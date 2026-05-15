@@ -1522,11 +1522,10 @@ mod tests {
 
         let config =
             ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test-key"));
-        let reconnection_config = ReconnectionConfig::default()
-            .with_max_attempts(10)
-            .unwrap()
-            .with_initial_delay(Duration::from_secs(2))
-            .unwrap();
+        let reconnection_config = ReconnectionConfig::builder()
+            .max_attempts(10)
+            .initial_delay(Duration::from_secs(2))
+            .build();
 
         let client = WebSocketClient::with_reconnection_config(config, reconnection_config);
 

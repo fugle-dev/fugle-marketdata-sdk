@@ -57,6 +57,10 @@ rustls-pemfile = "2.0"
 exponential-backoff = "2.0"
 indexmap = "2.2"
 
+# Declarative builder generation. Drives builders for `ConnectionConfig`,
+# `SubscribeRequest`, `RetryPolicy`, and `ReconnectionConfig`.
+bon = "3"
+
 # Optional structured-logging integration (gated behind the `tracing` feature).
 tracing = { version = "0.1", optional = true }
 

@@ -13,11 +13,11 @@ use std::time::Duration;
 
 /// Configuration for transparent retry of REST requests.
 ///
-/// Construct with [`RetryPolicy::new`] for full control or use
+/// Construct via the derived [`RetryPolicy::builder`] for full control, use
 /// [`RetryPolicy::conservative`] / [`RetryPolicy::aggressive`] for typical
-/// presets. Pass to
-/// [`RestClient::with_retry`](super::RestClient::with_retry) to enable.
-#[derive(Debug, Clone, Copy)]
+/// presets, or keep [`RetryPolicy::new`] for the legacy positional form. Pass
+/// to [`RestClient::with_retry`](super::RestClient::with_retry) to enable.
+#[derive(Debug, Clone, Copy, bon::Builder)]
 pub struct RetryPolicy {
     /// Maximum number of attempts (including the first). A value of `1`
     /// disables retry behaviour.
@@ -32,7 +32,10 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
-    /// Build a custom policy.
+    /// Build a custom policy via positional arguments.
+    ///
+    /// Equivalent to the derived
+    /// `RetryPolicy::builder().max_attempts(..).initial_backoff(..).max_backoff(..).build()`.
     pub fn new(max_attempts: u32, initial_backoff: Duration, max_backoff: Duration) -> Self {
         Self {
             max_attempts,
@@ -146,6 +149,19 @@ mod tests {
     fn test_aggressive_preset() {
         let p = RetryPolicy::aggressive();
         assert_eq!(p.max_attempts, 5);
+    }
+
+    #[test]
+    fn test_bon_builder_matches_new() {
+        let via_builder = RetryPolicy::builder()
+            .max_attempts(4)
+            .initial_backoff(Duration::from_millis(50))
+            .max_backoff(Duration::from_secs(5))
+            .build();
+        let via_new = RetryPolicy::new(4, Duration::from_millis(50), Duration::from_secs(5));
+        assert_eq!(via_builder.max_attempts, via_new.max_attempts);
+        assert_eq!(via_builder.initial_backoff, via_new.initial_backoff);
+        assert_eq!(via_builder.max_backoff, via_new.max_backoff);
     }
 
     #[test]

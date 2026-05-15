@@ -20,38 +20,41 @@ pub const MIN_INITIAL_DELAY_MS: u64 = 100;
 ///
 /// Controls automatic reconnection behavior after connection drops.
 ///
+/// Construct via the derived [`ReconnectionConfig::builder`] (no validation,
+/// fields default to the [`DEFAULT_*`](DEFAULT_MAX_ATTEMPTS) constants) or
+/// via the validating positional constructor [`ReconnectionConfig::new`].
+///
 /// `enabled` defaults to **`true`** in 0.4.0 — Rust users now get the
 /// production-safe behaviour out of the box, aligning with `reqwest` /
 /// `redis-rs` / `tokio-tungstenite` ergonomics. Bindings that need to
 /// preserve the historical "no auto-reconnect" semantics of
 /// `fugle-marketdata-{python,node}` SDKs MUST construct
 /// [`ReconnectionConfig::disabled`] explicitly at the FFI boundary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct ReconnectionConfig {
     /// Whether auto-reconnect is active. When `false`, [`ReconnectionManager::should_reconnect`]
     /// always returns `false` regardless of the close code.
+    #[builder(default = true)]
     pub enabled: bool,
     /// Maximum reconnection attempts before giving up
+    #[builder(default = DEFAULT_MAX_ATTEMPTS)]
     pub max_attempts: u32,
     /// Initial delay before first reconnection attempt
+    #[builder(default = Duration::from_millis(DEFAULT_INITIAL_DELAY_MS))]
     pub initial_delay: Duration,
     /// Maximum delay between reconnection attempts
+    #[builder(default = Duration::from_millis(DEFAULT_MAX_DELAY_MS))]
     pub max_delay: Duration,
 }
 
 impl Default for ReconnectionConfig {
     fn default() -> Self {
-        Self {
-            // 0.4.0: flipped from `false` → `true` so Rust users on the
-            // `WebSocketClient::new(config)` happy path get auto-reconnect
-            // by default. Bindings (Python / Node / UniFFI / etc.)
-            // explicitly call `ReconnectionConfig::disabled()` to keep
-            // their historical "no auto-reconnect" semantics for end users.
-            enabled: true,
-            max_attempts: DEFAULT_MAX_ATTEMPTS,
-            initial_delay: Duration::from_millis(DEFAULT_INITIAL_DELAY_MS),
-            max_delay: Duration::from_millis(DEFAULT_MAX_DELAY_MS),
-        }
+        // 0.4.0: flipped `enabled` from `false` → `true` so Rust users on
+        // the `WebSocketClient::new(config)` happy path get auto-reconnect
+        // by default. Bindings (Python / Node / UniFFI / etc.) explicitly
+        // call `ReconnectionConfig::disabled()` to keep their historical
+        // "no auto-reconnect" semantics for end users.
+        Self::builder().build()
     }
 }
 
@@ -117,51 +120,6 @@ impl ReconnectionConfig {
         }
     }
 
-    /// Builder: set max attempts with validation
-    ///
-    /// # Errors
-    /// Returns `MarketDataError::ConfigError` if `max_attempts` is 0
-    pub fn with_max_attempts(mut self, max_attempts: u32) -> Result<Self, MarketDataError> {
-        if max_attempts == 0 {
-            return Err(MarketDataError::ConfigError(
-                "max_attempts must be >= 1".to_string(),
-            ));
-        }
-        self.max_attempts = max_attempts;
-        Ok(self)
-    }
-
-    /// Builder: set initial delay with validation
-    ///
-    /// # Errors
-    /// Returns `MarketDataError::ConfigError` if `initial_delay` is less than 100ms
-    pub fn with_initial_delay(mut self, initial_delay: Duration) -> Result<Self, MarketDataError> {
-        if initial_delay < Duration::from_millis(MIN_INITIAL_DELAY_MS) {
-            return Err(MarketDataError::ConfigError(format!(
-                "initial_delay must be >= {}ms (got {}ms)",
-                MIN_INITIAL_DELAY_MS,
-                initial_delay.as_millis()
-            )));
-        }
-        self.initial_delay = initial_delay;
-        Ok(self)
-    }
-
-    /// Builder: set max delay with validation
-    ///
-    /// # Errors
-    /// Returns `MarketDataError::ConfigError` if `max_delay` is less than `initial_delay`
-    pub fn with_max_delay(mut self, max_delay: Duration) -> Result<Self, MarketDataError> {
-        if max_delay < self.initial_delay {
-            return Err(MarketDataError::ConfigError(format!(
-                "max_delay ({}ms) must be >= initial_delay ({}ms)",
-                max_delay.as_millis(),
-                self.initial_delay.as_millis()
-            )));
-        }
-        self.max_delay = max_delay;
-        Ok(self)
-    }
 }
 
 /// Manages reconnection attempts with exponential backoff
@@ -308,17 +266,29 @@ mod tests {
 
     #[test]
     fn test_reconnection_config_builder() {
-        let config = ReconnectionConfig::default()
-            .with_max_attempts(10)
-            .unwrap()
-            .with_initial_delay(Duration::from_secs(2))
-            .unwrap()
-            .with_max_delay(Duration::from_secs(120))
-            .unwrap();
+        let config = ReconnectionConfig::builder()
+            .max_attempts(10)
+            .initial_delay(Duration::from_secs(2))
+            .max_delay(Duration::from_secs(120))
+            .build();
 
         assert_eq!(config.max_attempts, 10);
         assert_eq!(config.initial_delay, Duration::from_secs(2));
         assert_eq!(config.max_delay, Duration::from_secs(120));
+        assert!(
+            config.enabled,
+            "builder defaults `enabled` to true, matching Default"
+        );
+    }
+
+    #[test]
+    fn test_reconnection_config_builder_defaults_match_default() {
+        let via_builder = ReconnectionConfig::builder().build();
+        let via_default = ReconnectionConfig::default();
+        assert_eq!(via_builder.enabled, via_default.enabled);
+        assert_eq!(via_builder.max_attempts, via_default.max_attempts);
+        assert_eq!(via_builder.initial_delay, via_default.initial_delay);
+        assert_eq!(via_builder.max_delay, via_default.max_delay);
     }
 
     #[test]
@@ -420,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_max_attempts_reached() {
-        let config = ReconnectionConfig::default().with_max_attempts(3).unwrap();
+        let config = ReconnectionConfig::builder().max_attempts(3).build();
         let mut manager = ReconnectionManager::new(config);
 
         // Get 3 delays
@@ -435,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_attempts_remaining() {
-        let config = ReconnectionConfig::default().with_max_attempts(5).unwrap();
+        let config = ReconnectionConfig::builder().max_attempts(5).build();
         let mut manager = ReconnectionManager::new(config);
 
         assert_eq!(manager.attempts_remaining(), 5);
@@ -523,25 +493,10 @@ mod tests {
         assert_eq!(config.max_delay, Duration::from_secs(30));
     }
 
-    #[test]
-    fn test_builder_rejects_zero_max_attempts() {
-        let result = ReconnectionConfig::default().with_max_attempts(0);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_builder_rejects_too_small_initial_delay() {
-        let result = ReconnectionConfig::default().with_initial_delay(Duration::from_millis(50));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_builder_rejects_max_delay_less_than_initial() {
-        // First set a larger initial_delay, then try to set smaller max_delay
-        let config = ReconnectionConfig::default()
-            .with_initial_delay(Duration::from_secs(30))
-            .unwrap();
-        let result = config.with_max_delay(Duration::from_secs(10));
-        assert!(result.is_err());
-    }
+    // Validation is now exclusively on `ReconnectionConfig::new(...)`.
+    // The `with_*` chainable validators were replaced by the unvalidated
+    // bon-derived `ReconnectionConfig::builder()` setters; users who want
+    // validation construct via `new()` and surface `MarketDataError` to
+    // their caller. The `test_new_rejects_*` tests above already cover
+    // the validation matrix.
 }
