@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.7.1] - 2026-05-16
+
+Refactor-only patch on top of 0.7.0. **Zero public API or behaviour
+changes.** Internal cleanup driven by a code-reuse / quality / efficiency
+review of the 0.7.0 diff.
+
+### Changed
+
+- Extracted shared `await_auth_response` helper in `websocket::aio::reconnect`.
+  Both `WebSocketClient::connect` and the internal `try_connect` reconnect
+  path now share a single 22-line auth-frame read loop, removing a copy-paste
+  risk where the WebSocket auth protocol could drift between fresh-connect
+  and reconnect.
+- `metrics_compat::build_drop_counters` now passes `client_id` as
+  `&str` (`.as_deref().unwrap_or("")`) instead of a freshly allocated
+  `String`, saving one allocation per `WebSocketClient::new`.
+- Inlined the `delay_ms` binding into the `tracing_compat::warn!` macro
+  call in `try_reconnect` so the `Duration::as_millis()` cast is dropped
+  along with the rest of the macro tokens when the `tracing` feature is
+  disabled. Also clears a stale `unused_variable` warning under that
+  feature combo.
+
 ## [Rust 0.7.0] - 2026-05-16
 
 Monitor-readiness followups bundle. **Zero breaking changes.** Five
