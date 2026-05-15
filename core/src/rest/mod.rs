@@ -10,6 +10,7 @@
 mod auth;
 mod client;
 mod error;
+mod retry;
 
 // Stock endpoints module
 pub mod stock;
@@ -21,4 +22,5 @@ pub mod futopt;
 pub use auth::Auth;
 pub use client::{IntradayClient, RestClient, StockClient};
 pub use futopt::{FutOptClient, FutOptIntradayClient};
+pub use retry::RetryPolicy;
 pub use stock::snapshot::SnapshotClient;

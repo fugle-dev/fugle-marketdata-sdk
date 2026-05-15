@@ -208,25 +208,10 @@ impl SubscribeRequest {
         }
     }
 
-    /// Create a trades channel subscription
-    pub fn trades(symbol: impl Into<String>) -> Self {
-        Self::new(Channel::Trades, symbol)
-    }
-
-    /// Create a candles channel subscription
-    pub fn candles(symbol: impl Into<String>) -> Self {
-        Self::new(Channel::Candles, symbol)
-    }
-
-    /// Create a books channel subscription
-    pub fn books(symbol: impl Into<String>) -> Self {
-        Self::new(Channel::Books, symbol)
-    }
-
-    /// Create an aggregates channel subscription
-    pub fn aggregates(symbol: impl Into<String>) -> Self {
-        Self::new(Channel::Aggregates, symbol)
-    }
+    // 0.4.0: Legacy per-channel constructors (`trades` / `candles` /
+    // `books` / `aggregates`) were removed. They duplicated
+    // `SubscribeRequest::new(Channel::*, symbol)` and complicated future
+    // channel additions. See MIGRATION-0.4.md.
 
     /// Generate subscription key for tracking.
     ///
@@ -485,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_subscribe_request() {
-        let req = SubscribeRequest::trades("2330");
+        let req = SubscribeRequest::new(Channel::Trades, "2330");
         assert_eq!(req.channel, "trades");
         assert_eq!(req.symbol.as_deref(), Some("2330"));
         assert_eq!(req.key(), "trades:2330");
@@ -493,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_subscribe_request_serialization() {
-        let req = SubscribeRequest::trades("2330");
+        let req = SubscribeRequest::new(Channel::Trades, "2330");
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"channel\":\"trades\""));
         assert!(json.contains("\"symbol\":\"2330\""));
@@ -700,7 +685,7 @@ mod tests {
 
     #[test]
     fn test_websocket_request_subscribe() {
-        let req = WebSocketRequest::subscribe(SubscribeRequest::trades("2330"));
+        let req = WebSocketRequest::subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"event\":\"subscribe\""));
         assert!(json.contains("\"channel\":\"trades\""));

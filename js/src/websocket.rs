@@ -42,6 +42,11 @@ pub type JsCallback = Arc<EventTsfn>;
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct ReconnectOptions {
+    /// Whether auto-reconnect is enabled (default: true when this object is
+    /// supplied; when the entire `reconnect` option is omitted the binding
+    /// preserves the historical Node SDK default of `false` — set this
+    /// explicitly to opt in or out)
+    pub enabled: Option<bool>,
     /// Maximum reconnection attempts (default: 5, min: 1)
     pub max_attempts: Option<u32>,
     /// Initial reconnection delay in milliseconds (default: 1000, min: 100)
@@ -255,7 +260,15 @@ impl WebSocketClient {
             .or(options.sdk_token)
             .unwrap();
 
-        // Build reconnection config with validation via core
+        // Build reconnection config with validation via core.
+        //
+        // Binding-side default: omitting `options.reconnect` preserves the
+        // historical Node SDK semantic of "no auto-reconnect" by routing
+        // through `ReconnectionConfig::disabled()`. Core 0.4.0 flipped its
+        // own `default()` to `enabled: true`; this branch compensates so the
+        // JS API surface is unchanged. Pass `{ reconnect: { enabled: true } }`
+        // (or any populated reconnect object — `enabled` defaults to true
+        // when the object itself is provided) to opt in.
         let reconnect_cfg = if let Some(r) = &options.reconnect {
             let max = r.max_attempts.map(|v| v as u32).unwrap_or(DEFAULT_MAX_ATTEMPTS);
             let initial = Duration::from_millis(
@@ -264,10 +277,15 @@ impl WebSocketClient {
             let max_delay = Duration::from_millis(
                 r.max_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_MAX_DELAY_MS)
             );
-            marketdata_core::ReconnectionConfig::new(max, initial, max_delay)
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?
+            let mut cfg = marketdata_core::ReconnectionConfig::new(max, initial, max_delay)
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            // Honor explicit opt-out: `{ reconnect: { enabled: false } }`.
+            if let Some(enabled) = r.enabled {
+                cfg.enabled = enabled;
+            }
+            cfg
         } else {
-            marketdata_core::ReconnectionConfig::default()
+            marketdata_core::ReconnectionConfig::disabled()
         };
 
         // Build health check config with validation via core
@@ -575,7 +593,7 @@ impl StockWebSocketClient {
                                     ConnectionEvent::Error { message, code } => {
                                         fire_callback(&callbacks_for_events, "error", format!("[{}] {}", code, message));
                                     }
-                                    ConnectionEvent::Disconnected { code, reason } => {
+                                    ConnectionEvent::Disconnected { code, reason, intent: _ } => {
                                         fire_callback(&callbacks_for_events, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
@@ -1065,7 +1083,7 @@ impl FutOptWebSocketClient {
                                     ConnectionEvent::Error { message, code } => {
                                         fire_callback(&callbacks_for_events, "error", format!("[{}] {}", code, message));
                                     }
-                                    ConnectionEvent::Disconnected { code, reason } => {
+                                    ConnectionEvent::Disconnected { code, reason, intent: _ } => {
                                         fire_callback(&callbacks_for_events, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {

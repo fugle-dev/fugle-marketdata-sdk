@@ -11,7 +11,7 @@ pub mod reconnect;
 pub mod runtime;
 pub mod writer;
 
-pub use client::WebSocketClient;
+pub use client::{WebSocketClient, DEFAULT_SHUTDOWN_TIMEOUT};
 pub use runtime::AsyncRuntime;
 
 use futures_util::stream::{SplitSink, SplitStream};

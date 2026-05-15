@@ -12,13 +12,14 @@ use crate::websocket::protocol::{
     AuthOutcome,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, HealthCheckConfig, ReconnectionManager,
-    SubscriptionManager,
+    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
+    ReconnectionManager, SubscriptionManager,
 };
 use crate::MarketDataError;
+use crate::tracing_compat::{debug, warn};
 use std::io::ErrorKind;
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tungstenite::stream::MaybeTlsStream;
@@ -36,7 +37,52 @@ const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Outbound queue capacity. Matches the async path (`aio::writer` uses 64).
 pub(crate) const WRITE_QUEUE_CAPACITY: usize = 64;
 
+/// Bounded wait for the server's Close acknowledgement after the local
+/// Close frame is sent. Caps the worst-case latency of `disconnect()` /
+/// `shutdown_with_timeout()` on the sync side; the supervisor thread
+/// returns even if the peer never replies.
+const CLOSE_ACK_DEADLINE: Duration = Duration::from_secs(2);
+
 pub(crate) type SyncWs = WebSocket<MaybeTlsStream<TcpStream>>;
+
+/// Drain pending outbound JSON frames from `write_rx` synchronously.
+/// Best-effort: write failures are ignored (the connection is shutting
+/// down anyway). Returns when the queue is empty or disconnected.
+fn drain_write_queue(ws: &mut SyncWs, write_rx: &mpsc::Receiver<String>) {
+    while let Ok(json) = write_rx.try_recv() {
+        if ws.send(Message::Text(json.into())).is_err() {
+            return;
+        }
+    }
+}
+
+/// Bounded wait for the peer's Close acknowledgement.
+///
+/// After we issue our Close frame, RFC 6455 requires reading until the
+/// peer also closes (manifesting as `Message::Close` or
+/// `tungstenite::Error::ConnectionClosed`/`AlreadyClosed`). This loop
+/// short-circuits within `deadline` so a wedged peer cannot block
+/// `disconnect()` indefinitely.
+fn await_close_ack(ws: &mut SyncWs, deadline: Duration) {
+    let stop_at = Instant::now() + deadline;
+    set_read_timeout(ws, Some(Duration::from_millis(50)));
+    while Instant::now() < stop_at {
+        match ws.read() {
+            Ok(Message::Close(_)) => return,
+            Err(tungstenite::Error::ConnectionClosed)
+            | Err(tungstenite::Error::AlreadyClosed) => return,
+            Err(tungstenite::Error::Io(e))
+                if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
+            {
+                continue;
+            }
+            // Any other variant — peer already gone; stop reading.
+            Err(_) => return,
+            // Drain remaining frames quietly during shutdown.
+            Ok(_) => continue,
+        }
+    }
+}
 
 /// Shared state owned by the `WebSocketClient` and updated by the owner thread.
 pub(crate) struct OwnerShared {
@@ -52,6 +98,9 @@ pub(crate) struct OwnerShared {
     /// callers pick up the new channel via `.lock().clone()`.
     pub write_tx_slot: Mutex<Option<mpsc::SyncSender<String>>>,
     pub should_stop: Arc<AtomicBool>,
+    /// Drop counter for the inbound message channel (drop-newest backpressure).
+    /// Exposed via `WebSocketClient::messages_dropped_total`.
+    pub messages_dropped: Arc<AtomicU64>,
 }
 
 /// Build a fresh TLS-wrapped WebSocket via `tungstenite::client_tls_with_config`.
@@ -205,8 +254,17 @@ fn owner_loop(
 
     loop {
         if shared.should_stop.load(Ordering::SeqCst) {
-            // Best-effort close frame; ignore errors during shutdown.
+            // Graceful shutdown sequence:
+            //   a) drain any queued writes so subscribe/unsubscribe acks
+            //      that the caller already enqueued reach the wire,
+            //   b) send the WebSocket Close frame,
+            //   c) bounded read until the server's Close ack arrives so
+            //      the peer can flush its own pending acks before TCP
+            //      teardown (RFC 6455 close handshake).
+            drain_write_queue(&mut ws, &write_rx);
             let _ = ws.close(None);
+            let _ = ws.flush();
+            await_close_ack(&mut ws, CLOSE_ACK_DEADLINE);
             return Some(1000);
         }
 
@@ -214,16 +272,30 @@ fn owner_loop(
         match ws.read() {
             Ok(Message::Text(text)) => {
                 last_activity = Instant::now();
+                debug!(
+                    target: "fugle_marketdata::ws",
+                    bytes = text.len(),
+                    kind = "text",
+                    "ws frame received"
+                );
                 match parse_text_frame(&text) {
                     Ok(ws_msg) => {
                         crate::websocket::protocol::handle_subscribed_event(
                             &shared.subscriptions,
                             &ws_msg,
                         );
-                        // Best-effort: if the receiver is dropped/full, we drop the
-                        // message. The receive queue is bounded (1024) and shapes
-                        // backpressure at the consumer side.
-                        let _ = shared.message_tx.try_send(ws_msg);
+                        // Drop-newest backpressure: full or disconnected receiver
+                        // drops the frame and increments the public counter.
+                        if let Err(mpsc::TrySendError::Full(_)) =
+                            shared.message_tx.try_send(ws_msg)
+                        {
+                            shared.messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            warn!(
+                                target: "fugle_marketdata::ws",
+                                dropped_total = shared.messages_dropped.load(Ordering::Relaxed),
+                                "message channel saturated; dropping frame (drop-newest)"
+                            );
+                        }
                     }
                     Err(e) => {
                         emit_event(&shared.event_tx, ConnectionEvent::Error {
@@ -235,13 +307,28 @@ fn owner_loop(
             }
             Ok(Message::Binary(data)) => {
                 last_activity = Instant::now();
+                debug!(
+                    target: "fugle_marketdata::ws",
+                    bytes = data.len(),
+                    kind = "binary",
+                    "ws frame received"
+                );
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) => {
                         crate::websocket::protocol::handle_subscribed_event(
                             &shared.subscriptions,
                             &ws_msg,
                         );
-                        let _ = shared.message_tx.try_send(ws_msg);
+                        if let Err(mpsc::TrySendError::Full(_)) =
+                            shared.message_tx.try_send(ws_msg)
+                        {
+                            shared.messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            warn!(
+                                target: "fugle_marketdata::ws",
+                                dropped_total = shared.messages_dropped.load(Ordering::Relaxed),
+                                "message channel saturated; dropping frame (drop-newest)"
+                            );
+                        }
                     }
                     Err(e) => {
                         emit_event(&shared.event_tx, ConnectionEvent::Error {
@@ -265,7 +352,11 @@ fn owner_loop(
                     .as_ref()
                     .map(|cf| cf.reason.to_string())
                     .unwrap_or_else(|| "Server initiated close".to_string());
-                emit_event(&shared.event_tx, ConnectionEvent::Disconnected { code, reason });
+                emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
+                    code,
+                    reason,
+                    intent: DisconnectIntent::Server,
+                });
                 let _ = ws.close(None);
                 return code;
             }
@@ -282,6 +373,7 @@ fn owner_loop(
                 emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
                     code: None,
                     reason: "Connection closed".to_string(),
+                    intent: DisconnectIntent::Network,
                 });
                 return None;
             }
@@ -333,10 +425,13 @@ fn reconnect_and_authenticate(
     shared: &Arc<OwnerShared>,
 ) -> Result<(SyncWs, mpsc::Receiver<String>), MarketDataError> {
     set_state(shared, ConnectionState::Connecting);
-    emit_event(&shared.event_tx, ConnectionEvent::Connecting);
+    emit_event(&shared.event_tx, ConnectionEvent::Connecting {
+    });
 
     let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config))?;
-    emit_event(&shared.event_tx, ConnectionEvent::Connected);
+    crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws reconnected");
+    emit_event(&shared.event_tx, ConnectionEvent::Connected {
+    });
 
     set_state(shared, ConnectionState::Authenticating);
     do_auth_handshake(&mut ws, &shared.config, &shared.message_tx)?;
@@ -360,7 +455,9 @@ fn reconnect_and_authenticate(
     }
 
     set_state(shared, ConnectionState::Connected);
-    emit_event(&shared.event_tx, ConnectionEvent::Authenticated);
+    crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
+    emit_event(&shared.event_tx, ConnectionEvent::Authenticated {
+    });
     Ok((ws, write_rx))
 }
 
@@ -387,6 +484,7 @@ pub(crate) fn run_supervisor(
             set_state(&shared, ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Client disconnected".to_string(),
+                intent: DisconnectIntent::Client,
             });
             return;
         }
@@ -403,8 +501,11 @@ pub(crate) fn run_supervisor(
             set_state(&shared, ConnectionState::Closed {
                 code: close_code,
                 reason: "Non-retriable error".to_string(),
+                intent: DisconnectIntent::Network,
             });
-            emit_event(&shared.event_tx, ConnectionEvent::ReconnectFailed { attempts });
+            emit_event(&shared.event_tx, ConnectionEvent::ReconnectFailed {
+                attempts,
+            });
             return;
         }
 
@@ -426,8 +527,11 @@ pub(crate) fn run_supervisor(
                 set_state(&shared, ConnectionState::Closed {
                     code: close_code,
                     reason: "Max reconnection attempts reached".to_string(),
+                    intent: DisconnectIntent::Network,
                 });
-                emit_event(&shared.event_tx, ConnectionEvent::ReconnectFailed { attempts });
+                emit_event(&shared.event_tx, ConnectionEvent::ReconnectFailed {
+                    attempts,
+                });
                 return;
             };
 
@@ -436,7 +540,15 @@ pub(crate) fn run_supervisor(
                 mgr.current_attempt()
             };
             set_state(&shared, ConnectionState::Reconnecting { attempt });
-            emit_event(&shared.event_tx, ConnectionEvent::Reconnecting { attempt });
+            warn!(
+                target: "fugle_marketdata::ws",
+                attempt,
+                delay_ms = d.as_millis() as u64,
+                "ws reconnect attempt"
+            );
+            emit_event(&shared.event_tx, ConnectionEvent::Reconnecting {
+                attempt,
+            });
 
             std::thread::sleep(d);
 

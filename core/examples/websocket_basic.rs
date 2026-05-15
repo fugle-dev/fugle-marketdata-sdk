@@ -56,7 +56,7 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
         loop {
             let rx = events.lock().expect("event lock poisoned");
             match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(ConnectionEvent::Disconnected { code, reason }) => {
+                Ok(ConnectionEvent::Disconnected { code, reason, .. }) => {
                     println!("Event: Disconnected (code: {:?}, reason: {})", code, reason);
                     break;
                 }

@@ -92,7 +92,7 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
         let request = self.client.agent().get(&url);
         let request = self.client.auth().apply_to_request(request);
 
-        let response = request.call()?;
+        let response = self.client.execute(request)?;
         let candles: FutOptHistoricalCandlesResponse = response
             .into_json()
             .map_err(|e| MarketDataError::Other(e.into()))?;

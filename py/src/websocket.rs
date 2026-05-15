@@ -299,12 +299,18 @@ impl ReconnectConfig {
     ///
     /// This should not fail since validation already happened in __new__
     pub fn to_core(&self) -> marketdata_core::ReconnectionConfig {
-        marketdata_core::ReconnectionConfig::new(
+        let mut cfg = marketdata_core::ReconnectionConfig::new(
             self.max_attempts,
             Duration::from_millis(self.initial_delay_ms),
             Duration::from_millis(self.max_delay_ms),
         )
-        .expect("Config already validated in constructor")
+        .expect("Config already validated in constructor");
+        // Honor the Python-level `enabled` flag. Without this, the binding
+        // silently ignored `ReconnectConfig(enabled=False)`. Pre-0.4 the core
+        // default was `enabled: false` so the bug was masked; in 0.4 the core
+        // default flipped to `true`, making the leak observable.
+        cfg.enabled = self.enabled;
+        cfg
     }
 }
 
@@ -829,7 +835,7 @@ impl StockWebSocketClient {
                                             ConnectionEvent::Error { message, code } => {
                                                 callbacks_for_events.invoke_error(py, &message, code);
                                             }
-                                            ConnectionEvent::Disconnected { code, reason } => {
+                                            ConnectionEvent::Disconnected { code, reason, intent: _ } => {
                                                 callbacks_for_events.invoke_disconnect(py, code, &reason);
                                             }
                                             ConnectionEvent::ReconnectFailed { attempts } => {
@@ -1677,7 +1683,7 @@ impl FutOptWebSocketClient {
                                             ConnectionEvent::Error { message, code } => {
                                                 callbacks_for_events.invoke_error(py, &message, code);
                                             }
-                                            ConnectionEvent::Disconnected { code, reason } => {
+                                            ConnectionEvent::Disconnected { code, reason, intent: _ } => {
                                                 callbacks_for_events.invoke_disconnect(py, code, &reason);
                                             }
                                             ConnectionEvent::ReconnectFailed { attempts } => {

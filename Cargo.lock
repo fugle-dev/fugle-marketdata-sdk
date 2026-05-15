@@ -1294,14 +1294,14 @@ dependencies = [
 
 [[package]]
 name = "fugle-marketdata"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "fugle-marketdata-core",
 ]
 
 [[package]]
 name = "fugle-marketdata-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -1317,6 +1317,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tokio-tungstenite",
+ "tracing",
  "tungstenite",
  "ureq",
  "url",

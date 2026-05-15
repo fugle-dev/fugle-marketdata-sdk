@@ -21,11 +21,22 @@ Rust SDK for [Fugle](https://developer.fugle.tw) market data. Provides REST API 
 
 ```toml
 # sync (no tokio in the dependency tree)
-fugle-marketdata = "0.3"
+fugle-marketdata = "0.4"
 
 # async (tokio + tokio-tungstenite)
-fugle-marketdata = { version = "0.3", features = ["tokio-comp"] }
+fugle-marketdata = { version = "0.4", features = ["tokio-comp"] }
+
+# opt in to structured tracing (no-op when off; zero binary cost)
+fugle-marketdata = { version = "0.4", features = ["tokio-comp", "tracing"] }
 ```
+
+Upgrading from 0.3? See [MIGRATION-0.4.md](../MIGRATION-0.4.md). The
+notable defaults that changed: `ReconnectionConfig::default().enabled` is
+now `true`, `disconnect()` is now a graceful 5 s drain (not
+fire-and-forget), `message_buffer` default is 4096, `Auth` /
+`ConnectionConfig` `Debug` redact secrets, and `SubscribeRequest::trades`
+/ `::candles` / `::books` / `::aggregates` were removed in favour of
+`SubscribeRequest::new(Channel::*, symbol)`.
 
 ## Quick Start
 
@@ -156,16 +167,29 @@ let _ = AuthRequest::with_sdk_token("your-sdk-token");
 
 ### Reconnection
 
+`ReconnectionConfig::default().enabled` is **`true`** as of 0.4. Rust
+callers on the `WebSocketClient::new(config)` happy path get
+auto-reconnect with no opt-in; bindings (Python / Node / UniFFI / Go /
+Java / C++ / C#) call `ReconnectionConfig::disabled()` at the FFI
+boundary so end-user behaviour is preserved.
+
 ```rust,no_run
 use fugle_marketdata::websocket::ReconnectionConfig;
 use std::time::Duration;
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
+// Default — auto-reconnect enabled (5 attempts, 1 s → 60 s exponential).
+let reconnect = ReconnectionConfig::default();
+
+// Custom — explicit `new()` also enables auto-reconnect.
 let reconnect = ReconnectionConfig::new(
     10,                              // max_attempts
     Duration::from_millis(2_000),    // initial_delay (min 100ms)
     Duration::from_millis(120_000),  // max_delay
 )?;
+
+// Opt out — matches old `fugle-marketdata-{python,node}` semantics.
+let reconnect = ReconnectionConfig::disabled();
 # drop(reconnect);
 # Ok(())
 # }
@@ -225,6 +249,121 @@ let client = WebSocketClient::with_full_config(connection, reconnect, health);
 # Ok(())
 # }
 ```
+
+### Custom endpoints (staging / proxy / mock server)
+
+Both transports accept a custom URL.
+
+REST — chainable setter:
+
+```rust,no_run
+use fugle_marketdata::{Auth, RestClient};
+
+let client = RestClient::new(Auth::SdkToken("t".into()))
+    .base_url("https://staging.fugle.tw/marketdata/v1.0");
+# drop(client);
+```
+
+WebSocket — `WebSocketFactory` mirrors the JS / Python SDK shape:
+supply one base URL, get both stock and futopt endpoints.
+
+```rust,no_run
+use fugle_marketdata::{AuthRequest, WebSocketClient, WebSocketFactory};
+
+# fn main() {
+let factory = WebSocketFactory::new(AuthRequest::with_api_key("k"))
+    .base_url("wss://staging.fugle.tw/marketdata");
+
+let stock_client  = WebSocketClient::new(factory.stock().build());
+let futopt_client = WebSocketClient::new(factory.futopt().build());
+# drop((stock_client, futopt_client));
+# }
+```
+
+For full control, `ConnectionConfig::new(url, auth)` accepts the
+fully-qualified WebSocket URL. The `urls` module exposes the canonical
+constants and roots:
+
+```rust,no_run
+use fugle_marketdata::urls;
+
+let _ = urls::STOCK_WS;        // wss://api.fugle.tw/marketdata/v1.0/stock/streaming
+let _ = urls::WS_BASE_ROOT;    // wss://api.fugle.tw/marketdata
+let _ = urls::API_VERSION;     // v1.0
+```
+
+### REST retry
+
+```rust,no_run
+use fugle_marketdata::{Auth, RestClient, RetryPolicy};
+
+let client = RestClient::new(Auth::SdkToken("t".into()))
+    .with_retry(RetryPolicy::conservative());  // 3 attempts, 100 ms initial, 2 s ceiling
+
+// or build your own
+use std::time::Duration;
+let client = RestClient::new(Auth::SdkToken("t".into()))
+    .with_retry(RetryPolicy::new(5, Duration::from_millis(250), Duration::from_secs(10)));
+# drop(client);
+```
+
+Off by default — observability use cases need real failures visible.
+Retries only errors classified by `MarketDataError::is_retryable()`
+(HTTP 429, HTTP 5xx, transport timeouts, connection errors). Exhausted
+retries return the last error verbatim.
+
+### Graceful shutdown
+
+`WebSocketClient::disconnect()` (both sync and async) defaults to a
+**5 second drain timeout**: it signals the dispatch loop to stop, drops
+the writer-side sender so any queued frames flush, sends the WebSocket
+Close frame, awaits the peer's Close acknowledgement, and only then
+forcibly aborts the background tasks. Pass an explicit budget for
+SIGTERM-style scenarios:
+
+```rust,no_run
+use fugle_marketdata::WebSocketClient;
+use std::time::Duration;
+
+# fn run(client: WebSocketClient) -> Result<(), fugle_marketdata::MarketDataError> {
+client.shutdown_with_timeout(Duration::from_millis(100))?;  // tight budget
+# Ok(())
+# }
+```
+
+`Duration::ZERO` is valid — same fire-and-forget shape as 0.3.
+
+### Tracing
+
+Opt in via the `tracing` feature. Hot-path `debug!` for received frames,
+lifecycle `info!` / `warn!` for connect / auth / reconnect /
+heartbeat / saturation, `error!` for runtime-init / close-frame
+failures. `#[tracing::instrument]` spans on
+`ws.connect` / `ws.subscribe` / `ws.unsubscribe` / `ws.disconnect`
+(cold path only — zero overhead per frame).
+
+```rust,ignore
+fn main() {
+    tracing_subscriber::fmt::init();
+    // ... existing client code unchanged
+}
+```
+
+### Backpressure & introspection
+
+```rust,no_run
+use fugle_marketdata::{Channel, WebSocketClient};
+
+# fn run(client: WebSocketClient) {
+let dropped: u64 = client.messages_dropped_total();
+let count: usize = client.subscription_count();
+let on:    bool  = client.is_subscribed(&Channel::Trades, "2330");
+# drop((dropped, count, on));
+# }
+```
+
+Default message-channel cap is 4096 (drop-newest backpressure). Tune
+with `ConnectionConfig::builder(...).message_buffer(N)`.
 
 ## Error Handling
 

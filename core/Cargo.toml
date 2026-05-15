@@ -1,6 +1,6 @@
 [package]
 name = "fugle-marketdata-core"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 license.workspace = true
 description = "Internal kernel for the Fugle market data SDK. End users should depend on `fugle-marketdata` instead."
@@ -20,6 +20,12 @@ default = []
 # the redis-rs pattern. Reserved namespace for future runtimes:
 #   async-std-comp, smol-comp (not implemented in 0.3.0).
 tokio-comp = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
+# Opt-in `tracing` integration. Off by default — adds no dependency weight
+# for consumers who do not install a `tracing_subscriber`. Enables hot-path
+# `debug!`, lifecycle `info!`/`warn!`, error `warn!`/`error!`, and
+# `#[tracing::instrument]` on cold-path operations (connect, subscribe,
+# unsubscribe, disconnect).
+tracing = ["dep:tracing"]
 
 [dependencies]
 # Workspace-inherited dependencies (always pulled)
@@ -49,6 +55,9 @@ rustls-native-certs = "0.8"
 rustls-pemfile = "2.0"
 exponential-backoff = "2.0"
 indexmap = "2.2"
+
+# Optional structured-logging integration (gated behind the `tracing` feature).
+tracing = { version = "0.1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }

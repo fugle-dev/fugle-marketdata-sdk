@@ -33,7 +33,12 @@ pub mod errors;
 pub mod models;
 pub mod rest;
 pub mod tls;
+pub mod urls;
 pub mod websocket;
+
+// Internal: cfg-gated tracing macro re-exports. No-op when the `tracing`
+// feature is disabled.
+mod tracing_compat;
 
 // Re-export error types
 pub use errors::MarketDataError;
@@ -42,12 +47,12 @@ pub use errors::MarketDataError;
 pub use tls::TlsConfig;
 
 // Re-export REST client types
-pub use rest::{Auth, RestClient};
+pub use rest::{Auth, RestClient, RetryPolicy};
 
 // Re-export WebSocket types
 pub use websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, HealthCheckConfig, MessageReceiver,
-    ReconnectionConfig, WebSocketClient,
+    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
+    MessageReceiver, ReconnectionConfig, WebSocketClient, WebSocketFactory,
 };
 
 // Re-export WebSocket config constants for binding layers (CON-01).

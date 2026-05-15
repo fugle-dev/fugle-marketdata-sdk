@@ -113,7 +113,12 @@ pub extern "C" fn create_runtime() -> *mut AsyncRuntime {
         match AsyncRuntime::new() {
             Ok(runtime) => Box::into_raw(Box::new(runtime)),
             Err(e) => {
-                eprintln!("Failed to create runtime: {}", e);
+                crate::tracing_compat::error!(
+                    target: "fugle_marketdata::runtime",
+                    error = %e,
+                    "failed to create async runtime"
+                );
+                let _ = e;
                 ptr::null_mut()
             }
         }

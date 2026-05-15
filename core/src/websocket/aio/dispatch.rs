@@ -2,11 +2,13 @@
 //! messages onto the inbound channel. Also implements optional outbound ping.
 
 use crate::models::WebSocketMessage;
+use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::WsStream;
 use crate::websocket::connection_event::emit_event;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
-use crate::websocket::{ConnectionEvent, SubscriptionManager};
+use crate::websocket::{ConnectionEvent, DisconnectIntent, SubscriptionManager};
 use futures_util::StreamExt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -49,6 +51,8 @@ pub(crate) async fn dispatch_messages(
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
+    messages_dropped: Arc<AtomicU64>,
+    shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<u16> {
     loop {
         // Read-site liveness: if `heartbeat_timeout` is set, the next
@@ -59,6 +63,11 @@ pub(crate) async fn dispatch_messages(
             Some(timeout) => match tokio::time::timeout(timeout, ws_read.next()).await {
                 Ok(opt) => opt,
                 Err(_elapsed) => {
+                    warn!(
+                        target: "fugle_marketdata::ws",
+                        elapsed_ms = timeout.as_millis() as u64,
+                        "heartbeat timeout: no inbound frame in window"
+                    );
                     emit_event(&event_tx, ConnectionEvent::HeartbeatTimeout {
                         elapsed: timeout,
                     });
@@ -71,24 +80,46 @@ pub(crate) async fn dispatch_messages(
         let msg_result = match frame_result {
             Some(r) => r,
             None => {
-                // Stream ended cleanly without close frame.
-                emit_event(&event_tx, ConnectionEvent::Disconnected {
-                    code: None,
-                    reason: "Connection closed".to_string(),
-                });
+                // Stream ended cleanly without close frame. Suppress
+                // the Disconnected emit when the caller already issued
+                // a `disconnect()` / `shutdown_with_timeout()` — the
+                // shutdown path will emit `Disconnected { intent: Client }`
+                // itself, and a duplicate `Disconnected { intent: Network }`
+                // here would race ahead of it (the client-initiated
+                // local socket close manifests as EOF on the read half).
+                if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    emit_event(&event_tx, ConnectionEvent::Disconnected {
+                        code: None,
+                        reason: "Connection closed".to_string(),
+                        intent: DisconnectIntent::Network,
+                    });
+                }
                 return None;
             }
         };
 
         match msg_result {
             Ok(Message::Text(text)) => {
+                debug!(
+                    target: "fugle_marketdata::ws",
+                    bytes = text.len(),
+                    kind = "text",
+                    "ws frame received"
+                );
                 match parse_text_frame(&text) {
                     Ok(ws_msg) => {
                         // Mutex is only taken when event == "subscribed" (cheap
                         // string compare for every other message).
                         handle_subscribed_event(&subscriptions, &ws_msg);
-                        if message_tx.send(ws_msg).await.is_err() {
-                            return None;
+                        if let Err(tokio_mpsc::error::TrySendError::Full(_)) =
+                            message_tx.try_send(ws_msg)
+                        {
+                            messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            warn!(
+                                target: "fugle_marketdata::ws",
+                                dropped_total = messages_dropped.load(Ordering::Relaxed),
+                                "message channel saturated; dropping frame (drop-newest)"
+                            );
                         }
                     }
                     Err(e) => {
@@ -100,11 +131,24 @@ pub(crate) async fn dispatch_messages(
                 }
             }
             Ok(Message::Binary(data)) => {
+                debug!(
+                    target: "fugle_marketdata::ws",
+                    bytes = data.len(),
+                    kind = "binary",
+                    "ws frame received"
+                );
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) => {
                         handle_subscribed_event(&subscriptions, &ws_msg);
-                        if message_tx.send(ws_msg).await.is_err() {
-                            return None;
+                        if let Err(tokio_mpsc::error::TrySendError::Full(_)) =
+                            message_tx.try_send(ws_msg)
+                        {
+                            messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            warn!(
+                                target: "fugle_marketdata::ws",
+                                dropped_total = messages_dropped.load(Ordering::Relaxed),
+                                "message channel saturated; dropping frame (drop-newest)"
+                            );
                         }
                     }
                     Err(e) => {
@@ -132,6 +176,7 @@ pub(crate) async fn dispatch_messages(
                 emit_event(&event_tx, ConnectionEvent::Disconnected {
                     code,
                     reason,
+                    intent: DisconnectIntent::Server,
                 });
 
                 return code;
@@ -141,11 +186,29 @@ pub(crate) async fn dispatch_messages(
                 // No action needed
             }
             Err(e) => {
-                // WebSocket error - connection likely broken
+                // WebSocket transport error — connection broken (e.g.
+                // "Connection reset without closing handshake"). Emit
+                // both `Error` (preserves existing diagnostic surface)
+                // *and* `Disconnected { intent: Network }` so consumers
+                // pattern-matching on `ConnectionEvent::Disconnected`
+                // see the close exactly as they do for the clean-EOF
+                // path above. Skip when shutdown was caller-initiated:
+                // a local `shutdown_with_timeout()` typically tears
+                // down the socket which surfaces here as a transport
+                // error, and the shutdown path already emits the
+                // canonical `Disconnected { intent: Client }`.
+                let err_msg = format!("WebSocket error: {}", e);
                 emit_event(&event_tx, ConnectionEvent::Error {
-                    message: format!("WebSocket error: {}", e),
+                    message: err_msg.clone(),
                     code: 2001,
                 });
+                if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    emit_event(&event_tx, ConnectionEvent::Disconnected {
+                        code: None,
+                        reason: err_msg,
+                        intent: DisconnectIntent::Network,
+                    });
+                }
                 return None;
             }
             Ok(Message::Frame(_)) => {

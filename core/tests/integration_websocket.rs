@@ -549,11 +549,11 @@ fn test_heartbeat_timeout_triggers_reconnect_in_real_env() {
             .ok();
 
             match event {
-                Some(Ok(ConnectionEvent::HeartbeatTimeout { elapsed })) => {
+                Some(Ok(ConnectionEvent::HeartbeatTimeout { elapsed, .. })) => {
                     println!("Got HeartbeatTimeout after {:?}", elapsed);
                     saw_heartbeat_timeout = true;
                 }
-                Some(Ok(ConnectionEvent::Reconnecting { attempt })) => {
+                Some(Ok(ConnectionEvent::Reconnecting { attempt, .. })) => {
                     println!("Got Reconnecting (attempt {})", attempt);
                     saw_reconnecting = true;
                     if saw_heartbeat_timeout {

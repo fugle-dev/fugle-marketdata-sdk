@@ -93,6 +93,9 @@ pub struct ReconnectConfigRecord {
 
 impl ReconnectConfigRecord {
     fn to_core(&self) -> marketdata_core::ReconnectionConfig {
+        // Explicit opt-in path: the user passed a ReconnectConfigRecord, so
+        // they want auto-reconnect. `default()` returns `enabled = true` in
+        // core 0.4.0 — same intent, no override needed here.
         let mut cfg = marketdata_core::ReconnectionConfig::default();
         if self.max_attempts > 0 {
             cfg.max_attempts = self.max_attempts;
@@ -373,13 +376,26 @@ impl WebSocketClient {
                 marketdata_core::HealthCheckConfig::default(),
             )
         } else if let Some(hc) = &self.health_check_config {
+            // Binding-side compensation for the core 0.4.0 default flip:
+            // when the caller did NOT supply a `ReconnectConfigRecord`,
+            // preserve the historical FFI semantics (no auto-reconnect)
+            // by explicitly disabling reconnect. Bypasses
+            // `ReconnectionConfig::default()` which now returns
+            // `enabled = true`.
             CoreWebSocketClient::with_full_config(
                 config,
-                marketdata_core::ReconnectionConfig::default(),
+                marketdata_core::ReconnectionConfig::disabled(),
                 hc.clone(),
             )
         } else {
-            CoreWebSocketClient::new(config)
+            // Same compensation as above: when the caller passed neither
+            // a reconnect record nor a health-check record, route through
+            // `with_reconnection_config(_, disabled())` instead of `new()`
+            // so the binding default stays "no auto-reconnect".
+            CoreWebSocketClient::with_reconnection_config(
+                config,
+                marketdata_core::ReconnectionConfig::disabled(),
+            )
         };
 
         // Connect to server
@@ -440,10 +456,10 @@ impl WebSocketClient {
                         Ok(event) => {
                             use marketdata_core::websocket::ConnectionEvent;
                             match event {
-                                ConnectionEvent::Reconnecting { attempt } => {
+                                ConnectionEvent::Reconnecting { attempt, .. } => {
                                     event_listener.on_reconnecting(attempt);
                                 }
-                                ConnectionEvent::ReconnectFailed { attempts } => {
+                                ConnectionEvent::ReconnectFailed { attempts, .. } => {
                                     event_listener.on_reconnect_failed(attempts);
                                     event_connected.store(false, Ordering::SeqCst);
                                 }
@@ -454,7 +470,7 @@ impl WebSocketClient {
                                     event_listener.on_disconnected();
                                     event_connected.store(false, Ordering::SeqCst);
                                 }
-                                ConnectionEvent::Authenticated => {
+                                ConnectionEvent::Authenticated { .. } => {
                                     event_connected.store(true, Ordering::SeqCst);
                                 }
                                 // Map Unauthenticated to on_error so existing UniFFI
@@ -462,7 +478,7 @@ impl WebSocketClient {
                                 // rejection without needing a new trait method.
                                 // To expose a dedicated callback, add `on_unauthenticated`
                                 // to the WebSocketListener trait and re-run uniffi-bindgen.
-                                ConnectionEvent::Unauthenticated { message } => {
+                                ConnectionEvent::Unauthenticated { message, .. } => {
                                     event_listener.on_error(format!(
                                         "Unauthenticated: {}",
                                         message

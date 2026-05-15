@@ -1,6 +1,6 @@
 //! Async WebSocket client (tokio-tungstenite).
 
-use crate::models::{SubscribeRequest, WebSocketMessage, WebSocketRequest};
+use crate::models::{Channel, SubscribeRequest, WebSocketMessage, WebSocketRequest};
 use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::run_writer_task;
@@ -11,8 +11,8 @@ use crate::websocket::protocol::{
     frame_subscribe_raw, frame_unsubscribe, AuthOutcome,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, HealthCheckConfig, MessageReceiver,
-    ReconnectionConfig, ReconnectionManager, SubscriptionManager,
+    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
+    MessageReceiver, ReconnectionConfig, ReconnectionManager, SubscriptionManager,
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
@@ -56,10 +56,23 @@ pub struct WebSocketClient {
     /// first `messages()` call, when we spawn the bridge task that drains
     /// the tokio receiver into a `std::sync::mpsc::Sender`.
     message_receiver: Arc<std::sync::Mutex<Option<Arc<MessageReceiver>>>>,
+    /// Monotonic counter incremented every time the inbound message
+    /// channel is saturated and a frame is dropped (drop-newest policy).
+    /// Exposed via [`Self::messages_dropped_total`].
+    messages_dropped: Arc<std::sync::atomic::AtomicU64>,
+    /// Set by [`Self::disconnect`] / [`Self::shutdown_with_timeout`] to
+    /// instruct the spawned dispatch task to exit cleanly instead of
+    /// looping back into the reconnect path after the next dispatch
+    /// return. Cleared on construction.
+    shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
     // Internal handles
     dispatch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
+
+/// Default drain timeout for [`WebSocketClient::disconnect`] when no
+/// explicit value is supplied.
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl WebSocketClient {
     /// Create a new WebSocket client with default reconnection config
@@ -110,8 +123,8 @@ impl WebSocketClient {
         reconnection_config: ReconnectionConfig,
         health_check_config: HealthCheckConfig,
     ) -> Self {
-        let (event_tx, event_rx) = mpsc::sync_channel(1024);
-        let (message_tx, message_rx) = tokio_mpsc::channel(1024);
+        let (event_tx, event_rx) = mpsc::sync_channel(config.event_buffer);
+        let (message_tx, message_rx) = tokio_mpsc::channel(config.message_buffer);
 
         Self {
             config,
@@ -126,9 +139,26 @@ impl WebSocketClient {
             message_tx,
             message_rx: Arc::new(std::sync::Mutex::new(Some(message_rx))),
             message_receiver: Arc::new(std::sync::Mutex::new(None)),
+            messages_dropped: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            shutdown_requested: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Total number of inbound messages dropped due to consumer-side
+    /// channel saturation since this client was constructed.
+    ///
+    /// Frames are dropped under the **drop-newest** backpressure policy:
+    /// when `message_buffer` is full, new arrivals are discarded rather
+    /// than blocking the network read loop. A non-zero value here usually
+    /// indicates the downstream consumer (your `messages()` /
+    /// `message_stream()` reader) is too slow or stalled.
+    ///
+    /// Counter is monotonic and thread-safe (`AtomicU64`). Reset only by
+    /// constructing a new client.
+    pub fn messages_dropped_total(&self) -> u64 {
+        self.messages_dropped.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Get current connection state (snapshot)
@@ -245,8 +275,8 @@ impl WebSocketClient {
     /// std::thread::spawn(move || {
     ///     while let Ok(event) = events.blocking_lock().recv() {
     ///         match event {
-    ///             ConnectionEvent::Connected => println!("Connected!"),
-    ///             ConnectionEvent::Disconnected { code, reason } => {
+    ///             ConnectionEvent::Connected { .. } => println!("Connected!"),
+    ///             ConnectionEvent::Disconnected { code, reason, .. } => {
     ///                 println!("Disconnected: {:?} - {}", code, reason);
     ///                 break;
     ///             }
@@ -332,6 +362,10 @@ impl WebSocketClient {
     /// - Connection fails
     /// - Authentication fails or times out
     /// - WebSocket handshake fails
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(target = "fugle_marketdata::ws", name = "ws.connect", skip(self))
+    )]
     pub async fn connect(&self) -> Result<(), MarketDataError> {
         // Check if client is closed - cannot reconnect a closed client
         if self.is_closed().await {
@@ -343,7 +377,8 @@ impl WebSocketClient {
             let mut state = self.state.write().await;
             *state = ConnectionState::Connecting;
         }
-        emit_event(&self.event_tx, ConnectionEvent::Connecting);
+        emit_event(&self.event_tx, ConnectionEvent::Connecting {
+        });
 
         // Connect to WebSocket (with optional TLS customization).
         let tls_connector = tls_connector_for(&self.config)?;
@@ -386,7 +421,9 @@ impl WebSocketClient {
         // Split the stream into read/write halves
         let (mut ws_sink, mut ws_read) = ws_stream.split();
 
-        emit_event(&self.event_tx, ConnectionEvent::Connected);
+        crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
+        emit_event(&self.event_tx, ConnectionEvent::Connected {
+        });
 
         // Update state to Authenticating
         {
@@ -453,7 +490,9 @@ impl WebSocketClient {
                     let mut state = self.state.write().await;
                     *state = ConnectionState::Connected;
                 }
-                emit_event(&self.event_tx, ConnectionEvent::Authenticated);
+                crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
+                emit_event(&self.event_tx, ConnectionEvent::Authenticated {
+                });
 
                 // Spawn dispatch task to handle incoming messages (uses read half).
                 // Liveness detection is wrapped inside dispatch_messages itself
@@ -499,90 +538,174 @@ impl WebSocketClient {
         }
     }
 
-    /// Disconnect from WebSocket server with graceful shutdown
+    /// Disconnect from the WebSocket server with a graceful drain.
     ///
-    /// Shutdown sequence:
-    /// 1. Stop health check monitoring
-    /// 2. Cancel dispatch task (abort async task)
-    /// 3. Join health check thread (blocking wait)
-    /// 4. Send close frame to server
-    /// 5. Wait for close acknowledgment (with timeout)
-    /// 6. Update state to Closed
-    /// 7. Send Disconnected event
+    /// Equivalent to
+    /// [`shutdown_with_timeout`](Self::shutdown_with_timeout) called with
+    /// [`DEFAULT_SHUTDOWN_TIMEOUT`] (5 seconds).
+    ///
+    /// Within the drain window the client signals the dispatch loop to
+    /// exit (so auto-reconnect does not re-establish the connection),
+    /// drops the writer-task sender so any in-flight queued frames flush,
+    /// sends a Close frame to the peer, and awaits the peer's Close
+    /// acknowledgement (manifested as the dispatch task exiting). On
+    /// timeout the dispatch and writer tasks are forcibly aborted and
+    /// the connection is force-closed.
+    ///
+    /// The emitted [`ConnectionEvent::Disconnected`] always carries
+    /// [`DisconnectIntent::Client`] regardless of whether the drain
+    /// completed in time.
     ///
     /// # Errors
     ///
-    /// Returns error if sending close frame fails. The client is still
-    /// marked as closed even if the close handshake fails.
+    /// Returns the error surfaced by the close-frame send if it failed.
+    /// The client is still marked as closed in either case.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(target = "fugle_marketdata::ws", name = "ws.disconnect", skip(self))
+    )]
     pub async fn disconnect(&self) -> Result<(), MarketDataError> {
-        // 1. Cancel dispatch task. The read-site timeout (configured via
-        //    `health_check_config`) lives inside this task, so aborting
-        //    it also tears down liveness detection — no separate stop
-        //    flag or background-task abort is needed.
-        {
-            let mut handle = self.dispatch_handle.lock().await;
-            if let Some(h) = handle.take() {
-                h.abort();
-                let _ = h.await;
-            }
-        }
+        self.shutdown_with_timeout(DEFAULT_SHUTDOWN_TIMEOUT).await
+    }
 
-        // 2. Drop the write_tx slot and abort the writer task
+    /// Disconnect with a caller-supplied drain timeout.
+    ///
+    /// See [`disconnect`](Self::disconnect) for sequencing details. Pass
+    /// a small value (e.g. `Duration::from_millis(100)`) when the caller
+    /// must return quickly (SIGTERM grace window expiring) and a longer
+    /// value when clean Close-ack handshake matters more than latency.
+    ///
+    /// A zero timeout still sends the Close frame on a best-effort basis
+    /// before forcibly aborting the background tasks, so this call is
+    /// always safe to use as the only cleanup step.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(target = "fugle_marketdata::ws", name = "ws.shutdown_with_timeout", skip(self))
+    )]
+    pub async fn shutdown_with_timeout(
+        &self,
+        timeout_dur: Duration,
+    ) -> Result<(), MarketDataError> {
+        // 1. Signal the dispatch loop to exit instead of reconnecting
+        //    after the next dispatch return.
+        self.shutdown_requested
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // 2. Drop the writer-task sender so the writer drains its queue
+        //    and exits naturally on the next `rx.recv()` returning `None`.
         {
             let mut tx_guard = self.write_tx.lock().await;
             *tx_guard = None;
         }
-        {
-            let mut handle = self.writer_handle.lock().await;
-            if let Some(h) = handle.take() {
-                h.abort();
-                let _ = h.await;
-            }
+
+        // 3. Send the Close frame within a small slice of the budget.
+        //    `sink.close()` flushes the WebSocket Close frame and closes
+        //    the underlying transport's send half. We bound this so a
+        //    wedged sink cannot eat the entire timeout budget.
+        let close_send_slice = timeout_dur
+            .checked_div(2)
+            .unwrap_or(Duration::from_secs(0))
+            .max(Duration::from_millis(50));
+        let close_result = self.send_close_frame(close_send_slice).await;
+
+        // 4. Wait for writer + dispatch tasks to exit naturally. Server's
+        //    Close ack arrives via the dispatch loop, which then sees the
+        //    shutdown flag and breaks out of the reconnect loop.
+        let drain_budget = timeout_dur.saturating_sub(close_send_slice);
+        let drained = tokio::time::timeout(
+            drain_budget.max(Duration::from_millis(0)),
+            self.await_background_tasks(),
+        )
+        .await;
+
+        // 5. Force-abort background tasks if drain budget elapsed.
+        if drained.is_err() {
+            self.abort_background_tasks().await;
         }
 
-        // 5. Send close frame with timeout
-        let close_result = self.close_websocket_with_timeout(Duration::from_secs(5)).await;
+        // 6. Clear the sink slot regardless of close-frame outcome.
+        {
+            let mut sink_guard = self.ws_sink.lock().await;
+            *sink_guard = None;
+        }
 
-        // 6. Update state to Closed (always, even if close failed)
+        // 7. Update state to Closed (always, even if close failed)
         {
             let mut state = self.state.write().await;
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Normal closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
-        // 7. Send Disconnected event
+        // 8. Emit the Client-intent Disconnected event.
         emit_event(&self.event_tx, ConnectionEvent::Disconnected {
             code: Some(1000),
             reason: "Normal closure".to_string(),
+            intent: DisconnectIntent::Client,
         });
 
         close_result
     }
 
-    /// Close WebSocket with proper handshake and timeout
+    /// Send the WebSocket Close frame, bounded by `budget`.
     ///
-    /// From RESEARCH.md Pitfall 1: Must continue reading after close()
-    /// until receiving ConnectionClosed error.
-    async fn close_websocket_with_timeout(
-        &self,
-        _timeout_duration: Duration,
-    ) -> Result<(), MarketDataError> {
-        // Send close frame through the write half
+    /// Internal helper for [`shutdown_with_timeout`]. On send failure or
+    /// timeout the error is logged via `tracing` and a successful result
+    /// returned so the caller's overall shutdown sequence still proceeds
+    /// to mark the client as closed.
+    async fn send_close_frame(&self, budget: Duration) -> Result<(), MarketDataError> {
         let mut sink_guard = self.ws_sink.lock().await;
-        if let Some(ref mut sink) = *sink_guard {
-            // Send close frame
-            if let Err(e) = sink.close().await {
-                // Log but continue - we still want to clean up
-                eprintln!("Warning: Failed to send close frame: {}", e);
+        let Some(sink) = sink_guard.as_mut() else {
+            return Ok(());
+        };
+        match tokio::time::timeout(budget, sink.close()).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => {
+                crate::tracing_compat::error!(
+                    target: "fugle_marketdata::ws",
+                    error = %e,
+                    "failed to send WebSocket close frame"
+                );
+                let _ = e;
+                Ok(())
+            }
+            Err(_) => {
+                crate::tracing_compat::warn!(
+                    target: "fugle_marketdata::ws",
+                    timeout_ms = budget.as_millis() as u64,
+                    "close frame send timed out"
+                );
+                Ok(())
             }
         }
+    }
 
-        // Clear the sink
-        *sink_guard = None;
+    /// Wait for both background tasks to exit naturally.
+    async fn await_background_tasks(&self) {
+        // Drain writer first — it exits as soon as `write_tx` was dropped.
+        if let Some(h) = self.writer_handle.lock().await.take() {
+            let _ = h.await;
+        }
+        // Then dispatch — relies on either the server sending Close (so
+        // dispatch_messages returns) or the read end seeing EOF after
+        // sink.close().
+        if let Some(h) = self.dispatch_handle.lock().await.take() {
+            let _ = h.await;
+        }
+    }
 
-        Ok(())
+    /// Force-abort both background tasks. Called on drain timeout.
+    async fn abort_background_tasks(&self) {
+        if let Some(h) = self.writer_handle.lock().await.take() {
+            h.abort();
+            let _ = h.await;
+        }
+        if let Some(h) = self.dispatch_handle.lock().await.take() {
+            h.abort();
+            let _ = h.await;
+        }
     }
 
     /// Force close without waiting for handshake
@@ -622,12 +745,14 @@ impl WebSocketClient {
             *state = ConnectionState::Closed {
                 code: Some(1006), // Abnormal closure
                 reason: "Force closed".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
         emit_event(&self.event_tx, ConnectionEvent::Disconnected {
             code: Some(1006),
             reason: "Force closed".to_string(),
+            intent: DisconnectIntent::Client,
         });
 
         Ok(())
@@ -651,6 +776,10 @@ impl WebSocketClient {
     /// # Errors
     ///
     /// Returns `ClientClosed` if the client has been closed.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(target = "fugle_marketdata::ws", name = "ws.subscribe", skip(self, sub))
+    )]
     pub async fn subscribe(
         &self,
         sub: crate::websocket::channels::StockSubscription,
@@ -715,6 +844,10 @@ impl WebSocketClient {
     /// # Errors
     ///
     /// Returns `ClientClosed` if the client has been closed.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(target = "fugle_marketdata::ws", name = "ws.unsubscribe", skip(self, ids))
+    )]
     pub async fn unsubscribe(
         &self,
         ids: impl IntoIterator<Item = impl Into<String>>,
@@ -752,6 +885,25 @@ impl WebSocketClient {
     /// Get all active subscriptions
     pub fn subscriptions(&self) -> Vec<SubscribeRequest> {
         self.subscriptions.get_all()
+    }
+
+    /// Number of currently active subscriptions.
+    ///
+    /// Cheap query — single read-lock on the internal subscription map.
+    pub fn subscription_count(&self) -> usize {
+        self.subscriptions.count()
+    }
+
+    /// Returns `true` iff at least one active subscription matches the
+    /// given channel and symbol. Modifier-suffixed forms (`:afterhours`,
+    /// `:oddlot`) are matched alongside the base form.
+    pub fn is_subscribed(&self, channel: &Channel, symbol: &str) -> bool {
+        let base = format!("{}:{}", channel.as_str(), symbol);
+        let modifier_prefix = format!("{}:", base);
+        self.subscriptions
+            .keys()
+            .iter()
+            .any(|k| k == &base || k.starts_with(&modifier_prefix))
     }
 
     /// Manually reconnect after disconnection
@@ -855,6 +1007,8 @@ impl WebSocketClient {
         let write_tx_slot = Arc::clone(&self.write_tx);
         let writer_handle = Arc::clone(&self.writer_handle);
         let subscriptions = Arc::clone(&self.subscriptions);
+        let messages_dropped = Arc::clone(&self.messages_dropped);
+        let shutdown_requested = Arc::clone(&self.shutdown_requested);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -866,8 +1020,21 @@ impl WebSocketClient {
                     event_tx.clone(),
                     heartbeat_timeout,
                     Arc::clone(&subscriptions),
+                    Arc::clone(&messages_dropped),
+                    Arc::clone(&shutdown_requested),
                 )
                 .await;
+
+                // Graceful-shutdown short-circuit: when `disconnect()` /
+                // `shutdown_with_timeout()` set the flag, the dispatch
+                // loop's exit must not loop back into reconnect — that
+                // would re-establish the connection the caller just asked
+                // to tear down. Ordering: this check happens after
+                // dispatch returns so any in-flight server Close frame is
+                // still observed and propagated as a `Disconnected` event.
+                if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
 
                 // Attempt auto-reconnect; returns new streams on success.
                 match try_reconnect(
@@ -958,6 +1125,7 @@ impl WebSocketClient {
                 *state = ConnectionState::Closed {
                     code: close_code,
                     reason: "Non-retriable error".to_string(),
+                    intent: DisconnectIntent::Network,
                 };
             }
 
@@ -966,7 +1134,9 @@ impl WebSocketClient {
                 reconnection.current_attempt()
             };
 
-            emit_event(&self.event_tx, ConnectionEvent::ReconnectFailed { attempts });
+            emit_event(&self.event_tx, ConnectionEvent::ReconnectFailed {
+                attempts,
+            });
             return Err(MarketDataError::ConnectionError {
                 msg: format!("Non-retriable close code: {:?}", close_code),
             });
@@ -994,7 +1164,14 @@ impl WebSocketClient {
                         let mut state = self.state.write().await;
                         *state = ConnectionState::Reconnecting { attempt };
                     }
-                    emit_event(&self.event_tx, ConnectionEvent::Reconnecting { attempt });
+                    crate::tracing_compat::warn!(
+                        target: "fugle_marketdata::ws",
+                        attempt,
+                        "ws manual reconnect attempt"
+                    );
+                    emit_event(&self.event_tx, ConnectionEvent::Reconnecting {
+                        attempt,
+                    });
 
                     // Wait before reconnecting
                     sleep(d).await;
@@ -1026,6 +1203,7 @@ impl WebSocketClient {
                         *state = ConnectionState::Closed {
                             code: close_code,
                             reason: "Max reconnection attempts reached".to_string(),
+                            intent: DisconnectIntent::Network,
                         };
                     }
 
@@ -1034,7 +1212,9 @@ impl WebSocketClient {
                         reconnection.current_attempt()
                     };
 
-                    emit_event(&self.event_tx, ConnectionEvent::ReconnectFailed { attempts });
+                    emit_event(&self.event_tx, ConnectionEvent::ReconnectFailed {
+                        attempts,
+                    });
 
                     return Err(MarketDataError::ConnectionError {
                         msg: "Max reconnection attempts reached".to_string(),
@@ -1066,6 +1246,7 @@ mod tests {
         let _closed = ConnectionState::Closed {
             code: Some(1000),
             reason: "Normal closure".to_string(),
+            intent: DisconnectIntent::Client,
         };
     }
 
@@ -1081,9 +1262,14 @@ mod tests {
         let _disconnected = ConnectionEvent::Disconnected {
             code: Some(1000),
             reason: "Normal closure".to_string(),
+            intent: DisconnectIntent::Client,
         };
-        let _reconnecting = ConnectionEvent::Reconnecting { attempt: 1 };
-        let _failed = ConnectionEvent::ReconnectFailed { attempts: 5 };
+        let _reconnecting = ConnectionEvent::Reconnecting {
+            attempt: 1,
+        };
+        let _failed = ConnectionEvent::ReconnectFailed {
+            attempts: 5,
+        };
         let _error = ConnectionEvent::Error {
             message: "Connection failed".to_string(),
             code: 2001,
@@ -1356,6 +1542,7 @@ mod tests {
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Normal closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
@@ -1376,6 +1563,7 @@ mod tests {
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
@@ -1400,6 +1588,7 @@ mod tests {
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
@@ -1419,6 +1608,7 @@ mod tests {
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
@@ -1438,6 +1628,7 @@ mod tests {
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
@@ -1460,6 +1651,7 @@ mod tests {
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
+                intent: DisconnectIntent::Client,
             };
         }
 
@@ -1491,8 +1683,8 @@ mod tests {
         emit_event(&tx, ConnectionEvent::Authenticated);
 
         // First two queued; third dropped at the sender.
-        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connecting)));
-        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connected)));
+        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connecting { .. })));
+        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connected { .. })));
         assert!(rx.try_recv().is_err(), "third event must have been dropped");
     }
 
@@ -1800,6 +1992,7 @@ mod disconnect_tests {
             Ok(ConnectionEvent::Disconnected {
                 code: Some(1006),
                 reason,
+                ..
             }) if reason == "Force closed"
         ));
     }
@@ -1884,7 +2077,7 @@ mod disconnect_tests {
         let _ = client.disconnect().await;
 
         let state = client.state_async().await;
-        if let ConnectionState::Closed { code, reason } = state {
+        if let ConnectionState::Closed { code, reason, .. } = state {
             assert_eq!(code, Some(1000));
             assert_eq!(reason, "Normal closure");
         } else {
@@ -1900,7 +2093,7 @@ mod disconnect_tests {
         let _ = client.force_close().await;
 
         let state = client.state_async().await;
-        if let ConnectionState::Closed { code, reason } = state {
+        if let ConnectionState::Closed { code, reason, .. } = state {
             assert_eq!(code, Some(1006));
             assert_eq!(reason, "Force closed");
         } else {

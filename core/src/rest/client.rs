@@ -1,6 +1,7 @@
 //! REST client for Fugle marketdata API
 
 use super::auth::Auth;
+use super::retry::{self, RetryPolicy};
 use crate::errors::MarketDataError;
 use crate::tls::{build_rustls_config, TlsConfig};
 
@@ -24,6 +25,9 @@ pub struct RestClient {
     agent: ureq::Agent,
     auth: Auth,
     base_url: String,
+    /// Optional retry policy. `None` (default) means each request is
+    /// attempted exactly once and any error propagates to the caller.
+    retry_policy: Option<RetryPolicy>,
 }
 
 impl RestClient {
@@ -59,8 +63,48 @@ impl RestClient {
         Ok(Self {
             agent: builder.build(),
             auth,
-            base_url: "https://api.fugle.tw/marketdata/v1.0".to_string(),
+            base_url: crate::urls::REST_BASE.to_string(),
+            retry_policy: None,
         })
+    }
+
+    /// Enable transparent retry of failed requests.
+    ///
+    /// By default the client does not retry — observability use cases
+    /// need real failures visible. With a [`RetryPolicy`] installed,
+    /// errors for which [`MarketDataError::is_retryable`] returns `true`
+    /// (HTTP 429, HTTP 5xx, transport timeouts and connection errors)
+    /// are retried with exponential backoff plus jitter, up to
+    /// `max_attempts` total attempts. Other errors propagate immediately.
+    ///
+    /// # Example
+    /// ```
+    /// use marketdata_core::{Auth, RestClient, RetryPolicy};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("t".into()))
+    ///     .with_retry(RetryPolicy::conservative());
+    /// ```
+    pub fn with_retry(mut self, policy: RetryPolicy) -> Self {
+        self.retry_policy = Some(policy);
+        self
+    }
+
+    /// Execute a prepared `ureq::Request`, applying any installed
+    /// [`RetryPolicy`].
+    ///
+    /// Builders inside this crate route their `.call()` through here so
+    /// retry semantics remain centralized.
+    pub(crate) fn execute(
+        &self,
+        request: ureq::Request,
+    ) -> Result<ureq::Response, MarketDataError> {
+        match self.retry_policy {
+            Some(policy) => retry::run(&policy, || {
+                let req = request.clone();
+                req.call().map_err(MarketDataError::from)
+            }),
+            None => request.call().map_err(MarketDataError::from),
+        }
     }
 
     /// Override the base URL (useful for testing or custom endpoints)
@@ -129,6 +173,7 @@ impl Clone for RestClient {
             agent: self.agent.clone(),
             auth: self.auth.clone(),
             base_url: self.base_url.clone(),
+            retry_policy: self.retry_policy,
         }
     }
 }

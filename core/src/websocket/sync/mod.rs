@@ -6,4 +6,4 @@
 pub mod client;
 pub(crate) mod owner_thread;
 
-pub use client::WebSocketClient;
+pub use client::{WebSocketClient, DEFAULT_SHUTDOWN_TIMEOUT};

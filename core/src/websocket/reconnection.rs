@@ -20,10 +20,12 @@ pub const MIN_INITIAL_DELAY_MS: u64 = 100;
 ///
 /// Controls automatic reconnection behavior after connection drops.
 ///
-/// `enabled` defaults to `false` so the binding layer matches the historical
-/// `fugle-marketdata-{python,node}` SDKs (no auto-reconnect unless the caller
-/// asks for it). Explicitly constructing via [`ReconnectionConfig::new`] sets
-/// `enabled: true` because the caller has expressed intent.
+/// `enabled` defaults to **`true`** in 0.4.0 — Rust users now get the
+/// production-safe behaviour out of the box, aligning with `reqwest` /
+/// `redis-rs` / `tokio-tungstenite` ergonomics. Bindings that need to
+/// preserve the historical "no auto-reconnect" semantics of
+/// `fugle-marketdata-{python,node}` SDKs MUST construct
+/// [`ReconnectionConfig::disabled`] explicitly at the FFI boundary.
 #[derive(Debug, Clone)]
 pub struct ReconnectionConfig {
     /// Whether auto-reconnect is active. When `false`, [`ReconnectionManager::should_reconnect`]
@@ -40,10 +42,12 @@ pub struct ReconnectionConfig {
 impl Default for ReconnectionConfig {
     fn default() -> Self {
         Self {
-            // Off by default — matches old fugle-marketdata SDKs that have no
-            // auto-reconnect at all. Bindings flip this on when the user
-            // explicitly passes a `reconnect:` option block.
-            enabled: false,
+            // 0.4.0: flipped from `false` → `true` so Rust users on the
+            // `WebSocketClient::new(config)` happy path get auto-reconnect
+            // by default. Bindings (Python / Node / UniFFI / etc.)
+            // explicitly call `ReconnectionConfig::disabled()` to keep
+            // their historical "no auto-reconnect" semantics for end users.
+            enabled: true,
             max_attempts: DEFAULT_MAX_ATTEMPTS,
             initial_delay: Duration::from_millis(DEFAULT_INITIAL_DELAY_MS),
             max_delay: Duration::from_millis(DEFAULT_MAX_DELAY_MS),
@@ -263,7 +267,10 @@ mod tests {
     #[test]
     fn test_reconnection_config_default() {
         let config = ReconnectionConfig::default();
-        assert!(!config.enabled, "default must be disabled to match old SDK behaviour");
+        assert!(
+            config.enabled,
+            "0.4.0 flipped default to enabled — Rust users get auto-reconnect on the happy path"
+        );
         assert_eq!(config.max_attempts, 5);
         assert_eq!(config.initial_delay, Duration::from_secs(1));
         assert_eq!(config.max_delay, Duration::from_secs(60));
@@ -283,10 +290,13 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config_never_reconnects() {
-        // The default config must short-circuit `should_reconnect` even on
-        // codes the close-code logic considers retriable (1006, 1001, …).
-        let manager = ReconnectionManager::new(ReconnectionConfig::default());
+    fn test_disabled_config_never_reconnects() {
+        // `ReconnectionConfig::disabled()` short-circuits `should_reconnect`
+        // even on codes the close-code logic considers retriable
+        // (1006, 1001, …). 0.4.0: the default is now enabled, so this
+        // contract specifically guards the explicit-disable path used by
+        // bindings to preserve historical "no auto-reconnect" semantics.
+        let manager = ReconnectionManager::new(ReconnectionConfig::disabled());
         assert!(!manager.should_reconnect(Some(1006)));
         assert!(!manager.should_reconnect(Some(1001)));
         assert!(!manager.should_reconnect(None));

@@ -8,7 +8,8 @@ use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, AuthOutcome,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, ReconnectionManager, SubscriptionManager,
+    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
+    SubscriptionManager,
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
@@ -63,6 +64,7 @@ pub(crate) async fn try_reconnect(
             *st = ConnectionState::Closed {
                 code: close_code,
                 reason: "Non-retriable error".to_string(),
+                intent: DisconnectIntent::Network,
             };
         }
 
@@ -71,7 +73,9 @@ pub(crate) async fn try_reconnect(
             reconnection.current_attempt()
         };
 
-        emit_event(&event_tx, ConnectionEvent::ReconnectFailed { attempts });
+        emit_event(&event_tx, ConnectionEvent::ReconnectFailed {
+            attempts,
+        });
         return None;
     }
 
@@ -97,7 +101,16 @@ pub(crate) async fn try_reconnect(
                     let mut st = state.write().await;
                     *st = ConnectionState::Reconnecting { attempt };
                 }
-                emit_event(&event_tx, ConnectionEvent::Reconnecting { attempt });
+                let delay_ms = d.as_millis() as u64;
+                crate::tracing_compat::warn!(
+                    target: "fugle_marketdata::ws",
+                    attempt,
+                    delay_ms,
+                    "ws reconnect attempt"
+                );
+                emit_event(&event_tx, ConnectionEvent::Reconnecting {
+                    attempt,
+                });
 
                 // Wait before reconnecting
                 sleep(d).await;
@@ -171,6 +184,7 @@ pub(crate) async fn try_reconnect(
                     *st = ConnectionState::Closed {
                         code: close_code,
                         reason: "Max reconnection attempts reached".to_string(),
+                        intent: DisconnectIntent::Network,
                     };
                 }
 
@@ -179,7 +193,9 @@ pub(crate) async fn try_reconnect(
                     reconnection.current_attempt()
                 };
 
-                emit_event(&event_tx, ConnectionEvent::ReconnectFailed { attempts });
+                emit_event(&event_tx, ConnectionEvent::ReconnectFailed {
+                    attempts,
+                });
 
                 return None;
             }
@@ -202,7 +218,8 @@ pub(crate) async fn try_connect(
         let mut st = state.write().await;
         *st = ConnectionState::Connecting;
     }
-    emit_event(&event_tx, ConnectionEvent::Connecting);
+    emit_event(&event_tx, ConnectionEvent::Connecting {
+    });
 
     // Connect to WebSocket
     let tls_connector = tls_connector_for(&config)?;
@@ -236,7 +253,9 @@ pub(crate) async fn try_connect(
     // Split the stream
     let (mut new_ws_sink, mut ws_read) = ws_stream.split();
 
-    emit_event(&event_tx, ConnectionEvent::Connected);
+    crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
+    emit_event(&event_tx, ConnectionEvent::Connected {
+    });
 
     // Authenticate
     {
@@ -285,7 +304,9 @@ pub(crate) async fn try_connect(
                 let mut st = state.write().await;
                 *st = ConnectionState::Connected;
             }
-            emit_event(&event_tx, ConnectionEvent::Authenticated);
+            crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
+            emit_event(&event_tx, ConnectionEvent::Authenticated {
+            });
             Ok((new_ws_sink, ws_read))
         }
         Ok(Err(e)) => {

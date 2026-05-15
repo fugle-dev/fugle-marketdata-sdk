@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.4.0] - TBD
+
+Production-readiness pass driven by the `monitor` integration: opt-in
+`tracing`, secret-redacting `Debug`, sane reconnect default, REST retry
+policy, multi-connection event labels, graceful shutdown drain, JS-style
+WebSocket factory, and the removal of a small set of legacy constructors.
+See `MIGRATION-0.4.md` for the full migration guide.
+
+### Breaking
+
+- **`ConnectionEvent::Disconnected` gains `intent: DisconnectIntent { Client, Server, Network }`.**
+  `ConnectionState::Closed` mirrors the same `intent` field. Other
+  `ConnectionEvent` variants are unchanged. Pattern matches on
+  `Disconnected` need `..` or explicit `intent` destructuring.
+- **`ReconnectionConfig::default().enabled` flipped `false` → `true`.**
+  Rust callers on the `WebSocketClient::new(config)` happy path get
+  auto-reconnect by default. Bindings explicitly call
+  `ReconnectionConfig::disabled()` at the FFI boundary so end-user
+  behavior is preserved (workspace-level CI gate in
+  `core/tests/reconnect_default.rs`).
+- **`Auth` and `ConnectionConfig` `Debug` redacted.** `Auth::ApiKey(***)`
+  etc. instead of the raw token. `ConnectionConfig::url`'s sensitive
+  query parameters (`token`, `key`, `apikey`, `api_key`, `secret`,
+  `password` — case insensitive) are masked. Logs and `tracing` output
+  now safe by default.
+- **`SubscribeRequest::{trades, candles, books, aggregates}` removed.**
+  Use `SubscribeRequest::new(Channel::*, symbol)`. Zero non-test callers
+  in the workspace.
+- **`disconnect()` is now a graceful drain, not fire-and-forget.**
+  Default 5 s drain timeout sends Close, awaits peer Close ack, then
+  force-closes on timeout. Use
+  `WebSocketClient::shutdown_with_timeout(Duration)` for a custom
+  budget; `Duration::ZERO` matches the old fire-and-forget behavior.
+
+### Added
+
+- **Opt-in `tracing` feature** (`features = ["tracing"]`). Hot-path
+  `debug!` for received frames, lifecycle `info!`/`warn!` for
+  connect/auth/reconnect/heartbeat, `error!` for runtime-init / close-
+  frame failures. `#[tracing::instrument]` spans named
+  `ws.connect` / `ws.subscribe` / `ws.unsubscribe` / `ws.disconnect`
+  on cold path only — zero overhead on the per-frame dispatch loop.
+  Replaces 3 of 5 `eprintln!` sites; the 2 panic-boundary sites stay as
+  `eprintln!` so they survive subscriber teardown.
+- **`RestClient::with_retry(RetryPolicy)`** — opt-in exponential backoff
+  with uniform jitter. `RetryPolicy::conservative()` (3 attempts, 100 ms
+  initial, 2 s ceiling) and `RetryPolicy::aggressive()` (5/250 ms/10 s)
+  presets. Retries only errors classified by
+  `MarketDataError::is_retryable()`.
+- **`Auth::from_env()`** — probes `FUGLE_API_KEY` →
+  `FUGLE_BEARER_TOKEN` → `FUGLE_SDK_TOKEN`, treats empty string as
+  unset.
+- **`WebSocketFactory`** — JS / Python SDK-equivalent factory taking one
+  auth + optional shared base URL. `.stock()` / `.futopt()` return
+  `ConnectionConfigBuilder` for further chaining. Mirrors
+  `fugle-marketdata-node/src/websocket/factory.ts` shape.
+- **`pub mod urls`** — centralized endpoint constants. Full canonical
+  endpoints (`STOCK_WS`, `FUTOPT_WS`, `REST_BASE`) plus host roots and
+  version (`WS_BASE_ROOT`, `REST_BASE_ROOT`, `API_VERSION`) for
+  composing custom URLs.
+- **Configurable channel buffers** — `ConnectionConfig::builder()`
+  exposes `message_buffer(usize)` and `event_buffer(usize)`. Default
+  `message_buffer` bumped 1024 → 4096 to give multi-symbol consumers
+  ~2 s of headroom at TWSE 9:00 open burst (~2000 msg/s);
+  `event_buffer` stays at 1024.
+- **`messages_dropped_total()` counter** — monotonic `AtomicU64` on each
+  client, incremented when the inbound message channel saturates and a
+  frame is dropped (drop-newest). Paired with `tracing::warn!` per
+  drop.
+- **`is_subscribed(&Channel, &str)` + `subscription_count()`** on both
+  sync and async clients.
+- **`shutdown_with_timeout(Duration)`** + `DEFAULT_SHUTDOWN_TIMEOUT`
+  const on both clients (5 s default).
+
+### Internal
+
+- `ConnectionEvent` saturation drop signal moved from `eprintln!` to
+  `tracing::warn!` (gated, no-op when feature off).
+- Sync `owner_thread` shutdown path now drains write queue → sends
+  Close → awaits peer Close ack within `CLOSE_ACK_DEADLINE` (2 s).
+  Supervisor exit signaled via mpsc one-shot so `shutdown_with_timeout`
+  can bound its wait without `JoinHandle::join_timeout` (which std
+  lacks).
+- Async dispatch task short-circuits its reconnect loop via a new
+  `shutdown_requested: AtomicBool` flag so `disconnect()` cannot race
+  the auto-reconnect path.
+
+### Migration
+
+See `MIGRATION-0.4.md` at the repo root.
+
 ## [Rust 0.3.0] - TBD
 
 Third Rust crate release — **sync-default `WebSocketClient` with optional
