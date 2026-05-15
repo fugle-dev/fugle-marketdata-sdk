@@ -101,6 +101,9 @@ pub(crate) struct OwnerShared {
     /// Drop counter for the inbound message channel (drop-newest backpressure).
     /// Exposed via `WebSocketClient::messages_dropped_total`.
     pub messages_dropped: Arc<AtomicU64>,
+    /// Drop counter for the lifecycle event channel (drop-newest backpressure).
+    /// Exposed via `WebSocketClient::events_dropped_total`.
+    pub events_dropped: Arc<AtomicU64>,
 }
 
 /// Build a fresh TLS-wrapped WebSocket via `tungstenite::client_tls_with_config`.
@@ -298,7 +301,7 @@ fn owner_loop(
                         }
                     }
                     Err(e) => {
-                        emit_event(&shared.event_tx, ConnectionEvent::Error {
+                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                             message: format!("Failed to deserialize message: {e}"),
                             code: 2003,
                         });
@@ -331,7 +334,7 @@ fn owner_loop(
                         }
                     }
                     Err(e) => {
-                        emit_event(&shared.event_tx, ConnectionEvent::Error {
+                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                             message: format!("Failed to deserialize binary message: {e}"),
                             code: 2003,
                         });
@@ -352,7 +355,7 @@ fn owner_loop(
                     .as_ref()
                     .map(|cf| cf.reason.to_string())
                     .unwrap_or_else(|| "Server initiated close".to_string());
-                emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
+                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
                     code,
                     reason,
                     intent: DisconnectIntent::Server,
@@ -375,7 +378,7 @@ fn owner_loop(
                 // `Disconnected { intent: Client }` itself, mirroring
                 // the async `dispatch.rs` short-circuit.
                 if !shared.should_stop.load(Ordering::SeqCst) {
-                    emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
+                    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
                         code: None,
                         reason: "Connection closed".to_string(),
                         intent: DisconnectIntent::Network,
@@ -392,12 +395,12 @@ fn owner_loop(
                 // clean closes. Mirrors the async `dispatch.rs` Err
                 // arm. Suppressed when caller initiated shutdown.
                 let err_msg = format!("WebSocket read error: {e}");
-                emit_event(&shared.event_tx, ConnectionEvent::Error {
+                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                     message: err_msg.clone(),
                     code: 2001,
                 });
                 if !shared.should_stop.load(Ordering::SeqCst) {
-                    emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
+                    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
                         code: None,
                         reason: err_msg,
                         intent: DisconnectIntent::Network,
@@ -410,7 +413,7 @@ fn owner_loop(
         // 2. Heartbeat liveness check
         if let Some(window) = heartbeat_window {
             if last_activity.elapsed() > window {
-                emit_event(&shared.event_tx, ConnectionEvent::HeartbeatTimeout {
+                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::HeartbeatTimeout {
                     elapsed: window,
                 });
                 return None;
@@ -422,7 +425,7 @@ fn owner_loop(
             match write_rx.try_recv() {
                 Ok(json) => {
                     if let Err(e) = ws.send(Message::Text(json.into())) {
-                        emit_event(&shared.event_tx, ConnectionEvent::Error {
+                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                             message: format!("WebSocket write error: {e}"),
                             code: 2002,
                         });
@@ -446,12 +449,12 @@ fn reconnect_and_authenticate(
     shared: &Arc<OwnerShared>,
 ) -> Result<(SyncWs, mpsc::Receiver<String>), MarketDataError> {
     set_state(shared, ConnectionState::Connecting);
-    emit_event(&shared.event_tx, ConnectionEvent::Connecting {
+    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Connecting {
     });
 
     let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config))?;
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws reconnected");
-    emit_event(&shared.event_tx, ConnectionEvent::Connected {
+    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Connected {
     });
 
     set_state(shared, ConnectionState::Authenticating);
@@ -477,7 +480,7 @@ fn reconnect_and_authenticate(
 
     set_state(shared, ConnectionState::Connected);
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
-    emit_event(&shared.event_tx, ConnectionEvent::Authenticated {
+    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Authenticated {
     });
     Ok((ws, write_rx))
 }
@@ -524,7 +527,7 @@ pub(crate) fn run_supervisor(
                 reason: "Non-retriable error".to_string(),
                 intent: DisconnectIntent::Network,
             });
-            emit_event(&shared.event_tx, ConnectionEvent::ReconnectFailed {
+            emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::ReconnectFailed {
                 attempts,
             });
             return;
@@ -550,7 +553,7 @@ pub(crate) fn run_supervisor(
                     reason: "Max reconnection attempts reached".to_string(),
                     intent: DisconnectIntent::Network,
                 });
-                emit_event(&shared.event_tx, ConnectionEvent::ReconnectFailed {
+                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::ReconnectFailed {
                     attempts,
                 });
                 return;
@@ -567,7 +570,7 @@ pub(crate) fn run_supervisor(
                 delay_ms = d.as_millis() as u64,
                 "ws reconnect attempt"
             );
-            emit_event(&shared.event_tx, ConnectionEvent::Reconnecting {
+            emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Reconnecting {
                 attempt,
             });
 
@@ -577,11 +580,11 @@ pub(crate) fn run_supervisor(
                 Ok(pair) => break Some(pair),
                 Err(e) => {
                     if let MarketDataError::AuthError { msg } = &e {
-                        emit_event(&shared.event_tx, ConnectionEvent::Unauthenticated {
+                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Unauthenticated {
                             message: msg.clone(),
                         });
                     } else {
-                        emit_event(&shared.event_tx, ConnectionEvent::Error {
+                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                             message: e.to_string(),
                             code: e.to_error_code(),
                         });

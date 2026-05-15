@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.5.1] - 2026-05-15
+
+Polish pass between 0.5.0 (databento patterns) and 0.6.0 (WebSocketError
+split + mock server). All changes are additive or doc-only; no API
+removals.
+
+### Added
+
+- **`MarketDataError::source_kind() -> ErrorKind`** — coarse-grained
+  classification helper returning one of `Network`, `Protocol`, `Auth`,
+  `RateLimit`, or `Client`. Lets monitor / downstream code branch on
+  failure category without pattern-matching every variant.
+- **`ErrorKind` enum** — `#[non_exhaustive]`, re-exported at the crate
+  root. Includes a dedicated `RateLimit` variant for HTTP 429 so the
+  incident-response action ("reduce request volume") doesn't get mixed
+  with `Network` failures ("retry with backoff").
+- **`events_dropped_total() -> u64`** on both sync and async
+  `WebSocketClient`. Mirrors `messages_dropped_total()` for the
+  lifecycle event channel; increments when the bounded channel drops
+  events under the drop-newest backpressure policy.
+
+### Documentation
+
+- **`Symbols::normalized` case-sensitivity policy** is now explicit in
+  the module rustdoc: dedup is **byte-for-byte case-sensitive**.
+  `"TXFB6"` and `"txfb6"` are distinct subscriptions, matching the
+  TWSE / Fugle wire contract.
+- **"Which constructor should I use?"** section in `core/README.md`
+  pinning the idiomatic choice for the four construction paths
+  (`bon` builder, positional `new(...)`, typestate factory,
+  convenience constructors).
+- **Stability promise** sections on
+  `ReconnectionConfig::disabled()`,
+  `RetryPolicy::conservative()`, and `RetryPolicy::aggressive()`.
+  These functions are FFI-load-bearing and will be preserved across
+  every `0.x` release.
+
+### Internal
+
+- `emit_event` now takes a `&Arc<AtomicU64>` drop counter; 56 call
+  sites updated. `dispatch_messages`, `try_reconnect`, `try_connect`,
+  and `run_writer_task` carry the counter through to the saturation
+  point.
+
 ## [Rust 0.5.0] - 2026-05-15
 
 Minor-version pass adopting three patterns observed in databento-rs:

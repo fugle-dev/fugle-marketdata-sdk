@@ -1319,14 +1319,14 @@ dependencies = [
 
 [[package]]
 name = "fugle-marketdata"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "fugle-marketdata-core",
 ]
 
 [[package]]
 name = "fugle-marketdata-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "bon",

@@ -14,7 +14,7 @@ pub mod websocket;
 mod tracing_compat;
 
 // Re-export error types
-pub use errors::MarketDataError;
+pub use errors::{ErrorKind, MarketDataError};
 
 // Re-export TLS config
 pub use tls::TlsConfig;
