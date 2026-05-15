@@ -46,6 +46,13 @@ impl RetryPolicy {
 
     /// Conservative preset: 3 attempts, 100 ms initial backoff, 2 s ceiling.
     /// Safe default for monitoring or critical-path REST calls.
+    ///
+    /// # Stability
+    ///
+    /// **Stable public API.** The name and tuning values may evolve in
+    /// a major release (`1.0`+), but they will be preserved across all
+    /// `0.x` releases. FFI binding test harnesses depend on them.
+    #[must_use]
     pub fn conservative() -> Self {
         Self::new(3, Duration::from_millis(100), Duration::from_secs(2))
     }
@@ -53,6 +60,12 @@ impl RetryPolicy {
     /// Aggressive preset: 5 attempts, 250 ms initial backoff, 10 s ceiling.
     /// Use when the upstream is known to be flaky and the caller can
     /// tolerate longer total latency.
+    ///
+    /// # Stability
+    ///
+    /// **Stable public API.** Same guarantees as
+    /// [`RetryPolicy::conservative`] — preserved across `0.x`.
+    #[must_use]
     pub fn aggressive() -> Self {
         Self::new(5, Duration::from_millis(250), Duration::from_secs(10))
     }

@@ -23,6 +23,17 @@
 //! `*Subscription::new`) runs `.normalized()` internally so duplicate
 //! symbols collapse to one subscription before reaching
 //! `SubscriptionManager`.
+//!
+//! # Case-sensitivity policy
+//!
+//! Dedup is **byte-for-byte case-sensitive**. `"TXFB6"`, `"txfb6"`, and
+//! `"TxFb6"` are three distinct subscription targets. This matches the
+//! TWSE / Fugle wire-format contract: lowercase and uppercase contract
+//! identifiers are different on the server side. If your caller wants
+//! case folding (e.g. to normalize user input from a web form), apply
+//! `.into_iter().map(str::to_ascii_uppercase).collect()` **before**
+//! passing the value to a constructor; do not rely on `Symbols::normalized`
+//! to do it.
 
 use indexmap::IndexSet;
 
@@ -39,9 +50,10 @@ pub enum Symbols {
 }
 
 impl Symbols {
-    /// Trim whitespace on each entry, drop empties (post-trim), deduplicate
-    /// preserving first-seen order, and collapse `Many` of length 1 down to
-    /// `Single` for canonical form.
+    /// Trim leading/trailing whitespace on each entry, drop empties
+    /// (post-trim), deduplicate **byte-for-byte case-sensitive** preserving
+    /// first-seen order, and collapse `Many` of length 1 down to `Single`
+    /// for canonical form.
     ///
     /// Empty `Many` (after dropping empties) collapses to `Many(vec![])`
     /// rather than panicking — the calling site decides how to handle it.
@@ -207,6 +219,26 @@ mod tests {
             Symbols::from(vec!["2330", "2454"]),
             Symbols::Many(vec!["2330".into(), "2454".into()])
         );
+    }
+
+    #[test]
+    fn normalize_preserves_case() {
+        // Three entries with different cases must all be retained — byte-
+        // for-byte dedup, no case folding. The TWSE / Fugle wire contract
+        // treats lowercase and uppercase identifiers as distinct subscriptions.
+        let s = Symbols::from(vec!["TXFB6", "txfb6", "TxFb6"]).normalized();
+        assert_eq!(
+            s,
+            Symbols::Many(vec!["TXFB6".into(), "txfb6".into(), "TxFb6".into()])
+        );
+    }
+
+    #[test]
+    fn normalize_preserves_case_after_whitespace_trim() {
+        // Whitespace trim runs FIRST, then dedup. After trimming, "TXFB6"
+        // and "txfb6" are still case-distinct and both retained.
+        let s = Symbols::from(vec!["  TXFB6 ", "txfb6"]).normalized();
+        assert_eq!(s, Symbols::Many(vec!["TXFB6".into(), "txfb6".into()]));
     }
 
     #[test]

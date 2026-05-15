@@ -60,6 +60,11 @@ pub struct WebSocketClient {
     /// channel is saturated and a frame is dropped (drop-newest policy).
     /// Exposed via [`Self::messages_dropped_total`].
     messages_dropped: Arc<std::sync::atomic::AtomicU64>,
+    /// Monotonic counter incremented every time a [`ConnectionEvent`] is
+    /// dropped because the lifecycle event channel was full. Drop-newest
+    /// policy mirrors the message channel. Exposed via
+    /// [`Self::events_dropped_total`].
+    events_dropped: Arc<std::sync::atomic::AtomicU64>,
     /// Set by [`Self::disconnect`] / [`Self::shutdown_with_timeout`] to
     /// instruct the spawned dispatch task to exit cleanly instead of
     /// looping back into the reconnect path after the next dispatch
@@ -140,6 +145,7 @@ impl WebSocketClient {
             message_rx: Arc::new(std::sync::Mutex::new(Some(message_rx))),
             message_receiver: Arc::new(std::sync::Mutex::new(None)),
             messages_dropped: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            events_dropped: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             shutdown_requested: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
@@ -159,6 +165,27 @@ impl WebSocketClient {
     /// constructing a new client.
     pub fn messages_dropped_total(&self) -> u64 {
         self.messages_dropped.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Total number of lifecycle [`ConnectionEvent`]s dropped due to event-
+    /// channel saturation since this client was constructed.
+    ///
+    /// Mirrors [`Self::messages_dropped_total`] for the lifecycle event
+    /// channel. The channel is bounded by `event_buffer` (default 1024)
+    /// and uses the same drop-newest backpressure policy: when full, new
+    /// events are discarded rather than blocking the producer.
+    ///
+    /// A non-zero value indicates the consumer of `events()` /
+    /// `state_events()` is too slow or stuck. Event volume is typically
+    /// much lower than message volume (one event per heartbeat plus
+    /// reconnect/error bursts), so a saturated event channel is almost
+    /// always a sign of a stalled consumer.
+    ///
+    /// Counter is monotonic and thread-safe (`AtomicU64`). Reset only by
+    /// constructing a new client.
+    #[must_use]
+    pub fn events_dropped_total(&self) -> u64 {
+        self.events_dropped.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Get current connection state (snapshot)
@@ -377,7 +404,7 @@ impl WebSocketClient {
             let mut state = self.state.write().await;
             *state = ConnectionState::Connecting;
         }
-        emit_event(&self.event_tx, ConnectionEvent::Connecting {
+        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Connecting {
         });
 
         // Connect to WebSocket (with optional TLS customization).
@@ -396,7 +423,7 @@ impl WebSocketClient {
                     let mut state = self.state.write().await;
                     *state = ConnectionState::Disconnected;
                 }
-                emit_event(&self.event_tx, ConnectionEvent::Error {
+                emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
                     message: err.to_string(),
                     code: err.to_error_code(),
                 });
@@ -410,7 +437,7 @@ impl WebSocketClient {
                     let mut state = self.state.write().await;
                     *state = ConnectionState::Disconnected;
                 }
-                emit_event(&self.event_tx, ConnectionEvent::Error {
+                emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
                     message: err.to_string(),
                     code: err.to_error_code(),
                 });
@@ -422,7 +449,7 @@ impl WebSocketClient {
         let (mut ws_sink, mut ws_read) = ws_stream.split();
 
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
-        emit_event(&self.event_tx, ConnectionEvent::Connected {
+        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Connected {
         });
 
         // Update state to Authenticating
@@ -491,7 +518,7 @@ impl WebSocketClient {
                     *state = ConnectionState::Connected;
                 }
                 crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
-                emit_event(&self.event_tx, ConnectionEvent::Authenticated {
+                emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Authenticated {
                 });
 
                 // Spawn dispatch task to handle incoming messages (uses read half).
@@ -510,11 +537,11 @@ impl WebSocketClient {
                 // listeners on `unauthenticated` keep working. Other failures
                 // (network, parse, etc.) still go through the generic Error event.
                 if let MarketDataError::AuthError { msg } = &e {
-                    emit_event(&self.event_tx, ConnectionEvent::Unauthenticated {
+                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Unauthenticated {
                         message: msg.clone(),
                     });
                 } else {
-                    emit_event(&self.event_tx, ConnectionEvent::Error {
+                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
                         message: e.to_string(),
                         code: e.to_error_code(),
                     });
@@ -529,7 +556,7 @@ impl WebSocketClient {
                     let mut state = self.state.write().await;
                     *state = ConnectionState::Disconnected;
                 }
-                emit_event(&self.event_tx, ConnectionEvent::Error {
+                emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
                     message: err.to_string(),
                     code: err.to_error_code(),
                 });
@@ -644,7 +671,7 @@ impl WebSocketClient {
         }
 
         // 8. Emit the Client-intent Disconnected event.
-        emit_event(&self.event_tx, ConnectionEvent::Disconnected {
+        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
             code: Some(1000),
             reason: "Normal closure".to_string(),
             intent: DisconnectIntent::Client,
@@ -757,7 +784,7 @@ impl WebSocketClient {
             };
         }
 
-        emit_event(&self.event_tx, ConnectionEvent::Disconnected {
+        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
             code: Some(1006),
             reason: "Force closed".to_string(),
             intent: DisconnectIntent::Client,
@@ -1021,6 +1048,7 @@ impl WebSocketClient {
         let writer_handle = Arc::clone(&self.writer_handle);
         let subscriptions = Arc::clone(&self.subscriptions);
         let messages_dropped = Arc::clone(&self.messages_dropped);
+        let events_dropped = Arc::clone(&self.events_dropped);
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
 
         let handle = tokio::spawn(async move {
@@ -1031,6 +1059,7 @@ impl WebSocketClient {
                     current_ws_read,
                     message_tx.clone(),
                     event_tx.clone(),
+                    Arc::clone(&events_dropped),
                     heartbeat_timeout,
                     Arc::clone(&subscriptions),
                     Arc::clone(&messages_dropped),
@@ -1056,6 +1085,7 @@ impl WebSocketClient {
                     config.clone(),
                     Arc::clone(&state),
                     event_tx.clone(),
+                    Arc::clone(&events_dropped),
                     Arc::clone(&ws_sink),
                     Arc::clone(&write_tx_slot),
                     Arc::clone(&writer_handle),
@@ -1099,7 +1129,8 @@ impl WebSocketClient {
 
         let ws_sink = Arc::clone(&self.ws_sink);
         let event_tx = self.event_tx.clone();
-        let handle = tokio::spawn(run_writer_task(rx, ws_sink, event_tx));
+        let events_dropped = Arc::clone(&self.events_dropped);
+        let handle = tokio::spawn(run_writer_task(rx, ws_sink, event_tx, events_dropped));
 
         let mut guard = self.writer_handle.lock().await;
         *guard = Some(handle);
@@ -1147,7 +1178,7 @@ impl WebSocketClient {
                 reconnection.current_attempt()
             };
 
-            emit_event(&self.event_tx, ConnectionEvent::ReconnectFailed {
+            emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::ReconnectFailed {
                 attempts,
             });
             return Err(MarketDataError::ConnectionError {
@@ -1182,7 +1213,7 @@ impl WebSocketClient {
                         attempt,
                         "ws manual reconnect attempt"
                     );
-                    emit_event(&self.event_tx, ConnectionEvent::Reconnecting {
+                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Reconnecting {
                         attempt,
                     });
 
@@ -1225,7 +1256,7 @@ impl WebSocketClient {
                         reconnection.current_attempt()
                     };
 
-                    emit_event(&self.event_tx, ConnectionEvent::ReconnectFailed {
+                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::ReconnectFailed {
                         attempts,
                     });
 
@@ -1686,18 +1717,26 @@ mod tests {
     #[test]
     fn emit_event_drops_when_channel_full() {
         // Saturate a tiny bounded channel and verify emit_event drops the
-        // overflow silently instead of panicking or blocking.
+        // overflow silently instead of panicking or blocking. Also verifies
+        // the events_dropped counter increments per drop.
         let (tx, rx) = mpsc::sync_channel::<ConnectionEvent>(2);
-        emit_event(&tx, ConnectionEvent::Connecting);
-        emit_event(&tx, ConnectionEvent::Connected);
+        let counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        emit_event(&tx, &counter, ConnectionEvent::Connecting);
+        emit_event(&tx, &counter, ConnectionEvent::Connected);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), 0);
 
         // 3rd send would block on plain `send`; emit_event must drop instead.
-        emit_event(&tx, ConnectionEvent::Authenticated);
+        emit_event(&tx, &counter, ConnectionEvent::Authenticated);
 
         // First two queued; third dropped at the sender.
         assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connecting { .. })));
         assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connected { .. })));
         assert!(rx.try_recv().is_err(), "third event must have been dropped");
+        assert_eq!(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "events_dropped counter must increment exactly once per saturating emit"
+        );
     }
 
     #[tokio::test]

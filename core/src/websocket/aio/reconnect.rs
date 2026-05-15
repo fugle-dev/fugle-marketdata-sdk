@@ -13,6 +13,7 @@ use crate::websocket::{
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
+use std::sync::atomic::AtomicU64;
 use std::sync::{mpsc, Arc};
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::{Mutex, RwLock};
@@ -45,6 +46,7 @@ pub(crate) async fn try_reconnect(
     config: ConnectionConfig,
     state: Arc<RwLock<ConnectionState>>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
+    events_dropped: Arc<AtomicU64>,
     ws_sink: Arc<Mutex<Option<WsSink>>>,
     write_tx_slot: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -73,7 +75,7 @@ pub(crate) async fn try_reconnect(
             reconnection.current_attempt()
         };
 
-        emit_event(&event_tx, ConnectionEvent::ReconnectFailed {
+        emit_event(&event_tx, &events_dropped, ConnectionEvent::ReconnectFailed {
             attempts,
         });
         return None;
@@ -108,7 +110,7 @@ pub(crate) async fn try_reconnect(
                     delay_ms,
                     "ws reconnect attempt"
                 );
-                emit_event(&event_tx, ConnectionEvent::Reconnecting {
+                emit_event(&event_tx, &events_dropped, ConnectionEvent::Reconnecting {
                     attempt,
                 });
 
@@ -120,6 +122,7 @@ pub(crate) async fn try_reconnect(
                     config.clone(),
                     Arc::clone(&state),
                     event_tx.clone(),
+                    Arc::clone(&events_dropped),
                     message_tx.clone(),
                 )
                 .await
@@ -150,6 +153,7 @@ pub(crate) async fn try_reconnect(
                             new_write_rx,
                             Arc::clone(&ws_sink),
                             event_tx.clone(),
+                            Arc::clone(&events_dropped),
                         ));
                         {
                             let mut guard = writer_handle.lock().await;
@@ -193,7 +197,7 @@ pub(crate) async fn try_reconnect(
                     reconnection.current_attempt()
                 };
 
-                emit_event(&event_tx, ConnectionEvent::ReconnectFailed {
+                emit_event(&event_tx, &events_dropped, ConnectionEvent::ReconnectFailed {
                     attempts,
                 });
 
@@ -211,6 +215,7 @@ pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: Arc<RwLock<ConnectionState>>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
+    events_dropped: Arc<AtomicU64>,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
 ) -> Result<(WsSink, WsStream), MarketDataError> {
     // Update state to Connecting
@@ -218,7 +223,7 @@ pub(crate) async fn try_connect(
         let mut st = state.write().await;
         *st = ConnectionState::Connecting;
     }
-    emit_event(&event_tx, ConnectionEvent::Connecting {
+    emit_event(&event_tx, &events_dropped, ConnectionEvent::Connecting {
     });
 
     // Connect to WebSocket
@@ -254,7 +259,7 @@ pub(crate) async fn try_connect(
     let (mut new_ws_sink, mut ws_read) = ws_stream.split();
 
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
-    emit_event(&event_tx, ConnectionEvent::Connected {
+    emit_event(&event_tx, &events_dropped, ConnectionEvent::Connected {
     });
 
     // Authenticate
@@ -305,7 +310,7 @@ pub(crate) async fn try_connect(
                 *st = ConnectionState::Connected;
             }
             crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
-            emit_event(&event_tx, ConnectionEvent::Authenticated {
+            emit_event(&event_tx, &events_dropped, ConnectionEvent::Authenticated {
             });
             Ok((new_ws_sink, ws_read))
         }
@@ -316,7 +321,7 @@ pub(crate) async fn try_connect(
             }
             // Same auth-vs-other split as the primary connect() flow
             if let MarketDataError::AuthError { msg } = &e {
-                emit_event(&event_tx, ConnectionEvent::Unauthenticated {
+                emit_event(&event_tx, &events_dropped, ConnectionEvent::Unauthenticated {
                     message: msg.clone(),
                 });
             }

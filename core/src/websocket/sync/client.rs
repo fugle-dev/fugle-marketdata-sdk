@@ -93,6 +93,7 @@ impl WebSocketClient {
             write_tx_slot: Mutex::new(None),
             should_stop: Arc::new(AtomicBool::new(false)),
             messages_dropped: Arc::new(AtomicU64::new(0)),
+            events_dropped: Arc::new(AtomicU64::new(0)),
         });
 
         Self {
@@ -169,7 +170,7 @@ impl WebSocketClient {
         }
 
         self.set_state(ConnectionState::Connecting);
-        emit_event(&self.shared.event_tx, ConnectionEvent::Connecting {
+        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Connecting {
         });
 
         let mut ws = match do_blocking_connect(
@@ -179,7 +180,7 @@ impl WebSocketClient {
             Ok(ws) => ws,
             Err(e) => {
                 self.set_state(ConnectionState::Disconnected);
-                emit_event(&self.shared.event_tx, ConnectionEvent::Error {
+                emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Error {
                     message: e.to_string(),
                     code: e.to_error_code(),
                 });
@@ -187,18 +188,18 @@ impl WebSocketClient {
             }
         };
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
-        emit_event(&self.shared.event_tx, ConnectionEvent::Connected {
+        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Connected {
         });
 
         self.set_state(ConnectionState::Authenticating);
         if let Err(e) = do_auth_handshake(&mut ws, &self.shared.config, &self.shared.message_tx) {
             self.set_state(ConnectionState::Disconnected);
             if let MarketDataError::AuthError { msg } = &e {
-                emit_event(&self.shared.event_tx, ConnectionEvent::Unauthenticated {
+                emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Unauthenticated {
                     message: msg.clone(),
                 });
             } else {
-                emit_event(&self.shared.event_tx, ConnectionEvent::Error {
+                emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Error {
                     message: e.to_string(),
                     code: e.to_error_code(),
                 });
@@ -212,7 +213,7 @@ impl WebSocketClient {
 
         self.set_state(ConnectionState::Connected);
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
-        emit_event(&self.shared.event_tx, ConnectionEvent::Authenticated {
+        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Authenticated {
         });
 
         // Spawn supervisor thread + an exit-signal one-shot. The signal
@@ -331,7 +332,7 @@ impl WebSocketClient {
             reason: "Normal closure".to_string(),
             intent: DisconnectIntent::Client,
         });
-        emit_event(&self.shared.event_tx, ConnectionEvent::Disconnected {
+        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Disconnected {
             code: Some(1000),
             reason: "Normal closure".to_string(),
             intent: DisconnectIntent::Client,
@@ -361,7 +362,7 @@ impl WebSocketClient {
             reason: "Force closed".to_string(),
             intent: DisconnectIntent::Client,
         });
-        emit_event(&self.shared.event_tx, ConnectionEvent::Disconnected {
+        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Disconnected {
             code: Some(1006),
             reason: "Force closed".to_string(),
             intent: DisconnectIntent::Client,
@@ -489,6 +490,19 @@ impl WebSocketClient {
         self.shared.messages_dropped.load(Ordering::Relaxed)
     }
 
+    /// Total number of lifecycle [`ConnectionEvent`]s dropped due to event-
+    /// channel saturation since this client was constructed.
+    ///
+    /// Mirrors [`Self::messages_dropped_total`] for the lifecycle event
+    /// channel. Drop-newest backpressure: when the event channel is full,
+    /// new events are discarded rather than blocking the supervisor.
+    ///
+    /// Counter is monotonic and thread-safe (`AtomicU64`).
+    #[must_use]
+    pub fn events_dropped_total(&self) -> u64 {
+        self.shared.events_dropped.load(Ordering::Relaxed)
+    }
+
     /// Returns `true` iff at least one active subscription matches the
     /// given channel and symbol. Modifier-suffixed forms (`:afterhours`,
     /// `:oddlot`) are matched alongside the base form.
@@ -587,6 +601,53 @@ mod tests {
         assert_eq!(client.state(), ConnectionState::Disconnected);
         assert!(!client.is_closed());
         assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn events_dropped_total_starts_at_zero() {
+        let config = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test"));
+        let client = WebSocketClient::new(config);
+        assert_eq!(client.events_dropped_total(), 0);
+    }
+
+    #[test]
+    fn events_dropped_increments_on_saturation() {
+        use crate::websocket::connection_event::emit_event;
+        let config = ConnectionConfig::builder("wss://example.com", AuthRequest::with_api_key("k"))
+            .event_buffer(1) // saturate after a single unread event
+            .build();
+        let client = WebSocketClient::new(config);
+
+        // Fill the channel and trigger drops without going through connect/
+        // disconnect (cheap, deterministic). The shared event_tx + counter
+        // are reachable directly.
+        emit_event(
+            &client.shared.event_tx,
+            &client.shared.events_dropped,
+            ConnectionEvent::Connecting {},
+        );
+        // Second emit fills (or saturates) the bounded channel of 1.
+        emit_event(
+            &client.shared.event_tx,
+            &client.shared.events_dropped,
+            ConnectionEvent::Connecting {},
+        );
+        emit_event(
+            &client.shared.event_tx,
+            &client.shared.events_dropped,
+            ConnectionEvent::Connecting {},
+        );
+
+        // At least one drop must have been recorded; counter is monotonic.
+        let dropped = client.events_dropped_total();
+        assert!(
+            dropped >= 1,
+            "expected events_dropped_total >= 1 after saturation, got {dropped}"
+        );
+
+        // Monotonic: a subsequent observation must not decrease.
+        let observed_again = client.events_dropped_total();
+        assert!(observed_again >= dropped);
     }
 
     #[test]

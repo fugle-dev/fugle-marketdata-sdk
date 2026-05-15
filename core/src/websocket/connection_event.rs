@@ -29,7 +29,9 @@
 //! Saturation is itself the bug signal — a healthy consumer never
 //! approaches the configured cap.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Who initiated the disconnect captured by
@@ -144,14 +146,22 @@ pub enum ConnectionEvent {
 /// Emit a [`ConnectionEvent`] on the bounded event channel.
 ///
 /// See the module-level documentation for the drop-newest backpressure
-/// policy and how saturation is surfaced.
-pub(crate) fn emit_event(tx: &mpsc::SyncSender<ConnectionEvent>, event: ConnectionEvent) {
-    if let Err(mpsc::TrySendError::Full(dropped)) = tx.try_send(event) {
+/// policy and how saturation is surfaced. The `dropped` atomic is
+/// incremented once per drop so consumers can observe saturation via
+/// [`crate::WebSocketClient::events_dropped_total`] /
+/// [`crate::aio::WebSocketClient::events_dropped_total`].
+pub(crate) fn emit_event(
+    tx: &mpsc::SyncSender<ConnectionEvent>,
+    dropped: &Arc<AtomicU64>,
+    event: ConnectionEvent,
+) {
+    if let Err(mpsc::TrySendError::Full(dropped_event)) = tx.try_send(event) {
+        dropped.fetch_add(1, Ordering::Relaxed);
         crate::tracing_compat::warn!(
             target: "fugle_marketdata::ws",
-            ?dropped,
+            dropped = ?dropped_event,
             "event channel saturated; consumer is likely stuck"
         );
-        let _ = dropped; // suppress unused warning when tracing feature is off
+        let _ = dropped_event; // suppress unused warning when tracing feature is off
     }
 }

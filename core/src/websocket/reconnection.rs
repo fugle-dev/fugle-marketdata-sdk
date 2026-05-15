@@ -110,9 +110,19 @@ impl ReconnectionConfig {
         })
     }
 
-    /// Build an explicitly disabled reconnection config
+    /// Build an explicitly disabled reconnection config.
     ///
     /// `should_reconnect()` will always return `false` regardless of close code.
+    ///
+    /// # Stability
+    ///
+    /// **Stable public API.** FFI binding crates (`fugle-marketdata-py`,
+    /// `fugle-marketdata-js`, `fugle-marketdata-uniffi`) call this at the
+    /// FFI boundary to preserve their historical "no auto-reconnect"
+    /// semantics — see the `tests/reconnect_default.rs` workspace-level
+    /// gate. The function's name and signature will be preserved across
+    /// every 0.x release; downstream code can rely on it.
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,

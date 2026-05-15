@@ -9,6 +9,47 @@
 use std::time::Duration;
 use thiserror::Error;
 
+/// Coarse-grained classification of the source of a [`MarketDataError`].
+///
+/// Returned by [`MarketDataError::source_kind`] so downstream code can branch
+/// on the *category* of failure (network glitch vs SDK / protocol bug vs
+/// auth vs caller-side validation) without pattern-matching every variant or
+/// string-matching the embedded `msg`.
+///
+/// The enum is `#[non_exhaustive]` so future variants can be added in a
+/// minor release without breaking exhaustive matches.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorKind {
+    /// Transport-level transient failure: connection reset, timeout,
+    /// heartbeat gap, server outage (5xx). Generally safe to retry with
+    /// backoff.
+    Network,
+    /// Protocol-level violation or unclassified WebSocket failure. Indicates
+    /// an SDK / version mismatch or a server-side bug; retry is unlikely
+    /// to help.
+    ///
+    /// 0.5.1 maps **every** [`MarketDataError::WebSocketError`] to this
+    /// kind because the variant is currently string-only. 0.6.0 refines
+    /// the mapping when `WebSocketErrorKind` lands — IO failures will move
+    /// to [`ErrorKind::Network`] and TLS failures to [`ErrorKind::Auth`].
+    Protocol,
+    /// Authentication / authorization failure: bad credentials, 401/403,
+    /// expired token, TLS cert failure. Human intervention required.
+    Auth,
+    /// Server is rejecting requests because the caller is exceeding its
+    /// rate budget (HTTP 429). Distinct from [`ErrorKind::Network`] —
+    /// the correct response is to *reduce* request volume, not to assume
+    /// the upstream is degraded. Adding parallel retries makes this
+    /// strictly worse.
+    RateLimit,
+    /// Caller-side problem: invalid input, configuration error, client
+    /// already closed, serialization failure, non-auth/non-throttle 4xx.
+    /// The SDK can't recover from the caller's request without changes
+    /// from the caller's side.
+    Client,
+}
+
 /// Main error type for marketdata-core operations
 #[derive(Error, Debug)]
 pub enum MarketDataError {
@@ -150,6 +191,58 @@ impl From<tungstenite::Error> for MarketDataError {
 }
 
 impl MarketDataError {
+    /// Coarse-grained classification of the source of this error.
+    ///
+    /// Returns one of [`ErrorKind::Network`], [`ErrorKind::Protocol`],
+    /// [`ErrorKind::Auth`], or [`ErrorKind::Client`] so downstream code can
+    /// branch on category without pattern-matching every variant.
+    ///
+    /// # Mapping
+    ///
+    /// | `MarketDataError` variant | `ErrorKind` |
+    /// |---|---|
+    /// | `ConnectionError`, `TimeoutError`, `HeartbeatTimeout` | `Network` |
+    /// | `WebSocketError` (collapsed in 0.5.1) | `Protocol` |
+    /// | `AuthError`, `ApiError { status: 401 \| 403 }` | `Auth` |
+    /// | `ApiError { status: 429 }` | `RateLimit` |
+    /// | `ApiError { status: 500..=599 }` | `Network` |
+    /// | `ApiError { status: other 4xx }` | `Client` |
+    /// | `InvalidSymbol`, `InvalidParameter`, `ConfigError`, `DeserializationError`, `ClientClosed` | `Client` |
+    /// | `RuntimeError`, `Other` | `Client` |
+    ///
+    /// # Coarse-grained WebSocket mapping in 0.5.1
+    ///
+    /// Every [`MarketDataError::WebSocketError`] returns
+    /// [`ErrorKind::Protocol`] because the variant is currently string-only.
+    /// 0.6.0 introduces `WebSocketErrorKind` and refines this mapping —
+    /// `Io` failures will move to `Network`, `Tls` to `Auth`, etc. Callers
+    /// that need to distinguish protocol violations from transport IO
+    /// today have no recourse beyond inspecting `WebSocketError { msg }`'s
+    /// text.
+    #[must_use]
+    pub fn source_kind(&self) -> ErrorKind {
+        match self {
+            Self::ConnectionError { .. }
+            | Self::TimeoutError { .. }
+            | Self::HeartbeatTimeout { .. } => ErrorKind::Network,
+            Self::WebSocketError { .. } => ErrorKind::Protocol,
+            Self::AuthError { .. } => ErrorKind::Auth,
+            Self::ApiError { status, .. } => match *status {
+                401 | 403 => ErrorKind::Auth,
+                429 => ErrorKind::RateLimit,
+                500..=599 => ErrorKind::Network,
+                _ => ErrorKind::Client,
+            },
+            Self::InvalidSymbol { .. }
+            | Self::InvalidParameter { .. }
+            | Self::ConfigError(_)
+            | Self::DeserializationError { .. }
+            | Self::ClientClosed
+            | Self::RuntimeError { .. }
+            | Self::Other(_) => ErrorKind::Client,
+        }
+    }
+
     /// Get numeric error code for FFI consumers
     pub fn to_error_code(&self) -> i32 {
         match self {
@@ -400,5 +493,139 @@ mod tests {
 
         assert_eq!(err.to_error_code(), 3002);
         assert!(matches!(err, MarketDataError::WebSocketError { .. }));
+    }
+
+    // ----- source_kind() classification (0.5.1) -----
+
+    #[test]
+    fn source_kind_network_for_transport_failures() {
+        let err = MarketDataError::ConnectionError {
+            msg: "reset".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
+
+        let err = MarketDataError::TimeoutError {
+            operation: "read".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
+
+        let err = MarketDataError::HeartbeatTimeout {
+            elapsed: Duration::from_secs(35),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
+    }
+
+    #[test]
+    fn source_kind_protocol_for_websocket_in_0_5_1() {
+        // Coarse mapping: all WebSocketError variants are Protocol until
+        // 0.6.0 splits the kind. Refined later.
+        let err = MarketDataError::WebSocketError {
+            msg: "frame".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Protocol);
+    }
+
+    #[test]
+    fn source_kind_auth_for_401_403_api_errors() {
+        let err = MarketDataError::ApiError {
+            status: 401,
+            message: "unauthorized".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Auth);
+
+        let err = MarketDataError::ApiError {
+            status: 403,
+            message: "forbidden".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Auth);
+
+        let err = MarketDataError::AuthError {
+            msg: "bad token".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Auth);
+    }
+
+    #[test]
+    fn source_kind_network_for_5xx() {
+        let err = MarketDataError::ApiError {
+            status: 503,
+            message: "service unavailable".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
+
+        let err = MarketDataError::ApiError {
+            status: 500,
+            message: "internal".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
+    }
+
+    #[test]
+    fn source_kind_rate_limit_for_429() {
+        // 429 is distinct from Network: the correct response is to
+        // *reduce* request volume, not to assume the upstream is down.
+        // Monitor incident playbooks differ — keep them separable.
+        let err = MarketDataError::ApiError {
+            status: 429,
+            message: "rate limit".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn source_kind_client_for_validation_failures() {
+        let err = MarketDataError::InvalidParameter {
+            name: "symbol".to_string(),
+            reason: "empty".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+
+        let err = MarketDataError::InvalidSymbol {
+            symbol: "?".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+
+        let err = MarketDataError::ConfigError("bad".to_string());
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+
+        let err = MarketDataError::ClientClosed;
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+    }
+
+    #[test]
+    fn source_kind_client_for_4xx_excl_auth() {
+        let err = MarketDataError::ApiError {
+            status: 404,
+            message: "not found".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+
+        let err = MarketDataError::ApiError {
+            status: 400,
+            message: "bad request".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+    }
+
+    // `#[non_exhaustive]` only forces wildcard arms in OTHER crates. Same-
+    // crate matches see every variant. We document the requirement here
+    // for clarity; downstream cross-crate enforcement is verified by the
+    // FFI binding builds (py / js / uniffi).
+    #[test]
+    fn error_kind_variants_exist() {
+        fn classify(k: ErrorKind) -> u8 {
+            match k {
+                ErrorKind::Network => 1,
+                ErrorKind::Protocol => 2,
+                ErrorKind::Auth => 3,
+                ErrorKind::RateLimit => 4,
+                ErrorKind::Client => 5,
+            }
+        }
+        assert_eq!(classify(ErrorKind::Network), 1);
+        assert_eq!(classify(ErrorKind::Protocol), 2);
+        assert_eq!(classify(ErrorKind::Auth), 3);
+        assert_eq!(classify(ErrorKind::RateLimit), 4);
+        assert_eq!(classify(ErrorKind::Client), 5);
     }
 }

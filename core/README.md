@@ -243,6 +243,75 @@ pub const DEFAULT_HEARTBEAT_TIMEOUT_MS: u64 = 35000;
 pub const MIN_HEARTBEAT_TIMEOUT_MS: u64 = 5000;
 ```
 
+## Which constructor should I use?
+
+The SDK exposes four distinct construction paths. They look similar; this section pins which to reach for in which situation.
+
+**1. `bon`-derived builders** — default-filled construction, `maybe_*` setters for `Option<T>` fields, no validation. Use for:
+
+- `SubscribeRequest::builder()`
+- `RetryPolicy::builder()`
+- `ReconnectionConfig::builder()`
+
+```rust,ignore
+use marketdata_core::{ReconnectionConfig, RetryPolicy};
+use std::time::Duration;
+
+let reconnect = ReconnectionConfig::builder()
+    .max_attempts(10)
+    .initial_delay(Duration::from_secs(2))
+    .build();
+
+let retry = RetryPolicy::builder()
+    .max_attempts(5)
+    .initial_backoff(Duration::from_millis(250))
+    .max_backoff(Duration::from_secs(10))
+    .build();
+```
+
+**2. Validating positional constructors** — return `Result<Self, MarketDataError>` and reject bad inputs at construction. Use when validation matters:
+
+- `ReconnectionConfig::new(max_attempts, initial_delay, max_delay)?`
+
+```rust,ignore
+use marketdata_core::ReconnectionConfig;
+use std::time::Duration;
+
+let reconnect = ReconnectionConfig::new(
+    5,
+    Duration::from_secs(1),
+    Duration::from_secs(60),
+)?; // returns ConfigError on invalid inputs
+```
+
+**3. Typestate factory** — derives stock + futopt endpoint configurations from one auth credential. Use for full-application setup:
+
+```rust,ignore
+use marketdata_core::websocket::WebSocketFactory;
+use marketdata_core::AuthRequest;
+
+let cfg = WebSocketFactory::new()
+    .auth(AuthRequest::with_api_key("k"))
+    .stock()
+    .build();
+```
+
+**4. Convenience constructors** — one-liner for common cases. Use in examples, scripts, and one-shot integration tests:
+
+- `ConnectionConfig::fugle_stock(auth)`
+- `ConnectionConfig::fugle_futopt(auth)`
+- `RetryPolicy::conservative()` / `RetryPolicy::aggressive()`
+- `ReconnectionConfig::default()` / `ReconnectionConfig::disabled()`
+
+```rust,ignore
+use marketdata_core::websocket::ConnectionConfig;
+use marketdata_core::AuthRequest;
+
+let cfg = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("k"));
+```
+
+**Rule of thumb:** Reach for the `bon` builder by default. If your inputs come from external configuration (env vars, JSON, a CLI flag) and you want bounds-checking at the boundary, use the positional `new(...)` constructor. Use the typestate factory when one auth credential drives multiple endpoint configurations.
+
 ## Error Handling
 
 All operations return `Result<T, MarketDataError>`:

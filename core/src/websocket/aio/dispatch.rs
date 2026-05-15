@@ -45,10 +45,12 @@ use tokio_tungstenite::tungstenite::Message;
 /// was dropped without a proper close, due to an error, or due to
 /// `heartbeat_timeout` firing. The dispatch-task caller treats `None` as
 /// reconnectable per `should_reconnect`'s default arm.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_messages(
     mut ws_read: WsStream,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
+    events_dropped: Arc<AtomicU64>,
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
     messages_dropped: Arc<AtomicU64>,
@@ -68,7 +70,7 @@ pub(crate) async fn dispatch_messages(
                         elapsed_ms = timeout.as_millis() as u64,
                         "heartbeat timeout: no inbound frame in window"
                     );
-                    emit_event(&event_tx, ConnectionEvent::HeartbeatTimeout {
+                    emit_event(&event_tx, &events_dropped, ConnectionEvent::HeartbeatTimeout {
                         elapsed: timeout,
                     });
                     return None;
@@ -88,7 +90,7 @@ pub(crate) async fn dispatch_messages(
                 // here would race ahead of it (the client-initiated
                 // local socket close manifests as EOF on the read half).
                 if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
-                    emit_event(&event_tx, ConnectionEvent::Disconnected {
+                    emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
                         code: None,
                         reason: "Connection closed".to_string(),
                         intent: DisconnectIntent::Network,
@@ -123,7 +125,7 @@ pub(crate) async fn dispatch_messages(
                         }
                     }
                     Err(e) => {
-                        emit_event(&event_tx, ConnectionEvent::Error {
+                        emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
                             message: format!("Failed to deserialize message: {}", e),
                             code: 2003,
                         });
@@ -152,7 +154,7 @@ pub(crate) async fn dispatch_messages(
                         }
                     }
                     Err(e) => {
-                        emit_event(&event_tx, ConnectionEvent::Error {
+                        emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
                             message: format!("Failed to deserialize binary message: {}", e),
                             code: 2003,
                         });
@@ -173,7 +175,7 @@ pub(crate) async fn dispatch_messages(
                     .unwrap_or_else(|| "Server initiated close".to_string());
 
                 // Send disconnected event with close details
-                emit_event(&event_tx, ConnectionEvent::Disconnected {
+                emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
                     code,
                     reason,
                     intent: DisconnectIntent::Server,
@@ -198,12 +200,12 @@ pub(crate) async fn dispatch_messages(
                 // error, and the shutdown path already emits the
                 // canonical `Disconnected { intent: Client }`.
                 let err_msg = format!("WebSocket error: {}", e);
-                emit_event(&event_tx, ConnectionEvent::Error {
+                emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
                     message: err_msg.clone(),
                     code: 2001,
                 });
                 if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
-                    emit_event(&event_tx, ConnectionEvent::Disconnected {
+                    emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
                         code: None,
                         reason: err_msg,
                         intent: DisconnectIntent::Network,
