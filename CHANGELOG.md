@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.5.0] - 2026-05-15
+
+Minor-version pass adopting three patterns observed in databento-rs:
+`Symbols` rename + dedup contract, typestate `WebSocketFactory`, and
+`bon::Builder` derives on `RetryPolicy`, `ReconnectionConfig`, and
+`SubscribeRequest`. See `MIGRATION-0.5.md` for the full migration
+guide.
+
+### Breaking
+
+- **`SymbolSpec` renamed to `Symbols`** and moved out of
+  `models/subscription.rs` into a dedicated `models/symbols.rs`. All
+  nine existing `From` impls retarget the renamed type. Mechanical
+  migration: `sed -i '' 's/SymbolSpec/Symbols/g'` over downstream
+  sources.
+- **Subscription dispatch deduplicates symbols.**
+  `SubscribeRequest::with_symbols`, `StockSubscription::new`, and
+  `FutOptSubscription::new` now run their input through
+  `Symbols::normalized()` (trim whitespace, drop empty, dedup
+  preserving insertion order, collapse `Many` of length 1 to `Single`)
+  before producing the request. Duplicate symbols that previously
+  produced two server ACKs now collapse to one subscription.
+- **`WebSocketFactory` is typestate-enforced.**
+  `WebSocketFactory::new(auth)` becomes
+  `WebSocketFactory::new().auth(auth)`. Calling `.stock()` / `.futopt()`
+  before `.auth(...)` is now a compile-time error
+  (`compile_fail` doctests guard the contract).
+- **`ReconnectionConfig::with_max_attempts` / `with_initial_delay` /
+  `with_max_delay` removed.** These fallible chainable validators are
+  superseded by the unvalidated `ReconnectionConfig::builder()` (bon)
+  and the existing validating `ReconnectionConfig::new(...)`
+  positional constructor.
+
+### Added
+
+- **`Symbols::normalized()`, `len()`, `is_empty()`, `iter()`,
+  `chunked(n)`** helpers on the renamed enum.
+- **`SUBSCRIPTION_BATCH_LIMIT: Option<usize>`** const (currently `None`)
+  in `models::symbols`, reserved for a future server-documented
+  per-frame limit. Downstream code can branch on the constant without
+  another version bump.
+- **`bon::Builder` derives** on `RetryPolicy`, `ReconnectionConfig`,
+  and `SubscribeRequest`. `bon` adds `maybe_*` setters for `Option<T>`
+  fields. Existing constructors (`new`, `with_symbols`, presets) are
+  preserved.
+
+### Internal
+
+- Adopted `bon = "3"` as a runtime dependency for builder generation.
+- `ConnectionConfig` intentionally retains its hand-rolled builder so
+  the `assert!`-based zero-capacity-buffer validation contract from
+  the `websocket-config` spec is preserved.
+
 ## [Rust 0.4.1] - 2026-05-15
 
 Documentation-policy and publish-readiness pass. No runtime changes; no
