@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.7.2] - 2026-05-16
+
+Decode-correctness patch. A full prod-environment smoke sweep (every REST
+endpoint + every WS channel, new `core/examples/prod_smoke` harness)
+surfaced response models written against the API spec rather than real
+payloads. Several endpoints were **completely unusable** before this fix.
+
+### Fixed
+
+- **`stock/intraday/tickers` & `futopt/intraday/tickers`**: `send()`
+  deserialised the body straight into `Vec<Ticker>` / `Vec<FutOptTicker>`,
+  but prod wraps the list in an envelope object
+  (`{date,type,exchange,data:[…]}`). Every call failed with
+  `invalid type: map, expected a sequence`. Now decodes the envelope and
+  returns `.data`. **Both endpoints were 100% broken.**
+- **`futopt/intraday/products`**: `Product.end_session` was `Option<i32>`
+  but prod sends it as the string `"1"`. New `de_opt_i32_flexible`
+  deserializer accepts a JSON int, a numeric string, `null`, or `""`.
+- **`stock/historical/stats`**: `StatsResponse.change_percent` was a
+  required `f64`; prod never sends `changePercent`. Now `Option<f64>`.
+- **`stock/technical/{sma,rsi,kdj,macd,bb}`**: responses required
+  `type`/`exchange`/`market`/`timeframe`; prod returns none of them. All
+  four are now `Option`.
+- **`stock/technical/macd`**: data points expected `macd`/`signal`/
+  `histogram`; prod sends `macdLine`/`signalLine` and no histogram.
+  Renamed via serde; `histogram` is now `Option<f64>`.
+- **`stock/technical/kdj`**: `KdjResponse` expected a single `period`;
+  prod returns `rPeriod`/`kPeriod`/`dPeriod`. Response fields corrected.
+
+### Added
+
+- `KdjRequestBuilder::r_period` / `k_period` / `d_period` setters. The
+  endpoint requires `rPeriod`/`kPeriod`/`dPeriod`; previously only
+  `period` could be set, so the endpoint was unreachable (HTTP 400) via
+  the SDK.
+- `core/examples/prod_smoke` — re-runnable REST+WS decode sweep that
+  classifies each probe by `MarketDataError` variant (Schema vs HTTP vs
+  param) and emits one JSON record per endpoint.
+
 ## [Rust 0.7.1] - 2026-05-16
 
 Refactor-only patch on top of 0.7.0. **Zero public API or behaviour

@@ -89,11 +89,19 @@ impl<'a> TickersRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let tickers: Vec<FutOptTicker> = response
+        // Prod wraps the list in an envelope: {type,exchange,session,data:[…]}.
+        // Decoding straight into Vec<FutOptTicker> fails with
+        // "invalid type: map, expected a sequence".
+        #[derive(serde::Deserialize)]
+        struct Envelope {
+            #[serde(default)]
+            data: Vec<FutOptTicker>,
+        }
+        let env: Envelope = response
             .into_json()
             .map_err(|e| MarketDataError::Other(e.into()))?;
 
-        Ok(tickers)
+        Ok(env.data)
     }
 }
 
@@ -133,6 +141,21 @@ mod tests {
         assert_eq!(builder.exchange, Some("TAIFEX".to_string()));
         assert_eq!(builder.session, Some("afterhours".to_string()));
         assert_eq!(builder.contract_type, Some(ContractType::Index));
+    }
+
+    #[test]
+    fn test_tickers_envelope_extraction() {
+        // Prod shape: object envelope, not a bare array.
+        let body = r#"{"type":"FUTURE","exchange":"TAIFEX","session":"REGULAR",
+            "data":[{"symbol":"TXFD6","date":"2026-04-16"}]}"#;
+        #[derive(serde::Deserialize)]
+        struct Envelope {
+            #[serde(default)]
+            data: Vec<FutOptTicker>,
+        }
+        let env: Envelope = serde_json::from_str(body).unwrap();
+        assert_eq!(env.data.len(), 1);
+        assert_eq!(env.data[0].symbol, "TXFD6");
     }
 
     #[test]

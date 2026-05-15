@@ -44,4 +44,4 @@ once_cell = "1.19"
 # Core library as workspace dependency.
 # `package` maps the alias `marketdata-core` to the actual published crate name.
 # `version` is required for path-deps to be publishable.
-marketdata-core = { path = "core", package = "fugle-marketdata-core", version = "0.7.1" }
+marketdata-core = { path = "core", package = "fugle-marketdata-core", version = "0.7.2" }

@@ -11,6 +11,9 @@ pub struct KdjRequestBuilder<'a> {
     to: Option<String>,
     timeframe: Option<String>,
     period: Option<u32>,
+    r_period: Option<u32>,
+    k_period: Option<u32>,
+    d_period: Option<u32>,
 }
 
 impl<'a> KdjRequestBuilder<'a> {
@@ -22,6 +25,9 @@ impl<'a> KdjRequestBuilder<'a> {
             to: None,
             timeframe: None,
             period: None,
+            r_period: None,
+            k_period: None,
+            d_period: None,
         }
     }
 
@@ -52,6 +58,25 @@ impl<'a> KdjRequestBuilder<'a> {
     /// Set the indicator period (default per Fugle docs).
     pub fn period(mut self, period: u32) -> Self {
         self.period = Some(period);
+        self
+    }
+
+    /// Set the RSV period (`rPeriod`). Prod requires this — the single
+    /// `period` param is rejected with HTTP 400 on its own.
+    pub fn r_period(mut self, r_period: u32) -> Self {
+        self.r_period = Some(r_period);
+        self
+    }
+
+    /// Set the K smoothing period (`kPeriod`).
+    pub fn k_period(mut self, k_period: u32) -> Self {
+        self.k_period = Some(k_period);
+        self
+    }
+
+    /// Set the D smoothing period (`dPeriod`).
+    pub fn d_period(mut self, d_period: u32) -> Self {
+        self.d_period = Some(d_period);
         self
     }
 
@@ -86,6 +111,15 @@ impl<'a> KdjRequestBuilder<'a> {
         }
         if let Some(period) = self.period {
             query_params.push(format!("period={}", period));
+        }
+        if let Some(r_period) = self.r_period {
+            query_params.push(format!("rPeriod={}", r_period));
+        }
+        if let Some(k_period) = self.k_period {
+            query_params.push(format!("kPeriod={}", k_period));
+        }
+        if let Some(d_period) = self.d_period {
+            query_params.push(format!("dPeriod={}", d_period));
         }
 
         if !query_params.is_empty() {

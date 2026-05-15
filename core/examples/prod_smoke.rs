@@ -164,11 +164,10 @@ async fn main() {
         .stock().technical().sma().symbol("2330").period(20).send());
     rest_probe!("rest stock/technical/rsi 2330", |c: &RestClient| c
         .stock().technical().rsi().symbol("2330").period(14).send());
-    // kdj: builder only emits `period=`, but prod requires rPeriod/kPeriod/
-    // dPeriod and exposes no setter for them — endpoint is unreachable via the
-    // SDK. Probe left minimal so the 400 documents that gap.
+    // kdj: prod requires rPeriod/kPeriod/dPeriod (0.7.2 added setters).
     rest_probe!("rest stock/technical/kdj 2330", |c: &RestClient| c
-        .stock().technical().kdj().symbol("2330").period(9).send());
+        .stock().technical().kdj().symbol("2330")
+        .r_period(9).k_period(3).d_period(3).send());
     rest_probe!("rest stock/technical/macd 2330", |c: &RestClient| c
         .stock().technical().macd().symbol("2330").fast(12).slow(26).signal(9).send());
     rest_probe!("rest stock/technical/bb 2330", |c: &RestClient| c
