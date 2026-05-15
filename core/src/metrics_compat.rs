@@ -97,7 +97,8 @@ impl DropCounter {
 
 /// Register human-readable descriptions for the SDK's drop counters with
 /// the active `metrics` recorder. Called once per `WebSocketClient`
-/// construction. No-op when the `metrics` feature is disabled.
+/// construction; the recorder dedupes by counter name, so repeat calls are
+/// cheap. No-op when the `metrics` feature is disabled.
 #[inline]
 pub(crate) fn describe_drop_counters() {
     #[cfg(feature = "metrics")]
@@ -136,8 +137,8 @@ pub(crate) fn build_drop_counters(
 ) -> (DropCounter, DropCounter) {
     describe_drop_counters();
     let endpoint = endpoint_label(&config.url);
-    let client_id_label = config.client_id.clone().unwrap_or_default();
-    let messages = DropCounter::new(COUNTER_MESSAGES_DROPPED, &endpoint, &client_id_label);
-    let events = DropCounter::new(COUNTER_EVENTS_DROPPED, &endpoint, &client_id_label);
+    let client_id_label = config.client_id.as_deref().unwrap_or("");
+    let messages = DropCounter::new(COUNTER_MESSAGES_DROPPED, &endpoint, client_id_label);
+    let events = DropCounter::new(COUNTER_EVENTS_DROPPED, &endpoint, client_id_label);
     (messages, events)
 }

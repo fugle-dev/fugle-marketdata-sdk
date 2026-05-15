@@ -7,8 +7,8 @@ use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{WsSink, WsStream};
 use crate::websocket::connection_event::emit_event;
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_request, frame_subscribe, frame_subscribe_futopt,
-    frame_subscribe_raw, frame_unsubscribe, AuthOutcome,
+    frame_auth, frame_request, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
+    frame_unsubscribe,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
@@ -477,39 +477,14 @@ impl WebSocketClient {
             .await
             .map_err(MarketDataError::from)?;
 
-        // Wait for authenticated event or timeout
-        // All messages during auth phase are forwarded to message channel
-        let message_tx = self.message_tx.clone();
-        let auth_timeout = Duration::from_secs(10);
-        let auth_result = timeout(auth_timeout, async {
-            while let Some(msg_result) = ws_read.next().await {
-                match msg_result {
-                    Ok(Message::Text(text)) => {
-                        if let Ok(ws_msg) =
-                            serde_json::from_str::<WebSocketMessage>(&text)
-                        {
-                            // Forward ALL messages to channel (including auth)
-                            let _ = message_tx.send(ws_msg.clone()).await;
-
-                            match classify_auth_response(&ws_msg) {
-                                AuthOutcome::Authenticated => return Ok(()),
-                                AuthOutcome::Failed(msg) => {
-                                    return Err(MarketDataError::AuthError { msg })
-                                }
-                                AuthOutcome::Pending => {}
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        return Err(MarketDataError::from(e));
-                    }
-                    _ => {}
-                }
-            }
-            Err(MarketDataError::ConnectionError {
-                msg: "Stream closed during authentication".to_string(),
-            })
-        })
+        // Wait for authenticated event or timeout. All messages during auth
+        // phase are forwarded to the message channel (shared helper with
+        // try_connect; see aio/reconnect.rs).
+        let auth_result = crate::websocket::aio::reconnect::await_auth_response(
+            &mut ws_read,
+            &self.message_tx,
+            Duration::from_secs(10),
+        )
         .await;
 
         match auth_result {
