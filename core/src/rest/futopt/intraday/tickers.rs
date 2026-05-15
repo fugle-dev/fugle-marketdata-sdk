@@ -39,11 +39,14 @@ impl<'a> TickersRequestBuilder<'a> {
         self
     }
 
-    /// Query after-hours session data
+    /// Query after-hours session data.
     ///
-    /// Sets `session=afterhours` query parameter
+    /// Sets `session=AFTERHOURS`. The `tickers` endpoint requires the
+    /// **uppercase** value — lowercase `afterhours` is silently accepted but
+    /// returns zero tickers. (Inconsistent with quote/candles/trades, which
+    /// require lowercase — server-side quirk, not ours.)
     pub fn after_hours(mut self) -> Self {
-        self.session = Some("afterhours".to_string());
+        self.session = Some("AFTERHOURS".to_string());
         self
     }
 
@@ -139,7 +142,7 @@ mod tests {
 
         assert_eq!(builder.typ, Some(FutOptType::Option));
         assert_eq!(builder.exchange, Some("TAIFEX".to_string()));
-        assert_eq!(builder.session, Some("afterhours".to_string()));
+        assert_eq!(builder.session, Some("AFTERHOURS".to_string()));
         assert_eq!(builder.contract_type, Some(ContractType::Index));
     }
 
