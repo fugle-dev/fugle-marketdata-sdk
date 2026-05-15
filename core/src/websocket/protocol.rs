@@ -7,7 +7,7 @@
 //! previously inlined in the async dispatch loop.
 
 use crate::models::{
-    AuthRequest, SubscribeRequest, SymbolSpec, UnsubscribeRequest, WebSocketMessage,
+    AuthRequest, SubscribeRequest, Symbols, UnsubscribeRequest, WebSocketMessage,
     WebSocketRequest,
 };
 use crate::websocket::channels::{FutOptSubscription, StockSubscription};
@@ -42,8 +42,8 @@ pub(crate) fn frame_subscribe(
         ..Default::default()
     };
     match &sub.symbols {
-        SymbolSpec::Single(s) => wire_req.symbol = Some(s.clone()),
-        SymbolSpec::Many(v) => wire_req.symbols = Some(v.clone()),
+        Symbols::Single(s) => wire_req.symbol = Some(s.clone()),
+        Symbols::Many(v) => wire_req.symbols = Some(v.clone()),
     }
     if sub.intraday_odd_lot {
         wire_req.intraday_odd_lot = Some(true);
@@ -66,8 +66,8 @@ pub(crate) fn frame_subscribe_futopt(
         ..Default::default()
     };
     match &sub.symbols {
-        SymbolSpec::Single(s) => wire_req.symbol = Some(s.clone()),
-        SymbolSpec::Many(v) => wire_req.symbols = Some(v.clone()),
+        Symbols::Single(s) => wire_req.symbol = Some(s.clone()),
+        Symbols::Many(v) => wire_req.symbols = Some(v.clone()),
     }
     if sub.after_hours {
         wire_req.after_hours = Some(true);

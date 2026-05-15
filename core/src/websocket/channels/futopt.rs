@@ -1,6 +1,6 @@
 //! FutOpt-specific subscription types
 //!
-//! Accepts either a single symbol or a batch via `impl Into<SymbolSpec>`.
+//! Accepts either a single symbol or a batch via `impl Into<Symbols>`.
 //! Distinct from [`StockSubscription`](super::StockSubscription) in two ways:
 //!
 //! - Uses [`FutOptChannel`] instead of [`Channel`](crate::models::Channel)
@@ -8,7 +8,7 @@
 //! - Modifier is `after_hours` (盤後) instead of `intraday_odd_lot` (盤中零股)
 
 use crate::models::futopt::FutOptChannel;
-use crate::models::SymbolSpec;
+use crate::models::Symbols;
 use serde_json::{json, Value};
 
 /// FutOpt-specific subscription parameters.
@@ -38,7 +38,7 @@ pub struct FutOptSubscription {
     /// Channel to subscribe to.
     pub channel: FutOptChannel,
     /// One or many contract symbols.
-    pub symbols: SymbolSpec,
+    pub symbols: Symbols,
     /// true: 盤後 (after-hours), false: 一般盤 (regular, default).
     pub after_hours: bool,
 }
@@ -46,7 +46,7 @@ pub struct FutOptSubscription {
 impl FutOptSubscription {
     /// Create a FutOpt subscription. Accepts the same input shapes as
     /// [`StockSubscription::new`](super::StockSubscription::new).
-    pub fn new(channel: FutOptChannel, symbols: impl Into<SymbolSpec>) -> Self {
+    pub fn new(channel: FutOptChannel, symbols: impl Into<Symbols>) -> Self {
         Self {
             channel,
             symbols: symbols.into(),
@@ -63,8 +63,8 @@ impl FutOptSubscription {
     /// Generate one local key per symbol (length 1 for `Single`, N for `Many`).
     pub fn keys(&self) -> Vec<String> {
         match &self.symbols {
-            SymbolSpec::Single(s) => vec![self.format_key(s)],
-            SymbolSpec::Many(v) => v.iter().map(|s| self.format_key(s)).collect(),
+            Symbols::Single(s) => vec![self.format_key(s)],
+            Symbols::Many(v) => v.iter().map(|s| self.format_key(s)).collect(),
         }
     }
 
@@ -84,8 +84,8 @@ impl FutOptSubscription {
     pub fn to_subscribe_data(&self) -> Value {
         let mut data = json!({ "channel": self.channel.as_str() });
         match &self.symbols {
-            SymbolSpec::Single(s) => data["symbol"] = json!(s),
-            SymbolSpec::Many(v) => data["symbols"] = json!(v),
+            Symbols::Single(s) => data["symbol"] = json!(s),
+            Symbols::Many(v) => data["symbols"] = json!(v),
         }
         if self.after_hours {
             data["afterHours"] = json!(true);
@@ -109,14 +109,14 @@ mod tests {
     #[test]
     fn new_single_symbol() {
         let sub = FutOptSubscription::new(FutOptChannel::Trades, "TXF202502");
-        assert!(matches!(sub.symbols, SymbolSpec::Single(ref s) if s == "TXF202502"));
+        assert!(matches!(sub.symbols, Symbols::Single(ref s) if s == "TXF202502"));
         assert!(!sub.after_hours);
     }
 
     #[test]
     fn new_batch_symbols() {
         let sub = FutOptSubscription::new(FutOptChannel::Trades, vec!["TXFC4", "MXFC4"]);
-        assert!(matches!(sub.symbols, SymbolSpec::Many(ref v) if v == &["TXFC4", "MXFC4"]));
+        assert!(matches!(sub.symbols, Symbols::Many(ref v) if v == &["TXFC4", "MXFC4"]));
     }
 
     #[test]

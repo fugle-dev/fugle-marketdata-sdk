@@ -1,11 +1,11 @@
 //! Stock-specific subscription types
 
-use crate::models::{Channel, SymbolSpec};
+use crate::models::{Channel, Symbols};
 use serde_json::{json, Value};
 
 /// Stock-specific subscription parameters.
 ///
-/// Accepts either a single symbol or a batch via `impl Into<SymbolSpec>`.
+/// Accepts either a single symbol or a batch via `impl Into<Symbols>`.
 /// Supports `intradayOddLot` for odd-lot sessions.
 ///
 /// # Example
@@ -30,16 +30,16 @@ pub struct StockSubscription {
     /// Channel to subscribe to.
     pub channel: Channel,
     /// One or many symbols.
-    pub symbols: SymbolSpec,
+    pub symbols: Symbols,
     /// true: 盤中零股, false: 股票 (default).
     pub intraday_odd_lot: bool,
 }
 
 impl StockSubscription {
     /// Create a stock subscription. Accepts `&str`, `String`, `Vec<String>`,
-    /// array literals (`["A", "B"]`), and slices — see [`SymbolSpec`] for
+    /// array literals (`["A", "B"]`), and slices — see [`Symbols`] for
     /// the full set of `From` impls.
-    pub fn new(channel: Channel, symbols: impl Into<SymbolSpec>) -> Self {
+    pub fn new(channel: Channel, symbols: impl Into<Symbols>) -> Self {
         Self {
             channel,
             symbols: symbols.into(),
@@ -59,8 +59,8 @@ impl StockSubscription {
     /// and unsubscribe lookup. Each batch symbol owns its own row.
     pub fn keys(&self) -> Vec<String> {
         match &self.symbols {
-            SymbolSpec::Single(s) => vec![self.format_key(s)],
-            SymbolSpec::Many(v) => v.iter().map(|s| self.format_key(s)).collect(),
+            Symbols::Single(s) => vec![self.format_key(s)],
+            Symbols::Many(v) => v.iter().map(|s| self.format_key(s)).collect(),
         }
     }
 
@@ -80,8 +80,8 @@ impl StockSubscription {
     pub fn to_subscribe_data(&self) -> Value {
         let mut data = json!({ "channel": self.channel.as_str() });
         match &self.symbols {
-            SymbolSpec::Single(s) => data["symbol"] = json!(s),
-            SymbolSpec::Many(v) => data["symbols"] = json!(v),
+            Symbols::Single(s) => data["symbol"] = json!(s),
+            Symbols::Many(v) => data["symbols"] = json!(v),
         }
         if self.intraday_odd_lot {
             data["intradayOddLot"] = json!(true);
@@ -106,14 +106,14 @@ mod tests {
     fn new_single_symbol() {
         let sub = StockSubscription::new(Channel::Trades, "2330");
         assert_eq!(sub.channel, Channel::Trades);
-        assert!(matches!(sub.symbols, SymbolSpec::Single(ref s) if s == "2330"));
+        assert!(matches!(sub.symbols, Symbols::Single(ref s) if s == "2330"));
         assert!(!sub.intraday_odd_lot);
     }
 
     #[test]
     fn new_batch_symbols() {
         let sub = StockSubscription::new(Channel::Trades, vec!["2330", "2454"]);
-        assert!(matches!(sub.symbols, SymbolSpec::Many(ref v) if v == &["2330", "2454"]));
+        assert!(matches!(sub.symbols, Symbols::Many(ref v) if v == &["2330", "2454"]));
     }
 
     #[test]

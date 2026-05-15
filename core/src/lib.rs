@@ -47,7 +47,7 @@ pub use models::{
     HistoricalCandle, HistoricalCandlesResponse, IntradayCandle, IntradayCandlesResponse,
     Quote, Ticker, Trade, TradesResponse, VolumeAtPrice, VolumesResponse,
     // WebSocket types
-    AuthRequest, Channel, SymbolSpec, UnsubscribeRequest, WebSocketMessage, WebSocketRequest,
+    AuthRequest, Channel, Symbols, UnsubscribeRequest, WebSocketMessage, WebSocketRequest,
 };
 
 // Re-export streaming message types (Phase 4)

@@ -28,6 +28,7 @@ mod quote;
 mod snapshot;
 pub mod streaming;
 mod subscription;
+pub mod symbols;
 mod technical;
 mod ticker;
 mod trade;
@@ -59,6 +60,6 @@ pub use volume::{VolumeAtPrice, VolumesResponse};
 
 // WebSocket types
 pub use subscription::{
-    AuthRequest, Channel, SubscribeRequest, SymbolSpec, UnsubscribeRequest, WebSocketMessage,
-    WebSocketRequest,
+    AuthRequest, Channel, SubscribeRequest, UnsubscribeRequest, WebSocketMessage, WebSocketRequest,
 };
+pub use symbols::Symbols;
