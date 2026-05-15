@@ -116,3 +116,9 @@ harness = false
 [[bench]]
 name = "websocket_throughput"
 harness = false
+
+# Async; uses the aio WebSocket client gated behind `tokio-comp`. Without the
+# feature cargo skips it cleanly instead of erroring on the aio import.
+[[example]]
+name = "prod_smoke"
+required-features = ["tokio-comp"]
