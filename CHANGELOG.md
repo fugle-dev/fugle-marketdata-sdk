@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.7.3] - 2026-05-16
+
+Follow-up to 0.7.2: a deeper prod sweep showed the futopt
+symbol-dependent endpoints were never decode-tested because the
+after-hours session value was wrong.
+
+### Fixed
+
+- **`futopt/intraday/tickers` & `futopt/intraday/products`**:
+  `after_hours()` emitted `session=afterhours`, but these two endpoints
+  require the **uppercase** `session=AFTERHOURS` — lowercase is silently
+  accepted and returns **zero rows**. So `.after_hours()` on tickers/
+  products appeared to "work" while always yielding an empty list. Now
+  emit `AFTERHOURS`. (quote/ticker/candles/trades/volumes correctly keep
+  lowercase `afterhours` — the server is genuinely inconsistent across
+  endpoints; verified against prod.)
+
+### Changed
+
+- `core/examples/prod_smoke`: futopt contract discovery now queries the
+  (populated) after-hours tickers list and prefers a `TXF*` contract,
+  falling back to the current near-month `TXFF6` (was the long-expired
+  `TXFE5`, which 404'd the entire futopt REST+WS sweep).
+
 ## [Rust 0.7.2] - 2026-05-16
 
 Decode-correctness patch. A full prod-environment smoke sweep (every REST

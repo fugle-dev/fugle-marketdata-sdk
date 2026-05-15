@@ -62,9 +62,9 @@ impl FutOptHistoricalCandlesResponse {
         })
     }
 
-    /// Get total volume over the series
+    /// Get total volume over the series (bars without volume count as 0).
     pub fn total_volume(&self) -> u64 {
-        self.candles.iter().map(|c| c.volume).sum()
+        self.candles.iter().filter_map(|c| c.volume).sum()
     }
 }
 
@@ -88,8 +88,11 @@ pub struct FutOptHistoricalCandle {
     /// Close price
     pub close: f64,
 
-    /// Volume (number of contracts)
-    pub volume: u64,
+    /// Volume (number of contracts). Optional — the prod
+    /// `futopt/historical/candles` series returns only OHLC per bar
+    /// (`{date,open,high,low,close}`), no volume.
+    #[serde(default)]
+    pub volume: Option<u64>,
 
     /// Open interest (total outstanding contracts)
     #[serde(rename = "openInterest")]
@@ -273,7 +276,7 @@ mod tests {
             high: 17580.0,
             low: 17480.0,
             close: 17550.0,
-            volume: 50000,
+            volume: Some(50000),
             open_interest: Some(121000),
             change: Some(70.0),
             change_percent: Some(0.4),
@@ -324,6 +327,21 @@ mod tests {
         assert!(data.is_bullish());
         assert!(!data.is_bearish());
         assert_eq!(data.range(), 100.0);
+    }
+
+    #[test]
+    fn test_futopt_historical_candles_prod_shape() {
+        // Real prod (futopt/historical/candles/TXF): OHLC only, no volume,
+        // plus a `contractMonth` key (ignored).
+        let json = r#"{"symbol":"TXF","contractMonth":"202605","exchange":"TAIFEX",
+            "timeframe":"D","data":[
+              {"date":"2026-05-15","open":41754.0,"high":42454.0,"low":40976.0,"close":42359.0}]}"#;
+        let r: FutOptHistoricalCandlesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.symbol, "TXF");
+        assert_eq!(r.candles.len(), 1);
+        assert_eq!(r.candles[0].volume, None);
+        assert_eq!(r.total_volume(), 0);
+        assert_eq!(r.candles[0].close, 42359.0);
     }
 
     #[test]

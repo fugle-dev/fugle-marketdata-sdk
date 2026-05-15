@@ -179,9 +179,11 @@ async fn main() {
     rest_probe!("rest futopt/intraday/tickers FUTURE", |c: &RestClient| c
         .futopt().intraday().tickers().typ(FutOptType::Future).send());
 
-    // Resolve a live futures symbol off-thread: probe tickers, fall back to a
-    // hardcoded near-month if the endpoint itself trips a landmine. This is a
-    // PROBE, not a GATE — the rest of the futopt sweep runs regardless.
+    // Resolve a live futures contract off-thread. The plain-session tickers
+    // list is empty at most times; the AFTERHOURS list is populated, and a
+    // TXF contract code (e.g. TXFF6) is valid on the regular-session quote/
+    // candles/etc endpoints too. Prefer a discovered TXF* symbol; fall back to
+    // the current near-month. PROBE, not a GATE — the sweep runs regardless.
     let futopt_symbol = {
         let r = rest.clone();
         tokio::task::spawn_blocking(move || {
@@ -189,15 +191,20 @@ async fn main() {
                 .intraday()
                 .tickers()
                 .typ(FutOptType::Future)
+                .after_hours()
                 .send()
                 .ok()
-                .and_then(|v| v.into_iter().next())
-                .map(|t| t.symbol)
+                .and_then(|v| {
+                    v.iter()
+                        .map(|t| t.symbol.clone())
+                        .find(|s| s.starts_with("TXF"))
+                        .or_else(|| v.into_iter().next().map(|t| t.symbol))
+                })
         })
         .await
         .ok()
         .flatten()
-        .unwrap_or_else(|| "TXFE5".to_string()) // near-month TXF as of 2026-05-16
+        .unwrap_or_else(|| "TXFF6".to_string()) // near-month TXF as of 2026-05-16
     };
 
     let s = futopt_symbol.clone();
@@ -216,13 +223,18 @@ async fn main() {
     rest_probe!("rest futopt/intraday/volumes", move |c: &RestClient| c
         .futopt().intraday().volumes().symbol(&s).send());
 
-    // FutOpt historical (2)
-    let s = futopt_symbol.clone();
+    // FutOpt historical candles: uses the *continuous* product code (e.g.
+    // "TXF"), NOT the month contract ("TXFF6") that intraday wants — derive
+    // it by stripping the 2-char month/year suffix.
+    let hist_sym = if futopt_symbol.len() > 2 {
+        futopt_symbol[..futopt_symbol.len() - 2].to_string()
+    } else {
+        futopt_symbol.clone()
+    };
     rest_probe!("rest futopt/historical/candles", move |c: &RestClient| c
-        .futopt().historical().candles().symbol(&s).send());
-    let s = futopt_symbol.clone();
-    rest_probe!("rest futopt/historical/daily", move |c: &RestClient| c
-        .futopt().historical().daily().symbol(&s).send());
+        .futopt().historical().candles().symbol(&hist_sym).send());
+    // futopt/historical/daily intentionally NOT probed: endpoint is not
+    // provided by the live API (always HTTP 404) — deprecated in 0.7.3.
 
     let mut rows: Vec<Row> = Vec::new();
     for h in handles {
