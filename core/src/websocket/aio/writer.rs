@@ -1,11 +1,11 @@
 //! Single-writer task that drains outbound JSON frames into the WS sink.
 
+use crate::metrics_compat::DropCounter;
 use crate::websocket::aio::WsSink;
 use crate::websocket::connection_event::emit_event;
 use crate::websocket::ConnectionEvent;
 use crate::MarketDataError;
 use futures_util::SinkExt;
-use std::sync::atomic::AtomicU64;
 use std::sync::mpsc;
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
@@ -19,7 +19,7 @@ pub(crate) async fn run_writer_task(
     mut rx: tokio_mpsc::Receiver<String>,
     ws_sink: Arc<Mutex<Option<WsSink>>>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: Arc<AtomicU64>,
+    events_dropped: DropCounter,
 ) {
     while let Some(text) = rx.recv().await {
         let mut sink_guard = ws_sink.lock().await;

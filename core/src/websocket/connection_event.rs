@@ -29,9 +29,7 @@
 //! Saturation is itself the bug signal — a healthy consumer never
 //! approaches the configured cap.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Who initiated the disconnect captured by
@@ -146,17 +144,20 @@ pub enum ConnectionEvent {
 /// Emit a [`ConnectionEvent`] on the bounded event channel.
 ///
 /// See the module-level documentation for the drop-newest backpressure
-/// policy and how saturation is surfaced. The `dropped` atomic is
+/// policy and how saturation is surfaced. The `dropped` counter is
 /// incremented once per drop so consumers can observe saturation via
 /// [`crate::WebSocketClient::events_dropped_total`] /
-/// [`crate::aio::WebSocketClient::events_dropped_total`].
+/// [`crate::aio::WebSocketClient::events_dropped_total`]. When the
+/// `metrics` feature is enabled, the increment also bumps the
+/// `fugle_marketdata_ws_events_dropped_total` counter on the active
+/// `metrics` recorder.
 pub(crate) fn emit_event(
     tx: &mpsc::SyncSender<ConnectionEvent>,
-    dropped: &Arc<AtomicU64>,
+    dropped: &crate::metrics_compat::DropCounter,
     event: ConnectionEvent,
 ) {
     if let Err(mpsc::TrySendError::Full(dropped_event)) = tx.try_send(event) {
-        dropped.fetch_add(1, Ordering::Relaxed);
+        dropped.bump();
         crate::tracing_compat::warn!(
             target: "fugle_marketdata::ws",
             dropped = ?dropped_event,

@@ -1,6 +1,7 @@
 //! Async dispatch loop: reads frames from the WS stream, parses, and pushes
 //! messages onto the inbound channel. Also implements optional outbound ping.
 
+use crate::metrics_compat::DropCounter;
 use crate::models::WebSocketMessage;
 use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::WsStream;
@@ -8,7 +9,6 @@ use crate::websocket::connection_event::emit_event;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, SubscriptionManager};
 use futures_util::StreamExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,10 +50,10 @@ pub(crate) async fn dispatch_messages(
     mut ws_read: WsStream,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: Arc<AtomicU64>,
+    events_dropped: DropCounter,
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
-    messages_dropped: Arc<AtomicU64>,
+    messages_dropped: DropCounter,
     shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<u16> {
     loop {
@@ -116,10 +116,10 @@ pub(crate) async fn dispatch_messages(
                         if let Err(tokio_mpsc::error::TrySendError::Full(_)) =
                             message_tx.try_send(ws_msg)
                         {
-                            messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            messages_dropped.bump();
                             warn!(
                                 target: "fugle_marketdata::ws",
-                                dropped_total = messages_dropped.load(Ordering::Relaxed),
+                                dropped_total = messages_dropped.load(),
                                 "message channel saturated; dropping frame (drop-newest)"
                             );
                         }
@@ -145,10 +145,10 @@ pub(crate) async fn dispatch_messages(
                         if let Err(tokio_mpsc::error::TrySendError::Full(_)) =
                             message_tx.try_send(ws_msg)
                         {
-                            messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            messages_dropped.bump();
                             warn!(
                                 target: "fugle_marketdata::ws",
-                                dropped_total = messages_dropped.load(Ordering::Relaxed),
+                                dropped_total = messages_dropped.load(),
                                 "message channel saturated; dropping frame (drop-newest)"
                             );
                         }

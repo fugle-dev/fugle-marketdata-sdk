@@ -1,6 +1,6 @@
 [package]
 name = "fugle-marketdata-core"
-version = "0.6.0"
+version = "0.7.0"
 edition.workspace = true
 rust-version = "1.82"
 license.workspace = true
@@ -33,8 +33,18 @@ tracing = ["dep:tracing"]
 # async-only (building a sync mock would force tokio-runtime construction
 # anyway). Consumers depend on it as a dev-dependency:
 #   [dev-dependencies]
-#   fugle-marketdata-core = { version = "0.6", features = ["test-utils"] }
+#   fugle-marketdata-core = { version = "0.7", features = ["test-utils"] }
 test-utils = ["tokio-comp"]
+# Opt-in `metrics`-crate integration. Off by default — adds no dependency
+# weight for consumers who do not use the `metrics` ecosystem. When enabled,
+# `WebSocketClient::new` registers `fugle_marketdata_ws_messages_dropped_total`
+# and `fugle_marketdata_ws_events_dropped_total` counters, both labelled with
+# `endpoint` and `client_id` (from `ConnectionConfig::client_id`). The polling
+# getters (`messages_dropped_total()`, `events_dropped_total()`) remain
+# available and authoritative for in-process callers regardless of this
+# feature. Consumers wire their own `metrics::Recorder` (typically
+# `metrics-exporter-prometheus`).
+metrics = ["dep:metrics"]
 
 [dependencies]
 # Workspace-inherited dependencies (always pulled)
@@ -72,6 +82,11 @@ bon = "3"
 # Optional structured-logging integration (gated behind the `tracing` feature).
 tracing = { version = "0.1", optional = true }
 
+# Optional `metrics` crate integration (gated behind the `metrics` feature).
+# Pinned to ^0.24 (current stable as of 2026-05). MSRV 1.71 — well below
+# core's 1.82.
+metrics = { version = "0.24", optional = true }
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 tokio-test = "0.4"
@@ -79,6 +94,9 @@ tokio-test = "0.4"
 tokio = { workspace = true }
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"] }
 futures-util.workspace = true
+# `metrics-util::debugging::DebuggingRecorder` powers the metrics smoke test
+# in `core/tests/metrics_smoke.rs`. Pinned to match the `metrics` major.
+metrics-util = "0.19"
 
 [package.metadata.docs.rs]
 all-features = true

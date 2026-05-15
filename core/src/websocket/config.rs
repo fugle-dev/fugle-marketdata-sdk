@@ -40,6 +40,14 @@ pub struct ConnectionConfig {
     /// `state_events()`. Defaults to [`DEFAULT_EVENT_BUFFER`]. Use
     /// [`ConnectionConfigBuilder::event_buffer`] to override.
     pub event_buffer: usize,
+
+    /// Optional caller-supplied identifier used as a metric label on the
+    /// `metrics` feature. Defaults to `None`. **Low-cardinality only** —
+    /// suitable for deployment / instance / service identifiers, never for
+    /// per-request UUIDs (Prometheus storage explodes on high-cardinality
+    /// labels). Values longer than [`CLIENT_ID_MAX_LEN`] are truncated by
+    /// the builder.
+    pub client_id: Option<String>,
 }
 
 /// Default capacity for the inbound message channel (`message_buffer`).
@@ -60,6 +68,14 @@ pub const DEFAULT_MESSAGE_BUFFER: usize = 4096;
 /// "no event left behind" safety. May be reduced in a future release once
 /// production telemetry confirms it is consistently underused.
 pub const DEFAULT_EVENT_BUFFER: usize = 1024;
+
+/// Maximum byte length accepted for [`ConnectionConfig::client_id`].
+///
+/// Values supplied to [`ConnectionConfigBuilder::client_id`] longer than this
+/// are truncated to `CLIENT_ID_MAX_LEN` bytes; truncation emits a
+/// `tracing::warn!` (no-op without the `tracing` feature). The cap exists
+/// to bound metric-label cardinality and Prometheus storage cost.
+pub const CLIENT_ID_MAX_LEN: usize = 64;
 
 /// Names whose value should be redacted when seen as a URL query parameter.
 /// Matched case-insensitively.
@@ -110,6 +126,7 @@ impl fmt::Debug for ConnectionConfig {
             .field("tls", &self.tls)
             .field("message_buffer", &self.message_buffer)
             .field("event_buffer", &self.event_buffer)
+            .field("client_id", &self.client_id)
             .finish()
     }
 }
@@ -125,6 +142,7 @@ impl ConnectionConfig {
             tls: TlsConfig::default(),
             message_buffer: DEFAULT_MESSAGE_BUFFER,
             event_buffer: DEFAULT_EVENT_BUFFER,
+            client_id: None,
         }
     }
 
@@ -138,7 +156,15 @@ impl ConnectionConfig {
             tls: TlsConfig::default(),
             message_buffer: DEFAULT_MESSAGE_BUFFER,
             event_buffer: DEFAULT_EVENT_BUFFER,
+            client_id: None,
         }
+    }
+
+    /// Caller-supplied identifier used as a metric label, or `None` if
+    /// unset. See [`ConnectionConfigBuilder::client_id`].
+    #[must_use]
+    pub fn client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
     }
 
     /// Create configuration for Fugle stock WebSocket endpoint
@@ -185,6 +211,7 @@ pub struct ConnectionConfigBuilder {
     tls: TlsConfig,
     message_buffer: usize,
     event_buffer: usize,
+    client_id: Option<String>,
 }
 
 impl ConnectionConfigBuilder {
@@ -238,6 +265,52 @@ impl ConnectionConfigBuilder {
         self
     }
 
+    /// Set a low-cardinality identifier used as a `client_id` metric label
+    /// when the `metrics` feature is enabled.
+    ///
+    /// **Cardinality**: pass a deployment, instance, or service identifier
+    /// (e.g. `"monitor-stock-probe"`, `"trader-prod-3"`). Per-request UUIDs
+    /// or any value derived from request data will explode Prometheus
+    /// storage and break the metrics pipeline.
+    ///
+    /// **Length**: values longer than [`CLIENT_ID_MAX_LEN`] are truncated
+    /// to that many bytes; truncation emits `tracing::warn!` so the
+    /// overflow is observable in operational logs.
+    pub fn client_id(mut self, id: impl Into<String>) -> Self {
+        let mut id = id.into();
+        if id.len() > CLIENT_ID_MAX_LEN {
+            // Truncate at a UTF-8 char boundary at or below CLIENT_ID_MAX_LEN
+            // so the resulting string is always valid UTF-8. The tracing
+            // warning fires on the original length so the operator sees the
+            // intended overflow size.
+            let _original_len = id.len();
+            let mut cut = CLIENT_ID_MAX_LEN;
+            while cut > 0 && !id.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            id.truncate(cut);
+            crate::tracing_compat::warn!(
+                target: "fugle_marketdata::config",
+                original_len = _original_len,
+                truncated_len = cut,
+                max_len = CLIENT_ID_MAX_LEN,
+                "client_id exceeded CLIENT_ID_MAX_LEN; truncated"
+            );
+        }
+        self.client_id = Some(id);
+        self
+    }
+
+    /// Convenience for `Option<impl Into<String>>` callers (e.g. forwarding
+    /// from a binding layer that may have an `Option<String>` in hand).
+    /// Equivalent to `client_id(...)` when `Some`; no-op when `None`.
+    pub fn maybe_client_id(self, id: Option<impl Into<String>>) -> Self {
+        match id {
+            Some(id) => self.client_id(id),
+            None => self,
+        }
+    }
+
     /// Build the configuration
     pub fn build(self) -> ConnectionConfig {
         ConnectionConfig {
@@ -248,6 +321,7 @@ impl ConnectionConfigBuilder {
             tls: self.tls,
             message_buffer: self.message_buffer,
             event_buffer: self.event_buffer,
+            client_id: self.client_id,
         }
     }
 }

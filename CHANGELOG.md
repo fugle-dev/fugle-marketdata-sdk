@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.7.0] - 2026-05-16
+
+Monitor-readiness followups bundle. **Zero breaking changes.** Five
+additive improvements driven by SDK user feedback after 0.6.0
+integration: macro hygiene, `WebSocketErrorKind::Http` doc relocation,
+multi-client mock, transport-drop intent injection, and an opt-in
+`metrics` crate integration. See `MIGRATION-0.7.md` for the opt-in
+patterns; existing 0.6.0 code compiles unchanged.
+
+### Added
+
+- **Optional `metrics` feature** (`features = ["metrics"]`). When
+  enabled, `WebSocketClient::new` registers
+  `fugle_marketdata_ws_messages_dropped_total` and
+  `fugle_marketdata_ws_events_dropped_total` counters on the active
+  `metrics::Recorder`, both labelled with `endpoint` (URL host) and
+  `client_id`. Polling getters remain authoritative; the integration
+  mirrors. Off by default — no transitive cost without the feature.
+- **`ConnectionConfig::client_id(...)` builder field** —
+  caller-supplied low-cardinality identifier used as a metric label.
+  64-byte cap with `tracing::warn!` on truncation. New `client_id() ->
+  Option<&str>` accessor.
+- **`MockWsServer::start_with_capacity(n)`** + per-client targeting via
+  `inject_frame_for(idx, …)`, `next_subscribe_id_for(idx, …)`,
+  `close_for(idx, code, reason)`. New convenience `aio_pair_n(n)`. The
+  bare `inject_frame` / `next_subscribe_id` / `close` panic on
+  multi-client mocks with a message naming the `_for` alternative.
+- **`MockWsServer::drop_transport(...)`** + `drop_transport_for(idx)` —
+  closes the underlying TCP socket without sending a Close frame,
+  forcing `DisconnectIntent::Network` on the client side. Idempotent.
+- **`metrics_compat::DropCounter`** internal wrapper around
+  `Arc<AtomicU64>` + optional `metrics::Counter`. Single bump path
+  guarantees the polling-getter atomic and the `metrics` recorder stay
+  in lock-step.
+- **`core/PUBLIC-API.txt` snapshot** + `core/tests/public_api_snapshot.rs`
+  (ignored by default; CI runs explicitly) + new
+  `.github/workflows/public-api.yml` job filtered on `core/src/lib.rs`,
+  `core/src/tracing_compat.rs`, `core/Cargo.toml`. Acknowledge
+  intentional surface changes in `core/PUBLIC-API.md`.
+
+### Changed
+
+- **`WebSocketErrorKind::Http(u16)` doc-comment** now contains the full
+  status-code → `ErrorKind` / `is_retryable()` mapping table.
+  `MarketDataError::source_kind`'s rustdoc cross-references the
+  variant. A `#[cfg(test)]` consistency assertion in `core/src/errors.rs`
+  exercises representative status codes against both methods so
+  doc-vs-impl drift fails CI.
+- **`tracing_compat` module-level rustdoc** explains why
+  `__tracing_noop` is exported at crate root via `#[macro_export]` and
+  reaffirms it is internal-only (carries `#[doc(hidden)]`).
+
+### Documentation
+
+- **`MIGRATION-0.7.md`** — opt-in patterns for the four feature
+  additions plus the REST + WebSocket dual-host pattern (already
+  supported in 0.6.0; 0.7.0 makes it discoverable). Uses
+  `your-ws-host.example.com` as the placeholder host name; never
+  references internal-only hostnames.
+- **`core/README.md`** — new "Feature flags" table covering
+  `tokio-comp` / `tracing` / `test-utils` / `metrics`. New "Independent
+  endpoints" paragraph in "Which constructor should I use?" cross-
+  referencing `MIGRATION-0.7.md`.
+
+### Origin
+
+Five-point feedback list from 0.6.0 SDK consumer reviews
+(2026-05-15…16):
+
+1. `tracing_compat` macro hygiene clarification.
+2. `WebSocketErrorKind::Http` mapping table relocation.
+3. `MockWsServer` multi-client support for monitor's dual-probe topology.
+4. `MockWsServer` `DisconnectIntent::Network` injection for incident-
+   classifier testing.
+5. `metrics` ecosystem integration so consumers don't hand-roll
+   `gauge.set(client.messages_dropped_total())` boilerplate.
+
 ## [Rust 0.6.0] - 2026-05-15
 
 Minor-version pass: `WebSocketError` structured-kind split, `MockWsServer`
