@@ -47,7 +47,7 @@ impl Channel {
 /// because the Fugle server protocol uses the field presence to drive its
 /// ACK shape (`subscribed` event `data` is an object for single, array for
 /// batch).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, bon::Builder)]
 pub struct SubscribeRequest {
     /// Channel to subscribe to
     pub channel: String,
@@ -464,6 +464,17 @@ mod tests {
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["symbol"], "2330");
         assert!(json.get("symbols").is_none());
+    }
+
+    #[test]
+    fn bon_builder_round_trips_through_new() {
+        // The derived builder is additive; the canonical constructors stay.
+        let via_builder = SubscribeRequest::builder()
+            .channel("trades".to_string())
+            .symbol("2330".to_string())
+            .build();
+        let via_new = SubscribeRequest::new(Channel::Trades, "2330");
+        assert_eq!(via_builder, via_new);
     }
 
     #[test]
