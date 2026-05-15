@@ -21,14 +21,28 @@ Rust SDK for [Fugle](https://developer.fugle.tw) market data. Provides REST API 
 
 ```toml
 # sync (no tokio in the dependency tree)
-fugle-marketdata = "0.4"
+fugle-marketdata = "0.7"
 
 # async (tokio + tokio-tungstenite)
-fugle-marketdata = { version = "0.4", features = ["tokio-comp"] }
+fugle-marketdata = { version = "0.7", features = ["tokio-comp"] }
 
 # opt in to structured tracing (no-op when off; zero binary cost)
-fugle-marketdata = { version = "0.4", features = ["tokio-comp", "tracing"] }
+fugle-marketdata = { version = "0.7", features = ["tokio-comp", "tracing"] }
+
+# opt in to the `metrics` crate integration for Prometheus / OTLP / statsd
+# exporters. Registers `fugle_marketdata_ws_messages_dropped_total` +
+# `fugle_marketdata_ws_events_dropped_total` counters automatically.
+fugle-marketdata = { version = "0.7", features = ["tokio-comp", "metrics"] }
+
+# in-process WebSocket mock server (`testing::MockWsServer`) for tests
+fugle-marketdata = { version = "0.7", features = ["test-utils"] }
 ```
+
+Upgrading from 0.6? See [MIGRATION-0.7.md](../MIGRATION-0.7.md). Zero
+breaking changes; four opt-in additions (`metrics` feature, multi-client
+mock, transport-drop intent injection, REST/WebSocket dual-host docs)
+plus doc/hygiene improvements (`WebSocketErrorKind::Http` mapping table,
+`tracing_compat` internal-macro doc, `cargo public-api` snapshot).
 
 Upgrading from 0.3? See [MIGRATION-0.4.md](../MIGRATION-0.4.md). The
 notable defaults that changed: `ReconnectionConfig::default().enabled` is
