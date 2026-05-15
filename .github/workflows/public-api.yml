@@ -1,0 +1,59 @@
+name: public-api
+
+on:
+  pull_request:
+    paths:
+      - core/src/lib.rs
+      - core/src/tracing_compat.rs
+      - core/Cargo.toml
+      - core/PUBLIC-API.txt
+      - core/PUBLIC-API.md
+      - .github/workflows/public-api.yml
+
+jobs:
+  ci-public-api:
+    name: cargo public-api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install nightly toolchain (rustdoc-json)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-public-api-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-public-api
+        run: cargo install cargo-public-api --locked
+
+      - name: Diff against committed snapshot
+        env:
+          RUSTC_BOOTSTRAP: 1
+        run: |
+          cargo public-api -p fugle-marketdata-core --simplified --all-features \
+            > /tmp/public-api-current.txt
+          if ! diff -u core/PUBLIC-API.txt /tmp/public-api-current.txt; then
+            echo "::error::Public API surface drifted from core/PUBLIC-API.txt."
+            echo "If this change is intentional:"
+            echo "  1. Regenerate: cargo public-api -p fugle-marketdata-core --simplified > core/PUBLIC-API.txt"
+            echo "  2. Add an acknowledgement entry to core/PUBLIC-API.md."
+            echo "  3. Re-run CI."
+            exit 1
+          fi
+
+      - name: Verify acknowledgement entry exists for surface diffs
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}..HEAD | grep -q "^core/PUBLIC-API.txt$"; then
+            if ! git diff --name-only origin/${{ github.base_ref }}..HEAD | grep -q "^core/PUBLIC-API.md$"; then
+              echo "::error::core/PUBLIC-API.txt changed but core/PUBLIC-API.md was not updated. Add an acknowledgement entry."
+              exit 1
+            fi
+          fi

@@ -1,5 +1,6 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
+use crate::metrics_compat::DropCounter;
 use crate::models::{WebSocketMessage};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{WsSink, WsStream};
@@ -13,7 +14,6 @@ use crate::websocket::{
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
-use std::sync::atomic::AtomicU64;
 use std::sync::{mpsc, Arc};
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::{Mutex, RwLock};
@@ -46,7 +46,7 @@ pub(crate) async fn try_reconnect(
     config: ConnectionConfig,
     state: Arc<RwLock<ConnectionState>>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: Arc<AtomicU64>,
+    events_dropped: DropCounter,
     ws_sink: Arc<Mutex<Option<WsSink>>>,
     write_tx_slot: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -122,7 +122,7 @@ pub(crate) async fn try_reconnect(
                     config.clone(),
                     Arc::clone(&state),
                     event_tx.clone(),
-                    Arc::clone(&events_dropped),
+                    events_dropped.clone(),
                     message_tx.clone(),
                 )
                 .await
@@ -153,7 +153,7 @@ pub(crate) async fn try_reconnect(
                             new_write_rx,
                             Arc::clone(&ws_sink),
                             event_tx.clone(),
-                            Arc::clone(&events_dropped),
+                            events_dropped.clone(),
                         ));
                         {
                             let mut guard = writer_handle.lock().await;
@@ -215,7 +215,7 @@ pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: Arc<RwLock<ConnectionState>>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: Arc<AtomicU64>,
+    events_dropped: DropCounter,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
 ) -> Result<(WsSink, WsStream), MarketDataError> {
     // Update state to Connecting

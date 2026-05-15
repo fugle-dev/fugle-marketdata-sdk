@@ -19,7 +19,7 @@ use crate::MarketDataError;
 use crate::tracing_compat::{debug, warn};
 use std::io::ErrorKind;
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tungstenite::stream::MaybeTlsStream;
@@ -99,11 +99,15 @@ pub(crate) struct OwnerShared {
     pub write_tx_slot: Mutex<Option<mpsc::SyncSender<String>>>,
     pub should_stop: Arc<AtomicBool>,
     /// Drop counter for the inbound message channel (drop-newest backpressure).
-    /// Exposed via `WebSocketClient::messages_dropped_total`.
-    pub messages_dropped: Arc<AtomicU64>,
+    /// Exposed via `WebSocketClient::messages_dropped_total`. Mirrors to
+    /// `metrics_compat::COUNTER_MESSAGES_DROPPED` when the `metrics` feature
+    /// is enabled.
+    pub messages_dropped: crate::metrics_compat::DropCounter,
     /// Drop counter for the lifecycle event channel (drop-newest backpressure).
-    /// Exposed via `WebSocketClient::events_dropped_total`.
-    pub events_dropped: Arc<AtomicU64>,
+    /// Exposed via `WebSocketClient::events_dropped_total`. Mirrors to
+    /// `metrics_compat::COUNTER_EVENTS_DROPPED` when the `metrics` feature
+    /// is enabled.
+    pub events_dropped: crate::metrics_compat::DropCounter,
 }
 
 /// Build a fresh TLS-wrapped WebSocket via `tungstenite::client_tls_with_config`.
@@ -292,10 +296,10 @@ fn owner_loop(
                         if let Err(mpsc::TrySendError::Full(_)) =
                             shared.message_tx.try_send(ws_msg)
                         {
-                            shared.messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            shared.messages_dropped.bump();
                             warn!(
                                 target: "fugle_marketdata::ws",
-                                dropped_total = shared.messages_dropped.load(Ordering::Relaxed),
+                                dropped_total = shared.messages_dropped.load(),
                                 "message channel saturated; dropping frame (drop-newest)"
                             );
                         }
@@ -325,10 +329,10 @@ fn owner_loop(
                         if let Err(mpsc::TrySendError::Full(_)) =
                             shared.message_tx.try_send(ws_msg)
                         {
-                            shared.messages_dropped.fetch_add(1, Ordering::Relaxed);
+                            shared.messages_dropped.bump();
                             warn!(
                                 target: "fugle_marketdata::ws",
-                                dropped_total = shared.messages_dropped.load(Ordering::Relaxed),
+                                dropped_total = shared.messages_dropped.load(),
                                 "message channel saturated; dropping frame (drop-newest)"
                             );
                         }

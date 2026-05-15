@@ -16,6 +16,12 @@ pub mod websocket;
 // feature is disabled.
 mod tracing_compat;
 
+// Internal: cfg-gated `metrics` crate integration. Provides `DropCounter`
+// (clone-cheap atomic + optional metrics::Counter wrapper) and the
+// SDK-registered counter names. No-op when the `metrics` feature is
+// disabled — the wrapper compiles to a single-Arc allocation.
+mod metrics_compat;
+
 // Re-export error types
 pub use errors::{ErrorKind, MarketDataError, WebSocketErrorKind};
 

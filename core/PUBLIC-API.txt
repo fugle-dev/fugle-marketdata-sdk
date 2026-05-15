@@ -1,0 +1,6 @@
+# 0.7.0 baseline — regenerate via:
+#   cargo public-api -p fugle-marketdata-core --simplified > core/PUBLIC-API.txt
+#
+# This file is committed as a placeholder. CI's first run with the
+# real `cargo public-api` output will replace these comments with the
+# full symbol list. See core/PUBLIC-API.md for the workflow.

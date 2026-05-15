@@ -46,8 +46,28 @@ pub enum WebSocketErrorKind {
     /// Retryable with backoff.
     Io,
     /// HTTP error during the WebSocket upgrade. `u16` is the status code.
-    /// Retry verdict depends on the status: 429 and 5xx retryable;
-    /// 401/403 not; everything else not.
+    ///
+    /// # Status code mapping
+    ///
+    /// Authoritative grid for monitor / incident-classifier code that
+    /// branches on `WebSocketErrorKind::Http(_)`. [`MarketDataError::source_kind`]
+    /// and [`MarketDataError::is_retryable`] honour this exact mapping; the
+    /// `#[cfg(test)]` `http_mapping_consistency` module in this file pins
+    /// the doc-vs-impl contract so silent drift fails CI.
+    ///
+    /// | Status range | [`ErrorKind`] | [`is_retryable`](MarketDataError::is_retryable) |
+    /// |---|---|---|
+    /// | `401`, `403` | [`Auth`](ErrorKind::Auth) | `false` |
+    /// | `429` | [`RateLimit`](ErrorKind::RateLimit) | `true` |
+    /// | `500..=599` | [`Network`](ErrorKind::Network) | `true` |
+    /// | other 4xx (e.g. `404`) | [`Client`](ErrorKind::Client) | `false` |
+    /// | anything else | [`Client`](ErrorKind::Client) | `false` |
+    ///
+    /// `Auth` and `Client` failures are non-retryable because the upstream
+    /// rejection will not change between attempts; `RateLimit` and `5xx`
+    /// retry with the configured backoff. Other 4xx codes (including `404`)
+    /// surface as `Client` rather than `Network` because the server has
+    /// stated, conclusively, that the request is wrong.
     Http(u16),
     /// Anything `tungstenite` adds in the future, or an error we can't
     /// classify. Retryable (conservative default).
@@ -248,22 +268,19 @@ impl MarketDataError {
     /// Coarse-grained classification of the source of this error.
     ///
     /// Returns one of [`ErrorKind::Network`], [`ErrorKind::Protocol`],
-    /// [`ErrorKind::Auth`], or [`ErrorKind::Client`] so downstream code can
-    /// branch on category without pattern-matching every variant.
+    /// [`ErrorKind::Auth`], [`ErrorKind::RateLimit`], or [`ErrorKind::Client`]
+    /// so downstream code can branch on category without pattern-matching
+    /// every variant.
     ///
     /// # Mapping
     ///
     /// | `MarketDataError` variant | `ErrorKind` |
     /// |---|---|
     /// | `ConnectionError`, `TimeoutError`, `HeartbeatTimeout` | `Network` |
-    /// | `WebSocketError { kind: Protocol \| Capacity \| Utf8 }` | `Protocol` |
+    /// | `WebSocketError { kind: Protocol \| Capacity \| Utf8 \| Other }` | `Protocol` |
     /// | `WebSocketError { kind: Tls }` | `Auth` |
     /// | `WebSocketError { kind: Io }` | `Network` |
-    /// | `WebSocketError { kind: Http(401 \| 403) }` | `Auth` |
-    /// | `WebSocketError { kind: Http(429) }` | `RateLimit` |
-    /// | `WebSocketError { kind: Http(500..=599) }` | `Network` |
-    /// | `WebSocketError { kind: Http(other) }` | `Client` |
-    /// | `WebSocketError { kind: Other }` | `Protocol` |
+    /// | `WebSocketError { kind: Http(_) }` | see [`WebSocketErrorKind::Http`] for the status-code mapping table |
     /// | `AuthError`, `ApiError { status: 401 \| 403 }` | `Auth` |
     /// | `ApiError { status: 429 }` | `RateLimit` |
     /// | `ApiError { status: 500..=599 }` | `Network` |
@@ -807,5 +824,53 @@ mod tests {
         assert_eq!(classify(ErrorKind::Auth), 3);
         assert_eq!(classify(ErrorKind::RateLimit), 4);
         assert_eq!(classify(ErrorKind::Client), 5);
+    }
+}
+
+#[cfg(test)]
+mod http_mapping_consistency {
+    //! Pins the doc-vs-impl contract for `WebSocketErrorKind::Http(u16)`.
+    //!
+    //! The variant doc-comment lists the status-code → `ErrorKind` and
+    //! `is_retryable()` mapping. This test exercises representative codes
+    //! across every documented family so any silent drift between the
+    //! doc table and the impl arms in `MarketDataError::source_kind` /
+    //! `is_retryable` fails the suite.
+    use super::{ErrorKind, MarketDataError, WebSocketErrorKind};
+
+    fn ws_err(status: u16) -> MarketDataError {
+        MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Http(status),
+            msg: format!("HTTP {} during WebSocket handshake", status),
+        }
+    }
+
+    /// Each row mirrors the rendered table on `WebSocketErrorKind::Http`.
+    /// Update both at the same time — they are the doc-vs-impl contract.
+    const HTTP_TABLE: &[(u16, ErrorKind, bool)] = &[
+        (401, ErrorKind::Auth, false),
+        (403, ErrorKind::Auth, false),
+        (404, ErrorKind::Client, false),
+        (429, ErrorKind::RateLimit, true),
+        (500, ErrorKind::Network, true),
+        (503, ErrorKind::Network, true),
+        (999, ErrorKind::Client, false),
+    ];
+
+    #[test]
+    fn http_status_mapping_matches_doc_table() {
+        for &(status, expected_kind, expected_retryable) in HTTP_TABLE {
+            let err = ws_err(status);
+            assert_eq!(
+                err.source_kind(),
+                expected_kind,
+                "HTTP {status}: source_kind() mismatch with documented table on WebSocketErrorKind::Http"
+            );
+            assert_eq!(
+                err.is_retryable(),
+                expected_retryable,
+                "HTTP {status}: is_retryable() mismatch with documented table on WebSocketErrorKind::Http"
+            );
+        }
     }
 }

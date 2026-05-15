@@ -16,7 +16,7 @@ use crate::websocket::{
     MessageReceiver, ReconnectionConfig, ReconnectionManager, SubscriptionManager,
 };
 use crate::MarketDataError;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -81,6 +81,9 @@ impl WebSocketClient {
         let tls_config = crate::tls::build_rustls_config(&config.tls)
             .unwrap_or_else(|e| panic!("Failed to build TLS config: {e}"));
 
+        let (messages_dropped, events_dropped) =
+            crate::metrics_compat::build_drop_counters(&config);
+
         let shared = Arc::new(OwnerShared {
             config,
             tls_config,
@@ -92,8 +95,8 @@ impl WebSocketClient {
             message_tx,
             write_tx_slot: Mutex::new(None),
             should_stop: Arc::new(AtomicBool::new(false)),
-            messages_dropped: Arc::new(AtomicU64::new(0)),
-            events_dropped: Arc::new(AtomicU64::new(0)),
+            messages_dropped,
+            events_dropped,
         });
 
         Self {
@@ -487,7 +490,7 @@ impl WebSocketClient {
     /// non-zero value usually indicates the consumer (`messages()`
     /// reader) is too slow or stalled.
     pub fn messages_dropped_total(&self) -> u64 {
-        self.shared.messages_dropped.load(Ordering::Relaxed)
+        self.shared.messages_dropped.load()
     }
 
     /// Total number of lifecycle [`ConnectionEvent`]s dropped due to event-
@@ -500,7 +503,7 @@ impl WebSocketClient {
     /// Counter is monotonic and thread-safe (`AtomicU64`).
     #[must_use]
     pub fn events_dropped_total(&self) -> u64 {
-        self.shared.events_dropped.load(Ordering::Relaxed)
+        self.shared.events_dropped.load()
     }
 
     /// Returns `true` iff at least one active subscription matches the

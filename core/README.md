@@ -312,6 +312,17 @@ let cfg = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("k"));
 
 **Rule of thumb:** Reach for the `bon` builder by default. If your inputs come from external configuration (env vars, JSON, a CLI flag) and you want bounds-checking at the boundary, use the positional `new(...)` constructor. Use the typestate factory when one auth credential drives multiple endpoint configurations.
 
+**Independent endpoints**: `RestClient::base_url(...)` and `WebSocketFactory::base_url(...)` are independent. The two clients can target different hosts (REST on the public API, WebSocket on a separate edge / staging / private host) — see `MIGRATION-0.7.md` for the dual-host pattern.
+
+## Feature flags
+
+| Feature       | Default | Adds                                                                              |
+|---------------|---------|-----------------------------------------------------------------------------------|
+| `tokio-comp`  | off     | Async client (`aio::WebSocketClient`), tokio + tokio-tungstenite.                 |
+| `tracing`     | off     | Hot-path `debug!`, lifecycle `info!`/`warn!`/`error!`, cold-path `instrument`.    |
+| `test-utils`  | off     | `core::testing::MockWsServer` + `aio_pair` / `aio_pair_n` (pulls `tokio-comp`).   |
+| `metrics`     | off     | Registers `fugle_marketdata_ws_messages_dropped_total` and `fugle_marketdata_ws_events_dropped_total` counters on the active `metrics` recorder. See `MIGRATION-0.7.md`. |
+
 ## Error Handling
 
 All operations return `Result<T, MarketDataError>`:
