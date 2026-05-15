@@ -2,6 +2,28 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Accept `endSession` as a JSON number, a numeric string (prod sends `"1"`),
+/// null, or an empty string. Anything else is a hard error.
+fn de_opt_i32_flexible<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(n) => Ok(n.as_i64().map(|v| v as i32)),
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            s.parse::<i32>().map(Some).map_err(serde::de::Error::custom)
+        }
+        other => Err(serde::de::Error::custom(format!(
+            "endSession: expected int or string, got {other}"
+        ))),
+    }
+}
+
 /// Tradeable product from FutOpt products endpoint (futopt/intraday/products)
 ///
 /// This matches the data array items in RestFutOptIntradayProductsResponse.
@@ -28,12 +50,14 @@ use serde::{Deserialize, Serialize};
 ///     "expiryType": "S",
 ///     "underlyingType": "I",
 ///     "marketCloseGroup": 1,
-///     "endSession": 2
+///     "endSession": "1"
 /// }"#;
 ///
 /// let product: Product = serde_json::from_str(json).unwrap();
 /// assert_eq!(product.symbol, "TX");
 /// assert_eq!(product.contract_type.as_deref(), Some("I"));
+/// // prod sends endSession as a string — accepted as i32
+/// assert_eq!(product.end_session, Some(1));
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Product {
@@ -60,9 +84,10 @@ pub struct Product {
     #[serde(rename = "contractType")]
     pub contract_type: Option<String>,
 
-    /// Contract size (multiplier)
+    /// Contract size (multiplier). `f64`: single-stock futures use a
+    /// fractional multiplier (e.g. `2020.0303`), not an integer.
     #[serde(rename = "contractSize")]
-    pub contract_size: Option<i64>,
+    pub contract_size: Option<f64>,
 
     /// Underlying type (I=Index, S=Stock, etc.)
     #[serde(rename = "underlyingType")]
@@ -99,8 +124,9 @@ pub struct Product {
     #[serde(rename = "marketCloseGroup")]
     pub market_close_group: Option<i32>,
 
-    /// End session number
-    #[serde(rename = "endSession")]
+    /// End session number. Prod sends this as a **string** (`"1"`), older
+    /// fixtures used an int — `de_opt_i32_flexible` accepts both.
+    #[serde(rename = "endSession", default, deserialize_with = "de_opt_i32_flexible")]
     pub end_session: Option<i32>,
 }
 
@@ -245,10 +271,33 @@ mod tests {
         assert_eq!(product.exchange.as_deref(), Some("TAIFEX"));
         assert_eq!(product.underlying_symbol.as_deref(), Some("FITX"));
         assert_eq!(product.contract_type.as_deref(), Some("I"));
-        assert_eq!(product.contract_size, Some(200));
+        assert_eq!(product.contract_size, Some(200.0));
         assert_eq!(product.status_code.as_deref(), Some("N"));
         assert!(product.quote_acceptable);
         assert!(product.can_block_trade);
+        assert_eq!(product.end_session, Some(2));
+    }
+
+    #[test]
+    fn test_product_end_session_string_and_edge_cases() {
+        // Prod wire form: string "1".
+        let p: Product =
+            serde_json::from_str(r#"{"symbol":"BRF","endSession":"1"}"#).unwrap();
+        assert_eq!(p.end_session, Some(1));
+
+        // Empty string -> None (prod uses "" for some fields).
+        let p: Product =
+            serde_json::from_str(r#"{"symbol":"X","endSession":""}"#).unwrap();
+        assert_eq!(p.end_session, None);
+
+        // Bare int still accepted (back-compat with older fixtures).
+        let p: Product =
+            serde_json::from_str(r#"{"symbol":"X","endSession":3}"#).unwrap();
+        assert_eq!(p.end_session, Some(3));
+
+        // Absent -> None.
+        let p: Product = serde_json::from_str(r#"{"symbol":"X"}"#).unwrap();
+        assert_eq!(p.end_session, None);
     }
 
     #[test]

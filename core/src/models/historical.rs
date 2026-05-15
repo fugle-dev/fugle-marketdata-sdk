@@ -50,9 +50,12 @@ pub struct StatsResponse {
     /// Price change
     pub change: f64,
 
-    /// Price change percentage
-    #[serde(rename = "changePercent")]
-    pub change_percent: f64,
+    /// Price change percentage.
+    ///
+    /// Optional: the prod `historical/stats` response does not include this
+    /// key (only `change` is sent). Kept for forward-compat / other markets.
+    #[serde(rename = "changePercent", default)]
+    pub change_percent: Option<f64>,
 
     /// Total trading volume
     #[serde(rename = "tradeVolume")]
@@ -106,9 +109,25 @@ mod tests {
         assert_eq!(stats.date, "2024-01-15");
         assert_eq!(stats.close_price, 588.0);
         assert_eq!(stats.change, 8.0);
-        assert_eq!(stats.change_percent, 1.38);
+        assert_eq!(stats.change_percent, Some(1.38));
         assert_eq!(stats.week52_high, 650.0);
         assert_eq!(stats.week52_low, 480.0);
+    }
+
+    #[test]
+    fn test_stats_response_omits_change_percent() {
+        // Real prod payload: no `changePercent` key at all.
+        let json = r#"{
+            "date": "2026-04-16", "type": "EQUITY", "exchange": "TWSE",
+            "market": "TSE", "symbol": "2330", "name": "台積電",
+            "openPrice": 580.0, "highPrice": 590.0, "lowPrice": 575.0,
+            "closePrice": 588.0, "change": 8.0, "tradeVolume": 50000000,
+            "tradeValue": 29000000000, "previousClose": 580.0,
+            "week52High": 650.0, "week52Low": 480.0
+        }"#;
+        let stats: StatsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(stats.change_percent, None);
+        assert_eq!(stats.change, 8.0);
     }
 
     #[test]
@@ -125,7 +144,7 @@ mod tests {
             low_price: 575.0,
             close_price: 588.0,
             change: 8.0,
-            change_percent: 1.38,
+            change_percent: Some(1.38),
             trade_volume: 50000000,
             trade_value: 29000000000.0,
             previous_close: 580.0,

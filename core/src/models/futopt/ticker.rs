@@ -32,8 +32,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct FutOptTicker {
     // === Response metadata ===
-    /// Trading date (YYYY-MM-DD)
-    pub date: String,
+    /// Trading date (YYYY-MM-DD). Optional: the `intraday/tickers` list
+    /// returns lightweight items with no `date`; the single `ticker`
+    /// endpoint includes it.
+    #[serde(default)]
+    pub date: Option<String>,
 
     /// Contract type (FUTURE or OPTION)
     #[serde(rename = "type")]

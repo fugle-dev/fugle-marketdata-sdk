@@ -10,8 +10,11 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "js", napi_derive::napi(object))]
 pub struct Ticker {
     // === Response metadata ===
-    /// Trading date (YYYY-MM-DD)
-    pub date: String,
+    /// Trading date (YYYY-MM-DD). Optional: the `intraday/tickers` list
+    /// returns lightweight items (`symbol`/`industry`/`name` only) with no
+    /// `date`; the single `ticker`/`quote` endpoints do include it.
+    #[serde(default)]
+    pub date: Option<String>,
 
     /// Security type (e.g., "EQUITY", "ODDLOT")
     #[serde(rename = "type")]
