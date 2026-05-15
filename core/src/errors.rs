@@ -18,6 +18,50 @@ use thiserror::Error;
 ///
 /// The enum is `#[non_exhaustive]` so future variants can be added in a
 /// minor release without breaking exhaustive matches.
+/// Refined classification of a [`MarketDataError::WebSocketError`].
+///
+/// Mirrors `tungstenite::Error`'s own categorization without leaking the
+/// upstream dependency type. Returned by pattern-matching the structured
+/// `kind` field on the variant.
+///
+/// The enum is `#[non_exhaustive]` so future `tungstenite` releases or
+/// new error sources can add variants without breaking exhaustive matches.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WebSocketErrorKind {
+    /// Protocol-level violation: malformed frame, illegal state transition,
+    /// reserved bits set. Never retryable — indicates an SDK / version
+    /// mismatch or a server-side bug.
+    Protocol,
+    /// Frame exceeded the configured `max_message_size` / `max_frame_size`.
+    /// Never retryable; the producer is misbehaving.
+    Capacity,
+    /// UTF-8 decoding failed on a text frame. Never retryable; the producer
+    /// emitted invalid bytes.
+    Utf8,
+    /// TLS / certificate failure during the WebSocket handshake. Treated as
+    /// authentication-adjacent — never retryable without operator action.
+    Tls,
+    /// Transport IO failure: connection reset, EOF, write error, etc.
+    /// Retryable with backoff.
+    Io,
+    /// HTTP error during the WebSocket upgrade. `u16` is the status code.
+    /// Retry verdict depends on the status: 429 and 5xx retryable;
+    /// 401/403 not; everything else not.
+    Http(u16),
+    /// Anything `tungstenite` adds in the future, or an error we can't
+    /// classify. Retryable (conservative default).
+    Other,
+}
+
+/// Coarse-grained classification of the source of a [`MarketDataError`].
+///
+/// Returned by [`MarketDataError::source_kind`] so downstream code can
+/// branch on the *category* of failure (network glitch vs SDK / protocol
+/// bug vs auth vs rate-limit vs caller-side validation) without
+/// pattern-matching every variant or string-matching the embedded `msg`.
+///
+/// `#[non_exhaustive]` so future variants are non-breaking.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ErrorKind {
@@ -122,8 +166,12 @@ pub enum MarketDataError {
     },
 
     /// WebSocket error
-    #[error("WebSocket error: {msg}")]
+    #[error("WebSocket error ({kind:?}): {msg}")]
     WebSocketError {
+        /// Structured classification of the underlying WebSocket failure.
+        /// Branch on this rather than substring-matching `msg` for
+        /// programmatic decision-making (retry, alert, fail fast).
+        kind: WebSocketErrorKind,
         /// Diagnostic message describing the WebSocket failure.
         msg: String,
     },
@@ -153,40 +201,46 @@ impl From<tungstenite::Error> for MarketDataError {
     fn from(err: tungstenite::Error) -> Self {
         use tungstenite::Error as WsError;
 
-        match err {
-            // Retryable connection errors
-            WsError::ConnectionClosed | WsError::Io(_) => {
-                Self::ConnectionError {
-                    msg: format!("WebSocket connection error: {}", err),
-                }
-            }
-            // Fatal WebSocket protocol errors
-            WsError::AlreadyClosed | WsError::Protocol(_) | WsError::Capacity(_) => {
-                Self::WebSocketError {
-                    msg: format!("WebSocket protocol error: {}", err),
-                }
-            }
-            // TLS/certificate errors are auth errors (often cert issues)
-            WsError::Tls(_) => Self::AuthError {
-                msg: format!("TLS/certificate error: {}", err),
-            },
-            // HTTP errors (e.g., 401, 403, 404)
+        // Map each upstream variant to the right `WebSocketErrorKind`.
+        // Previous behaviour collapsed everything into either
+        // `ConnectionError` (IO), `WebSocketError` (protocol/capacity), or
+        // `AuthError` (TLS/401/403) which conflated retry-policy with
+        // fault-source. 0.6.0 retains `WebSocketError` as the single carrier
+        // and exposes the source via the `kind` field.
+        let (kind, msg) = match err {
+            WsError::ConnectionClosed | WsError::AlreadyClosed | WsError::Io(_) => (
+                WebSocketErrorKind::Io,
+                format!("WebSocket transport error: {}", err),
+            ),
+            WsError::Protocol(_) => (
+                WebSocketErrorKind::Protocol,
+                format!("WebSocket protocol violation: {}", err),
+            ),
+            WsError::Capacity(_) => (
+                WebSocketErrorKind::Capacity,
+                format!("WebSocket capacity exceeded: {}", err),
+            ),
+            WsError::Utf8(_) => (
+                WebSocketErrorKind::Utf8,
+                format!("WebSocket UTF-8 decode failure: {}", err),
+            ),
+            WsError::Tls(_) => (
+                WebSocketErrorKind::Tls,
+                format!("TLS/certificate error: {}", err),
+            ),
             WsError::Http(response) => {
                 let status = response.status().as_u16();
-                match status {
-                    401 | 403 => Self::AuthError {
-                        msg: format!("HTTP {} during WebSocket handshake", status),
-                    },
-                    _ => Self::ConnectionError {
-                        msg: format!("HTTP {} during WebSocket handshake", status),
-                    },
-                }
+                (
+                    WebSocketErrorKind::Http(status),
+                    format!("HTTP {} during WebSocket handshake", status),
+                )
             }
-            // Other errors (URL parsing, UTF-8, etc.) are WebSocket errors
-            _ => Self::WebSocketError {
-                msg: format!("WebSocket error: {}", err),
-            },
-        }
+            _ => (
+                WebSocketErrorKind::Other,
+                format!("WebSocket error: {}", err),
+            ),
+        };
+        Self::WebSocketError { kind, msg }
     }
 }
 
@@ -202,30 +256,40 @@ impl MarketDataError {
     /// | `MarketDataError` variant | `ErrorKind` |
     /// |---|---|
     /// | `ConnectionError`, `TimeoutError`, `HeartbeatTimeout` | `Network` |
-    /// | `WebSocketError` (collapsed in 0.5.1) | `Protocol` |
+    /// | `WebSocketError { kind: Protocol \| Capacity \| Utf8 }` | `Protocol` |
+    /// | `WebSocketError { kind: Tls }` | `Auth` |
+    /// | `WebSocketError { kind: Io }` | `Network` |
+    /// | `WebSocketError { kind: Http(401 \| 403) }` | `Auth` |
+    /// | `WebSocketError { kind: Http(429) }` | `RateLimit` |
+    /// | `WebSocketError { kind: Http(500..=599) }` | `Network` |
+    /// | `WebSocketError { kind: Http(other) }` | `Client` |
+    /// | `WebSocketError { kind: Other }` | `Protocol` |
     /// | `AuthError`, `ApiError { status: 401 \| 403 }` | `Auth` |
     /// | `ApiError { status: 429 }` | `RateLimit` |
     /// | `ApiError { status: 500..=599 }` | `Network` |
     /// | `ApiError { status: other 4xx }` | `Client` |
     /// | `InvalidSymbol`, `InvalidParameter`, `ConfigError`, `DeserializationError`, `ClientClosed` | `Client` |
     /// | `RuntimeError`, `Other` | `Client` |
-    ///
-    /// # Coarse-grained WebSocket mapping in 0.5.1
-    ///
-    /// Every [`MarketDataError::WebSocketError`] returns
-    /// [`ErrorKind::Protocol`] because the variant is currently string-only.
-    /// 0.6.0 introduces `WebSocketErrorKind` and refines this mapping —
-    /// `Io` failures will move to `Network`, `Tls` to `Auth`, etc. Callers
-    /// that need to distinguish protocol violations from transport IO
-    /// today have no recourse beyond inspecting `WebSocketError { msg }`'s
-    /// text.
     #[must_use]
     pub fn source_kind(&self) -> ErrorKind {
         match self {
             Self::ConnectionError { .. }
             | Self::TimeoutError { .. }
             | Self::HeartbeatTimeout { .. } => ErrorKind::Network,
-            Self::WebSocketError { .. } => ErrorKind::Protocol,
+            Self::WebSocketError { kind, .. } => match kind {
+                WebSocketErrorKind::Protocol
+                | WebSocketErrorKind::Capacity
+                | WebSocketErrorKind::Utf8
+                | WebSocketErrorKind::Other => ErrorKind::Protocol,
+                WebSocketErrorKind::Tls => ErrorKind::Auth,
+                WebSocketErrorKind::Io => ErrorKind::Network,
+                WebSocketErrorKind::Http(status) => match *status {
+                    401 | 403 => ErrorKind::Auth,
+                    429 => ErrorKind::RateLimit,
+                    500..=599 => ErrorKind::Network,
+                    _ => ErrorKind::Client,
+                },
+            },
             Self::AuthError { .. } => ErrorKind::Auth,
             Self::ApiError { status, .. } => match *status {
                 401 | 403 => ErrorKind::Auth,
@@ -262,14 +326,41 @@ impl MarketDataError {
         }
     }
 
-    /// Check if error is retryable
+    /// Check if error is retryable.
+    ///
+    /// # WebSocket retry verdict (0.6.0+)
+    ///
+    /// Refined to honour [`WebSocketErrorKind`]:
+    ///
+    /// | Kind | Retryable |
+    /// |---|---|
+    /// | `Protocol`, `Capacity`, `Utf8`, `Tls` | no |
+    /// | `Io`, `Other` | yes |
+    /// | `Http(429)`, `Http(500..=599)` | yes |
+    /// | `Http(401 \| 403)` | no |
+    /// | `Http(other)` | no |
+    ///
+    /// Protocol violations are now correctly non-retryable — retrying the
+    /// same SDK against the same server will keep failing. Pre-0.6.0
+    /// behaviour treated every WebSocket error as retryable, which was
+    /// a footgun for monitor incident response.
     pub fn is_retryable(&self) -> bool {
         match self {
-            // Network errors are always retryable
+            // Network errors are retryable
             Self::ConnectionError { .. }
             | Self::TimeoutError { .. }
-            | Self::WebSocketError { .. }
             | Self::HeartbeatTimeout { .. } => true,
+            // WebSocket retry verdict driven by structured kind
+            Self::WebSocketError { kind, .. } => match kind {
+                WebSocketErrorKind::Io | WebSocketErrorKind::Other => true,
+                WebSocketErrorKind::Http(status) => {
+                    *status == 429 || (500..=599).contains(status)
+                }
+                WebSocketErrorKind::Protocol
+                | WebSocketErrorKind::Capacity
+                | WebSocketErrorKind::Utf8
+                | WebSocketErrorKind::Tls => false,
+            },
             // API errors with 429 or 5xx status codes are retryable
             Self::ApiError { status, .. } => *status == 429 || (500..=599).contains(status),
             // Parameter errors are never retryable (user must fix input)
@@ -346,6 +437,7 @@ mod tests {
         assert_eq!(err.to_error_code(), 3001);
 
         let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Protocol,
             msg: "test".to_string(),
         };
         assert_eq!(err.to_error_code(), 3002);
@@ -375,10 +467,17 @@ mod tests {
         };
         assert!(err.is_retryable());
 
+        // Io kind is retryable; Protocol is not — test both.
         let err = MarketDataError::WebSocketError {
-            msg: "test".to_string(),
+            kind: WebSocketErrorKind::Io,
+            msg: "reset".to_string(),
         };
         assert!(err.is_retryable());
+        let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Protocol,
+            msg: "frame".to_string(),
+        };
+        assert!(!err.is_retryable());
 
         let err = MarketDataError::HeartbeatTimeout {
             elapsed: Duration::from_secs(35),
@@ -461,18 +560,27 @@ mod tests {
 
     #[test]
     fn test_from_tungstenite_connection_closed() {
+        // 0.6.0: ConnectionClosed routes to WebSocketError { kind: Io }
+        // (the old behaviour collapsed it into ConnectionError).
         use tokio_tungstenite::tungstenite::Error as WsError;
 
         let ws_err = WsError::ConnectionClosed;
         let err: MarketDataError = ws_err.into();
 
-        assert_eq!(err.to_error_code(), 2001);
-        assert!(matches!(err, MarketDataError::ConnectionError { .. }));
+        assert_eq!(err.to_error_code(), 3002);
+        assert!(matches!(
+            err,
+            MarketDataError::WebSocketError {
+                kind: WebSocketErrorKind::Io,
+                ..
+            }
+        ));
         assert!(err.is_retryable());
     }
 
     #[test]
     fn test_from_tungstenite_protocol_error() {
+        // 0.6.0: Protocol kind is NOT retryable (was retryable in 0.5.x).
         use tokio_tungstenite::tungstenite::Error as WsError;
         use tokio_tungstenite::tungstenite::error::ProtocolError;
 
@@ -480,8 +588,17 @@ mod tests {
         let err: MarketDataError = ws_err.into();
 
         assert_eq!(err.to_error_code(), 3002);
-        assert!(matches!(err, MarketDataError::WebSocketError { .. }));
-        assert!(err.is_retryable()); // WebSocket errors are retryable
+        assert!(matches!(
+            err,
+            MarketDataError::WebSocketError {
+                kind: WebSocketErrorKind::Protocol,
+                ..
+            }
+        ));
+        assert!(
+            !err.is_retryable(),
+            "Protocol violations must not retry (0.6.0+); retry against the same SDK + server combo will keep failing"
+        );
     }
 
     #[test]
@@ -516,13 +633,76 @@ mod tests {
     }
 
     #[test]
-    fn source_kind_protocol_for_websocket_in_0_5_1() {
-        // Coarse mapping: all WebSocketError variants are Protocol until
-        // 0.6.0 splits the kind. Refined later.
+    fn source_kind_for_websocket_protocol_kind() {
         let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Protocol,
             msg: "frame".to_string(),
         };
         assert_eq!(err.source_kind(), ErrorKind::Protocol);
+    }
+
+    #[test]
+    fn source_kind_for_websocket_io_routes_to_network() {
+        let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Io,
+            msg: "reset".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
+    }
+
+    #[test]
+    fn source_kind_for_websocket_tls_routes_to_auth() {
+        let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Tls,
+            msg: "cert".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Auth);
+    }
+
+    #[test]
+    fn source_kind_for_websocket_http_401_routes_to_auth() {
+        let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Http(401),
+            msg: "unauthorized".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::Auth);
+    }
+
+    #[test]
+    fn source_kind_for_websocket_http_429_routes_to_rate_limit() {
+        let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Http(429),
+            msg: "throttle".to_string(),
+        };
+        assert_eq!(err.source_kind(), ErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn tungstenite_protocol_routes_to_protocol_kind() {
+        use tokio_tungstenite::tungstenite::error::ProtocolError;
+        use tokio_tungstenite::tungstenite::Error as WsError;
+        let ws_err = WsError::Protocol(ProtocolError::ResetWithoutClosingHandshake);
+        let err: MarketDataError = ws_err.into();
+        match err {
+            MarketDataError::WebSocketError { kind, .. } => {
+                assert_eq!(kind, WebSocketErrorKind::Protocol);
+            }
+            other => panic!("expected WebSocketError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tungstenite_io_routes_to_io_kind() {
+        use std::io;
+        use tokio_tungstenite::tungstenite::Error as WsError;
+        let ws_err = WsError::Io(io::Error::new(io::ErrorKind::ConnectionReset, "reset"));
+        let err: MarketDataError = ws_err.into();
+        match err {
+            MarketDataError::WebSocketError { kind, .. } => {
+                assert_eq!(kind, WebSocketErrorKind::Io);
+            }
+            other => panic!("expected WebSocketError, got {other:?}"),
+        }
     }
 
     #[test]

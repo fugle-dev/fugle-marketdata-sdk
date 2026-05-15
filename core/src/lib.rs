@@ -3,6 +3,9 @@
 #![deny(missing_docs, rustdoc::broken_intra_doc_links, clippy::missing_errors_doc)]
 
 pub mod errors;
+#[cfg(all(feature = "test-utils", feature = "tokio-comp"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "test-utils")))]
+pub mod testing;
 pub mod models;
 pub mod rest;
 pub mod tls;
@@ -14,7 +17,7 @@ pub mod websocket;
 mod tracing_compat;
 
 // Re-export error types
-pub use errors::{ErrorKind, MarketDataError};
+pub use errors::{ErrorKind, MarketDataError, WebSocketErrorKind};
 
 // Re-export TLS config
 pub use tls::TlsConfig;

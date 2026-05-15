@@ -78,7 +78,13 @@ impl From<CoreError> for MarketDataError {
             CoreError::HeartbeatTimeout { elapsed } => MarketDataError::TimeoutError {
                 msg: format!("Heartbeat timeout: no inbound frames for {:?}", elapsed),
             },
-            CoreError::WebSocketError { msg } => MarketDataError::WebSocketError { msg },
+            // 0.6.0: core's WebSocketError gained a structured `kind` field;
+            // uniffi's shadow stays string-only because non-exhaustive enums
+            // don't translate cleanly across all FFI targets (Go / Java).
+            // Stringify the kind into the message to preserve detail.
+            CoreError::WebSocketError { kind, msg } => MarketDataError::WebSocketError {
+                msg: format!("[{kind:?}] {msg}"),
+            },
             CoreError::ClientClosed => MarketDataError::ClientClosed,
             CoreError::InvalidParameter { name, reason } => MarketDataError::ApiError {
                 msg: format!("Invalid parameter '{}': {}", name, reason),
