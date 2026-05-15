@@ -12,11 +12,9 @@
 //!   [`RestClient::new`](crate::RestClient::new) to point at a custom host.
 //! - WebSocket: pass a custom URL directly to
 //!   [`ConnectionConfig::new`](crate::websocket::ConnectionConfig::new), or
-//!   use the
-//!   [`fugle_stock_at`](crate::websocket::ConnectionConfig::fugle_stock_at)
-//!   / [`fugle_futopt_at`](crate::websocket::ConnectionConfig::fugle_futopt_at)
-//!   helpers, which take only the host root and append
-//!   `{API_VERSION}/{type}/streaming` for you.
+//!   build via [`WebSocketFactory::new`](crate::WebSocketFactory::new) and
+//!   chain `.base_url(...)` to point at a custom host root; the factory
+//!   appends `{API_VERSION}/{type}/streaming` automatically.
 
 // ---- Full production endpoints (default values used by convenience constructors) ----
 
@@ -40,8 +38,8 @@ pub const REST_BASE_ROOT: &str = "https://api.fugle.tw/marketdata";
 ///
 /// Combine with [`API_VERSION`] and a channel suffix to derive a custom
 /// WebSocket endpoint, or pass directly to
-/// [`ConnectionConfig::fugle_stock_at`](crate::websocket::ConnectionConfig::fugle_stock_at)
-/// / [`fugle_futopt_at`](crate::websocket::ConnectionConfig::fugle_futopt_at).
+/// [`WebSocketFactory::base_url`](crate::WebSocketFactory::base_url) for
+/// staging / mock-server overrides.
 pub const WS_BASE_ROOT: &str = "wss://api.fugle.tw/marketdata";
 
 /// API version segment shared by REST and WebSocket endpoints.

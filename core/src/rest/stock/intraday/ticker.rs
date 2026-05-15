@@ -36,6 +36,10 @@ impl<'a> TickerRequestBuilder<'a> {
     }
 
     /// Execute the request and return the ticker info
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<Ticker, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),

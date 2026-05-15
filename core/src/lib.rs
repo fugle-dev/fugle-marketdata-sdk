@@ -1,33 +1,6 @@
-//! marketdata-core: Core library for Fubon market data streaming
-//!
-//! This crate provides:
-//! - Error types for market data operations
-//! - Data models matching official Fugle marketdata SDK structures
-//! - Async runtime for REST and WebSocket clients
-//! - Stock and FutOpt (futures/options) market data support
-//! - FFI bindings for Python and Node.js (Phase 6)
-//!
-//! # Stock Subscription Example
-//!
-//! ```rust
-//! use marketdata_core::{Quote, Trade, Channel, websocket::channels::StockSubscription};
-//!
-//! // Create a WebSocket subscription
-//! let sub = StockSubscription::new(Channel::Trades, "2330");
-//! ```
-//!
-//! # FutOpt Subscription Example
-//!
-//! ```rust
-//! use marketdata_core::{FutOptChannel, FutOptSubscription};
-//!
-//! // Create a futures subscription
-//! let sub = FutOptSubscription::new(FutOptChannel::Trades, "TXF202502");
-//!
-//! // After-hours trading
-//! let ah_sub = FutOptSubscription::new(FutOptChannel::Books, "MXFC4")
-//!     .with_after_hours(true);
-//! ```
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![doc = include_str!("../README.md")]
+#![deny(missing_docs, rustdoc::broken_intra_doc_links, clippy::missing_errors_doc)]
 
 pub mod errors;
 pub mod models;

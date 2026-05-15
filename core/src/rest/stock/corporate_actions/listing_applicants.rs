@@ -44,6 +44,10 @@ impl<'a> ListingApplicantsRequestBuilder<'a> {
     }
 
     /// Execute the request and return listing applicants response
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<ListingApplicantsResponse, MarketDataError> {
         // Build URL
         let mut url = format!(

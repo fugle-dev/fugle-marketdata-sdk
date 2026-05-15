@@ -10,8 +10,8 @@
 //! Events flow over `std::sync::mpsc::sync_channel(N)` where `N` is the
 //! per-client `event_buffer` (default
 //! [`DEFAULT_EVENT_BUFFER`](crate::websocket::DEFAULT_EVENT_BUFFER)). The
-//! channel is **drop-newest**: when full, [`emit_event`] discards the
-//! incoming event rather than blocking the network task. This is the only
+//! channel is **drop-newest**: when full, `emit_event` (internal) discards
+//! the incoming event rather than blocking the network task. This is the only
 //! safe choice because `std::sync::mpsc` does not expose receiver-side
 //! access to the sender; switching to a primitive that does (e.g.
 //! `tokio::sync::broadcast`) would break the `events()` /
@@ -60,13 +60,19 @@ pub enum ConnectionState {
     /// Connected and authenticated
     Connected,
     /// Reconnecting after disconnection
-    Reconnecting { attempt: u32 },
+    Reconnecting {
+        /// Current attempt number (1-indexed).
+        attempt: u32,
+    },
     /// Connection closed. `intent` mirrors the matching
     /// [`ConnectionEvent::Disconnected`] field so state inspection by the
     /// caller does not lose classification information.
     Closed {
+        /// WebSocket close code, if the peer supplied one.
         code: Option<u16>,
+        /// Human-readable close reason (may be empty).
         reason: String,
+        /// Who initiated the disconnect.
         intent: DisconnectIntent,
     },
 }
@@ -90,7 +96,10 @@ pub enum ConnectionEvent {
     /// Authentication successful
     Authenticated,
     /// Authentication rejected by the server (parallels old SDKs' `unauthenticated` event)
-    Unauthenticated { message: String },
+    Unauthenticated {
+        /// Server-provided rejection message.
+        message: String,
+    },
     /// Connection closed.
     ///
     /// `intent` classifies the originator: [`Client`](DisconnectIntent::Client)
@@ -98,21 +107,38 @@ pub enum ConnectionEvent {
     /// peer Close frame, [`Network`](DisconnectIntent::Network) for
     /// transport errors / EOF / heartbeat timeout.
     Disconnected {
+        /// WebSocket close code, if the peer supplied one.
         code: Option<u16>,
+        /// Human-readable close reason (may be empty).
         reason: String,
+        /// Who initiated the disconnect.
         intent: DisconnectIntent,
     },
     /// Reconnection attempt started
-    Reconnecting { attempt: u32 },
+    Reconnecting {
+        /// Current attempt number (1-indexed).
+        attempt: u32,
+    },
     /// Reconnection failed after max attempts
-    ReconnectFailed { attempts: u32 },
+    ReconnectFailed {
+        /// Total attempts performed before giving up.
+        attempts: u32,
+    },
     /// Heartbeat timeout: no inbound frame received within the configured
     /// `heartbeat_timeout` window. Emitted by the dispatch loop when the
     /// read-site timeout fires; the dispatch loop returns immediately
     /// afterwards, which lets the reconnect path take over.
-    HeartbeatTimeout { elapsed: Duration },
+    HeartbeatTimeout {
+        /// Wall-clock interval that elapsed since the last inbound frame.
+        elapsed: Duration,
+    },
     /// Error occurred
-    Error { message: String, code: i32 },
+    Error {
+        /// Diagnostic message describing the error.
+        message: String,
+        /// Numeric error code (mirrors [`MarketDataError::to_error_code`](crate::MarketDataError::to_error_code)).
+        code: i32,
+    },
 }
 
 /// Emit a [`ConnectionEvent`] on the bounded event channel.

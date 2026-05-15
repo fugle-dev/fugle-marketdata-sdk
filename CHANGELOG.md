@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.4.1] - 2026-05-15
+
+Documentation-policy and publish-readiness pass. No runtime changes; no
+breaking API changes.
+
+### Added
+
+- **Declared MSRV: `rust-version = "1.82"`** in `core/Cargo.toml`. New
+  `rust-core-msrv` CI job builds with Rust 1.82 to guard the contract.
+- **Strict documentation lints** at crate root: `#![deny(missing_docs,
+  rustdoc::broken_intra_doc_links, clippy::missing_errors_doc)]`.
+  Backfilled doc comments and `# Errors` sections across the public API.
+- **README is now the crate-level rustdoc** via
+  `#![doc = include_str!("../README.md")]`. README code blocks tagged
+  `rust,ignore` so doctests stay green.
+- **`docs.rs` renders all features with feature badges.**
+  `[package.metadata.docs.rs]` switched to `all-features = true` plus
+  `--cfg docsrs`; `aio` and other `tokio-comp`/`tracing`-gated items
+  carry `#[cfg_attr(docsrs, doc(cfg(...)))]`.
+- **`check-cfg` declaration** for the `python` and `js` feature flags
+  used by the FFI binding crates, silencing the `unexpected_cfgs` warnings
+  that previously polluted `cargo build`/`cargo doc` output.
+
+### Internal
+
+- Auto-fixed 21 `elided_named_lifetimes` warnings via `cargo fix`.
+- Tagged `aio::WebSocketClient::send_text` as `#[allow(dead_code)]` with
+  a `reason` (kept for future direct-frame test harness).
+
 ## [Rust 0.4.0] - TBD
 
 Production-readiness pass driven by the `monitor` integration: opt-in

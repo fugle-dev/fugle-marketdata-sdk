@@ -68,6 +68,10 @@ impl ReconnectionConfig {
     /// returned config has `enabled: true`. To get a disabled config (e.g.
     /// to fall back to "no reconnect at all") use [`ReconnectionConfig::disabled`]
     /// or `ReconnectionConfig::default()`.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn new(
         max_attempts: u32,
         initial_delay: Duration,

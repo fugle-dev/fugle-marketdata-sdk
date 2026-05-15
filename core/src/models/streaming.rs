@@ -33,6 +33,7 @@ pub enum StreamMessage {
 
     /// Subscription confirmed
     Subscribed {
+        /// Subscription confirmation payload.
         #[serde(flatten)]
         data: SubscribedData,
     },
@@ -61,12 +62,14 @@ pub enum StreamMessage {
 
     /// Error event
     Error {
+        /// Server-supplied error details.
         #[serde(flatten)]
         data: ErrorData,
     },
 
     /// Pong response (health check)
     Pong {
+        /// Optional server-reported connection state (e.g. `"alive"`).
         #[serde(default)]
         state: Option<String>,
     },

@@ -44,6 +44,10 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
     }
 
     /// Execute the request and return capital changes response
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<CapitalChangesResponse, MarketDataError> {
         // Build URL
         let mut url = format!(

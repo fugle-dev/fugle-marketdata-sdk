@@ -41,7 +41,7 @@ impl<'a> TechnicalClient<'a> {
     ///     .period(20)
     ///     .send()?;
     /// ```
-    pub fn sma(&self) -> SmaRequestBuilder {
+    pub fn sma(&self) -> SmaRequestBuilder<'_> {
         SmaRequestBuilder::new(self.client)
     }
 
@@ -54,7 +54,7 @@ impl<'a> TechnicalClient<'a> {
     ///     .period(14)
     ///     .send()?;
     /// ```
-    pub fn rsi(&self) -> RsiRequestBuilder {
+    pub fn rsi(&self) -> RsiRequestBuilder<'_> {
         RsiRequestBuilder::new(self.client)
     }
 
@@ -67,7 +67,7 @@ impl<'a> TechnicalClient<'a> {
     ///     .period(9)
     ///     .send()?;
     /// ```
-    pub fn kdj(&self) -> KdjRequestBuilder {
+    pub fn kdj(&self) -> KdjRequestBuilder<'_> {
         KdjRequestBuilder::new(self.client)
     }
 
@@ -82,7 +82,7 @@ impl<'a> TechnicalClient<'a> {
     ///     .signal(9)
     ///     .send()?;
     /// ```
-    pub fn macd(&self) -> MacdRequestBuilder {
+    pub fn macd(&self) -> MacdRequestBuilder<'_> {
         MacdRequestBuilder::new(self.client)
     }
 
@@ -96,7 +96,7 @@ impl<'a> TechnicalClient<'a> {
     ///     .stddev(2.0)
     ///     .send()?;
     /// ```
-    pub fn bb(&self) -> BbRequestBuilder {
+    pub fn bb(&self) -> BbRequestBuilder<'_> {
         BbRequestBuilder::new(self.client)
     }
 }

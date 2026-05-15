@@ -1,7 +1,8 @@
 [package]
 name = "fugle-marketdata"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
+rust-version = "1.82"
 license.workspace = true
 description = "Rust SDK for Fugle market data — REST and WebSocket clients for Taiwan stock, futures, and options"
 readme = "README.md"

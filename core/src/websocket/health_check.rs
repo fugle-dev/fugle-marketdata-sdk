@@ -71,6 +71,10 @@ impl HealthCheckConfig {
     /// Note: this only enforces a floor, not a value that's actually
     /// safe against the live server's heartbeat period. See the
     /// constant's docs.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn with_timeout(timeout: Duration) -> Result<Self, MarketDataError> {
         if timeout < Duration::from_millis(MIN_HEARTBEAT_TIMEOUT_MS) {
             return Err(MarketDataError::ConfigError(format!(

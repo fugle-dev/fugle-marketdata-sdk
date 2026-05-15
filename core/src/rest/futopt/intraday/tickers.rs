@@ -54,6 +54,10 @@ impl<'a> TickersRequestBuilder<'a> {
     }
 
     /// Execute the request and return the tickers
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<Vec<FutOptTicker>, MarketDataError> {
         // type is required for tickers endpoint
         let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(

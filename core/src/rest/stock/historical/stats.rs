@@ -24,6 +24,10 @@ impl<'a> StatsRequestBuilder<'a> {
     }
 
     /// Execute the request and return the stats response
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<StatsResponse, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),

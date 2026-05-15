@@ -29,7 +29,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 ### REST API
 
-```rust
+```rust,ignore
 use marketdata_core::{RestClient, Auth};
 
 fn main() -> Result<(), marketdata_core::MarketDataError> {
@@ -68,7 +68,7 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
 
 ### WebSocket Streaming
 
-```rust
+```rust,ignore
 use marketdata_core::{
     AuthRequest, Channel, WebSocketClient,
     websocket::{ConnectionConfig, ConnectionEvent},
@@ -138,7 +138,7 @@ async fn main() -> Result<(), marketdata_core::MarketDataError> {
 
 Three authentication methods are supported:
 
-```rust
+```rust,ignore
 use marketdata_core::Auth;
 
 // 1. API Key (most common)
@@ -153,7 +153,7 @@ let auth = Auth::SdkToken("your-sdk-token".to_string());
 
 For WebSocket:
 
-```rust
+```rust,ignore
 use marketdata_core::AuthRequest;
 
 let auth = AuthRequest::with_api_key("your-api-key");
@@ -167,7 +167,7 @@ let auth = AuthRequest::with_sdk_token("your-sdk-token");
 
 Control WebSocket automatic reconnection behavior with exponential backoff:
 
-```rust
+```rust,ignore
 use marketdata_core::websocket::ReconnectionConfig;
 use std::time::Duration;
 
@@ -198,7 +198,7 @@ background task, no atomic timestamps, no protocol-level pings. The dispatch
 loop wraps each `ws_read.next()` in `tokio::time::timeout(heartbeat_timeout, ...)`
 and emits `ConnectionEvent::HeartbeatTimeout` when the timer fires.
 
-```rust
+```rust,ignore
 use marketdata_core::websocket::HealthCheckConfig;
 use std::time::Duration;
 
@@ -230,7 +230,7 @@ max_missed_pongs)?`.
 
 All configuration constants are exported from `lib.rs` for use in binding layers:
 
-```rust
+```rust,ignore
 // Reconnection defaults
 pub const DEFAULT_MAX_ATTEMPTS: u32 = 5;
 pub const DEFAULT_INITIAL_DELAY_MS: u64 = 1000;
@@ -247,7 +247,7 @@ pub const MIN_HEARTBEAT_TIMEOUT_MS: u64 = 5000;
 
 All operations return `Result<T, MarketDataError>`:
 
-```rust
+```rust,ignore
 use marketdata_core::MarketDataError;
 
 match client.stock().intraday().quote().symbol("2330").send() {

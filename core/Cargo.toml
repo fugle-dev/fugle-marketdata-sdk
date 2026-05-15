@@ -1,7 +1,8 @@
 [package]
 name = "fugle-marketdata-core"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
+rust-version = "1.82"
 license.workspace = true
 description = "Internal kernel for the Fugle market data SDK. End users should depend on `fugle-marketdata` instead."
 readme = "README.md"
@@ -68,8 +69,15 @@ tokio-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"] }
 futures-util.workspace = true
 
 [package.metadata.docs.rs]
-features = ["tokio-comp"]
+all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+# `python` and `js` are feature flags declared on the FFI binding crates
+# (py/, js/) that re-export this crate's `cfg_attr(feature = "python", ...)`
+# annotations. They're not features of the core crate itself, so declare
+# them here so `check-cfg` does not flag every annotation site.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("python", "js"))'] }
 
 [[bench]]
 name = "rest_latency"

@@ -53,6 +53,10 @@ impl RestClient {
     /// against public Fugle endpoints.
     ///
     /// Returns a `ConfigError` if the PEM in `tls.root_cert_pem` is malformed.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn with_tls(auth: Auth, tls: TlsConfig) -> Result<Self, MarketDataError> {
         let tls_config = build_rustls_config(&tls)?;
         let builder = ureq::AgentBuilder::new()
@@ -130,7 +134,7 @@ impl RestClient {
     /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
     /// let stock_client = client.stock();
     /// ```
-    pub fn stock(&self) -> StockClient {
+    pub fn stock(&self) -> StockClient<'_> {
         StockClient { client: self }
     }
 
@@ -143,7 +147,7 @@ impl RestClient {
     /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
     /// let futopt_client = client.futopt();
     /// ```
-    pub fn futopt(&self) -> super::futopt::FutOptClient {
+    pub fn futopt(&self) -> super::futopt::FutOptClient<'_> {
         super::futopt::FutOptClient { client: self }
     }
 
@@ -272,7 +276,7 @@ impl<'a> CorporateActionsClient<'a> {
     /// let changes = client.stock().corporate_actions().capital_changes().send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn capital_changes(&self) -> crate::rest::stock::corporate_actions::CapitalChangesRequestBuilder {
+    pub fn capital_changes(&self) -> crate::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'_> {
         crate::rest::stock::corporate_actions::CapitalChangesRequestBuilder::new(self.client)
     }
 
@@ -286,7 +290,7 @@ impl<'a> CorporateActionsClient<'a> {
     /// let dividends = client.stock().corporate_actions().dividends().send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn dividends(&self) -> crate::rest::stock::corporate_actions::DividendsRequestBuilder {
+    pub fn dividends(&self) -> crate::rest::stock::corporate_actions::DividendsRequestBuilder<'_> {
         crate::rest::stock::corporate_actions::DividendsRequestBuilder::new(self.client)
     }
 
@@ -300,7 +304,7 @@ impl<'a> CorporateActionsClient<'a> {
     /// let applicants = client.stock().corporate_actions().listing_applicants().send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn listing_applicants(&self) -> crate::rest::stock::corporate_actions::ListingApplicantsRequestBuilder {
+    pub fn listing_applicants(&self) -> crate::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'_> {
         crate::rest::stock::corporate_actions::ListingApplicantsRequestBuilder::new(self.client)
     }
 }
@@ -325,7 +329,7 @@ impl<'a> HistoricalClient<'a> {
     ///     .send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn candles(&self) -> crate::rest::stock::historical::HistoricalCandlesRequestBuilder {
+    pub fn candles(&self) -> crate::rest::stock::historical::HistoricalCandlesRequestBuilder<'_> {
         crate::rest::stock::historical::HistoricalCandlesRequestBuilder::new(self.client)
     }
 
@@ -341,7 +345,7 @@ impl<'a> HistoricalClient<'a> {
     ///     .send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn stats(&self) -> crate::rest::stock::historical::StatsRequestBuilder {
+    pub fn stats(&self) -> crate::rest::stock::historical::StatsRequestBuilder<'_> {
         crate::rest::stock::historical::StatsRequestBuilder::new(self.client)
     }
 }
@@ -362,7 +366,7 @@ impl<'a> IntradayClient<'a> {
     /// let quote = client.stock().intraday().quote().symbol("2330").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn quote(&self) -> crate::rest::stock::intraday::QuoteRequestBuilder {
+    pub fn quote(&self) -> crate::rest::stock::intraday::QuoteRequestBuilder<'_> {
         crate::rest::stock::intraday::QuoteRequestBuilder::new(self.client)
     }
 
@@ -376,7 +380,7 @@ impl<'a> IntradayClient<'a> {
     /// let ticker = client.stock().intraday().ticker().symbol("2330").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn ticker(&self) -> crate::rest::stock::intraday::TickerRequestBuilder {
+    pub fn ticker(&self) -> crate::rest::stock::intraday::TickerRequestBuilder<'_> {
         crate::rest::stock::intraday::TickerRequestBuilder::new(self.client)
     }
 
@@ -390,7 +394,7 @@ impl<'a> IntradayClient<'a> {
     /// let tickers = client.stock().intraday().tickers().typ("EQUITY").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn tickers(&self) -> crate::rest::stock::intraday::TickersRequestBuilder {
+    pub fn tickers(&self) -> crate::rest::stock::intraday::TickersRequestBuilder<'_> {
         crate::rest::stock::intraday::TickersRequestBuilder::new(self.client)
     }
 
@@ -404,7 +408,7 @@ impl<'a> IntradayClient<'a> {
     /// let candles = client.stock().intraday().candles().symbol("2330").timeframe("5").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn candles(&self) -> crate::rest::stock::intraday::CandlesRequestBuilder {
+    pub fn candles(&self) -> crate::rest::stock::intraday::CandlesRequestBuilder<'_> {
         crate::rest::stock::intraday::CandlesRequestBuilder::new(self.client)
     }
 
@@ -418,7 +422,7 @@ impl<'a> IntradayClient<'a> {
     /// let trades = client.stock().intraday().trades().symbol("2330").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn trades(&self) -> crate::rest::stock::intraday::TradesRequestBuilder {
+    pub fn trades(&self) -> crate::rest::stock::intraday::TradesRequestBuilder<'_> {
         crate::rest::stock::intraday::TradesRequestBuilder::new(self.client)
     }
 
@@ -432,7 +436,7 @@ impl<'a> IntradayClient<'a> {
     /// let volumes = client.stock().intraday().volumes().symbol("2330").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn volumes(&self) -> crate::rest::stock::intraday::VolumesRequestBuilder {
+    pub fn volumes(&self) -> crate::rest::stock::intraday::VolumesRequestBuilder<'_> {
         crate::rest::stock::intraday::VolumesRequestBuilder::new(self.client)
     }
 }

@@ -59,6 +59,10 @@ fn system_root_store() -> &'static Arc<RootCertStore> {
 /// a config using the OS trust store loaded once into a process-wide
 /// `RootCertStore`. ureq's rustls integration and tokio-tungstenite's
 /// `Connector::Rustls` both consume this `Arc<ClientConfig>`.
+///
+/// # Errors
+/// Returns [`MarketDataError`] on parse, transport, protocol, deserialization,
+/// validation, or peer-initiated failures.
 pub fn build_rustls_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, MarketDataError> {
     install_crypto_provider();
 

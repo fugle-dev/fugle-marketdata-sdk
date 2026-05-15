@@ -56,6 +56,10 @@ impl<'a> ProductsRequestBuilder<'a> {
     }
 
     /// Execute the request and return the products response
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<ProductsResponse, MarketDataError> {
         // type is required for products endpoint
         let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(

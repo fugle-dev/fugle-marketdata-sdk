@@ -38,6 +38,27 @@ jobs:
         continue-on-error: true
 
   # ============================================================
+  # MSRV verification (declared rust-version in core/Cargo.toml)
+  # ============================================================
+  rust-core-msrv:
+    name: Rust Core MSRV (1.82)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.82
+        uses: dtolnay/rust-toolchain@1.82
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: rust-core-msrv
+
+      - name: Build core with all features on MSRV toolchain
+        run: cargo build --all-features -p fugle-marketdata-core
+
+  # ============================================================
   # Python Binding Tests
   # ============================================================
   python-tests:
@@ -322,7 +343,7 @@ jobs:
   # ============================================================
   test-summary:
     name: Test Summary
-    needs: [rust-core, python-tests, nodejs-tests, csharp-tests, go-tests, java-tests]
+    needs: [rust-core, rust-core-msrv, python-tests, nodejs-tests, csharp-tests, go-tests, java-tests]
     runs-on: ubuntu-latest
     if: always()
 
@@ -331,6 +352,7 @@ jobs:
         run: |
           echo "Test Results:"
           echo "  Rust Core: ${{ needs.rust-core.result }}"
+          echo "  Rust Core MSRV: ${{ needs.rust-core-msrv.result }}"
           echo "  Python: ${{ needs.python-tests.result }}"
           echo "  Node.js: ${{ needs.nodejs-tests.result }}"
           echo "  C#: ${{ needs.csharp-tests.result }}"
@@ -340,6 +362,7 @@ jobs:
       - name: Fail if any tests failed
         if: |
           needs.rust-core.result == 'failure' ||
+          needs.rust-core-msrv.result == 'failure' ||
           needs.python-tests.result == 'failure' ||
           needs.nodejs-tests.result == 'failure' ||
           needs.csharp-tests.result == 'failure' ||

@@ -48,6 +48,10 @@ impl MessageReceiver {
     /// - `Ok(Some(msg))` if message received within timeout
     /// - `Ok(None)` if timeout elapsed with no message
     /// - `Err` if channel closed
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn receive_timeout(
         &self,
         timeout: Duration,

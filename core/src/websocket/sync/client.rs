@@ -151,6 +151,10 @@ impl WebSocketClient {
 
     /// Connect to the WebSocket server and authenticate. Blocks until either
     /// authentication succeeds or fails.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.sync.connect", skip(self))
@@ -239,6 +243,10 @@ impl WebSocketClient {
     ///
     /// See [`shutdown_with_timeout`](Self::shutdown_with_timeout) for
     /// detailed sequencing — this is a thin wrapper.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.sync.disconnect", skip(self))
@@ -266,6 +274,10 @@ impl WebSocketClient {
     /// `timeout_dur` of zero is valid and behaves as "fire-and-forget":
     /// the call returns immediately, the supervisor exits in the
     /// background.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.sync.shutdown_with_timeout", skip(self))
@@ -329,6 +341,10 @@ impl WebSocketClient {
     }
 
     /// Force-close without waiting for the supervisor.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn force_close(&self) -> Result<(), MarketDataError> {
         self.shared.should_stop.store(true, Ordering::SeqCst);
         *self.shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = None;
@@ -355,6 +371,10 @@ impl WebSocketClient {
     }
 
     /// Subscribe to a stock-domain stream.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.sync.subscribe", skip(self, sub))
@@ -379,6 +399,10 @@ impl WebSocketClient {
     }
 
     /// Subscribe to a FutOpt-domain stream.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn subscribe_futopt(
         &self,
         sub: crate::websocket::channels::FutOptSubscription,
@@ -399,6 +423,10 @@ impl WebSocketClient {
     }
 
     /// Unsubscribe by server id or local key.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.sync.unsubscribe", skip(self, ids))
@@ -476,6 +504,10 @@ impl WebSocketClient {
 
     /// Manually reconnect. Calls disconnect() then connect() — simpler and
     /// safer than poking the supervisor.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn reconnect(&self) -> Result<(), MarketDataError> {
         if self.is_closed() {
             return Err(MarketDataError::ClientClosed);
@@ -497,6 +529,10 @@ impl WebSocketClient {
     }
 
     /// Send an arbitrary WebSocket request frame.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub fn send(&self, request: WebSocketRequest) -> Result<(), MarketDataError> {
         if self.is_closed() {
             return Err(MarketDataError::ClientClosed);

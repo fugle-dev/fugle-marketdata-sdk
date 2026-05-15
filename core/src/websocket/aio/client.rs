@@ -578,6 +578,10 @@ impl WebSocketClient {
     /// A zero timeout still sends the Close frame on a best-effort basis
     /// before forcibly aborting the background tasks, so this call is
     /// always safe to use as the only cleanup step.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.shutdown_with_timeout", skip(self))
@@ -711,6 +715,10 @@ impl WebSocketClient {
     /// Force close without waiting for handshake
     ///
     /// Use when graceful close is not possible or times out.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub async fn force_close(&self) -> Result<(), MarketDataError> {
         // Abort dispatch task without waiting (read-site liveness timeout
         // tears down with it; no separate health-check task to abort).
@@ -766,7 +774,7 @@ impl WebSocketClient {
 
     /// Subscribe to a stock streaming channel.
     ///
-    /// Accepts a [`StockSubscription`] carrying single or batch symbols and
+    /// Accepts a [`StockSubscription`](crate::StockSubscription) carrying single or batch symbols and
     /// optional `intraday_odd_lot` modifier. On the wire the request is sent
     /// as one frame (`{channel, symbol, ...}` for single,
     /// `{channel, symbols: [...], ...}` for batch). Internally, batch
@@ -809,6 +817,10 @@ impl WebSocketClient {
     /// Mirror of [`subscribe`](Self::subscribe) for the FutOpt domain. Same
     /// single/batch semantics; the modifier is `after_hours` instead of
     /// `intraday_odd_lot`.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
+    /// validation, or peer-initiated failures.
     pub async fn subscribe_futopt(
         &self,
         sub: crate::websocket::channels::FutOptSubscription,
@@ -974,6 +986,7 @@ impl WebSocketClient {
     /// Send raw text message to WebSocket
     ///
     /// Used internally for sending subscription requests
+    #[allow(dead_code, reason = "kept for future direct-frame test harness")]
     pub(crate) async fn send_text(&self, text: &str) -> Result<(), MarketDataError> {
         self.enqueue_write(text.to_string()).await
     }

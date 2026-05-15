@@ -14,51 +14,86 @@ use thiserror::Error;
 pub enum MarketDataError {
     /// Invalid symbol format or unsupported symbol
     #[error("Invalid symbol: {symbol}")]
-    InvalidSymbol { symbol: String },
+    InvalidSymbol {
+        /// The offending symbol string that failed validation.
+        symbol: String,
+    },
 
     /// Invalid or missing parameter
     #[error("Invalid parameter '{name}': {reason}")]
-    InvalidParameter { name: String, reason: String },
+    InvalidParameter {
+        /// Parameter name that failed validation.
+        name: String,
+        /// Human-readable explanation of why the parameter was rejected.
+        reason: String,
+    },
 
     /// JSON deserialization failed
     #[error("Deserialization failed: {source}")]
     DeserializationError {
+        /// Underlying `serde_json` error.
         #[from]
         source: serde_json::Error,
     },
 
     /// Runtime operation failed
     #[error("Runtime error: {msg}")]
-    RuntimeError { msg: String },
+    RuntimeError {
+        /// Diagnostic message describing the runtime failure.
+        msg: String,
+    },
 
     /// Configuration error
     #[error("Configuration error: {0}")]
-    ConfigError(String),
+    ConfigError(
+        /// Diagnostic message identifying the misconfiguration.
+        String,
+    ),
 
     /// Connection to server failed
     #[error("Connection error: {msg}")]
-    ConnectionError { msg: String },
+    ConnectionError {
+        /// Diagnostic message describing the connection failure.
+        msg: String,
+    },
 
     /// Authentication failed
     #[error("Authentication error: {msg}")]
-    AuthError { msg: String },
+    AuthError {
+        /// Diagnostic message describing the authentication failure.
+        msg: String,
+    },
 
     /// API returned error response
     #[error("API error (status {status}): {message}")]
-    ApiError { status: u16, message: String },
+    ApiError {
+        /// HTTP status code returned by the server.
+        status: u16,
+        /// Server-provided error message.
+        message: String,
+    },
 
     /// Operation timed out
     #[error("Timeout error: {operation}")]
-    TimeoutError { operation: String },
+    TimeoutError {
+        /// Human-readable name of the operation that timed out.
+        operation: String,
+    },
 
     /// WebSocket error
     #[error("WebSocket error: {msg}")]
-    WebSocketError { msg: String },
+    WebSocketError {
+        /// Diagnostic message describing the WebSocket failure.
+        msg: String,
+    },
 
     /// Inbound activity timed out: no frame received within the
     /// configured `heartbeat_timeout` window.
     #[error("Heartbeat timeout: no inbound frames for {elapsed:?}")]
-    HeartbeatTimeout { elapsed: Duration },
+    HeartbeatTimeout {
+        /// Wall-clock interval that elapsed since the last inbound frame.
+        elapsed: Duration,
+    },
 
     /// Client has been closed and cannot be reused
     #[error("Client already closed")]
@@ -66,7 +101,11 @@ pub enum MarketDataError {
 
     /// Other unexpected errors
     #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    Other(
+        /// Underlying error wrapped via `anyhow`.
+        #[from]
+        anyhow::Error,
+    ),
 }
 
 impl From<tungstenite::Error> for MarketDataError {

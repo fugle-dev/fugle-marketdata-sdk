@@ -40,6 +40,10 @@ pub enum ChannelData {
 /// let json = r#"{"event": "subscribed", "id": "sub-1", "channel": "trades", "symbol": "2330"}"#;
 /// let msg = parse_stream_message(json).unwrap();
 /// ```
+///
+/// # Errors
+/// Returns [`MarketDataError`] on parse, transport, protocol, deserialization,
+/// validation, or peer-initiated failures.
 pub fn parse_stream_message(text: &str) -> Result<StreamMessage, MarketDataError> {
     serde_json::from_str(text).map_err(|e| MarketDataError::DeserializationError {
         source: serde_json::Error::io(std::io::Error::new(
@@ -62,6 +66,10 @@ pub fn parse_stream_message(text: &str) -> Result<StreamMessage, MarketDataError
 /// * `channel` - Channel name (e.g., "trades", "candles")
 /// * `data` - Raw JSON data payload
 /// * `is_snapshot` - Whether this is a snapshot event (affects candles parsing)
+///
+/// # Errors
+/// Returns [`MarketDataError`] on parse, transport, protocol, deserialization,
+/// validation, or peer-initiated failures.
 pub fn parse_channel_data(
     channel: &str,
     data: &Value,

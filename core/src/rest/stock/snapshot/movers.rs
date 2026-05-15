@@ -52,6 +52,10 @@ impl<'a> MoversRequestBuilder<'a> {
     }
 
     /// Execute the request and return the movers response
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<MoversResponse, MarketDataError> {
         let market = self.market.ok_or_else(|| MarketDataError::InvalidParameter {
             name: "market".to_string(),

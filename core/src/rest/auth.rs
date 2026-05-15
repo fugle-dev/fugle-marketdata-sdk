@@ -60,6 +60,7 @@ impl Auth {
     /// let auth = Auth::from_env().expect("set FUGLE_API_KEY");
     /// ```
     pub fn from_env() -> Result<Self, MarketDataError> {
+        #[allow(clippy::type_complexity, reason = "trivial env-var probe table")]
         const VARS: &[(&str, fn(String) -> Auth)] = &[
             ("FUGLE_API_KEY", Auth::ApiKey),
             ("FUGLE_BEARER_TOKEN", Auth::BearerToken),

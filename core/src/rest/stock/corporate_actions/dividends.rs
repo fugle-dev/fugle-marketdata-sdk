@@ -44,6 +44,10 @@ impl<'a> DividendsRequestBuilder<'a> {
     }
 
     /// Execute the request and return dividends response
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError`] on transport, deserialization, validation,
+    /// or non-2xx API failures.
     pub fn send(self) -> Result<DividendsResponse, MarketDataError> {
         // Build URL
         let mut url = format!(

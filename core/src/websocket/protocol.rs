@@ -146,8 +146,10 @@ fn build_sub_key(channel: &str, symbol: &str, after_hours: bool, odd_lot: bool) 
 /// If `msg` is a `subscribed` ack, record the server-assigned id in the
 /// subscription manager. Supports two wire shapes observed in the Fugle
 /// protocol:
-///   - single: top-level `{event, id, channel, symbol, afterHours?, intradayOddLot?}`
-///   - batched: `{event, data: [{id, channel, symbol, afterHours?, intradayOddLot?}, ...]}`
+///
+/// - single: top-level `{event, id, channel, symbol, afterHours?, intradayOddLot?}`
+/// - batched: `{event, data: [{id, channel, symbol, afterHours?, intradayOddLot?}, ...]}`
+///
 /// Any shape we can't parse is silently ignored — the unsub fallback path
 /// (sending the local key as id) keeps the wire format valid even without
 /// a recorded server id.

@@ -25,31 +25,44 @@ impl<'a> KdjRequestBuilder<'a> {
         }
     }
 
+    /// Set the target symbol (e.g. `"2330"`).
     pub fn symbol(mut self, symbol: &str) -> Self {
         self.symbol = Some(symbol.to_string());
         self
     }
 
+    /// Set the `from` date filter (ISO-8601 date, inclusive).
     pub fn from(mut self, from: &str) -> Self {
         self.from = Some(from.to_string());
         self
     }
 
+    /// Set the `to` date filter (ISO-8601 date, inclusive).
     pub fn to(mut self, to: &str) -> Self {
         self.to = Some(to.to_string());
         self
     }
 
+    /// Set the candle timeframe (e.g. `"1"`, `"5"`, `"D"`).
     pub fn timeframe(mut self, timeframe: &str) -> Self {
         self.timeframe = Some(timeframe.to_string());
         self
     }
 
+    /// Set the indicator period (default per Fugle docs).
     pub fn period(mut self, period: u32) -> Self {
         self.period = Some(period);
         self
     }
 
+    /// Execute the request and deserialize the response.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError::InvalidSymbol`] if no symbol was provided,
+    /// [`MarketDataError::ConnectionError`] / [`MarketDataError::TimeoutError`]
+    /// on transport failure, [`MarketDataError::ApiError`] on a non-2xx HTTP
+    /// status, and [`MarketDataError::DeserializationError`] or
+    /// [`MarketDataError::Other`] if the body fails to decode.
     pub fn send(self) -> Result<KdjResponse, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),

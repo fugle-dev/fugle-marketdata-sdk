@@ -36,7 +36,7 @@ impl<'a> SnapshotClient<'a> {
     /// let quotes = client.stock().snapshot().quotes().market("TSE").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn quotes(&self) -> SnapshotQuotesRequestBuilder {
+    pub fn quotes(&self) -> SnapshotQuotesRequestBuilder<'_> {
         SnapshotQuotesRequestBuilder::new(self.client)
     }
 
@@ -50,7 +50,7 @@ impl<'a> SnapshotClient<'a> {
     /// let movers = client.stock().snapshot().movers().market("TSE").direction("up").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn movers(&self) -> MoversRequestBuilder {
+    pub fn movers(&self) -> MoversRequestBuilder<'_> {
         MoversRequestBuilder::new(self.client)
     }
 
@@ -64,7 +64,7 @@ impl<'a> SnapshotClient<'a> {
     /// let actives = client.stock().snapshot().actives().market("TSE").trade("volume").send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    pub fn actives(&self) -> ActivesRequestBuilder {
+    pub fn actives(&self) -> ActivesRequestBuilder<'_> {
         ActivesRequestBuilder::new(self.client)
     }
 }
