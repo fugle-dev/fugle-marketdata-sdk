@@ -46,10 +46,13 @@ pub struct FutOptSubscription {
 impl FutOptSubscription {
     /// Create a FutOpt subscription. Accepts the same input shapes as
     /// [`StockSubscription::new`](super::StockSubscription::new).
+    ///
+    /// The input runs through [`Symbols::normalized`] before being stored,
+    /// so duplicate symbols collapse to one subscription.
     pub fn new(channel: FutOptChannel, symbols: impl Into<Symbols>) -> Self {
         Self {
             channel,
-            symbols: symbols.into(),
+            symbols: symbols.into().normalized(),
             after_hours: false,
         }
     }

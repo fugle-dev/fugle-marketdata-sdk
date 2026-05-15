@@ -91,15 +91,25 @@ impl SubscribeRequest {
     /// Accepts `&str` / `String` / `Vec<String>` / array literal / slice via
     /// `impl Into<Symbols>`. Routes to the `symbol` or `symbols` wire field
     /// based on the variant.
+    ///
+    /// The input runs through [`Symbols::normalized`] before being attached
+    /// to the request, so duplicate symbols collapse to one subscription
+    /// and whitespace-only differences are squashed. Empty inputs produce a
+    /// request with no symbols attached (the dispatch path treats this as
+    /// a no-op on the wire).
     pub fn with_symbols(channel: Channel, symbols: impl Into<Symbols>) -> Self {
-        let spec = symbols.into();
+        let spec = symbols.into().normalized();
         let mut req = Self {
             channel: channel.as_str().to_string(),
             ..Default::default()
         };
         match spec {
             Symbols::Single(s) => req.symbol = Some(s),
-            Symbols::Many(v) => req.symbols = Some(v),
+            Symbols::Many(v) => {
+                if !v.is_empty() {
+                    req.symbols = Some(v);
+                }
+            }
         }
         req
     }
@@ -454,6 +464,45 @@ mod tests {
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["symbol"], "2330");
         assert!(json.get("symbols").is_none());
+    }
+
+    #[test]
+    fn with_symbols_dedups_duplicates() {
+        let req = SubscribeRequest::with_symbols(Channel::Trades, vec!["2330", "2330"]);
+        // Many-of-one collapses to Single during normalization, so the
+        // single-symbol wire path applies.
+        assert_eq!(req.symbol.as_deref(), Some("2330"));
+        assert!(req.symbols.is_none());
+        assert_eq!(req.expand().len(), 1);
+    }
+
+    #[test]
+    fn with_symbols_collapses_whitespace_differences() {
+        let req = SubscribeRequest::with_symbols(Channel::Trades, vec!["2330", " 2330 ", "2330\n"]);
+        assert_eq!(req.symbol.as_deref(), Some("2330"));
+        assert!(req.symbols.is_none());
+        assert_eq!(req.expand().len(), 1);
+    }
+
+    #[test]
+    fn with_symbols_keeps_distinct_in_insertion_order() {
+        let req =
+            SubscribeRequest::with_symbols(Channel::Trades, vec!["2330", "2454", "2317"]);
+        assert_eq!(
+            req.symbols.as_deref(),
+            Some(&["2330".to_string(), "2454".to_string(), "2317".to_string()][..])
+        );
+        assert_eq!(req.expand().len(), 3);
+    }
+
+    #[test]
+    fn with_symbols_empty_input_yields_no_symbol_field() {
+        // After normalization, an all-empty / all-whitespace input collapses
+        // to `Many(vec![])`. We deliberately do NOT populate either wire
+        // field in this case — the caller can detect and short-circuit.
+        let req = SubscribeRequest::with_symbols(Channel::Trades, Vec::<String>::new());
+        assert!(req.symbol.is_none());
+        assert!(req.symbols.is_none());
     }
 
     #[test]

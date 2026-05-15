@@ -39,10 +39,14 @@ impl StockSubscription {
     /// Create a stock subscription. Accepts `&str`, `String`, `Vec<String>`,
     /// array literals (`["A", "B"]`), and slices — see [`Symbols`] for
     /// the full set of `From` impls.
+    ///
+    /// The input runs through [`Symbols::normalized`] before being stored,
+    /// so duplicate symbols collapse to one subscription and whitespace-
+    /// only differences are squashed.
     pub fn new(channel: Channel, symbols: impl Into<Symbols>) -> Self {
         Self {
             channel,
-            symbols: symbols.into(),
+            symbols: symbols.into().normalized(),
             intraday_odd_lot: false,
         }
     }
