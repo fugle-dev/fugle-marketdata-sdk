@@ -1,6 +1,6 @@
 [package]
 name = "fugle-marketdata"
-version = "0.6.0"
+version = "0.7.0"
 edition.workspace = true
 rust-version = "1.82"
 license.workspace = true
@@ -14,8 +14,20 @@ categories = ["api-bindings", "asynchronous", "finance"]
 
 [features]
 default = []
-# Enable the async (tokio) `aio::WebSocketClient` surface.
+# Async (tokio) `aio::WebSocketClient` surface.
 tokio-comp = ["marketdata-core/tokio-comp"]
+# Structured-logging integration via the `tracing` crate. Hot-path `debug!`,
+# lifecycle `info!`/`warn!`, error `warn!`/`error!`, plus
+# `#[tracing::instrument(...)]` on cold-path operations.
+tracing = ["marketdata-core/tracing"]
+# In-process WebSocket mock server (`testing::MockWsServer`) for downstream
+# test crates. Async-only — pulls `tokio-comp` transitively.
+test-utils = ["marketdata-core/test-utils"]
+# Optional `metrics` crate integration. Registers
+# `fugle_marketdata_ws_messages_dropped_total` and
+# `fugle_marketdata_ws_events_dropped_total` counters on the active recorder.
+# Consumers wire their own exporter (typically `metrics-exporter-prometheus`).
+metrics = ["marketdata-core/metrics"]
 
 [dependencies]
 marketdata-core.workspace = true
