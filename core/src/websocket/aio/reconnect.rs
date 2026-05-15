@@ -32,6 +32,42 @@ pub(crate) fn tls_connector_for(
     Ok(Connector::Rustls(client_config))
 }
 
+/// Read frames off `ws_read` until a terminal auth outcome arrives or
+/// `auth_timeout` elapses. Each text frame is forwarded to `message_tx`
+/// so subscribers see the auth payloads, matching the pre-extraction
+/// behaviour. Shared by `WebSocketClient::connect` and `try_connect` so
+/// the auth protocol cannot drift between fresh-connect and reconnect.
+pub(crate) async fn await_auth_response(
+    ws_read: &mut WsStream,
+    message_tx: &tokio_mpsc::Sender<WebSocketMessage>,
+    auth_timeout: Duration,
+) -> Result<Result<(), MarketDataError>, tokio::time::error::Elapsed> {
+    timeout(auth_timeout, async {
+        while let Some(msg_result) = ws_read.next().await {
+            match msg_result {
+                Ok(Message::Text(text)) => {
+                    if let Ok(ws_msg) = serde_json::from_str::<WebSocketMessage>(&text) {
+                        let _ = message_tx.send(ws_msg.clone()).await;
+                        match classify_auth_response(&ws_msg) {
+                            AuthOutcome::Authenticated => return Ok(()),
+                            AuthOutcome::Failed(msg) => {
+                                return Err(MarketDataError::AuthError { msg })
+                            }
+                            AuthOutcome::Pending => {}
+                        }
+                    }
+                }
+                Err(e) => return Err(MarketDataError::from(e)),
+                _ => {}
+            }
+        }
+        Err(MarketDataError::ConnectionError {
+            msg: "Stream closed during authentication".to_string(),
+        })
+    })
+    .await
+}
+
 /// Attempt auto-reconnection after a disconnect.
 ///
 /// Called from within the dispatch loop's spawned task. Takes owned values
@@ -103,11 +139,10 @@ pub(crate) async fn try_reconnect(
                     let mut st = state.write().await;
                     *st = ConnectionState::Reconnecting { attempt };
                 }
-                let delay_ms = d.as_millis() as u64;
                 crate::tracing_compat::warn!(
                     target: "fugle_marketdata::ws",
                     attempt,
-                    delay_ms,
+                    delay_ms = d.as_millis() as u64,
                     "ws reconnect attempt"
                 );
                 emit_event(&event_tx, &events_dropped, ConnectionEvent::Reconnecting {
@@ -275,33 +310,9 @@ pub(crate) async fn try_connect(
         .await
         .map_err(MarketDataError::from)?;
 
-    // Wait for auth response (same pattern as WebSocketClient::connect)
-    let msg_tx = message_tx.clone();
-    let auth_timeout = Duration::from_secs(10);
-    let auth_result = timeout(auth_timeout, async {
-        while let Some(msg_result) = ws_read.next().await {
-            match msg_result {
-                Ok(Message::Text(text)) => {
-                    if let Ok(ws_msg) = serde_json::from_str::<WebSocketMessage>(&text) {
-                        let _ = msg_tx.send(ws_msg.clone()).await;
-                        match classify_auth_response(&ws_msg) {
-                            AuthOutcome::Authenticated => return Ok(()),
-                            AuthOutcome::Failed(msg) => {
-                                return Err(MarketDataError::AuthError { msg })
-                            }
-                            AuthOutcome::Pending => {}
-                        }
-                    }
-                }
-                Err(e) => return Err(MarketDataError::from(e)),
-                _ => {}
-            }
-        }
-        Err(MarketDataError::ConnectionError {
-            msg: "Stream closed during authentication".to_string(),
-        })
-    })
-    .await;
+    // Wait for auth response (shared with WebSocketClient::connect)
+    let auth_result =
+        await_auth_response(&mut ws_read, &message_tx, Duration::from_secs(10)).await;
 
     match auth_result {
         Ok(Ok(())) => {
