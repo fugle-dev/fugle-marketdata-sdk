@@ -13,8 +13,11 @@
 //! - WebSocket: pass a custom URL directly to
 //!   [`ConnectionConfig::new`](crate::websocket::ConnectionConfig::new), or
 //!   build via [`WebSocketFactory::new`](crate::WebSocketFactory::new) and
-//!   chain `.base_url(...)` to point at a custom host root; the factory
-//!   appends `{API_VERSION}/{type}/streaming` automatically.
+//!   chain `.base_url(...)` to point at a custom prefix. As of 0.6.0 the
+//!   prefix MUST include the API version segment
+//!   (e.g. `"wss://example.com/marketdata/v1.0"`) — the factory appends
+//!   only `/{stock|futopt}/streaming`. Aligns with OpenAI / Stripe / AWS
+//!   SDK conventions. See `MIGRATION-0.6.md` for the 0.5.x → 0.6.0 shift.
 
 // ---- Full production endpoints (default values used by convenience constructors) ----
 
@@ -36,10 +39,11 @@ pub const REST_BASE_ROOT: &str = "https://api.fugle.tw/marketdata";
 
 /// WebSocket host root (no version segment).
 ///
-/// Combine with [`API_VERSION`] and a channel suffix to derive a custom
-/// WebSocket endpoint, or pass directly to
-/// [`WebSocketFactory::base_url`](crate::WebSocketFactory::base_url) for
-/// staging / mock-server overrides.
+/// Note: as of 0.6.0,
+/// [`WebSocketFactory::base_url`](crate::WebSocketFactory::base_url)
+/// expects the FULL prefix including [`API_VERSION`]. Pass
+/// `format!("{}/{}", WS_BASE_ROOT, API_VERSION)` or — more idiomatically —
+/// pass the version-included literal directly.
 pub const WS_BASE_ROOT: &str = "wss://api.fugle.tw/marketdata";
 
 /// API version segment shared by REST and WebSocket endpoints.

@@ -13,10 +13,11 @@
 //!     .stock()
 //!     .build();
 //!
-//! // Custom base (staging / mock server). Both stock + futopt share the
-//! // base; the factory derives /v1.0/{type}/streaming for each.
+//! // Custom base (staging / mock server). `base_url` follows the OpenAI /
+//! // Stripe / AWS convention — caller passes the FULL prefix including
+//! // the API version segment; the factory appends only /{type}/streaming.
 //! let factory = WebSocketFactory::new()
-//!     .base_url("wss://staging.fugle.tw/marketdata")
+//!     .base_url("wss://staging.fugle.tw/marketdata/v1.0")
 //!     .auth(AuthRequest::with_api_key("k"));
 //!
 //! let stock_cfg = factory.stock().build();
@@ -99,11 +100,22 @@ impl WebSocketFactory<Unset> {
 }
 
 impl<S> WebSocketFactory<S> {
-    /// Override the WebSocket base URL (host root, no version segment).
+    /// Override the WebSocket base URL.
     ///
-    /// Available in any state. The factory appends
-    /// `/{API_VERSION}/{type}/streaming` to every derived endpoint;
-    /// trailing slashes on `base` are stripped.
+    /// Available in any state. **`base` MUST include the API version
+    /// segment** (e.g. `"wss://api.fugle.tw/marketdata/v1.0"`). The factory
+    /// appends only `/{stock|futopt}/streaming` to whatever you pass;
+    /// it does NOT inject `/{API_VERSION}` for caller-supplied bases.
+    /// Trailing slashes are stripped.
+    ///
+    /// # ⚠️ Silent breaking change in 0.6.0
+    ///
+    /// Pre-0.6.0 this method accepted a host root (no version) and the
+    /// factory silently appended `/{API_VERSION}`. As of 0.6.0 the
+    /// caller owns the full prefix, matching the OpenAI / Stripe / AWS
+    /// SDK convention. Code that worked in 0.5.x will compile against
+    /// 0.6.0 but produce a 404 on first connect because the URL lacks
+    /// the `/v1.0` segment. See `MIGRATION-0.6.md`.
     #[must_use]
     pub fn base_url(mut self, base: impl Into<String>) -> Self {
         self.base_url = Some(base.into());
@@ -111,16 +123,20 @@ impl<S> WebSocketFactory<S> {
     }
 
     fn endpoint_for(&self, kind: &str) -> String {
-        let base = self
-            .base_url
-            .as_deref()
-            .unwrap_or(crate::urls::WS_BASE_ROOT);
-        format!(
-            "{}/{}/{}/streaming",
-            base.trim_end_matches('/'),
-            crate::urls::API_VERSION,
-            kind,
-        )
+        // No-override path: use the canonical full endpoints from
+        // `crate::urls` directly. These already include the version
+        // segment, so no concatenation is needed.
+        let canonical = match kind {
+            "stock" => crate::urls::STOCK_WS,
+            "futopt" => crate::urls::FUTOPT_WS,
+            _ => unreachable!("endpoint_for only called with \"stock\" / \"futopt\""),
+        };
+        match self.base_url.as_deref() {
+            None => canonical.to_string(),
+            // Custom-base path: append only the channel suffix; the caller
+            // owns everything up to and including the version segment.
+            Some(base) => format!("{}/{}/streaming", base.trim_end_matches('/'), kind),
+        }
     }
 }
 
@@ -163,8 +179,9 @@ mod tests {
 
     #[test]
     fn test_custom_base_url_applied_to_stock() {
+        // 0.6.0: base_url MUST include the API version segment.
         let factory = WebSocketFactory::new()
-            .base_url("wss://staging.fugle.tw/marketdata")
+            .base_url("wss://staging.fugle.tw/marketdata/v1.0")
             .auth(AuthRequest::with_api_key("k"));
         let cfg = factory.stock().build();
         assert_eq!(
@@ -176,7 +193,7 @@ mod tests {
     #[test]
     fn test_custom_base_url_applied_to_futopt() {
         let factory = WebSocketFactory::new()
-            .base_url("ws://localhost:8080")
+            .base_url("ws://localhost:8080/v1.0")
             .auth(AuthRequest::with_api_key("k"));
         let cfg = factory.futopt().build();
         assert_eq!(cfg.url, "ws://localhost:8080/v1.0/futopt/streaming");
@@ -185,12 +202,44 @@ mod tests {
     #[test]
     fn test_base_url_strips_trailing_slashes() {
         let factory = WebSocketFactory::new()
-            .base_url("wss://example.com/marketdata///")
+            .base_url("wss://example.com/marketdata/v1.0///")
             .auth(AuthRequest::with_api_key("k"));
         let cfg = factory.stock().build();
         assert_eq!(
             cfg.url,
             "wss://example.com/marketdata/v1.0/stock/streaming",
+        );
+    }
+
+    #[test]
+    fn test_different_api_version_is_honored() {
+        // The factory does NOT force `urls::API_VERSION` onto user-supplied
+        // bases. Whatever segment the caller types is what ends up in the URL.
+        let factory = WebSocketFactory::new()
+            .base_url("wss://api.fugle.tw/marketdata/v2.0")
+            .auth(AuthRequest::with_api_key("k"));
+        let cfg = factory.stock().build();
+        assert_eq!(
+            cfg.url,
+            "wss://api.fugle.tw/marketdata/v2.0/stock/streaming",
+        );
+    }
+
+    #[test]
+    fn test_legacy_host_root_caller_produces_non_canonical_url() {
+        // 0.5.x callers passed a host root without /v1.0 and the SDK
+        // injected the version. 0.6.0 stops doing that — the URL ends up
+        // missing /v1.0 and the gateway responds 404. This test pins the
+        // SILENT BREAKING semantic so MIGRATION-0.6.md stays honest.
+        let factory = WebSocketFactory::new()
+            .base_url("wss://api.fugle.tw/marketdata") // <-- missing /v1.0 on purpose
+            .auth(AuthRequest::with_api_key("k"));
+        let cfg = factory.stock().build();
+        assert_eq!(
+            cfg.url,
+            "wss://api.fugle.tw/marketdata/stock/streaming",
+            "Pinned non-canonical URL — confirms 0.5.x host-root callers \
+             must be updated to include /v1.0 in their base_url string"
         );
     }
 
@@ -210,7 +259,7 @@ mod tests {
     #[test]
     fn test_chained_setters_compose_with_factory() {
         let factory = WebSocketFactory::new()
-            .base_url("wss://staging.fugle.tw/marketdata")
+            .base_url("wss://staging.fugle.tw/marketdata/v1.0")
             .auth(AuthRequest::with_api_key("k"));
         let cfg = factory
             .stock()

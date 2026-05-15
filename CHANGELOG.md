@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.6.0] - 2026-05-15
+
+Minor-version pass: `WebSocketError` structured-kind split, `MockWsServer`
+test utility, and an OpenAI-aligned `WebSocketFactory::base_url` semantic
+shift. See `MIGRATION-0.6.md` for the full migration recipe.
+
+### Breaking — SILENT (no compile error; behaviour changes)
+
+- **`WebSocketFactory::base_url(...)` now expects the full URL prefix
+  including the API version segment.** Pre-0.6.0 the factory silently
+  injected `/v1.0`; 0.6.0 does not. Code that worked in 0.5.x compiles
+  against 0.6.0 but produces a 404 on first connect because the URL
+  lacks `/v1.0`. Aligns with OpenAI / Stripe / AWS / Anthropic SDK
+  conventions. **READ `MIGRATION-0.6.md` §1 BEFORE UPGRADING PROD.**
+
+### Breaking — type-level (compile error)
+
+- **`MarketDataError::WebSocketError` reshape**:
+  `{ msg: String }` → `{ kind: WebSocketErrorKind, msg: String }`. Pattern
+  matches need the new `kind` field (or use `..`).
+- **`is_retryable()` retry verdict refined.**
+  Protocol violations (`Protocol`, `Capacity`, `Utf8`) and TLS failures
+  are now **non-retryable** — they were retryable in 0.5.x. Migration
+  table in `MIGRATION-0.6.md` §2.
+- **`From<tungstenite::Error>` no longer routes to `ConnectionError` /
+  `AuthError` for WebSocket transport failures.** Every upstream variant
+  produces a `MarketDataError::WebSocketError { kind, msg }`.
+
+### Added
+
+- **`WebSocketErrorKind` enum** (`#[non_exhaustive]`): `Protocol`,
+  `Capacity`, `Utf8`, `Tls`, `Io`, `Http(u16)`, `Other`. Re-exported at
+  crate root.
+- **`MarketDataError::source_kind()` mapping refined** to honour
+  `WebSocketErrorKind` — `Io` → `Network`, `Tls` → `Auth`,
+  `Http(429)` → `RateLimit`, etc.
+- **`core::testing::MockWsServer`** behind `features = ["test-utils"]`.
+  In-process WebSocket server with subscribe-ACK echo, frame injection,
+  and server-initiated close. `aio_pair()` convenience constructor pairs
+  it with a pre-configured async client. Replaces hand-rolled echo
+  servers in monitor / py / js / uniffi test suites.
+- **`test-utils` cargo feature** (off by default; pulls `tokio-comp`
+  transitively).
+- **`tests/mock_server_smoke.rs`** — 5-scenario smoke test catching
+  drift between the mock's subscribe protocol and production
+  `protocol.rs`.
+
+### Internal
+
+- `core/src/websocket/factory.rs`: `endpoint_for(kind)` now reads from
+  `urls::STOCK_WS` / `urls::FUTOPT_WS` directly on the no-override path;
+  appends only `/{kind}/streaming` on the override path.
+- `uniffi/src/errors.rs`: shadow `WebSocketError { msg }` retained for
+  FFI ABI stability; conversion at boundary stringifies `kind` into `msg`.
+
 ## [Rust 0.5.1] - 2026-05-15
 
 Polish pass between 0.5.0 (databento patterns) and 0.6.0 (WebSocketError
