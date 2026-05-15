@@ -1,0 +1,348 @@
+name: Test All Bindings
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Cancel in-progress test runs on same PR/branch
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================
+  # Rust Core Tests
+  # ============================================================
+  rust-core:
+    name: Rust Core Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: rust-core
+
+      - name: Run core unit tests
+        run: cargo test -p marketdata-core
+
+      - name: Run core integration tests (structural only)
+        run: cargo test -p marketdata-core --test integration_rest --test integration_websocket
+        continue-on-error: true
+
+  # ============================================================
+  # Python Binding Tests
+  # ============================================================
+  python-tests:
+    name: Python Tests (${{ matrix.os }}, ${{ matrix.python-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.8', '3.11', '3.12']
+        exclude:
+          # Test 3.8 only on Linux, 3.11/3.12 on all platforms
+          - os: macos-latest
+            python-version: '3.8'
+          - os: windows-latest
+            python-version: '3.8'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py -> target
+          shared-key: python-${{ matrix.os }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install maturin pytest pytest-asyncio pytest-timeout pytest-benchmark
+
+      - name: Build Python binding
+        working-directory: py
+        run: maturin develop
+
+      - name: Run structural tests (no API key required)
+        working-directory: py
+        run: |
+          pytest tests/test_api_compatibility.py -v
+          pytest tests/test_rest_async.py -v -k "not integration"
+          pytest tests/test_websocket_async.py -v -k "not integration"
+          pytest tests/test_gil_safety.py -v
+          pytest tests/test_ffi_boundary.py -v
+
+      - name: Run response compatibility tests
+        working-directory: py
+        run: pytest tests/test_response_compatibility.py -v
+
+      - name: Run integration tests (main branch only with API key)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: py
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
+        run: |
+          pytest tests/test_rest_async.py -v -k integration
+          pytest tests/test_websocket_async.py -v -k integration
+        continue-on-error: true
+
+  # ============================================================
+  # Node.js Binding Tests
+  # ============================================================
+  nodejs-tests:
+    name: Node.js Tests (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: ['18', '20', '22']
+        exclude:
+          # Test Node 18 only on Linux, 20/22 on all platforms
+          - os: macos-latest
+            node-version: '18'
+          - os: windows-latest
+            node-version: '18'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: js -> target
+          shared-key: nodejs-${{ matrix.os }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm install
+
+      - name: Build Node.js binding
+        working-directory: js
+        run: npm run build:debug
+
+      - name: Run structural tests (no API key required)
+        working-directory: js
+        run: npm test -- --testPathIgnorePatterns=integration
+
+      - name: Run response compatibility tests
+        working-directory: js
+        run: npm test -- response-compatibility
+
+      - name: Run FFI boundary tests
+        working-directory: js
+        run: npm test -- ffi-boundary
+
+      - name: Run integration tests (main branch only with API key)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: js
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
+        run: npm test -- integration
+        continue-on-error: true
+
+  # ============================================================
+  # C# Binding Tests
+  # ============================================================
+  csharp-tests:
+    name: C# Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: uniffi -> target
+          shared-key: csharp-${{ matrix.os }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build UniFFI library
+        run: cargo build -p marketdata-uniffi
+
+      - name: Run Rust tests
+        run: cargo test -p marketdata-uniffi
+
+      - name: Run C# structural tests
+        working-directory: bindings/csharp
+        run: dotnet test --filter "Category!=Integration"
+
+      - name: Run C# integration tests (main branch only with API key)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: bindings/csharp
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
+        run: dotnet test --filter "Category=Integration"
+        continue-on-error: true
+
+  # ============================================================
+  # Go Binding Tests
+  # ============================================================
+  go-tests:
+    name: Go Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: uniffi -> target
+          shared-key: go-${{ matrix.os }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build UniFFI library
+        run: cargo build -p marketdata-uniffi
+
+      - name: Run Go structural tests
+        working-directory: bindings/go
+        run: go test -v -short ./...
+
+      - name: Run Go integration tests (main branch only with API key)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: bindings/go
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
+        run: go test -v ./...
+        continue-on-error: true
+
+  # ============================================================
+  # Java Binding Tests
+  # ============================================================
+  java-tests:
+    name: Java Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            lib-name: libmarketdata_uniffi.so
+          - os: macos-latest
+            lib-name: libmarketdata_uniffi.dylib
+          - os: windows-latest
+            lib-name: marketdata_uniffi.dll
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: uniffi -> target
+          shared-key: java-${{ matrix.os }}
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install uniffi-bindgen-java
+        run: cargo install uniffi-bindgen-java --git https://github.com/NordSecurity/uniffi-bindgen-java --tag v0.1.0+v0.29.4
+
+      - name: Build UniFFI library
+        run: cargo build -p marketdata-uniffi --release
+
+      - name: Generate Java bindings
+        run: |
+          uniffi-bindgen-java --library target/release/${{ matrix.lib-name }} \
+            --out-dir bindings/java/src/main/java
+
+      - name: Build Java bindings
+        working-directory: bindings/java
+        run: ./gradlew build --no-daemon
+
+      - name: Run Java structural tests
+        working-directory: bindings/java
+        run: ./gradlew test --no-daemon --tests '*Test' --exclude-tag integration
+
+      - name: Run Java integration tests (main branch only with API key)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: bindings/java
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
+        run: ./gradlew test --no-daemon --tests '*Test' --tag integration
+        continue-on-error: true
+
+  # ============================================================
+  # Test Summary
+  # ============================================================
+  test-summary:
+    name: Test Summary
+    needs: [rust-core, python-tests, nodejs-tests, csharp-tests, go-tests, java-tests]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          echo "Test Results:"
+          echo "  Rust Core: ${{ needs.rust-core.result }}"
+          echo "  Python: ${{ needs.python-tests.result }}"
+          echo "  Node.js: ${{ needs.nodejs-tests.result }}"
+          echo "  C#: ${{ needs.csharp-tests.result }}"
+          echo "  Go: ${{ needs.go-tests.result }}"
+          echo "  Java: ${{ needs.java-tests.result }}"
+
+      - name: Fail if any tests failed
+        if: |
+          needs.rust-core.result == 'failure' ||
+          needs.python-tests.result == 'failure' ||
+          needs.nodejs-tests.result == 'failure' ||
+          needs.csharp-tests.result == 'failure' ||
+          needs.go-tests.result == 'failure' ||
+          needs.java-tests.result == 'failure'
+        run: exit 1

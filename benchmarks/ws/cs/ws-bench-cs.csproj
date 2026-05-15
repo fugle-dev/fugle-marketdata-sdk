@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>ws_bench_cs</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj" />
+  </ItemGroup>
+
+  <!-- Copy native library to output directory -->
+  <ItemGroup>
+    <None Include="../../../target/release/libmarketdata_uniffi.dylib" Condition="Exists('../../../target/release/libmarketdata_uniffi.dylib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>libmarketdata_uniffi.dylib</Link>
+    </None>
+    <None Include="../../../target/release/libmarketdata_uniffi.so" Condition="Exists('../../../target/release/libmarketdata_uniffi.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>libmarketdata_uniffi.so</Link>
+    </None>
+    <None Include="../../../target/release/marketdata_uniffi.dll" Condition="Exists('../../../target/release/marketdata_uniffi.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>marketdata_uniffi.dll</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

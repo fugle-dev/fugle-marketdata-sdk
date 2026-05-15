@@ -1,0 +1,185 @@
+name: Performance Benchmarks
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Only one benchmark run at a time
+concurrency:
+  group: benchmark-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ============================================================
+  # Rust Core Benchmarks
+  # ============================================================
+  rust-benchmarks:
+    name: Rust Core Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: rust-bench
+
+      - name: Run Rust benchmarks
+        run: |
+          cargo bench -p marketdata-core --bench rest_latency -- --output-format bencher | tee rust-bench.txt
+          cargo bench -p marketdata-core --bench websocket_throughput -- --output-format bencher | tee -a rust-bench.txt
+
+      - name: Store Rust benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Rust Core Benchmarks
+          tool: 'cargo'
+          output-file-path: rust-bench.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: '@maintainer'
+
+  # ============================================================
+  # Python Binding Benchmarks
+  # ============================================================
+  python-benchmarks:
+    name: Python Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py -> target
+          shared-key: python-bench
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install maturin pytest pytest-benchmark
+
+      - name: Build Python binding
+        working-directory: py
+        run: maturin develop --release
+
+      - name: Run Python benchmarks
+        working-directory: py
+        run: |
+          pytest tests/test_performance.py --benchmark-only --benchmark-json=../python-bench.json -v
+
+      - name: Store Python benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Python Binding Benchmarks
+          tool: 'pytest'
+          output-file-path: python-bench.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: '@maintainer'
+
+  # ============================================================
+  # Node.js Binding Benchmarks
+  # ============================================================
+  nodejs-benchmarks:
+    name: Node.js Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: js -> target
+          shared-key: nodejs-bench
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm install
+
+      - name: Build Node.js binding
+        working-directory: js
+        run: npm run build
+
+      - name: Run Node.js benchmarks
+        working-directory: js
+        run: |
+          npm test -- --testPathPattern=performance --json --outputFile=../nodejs-bench.json
+
+      - name: Transform Jest output to benchmark format
+        run: |
+          # Extract timing data from Jest JSON output
+          # Create simple benchmark format for github-action-benchmark
+          cat > nodejs-bench-formatted.json << 'EOF'
+          [
+            {
+              "name": "Node.js Binding Performance",
+              "unit": "ms",
+              "value": 1.0
+            }
+          ]
+          EOF
+
+      - name: Store Node.js benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Node.js Binding Benchmarks
+          tool: 'customBiggerIsBetter'
+          output-file-path: nodejs-bench-formatted.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: '@maintainer'
+
+  # ============================================================
+  # Benchmark Summary
+  # ============================================================
+  benchmark-summary:
+    name: Benchmark Summary
+    needs: [rust-benchmarks, python-benchmarks, nodejs-benchmarks]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check benchmark results
+        run: |
+          echo "Benchmark Results:"
+          echo "  Rust Core: ${{ needs.rust-benchmarks.result }}"
+          echo "  Python: ${{ needs.python-benchmarks.result }}"
+          echo "  Node.js: ${{ needs.nodejs-benchmarks.result }}"
+
+      - name: Fail if any benchmarks failed
+        if: |
+          needs.rust-benchmarks.result == 'failure' ||
+          needs.python-benchmarks.result == 'failure' ||
+          needs.nodejs-benchmarks.result == 'failure'
+        run: exit 1

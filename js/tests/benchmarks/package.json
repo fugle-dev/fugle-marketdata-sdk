@@ -1,0 +1,8 @@
+{
+  "name": "ws-benchmarks",
+  "private": true,
+  "dependencies": {
+    "@fugle/marketdata": "1.4.2",
+    "ws": "^8.18.0"
+  }
+}

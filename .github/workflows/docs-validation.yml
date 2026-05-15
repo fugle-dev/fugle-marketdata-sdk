@@ -1,0 +1,66 @@
+name: Documentation Validation
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - 'migration/**'
+      - 'examples/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.md'
+      - 'migration/**'
+      - 'examples/**'
+
+jobs:
+  validate-docs:
+    name: Validate Documentation Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install documentation tools
+        run: |
+          npm install -g markdownlint-cli markdown-link-check
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint \
+            '*.md' \
+            'docs/**/*.md' \
+            'py/README.md' \
+            'js/README.md' \
+            'core/README.md' \
+            'uniffi/README.md' \
+            --ignore node_modules \
+            --ignore .planning \
+            --ignore target \
+            --config .markdownlint.json
+
+      - name: Check for deprecated API patterns
+        run: |
+          chmod +x migration/validate-migration.sh
+          ./migration/validate-migration.sh
+
+      - name: Check documentation links
+        run: |
+          # Check key documentation files for broken links
+          if [ -f MIGRATION.md ]; then
+            markdown-link-check MIGRATION.md --config .markdown-link-check.json
+          fi
+          if [ -f docs/configuration.md ]; then
+            markdown-link-check docs/configuration.md --config .markdown-link-check.json
+          fi
+          if [ -f CHANGELOG.md ]; then
+            markdown-link-check CHANGELOG.md --config .markdown-link-check.json
+          fi
+        continue-on-error: true

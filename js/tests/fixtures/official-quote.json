@@ -1,0 +1,106 @@
+{
+  "_comment": "Mock response based on Fugle API documentation - replace with real response when available",
+  "date": "2024-01-15",
+  "symbol": "2330",
+  "name": "台積電",
+  "referencePrice": 595.00,
+  "previousClose": 595.00,
+  "openPrice": 598.00,
+  "openTime": 1705287000000,
+  "highPrice": 602.00,
+  "highTime": 1705290600000,
+  "lowPrice": 596.00,
+  "lowTime": 1705287600000,
+  "closePrice": 600.00,
+  "closeTime": 1705305000000,
+  "avgPrice": 599.50,
+  "change": 5.00,
+  "changePercent": 0.84,
+  "amplitude": 1.01,
+  "lastPrice": 600.00,
+  "lastSize": 100,
+  "bids": [
+    {
+      "price": 599.00,
+      "size": 500
+    },
+    {
+      "price": 598.00,
+      "size": 300
+    },
+    {
+      "price": 597.00,
+      "size": 200
+    },
+    {
+      "price": 596.00,
+      "size": 150
+    },
+    {
+      "price": 595.00,
+      "size": 100
+    }
+  ],
+  "asks": [
+    {
+      "price": 600.00,
+      "size": 400
+    },
+    {
+      "price": 601.00,
+      "size": 250
+    },
+    {
+      "price": 602.00,
+      "size": 180
+    },
+    {
+      "price": 603.00,
+      "size": 120
+    },
+    {
+      "price": 604.00,
+      "size": 80
+    }
+  ],
+  "total": {
+    "tradeValue": 14988750000,
+    "tradeVolume": 25000000,
+    "tradeVolumeAtBid": 12500000,
+    "tradeVolumeAtAsk": 12500000,
+    "transaction": 18500,
+    "time": 1705305000000
+  },
+  "trial": {
+    "trade": 100,
+    "tradeVolume": 50000,
+    "tradeValue": 29975000,
+    "bid": 599.00,
+    "bidVolume": 30000,
+    "ask": 600.00,
+    "askVolume": 25000
+  },
+  "lastTrade": {
+    "bid": 599.00,
+    "bidVolume": 500,
+    "ask": 600.00,
+    "askVolume": 400,
+    "price": 600.00,
+    "size": 100,
+    "time": 1705305000000,
+    "serial": 185000
+  },
+  "lastTrial": {
+    "bid": 599.00,
+    "bidVolume": 30000,
+    "ask": 600.00,
+    "askVolume": 25000,
+    "price": 600.00,
+    "size": 50,
+    "time": 1705305300000,
+    "serial": 1
+  },
+  "isClose": true,
+  "serial": 185000,
+  "lastUpdated": 1705305000000
+}

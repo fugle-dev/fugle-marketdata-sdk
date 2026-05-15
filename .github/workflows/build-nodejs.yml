@@ -1,0 +1,220 @@
+name: Build Node.js Native Addon
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'SemVer version (e.g., 3.0.0 or 3.0.0-rc.10). Injected into package.json before napi build.'
+        required: true
+        type: string
+    outputs:
+      version:
+        description: 'Resolved version used for artifact naming'
+        value: ${{ jobs.version.outputs.version }}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for artifact naming'
+        required: false
+        type: string
+        default: 'dev'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Extract Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve build version
+        id: version
+        run: |
+          TAG="${{ inputs.version }}"
+          if [[ -z "$TAG" || "$TAG" == "dev" ]]; then
+            # Manual workflow_dispatch fallback
+            TAG=$(node -p "require('./js/package.json').version")
+          fi
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+          echo "Resolved npm version: $TAG"
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS x64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+          # macOS ARM64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+          # Linux x64 (glibc)
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+
+          # Linux ARM64 (glibc) - requires cross-compilation
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+
+          # Windows x64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: js -> target
+          shared-key: nodejs-release-${{ matrix.target }}
+
+      # Linux ARM64 cross-compilation setup
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.cross == true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install npm dependencies
+        working-directory: js
+        run: npm ci
+
+      # Build with napi-rs
+      - name: Build native addon
+        working-directory: js
+        run: npm run build -- --target ${{ matrix.target }}
+        env:
+          # For Linux ARM64 cross-compilation
+          CC_aarch64_unknown_linux_gnu: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
+          CXX_aarch64_unknown_linux_gnu: ${{ matrix.cross && 'aarch64-linux-gnu-g++' || '' }}
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: js/*.node
+          if-no-files-found: error
+          retention-days: 7
+
+  # Generate platform package stubs after all builds complete
+  prepare-packages:
+    name: Prepare Platform Packages
+    needs: [build, version]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm ci
+
+      # Inject version BEFORE `napi prepublish` (below) stamps sub-package
+      # manifests. --allow-same-version avoids error on stable builds where
+      # the injected value equals the current package.json literal.
+      - name: Inject version into package.json
+        working-directory: js
+        run: npm version --no-git-tag-version --allow-same-version "${{ needs.version.outputs.version }}"
+
+      # Download all built artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: js/artifacts
+          pattern: bindings-*
+          merge-multiple: false
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find js/artifacts -name "*.node" -type f
+
+      # Move artifacts to expected locations for napi prepublish
+      - name: Organize artifacts
+        run: |
+          mkdir -p js/npm
+          for target_dir in js/artifacts/bindings-*; do
+            target=$(basename "$target_dir" | sed 's/bindings-//')
+            echo "Processing target: $target"
+            mkdir -p "js/npm/$target"
+            cp "$target_dir"/*.node "js/npm/$target/" || true
+          done
+          echo "Organized structure:"
+          find js/npm -name "*.node" -type f
+
+      # Generate platform package stubs
+      - name: Generate platform packages
+        working-directory: js
+        run: |
+          # Copy .node files to root for napi to find
+          for target_dir in npm/*/; do
+            cp "$target_dir"*.node . 2>/dev/null || true
+          done
+
+          # Run napi prepublish to generate optionalDependencies packages
+          npx napi prepublish -t npm
+
+          echo "Generated platform packages:"
+          ls -la npm/ || echo "No npm directory created"
+
+      - name: Upload platform packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: |
+            js/npm/
+            js/*.node
+          if-no-files-found: warn
+          retention-days: 7
+
+  summary:
+    name: Build Summary
+    needs: [build, prepare-packages, version]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## Node.js Native Addon Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Platforms Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS x64 | x86_64-apple-darwin | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS ARM64 | aarch64-apple-darwin | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux x64 | x86_64-unknown-linux-gnu | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux ARM64 | aarch64-unknown-linux-gnu | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows x64 | x86_64-pc-windows-msvc | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY

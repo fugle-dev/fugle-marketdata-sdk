@@ -1,0 +1,47 @@
+[workspace]
+members = ["core", "py", "js", "uniffi", "gui-web/src-tauri", "rust"]
+resolver = "2"
+
+[workspace.package]
+version = "3.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/fugle/fugle-marketdata-sdk"
+homepage = "https://developer.fugle.tw"
+authors = ["Fugle Team"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.49", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Utilities
+futures-util = "0.3"
+url = "2.5"
+
+# Python binding dependencies
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py37"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+
+# Node.js binding dependencies (pinned for Rust 1.87 compatibility: napi 3.4 MSRV=1.82)
+napi = { version = "=3.4.0", features = ["napi8", "async", "serde-json", "tokio_rt"] }
+napi-derive = "=3.3.0"
+napi-build = "=2.2.4"
+
+# UniFFI binding dependencies (for C#, Go, and Java bindings)
+# Note: Keep at 0.28 for uniffi-bindgen-go compatibility (0.4.0 requires 0.28)
+uniffi = { version = "0.28", features = ["cli", "tokio"] }
+libc = "0.2"
+once_cell = "1.19"
+
+# Core library as workspace dependency.
+# `package` maps the alias `marketdata-core` to the actual published crate name.
+# `version` is required for path-deps to be publishable.
+marketdata-core = { path = "core", package = "fugle-marketdata-core", version = "0.3.0" }

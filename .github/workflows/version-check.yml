@@ -1,0 +1,92 @@
+name: Version Check
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'py/pyproject.toml'
+      - 'js/package.json'
+      - 'bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj'
+      - 'bindings/java/build.gradle.kts'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'py/pyproject.toml'
+      - 'js/package.json'
+      - 'bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj'
+      - 'bindings/java/build.gradle.kts'
+
+jobs:
+  check:
+    name: Verify All Package Versions Match
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract workspace version
+        id: workspace
+        run: |
+          VERSION=$(grep -A1 '\[workspace.package\]' Cargo.toml | grep 'version' | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "## Version Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workspace version:** \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check Python version
+        run: |
+          PY_VERSION=$(grep '^version' py/pyproject.toml | cut -d'"' -f2)
+          echo "Python version: $PY_VERSION"
+          if [ "$PY_VERSION" != "${{ steps.workspace.outputs.version }}" ]; then
+            echo "::error file=py/pyproject.toml::Python version $PY_VERSION != workspace ${{ steps.workspace.outputs.version }}"
+            exit 1
+          fi
+          echo "- Python: \`$PY_VERSION\` :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check Node.js version
+        run: |
+          JS_VERSION=$(node -p "require('./js/package.json').version")
+          echo "Node.js version: $JS_VERSION"
+          if [ "$JS_VERSION" != "${{ steps.workspace.outputs.version }}" ]; then
+            echo "::error file=js/package.json::Node.js version $JS_VERSION != workspace ${{ steps.workspace.outputs.version }}"
+            exit 1
+          fi
+          echo "- Node.js: \`$JS_VERSION\` :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check C# version
+        run: |
+          CS_VERSION=$(grep '<Version>' bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')
+          echo "C# version: $CS_VERSION"
+          if [ "$CS_VERSION" != "${{ steps.workspace.outputs.version }}" ]; then
+            echo "::error file=bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj::C# version $CS_VERSION != workspace ${{ steps.workspace.outputs.version }}"
+            exit 1
+          fi
+          echo "- C#: \`$CS_VERSION\` :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check Java version
+        run: |
+          # bindings/java/build.gradle.kts reads the version dynamically from
+          # the `projectVersion` Gradle property at publish time, so there's
+          # no hardcoded literal to diff against the workspace version. The
+          # defensive check below fails loudly if anyone regresses back to a
+          # hardcoded `version = "X.Y.Z"` form (which historically caused
+          # 409 Conflicts on every rc tag).
+          if grep -qE '^version = "[0-9]' bindings/java/build.gradle.kts; then
+            HARDCODED=$(grep -E '^version = "' bindings/java/build.gradle.kts | head -1)
+            echo "::error file=bindings/java/build.gradle.kts::Java version appears hardcoded ($HARDCODED). Use providers.gradleProperty(\"projectVersion\") so release.yml can inject the tag-derived version."
+            exit 1
+          fi
+          if ! grep -q 'gradleProperty("projectVersion")' bindings/java/build.gradle.kts; then
+            echo "::error file=bindings/java/build.gradle.kts::Java version line no longer reads projectVersion property. Expected providers.gradleProperty(\"projectVersion\").getOrElse(...)."
+            exit 1
+          fi
+          echo "- Java: \`dynamic via -PprojectVersion\` :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+
+      - name: All versions match
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Result:** All package versions match workspace version \`${{ steps.workspace.outputs.version }}\` :tada:" >> $GITHUB_STEP_SUMMARY
+          echo "All package versions match workspace version ${{ steps.workspace.outputs.version }}"

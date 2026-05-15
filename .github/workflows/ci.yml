@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      python: ${{ steps.filter.outputs.python }}
+      nodejs: ${{ steps.filter.outputs.nodejs }}
+      csharp: ${{ steps.filter.outputs.csharp }}
+      uniffi: ${{ steps.filter.outputs.uniffi }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            python:
+              - 'py/**'
+              - 'core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            nodejs:
+              - 'js/**'
+              - 'core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            csharp:
+              - 'uniffi/**'
+              - 'core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            uniffi:
+              - 'uniffi/**'
+              - 'bindings/**'
+              - 'core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+
+  python:
+    name: Python Bindings
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
+    uses: ./.github/workflows/python.yml
+
+  nodejs:
+    name: Node.js Bindings
+    needs: changes
+    if: ${{ needs.changes.outputs.nodejs == 'true' }}
+    uses: ./.github/workflows/nodejs.yml
+
+  csharp:
+    name: C# Bindings
+    needs: changes
+    if: ${{ needs.changes.outputs.csharp == 'true' }}
+    uses: ./.github/workflows/csharp.yml
+
+  uniffi:
+    name: UniFFI Bindings (C#, Go)
+    needs: changes
+    if: ${{ needs.changes.outputs.uniffi == 'true' }}
+    uses: ./.github/workflows/uniffi.yml
+
+  version:
+    name: Version Check
+    uses: ./.github/workflows/version-check.yml

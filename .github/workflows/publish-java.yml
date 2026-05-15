@@ -1,0 +1,81 @@
+name: Publish Java to GitHub Packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string to publish (e.g. 3.0.0-rc.3)'
+        required: false
+        default: '3.0.0-dev'
+        type: string
+      dry-run:
+        description: 'Dry run (skip actual publish)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  publish:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Download unified native library artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-all
+          path: native-libs/
+
+      - name: Copy native libraries to resources
+        run: |
+          echo "Creating native resource directories..."
+          mkdir -p bindings/java/src/main/resources/native/linux-x64
+          mkdir -p bindings/java/src/main/resources/native/osx-arm64
+          mkdir -p bindings/java/src/main/resources/native/osx-x64
+          mkdir -p bindings/java/src/main/resources/native/win-x64
+
+          echo "Copying native libraries..."
+          cp native-libs/linux-x64/*.so bindings/java/src/main/resources/native/linux-x64/
+          cp native-libs/osx-arm64/*.dylib bindings/java/src/main/resources/native/osx-arm64/
+          cp native-libs/osx-x64/*.dylib bindings/java/src/main/resources/native/osx-x64/
+          cp native-libs/win-x64/*.dll bindings/java/src/main/resources/native/win-x64/
+
+          echo "Verifying native library structure..."
+          find bindings/java/src/main/resources/native -type f -exec ls -lh {} \;
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Publish to GitHub Packages
+        if: ${{ github.event.inputs.dry-run != 'true' }}
+        working-directory: bindings/java
+        run: ./gradlew publish -PprojectVersion=${{ inputs.version }}
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build package (dry run)
+        if: ${{ github.event.inputs.dry-run == 'true' }}
+        working-directory: bindings/java
+        run: |
+          ./gradlew build -PprojectVersion=${{ inputs.version }}
+          echo "## Java Package (Dry Run)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Package built successfully but not published (dry run mode)" >> $GITHUB_STEP_SUMMARY
+          echo "Version: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,28 @@
+[package]
+name = "marketdata-js"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "NAPI-RS bindings for marketdata-core - Node.js FFI"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core library
+marketdata-core = { workspace = true, features = ["tokio-comp"] }
+
+# NAPI-RS 2.x for Node.js bindings
+napi.workspace = true
+napi-derive.workspace = true
+
+# Async runtime (for WebSocket and spawn_blocking)
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+napi-build.workspace = true

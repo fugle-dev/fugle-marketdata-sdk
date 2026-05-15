@@ -1,0 +1,135 @@
+name: Build Python Wheels
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    outputs:
+      version:
+        description: "Resolved PEP 440 version used for the wheel"
+        value: ${{ jobs.build.outputs.version }}
+  workflow_dispatch:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: 'dev'
+        description: "Version to build (for artifact naming)"
+
+jobs:
+  build:
+    name: Build wheel (${{ matrix.os }}-${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 — builds inside PyPA's manylinux2014 docker image
+          # (CentOS 7, glibc 2.17 baseline), producing a portable wheel
+          # with the manylinux_2_17_x86_64 ABI tag. Covers RHEL 7+,
+          # Debian 10+, Ubuntu 18.04+ — the broadest compatibility so
+          # downstream packages pinning the 2_17 baseline stay happy.
+          #
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: '2_17'
+          # Linux aarch64 — native arm64 runner (ubuntu-24.04-arm, free
+          # for public repos since 2025). Same manylinux2014 baseline.
+          - os: ubuntu-24.04-arm
+            target: aarch64
+            manylinux: '2_17'
+          # macOS Intel — cross-compiled on Apple Silicon runner. The
+          # dedicated `macos-13` Intel runner pool is scarce in GitHub's
+          # hosted fleet and sporadically auto-cancels queued jobs before
+          # they can allocate. Apple's clang toolchain on arm64 supports
+          # targeting x86_64-apple-darwin natively (no emulation, just
+          # linker flags), so we run both mac builds on a single
+          # macos-14 runner with explicit target triples. Same strategy
+          # build-nodejs.yml uses.
+          - os: macos-14
+            target: x86_64-apple-darwin
+          # macOS Apple Silicon — native arm64 on the same runner pool
+          - os: macos-14
+            target: aarch64-apple-darwin
+          # Windows x64
+          - os: windows-latest
+            target: x64
+
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py -> target
+          shared-key: python-release
+
+      # Translate the tag-derived version into PEP 440 form and bake it
+      # into py/pyproject.toml. maturin reads [project] version here,
+      # authoritative over Cargo.toml when present.
+      #
+      #   v3.0.0-rc.10  →  3.0.0rc10   (prerelease)
+      #   v3.0.0        →  3.0.0       (stable, pass-through)
+      #   anything else →  fail-fast (beta/alpha/dev not yet supported)
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ inputs.version }}"
+          if [[ -z "$TAG" || "$TAG" == "dev" ]]; then
+            # Manual workflow_dispatch fallback — use the in-tree workspace value
+            TAG=$(grep -A1 '\[workspace.package\]' Cargo.toml | grep 'version' | cut -d'"' -f2)
+          fi
+          if [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            PY_VERSION=$(echo "$TAG" | sed -E 's/-rc\.([0-9]+)$/rc\1/')
+          else
+            echo "::error::Unsupported version format: $TAG (accepts X.Y.Z or X.Y.Z-rc.N)"
+            exit 1
+          fi
+          echo "version=$PY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved PEP 440 version: $PY_VERSION (from $TAG)"
+
+      - name: Inject version into pyproject.toml
+        shell: bash
+        run: |
+          # sed -i.bak + rm .bak: portable across Linux (GNU sed) and macOS (BSD sed).
+          # Both are in the matrix; GitHub Actions Linux uses GNU, macOS uses BSD.
+          sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"${{ steps.version.outputs.version }}\"/" py/pyproject.toml
+          rm py/pyproject.toml.bak
+
+      # Pinned to v1.51.0 — the floating `@v1` tag is stuck at the 2021
+      # release and its docker-pull path is broken on current runners
+      # (`/usr/bin/docker failed with exit code 1` at action step 585).
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          args: --release -m py/Cargo.toml --out dist
+
+      # Regression guard — if the Linux wheel ever ships without the
+      # manylinux_2_17 ABI tag, fail the build loudly. Historically this
+      # was silently `linux_x86_64` (glibc-locked to the build host),
+      # which broke users on older LTS distros.
+      - name: Assert manylinux ABI tag on Linux wheels
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          ls dist/*.whl
+          if ! ls dist/*manylinux_2_17*.whl 1>/dev/null 2>&1; then
+            echo "::error::Expected manylinux_2_17 wheel but none found"
+            ls dist/
+            exit 1
+          fi
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.target }}
+          path: dist/*.whl
+          retention-days: 5

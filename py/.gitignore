@@ -1,0 +1,11 @@
+# Python binding specific ignores
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.so
+*.dylib
+target/
+
+# Test/dev files (keep in repo for reference, but ignore local variants)
+test_*.local.py

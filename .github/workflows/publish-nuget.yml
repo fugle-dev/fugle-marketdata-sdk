@@ -1,0 +1,84 @@
+name: Publish C# to NuGet
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'SemVer version (e.g., 3.0.0). Passed to dotnet pack as -p:Version.'
+        required: true
+        type: string
+    secrets:
+      NUGET_API_KEY:
+        # See publish-nodejs.yml — optional for fork compatibility, the
+        # stable publish path is gated by `if: channel == stable` upstream.
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to pack (e.g., 3.0.0). Defaults to "dev" for debug dispatches.'
+        required: false
+        type: string
+        default: 'dev'
+      dry-run:
+        description: 'Dry run (skip actual push)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  publish:
+    name: Publish to NuGet
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Download unified native library artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-all
+          path: native-libs/
+
+      - name: Copy native libraries to runtimes
+        run: |
+          echo "Creating runtimes directories..."
+          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/linux-x64/native
+          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/osx-arm64/native
+          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/osx-x64/native
+          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/win-x64/native
+
+          echo "Copying native libraries..."
+          cp native-libs/linux-x64/*.so bindings/csharp/MarketdataUniffi/runtimes/linux-x64/native/
+          cp native-libs/osx-arm64/*.dylib bindings/csharp/MarketdataUniffi/runtimes/osx-arm64/native/
+          cp native-libs/osx-x64/*.dylib bindings/csharp/MarketdataUniffi/runtimes/osx-x64/native/
+          cp native-libs/win-x64/*.dll bindings/csharp/MarketdataUniffi/runtimes/win-x64/native/
+
+          echo "Verifying native library structure..."
+          find bindings/csharp/MarketdataUniffi/runtimes -type f -exec ls -lh {} \;
+
+      - name: Pack NuGet package
+        working-directory: bindings/csharp/MarketdataUniffi
+        run: |
+          dotnet pack -c Release -p:Version=${{ inputs.version }} -o nupkg
+          echo "## NuGet Package" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|------|" >> $GITHUB_STEP_SUMMARY
+          for pkg in nupkg/*.nupkg; do
+            size=$(ls -lh "$pkg" | awk '{print $5}')
+            name=$(basename "$pkg")
+            echo "| $name | $size |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Push to NuGet
+        if: ${{ github.event.inputs.dry-run != 'true' }}
+        run: |
+          dotnet nuget push bindings/csharp/MarketdataUniffi/nupkg/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

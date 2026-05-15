@@ -1,0 +1,60 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.5
+      X-API-KEY:
+      - mock-api-key
+    method: GET
+    uri: https://api.fugle.tw/marketdata/v1.0/stock/intraday/volumes/2330
+  response:
+    body:
+      string: '{"date":"2026-01-30","type":"EQUITY","exchange":"TWSE","market":"TSE","symbol":"2330","data":[{"price":1800,"volume":854,"volumeAtBid":0,"volumeAtAsk":854},{"price":1795,"volume":6886,"volumeAtBid":2118,"volumeAtAsk":4768},{"price":1790,"volume":8924,"volumeAtBid":3581,"volumeAtAsk":2743},{"price":1785,"volume":7628,"volumeAtBid":5008,"volumeAtAsk":2620},{"price":1780,"volume":2029,"volumeAtBid":2029,"volumeAtAsk":0},{"price":1775,"volume":14289,"volumeAtBid":14289,"volumeAtAsk":0}]}'
+    headers:
+      Access-Control-Allow-Credentials:
+      - 'true'
+      Access-Control-Allow-Headers:
+      - api_key,authorization,content-type
+      Access-Control-Allow-Methods:
+      - GET,HEAD,OPTIONS,POST,DELETE
+      Access-Control-Expose-Headers:
+      - content-length,fr-aa,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset
+      Access-Control-Max-Age:
+      - '1728000'
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Sat, 31 Jan 2026 13:38:34 GMT
+      ETag:
+      - W/"1e8-kWj70mFCzBGy4owaHrWsCXdcpGc"
+      Retry-After:
+      - '60'
+      Server:
+      - Unknown
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Accept-Encoding
+      Via:
+      - 1.1 google
+      X-RateLimit-Limit:
+      - '600'
+      X-RateLimit-Remaining:
+      - '599'
+      X-RateLimit-Reset:
+      - '1769866774704'
+      content-length:
+      - '488'
+    status:
+      code: 200
+      message: OK
+version: 1

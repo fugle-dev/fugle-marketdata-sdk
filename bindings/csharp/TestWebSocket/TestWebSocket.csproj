@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../MarketdataUniffi/MarketdataUniffi.csproj" />
+  </ItemGroup>
+
+  <!-- Copy native library to output -->
+  <ItemGroup>
+    <None Include="../../../target/release/libmarketdata_uniffi.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('../../../target/release/libmarketdata_uniffi.dylib')" />
+  </ItemGroup>
+
+</Project>

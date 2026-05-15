@@ -1,0 +1,52 @@
+name: Node.js Bindings
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Node.js (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: ['18', '20', '22']
+        exclude:
+          # Test Node 18 (min) only on Linux, 20/22 on all
+          - os: macos-latest
+            node-version: '18'
+          - os: windows-latest
+            node-version: '18'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: js -> target
+          shared-key: nodejs-${{ matrix.os }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm install
+
+      - name: Build Node.js binding
+        working-directory: js
+        run: npm run build:debug
+
+      - name: Test import
+        working-directory: js
+        run: |
+          node -e "const m = require('./index.js'); console.log('Import successful', Object.keys(m))"
+        # npm test will be added in Phase 3

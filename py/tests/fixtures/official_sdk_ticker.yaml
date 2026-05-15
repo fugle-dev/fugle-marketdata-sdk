@@ -1,0 +1,58 @@
+# Mock VCR cassette - replace with real recording using record_official_responses.py
+version: 1
+interactions:
+- request:
+    body: null
+    headers:
+      X-API-KEY:
+      - mock-api-key
+    method: GET
+    uri: https://api.fugle.tw/marketdata/v1.0/stock/intraday/ticker/2330
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: |
+        {
+          "apiVersion": "1.0.0",
+          "data": {
+            "info": {
+              "date": "2026-01-31",
+              "mode": "twse-sem",
+              "symbolId": "2330",
+              "countryCode": "TW",
+              "timeZone": "Asia/Taipei",
+              "lastUpdatedAt": "2026-01-31T13:30:00.000000+08:00"
+            },
+            "ticker": [
+              {
+                "at": "2026-01-31T13:29:58.123456+08:00",
+                "bid": 744.00,
+                "ask": 745.00,
+                "price": 744.00,
+                "volume": 100,
+                "serial": 987654
+              },
+              {
+                "at": "2026-01-31T13:29:55.654321+08:00",
+                "bid": 744.00,
+                "ask": 745.00,
+                "price": 745.00,
+                "volume": 50,
+                "serial": 987653
+              },
+              {
+                "at": "2026-01-31T13:29:52.321987+08:00",
+                "bid": 744.00,
+                "ask": 745.00,
+                "price": 744.00,
+                "volume": 75,
+                "serial": 987652
+              }
+            ]
+          }
+        }

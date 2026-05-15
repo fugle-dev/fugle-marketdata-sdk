@@ -1,0 +1,40 @@
+[build-system]
+requires = ["maturin>=1.11,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "fugle-marketdata"
+version = "3.0.0"
+description = "Python bindings for Fugle marketdata-core"
+requires-python = ">=3.7"
+dependencies = [
+    "importlib-metadata>=4.0; python_version < '3.8'",
+]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0", "pytest-asyncio>=0.21", "pytest-timeout>=2.1", "vcrpy>=6.0.0", "pytest-benchmark>=4.0.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "pytest-timeout>=2.1", "vcrpy>=6.0.0", "pytest-benchmark>=4.0.0"]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "."
+module-name = "fugle_marketdata.fugle_marketdata"
+
+[tool.pytest.ini_options]
+timeout = 30
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (require API key)",
+    "benchmark: marks tests as benchmark tests"
+]
+
+[tool.pytest-benchmark]
+disable_gc = true
+min_rounds = 5
+warmup = true

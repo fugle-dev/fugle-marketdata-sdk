@@ -1,0 +1,11 @@
+[bindings.java]
+package_name = "tw.com.fugle.marketdata.generated"
+
+# C# binding visibility. Without this, uniffi-bindgen-cs v0.8.0+ emits types
+# as `internal`, which breaks the hand-written public wrappers in
+# FugleRestClient.cs / FugleWebSocketClient.cs (CS0050/CS0051). Defense-in-depth
+# against running `uniffi-bindgen-cs` directly bypassing `make gen-csharp`'s
+# sed post-processing. Supported since uniffi-bindgen-cs v0.8.0+v0.25.0; CI
+# pins v0.10.0+v0.29.4.
+[bindings.csharp]
+access_modifier = "public"

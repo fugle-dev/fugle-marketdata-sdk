@@ -1,0 +1,180 @@
+name: UniFFI Bindings
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-rust:
+    name: Build UniFFI Library (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            lib-name: libmarketdata_uniffi.so
+          - os: macos-latest
+            lib-name: libmarketdata_uniffi.dylib
+          - os: windows-latest
+            lib-name: marketdata_uniffi.dll
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: uniffi-${{ matrix.os }}
+
+      - name: Build UniFFI crate
+        run: cargo build -p marketdata-uniffi --release
+
+      - name: Run UniFFI tests
+        run: cargo test -p marketdata-uniffi
+
+      - name: Upload library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-lib-${{ matrix.os }}
+          path: target/release/${{ matrix.lib-name }}
+          retention-days: 1
+
+  test-csharp:
+    name: Test C# Bindings (${{ matrix.os }})
+    needs: build-rust
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            lib-name: libmarketdata_uniffi.so
+          - os: macos-latest
+            lib-name: libmarketdata_uniffi.dylib
+          - os: windows-latest
+            lib-name: marketdata_uniffi.dll
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download library
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-lib-${{ matrix.os }}
+          path: bindings/csharp/MarketdataUniffi/bin/Debug/net8.0/
+
+      - name: Build C# solution
+        run: dotnet build bindings/csharp/FugleMarketData.sln
+
+      - name: Run C# tests (structural only)
+        run: dotnet test bindings/csharp/MarketdataUniffi.Tests/ --filter "TestCategory!=Integration" --verbosity normal
+
+  test-go:
+    name: Test Go Bindings (${{ matrix.os }})
+    needs: build-rust
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            lib-name: libmarketdata_uniffi.so
+            lib-path: /usr/local/lib
+          - os: macos-latest
+            lib-name: libmarketdata_uniffi.dylib
+            lib-path: /usr/local/lib
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Download library
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-lib-${{ matrix.os }}
+          path: ${{ github.workspace }}/target/release/
+
+      - name: Install library (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo cp ${{ github.workspace }}/target/release/${{ matrix.lib-name }} /usr/local/lib/
+          sudo ldconfig
+
+      - name: Install library (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sudo cp ${{ github.workspace }}/target/release/${{ matrix.lib-name }} /usr/local/lib/
+
+      - name: Build Go module
+        run: |
+          cd bindings/go/marketdata
+          CGO_ENABLED=1 go build .
+
+      - name: Run Go tests (structural only)
+        run: |
+          cd bindings/go/marketdata
+          CGO_ENABLED=1 go test -v -short .
+        env:
+          LD_LIBRARY_PATH: /usr/local/lib
+          DYLD_LIBRARY_PATH: /usr/local/lib
+
+  generate-bindings:
+    name: Verify Binding Generation
+    needs: build-rust
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download library
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-lib-ubuntu-latest
+          path: target/release/
+
+      - name: Install uniffi-bindgen-cs
+        run: cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.10.0+v0.29.4
+
+      - name: Install uniffi-bindgen-go
+        run: cargo install uniffi-bindgen-go --git https://github.com/NordSecurity/uniffi-bindgen-go --tag v0.2.2+v0.28.3
+
+      - name: Generate C# bindings
+        # --config matches Makefile gen-csharp; without it the bindgen falls
+        # back to access_modifier="internal" default and would silently produce
+        # broken bindings if the uniffi.toml [bindings.csharp] section ever
+        # drifts away (this is what caused the rc.9 nupkg pack failure).
+        run: |
+          uniffi-bindgen-cs --library target/release/libmarketdata_uniffi.so --config uniffi/uniffi.toml -o generated/csharp/
+          echo "C# bindings generated:"
+          ls -la generated/csharp/
+
+      - name: Generate Go bindings
+        run: |
+          uniffi-bindgen-go --library target/release/libmarketdata_uniffi.so -o generated/go/
+          echo "Go bindings generated:"
+          ls -la generated/go/
+
+      - name: Verify generated files
+        run: |
+          test -f generated/csharp/marketdata_uniffi.cs || exit 1
+          test -f generated/go/marketdata_uniffi/marketdata_uniffi.go || exit 1
+          echo "Binding generation verified successfully"

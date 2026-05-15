@@ -1,0 +1,138 @@
+# ============================================
+# Fugle Market Data SDK - Root .gitignore
+# ============================================
+
+# --------------------------------------------
+# Rust / Cargo
+# --------------------------------------------
+/target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+!core/Cargo.lock
+
+# --------------------------------------------
+# Python
+# --------------------------------------------
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# Compiled bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.eggs/
+*.egg-info/
+*.egg
+dist/
+build/
+wheels/
+*.whl
+
+# Maturin / PyO3 build artifacts
+*.so
+*.dylib
+*.pyd
+py/marketdata_py/*.so
+py/marketdata_py/*.dylib
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --------------------------------------------
+# Node.js / JavaScript
+# --------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn/
+
+# napi-rs build artifacts
+*.node
+js/*.node
+
+# TypeScript
+*.tsbuildinfo
+
+# --------------------------------------------
+# C# / .NET
+# --------------------------------------------
+bin/
+obj/
+*.dll
+*.pdb
+*.exe
+*.nupkg
+.nuget/
+packages/
+
+# --------------------------------------------
+# IDE / Editor
+# --------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --------------------------------------------
+# Logs and temp files
+# --------------------------------------------
+*.log
+log/
+logs/
+tmp/
+temp/
+*.tmp
+
+# --------------------------------------------
+# Environment and secrets
+# --------------------------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials.json
+
+# --------------------------------------------
+# Test artifacts
+# --------------------------------------------
+coverage/
+*.lcov
+test-results/
+
+# --------------------------------------------
+# Local-only references and tooling state
+# --------------------------------------------
+# Old fugle-marketdata SDK clones used as local reference for compatibility work.
+# Keep these checked out locally but never commit them into this repo.
+fugle-marketdata-node/
+fugle-marketdata-python/
+
+# Serena MCP cache
+.serena/
+
+# Claude Code session / task state — machine-specific, never commit
+.claude/
+
+# Ad-hoc developer scratch files (not part of the test suite)
+js/test_dummy.js
+py/test_*.py
+py/ws_stream.py
+py/ca.crt
+

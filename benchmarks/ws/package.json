@@ -1,0 +1,9 @@
+{
+  "name": "ws-benchmarks",
+  "private": true,
+  "description": "WebSocket throughput benchmarks: new Rust-core SDK vs old @fugle/marketdata@1.4.2",
+  "dependencies": {
+    "ws": "^8.18.0",
+    "@fugle/marketdata": "1.4.2"
+  }
+}

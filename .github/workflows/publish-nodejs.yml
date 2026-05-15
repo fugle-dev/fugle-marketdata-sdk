@@ -1,0 +1,98 @@
+name: Publish Node.js to npm
+
+on:
+  workflow_call:
+    secrets:
+      NPM_TOKEN:
+        # Marked optional so forks without NPM_TOKEN (kevinypfan) can still
+        # validate release.yml — this job is gated by `if: channel == stable`
+        # upstream and is never actually invoked on a fork. The `npm publish`
+        # step will fail at runtime if NPM_TOKEN is absent, which is fine.
+        required: false
+  workflow_dispatch:
+    # Manual trigger requires NPM_TOKEN in repository secrets
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for npm provenance
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download binding artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-*
+          path: js/artifacts/
+
+      - name: Organize bindings for publishing
+        working-directory: js
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -name "*.node" -type f
+
+          # Move .node files to js root for napi prepublish
+          for dir in artifacts/bindings-*/; do
+            cp "$dir"/*.node . 2>/dev/null || true
+          done
+          rm -rf artifacts/
+
+          echo ""
+          echo "Bindings ready for publish:"
+          ls -la *.node
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm ci
+
+      - name: Prepare platform packages
+        working-directory: js
+        run: |
+          # Generate optionalDependencies platform packages
+          npm run prepublishOnly
+
+          echo "## Platform Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | Files |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          for pkg_dir in npm/*/; do
+            pkg=$(basename "$pkg_dir")
+            files=$(ls -1 "$pkg_dir" | wc -l | tr -d ' ')
+            echo "| @fugle/marketdata-$pkg | $files |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Publish main package with provenance
+        working-directory: js
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish platform packages
+        working-directory: js
+        run: |
+          # Publish each platform-specific package
+          for pkg_dir in npm/*/; do
+            echo "Publishing $(basename "$pkg_dir")..."
+            cd "$pkg_dir"
+            npm publish --provenance --access public || echo "Package may already exist"
+            cd ../..
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Publish Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Main package published with provenance attestation." >> $GITHUB_STEP_SUMMARY

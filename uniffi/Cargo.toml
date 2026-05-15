@@ -1,0 +1,45 @@
+[package]
+name = "marketdata-uniffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "UniFFI bindings for Fugle marketdata-core (EXPERIMENTAL)"
+publish = false
+
+# Metadata to indicate experimental status
+[package.metadata]
+status = "experimental"
+stability = "alpha"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+name = "marketdata_uniffi"
+
+[dependencies]
+# Core dependency
+marketdata-core = { workspace = true, features = ["tokio-comp"] }
+
+# UniFFI for cross-language bindings (tokio feature enables async_runtime = "tokio")
+uniffi = { workspace = true }
+
+# Serialization for JSON return values
+serde_json = { workspace = true }
+
+# Error derive macro
+thiserror = { workspace = true }
+
+# Async runtime for blocking operations
+tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+
+[features]
+# Enable this feature to exclude async methods for uniffi-bindgen-cpp compatibility.
+# C++ bindgen does not support async functions, so this strips them and keeps sync-only API.
+cpp = []
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+# Testing utilities
+tokio = { workspace = true, features = ["macros"] }

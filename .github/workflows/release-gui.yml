@@ -1,0 +1,89 @@
+name: Release GUI
+
+# Tag-pushed Tauri desktop app release workflow. Intentionally decoupled from
+# SDK's release.yml — app version (0.1.0) and SDK version (0.3.0-dev) move on
+# independent cadences. Tag `gui-v*.*.*` → matrix build macOS/Linux/Windows →
+# upload to draft GitHub Release. Manual publish gate keeps a human in the loop.
+#
+# MVP: no code signing, no notarization, no auto-updater. Users see a one-time
+# Gatekeeper / SmartScreen warning on first launch. Add signing later when
+# budget for Apple Developer Program + Windows EV cert is approved.
+
+on:
+  push:
+    tags:
+      - 'gui-v*.*.*'
+  workflow_dispatch:  # manual trigger for dry-run testing; uploads skipped when no tag
+
+# Serialize runs on the same tag so two quick pushes (e.g. rc.1 → rc.2) don't
+# race on the draft release or thrash rust-cache keys.
+concurrency:
+  group: gui-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # create releases + upload assets
+
+jobs:
+  publish-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gui-web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # Cache points at the real workspace root — `cargo tauri build` resolves
+      # up to the workspace's Cargo.toml and writes to `./target`, NOT
+      # `gui-web/src-tauri/target`. Pointing at the wrong path is a silent
+      # cache miss that costs ~45min/release with zero error signal.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          shared-key: gui-release
+
+      - name: Install Linux deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend deps
+        working-directory: gui-web
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: gui-web
+          # Empty tagName on non-tag runs (e.g. workflow_dispatch from main)
+          # tells tauri-action to build only, skip upload. With a real tag it
+          # substitutes __VERSION__ with tauri.conf.json's version field.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && 'gui-v__VERSION__' || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && 'Marketdata GUI v__VERSION__' || '' }}
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref, '-rc.') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          args: ${{ matrix.args }}
