@@ -370,18 +370,39 @@ fn owner_loop(
             }
             Err(tungstenite::Error::ConnectionClosed)
             | Err(tungstenite::Error::AlreadyClosed) => {
-                emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
-                    code: None,
-                    reason: "Connection closed".to_string(),
-                    intent: DisconnectIntent::Network,
-                });
+                // Suppress when caller initiated shutdown — the
+                // shutdown path emits the canonical
+                // `Disconnected { intent: Client }` itself, mirroring
+                // the async `dispatch.rs` short-circuit.
+                if !shared.should_stop.load(Ordering::SeqCst) {
+                    emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
+                        code: None,
+                        reason: "Connection closed".to_string(),
+                        intent: DisconnectIntent::Network,
+                    });
+                }
                 return None;
             }
             Err(e) => {
+                // WebSocket transport error — emit both `Error`
+                // (preserves diagnostic surface) and
+                // `Disconnected { intent: Network }` so consumers
+                // pattern-matching on `ConnectionEvent::Disconnected`
+                // observe abnormal closes the same way they observe
+                // clean closes. Mirrors the async `dispatch.rs` Err
+                // arm. Suppressed when caller initiated shutdown.
+                let err_msg = format!("WebSocket read error: {e}");
                 emit_event(&shared.event_tx, ConnectionEvent::Error {
-                    message: format!("WebSocket read error: {e}"),
+                    message: err_msg.clone(),
                     code: 2001,
                 });
+                if !shared.should_stop.load(Ordering::SeqCst) {
+                    emit_event(&shared.event_tx, ConnectionEvent::Disconnected {
+                        code: None,
+                        reason: err_msg,
+                        intent: DisconnectIntent::Network,
+                    });
+                }
                 return None;
             }
         }
