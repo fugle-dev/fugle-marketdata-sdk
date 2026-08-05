@@ -1,6 +1,10 @@
 [package]
 name = "marketdata-uniffi"
-version.workspace = true
+# Decoupled from the workspace version on purpose. The C#/Go/Java/C++
+# bindings have never been published and share no namespace with the official
+# SDK, so they start their own 0.x track rather than inheriting the 3.x that
+# py/js need in order to supersede the official packages.
+version = "0.1.0-rc.1"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true

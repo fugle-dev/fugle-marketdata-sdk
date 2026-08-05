@@ -1443,3 +1443,66 @@ impl From<core::WebSocketMessage> for StreamMessage {
         }
     }
 }
+
+/// One constituent of an ETF's holdings on a given date
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EtfHoldingComponent {
+    pub symbol: String,
+    pub name: String,
+    pub quantity: f64,
+    pub weight: f64,
+    /// Absent on the first date in a series — nothing to compare against.
+    pub quantity_change: Option<f64>,
+    pub weight_change: Option<f64>,
+}
+
+impl From<core::EtfHoldingComponent> for EtfHoldingComponent {
+    fn from(c: core::EtfHoldingComponent) -> Self {
+        Self {
+            symbol: c.symbol,
+            name: c.name,
+            quantity: c.quantity,
+            weight: c.weight,
+            quantity_change: c.quantity_change,
+            weight_change: c.weight_change,
+        }
+    }
+}
+
+/// Holdings disclosed on a single date
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EtfHoldingsEntry {
+    pub date: String,
+    pub components: Vec<EtfHoldingComponent>,
+}
+
+impl From<core::EtfHoldingsEntry> for EtfHoldingsEntry {
+    fn from(e: core::EtfHoldingsEntry) -> Self {
+        Self {
+            date: e.date,
+            components: e.components.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Response for `stock/ownership/etf-holdings/{symbol}`
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EtfHoldingsResponse {
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub symbol: String,
+    pub data: Vec<EtfHoldingsEntry>,
+}
+
+impl From<core::EtfHoldingsResponse> for EtfHoldingsResponse {
+    fn from(r: core::EtfHoldingsResponse) -> Self {
+        Self {
+            data_type: r.data_type,
+            exchange: r.exchange,
+            market: r.market,
+            symbol: r.symbol,
+            data: r.data.into_iter().map(Into::into).collect(),
+        }
+    }
+}

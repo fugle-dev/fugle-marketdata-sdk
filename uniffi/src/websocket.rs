@@ -27,7 +27,7 @@
 use crate::errors::MarketDataError;
 use crate::models::StreamMessage;
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
-use marketdata_core::websocket::{ConnectionConfig, MessageReceiver};
+use marketdata_core::websocket::MessageReceiver;
 use marketdata_core::AuthRequest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -148,6 +148,63 @@ pub enum WebSocketEndpoint {
     FutOpt,
 }
 
+/// Per-product streaming version selection.
+///
+/// UniFFI has no way to express core's one-enum-per-product typing across
+/// C#/Go/Java/C++ at once, so this carries optional strings and validates
+/// them — the same shape the official SDK's version map has.
+#[derive(uniffi::Record, Clone, Debug, Default)]
+pub struct StreamingVersionRecord {
+    /// Stock streaming version. Only "v1.0" is served. None means latest.
+    pub stock: Option<String>,
+    /// FutOpt streaming version: "v1.0" or "v1.1". None means latest (v1.1).
+    ///
+    /// v1.1 adds trial-matching (試撮) frames on trades / books — check the
+    /// frame's `isTrial` before acting on a price.
+    pub futopt: Option<String>,
+}
+
+impl StreamingVersionRecord {
+    fn resolve(
+        &self,
+    ) -> Result<
+        (
+            marketdata_core::websocket::StockVersion,
+            marketdata_core::websocket::FutOptVersion,
+        ),
+        MarketDataError,
+    > {
+        use marketdata_core::websocket::{FutOptVersion, StockVersion};
+
+        let stock = match self.stock.as_deref() {
+            None => StockVersion::default(),
+            Some("v1.0") => StockVersion::V1_0,
+            Some(other) => {
+                return Err(MarketDataError::ConfigError {
+                    msg: format!(
+                        "stock streaming does not support {other} (supported: v1.0). \
+                         Leave it unset to use v1.0."
+                    ),
+                })
+            }
+        };
+        let futopt = match self.futopt.as_deref() {
+            None => FutOptVersion::default(),
+            Some("v1.0") => FutOptVersion::V1_0,
+            Some("v1.1") => FutOptVersion::V1_1,
+            Some(other) => {
+                return Err(MarketDataError::ConfigError {
+                    msg: format!(
+                        "futopt streaming does not support {other} (supported: v1.0, v1.1). \
+                         Leave it unset to use v1.1."
+                    ),
+                })
+            }
+        };
+        Ok((stock, futopt))
+    }
+}
+
 /// WebSocket client for real-time market data streaming
 ///
 /// Wraps the core WebSocketClient and forwards messages to the provided
@@ -158,6 +215,7 @@ pub struct WebSocketClient {
     listener: Arc<dyn WebSocketListener>,
     api_key: String,
     base_url: Option<String>,
+    version: StreamingVersionRecord,
     endpoint: WebSocketEndpoint,
     connected: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
@@ -179,12 +237,14 @@ impl WebSocketClient {
         health_check_config: Option<marketdata_core::HealthCheckConfig>,
         base_url: Option<String>,
         tls_config: Option<marketdata_core::TlsConfig>,
+        version: StreamingVersionRecord,
     ) -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(Mutex::new(None)),
             listener,
             api_key,
             base_url,
+            version,
             endpoint,
             connected: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -206,7 +266,7 @@ impl WebSocketClient {
     /// * `listener` - Callback interface for receiving WebSocket events
     #[uniffi::constructor]
     pub fn new(api_key: String, listener: Arc<dyn WebSocketListener>) -> Arc<Self> {
-        Self::new_internal(api_key, listener, WebSocketEndpoint::Stock, None, None, None, None)
+        Self::new_internal(api_key, listener, WebSocketEndpoint::Stock, None, None, None, None, Default::default())
     }
 
     /// Create a new WebSocket client for a specific endpoint
@@ -221,7 +281,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
     ) -> Arc<Self> {
-        Self::new_internal(api_key, listener, endpoint, None, None, None, None)
+        Self::new_internal(api_key, listener, endpoint, None, None, None, None, Default::default())
     }
 
     /// Create a new WebSocket client with full configuration
@@ -248,6 +308,7 @@ impl WebSocketClient {
             health_check_config.map(|c| c.to_core()),
             None,
             None,
+            Default::default(),
         )
     }
 
@@ -269,6 +330,7 @@ impl WebSocketClient {
             health_check_config.map(|c| c.to_core()),
             Some(base_url),
             None,
+            Default::default(),
         )
     }
 
@@ -295,6 +357,7 @@ impl WebSocketClient {
         reconnect_config: Option<ReconnectConfigRecord>,
         health_check_config: Option<HealthCheckConfigRecord>,
         tls: Option<crate::tls::TlsConfigRecord>,
+        version: Option<StreamingVersionRecord>,
     ) -> Arc<Self> {
         Self::new_internal(
             api_key,
@@ -304,6 +367,7 @@ impl WebSocketClient {
             health_check_config.map(|c| c.to_core()),
             base_url,
             tls.map(|t| t.to_core()),
+            version.unwrap_or_default(),
         )
     }
 
@@ -349,21 +413,22 @@ impl WebSocketClient {
 impl WebSocketClient {
     /// Connect to the WebSocket server (implementation).
     async fn connect_impl(&self) -> Result<(), MarketDataError> {
-        // Create auth request
+        // Resolve the endpoint through core's factory so `base_url` semantics
+        // and the per-product version live in one place. Before 0.8.0 this
+        // hand-rolled `format!("{base}/stock/streaming")`, which is how the
+        // version segment ended up being the caller's problem.
+        let (stock_version, futopt_version) = self.version.resolve()?;
         let auth = AuthRequest::with_api_key(&self.api_key);
-
-        // Create connection config based on endpoint (with optional custom base URL)
-        let mut config = if let Some(ref url) = self.base_url {
-            let ws_url = match self.endpoint {
-                WebSocketEndpoint::Stock => format!("{}/stock/streaming", url),
-                WebSocketEndpoint::FutOpt => format!("{}/futopt/streaming", url),
-            };
-            ConnectionConfig::new(ws_url, auth)
-        } else {
-            match self.endpoint {
-                WebSocketEndpoint::Stock => ConnectionConfig::fugle_stock(auth),
-                WebSocketEndpoint::FutOpt => ConnectionConfig::fugle_futopt(auth),
-            }
+        let mut factory = marketdata_core::WebSocketFactory::new()
+            .stock_version(stock_version)
+            .futopt_version(futopt_version);
+        if let Some(ref url) = self.base_url {
+            factory = factory.base_url(url);
+        }
+        let factory = factory.auth(auth);
+        let mut config = match self.endpoint {
+            WebSocketEndpoint::Stock => factory.stock()?.build(),
+            WebSocketEndpoint::FutOpt => factory.futopt()?.build(),
         };
         // Apply TLS customization if provided (custom CA / accept_invalid_certs).
         if let Some(ref tls) = self.tls_config {

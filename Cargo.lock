@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "marketdata-uniffi"
-version = "3.0.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "fugle-marketdata-core",
  "serde_json",

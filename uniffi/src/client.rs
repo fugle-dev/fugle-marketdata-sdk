@@ -18,6 +18,8 @@ use crate::models::{
     SmaResponse, RsiResponse, KdjResponse, MacdResponse, BbResponse,
     // Corporate actions models
     CapitalChangesResponse, DividendsResponse, ListingApplicantsResponse,
+    // Ownership models
+    EtfHoldingsResponse,
     // FutOpt historical models
     FutOptHistoricalCandlesResponse, FutOptDailyResponse,
 };
@@ -52,16 +54,30 @@ impl RestClient {
         })
     }
 
-    /// Override the base URL (consumes and returns a new instance)
-    pub fn with_base_url(self, url: &str) -> Self {
-        Self {
-            inner: self.inner.base_url(url),
-        }
+    /// Override the base URL (consumes and returns a new instance).
+    ///
+    /// `url` carries the host and path prefix only — the SDK appends the
+    /// version segment. A url that already ends in one is rejected here so
+    /// the error surfaces from the factory function that built the client,
+    /// not from an unrelated request much later.
+    pub(crate) fn with_base_url(self, url: &str) -> Result<Self, MarketDataError> {
+        Ok(Self {
+            inner: self.inner.try_base_url(url)?,
+        })
     }
 }
 
 #[uniffi::export]
 impl RestClient {
+    /// The prefix every request from this client is built on, fully resolved —
+    /// host, path prefix and version segment.
+    ///
+    /// The version segment is chosen by the SDK rather than written by the
+    /// caller, so this is the only way to see what a client resolved to.
+    pub fn base_url(&self) -> String {
+        self.inner.resolved_base_url().to_string()
+    }
+
     /// Access stock-related endpoints
     pub fn stock(&self) -> Arc<StockClient> {
         Arc::new(StockClient::new(self.inner.clone()))
@@ -114,6 +130,16 @@ impl StockClient {
     /// Access corporate actions endpoints
     pub fn corporate_actions(&self) -> Arc<StockCorporateActionsClient> {
         Arc::new(StockCorporateActionsClient::new(self.inner.clone()))
+    }
+
+    /// Access ownership endpoints (ETF holdings)
+    pub fn ownership(&self) -> Arc<StockOwnershipClient> {
+        Arc::new(StockOwnershipClient::new(self.inner.clone()))
+    }
+
+    /// The fully resolved request prefix for this product client.
+    pub fn base_url(&self) -> String {
+        self.inner.resolved_base_url().to_string()
     }
 }
 
@@ -910,13 +936,19 @@ impl FutOptIntradayClient {
     /// Get batch tickers for futures/options (async)
     ///
     /// typ: "F" for futures, "O" for options
-    pub async fn get_tickers(&self, typ: String) -> Result<Vec<FutOptTicker>, MarketDataError> {
+    pub async fn get_tickers(
+        &self,
+        typ: String,
+        is_spread: Option<bool>,
+    ) -> Result<Vec<FutOptTicker>, MarketDataError> {
         let futopt_type = parse_futopt_type(&typ)?;
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            inner.futopt().intraday().tickers()
-                .typ(futopt_type)
-                .send()
+            let mut builder = inner.futopt().intraday().tickers().typ(futopt_type);
+            if let Some(sp) = is_spread {
+                builder = builder.is_spread(sp);
+            }
+            builder.send()
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
@@ -980,11 +1012,17 @@ impl FutOptIntradayClient {
     /// Get batch tickers for futures/options (sync/blocking)
     ///
     /// typ: "F" for futures, "O" for options
-    pub fn tickers_sync(&self, typ: String) -> Result<Vec<FutOptTicker>, MarketDataError> {
+    pub fn tickers_sync(
+        &self,
+        typ: String,
+        is_spread: Option<bool>,
+    ) -> Result<Vec<FutOptTicker>, MarketDataError> {
         let futopt_type = parse_futopt_type(&typ)?;
-        let result = self.inner.futopt().intraday().tickers()
-            .typ(futopt_type)
-            .send()?;
+        let mut builder = self.inner.futopt().intraday().tickers().typ(futopt_type);
+        if let Some(sp) = is_spread {
+            builder = builder.is_spread(sp);
+        }
+        let result = builder.send()?;
         Ok(result.into_iter().map(|t| t.into()).collect())
     }
 }
@@ -1361,5 +1399,109 @@ mod tests {
         assert!(matches!(parse_futopt_type("future"), Ok(marketdata_core::FutOptType::Future)));
         assert!(matches!(parse_futopt_type("options"), Ok(marketdata_core::FutOptType::Option)));
         assert!(parse_futopt_type("invalid").is_err());
+    }
+}
+
+// ============================================================================
+// Stock Ownership Client
+// ============================================================================
+
+/// Stock ownership endpoints client
+#[derive(uniffi::Object)]
+pub struct StockOwnershipClient {
+    inner: CoreRestClient,
+}
+
+impl StockOwnershipClient {
+    pub fn new(client: CoreRestClient) -> Self {
+        Self { inner: client }
+    }
+}
+
+/// Build an ETF holdings request.
+///
+/// `sort` is validated rather than dropped: a typo would otherwise return the
+/// opposite series without complaint.
+fn build_etf_holdings_request(
+    client: &CoreRestClient,
+    symbol: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    sort: Option<&str>,
+) -> Result<marketdata_core::models::EtfHoldingsResponse, marketdata_core::MarketDataError> {
+    use marketdata_core::rest::stock::ownership::HoldingsSort;
+
+    let sort = match sort {
+        None => None,
+        Some("asc") => Some(HoldingsSort::Asc),
+        Some("desc") => Some(HoldingsSort::Desc),
+        Some(other) => {
+            return Err(marketdata_core::MarketDataError::ConfigError(format!(
+                "sort must be 'asc' or 'desc' (got '{other}')"
+            )))
+        }
+    };
+
+    let stock = client.stock();
+    let ownership = stock.ownership();
+    let mut builder = ownership.etf_holdings().symbol(symbol);
+    if let Some(f) = from {
+        builder = builder.from(f);
+    }
+    if let Some(t) = to {
+        builder = builder.to(t);
+    }
+    if let Some(s) = sort {
+        builder = builder.sort(s);
+    }
+    builder.send()
+}
+
+#[cfg(not(feature = "cpp"))]
+#[uniffi::export(async_runtime = "tokio")]
+impl StockOwnershipClient {
+    /// Get the constituents an ETF held over a date range (async)
+    pub async fn get_etf_holdings(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<EtfHoldingsResponse, MarketDataError> {
+        let inner = self.inner.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            build_etf_holdings_request(
+                &inner,
+                &symbol,
+                from.as_deref(),
+                to.as_deref(),
+                sort.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        Ok(result.into())
+    }
+}
+
+#[cfg(feature = "cpp")]
+#[uniffi::export]
+impl StockOwnershipClient {
+    /// Get the constituents an ETF held over a date range (sync/blocking)
+    pub fn etf_holdings_sync(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<EtfHoldingsResponse, MarketDataError> {
+        let result = build_etf_holdings_request(
+            &self.inner,
+            &symbol,
+            from.as_deref(),
+            to.as_deref(),
+            sort.as_deref(),
+        )?;
+        Ok(result.into())
     }
 }

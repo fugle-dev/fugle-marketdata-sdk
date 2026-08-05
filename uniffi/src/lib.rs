@@ -116,7 +116,7 @@ fn build_rest_client_with_tls(
 ) -> Result<Arc<RestClient>, MarketDataError> {
     let mut client = RestClient::with_tls(auth, tls.to_core())?;
     if let Some(url) = base_url {
-        client = client.with_base_url(&url);
+        client = client.with_base_url(&url)?;
     }
     Ok(Arc::new(client))
 }
