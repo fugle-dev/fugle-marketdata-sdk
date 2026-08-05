@@ -8,11 +8,28 @@ publish = false
 
 [lib]
 name = "fugle_marketdata"
-crate-type = ["cdylib"]
+# `rlib` alongside `cdylib` so `cargo test` can link the crate at all — a
+# pure-cdylib target produces no testable artifact.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["extension-module"]
+# pyo3's `extension-module` tells the linker that CPython symbols will be
+# resolved by the interpreter at import time. That is correct for the wheel
+# maturin builds, but it makes `cargo test` fail to link — there is no
+# interpreter in a test binary. Turn it off for tests:
+#     cargo test -p marketdata-py --no-default-features
+extension-module = ["pyo3/extension-module"]
+
+[dev-dependencies]
+# Tests that touch Python objects need a real interpreter in-process.
+# `auto-initialize` cannot live in [dependencies]: it conflicts with
+# `extension-module`, which is on for the wheel build.
+pyo3 = { workspace = true, default-features = false, features = ["abi3-py37", "macros", "auto-initialize"] }
 
 [dependencies]
 marketdata-core = { workspace = true, features = ["tokio-comp"] }
-pyo3.workspace = true
+pyo3 = { workspace = true, default-features = false, features = ["abi3-py37", "macros"] }
 pyo3-async-runtimes.workspace = true
 serde.workspace = true
 serde_json.workspace = true

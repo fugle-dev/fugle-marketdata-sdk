@@ -107,10 +107,25 @@ impl RestClient {
             pyo3::exceptions::PyValueError::new_err(format!("{e}"))
         })?;
         if let Some(url) = base_url {
-            inner = inner.base_url(&url);
+            // `try_base_url` rather than `base_url`: a Python caller expects a
+            // bad kwarg to raise at construction, matching the official SDK's
+            // TypeError, not to surface later from an unrelated request.
+            inner = inner.try_base_url(&url).map_err(|e| {
+                pyo3::exceptions::PyTypeError::new_err(format!("{e}"))
+            })?;
         }
 
         Ok(Self { inner })
+    }
+
+    /// The prefix every request from this client is built on, fully resolved —
+    /// host, path prefix and version segment. Endpoints are appended to it.
+    ///
+    /// The version segment is chosen by the SDK rather than written by the
+    /// caller, so this is the only way to see what a client resolved to.
+    #[getter]
+    pub fn base_url(&self) -> &str {
+        self.inner.resolved_base_url()
     }
 
     /// Create a REST client with bearer token authentication
@@ -225,6 +240,137 @@ impl StockClient {
         StockCorporateActionsClient {
             inner: self.inner.clone(),
         }
+    }
+
+    /// Access ownership endpoints (ETF holdings)
+    ///
+    /// Returns:
+    ///     StockOwnershipClient for accessing ownership endpoints
+    #[getter]
+    pub fn ownership(&self) -> StockOwnershipClient {
+        StockOwnershipClient {
+            inner: self.inner.clone(),
+        }
+    }
+
+    /// The prefix every request from this product client is built on, fully
+    /// resolved — host, path prefix and version segment.
+    #[getter]
+    pub fn base_url(&self) -> &str {
+        self.inner.resolved_base_url()
+    }
+}
+
+/// Stock ownership endpoints client
+///
+/// Access via `client.stock.ownership`
+#[pyclass]
+pub struct StockOwnershipClient {
+    inner: marketdata_core::RestClient,
+}
+
+#[pymethods]
+impl StockOwnershipClient {
+    /// Get the constituents an ETF held over a date range
+    ///
+    /// Args:
+    ///     symbol: ETF symbol (e.g. "0050") — required
+    ///     from_date: Start of the date range (YYYY-MM-DD)
+    ///     to_date: End of the date range (YYYY-MM-DD)
+    ///     sort: "asc" (oldest first) or "desc" (newest first)
+    ///
+    /// Returns:
+    ///     Awaitable[dict]: ETF holdings data
+    ///
+    /// Example:
+    ///     ```python
+    ///     holdings = await client.stock.ownership.etf_holdings(symbol="0050")
+    ///     ```
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn etf_holdings_async<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        warn_unknown_kwargs(py, "stock.ownership.etf_holdings", &_extra);
+        let sort = parse_holdings_sort(sort)?;
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let result = tokio::task::spawn_blocking(move || {
+                let stock = client.stock();
+                let ownership = stock.ownership();
+                let mut builder = ownership.etf_holdings().symbol(&symbol);
+                if let Some(f) = from_date {
+                    builder = builder.from(&f);
+                }
+                if let Some(t) = to_date {
+                    builder = builder.to(&t);
+                }
+                if let Some(s) = sort {
+                    builder = builder.sort(s);
+                }
+                builder.send()
+            })
+            .await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
+
+            match result {
+                Ok(holdings) => Python::attach(|py| types::corporate_action_to_dict(py, &holdings)),
+                Err(e) => Err(errors::to_py_err(e)),
+            }
+        })
+    }
+
+    /// Sync sibling of `etf_holdings()` for legacy fugle-marketdata callers.
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn etf_holdings(
+        &self,
+        py: Python<'_>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Py<pyo3::types::PyDict>> {
+        warn_unknown_kwargs(py, "stock.ownership.etf_holdings", &_extra);
+        let sort = parse_holdings_sort(sort)?;
+        let inner = self.inner.clone();
+        let result = py.detach(|| {
+            let stock = inner.stock();
+            let ownership = stock.ownership();
+            let mut builder = ownership.etf_holdings().symbol(&symbol);
+            if let Some(f) = from_date { builder = builder.from(&f); }
+            if let Some(t) = to_date { builder = builder.to(&t); }
+            if let Some(s) = sort { builder = builder.sort(s); }
+            builder.send()
+        });
+        match result {
+            Ok(holdings) => types::corporate_action_to_dict(py, &holdings),
+            Err(e) => Err(errors::to_py_err(e)),
+        }
+    }
+}
+
+/// Map the `sort` kwarg onto core's enum.
+///
+/// Rejects anything else with a `ValueError` rather than silently dropping it —
+/// a typo'd sort order would otherwise return the opposite series without
+/// complaint.
+fn parse_holdings_sort(
+    sort: Option<String>,
+) -> PyResult<Option<marketdata_core::rest::stock::ownership::HoldingsSort>> {
+    use marketdata_core::rest::stock::ownership::HoldingsSort;
+    match sort.as_deref() {
+        None => Ok(None),
+        Some("asc") => Ok(Some(HoldingsSort::Asc)),
+        Some("desc") => Ok(Some(HoldingsSort::Desc)),
+        Some(other) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "sort must be 'asc' or 'desc' (got '{other}')"
+        ))),
     }
 }
 
@@ -1797,14 +1943,15 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     tickers = await client.futopt.intraday.tickers(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, **_extra))]
     pub fn tickers_async<'py>(
         &self,
         py: Python<'py>,
         r#type: String,
         exchange: Option<String>,
         after_hours: bool,
-        contract_type: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,
+        is_spread: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "futopt.intraday.tickers", &_extra);
         let client = self.inner.clone();
@@ -1826,6 +1973,9 @@ impl FutOptIntradayClient {
                 }
                 if let Some(c) = ct {
                     builder = builder.contract_type(c);
+                }
+                if let Some(sp) = is_spread {
+                    builder = builder.is_spread(sp);
                 }
                 builder.send()
             }).await
@@ -1914,14 +2064,15 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, **_extra))]
     pub fn tickers(
         &self,
         py: Python<'_>,
         r#type: String,
         exchange: Option<String>,
         after_hours: bool,
-        contract_type: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,
+        is_spread: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
         warn_unknown_kwargs(py, "futopt.intraday.tickers", &_extra);
         let typ = parse_futopt_type(&r#type)?;
@@ -1942,6 +2093,9 @@ impl FutOptIntradayClient {
             }
             if let Some(c) = ct {
                 builder = builder.contract_type(c);
+            }
+            if let Some(sp) = is_spread {
+                builder = builder.is_spread(sp);
             }
             builder.send()
         });

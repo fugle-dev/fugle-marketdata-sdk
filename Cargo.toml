@@ -27,7 +27,7 @@ futures-util = "0.3"
 url = "2.5"
 
 # Python binding dependencies
-pyo3 = { version = "0.27", features = ["extension-module", "abi3-py37"] }
+pyo3 = { version = "0.27", default-features = false, features = ["abi3-py37", "macros"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 
 # Node.js binding dependencies (pinned for Rust 1.87 compatibility: napi 3.4 MSRV=1.82)

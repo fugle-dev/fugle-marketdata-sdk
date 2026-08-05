@@ -2,7 +2,7 @@
 
 Fugle Market Data SDK - Python bindings with full type annotations.
 """
-from typing import Any, Callable, Mapping, Optional, List
+from typing import Any, Callable, Literal, Mapping, Optional, List
 
 __version__: str
 
@@ -104,7 +104,10 @@ class RestClient:
             api_key: Your Fugle API key (exactly one auth method required)
             bearer_token: Bearer token for authentication (exactly one auth method required)
             sdk_token: SDK token for authentication (exactly one auth method required)
-            base_url: Optional custom base URL
+            base_url: Optional custom base URL — host and path prefix ONLY.
+                The SDK appends the version segment; a base_url that already
+                ends in one (e.g. ".../v1.0") raises TypeError. Changed in
+                0.8.0, which reversed the 0.6-0.7 rule.
             tls_ca_file: Path to a PEM-encoded root CA to trust (in addition to
                 the system trust store). Mutually exclusive with tls_root_cert_pem.
             tls_root_cert_pem: Raw PEM bytes of a root CA to trust. Mutually
@@ -114,7 +117,8 @@ class RestClient:
                 tls_ca_file for production. Emits UserWarning when set.
 
         Raises:
-            TypeError: zero/multiple auth methods, or both TLS cert options set
+            TypeError: zero/multiple auth methods, both TLS cert options set,
+                or a base_url carrying a version segment
             OSError: tls_ca_file path not readable
             ValueError: tls_root_cert_pem contents not a valid PEM certificate
 
@@ -123,8 +127,9 @@ class RestClient:
             # API key auth
             client = RestClient(api_key="your-key")
 
-            # Custom base URL
+            # Custom base URL — no version segment; the SDK appends it
             client = RestClient(api_key="key", base_url="https://custom.api")
+            assert client.base_url == "https://custom.api/v1.0"
 
             # Self-signed deployment — pin the CA
             client = RestClient(api_key="key",
@@ -136,6 +141,16 @@ class RestClient:
                                 base_url="https://192.168.1.1/v1",
                                 tls_accept_invalid_certs=True)
             ```
+        """
+        ...
+
+    @property
+    def base_url(self) -> str:
+        """The prefix every request from this client is built on, fully
+        resolved — host, path prefix and version segment.
+
+        The version segment is chosen by the SDK rather than written by the
+        caller, so this is the only way to see what a client resolved to.
         """
         ...
 
@@ -222,6 +237,20 @@ class StockClient:
         Returns:
             StockSnapshotClient for accessing snapshot endpoints
         """
+        ...
+
+    @property
+    def ownership(self) -> "StockOwnershipClient":
+        """Access ownership endpoints (ETF holdings).
+
+        Returns:
+            StockOwnershipClient for accessing ownership endpoints
+        """
+        ...
+
+    @property
+    def base_url(self) -> str:
+        """The fully resolved request prefix for this product client."""
         ...
 
     @property
@@ -791,6 +820,52 @@ class StockTechnicalClient:
         ...
 
 
+class StockOwnershipClient:
+    """Stock ownership endpoints client.
+
+    Access via `client.stock.ownership`.
+    """
+
+    async def etf_holdings_async(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+    ) -> dict[str, Any]:
+        """Get the constituents an ETF held over a date range.
+
+        Args:
+            symbol: ETF symbol (e.g. "0050")
+            from_date: Start of the date range (YYYY-MM-DD)
+            to_date: End of the date range (YYYY-MM-DD)
+            sort: "asc" (oldest first) or "desc" (newest first)
+
+        Raises:
+            ValueError: sort is neither "asc" nor "desc"
+
+        Example:
+            ```python
+            holdings = await client.stock.ownership.etf_holdings_async(symbol="0050")
+            for entry in holdings["data"]:
+                print(entry["date"], len(entry["components"]))
+            ```
+        """
+        ...
+
+    def etf_holdings(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+    ) -> dict[str, Any]:
+        """Blocking version of `etf_holdings_async()`."""
+        ...
+
+
 class StockCorporateActionsClient:
     """Stock corporate actions endpoints client.
 
@@ -1301,6 +1376,7 @@ class WebSocketClient:
         bearer_token: str | None = None,
         sdk_token: str | None = None,
         base_url: str | None = None,
+        version: dict[str, str] | None = None,
         reconnect: ReconnectConfig | None = None,
         health_check: HealthCheckConfig | None = None,
         tls_ca_file: str | None = None,
@@ -1313,7 +1389,16 @@ class WebSocketClient:
             api_key: Your Fugle API key (exactly one auth method required)
             bearer_token: Bearer token for authentication (exactly one auth method required)
             sdk_token: SDK token for authentication (exactly one auth method required)
-            base_url: Optional custom base URL
+            base_url: Optional custom base URL — host and path prefix ONLY.
+                The SDK appends the version segment; a base_url that already
+                ends in one (e.g. ".../v1.0") raises TypeError. Changed in
+                0.8.0, which reversed the 0.6-0.7 rule.
+            version: Per-product streaming version, e.g. {"futopt": "v1.0"}.
+                Omitted products get their latest: stock v1.0, futopt v1.1.
+                futopt v1.1 delivers trial-matching (試撮) frames on trades /
+                books — branch on the frame's isTrial before acting on a price.
+                Asking for a version a product does not serve raises TypeError
+                rather than silently falling back.
             reconnect: Optional reconnect configuration (default: enabled with 5 attempts)
             health_check: Optional health check configuration (default: disabled)
             tls_ca_file: Path to a PEM-encoded root CA to trust (in addition to
@@ -1325,7 +1410,8 @@ class WebSocketClient:
                 tls_ca_file for production. Emits UserWarning when set.
 
         Raises:
-            TypeError: zero/multiple auth methods, or both TLS cert options set
+            TypeError: zero/multiple auth methods, both TLS cert options set,
+                or a base_url carrying a version segment
             OSError: tls_ca_file path not readable
             ValueError: tls_root_cert_pem contents not a valid PEM certificate
 

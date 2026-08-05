@@ -114,6 +114,7 @@ fn fugle_marketdata(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<client::StockSnapshotClient>()?;
     m.add_class::<client::StockTechnicalClient>()?;
     m.add_class::<client::StockCorporateActionsClient>()?;
+    m.add_class::<client::StockOwnershipClient>()?;
 
     // Register futopt client classes
     m.add_class::<client::FutOptClient>()?;

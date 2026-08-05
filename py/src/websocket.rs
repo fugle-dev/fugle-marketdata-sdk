@@ -445,6 +445,8 @@ impl Default for HealthCheckConfig {
 pub struct WebSocketClient {
     api_key: String,
     base_url: Option<String>,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
     reconnect_config: ReconnectConfig,
     health_check_config: HealthCheckConfig,
     tls: marketdata_core::TlsConfig,
@@ -484,13 +486,14 @@ impl WebSocketClient {
     ///     ws = WebSocketClient(api_key="key", health_check=hc)
     ///     ```
     #[new]
-    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None, base_url=None, reconnect=None, health_check=None, tls_ca_file=None, tls_root_cert_pem=None, tls_accept_invalid_certs=false))]
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None, base_url=None, version=None, reconnect=None, health_check=None, tls_ca_file=None, tls_root_cert_pem=None, tls_accept_invalid_certs=false))]
     pub fn new(
         py: Python<'_>,
         api_key: Option<String>,
         bearer_token: Option<String>,
         sdk_token: Option<String>,
         base_url: Option<String>,
+        version: Option<&Bound<'_, pyo3::types::PyDict>>,
         reconnect: Option<&Bound<'_, ReconnectConfig>>,
         health_check: Option<&Bound<'_, HealthCheckConfig>>,
         tls_ca_file: Option<String>,
@@ -532,9 +535,27 @@ impl WebSocketClient {
             tls_accept_invalid_certs,
         )?;
 
+        let (stock_version, futopt_version) = parse_ws_versions(version)?;
+
+        // Resolve both endpoints now so a bad `base_url` raises here rather
+        // than from `.stock.connect()` much later. Matches the official SDK,
+        // which rejects a versioned baseUrl at construction.
+        for product in [WsProduct::Stock, WsProduct::FutOpt] {
+            build_stream_config(
+                &auth_key,
+                base_url.as_deref(),
+                product,
+                stock_version,
+                futopt_version,
+            )
+            .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
+        }
+
         Ok(Self {
             api_key: auth_key,
             base_url,
+            stock_version,
+            futopt_version,
             reconnect_config,
             health_check_config,
             tls,
@@ -550,6 +571,8 @@ impl WebSocketClient {
         StockWebSocketClient::new(
             self.api_key.clone(),
             self.base_url.clone(),
+            self.stock_version,
+            self.futopt_version,
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls.clone(),
@@ -565,11 +588,113 @@ impl WebSocketClient {
         FutOptWebSocketClient::new(
             self.api_key.clone(),
             self.base_url.clone(),
+            self.stock_version,
+            self.futopt_version,
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls.clone(),
         )
     }
+}
+
+/// Resolve the `version` kwarg into the two per-product enums.
+///
+/// The official SDK takes a per-product mapping (`{'futopt': 'v1.1'}`) and
+/// validates it at runtime. Core models the same thing as one enum per product
+/// so an unsupported pairing cannot be built at all — but a Python caller
+/// hands us untyped strings, so the validation has to happen here, with the
+/// same error text the official SDK raises.
+fn parse_ws_versions(
+    version: Option<&Bound<'_, pyo3::types::PyDict>>,
+) -> PyResult<(marketdata_core::websocket::StockVersion, marketdata_core::websocket::FutOptVersion)> {
+    use marketdata_core::websocket::{FutOptVersion, StockVersion};
+    use pyo3::types::PyAnyMethods;
+
+    let mut stock = StockVersion::default();
+    let mut futopt = FutOptVersion::default();
+
+    let Some(map) = version else {
+        return Ok((stock, futopt));
+    };
+
+    for (key, value) in map.iter() {
+        let product: String = key.extract().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(
+                "version keys must be product names: 'stock' or 'futopt'",
+            )
+        })?;
+        let requested: String = value.extract().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(format!(
+                "version['{product}'] must be a version string, e.g. 'v1.1'"
+            ))
+        })?;
+
+        match product.as_str() {
+            "stock" => {
+                stock = match requested.as_str() {
+                    "v1.0" => StockVersion::V1_0,
+                    other => {
+                        return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                            "stock streaming does not support {other} (supported: v1.0). \
+                             Remove it from the version mapping to use v1.0."
+                        )))
+                    }
+                }
+            }
+            "futopt" => {
+                futopt = match requested.as_str() {
+                    "v1.0" => FutOptVersion::V1_0,
+                    "v1.1" => FutOptVersion::V1_1,
+                    other => {
+                        return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                            "futopt streaming does not support {other} (supported: v1.0, v1.1). \
+                             Remove it from the version mapping to use v1.1."
+                        )))
+                    }
+                }
+            }
+            other => {
+                return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                    "unknown product '{other}' in version mapping (known: stock, futopt)"
+                )))
+            }
+        }
+    }
+
+    Ok((stock, futopt))
+}
+
+/// Resolve a streaming endpoint through core's factory.
+///
+/// Centralised so the three call sites (sync stock, sync futopt, async stock)
+/// cannot drift on base-URL semantics — which is exactly what happened before
+/// 0.8.0, when each one hand-rolled `format!("{base}/stock/streaming")`.
+fn build_stream_config(
+    api_key: &str,
+    base_url: Option<&str>,
+    product: WsProduct,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
+) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
+    let auth = marketdata_core::AuthRequest::with_api_key(api_key);
+    let mut factory = marketdata_core::WebSocketFactory::new()
+        .stock_version(stock_version)
+        .futopt_version(futopt_version);
+    if let Some(base) = base_url {
+        factory = factory.base_url(base);
+    }
+    let factory = factory.auth(auth);
+    let builder = match product {
+        WsProduct::Stock => factory.stock()?,
+        WsProduct::FutOpt => factory.futopt()?,
+    };
+    Ok(builder.build())
+}
+
+#[derive(Clone, Copy)]
+enum WsProduct {
+    Stock,
+    FutOpt,
 }
 
 /// Internal WebSocket state (not Send/Sync safe, managed via Mutex)
@@ -592,6 +717,8 @@ struct WebSocketState {
 pub struct StockWebSocketClient {
     api_key: String,
     base_url: Option<String>,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
     reconnect_config: ReconnectConfig,
     health_check_config: HealthCheckConfig,
     tls: marketdata_core::TlsConfig,
@@ -608,6 +735,8 @@ impl StockWebSocketClient {
     fn new(
         api_key: String,
         base_url: Option<String>,
+        stock_version: marketdata_core::websocket::StockVersion,
+        futopt_version: marketdata_core::websocket::FutOptVersion,
         reconnect_config: ReconnectConfig,
         health_check_config: HealthCheckConfig,
         tls: marketdata_core::TlsConfig,
@@ -615,6 +744,8 @@ impl StockWebSocketClient {
         Self {
             api_key,
             base_url,
+            stock_version,
+            futopt_version,
             reconnect_config,
             health_check_config,
             tls,
@@ -627,17 +758,21 @@ impl StockWebSocketClient {
     }
 
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
-        let auth = marketdata_core::AuthRequest::with_api_key(&self.api_key);
-        let mut config = match &self.base_url {
-            // Legacy SDK semantic: base_url is the host + marketdata version
-            // prefix (e.g. "wss://api.fugle.tw/marketdata/v1.0"), the SDK
-            // appends "/stock/streaming". Trailing slashes tolerated.
-            Some(base) => {
-                let url = format!("{}/stock/streaming", base.trim_end_matches('/'));
-                marketdata_core::ConnectionConfig::new(url, auth)
-            }
-            None => marketdata_core::ConnectionConfig::fugle_stock(auth),
-        };
+        // `base_url` was already validated in `WebSocketClient::new`, so the
+        // only way this can fail is a caller constructing the product client
+        // directly — fall back to the production endpoint rather than panic.
+        let mut config = build_stream_config(
+            &self.api_key,
+            self.base_url.as_deref(),
+            WsProduct::Stock,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .unwrap_or_else(|_| {
+            marketdata_core::ConnectionConfig::fugle_stock(
+                marketdata_core::AuthRequest::with_api_key(&self.api_key),
+            )
+        });
         config.tls = self.tls.clone();
         config
     }
@@ -1243,6 +1378,8 @@ impl StockWebSocketClient {
         })?;
 
         let api_key = self.api_key.clone();
+        let stock_version = self.stock_version;
+        let futopt_version = self.futopt_version;
         let base_url = self.base_url.clone();
         let reconnect_config = self.reconnect_config.to_core();
         let health_check_config = self.health_check_config.to_core();
@@ -1254,14 +1391,14 @@ impl StockWebSocketClient {
 
         future_into_py(py, async move {
             // Create WebSocket client with full config
-            let auth = marketdata_core::AuthRequest::with_api_key(&api_key);
-            let config = match base_url {
-                Some(base) => {
-                    let url = format!("{}/stock/streaming", base.trim_end_matches('/'));
-                    marketdata_core::ConnectionConfig::new(url, auth)
-                }
-                None => marketdata_core::ConnectionConfig::fugle_stock(auth),
-            };
+            let config = build_stream_config(
+                &api_key,
+                base_url.as_deref(),
+                WsProduct::Stock,
+                stock_version,
+                futopt_version,
+            )
+            .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
             let ws_client = marketdata_core::aio::WebSocketClient::with_full_config(
                 config,
                 reconnect_config,
@@ -1468,6 +1605,8 @@ impl StockWebSocketClient {
 pub struct FutOptWebSocketClient {
     api_key: String,
     base_url: Option<String>,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
     reconnect_config: ReconnectConfig,
     health_check_config: HealthCheckConfig,
     tls: marketdata_core::TlsConfig,
@@ -1482,6 +1621,8 @@ impl FutOptWebSocketClient {
     fn new(
         api_key: String,
         base_url: Option<String>,
+        stock_version: marketdata_core::websocket::StockVersion,
+        futopt_version: marketdata_core::websocket::FutOptVersion,
         reconnect_config: ReconnectConfig,
         health_check_config: HealthCheckConfig,
         tls: marketdata_core::TlsConfig,
@@ -1489,6 +1630,8 @@ impl FutOptWebSocketClient {
         Self {
             api_key,
             base_url,
+            stock_version,
+            futopt_version,
             reconnect_config,
             health_check_config,
             tls,
@@ -1549,14 +1692,19 @@ impl FutOptWebSocketClient {
     }
 
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
-        let auth = marketdata_core::AuthRequest::with_api_key(&self.api_key);
-        let mut config = match &self.base_url {
-            Some(base) => {
-                let url = format!("{}/futopt/streaming", base.trim_end_matches('/'));
-                marketdata_core::ConnectionConfig::new(url, auth)
-            }
-            None => marketdata_core::ConnectionConfig::fugle_futopt(auth),
-        };
+        // See the stock sibling: validation already happened at construction.
+        let mut config = build_stream_config(
+            &self.api_key,
+            self.base_url.as_deref(),
+            WsProduct::FutOpt,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .unwrap_or_else(|_| {
+            marketdata_core::ConnectionConfig::fugle_futopt(
+                marketdata_core::AuthRequest::with_api_key(&self.api_key),
+            )
+        });
         config.tls = self.tls.clone();
         config
     }
@@ -2116,11 +2264,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_default_versions_match_core() {
+        // The Python default must not drift from core's: futopt on v1.1 means
+        // trial frames arrive without opting in, and that has to be the same
+        // story in every language.
+        let (stock, futopt) = parse_ws_versions(None).unwrap();
+        assert_eq!(stock, marketdata_core::websocket::StockVersion::V1_0);
+        assert_eq!(futopt, marketdata_core::websocket::FutOptVersion::V1_1);
+    }
+
+    #[test]
+    fn test_build_stream_config_appends_version_per_product() {
+        // One base URL, two different version segments — the thing a version
+        // baked into base_url could never express.
+        let stock = build_stream_config(
+            "k",
+            Some("wss://staging.fugle.tw/marketdata"),
+            WsProduct::Stock,
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            stock.url,
+            "wss://staging.fugle.tw/marketdata/v1.0/stock/streaming"
+        );
+
+        let futopt = build_stream_config(
+            "k",
+            Some("wss://staging.fugle.tw/marketdata"),
+            WsProduct::FutOpt,
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            futopt.url,
+            "wss://staging.fugle.tw/marketdata/v1.1/futopt/streaming"
+        );
+    }
+
+    #[test]
+    fn test_build_stream_config_rejects_versioned_base_url() {
+        // The 0.6-era form. Python callers see this as a TypeError at
+        // construction, matching the official SDK.
+        let err = build_stream_config(
+            "k",
+            Some("wss://staging.fugle.tw/marketdata/v1.0"),
+            WsProduct::Stock,
+            Default::default(),
+            Default::default(),
+        )
+        .expect_err("a versioned base_url must be rejected");
+        assert!(err.to_string().contains("must not include a version segment"));
+    }
+
+    #[test]
+    fn test_build_stream_config_defaults_to_production() {
+        let cfg = build_stream_config("k", None, WsProduct::FutOpt, Default::default(), Default::default())
+            .unwrap();
+        assert_eq!(cfg.url, marketdata_core::urls::FUTOPT_WS);
+    }
+
+    #[test]
     fn test_websocket_client_creation_with_api_key() {
         // WebSocketClient::new requires Python bindings, test the internal child client instead
         let client = StockWebSocketClient::new(
             "test-key".to_string(),
             None,
+            Default::default(),
+            Default::default(),
             ReconnectConfig::default(),
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
@@ -2134,6 +2347,8 @@ mod tests {
         let client = StockWebSocketClient::new(
             "test-key".to_string(),
             None,
+            Default::default(),
+            Default::default(),
             ReconnectConfig::default(),
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
@@ -2147,6 +2362,8 @@ mod tests {
         let client = FutOptWebSocketClient::new(
             "test-key".to_string(),
             None,
+            Default::default(),
+            Default::default(),
             ReconnectConfig::default(),
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),

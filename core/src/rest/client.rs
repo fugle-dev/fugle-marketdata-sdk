@@ -164,6 +164,10 @@ impl RestClient {
                 self.base_url = resolved;
                 self.config_error = None;
             }
+            // Store the inner message, not the formatted error: `execute`
+            // re-wraps it in `ConfigError`, and `err.to_string()` already
+            // carries that prefix — keeping it would double it.
+            Err(MarketDataError::ConfigError(message)) => self.config_error = Some(message),
             Err(err) => self.config_error = Some(err.to_string()),
         }
         self
@@ -612,7 +616,14 @@ mod tests {
             .try_base_url("https://api.fugle.tw/marketdata/v1.0")
             .err()
             .expect("0.6-era base_url must be rejected");
-        assert!(err.to_string().contains("must not include a version segment"));
+        let msg = err.to_string();
+        assert!(msg.contains("must not include a version segment"));
+        assert_eq!(
+            msg.matches("Configuration error").count(),
+            1,
+            "the stored message must not carry its own prefix — \
+             `execute` adds one: {msg}"
+        );
     }
 
     #[test]
