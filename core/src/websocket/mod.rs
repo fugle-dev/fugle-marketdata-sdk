@@ -17,6 +17,7 @@ pub(crate) mod protocol;
 pub mod reconnection;
 pub mod subscription;
 pub mod sync;
+pub mod version;
 
 #[cfg(feature = "tokio-comp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio-comp")))]
@@ -33,3 +34,4 @@ pub use message::MessageReceiver;
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};
 pub use subscription::SubscriptionManager;
 pub use sync::WebSocketClient;
+pub use version::{FutOptVersion, StockVersion};

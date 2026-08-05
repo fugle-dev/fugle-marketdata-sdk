@@ -28,6 +28,12 @@ pub struct RestClient {
     /// Optional retry policy. `None` (default) means each request is
     /// attempted exactly once and any error propagates to the caller.
     retry_policy: Option<RetryPolicy>,
+    /// Rejection message from [`RestClient::base_url`], held until the first
+    /// request so the builder chain stays infallible.
+    ///
+    /// Stored as a `String` rather than a `MarketDataError` because the error
+    /// type isn't `Clone` and `execute` only has `&self`.
+    config_error: Option<String>,
 }
 
 impl RestClient {
@@ -69,6 +75,7 @@ impl RestClient {
             auth,
             base_url: crate::urls::REST_BASE.to_string(),
             retry_policy: None,
+            config_error: None,
         })
     }
 
@@ -102,6 +109,14 @@ impl RestClient {
         &self,
         request: ureq::Request,
     ) -> Result<ureq::Response, MarketDataError> {
+        // `base_url` is an infallible builder setter, so a rejected prefix is
+        // parked until here — the first point on the path that can report it.
+        // Every endpoint routes its request through `execute`, so there is no
+        // way to reach the network with a poisoned base URL.
+        if let Some(message) = &self.config_error {
+            return Err(MarketDataError::ConfigError(message.clone()));
+        }
+
         match self.retry_policy {
             Some(policy) => retry::run(&policy, || {
                 let req = request.clone();
@@ -111,18 +126,75 @@ impl RestClient {
         }
     }
 
-    /// Override the base URL (useful for testing or custom endpoints)
+    /// Override the base URL (useful for testing or custom endpoints).
+    ///
+    /// `url` carries the **host and path prefix and nothing else** — the SDK
+    /// appends the version segment. REST serves a single version, so unlike
+    /// streaming there is no option to choose it with, but a version written
+    /// into `url` is still rejected rather than silently doubled.
     ///
     /// # Example
     /// ```
     /// use marketdata_core::{RestClient, Auth};
     ///
     /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()))
-    ///     .base_url("https://custom.api.example.com");
+    ///     .base_url("https://custom.api.example.com/marketdata");
+    ///
+    /// assert_eq!(
+    ///     client.resolved_base_url(),
+    ///     "https://custom.api.example.com/marketdata/v1.0"
+    /// );
     /// ```
+    ///
+    /// # Deferred rejection
+    ///
+    /// This setter is infallible so it stays chainable. A `url` that already
+    /// ends in a version segment is parked and surfaces as
+    /// [`MarketDataError::ConfigError`] from the first request made with this
+    /// client. [`try_base_url`](Self::try_base_url) reports it immediately.
+    ///
+    /// # ⚠️ Breaking change in 0.8.0
+    ///
+    /// 0.6.0 through 0.7.x required `url` to *include* `/v1.0`. That form now
+    /// fails. See `MIGRATION-0.8.md`.
+    #[must_use]
     pub fn base_url(mut self, url: &str) -> Self {
-        self.base_url = url.to_string();
+        match crate::urls::with_version(url, crate::urls::API_VERSION, "") {
+            Ok(resolved) => {
+                self.base_url = resolved;
+                self.config_error = None;
+            }
+            Err(err) => self.config_error = Some(err.to_string()),
+        }
         self
+    }
+
+    /// Same as [`base_url`](Self::base_url), but reports a rejected prefix
+    /// immediately instead of parking it until the first request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] if `url` already ends in a
+    /// version segment.
+    pub fn try_base_url(self, url: &str) -> Result<Self, MarketDataError> {
+        let client = self.base_url(url);
+        match &client.config_error {
+            Some(message) => Err(MarketDataError::ConfigError(message.clone())),
+            None => Ok(client),
+        }
+    }
+
+    /// The prefix every request from this client is built on, fully resolved —
+    /// host, path prefix and version segment. Endpoints are appended to it.
+    ///
+    /// The version segment is chosen by the SDK rather than written by the
+    /// caller, so this is the only way to see what a client actually resolved
+    /// to. If [`base_url`](Self::base_url) rejected its argument, this still
+    /// reports the last accepted prefix — the rejection surfaces from the
+    /// request itself.
+    #[must_use]
+    pub fn resolved_base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// Access stock-related endpoints
@@ -178,6 +250,7 @@ impl Clone for RestClient {
             auth: self.auth.clone(),
             base_url: self.base_url.clone(),
             retry_policy: self.retry_policy,
+            config_error: self.config_error.clone(),
         }
     }
 }
@@ -452,10 +525,71 @@ mod tests {
     }
 
     #[test]
-    fn test_rest_client_custom_base_url() {
+    fn test_rest_client_custom_base_url_gets_version_appended() {
+        // 0.8.0: the caller passes host + prefix; the SDK owns /v1.0.
         let client = RestClient::new(Auth::SdkToken("test-token".to_string()))
             .base_url("https://custom.example.com");
-        assert_eq!(client.get_base_url(), "https://custom.example.com");
+        assert_eq!(client.get_base_url(), "https://custom.example.com/v1.0");
+        assert_eq!(client.resolved_base_url(), "https://custom.example.com/v1.0");
+    }
+
+    #[test]
+    fn test_rest_client_base_url_strips_trailing_slashes() {
+        let client = RestClient::new(Auth::SdkToken("t".to_string()))
+            .base_url("https://custom.example.com/marketdata///");
+        assert_eq!(
+            client.resolved_base_url(),
+            "https://custom.example.com/marketdata/v1.0"
+        );
+    }
+
+    #[test]
+    fn test_legacy_0_6_base_url_is_rejected_on_request() {
+        // 0.6.0-0.7.x required base_url to INCLUDE /v1.0. That form is now
+        // rejected — but the setter stays chainable, so the rejection is
+        // parked until the request. Pins the deferred-error contract.
+        let client = RestClient::new(Auth::SdkToken("t".to_string()))
+            .base_url("https://api.fugle.tw/marketdata/v1.0"); // <-- 0.6-era form
+
+        let request = client.agent().get("https://example.invalid/unused");
+        let msg = match client.execute(request) {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("a poisoned base_url must not reach the network"),
+        };
+        assert!(msg.contains("/v1.0"), "names the offending segment: {msg}");
+        assert!(
+            msg.contains("'https://api.fugle.tw/marketdata'"),
+            "names the prefix to use instead: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_try_base_url_reports_rejection_immediately() {
+        let err = RestClient::new(Auth::SdkToken("t".to_string()))
+            .try_base_url("https://api.fugle.tw/marketdata/v1.0")
+            .err()
+            .expect("0.6-era base_url must be rejected");
+        assert!(err.to_string().contains("must not include a version segment"));
+    }
+
+    #[test]
+    fn test_try_base_url_accepts_host_prefix() {
+        let client = RestClient::new(Auth::SdkToken("t".to_string()))
+            .try_base_url("https://staging.fugle.tw/marketdata")
+            .expect("host + prefix is the accepted form");
+        assert_eq!(
+            client.resolved_base_url(),
+            "https://staging.fugle.tw/marketdata/v1.0"
+        );
+    }
+
+    #[test]
+    fn test_default_client_has_no_config_error() {
+        // The default base URL already carries /v1.0, but it is set directly
+        // rather than through `base_url`, so it must not self-reject.
+        let client = RestClient::new(Auth::SdkToken("t".to_string()));
+        assert!(client.config_error.is_none());
+        assert_eq!(client.resolved_base_url(), "https://api.fugle.tw/marketdata/v1.0");
     }
 
     #[test]
@@ -517,7 +651,18 @@ mod tests {
             .base_url("https://custom.example.com");
 
         let cloned = client.clone();
-        assert_eq!(cloned.get_base_url(), "https://custom.example.com");
+        assert_eq!(cloned.get_base_url(), "https://custom.example.com/v1.0");
+    }
+
+    #[test]
+    fn test_config_error_survives_clone() {
+        // A poisoned client must not launder its rejection through a clone.
+        let client = RestClient::new(Auth::SdkToken("t".to_string()))
+            .base_url("https://custom.example.com/v1.0");
+        let cloned = client.clone();
+
+        let request = cloned.agent().get("https://example.invalid/unused");
+        assert!(cloned.execute(request).is_err());
     }
 
     #[test]

@@ -184,7 +184,17 @@ impl ConnectionConfig {
         Self::new(crate::urls::STOCK_WS, auth)
     }
 
-    /// Create configuration for Fugle futures/options WebSocket endpoint
+    /// Create configuration for Fugle futures/options WebSocket endpoint,
+    /// at the default futopt streaming version
+    /// ([`FutOptVersion::V1_1`](crate::websocket::FutOptVersion::V1_1)).
+    ///
+    /// # ⚠️ Behaviour change in 0.8.0
+    ///
+    /// This moved from `v1.0` to `v1.1`, so trial-matching (試撮) frames now
+    /// arrive on `trades` / `books`. Branch on the frame's `is_trial` before
+    /// acting on a price. To stay on `v1.0`, build through
+    /// [`WebSocketFactory`](crate::WebSocketFactory) with
+    /// `.futopt_version(FutOptVersion::V1_0)`.
     ///
     /// # Example
     ///
@@ -195,7 +205,7 @@ impl ConnectionConfig {
     /// let config = ConnectionConfig::fugle_futopt(
     ///     AuthRequest::with_api_key("my-api-key")
     /// );
-    /// assert_eq!(config.url, "wss://api.fugle.tw/marketdata/v1.0/futopt/streaming");
+    /// assert_eq!(config.url, "wss://api.fugle.tw/marketdata/v1.1/futopt/streaming");
     /// ```
     pub fn fugle_futopt(auth: AuthRequest) -> Self {
         Self::new(crate::urls::FUTOPT_WS, auth)
@@ -366,7 +376,9 @@ mod tests {
         let auth = AuthRequest::with_api_key("test-key");
         let config = ConnectionConfig::fugle_futopt(auth);
 
-        assert_eq!(config.url, "wss://api.fugle.tw/marketdata/v1.0/futopt/streaming");
+        // 0.8.0: the futopt default moved to v1.1, so this convenience
+        // constructor and `WebSocketFactory::futopt()` stay in agreement.
+        assert_eq!(config.url, "wss://api.fugle.tw/marketdata/v1.1/futopt/streaming");
     }
 
     #[test]
