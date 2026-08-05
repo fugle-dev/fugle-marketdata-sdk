@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Rust 0.8.0-rc.1] - 2026-08-05
+
+Aligns with the official `@fugle/marketdata` 1.5.0-rc.5 and
+`fugle-marketdata` 2.5.0rc5. Released as a pre-release while the official
+SDKs are still in rc.
+
+See [MIGRATION-0.8.md](MIGRATION-0.8.md).
+
+### ⚠️ Breaking
+
+- **`base_url` no longer accepts a version segment — this reverses 0.6.0.**
+  A base URL carries the host and path prefix only; the SDK appends the
+  version. Passing a 0.6-era base URL (one ending in `/v1.0`) is now
+  rejected with a `ConfigError` naming the prefix to use instead.
+
+  This follows the official SDKs, whose rationale is that letting two
+  options decide the same path segment forces precedence rules — and those
+  rules make anyone who only wants to change host manage the version by
+  hand. That matters more now that streaming versions are per-product: with
+  `futopt` on `v1.1` and `stock` on `v1.0`, one baked-in segment cannot be
+  right for both.
+
+  Unlike the 0.6.0 change, this failure is loud rather than silent.
+
+- **`WebSocketFactory::stock()` / `::futopt()` now return `Result`**, so a
+  rejected `base_url` surfaces at the earliest honest point. `RestClient`
+  keeps an infallible `base_url()` and surfaces the rejection from the first
+  request; `try_base_url()` reports it immediately instead.
+
+### ⚠️ Behaviour change
+
+- **futopt streaming defaults to `v1.1`**, which delivers trial-matching
+  (試撮, TAIFEX I022/I082) frames on `trades` / `books`. A trial frame is a
+  simulated match, not a trade — branch on `is_trial` before acting on a
+  price. Pin `FutOptVersion::V1_0` to opt out.
+
+  `urls::FUTOPT_WS` and `ConnectionConfig::fugle_futopt` moved to `v1.1`
+  in step, so they cannot drift from the factory.
+
+  Note that `aggregates` is **not** version-gated: it carries trial data on
+  every version, and pinning `V1_0` does not opt out of it.
+
+### Added
+
+- `stock().ownership().etf_holdings()` — `GET
+  /stock/ownership/etf-holdings/{symbol}` with `from` / `to` / `sort`.
+- `StockVersion` / `FutOptVersion` enums and
+  `WebSocketFactory::{stock_version, futopt_version}`. One enum per product
+  makes an unsupported pairing unrepresentable, so unlike the official SDKs'
+  runtime-validated version map, a bad combination does not compile.
+- `RestClient::resolved_base_url()` — the fully resolved request prefix.
+  Since the SDK owns the version segment, this is the only way to see what a
+  client actually resolved to.
+- `RestClient::try_base_url()`.
+- `futopt().intraday().tickers().is_spread(bool)` filter, and `is_spread` on
+  `FutOptTicker`.
+- `FutOptQuote`: `market`, `price_limits`, `last_trial`, `trading_halt`,
+  `is_trial`, `is_delayed_open`, `is_delayed_close`, `is_continuous`,
+  `is_open`, `is_close`, `serial`. `FutOptTotalStats` goes from 3 fields to
+  8; `FutOptLastTrade` gains `bid` / `ask` / `serial`. New
+  `FutOptPriceLimits` and `FutOptTradingHalt`.
+- Streaming frames: `is_trial` on `TradesData` / `BooksData` /
+  `AggregatesData`; `derived_bid` / `derived_ask` / `data_type` / `exchange`
+  on `BooksData`; `time` / `serial` / `is_replaced` on `StreamTrade`;
+  `last_trial` on `AggregatesData`.
+- `prod_smoke` probes for etf-holdings, the `isSpread` filter, and spread
+  contracts (discovered dynamically).
+
+### Fixed
+
+- **Symbol path segments are percent-encoded.** Spread contract symbols
+  carry a `/` (e.g. `TXFC4/TXFD4`); interpolated raw it became a path
+  separator and the request silently reached a different endpoint. Applied
+  to all 19 endpoints that put a symbol in the path. The encoder reproduces
+  `encodeURIComponent`'s reserved set exactly, so a symbol encodes
+  identically here and in the Node SDK.
+
+### Notes
+
+- The official SDKs' 1.5.0 health-check rework (freshness-based detection
+  plus a disconnect reason, and the `maxMissedPongs >= 1` clamp) needs no
+  counterpart: this SDK has used a single async-native timeout window since
+  0.3.0, and has no missed-pong counter to clamp. `health_check`'s module
+  docs now carry a mapping table for anyone porting config from Node or
+  Python.
+- `name` / `previous_close` were dropped from the official futopt quote
+  response in 1.5.0 but are retained here as `Option`, so payloads still
+  carrying them keep decoding.
+
 ## [Rust 0.7.3] - 2026-05-16
 
 Follow-up to 0.7.2: a deeper prod sweep showed the futopt

@@ -1,3 +1,13 @@
+> ## ⚠️ Superseded by 0.8.0
+>
+> The `base_url` change described below was **reversed in 0.8.0** to match the
+> official Node / Python SDKs: a base URL must now carry the host and path
+> prefix *only*, and one ending in a version segment is rejected.
+>
+> If you are upgrading past 0.8.0, read [MIGRATION-0.8.md](MIGRATION-0.8.md)
+> instead — it covers both the 0.5.x and 0.6.x/0.7.x starting points. This
+> document is kept for anyone landing on an intermediate 0.6.x / 0.7.x pin.
+
 # Migration Guide: Rust 0.5.x → 0.6
 
 Three changes in 0.6.0. **One is a silent breaking semantic shift** —

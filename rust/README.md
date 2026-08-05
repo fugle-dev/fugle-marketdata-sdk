@@ -266,7 +266,12 @@ let client = WebSocketClient::with_full_config(connection, reconnect, health);
 
 ### Custom endpoints (staging / proxy / mock server)
 
-Both transports accept a custom URL.
+Both transports accept a custom base URL. It carries the **host and path
+prefix only** — the SDK appends the version segment. A base URL that already
+ends in a version segment is rejected.
+
+> **Changed in 0.8.0.** 0.6.0–0.7.x required the opposite (the version segment
+> had to be included). See [MIGRATION-0.8.md](../MIGRATION-0.8.md).
 
 REST — chainable setter:
 
@@ -274,8 +279,12 @@ REST — chainable setter:
 use fugle_marketdata::{Auth, RestClient};
 
 let client = RestClient::new(Auth::SdkToken("t".into()))
-    .base_url("https://staging.fugle.tw/marketdata/v1.0");
-# drop(client);
+    .base_url("https://staging.fugle.tw/marketdata");
+
+assert_eq!(
+    client.resolved_base_url(),
+    "https://staging.fugle.tw/marketdata/v1.0"
+);
 ```
 
 WebSocket — `WebSocketFactory` mirrors the JS / Python SDK shape:
@@ -284,13 +293,34 @@ supply one base URL, get both stock and futopt endpoints.
 ```rust,no_run
 use fugle_marketdata::{AuthRequest, WebSocketClient, WebSocketFactory};
 
-# fn main() {
-let factory = WebSocketFactory::new(AuthRequest::with_api_key("k"))
-    .base_url("wss://staging.fugle.tw/marketdata");
+# fn main() -> Result<(), fugle_marketdata::MarketDataError> {
+let factory = WebSocketFactory::new()
+    .base_url("wss://staging.fugle.tw/marketdata")
+    .auth(AuthRequest::with_api_key("k"));
 
-let stock_client  = WebSocketClient::new(factory.stock().build());
-let futopt_client = WebSocketClient::new(factory.futopt().build());
+let stock_client  = WebSocketClient::new(factory.stock()?.build());
+let futopt_client = WebSocketClient::new(factory.futopt()?.build());
 # drop((stock_client, futopt_client));
+# Ok(())
+# }
+```
+
+Streaming versions are per-product options, not something written into the
+base URL. futopt defaults to `v1.1`, which delivers trial-matching (試撮)
+frames — branch on `is_trial` before acting on a price, or pin `V1_0`:
+
+```rust,no_run
+use fugle_marketdata::{AuthRequest, WebSocketFactory};
+use fugle_marketdata::websocket::FutOptVersion;
+
+# fn main() -> Result<(), fugle_marketdata::MarketDataError> {
+let cfg = WebSocketFactory::new()
+    .futopt_version(FutOptVersion::V1_0)
+    .auth(AuthRequest::with_api_key("k"))
+    .futopt()?
+    .build();
+# drop(cfg);
+# Ok(())
 # }
 ```
 

@@ -12,6 +12,17 @@ There are two distinct migrations covered in this document:
 If you are coming from the old SDK, read section 1. If you already use this
 package, jump to section 2.
 
+### Per-release migration guides (Rust crates)
+
+| Release | Guide | Headline |
+|---|---|---|
+| 0.8.0 | [MIGRATION-0.8.md](MIGRATION-0.8.md) | `base_url` reverses 0.6.0 (version segment now rejected); futopt streaming defaults to v1.1 with trial frames |
+| 0.7.0 | [MIGRATION-0.7.md](MIGRATION-0.7.md) | dual-host REST/WebSocket endpoints |
+| 0.6.0 | [MIGRATION-0.6.md](MIGRATION-0.6.md) | `base_url` required the version segment — **superseded by 0.8.0** |
+| 0.5.0 | [MIGRATION-0.5.md](MIGRATION-0.5.md) | `SymbolSpec` → `Symbols`, typestate factory |
+| 0.4.0 | [MIGRATION-0.4.md](MIGRATION-0.4.md) | reconnect default flip, graceful shutdown |
+| 0.3.0 | [MIGRATION-0.3.md](MIGRATION-0.3.md) | sync-default + `tokio-comp` feature |
+
 ---
 
 ## Migrating from the legacy `fugle-marketdata` SDKs

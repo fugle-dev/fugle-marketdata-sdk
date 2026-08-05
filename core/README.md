@@ -314,6 +314,8 @@ let cfg = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("k"));
 
 **Independent endpoints**: `RestClient::base_url(...)` and `WebSocketFactory::base_url(...)` are independent. The two clients can target different hosts (REST on the public API, WebSocket on a separate edge / staging / private host) — see `MIGRATION-0.7.md` for the dual-host pattern.
 
+**Base URLs carry no version segment** (changed in 0.8.0). Pass the host and path prefix only — `"wss://staging.fugle.tw/marketdata"`, not `".../marketdata/v1.0"` — and the SDK appends the version. A base URL ending in a version segment is rejected. Streaming versions come from `WebSocketFactory::{stock_version, futopt_version}`; **futopt defaults to `v1.1`, which delivers trial-matching (試撮) frames**. See `MIGRATION-0.8.md`.
+
 ## Feature flags
 
 | Feature       | Default | Adds                                                                              |

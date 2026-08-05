@@ -29,6 +29,37 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### 0.8.0-rc.1 — official 1.5.0 / 2.5.0 parity
+
+Breaking and additive changes; see `MIGRATION-0.8.md` for the caller-facing
+story.
+
+- `~` `WebSocketFactory::stock` / `::futopt` — now return
+  `Result<ConnectionConfigBuilder, MarketDataError>`. A `base_url` carrying a
+  version segment is rejected, and this is the earliest point that can report
+  it.
+- `~` `RestClient::base_url` — semantics reversed (host + prefix only, SDK
+  appends the version). Signature unchanged; gained `#[must_use]`.
+- `~` `urls::FUTOPT_WS` — value moved from `/v1.0/` to `/v1.1/` so it cannot
+  drift from the new futopt default.
+- `+` `urls::with_version` — shared base-URL + version join and rejection.
+- `+` `websocket::version` module: `StockVersion`, `FutOptVersion`
+  (`#[non_exhaustive]`, re-exported from `websocket`).
+- `+` `WebSocketFactory::stock_version` / `::futopt_version`.
+- `+` `RestClient::try_base_url`, `RestClient::resolved_base_url`.
+- `+` `rest::client::OwnershipClient`, `StockClient::ownership`.
+- `+` `rest::stock::ownership` module: `EtfHoldingsRequestBuilder`,
+  `HoldingsSort`.
+- `+` `models::{EtfHoldingComponent, EtfHoldingsEntry, EtfHoldingsResponse}`.
+- `+` `models::futopt::{FutOptPriceLimits, FutOptTradingHalt}` and new fields
+  on `FutOptQuote`, `FutOptTotalStats`, `FutOptLastTrade`, `FutOptTicker`.
+- `+` New fields on `models::streaming::{TradesData, BooksData, StreamTrade,
+  AggregatesData}`.
+- `+` `TickersRequestBuilder::is_spread`.
+
+Note: `urls::API_VERSION` is retained and still means the REST version.
+WebSocket versions are now per-product and live in `websocket::version`.
+
 ### 0.7.0 (baseline)
 
 Initial baseline captured at the 0.7.0 release. Contents of
