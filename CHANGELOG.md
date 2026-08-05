@@ -72,6 +72,13 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
   `AggregatesData`; `derived_bid` / `derived_ask` / `data_type` / `exchange`
   on `BooksData`; `time` / `serial` / `is_replaced` on `StreamTrade`;
   `last_trial` on `AggregatesData`.
+- `TradeInfo` gains `serial: Option<String>` — stock's `lastTrade` /
+  `lastTrial` carry one and it was previously discarded.
+- Optional boolean flags (`is_trial`, `is_replaced`) now tolerate an explicit
+  JSON `null` as well as an absent key. `#[serde(default)]` alone only covers
+  the absent case; a literal `null` failed the whole decode. The API
+  demonstrably uses explicit nulls for unset fields on dormant contracts.
+  Precautionary — no `isTrial: null` has been observed in the wild.
 - `prod_smoke` probes for etf-holdings, the `isSpread` filter, and spread
   contracts (discovered dynamically).
 

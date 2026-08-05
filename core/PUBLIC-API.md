@@ -53,6 +53,11 @@ story.
 - `+` `models::{EtfHoldingComponent, EtfHoldingsEntry, EtfHoldingsResponse}`.
 - `+` `models::futopt::{FutOptPriceLimits, FutOptTradingHalt}` and new fields
   on `FutOptQuote`, `FutOptTotalStats`, `FutOptLastTrade`, `FutOptTicker`.
+- `+` `models::TradeInfo::serial` (`Option<String>`).
+- `~` `FutOptLastTrade::serial` is `Option<String>`, not a numeric type — the
+  server sends a zero-padded string on futopt and a number on stock, and both
+  normalise to `String`. Verified against live payloads; the official
+  TypeScript interface declares `number` for both and is wrong for futopt.
 - `+` New fields on `models::streaming::{TradesData, BooksData, StreamTrade,
   AggregatesData}`.
 - `+` `TickersRequestBuilder::is_spread`.
