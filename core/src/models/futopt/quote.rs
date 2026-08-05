@@ -12,33 +12,89 @@ pub struct FutOptPriceLevel {
 }
 
 /// Total trading statistics for FutOpt
+///
+/// Every field past `tradeVolume` is optional: which of them the server sends
+/// varies by endpoint and by session, and a missing field must never fail the
+/// whole decode.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct FutOptTotalStats {
     /// Total trade volume
-    #[serde(rename = "tradeVolume")]
+    #[serde(rename = "tradeVolume", default)]
     pub trade_volume: i64,
+    /// Total traded value
+    #[serde(rename = "tradeValue", default)]
+    pub trade_value: Option<f64>,
     /// Total volume matched at bid price
     #[serde(rename = "totalBidMatch")]
     pub total_bid_match: Option<i64>,
     /// Total volume matched at ask price
     #[serde(rename = "totalAskMatch")]
     pub total_ask_match: Option<i64>,
+    /// Volume traded at the bid
+    #[serde(rename = "tradeVolumeAtBid")]
+    pub trade_volume_at_bid: Option<i64>,
+    /// Volume traded at the ask
+    #[serde(rename = "tradeVolumeAtAsk")]
+    pub trade_volume_at_ask: Option<i64>,
+    /// Number of transactions
+    pub transaction: Option<i64>,
+    /// Timestamp (Unix milliseconds)
+    pub time: Option<i64>,
 }
 
 /// Last trade information for FutOpt
+///
+/// Also used for `lastTrial`, which carries the same shape.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct FutOptLastTrade {
+    /// Best bid price at trade time
+    pub bid: Option<f64>,
+    /// Best ask price at trade time
+    pub ask: Option<f64>,
     /// Trade price
+    #[serde(default)]
     pub price: f64,
     /// Trade size
+    #[serde(default)]
     pub size: i64,
     /// Trade timestamp (Unix milliseconds)
+    #[serde(default)]
     pub time: i64,
+    /// Exchange sequence number for this trade
+    pub serial: Option<i64>,
+}
+
+/// Daily price limits and the reference prices they are derived from.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct FutOptPriceLimits {
+    /// Limit on the traded price
+    pub price: Option<f64>,
+    /// Limit on the bid side
+    pub bid: Option<f64>,
+    /// Limit on the ask side
+    pub ask: Option<f64>,
+    /// Circuit-breaker (curb) level
+    pub curb: Option<f64>,
+}
+
+/// Trading halt status for FutOpt
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct FutOptTradingHalt {
+    /// Whether trading is currently halted
+    #[serde(rename = "isHalted", default)]
+    pub is_halted: bool,
+    /// Timestamp of the halt state (Unix milliseconds)
+    pub time: Option<i64>,
 }
 
 /// Real-time FutOpt quote from Fugle API (futopt/intraday/quote/{symbol})
 ///
-/// This matches the official SDK's RestFutOptIntradayQuoteResponse
+/// Matches the official SDK's `RestFutOptIntradayQuoteResponse`.
+///
+/// Every field but `date` and `symbol` is optional or `#[serde(default)]`.
+/// Which fields the server actually sends varies by contract, by session and
+/// by whether a trial (試撮) is running, and a payload that omits one must not
+/// fail the whole decode.
 ///
 /// # Example
 ///
@@ -46,20 +102,14 @@ pub struct FutOptLastTrade {
 /// use marketdata_core::models::futopt::FutOptQuote;
 ///
 /// let json = r#"{
-///     "date": "2024-01-15",
+///     "date": "2026-08-05",
 ///     "type": "FUTURE",
 ///     "exchange": "TAIFEX",
-///     "symbol": "TXFC4",
-///     "name": "臺股期貨",
-///     "previousClose": 17500.0,
+///     "market": "FUTURES",
+///     "symbol": "TXFH6",
 ///     "openPrice": 17520.0,
-///     "openTime": 1705287000000,
 ///     "highPrice": 17580.0,
-///     "highTime": 1705290600000,
 ///     "lowPrice": 17480.0,
-///     "lowTime": 1705288800000,
-///     "closePrice": 17550.0,
-///     "closeTime": 1705302000000,
 ///     "lastPrice": 17550.0,
 ///     "lastSize": 2,
 ///     "avgPrice": 17530.0,
@@ -68,14 +118,31 @@ pub struct FutOptLastTrade {
 ///     "amplitude": 0.57,
 ///     "bids": [{"price": 17549.0, "size": 50}],
 ///     "asks": [{"price": 17550.0, "size": 30}],
-///     "total": {"tradeVolume": 50000, "totalBidMatch": 25000, "totalAskMatch": 25000},
-///     "lastTrade": {"price": 17550.0, "size": 2, "time": 1705302000000},
-///     "lastUpdated": 1705302000000
+///     "total": {
+///         "tradeValue": 8765000000.0,
+///         "tradeVolume": 50000,
+///         "tradeVolumeAtBid": 24000,
+///         "tradeVolumeAtAsk": 26000,
+///         "transaction": 31234,
+///         "time": 1785900000000
+///     },
+///     "priceLimits": {"price": 19250.0, "bid": 19250.0, "ask": 15750.0, "curb": 0.0},
+///     "lastTrade": {
+///         "bid": 17549.0, "ask": 17550.0, "price": 17550.0,
+///         "size": 2, "time": 1785900000000, "serial": 981234
+///     },
+///     "tradingHalt": {"isHalted": false, "time": 0},
+///     "isContinuous": true,
+///     "isOpen": true,
+///     "serial": 981234,
+///     "lastUpdated": 1785900000000
 /// }"#;
 ///
 /// let quote: FutOptQuote = serde_json::from_str(json).unwrap();
-/// assert_eq!(quote.symbol, "TXFC4");
+/// assert_eq!(quote.symbol, "TXFH6");
 /// assert_eq!(quote.last_price, Some(17550.0));
+/// assert!(!quote.is_trial, "no trial session in this payload");
+/// assert_eq!(quote.price_limits.unwrap().price, Some(19250.0));
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct FutOptQuote {
@@ -90,16 +157,29 @@ pub struct FutOptQuote {
     /// Exchange code (TAIFEX)
     pub exchange: Option<String>,
 
+    /// Market
+    pub market: Option<String>,
+
     /// Contract symbol (e.g., "TXFC4", "TXO18000C4")
     pub symbol: String,
 
     /// Contract name
+    ///
+    /// The official SDK dropped this field in 1.5.0; it is kept here as an
+    /// `Option` so payloads that still carry it keep decoding.
     pub name: Option<String>,
 
     // === Reference prices ===
     /// Previous close price
+    ///
+    /// The official SDK dropped this field in 1.5.0; it is kept here as an
+    /// `Option` so payloads that still carry it keep decoding.
     #[serde(rename = "previousClose")]
     pub previous_close: Option<f64>,
+
+    /// Daily price limits
+    #[serde(rename = "priceLimits")]
+    pub price_limits: Option<FutOptPriceLimits>,
 
     // === OHLC prices with timestamps ===
     /// Open price
@@ -173,6 +253,46 @@ pub struct FutOptQuote {
     /// Last trade information
     #[serde(rename = "lastTrade")]
     pub last_trade: Option<FutOptLastTrade>,
+
+    /// Last trial match (試撮). Absent outside a trial session.
+    #[serde(rename = "lastTrial")]
+    pub last_trial: Option<FutOptLastTrade>,
+
+    /// Trading halt status
+    #[serde(rename = "tradingHalt")]
+    pub trading_halt: Option<FutOptTradingHalt>,
+
+    // === Session flags ===
+    /// Marks the quote as trial-matching (試撮) — a simulated match, not a
+    /// trade. Omitted rather than sent as `false` outside a trial session,
+    /// during which `last_price` / `last_size` are the trial values.
+    ///
+    /// Branch on this before acting on a price.
+    #[serde(rename = "isTrial", default)]
+    pub is_trial: bool,
+
+    /// Is delayed open
+    #[serde(rename = "isDelayedOpen", default)]
+    pub is_delayed_open: bool,
+
+    /// Is delayed close
+    #[serde(rename = "isDelayedClose", default)]
+    pub is_delayed_close: bool,
+
+    /// Is in continuous trading
+    #[serde(rename = "isContinuous", default)]
+    pub is_continuous: bool,
+
+    /// Is the session open
+    #[serde(rename = "isOpen", default)]
+    pub is_open: bool,
+
+    /// Is the session closed
+    #[serde(rename = "isClose", default)]
+    pub is_close: bool,
+
+    /// Exchange sequence number for this quote
+    pub serial: Option<i64>,
 
     /// Last updated timestamp (Unix milliseconds)
     #[serde(rename = "lastUpdated")]
@@ -339,11 +459,128 @@ mod tests {
     }
 
     #[test]
+    fn test_futopt_total_stats_new_fields() {
+        let json = r#"{
+            "tradeValue": 8765000000.0,
+            "tradeVolume": 50000,
+            "tradeVolumeAtBid": 24000,
+            "tradeVolumeAtAsk": 26000,
+            "transaction": 31234,
+            "time": 1785900000000
+        }"#;
+        let stats: FutOptTotalStats = serde_json::from_str(json).unwrap();
+        assert_eq!(stats.trade_value, Some(8765000000.0));
+        assert_eq!(stats.trade_volume_at_bid, Some(24000));
+        assert_eq!(stats.trade_volume_at_ask, Some(26000));
+        assert_eq!(stats.transaction, Some(31234));
+        assert_eq!(stats.time, Some(1785900000000));
+    }
+
+    #[test]
+    fn test_futopt_total_stats_tolerates_every_field_missing() {
+        // Which of these the server sends varies by endpoint and session.
+        // Decoding must survive an empty object rather than failing the whole
+        // quote — this is the 0.7.2 lesson encoded as a test.
+        let stats: FutOptTotalStats = serde_json::from_str("{}").unwrap();
+        assert_eq!(stats.trade_volume, 0);
+        assert_eq!(stats.trade_value, None);
+    }
+
+    #[test]
     fn test_futopt_last_trade_deserialization() {
         let json = r#"{"price": 17550.0, "size": 2, "time": 1705302000000}"#;
         let trade: FutOptLastTrade = serde_json::from_str(json).unwrap();
         assert_eq!(trade.price, 17550.0);
         assert_eq!(trade.size, 2);
         assert_eq!(trade.time, 1705302000000);
+        assert_eq!(trade.bid, None);
+        assert_eq!(trade.serial, None);
+    }
+
+    #[test]
+    fn test_futopt_last_trade_with_bid_ask_serial() {
+        let json = r#"{
+            "bid": 17549.0, "ask": 17550.0, "price": 17550.0,
+            "size": 2, "time": 1785900000000, "serial": 981234
+        }"#;
+        let trade: FutOptLastTrade = serde_json::from_str(json).unwrap();
+        assert_eq!(trade.bid, Some(17549.0));
+        assert_eq!(trade.ask, Some(17550.0));
+        assert_eq!(trade.serial, Some(981234));
+    }
+
+    #[test]
+    fn test_futopt_quote_trial_session() {
+        // During a trial, `lastPrice` / `lastSize` are the trial values and
+        // only `isTrial` distinguishes them from a real trade.
+        let json = r#"{
+            "date": "2026-08-05",
+            "symbol": "TXFH6",
+            "lastPrice": 17550.0,
+            "lastSize": 2,
+            "isTrial": true,
+            "lastTrial": {"price": 17550.0, "size": 2, "time": 1785900000000, "serial": 5}
+        }"#;
+        let quote: FutOptQuote = serde_json::from_str(json).unwrap();
+        assert!(quote.is_trial);
+        assert_eq!(quote.last_trial.unwrap().serial, Some(5));
+    }
+
+    #[test]
+    fn test_futopt_quote_is_trial_defaults_false_when_omitted() {
+        // The server omits `isTrial` entirely rather than sending false.
+        let json = r#"{"date": "2026-08-05", "symbol": "TXFH6"}"#;
+        let quote: FutOptQuote = serde_json::from_str(json).unwrap();
+        assert!(!quote.is_trial);
+    }
+
+    #[test]
+    fn test_futopt_quote_session_flags_and_serial() {
+        let json = r#"{
+            "date": "2026-08-05",
+            "symbol": "TXFH6",
+            "market": "FUTURES",
+            "isDelayedOpen": true,
+            "isContinuous": true,
+            "isOpen": true,
+            "serial": 981234,
+            "tradingHalt": {"isHalted": true, "time": 1785900000000}
+        }"#;
+        let quote: FutOptQuote = serde_json::from_str(json).unwrap();
+        assert_eq!(quote.market.as_deref(), Some("FUTURES"));
+        assert!(quote.is_delayed_open);
+        assert!(quote.is_continuous);
+        assert!(quote.is_open);
+        assert!(!quote.is_close);
+        assert_eq!(quote.serial, Some(981234));
+
+        let halt = quote.trading_halt.unwrap();
+        assert!(halt.is_halted);
+        assert_eq!(halt.time, Some(1785900000000));
+    }
+
+    #[test]
+    fn test_futopt_price_limits() {
+        let json = r#"{"price": 19250.0, "bid": 19250.0, "ask": 15750.0, "curb": 0.0}"#;
+        let limits: FutOptPriceLimits = serde_json::from_str(json).unwrap();
+        assert_eq!(limits.price, Some(19250.0));
+        assert_eq!(limits.bid, Some(19250.0));
+        assert_eq!(limits.ask, Some(15750.0));
+        assert_eq!(limits.curb, Some(0.0));
+    }
+
+    #[test]
+    fn test_futopt_quote_dropped_fields_still_decode() {
+        // The official SDK dropped `name` / `previousClose` in 1.5.0. We keep
+        // them so a payload that still carries them does not fail to decode.
+        let json = r#"{
+            "date": "2026-08-05",
+            "symbol": "TXFH6",
+            "name": "臺股期貨",
+            "previousClose": 17500.0
+        }"#;
+        let quote: FutOptQuote = serde_json::from_str(json).unwrap();
+        assert_eq!(quote.name.as_deref(), Some("臺股期貨"));
+        assert_eq!(quote.previous_close, Some(17500.0));
     }
 }

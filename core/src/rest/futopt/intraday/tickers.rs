@@ -13,6 +13,7 @@ pub struct TickersRequestBuilder<'a> {
     exchange: Option<String>,
     session: Option<String>,
     contract_type: Option<ContractType>,
+    is_spread: Option<bool>,
 }
 
 impl<'a> TickersRequestBuilder<'a> {
@@ -24,6 +25,7 @@ impl<'a> TickersRequestBuilder<'a> {
             exchange: None,
             session: None,
             contract_type: None,
+            is_spread: None,
         }
     }
 
@@ -56,6 +58,15 @@ impl<'a> TickersRequestBuilder<'a> {
         self
     }
 
+    /// Filter by whether the contract is a spread (價差) contract.
+    ///
+    /// Spread symbols carry a `/` (e.g. `TXFC4/TXFD4`); the SDK escapes it
+    /// when the symbol goes into a path.
+    pub fn is_spread(mut self, is_spread: bool) -> Self {
+        self.is_spread = Some(is_spread);
+        self
+    }
+
     /// Execute the request and return the tickers
     ///
     /// # Errors
@@ -79,6 +90,9 @@ impl<'a> TickersRequestBuilder<'a> {
         }
         if let Some(contract_type) = &self.contract_type {
             query_params.push(format!("contractType={}", contract_type.as_code()));
+        }
+        if let Some(is_spread) = self.is_spread {
+            query_params.push(format!("isSpread={}", is_spread));
         }
 
         let url = format!(
@@ -129,6 +143,25 @@ mod tests {
         let builder = TickersRequestBuilder::new(&client).typ(FutOptType::Future);
 
         assert_eq!(builder.typ, Some(FutOptType::Future));
+    }
+
+    #[test]
+    fn test_tickers_builder_with_is_spread() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let builder = TickersRequestBuilder::new(&client)
+            .typ(FutOptType::Future)
+            .is_spread(true);
+
+        assert_eq!(builder.is_spread, Some(true));
+    }
+
+    #[test]
+    fn test_tickers_builder_is_spread_defaults_unset() {
+        // Unset means "don't filter", which is not the same as isSpread=false.
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let builder = TickersRequestBuilder::new(&client).typ(FutOptType::Future);
+
+        assert_eq!(builder.is_spread, None);
     }
 
     #[test]

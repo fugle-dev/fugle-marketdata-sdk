@@ -79,5 +79,8 @@ pub use historical::{
     FutOptDailyData, FutOptDailyResponse, FutOptHistoricalCandle, FutOptHistoricalCandlesResponse,
 };
 pub use product::{Product, ProductsResponse};
-pub use quote::{FutOptLastTrade, FutOptPriceLevel, FutOptQuote, FutOptTotalStats};
+pub use quote::{
+    FutOptLastTrade, FutOptPriceLevel, FutOptPriceLimits, FutOptQuote, FutOptTotalStats,
+    FutOptTradingHalt,
+};
 pub use ticker::FutOptTicker;

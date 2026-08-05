@@ -78,6 +78,11 @@ pub struct FutOptTicker {
     #[serde(rename = "isDynamicBanding", default)]
     pub is_dynamic_banding: bool,
 
+    /// Whether this is a spread (價差) contract. Spread symbols carry a `/`
+    /// (e.g. `TXFC4/TXFD4`).
+    #[serde(rename = "isSpread", default)]
+    pub is_spread: bool,
+
     /// Flow group for trading
     #[serde(rename = "flowGroup")]
     pub flow_group: Option<i32>,
