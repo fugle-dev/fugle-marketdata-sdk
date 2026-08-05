@@ -26,6 +26,10 @@
 //! | `FUGLE_REST_BASE_URL` | the REST half (e.g. `https://api-dev.fugle.tw/marketdata`) |
 //! | `FUGLE_WS_BASE_URL` | the streaming half (a broker SDK token is usually not accepted by the public gateway) |
 //!
+//! `FUGLE_FUTOPT_SYMBOL` overrides contract discovery — comma-separated, and
+//! continuous aliases work (`TXF1!,MXF1!`). The alias always resolves to the
+//! current near-month, so it subscribes to a contract that actually trades.
+//!
 //! # Run
 //! ```bash
 //! export FUGLE_API_KEY="your-prod-key"
@@ -225,6 +229,36 @@ fn classify(e: &MarketDataError) -> Outcome {
     }
 }
 
+/// Find a futures contract that is currently listed.
+///
+/// The plain-session tickers list is empty at most times; the AFTERHOURS list
+/// is populated, and a TXF contract code is valid on the regular-session
+/// endpoints too. Prefers a TXF* symbol, falls back to the first listed one,
+/// then to the `TXF1!` continuous alias.
+async fn discover_futopt_symbol(rest: Arc<RestClient>) -> String {
+    tokio::task::spawn_blocking(move || {
+        rest.futopt()
+            .intraday()
+            .tickers()
+            .typ(FutOptType::Future)
+            .after_hours()
+            .send()
+            .ok()
+            .and_then(|v| {
+                v.iter()
+                    .map(|t| t.symbol.clone())
+                    .find(|s| s.starts_with("TXF"))
+                    .or_else(|| v.into_iter().next().map(|t| t.symbol))
+            })
+    })
+    .await
+    .ok()
+    .flatten()
+    // Continuous alias: always resolves to the current near-month, so it does
+    // not rot the way a hardcoded contract code does.
+    .unwrap_or_else(|| "TXF1!".to_string())
+}
+
 fn spawn_rest<F>(name: &'static str, rest: Arc<RestClient>, f: F) -> JoinHandle<Row>
 where
     F: FnOnce(&RestClient) -> Result<(), MarketDataError> + Send + 'static,
@@ -338,34 +372,30 @@ async fn main() {
     // TXF contract code (e.g. TXFF6) is valid on the regular-session quote/
     // candles/etc endpoints too. Prefer a discovered TXF* symbol; fall back to
     // the current near-month. PROBE, not a GATE — the sweep runs regardless.
-    let futopt_symbol = {
-        let r = rest.clone();
-        tokio::task::spawn_blocking(move || {
-            r.futopt()
-                .intraday()
-                .tickers()
-                .typ(FutOptType::Future)
-                .after_hours()
-                .send()
-                .ok()
-                .and_then(|v| {
-                    v.iter()
-                        .map(|t| t.symbol.clone())
-                        .find(|s| s.starts_with("TXF"))
-                        .or_else(|| v.into_iter().next().map(|t| t.symbol))
-                })
-        })
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "TXFF6".to_string()) // near-month TXF as of 2026-05-16
+    // `FUGLE_FUTOPT_SYMBOL` overrides discovery. Continuous-contract aliases
+    // (`TXF1!`, `MXF1!`) are the useful values here: they always resolve to
+    // the current near-month, which is the contract that actually trades, so
+    // the streaming half gets frames instead of subscribing to a dormant
+    // contract. Comma-separated to subscribe several at once.
+    let futopt_symbol = match std::env::var("FUGLE_FUTOPT_SYMBOL") {
+        Ok(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => discover_futopt_symbol(rest.clone()).await,
     };
 
-    // Resolve a live SPREAD contract (價差). Its symbol carries a `/`
-    // (e.g. "TXFF6/TXFG6"), which is exactly what the 0.8.0 percent-encoding
-    // exists for: unescaped, the slash becomes a path separator and the
-    // request silently lands on a different endpoint. PROBE, not a GATE —
-    // if no spread contract is listed right now, the probe is skipped.
+    let futopt_ws_symbols: Vec<String> = futopt_symbol
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    // REST probes take a single symbol; the first one wins.
+    let futopt_symbol = futopt_ws_symbols
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "TXF1!".to_string());
+
+    // Resolve a live SPREAD contract (價差). Its symbol carries a `/`, which
+    // is what the 0.8.0 percent-encoding covers. PROBE, not a GATE — if no
+    // spread contract is listed right now, the probe is skipped.
     let spread_symbol = {
         let r = rest.clone();
         tokio::task::spawn_blocking(move || {
@@ -439,7 +469,7 @@ async fn main() {
     // on those is exactly what this sweep is meant to catch.
     let (mut stock_rows, mut futopt_rows) = tokio::join!(
         smoke_ws_stock(stock_cfg, "2330", "IX0001"),
-        smoke_ws_futopt(futopt_cfg, &futopt_symbol),
+        smoke_ws_futopt(futopt_cfg, &futopt_ws_symbols),
     );
     rows.append(&mut stock_rows);
     rows.append(&mut futopt_rows);
@@ -492,7 +522,7 @@ async fn smoke_ws_stock(cfg: ConnectionConfig, equity: &str, index: &str) -> Vec
 
 /// FutOpt counterpart. Channels: trades, books, candles, aggregates (no
 /// indices on the futopt feed).
-async fn smoke_ws_futopt(cfg: ConnectionConfig, symbol: &str) -> Vec<Row> {
+async fn smoke_ws_futopt(cfg: ConnectionConfig, symbols: &[String]) -> Vec<Row> {
     let want: &[(FutOptChannel, &str)] = &[
         (FutOptChannel::Trades, "ws futopt trades"),
         (FutOptChannel::Books, "ws futopt books"),
@@ -505,10 +535,15 @@ async fn smoke_ws_futopt(cfg: ConnectionConfig, symbol: &str) -> Vec<Row> {
     if let Err(e) = client.connect().await {
         return vec![Row { name: "ws futopt connect".into(), outcome: classify(&e) }];
     }
+    // Subscribing several contracts widens the chance of catching a frame on
+    // a thin session; the rows are still keyed by channel, so an extra symbol
+    // only helps.
     for (ch, _) in want {
-        let _ = client
-            .subscribe_futopt(FutOptSubscription::new(ch.clone(), symbol))
-            .await;
+        for symbol in symbols {
+            let _ = client
+                .subscribe_futopt(FutOptSubscription::new(ch.clone(), symbol.as_str()))
+                .await;
+        }
     }
 
     let labels: BTreeMap<&str, &str> =
