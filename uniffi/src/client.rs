@@ -1307,6 +1307,13 @@ fn build_futopt_historical_candles_request(
 }
 
 /// Build FutOpt daily request
+#[allow(
+    deprecated,
+    reason = "core deprecated this endpoint (the API always 404s), but the \
+              binding keeps exposing it for parity with the official SDK — \
+              removing it would be a breaking change to the C#/Go/Java/C++ \
+              surface, decided separately from core's deprecation"
+)]
 fn build_futopt_daily_request(
     client: &CoreRestClient,
     symbol: &str,

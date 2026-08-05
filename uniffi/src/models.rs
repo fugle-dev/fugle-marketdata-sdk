@@ -196,7 +196,7 @@ impl From<core::Quote> for Quote {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct Ticker {
     // Response metadata
-    pub date: String,
+    pub date: Option<String>,
     pub data_type: Option<String>,
     pub exchange: Option<String>,
     pub market: Option<String>,
@@ -608,7 +608,7 @@ impl From<core::futopt::FutOptQuote> for FutOptQuote {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FutOptTicker {
     // Response metadata
-    pub date: String,
+    pub date: Option<String>,
     pub contract_type: Option<String>,
     pub exchange: Option<String>,
     pub symbol: String,
@@ -653,7 +653,7 @@ pub struct Product {
     pub name: Option<String>,
     pub underlying_symbol: Option<String>,
     pub contract_type: Option<String>,
-    pub contract_size: Option<i64>,
+    pub contract_size: Option<f64>,
     pub underlying_type: Option<String>,
     pub status_code: Option<String>,
     pub trading_currency: Option<String>,
@@ -730,7 +730,7 @@ pub struct StatsResponse {
     pub low_price: f64,
     pub close_price: f64,
     pub change: f64,
-    pub change_percent: f64,
+    pub change_percent: Option<f64>,
     pub trade_volume: i64,
     pub trade_value: f64,
     pub previous_close: f64,
@@ -942,10 +942,10 @@ impl From<core::Active> for Active {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct SmaResponse {
     pub symbol: String,
-    pub data_type: String,
-    pub exchange: String,
-    pub market: String,
-    pub timeframe: String,
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub timeframe: Option<String>,
     pub period: u32,
     pub data: Vec<SmaDataPoint>,
 }
@@ -981,10 +981,10 @@ impl From<core::SmaDataPoint> for SmaDataPoint {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RsiResponse {
     pub symbol: String,
-    pub data_type: String,
-    pub exchange: String,
-    pub market: String,
-    pub timeframe: String,
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub timeframe: Option<String>,
     pub period: u32,
     pub data: Vec<RsiDataPoint>,
 }
@@ -1020,11 +1020,15 @@ impl From<core::RsiDataPoint> for RsiDataPoint {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct KdjResponse {
     pub symbol: String,
-    pub data_type: String,
-    pub exchange: String,
-    pub market: String,
-    pub timeframe: String,
-    pub period: u32,
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub timeframe: Option<String>,
+    /// KDJ takes three separate periods, not one. 0.7.2 added the setters
+    /// after prod rejected requests that omitted them.
+    pub r_period: Option<u32>,
+    pub k_period: Option<u32>,
+    pub d_period: Option<u32>,
     pub data: Vec<KdjDataPoint>,
 }
 
@@ -1036,7 +1040,9 @@ impl From<core::KdjResponse> for KdjResponse {
             exchange: r.exchange,
             market: r.market,
             timeframe: r.timeframe,
-            period: r.period,
+            r_period: r.r_period,
+            k_period: r.k_period,
+            d_period: r.d_period,
             data: r.data.into_iter().map(Into::into).collect(),
         }
     }
@@ -1061,10 +1067,10 @@ impl From<core::KdjDataPoint> for KdjDataPoint {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct MacdResponse {
     pub symbol: String,
-    pub data_type: String,
-    pub exchange: String,
-    pub market: String,
-    pub timeframe: String,
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub timeframe: Option<String>,
     pub fast: u32,
     pub slow: u32,
     pub signal: u32,
@@ -1093,7 +1099,7 @@ pub struct MacdDataPoint {
     pub date: String,
     pub macd: f64,
     pub signal_value: f64,
-    pub histogram: f64,
+    pub histogram: Option<f64>,
 }
 
 impl From<core::MacdDataPoint> for MacdDataPoint {
@@ -1106,12 +1112,12 @@ impl From<core::MacdDataPoint> for MacdDataPoint {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BbResponse {
     pub symbol: String,
-    pub data_type: String,
-    pub exchange: String,
-    pub market: String,
-    pub timeframe: String,
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub timeframe: Option<String>,
     pub period: u32,
-    pub stddev: f64,
+    pub stddev: Option<f64>,
     pub data: Vec<BbDataPoint>,
 }
 
@@ -1319,7 +1325,7 @@ pub struct FutOptHistoricalCandle {
     pub high: f64,
     pub low: f64,
     pub close: f64,
-    pub volume: u64,
+    pub volume: Option<u64>,
     pub open_interest: Option<u64>,
     pub change: Option<f64>,
     pub change_percent: Option<f64>,

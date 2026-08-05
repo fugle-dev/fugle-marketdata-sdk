@@ -125,13 +125,17 @@ pub struct HealthCheckConfigRecord {
 
 impl HealthCheckConfigRecord {
     fn to_core(&self) -> marketdata_core::HealthCheckConfig {
-        let mut cfg = marketdata_core::HealthCheckConfig::default();
-        cfg.enabled = self.enabled;
-        if self.heartbeat_timeout_ms > 0 {
-            cfg.heartbeat_timeout =
-                std::time::Duration::from_millis(self.heartbeat_timeout_ms);
+        let default = marketdata_core::HealthCheckConfig::default();
+        marketdata_core::HealthCheckConfig {
+            enabled: self.enabled,
+            // 0 means "unset" across the FFI boundary — there is no Option<u64>
+            // that reads naturally in C#/Go/Java, so fall back to the default.
+            heartbeat_timeout: if self.heartbeat_timeout_ms > 0 {
+                std::time::Duration::from_millis(self.heartbeat_timeout_ms)
+            } else {
+                default.heartbeat_timeout
+            },
         }
-        cfg
     }
 }
 
@@ -470,7 +474,7 @@ impl WebSocketClient {
                                     event_listener.on_disconnected();
                                     event_connected.store(false, Ordering::SeqCst);
                                 }
-                                ConnectionEvent::Authenticated { .. } => {
+                                ConnectionEvent::Authenticated => {
                                     event_connected.store(true, Ordering::SeqCst);
                                 }
                                 // Map Unauthenticated to on_error so existing UniFFI
