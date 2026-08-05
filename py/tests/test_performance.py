@@ -34,12 +34,12 @@ class TestRestClientPerformance:
     @pytest.fixture
     def client(self):
         """Create test client for benchmarks."""
-        return RestClient("benchmark-test-key")
+        return RestClient(api_key="benchmark-test-key")
 
     def test_client_creation_latency(self, benchmark):
         """Benchmark client instantiation time."""
         def create_client():
-            client = RestClient("test-key")
+            client = RestClient(api_key="test-key")
             return client
 
         result = benchmark(create_client)
@@ -80,7 +80,7 @@ class TestRestClientPerformanceIntegration:
         api_key = os.environ.get("FUGLE_API_KEY")
         if not api_key:
             pytest.skip("FUGLE_API_KEY not set")
-        return RestClient(api_key)
+        return RestClient(api_key=api_key)
 
     def test_quote_latency_live(self, benchmark, live_client):
         """Benchmark actual quote API call latency."""
@@ -127,7 +127,7 @@ class TestOfficialSdkComparison:
         api_key = os.environ.get("FUGLE_API_KEY")
         if not api_key:
             pytest.skip("FUGLE_API_KEY not set")
-        return RestClient(api_key)
+        return RestClient(api_key=api_key)
 
     @pytest.fixture
     def baseline(self):

@@ -27,7 +27,7 @@ class TestGilSafety:
         """
         from fugle_marketdata import RestClient
 
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
 
         # Spawn multiple concurrent tasks
         async def make_request():
@@ -52,7 +52,7 @@ class TestGilSafety:
         """
         from fugle_marketdata import RestClient
 
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
 
         def sync_work():
             """Simulate CPU-bound work in thread."""
@@ -88,7 +88,7 @@ class TestGilSafety:
         """
         from fugle_marketdata import WebSocketClient
 
-        ws = WebSocketClient(mock_api_key)
+        ws = WebSocketClient(api_key=mock_api_key)
 
         # This tests that the iterator's __anext__ releases GIL
         # If GIL is held during recv(), other tasks would be blocked
@@ -126,7 +126,7 @@ class TestGilSafety:
         """
         from fugle_marketdata import WebSocketClient
 
-        ws = WebSocketClient(mock_api_key)
+        ws = WebSocketClient(api_key=mock_api_key)
 
         completed_tasks = []
 

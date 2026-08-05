@@ -31,7 +31,7 @@ class TestErrorHandlingBoundary:
         """Invalid symbol should raise specific error type (not base MarketDataError)."""
         from fugle_marketdata import RestClient, MarketDataError
 
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
 
         # Invalid symbol should raise a specific error subclass
         with pytest.raises(MarketDataError) as exc_info:
@@ -51,7 +51,7 @@ class TestErrorHandlingBoundary:
         from fugle_marketdata import RestClient, AuthError, MarketDataError
 
         # Mock key will likely fail authentication
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
 
         try:
             await client.stock.intraday.quote_async("2330")
@@ -71,7 +71,7 @@ class TestErrorHandlingBoundary:
         """Error messages should be valid strings (no memory corruption)."""
         from fugle_marketdata import RestClient, MarketDataError
 
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
 
         try:
             # This will likely fail - we're testing error handling
@@ -91,7 +91,7 @@ class TestErrorHandlingBoundary:
         """Error args should contain message and error code."""
         from fugle_marketdata import RestClient, MarketDataError
 
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
 
         try:
             await client.stock.intraday.quote_async("INVALID")
@@ -115,7 +115,7 @@ class TestPanicRecovery:
 
         # Empty API key should not panic - may accept empty string
         try:
-            client = RestClient("")
+            client = RestClient(api_key="")
             # If it succeeds, verify client is created
             assert client is not None
         except Exception as e:
@@ -128,7 +128,7 @@ class TestPanicRecovery:
         """Very long input strings should not cause buffer overflow."""
         from fugle_marketdata import RestClient
 
-        client = RestClient("test_key")
+        client = RestClient(api_key="test_key")
 
         # Try extremely long symbol (potential buffer overflow)
         long_symbol = "A" * 10000
@@ -143,7 +143,7 @@ class TestPanicRecovery:
         """Unicode input should be handled without panic."""
         from fugle_marketdata import RestClient
 
-        client = RestClient("test_key")
+        client = RestClient(api_key="test_key")
 
         # Unicode characters that might cause issues
         unicode_symbols = [
@@ -169,7 +169,7 @@ class TestMemorySafety:
         from fugle_marketdata import RestClient
 
         # Create multiple clients and delete them
-        clients = [RestClient(f"key_{i}") for i in range(10)]
+        clients = [RestClient(api_key=f"key_{i}") for i in range(10)]
 
         # Get initial reference count
         import sys
@@ -181,14 +181,14 @@ class TestMemorySafety:
 
         # Create new client - should not have memory leaks
         # If there were leaks, this would eventually fail with OOM
-        new_client = RestClient("test_key")
+        new_client = RestClient(api_key="test_key")
         assert new_client is not None
 
     def test_concurrent_client_creation(self):
         """Multiple clients should not interfere with each other's memory."""
         from fugle_marketdata import RestClient
 
-        clients = [RestClient(f"key_{i}") for i in range(10)]
+        clients = [RestClient(api_key=f"key_{i}") for i in range(10)]
 
         # All clients should be independent
         assert len(clients) == 10
@@ -202,7 +202,7 @@ class TestMemorySafety:
         """Client should remain usable after error (no state corruption)."""
         from fugle_marketdata import RestClient
 
-        client = RestClient("test_key")
+        client = RestClient(api_key="test_key")
 
         # Cause an error
         try:
@@ -222,7 +222,7 @@ class TestMemorySafety:
         """Test that any buffer handling is memory safe."""
         from fugle_marketdata import RestClient
 
-        client = RestClient("test_key")
+        client = RestClient(api_key="test_key")
 
         # Test with various input types that might use buffer protocol
         inputs = [
@@ -250,7 +250,7 @@ class TestGilSafety:
         import asyncio
         from fugle_marketdata import RestClient
 
-        client = RestClient("test_key")
+        client = RestClient(api_key="test_key")
         results = []
 
         async def make_request():
@@ -280,7 +280,7 @@ class TestGilSafety:
         results = []
 
         async def use_client(client_id):
-            client = RestClient(f"key_{client_id}")
+            client = RestClient(api_key=f"key_{client_id}")
             try:
                 await client.stock.intraday.quote_async("2330")
             except Exception:

@@ -16,13 +16,13 @@ def api_key():
 @pytest.fixture
 def rest_client(api_key):
     """Create REST client for tests."""
-    return RestClient(api_key)
+    return RestClient(api_key=api_key)
 
 
 @pytest.fixture
 def ws_client(api_key):
     """Create WebSocket client for tests."""
-    return WebSocketClient(api_key)
+    return WebSocketClient(api_key=api_key)
 
 
 @pytest.fixture

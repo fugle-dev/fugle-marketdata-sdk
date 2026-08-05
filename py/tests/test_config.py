@@ -19,49 +19,66 @@ from fugle_marketdata import (
 class TestHealthCheckConfig:
     """Tests for HealthCheckConfig class."""
 
+    # NOTE: this class does NOT mirror the official SDK's HealthCheckConfig
+    # field-for-field. The official SDKs poll on a timer and count missed
+    # pongs (`ping_interval`, `max_missed_pongs`); this SDK uses a single
+    # timeout window enforced at the read site, so there is no interval to
+    # set and no counter to clamp. See the mapping table in
+    # `websocket::health_check`'s module docs.
+
     def test_default_construction(self):
         """Default construction uses sensible defaults."""
         config = HealthCheckConfig()
-        assert config.enabled == False  # Aligned with official SDKs
-        assert config.interval_ms == 30000
-        assert config.max_missed_pongs == 2
+        # Enabled by default since 3.0 — a silent connection would otherwise
+        # sit unnoticed until the OS times out the TCP socket.
+        assert config.enabled is True
+        # Server heartbeat is 30s; +5s absorbs network jitter.
+        assert config.heartbeat_timeout_ms == 35000
 
     def test_custom_values(self):
         """Can specify custom values via kwargs."""
-        config = HealthCheckConfig(
-            enabled=True,
-            interval_ms=15000,
-            max_missed_pongs=3
-        )
-        assert config.enabled == True
-        assert config.interval_ms == 15000
-        assert config.max_missed_pongs == 3
+        config = HealthCheckConfig(enabled=True, heartbeat_timeout_ms=60000)
+        assert config.enabled is True
+        assert config.heartbeat_timeout_ms == 60000
 
     def test_partial_kwargs(self):
         """Can override only some values."""
-        config = HealthCheckConfig(enabled=True)
-        assert config.enabled == True
-        assert config.interval_ms == 30000  # Default
+        config = HealthCheckConfig(enabled=False)
+        assert config.enabled is False
+        assert config.heartbeat_timeout_ms == 35000  # Default
 
-    def test_validation_interval_too_small(self):
-        """interval_ms must be >= 5000."""
+    def test_validation_timeout_too_small(self):
+        """heartbeat_timeout_ms must be >= 5000."""
         with pytest.raises(ValueError) as exc_info:
-            HealthCheckConfig(interval_ms=1000)
+            HealthCheckConfig(heartbeat_timeout_ms=1000)
         assert "5000" in str(exc_info.value)  # Should mention minimum
 
-    def test_validation_max_missed_pongs_zero(self):
-        """max_missed_pongs must be >= 1."""
-        with pytest.raises(ValueError) as exc_info:
-            HealthCheckConfig(max_missed_pongs=0)
-        assert "max_missed_pongs" in str(exc_info.value).lower() or "1" in str(exc_info.value)
+    def test_validation_floor_is_accepted(self):
+        """5000 is at the floor and must be accepted."""
+        assert HealthCheckConfig(heartbeat_timeout_ms=5000).heartbeat_timeout_ms == 5000
+
+    def test_validation_runs_even_when_disabled(self):
+        """Bad input is rejected up front, not silently kept for later."""
+        with pytest.raises(ValueError):
+            HealthCheckConfig(enabled=False, heartbeat_timeout_ms=100)
+
+    def test_rejects_official_sdk_field_names(self):
+        """`ping_interval` / `max_missed_pongs` have no counterpart here.
+
+        Accepting them silently would be worse than rejecting: a caller
+        porting config from the Node or Python SDK would believe they had
+        tuned the health check when nothing had changed.
+        """
+        with pytest.raises(TypeError):
+            HealthCheckConfig(ping_interval=15000)
+        with pytest.raises(TypeError):
+            HealthCheckConfig(max_missed_pongs=3)
 
     def test_fields_are_readable(self):
         """All fields can be read after construction."""
-        config = HealthCheckConfig(enabled=True, interval_ms=10000, max_missed_pongs=5)
-        # These should not raise AttributeError
-        _ = config.enabled
-        _ = config.interval_ms
-        _ = config.max_missed_pongs
+        config = HealthCheckConfig(enabled=True, heartbeat_timeout_ms=10000)
+        assert config.enabled is True
+        assert config.heartbeat_timeout_ms == 10000
 
 
 class TestReconnectConfig:
@@ -143,19 +160,19 @@ class TestRestClientKwargsConstructor:
 
     def test_no_auth_raises_error(self):
         """Must provide at least one auth method."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             RestClient()
         assert "exactly one" in str(exc_info.value).lower()
 
     def test_multiple_auth_raises_error(self):
         """Cannot provide multiple auth methods."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             RestClient(api_key="key", bearer_token="token")
         assert "exactly one" in str(exc_info.value).lower()
 
     def test_all_three_auth_raises_error(self):
         """Cannot provide all three auth methods."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             RestClient(api_key="k", bearer_token="t", sdk_token="s")
         assert "exactly one" in str(exc_info.value).lower()
 
@@ -193,7 +210,7 @@ class TestWebSocketClientKwargsConstructor:
 
     def test_with_health_check_config(self):
         """Can pass HealthCheckConfig."""
-        config = HealthCheckConfig(enabled=True, interval_ms=15000)
+        config = HealthCheckConfig(enabled=True, heartbeat_timeout_ms=15000)
         ws = WebSocketClient(api_key="key", health_check=config)
         assert ws is not None
 
@@ -211,13 +228,13 @@ class TestWebSocketClientKwargsConstructor:
 
     def test_no_auth_raises_error(self):
         """Must provide at least one auth method."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             WebSocketClient()
         assert "exactly one" in str(exc_info.value).lower()
 
     def test_multiple_auth_raises_error(self):
         """Cannot provide multiple auth methods."""
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(TypeError) as exc_info:
             WebSocketClient(api_key="key", bearer_token="token")
         assert "exactly one" in str(exc_info.value).lower()
 

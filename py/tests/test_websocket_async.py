@@ -17,17 +17,17 @@ class TestWebSocketClientCreation:
 
     def test_create_with_api_key(self, mock_api_key):
         """Client should be creatable with API key."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         assert client is not None
 
     def test_stock_property_returns_client(self, mock_api_key):
         """ws.stock should return StockWebSocketClient."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         assert client.stock is not None
 
     def test_futopt_property_returns_client(self, mock_api_key):
         """ws.futopt should return FutOptWebSocketClient."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         assert client.futopt is not None
 
 
@@ -38,7 +38,7 @@ class TestAsyncConnect:
     @pytest.mark.timeout(10)
     async def test_connect_async_returns_awaitable(self, mock_api_key):
         """connect_async() should return an awaitable."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         # Should fail with auth error but be awaitable
         # The connection will fail because of invalid API key
         with pytest.raises((MarketDataError, ConnectionError, Exception)):
@@ -50,7 +50,7 @@ class TestCallbackPattern:
 
     def test_on_registers_callback(self, mock_api_key):
         """on() should register a callback."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         called = []
 
         def handler(msg):
@@ -61,14 +61,14 @@ class TestCallbackPattern:
 
     def test_off_removes_callback(self, mock_api_key):
         """off() should remove callbacks."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         client.stock.on("message", lambda m: None)
         # No error means callback removed successfully
         client.stock.off("message")
 
     def test_on_supports_multiple_events(self, mock_api_key):
         """on() should support multiple event types."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
 
         # Test various event types
         client.stock.on("message", lambda m: None)
@@ -82,7 +82,7 @@ class TestAsyncIterator:
 
     def test_messages_method_exists(self, mock_api_key):
         """messages() method should exist."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         assert hasattr(client.stock, 'messages')
         assert callable(client.stock.messages)
 
@@ -92,23 +92,28 @@ class TestSyncMethods:
 
     def test_is_connected_returns_bool(self, mock_api_key):
         """is_connected() should return bool."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         result = client.stock.is_connected()
         assert isinstance(result, bool)
         assert result is False  # Not connected initially
 
     def test_is_closed_returns_bool(self, mock_api_key):
         """is_closed() should return bool."""
-        client = WebSocketClient(mock_api_key)
+        client = WebSocketClient(api_key=mock_api_key)
         result = client.stock.is_closed()
         assert isinstance(result, bool)
 
-    def test_subscriptions_returns_list(self, mock_api_key):
-        """subscriptions() should return list."""
-        client = WebSocketClient(mock_api_key)
-        result = client.stock.subscriptions()
-        assert isinstance(result, list)
-        assert len(result) == 0  # No subscriptions initially
+    def test_subscriptions_requires_connection(self, mock_api_key):
+        """subscriptions() sends a request frame; it does not return a list.
+
+        Matches the official SDK, where `subscriptions()` asks the server for
+        the current list and the answer arrives through the message handler.
+        There is nothing to send before connecting, so this raises rather than
+        pretending to succeed.
+        """
+        client = WebSocketClient(api_key=mock_api_key)
+        with pytest.raises(RuntimeError, match="Not connected"):
+            client.stock.subscriptions()
 
 
 @pytest.mark.integration
@@ -168,7 +173,7 @@ class TestIntegrationWebSocket:
     @pytest.mark.timeout(15)
     async def test_context_manager(self, api_key):
         """Context manager should connect and disconnect automatically."""
-        ws = WebSocketClient(api_key)
+        ws = WebSocketClient(api_key=api_key)
         async with ws.stock:
             assert ws.stock.is_connected()
         # After context exit, should be disconnected (eventually)
@@ -177,7 +182,7 @@ class TestIntegrationWebSocket:
     @pytest.mark.timeout(10)
     async def test_sync_connect_works(self, api_key):
         """Sync connect() should also work."""
-        ws = WebSocketClient(api_key)
+        ws = WebSocketClient(api_key=api_key)
         # Note: sync connect blocks the event loop
         # This is a known limitation; use connect_async() in async code
         import asyncio
@@ -192,7 +197,7 @@ class TestFutOptWebSocket:
 
     def test_futopt_has_expected_methods(self, mock_api_key):
         """FutOpt client should have expected methods."""
-        ws = WebSocketClient(mock_api_key)
+        ws = WebSocketClient(api_key=mock_api_key)
         futopt = ws.futopt
 
         assert hasattr(futopt, 'connect')
@@ -205,7 +210,7 @@ class TestFutOptWebSocket:
 
     def test_futopt_is_connected_returns_bool(self, mock_api_key):
         """is_connected() should return bool."""
-        ws = WebSocketClient(mock_api_key)
+        ws = WebSocketClient(api_key=mock_api_key)
         result = ws.futopt.is_connected()
         assert isinstance(result, bool)
         assert result is False

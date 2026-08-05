@@ -17,7 +17,7 @@ class TestRestClientCreation:
 
     def test_create_with_api_key(self, mock_api_key):
         """Client should be creatable with API key."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         assert client is not None
 
     def test_create_with_bearer_token(self):
@@ -32,13 +32,13 @@ class TestRestClientCreation:
 
     def test_stock_property_returns_client(self, mock_api_key):
         """client.stock should return StockClient."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         assert client.stock is not None
         assert client.stock.intraday is not None
 
     def test_futopt_property_returns_client(self, mock_api_key):
         """client.futopt should return FutOptClient."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         assert client.futopt is not None
         assert client.futopt.intraday is not None
 
@@ -49,7 +49,7 @@ class TestAsyncMethods:
     @pytest.mark.asyncio
     async def test_quote_returns_awaitable(self, mock_api_key):
         """quote() should return an awaitable that raises error with invalid key."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         # This should raise an error (invalid key) but BE awaitable
         with pytest.raises((MarketDataError, ApiError, AuthError)):
             await client.stock.intraday.quote_async("2330")
@@ -57,35 +57,35 @@ class TestAsyncMethods:
     @pytest.mark.asyncio
     async def test_ticker_returns_awaitable(self, mock_api_key):
         """ticker() should return an awaitable."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         with pytest.raises((MarketDataError, ApiError, AuthError)):
             await client.stock.intraday.ticker_async("2330")
 
     @pytest.mark.asyncio
     async def test_candles_returns_awaitable(self, mock_api_key):
         """candles() should return an awaitable."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         with pytest.raises((MarketDataError, ApiError, AuthError)):
             await client.stock.intraday.candles_async("2330")
 
     @pytest.mark.asyncio
     async def test_trades_returns_awaitable(self, mock_api_key):
         """trades() should return an awaitable."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         with pytest.raises((MarketDataError, ApiError, AuthError)):
             await client.stock.intraday.trades_async("2330")
 
     @pytest.mark.asyncio
     async def test_volumes_returns_awaitable(self, mock_api_key):
         """volumes() should return an awaitable."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         with pytest.raises((MarketDataError, ApiError, AuthError)):
             await client.stock.intraday.volumes_async("2330")
 
     @pytest.mark.asyncio
     async def test_futopt_quote_returns_awaitable(self, mock_api_key):
         """futopt.intraday.quote() should return an awaitable."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         with pytest.raises((MarketDataError, ApiError, AuthError)):
             await client.futopt.intraday.quote_async("TXFC4")
 
@@ -95,14 +95,14 @@ class TestMethodSignatures:
 
     def test_quote_accepts_symbol(self, mock_api_key):
         """quote() should accept symbol parameter."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         # Verify method exists and is callable
         assert hasattr(client.stock.intraday, 'quote')
         assert callable(client.stock.intraday.quote)
 
     def test_quote_accepts_odd_lot(self, mock_api_key):
         """quote() should accept odd_lot parameter."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         # The method signature includes odd_lot parameter
         # We verify by checking it doesn't raise TypeError
         import inspect
@@ -113,7 +113,7 @@ class TestMethodSignatures:
 
     def test_candles_accepts_timeframe(self, mock_api_key):
         """candles() should accept timeframe parameter."""
-        client = RestClient(mock_api_key)
+        client = RestClient(api_key=mock_api_key)
         assert hasattr(client.stock.intraday, 'candles')
 
 
