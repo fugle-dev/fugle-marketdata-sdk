@@ -24,6 +24,7 @@ mod common;
 mod corporate;
 pub mod futopt;
 mod historical;
+mod ownership;
 mod quote;
 mod snapshot;
 pub mod streaming;
@@ -42,6 +43,7 @@ pub use candle::{
     HistoricalCandle, HistoricalCandlesResponse, IntradayCandle, IntradayCandlesResponse,
 };
 pub use historical::StatsResponse;
+pub use ownership::{EtfHoldingComponent, EtfHoldingsEntry, EtfHoldingsResponse};
 pub use quote::Quote;
 pub use ticker::Ticker;
 pub use technical::{

@@ -331,6 +331,49 @@ impl<'a> StockClient<'a> {
             client: self.client,
         }
     }
+
+    /// Access ownership endpoints (ETF holdings)
+    ///
+    /// # Example
+    /// ```
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
+    /// let ownership = client.stock().ownership();
+    /// ```
+    pub fn ownership(&self) -> OwnershipClient<'a> {
+        OwnershipClient {
+            client: self.client,
+        }
+    }
+}
+
+/// Ownership endpoints client
+pub struct OwnershipClient<'a> {
+    client: &'a RestClient,
+}
+
+impl<'a> OwnershipClient<'a> {
+    /// Get the constituents an ETF held over a date range.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
+    /// let holdings = client
+    ///     .stock()
+    ///     .ownership()
+    ///     .etf_holdings()
+    ///     .symbol("0050")
+    ///     .send()?;
+    /// # Ok::<(), marketdata_core::MarketDataError>(())
+    /// ```
+    pub fn etf_holdings(
+        &self,
+    ) -> crate::rest::stock::ownership::EtfHoldingsRequestBuilder<'_> {
+        crate::rest::stock::ownership::EtfHoldingsRequestBuilder::new(self.client)
+    }
 }
 
 /// Corporate actions endpoints client
