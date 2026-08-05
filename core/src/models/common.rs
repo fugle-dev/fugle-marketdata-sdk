@@ -1,6 +1,38 @@
 //! Common types shared across market data models
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize an exchange sequence number that the server types
+/// inconsistently, normalising to `String`.
+///
+/// Verified against live payloads: on `stock/intraday/quote`,
+/// `lastTrade.serial` is a JSON number (`17738549`); on
+/// `futopt/intraday/quote` the same field is a zero-padded JSON string
+/// (`"00379320"`). The official TypeScript interface declares `serial: number`
+/// for both, which is wrong for futopt.
+///
+/// This matters beyond the two REST endpoints: futopt's streaming
+/// `aggregates` frame carries the same object as the futopt REST quote, so a
+/// numeric-only type would fail to decode it.
+///
+/// `String` is the honest target type — a serial is an opaque identifier, never
+/// an operand, and futopt's zero padding is fixed-width and significant.
+pub(crate) fn deserialize_serial<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Serial {
+        Str(String),
+        Int(i64),
+    }
+
+    Ok(Option::<Serial>::deserialize(deserializer)?.map(|s| match s {
+        Serial::Str(s) => s,
+        Serial::Int(i) => i.to_string(),
+    }))
+}
 
 /// Common response metadata for all API responses
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -55,6 +87,13 @@ pub struct TradeInfo {
 
     /// Trade timestamp (Unix milliseconds)
     pub time: i64,
+
+    /// Exchange sequence number, normalised to a string.
+    ///
+    /// The server sends a number here for stock and a zero-padded string for
+    /// futopt; see [`deserialize_serial`].
+    #[serde(default, deserialize_with = "deserialize_serial")]
+    pub serial: Option<String>,
 }
 
 /// Total trading statistics
@@ -119,6 +158,25 @@ mod tests {
         assert_eq!(info.price, 100.5);
         assert_eq!(info.size, 500);
         assert_eq!(info.time, 1704067200000);
+        assert_eq!(info.serial, None);
+    }
+
+    #[test]
+    fn test_trade_info_serial_from_number() {
+        // Live stock/intraday/quote shape.
+        let json = r#"{"price": 2405.0, "size": 4021, "time": 1785907800000000, "serial": 17738549}"#;
+        let info: TradeInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.serial.as_deref(), Some("17738549"));
+    }
+
+    #[test]
+    fn test_trade_info_serial_from_padded_string() {
+        // Live futopt/intraday/quote shape — same field, different JSON type.
+        // futopt's streaming `aggregates` frame carries this same object, so
+        // both spellings have to decode through one type.
+        let json = r#"{"price": 45777.0, "size": 1, "time": 1785901265049000, "serial": "00379320"}"#;
+        let info: TradeInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.serial.as_deref(), Some("00379320"));
     }
 
     #[test]

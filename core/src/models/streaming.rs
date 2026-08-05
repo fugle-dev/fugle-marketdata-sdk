@@ -174,8 +174,11 @@ pub struct StreamTrade {
     /// Trade timestamp (Unix microseconds)
     #[serde(default)]
     pub time: Option<i64>,
-    /// Exchange sequence number, as a string on futopt frames
-    #[serde(default)]
+    /// Exchange sequence number, normalised to a string.
+    ///
+    /// See [`deserialize_serial`](crate::models::common::deserialize_serial) —
+    /// the server types this field inconsistently across products.
+    #[serde(default, deserialize_with = "crate::models::common::deserialize_serial")]
     pub serial: Option<String>,
     /// Whether this trade replaces a previously published one
     #[serde(rename = "isReplaced", default)]

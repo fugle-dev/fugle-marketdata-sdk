@@ -17,9 +17,14 @@
 //!
 //! `FUGLE_API_KEY` wins if both are set.
 //!
-//! `FUGLE_WS_BASE_URL` optionally redirects the streaming half to a
-//! broker-specific gateway (a broker SDK token is usually not accepted by the
-//! public one). Host and path prefix only — no version segment.
+//! Two optional overrides point the sweep at a non-public deployment. Both
+//! take **host and path prefix only** — no version segment, which the SDK
+//! appends itself.
+//!
+//! | Variable | Redirects |
+//! |---|---|
+//! | `FUGLE_REST_BASE_URL` | the REST half (e.g. `https://api-dev.fugle.tw/marketdata`) |
+//! | `FUGLE_WS_BASE_URL` | the streaming half (a broker SDK token is usually not accepted by the public gateway) |
 //!
 //! # Run
 //! ```bash
@@ -104,6 +109,22 @@ impl Credential {
             Self::ApiKey(_) => "FUGLE_API_KEY",
             Self::SdkToken(_) => "FUGLE_SDK_TOKEN",
         }
+    }
+}
+
+/// Build the REST client, honouring `FUGLE_REST_BASE_URL`.
+///
+/// Staging and broker-specific deployments serve a different host — Fubon's
+/// dev build points at `https://api-dev.fugle.tw/marketdata`. Host and path
+/// prefix only; the SDK appends the version.
+///
+/// Uses `try_base_url` rather than `base_url` so a bad prefix is reported here
+/// instead of surfacing identically on all 30 probes.
+fn rest_client(credential: &Credential) -> Result<RestClient, MarketDataError> {
+    let client = RestClient::new(credential.rest_auth());
+    match std::env::var("FUGLE_REST_BASE_URL") {
+        Ok(base) if !base.trim().is_empty() => client.try_base_url(base.trim()),
+        _ => Ok(client),
     }
 }
 
@@ -231,10 +252,18 @@ async fn main() {
             std::process::exit(2);
         }
     };
+    let rest = match rest_client(&credential) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("FUGLE_REST_BASE_URL rejected: {e}");
+            std::process::exit(2);
+        }
+    };
+    eprintln!("rest:      {}", rest.resolved_base_url());
     eprintln!("ws stock:  {}", stock_cfg.url);
     eprintln!("ws futopt: {}", futopt_cfg.url);
 
-    let rest = Arc::new(RestClient::new(credential.rest_auth()));
+    let rest = Arc::new(rest);
 
     // === REST sweep: every call on the tokio blocking pool, all in flight at
     // once. ureq is synchronous, so spawn_blocking is what gives overlap. ===

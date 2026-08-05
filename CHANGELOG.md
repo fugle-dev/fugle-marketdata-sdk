@@ -77,12 +77,28 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
 
 ### Fixed
 
+- **`lastTrade.serial` / `lastTrial.serial` decode correctly on futopt.**
+  The server sends a zero-padded **string** (`"00379320"`) for futopt and a
+  **number** (`17738549`) for stock — the same field, different JSON types
+  per product. The official TypeScript interface declares `serial: number`
+  for both, which is wrong for futopt; typing it that way made
+  `futopt/intraday/quote` fail to decode outright, and would have broken
+  futopt's streaming `aggregates` frame too, since it carries the same
+  object. Both spellings now normalise to `String` — a serial is an opaque
+  identifier, never an operand, and futopt's padding is significant.
+
+  Found by running the sweep against a live environment. Same class of bug
+  as 0.7.2/0.7.3: the published type did not match the payload.
+
 - **Symbol path segments are percent-encoded.** Spread contract symbols
-  carry a `/` (e.g. `TXFC4/TXFD4`); interpolated raw it became a path
-  separator and the request silently reached a different endpoint. Applied
-  to all 19 endpoints that put a symbol in the path. The encoder reproduces
-  `encodeURIComponent`'s reserved set exactly, so a symbol encodes
-  identically here and in the Node SDK.
+  carry a `/` (e.g. `BRFJ6/F7`). Applied to all 19 endpoints that put a
+  symbol in the path. The encoder reproduces `encodeURIComponent`'s reserved
+  set exactly, so a symbol encodes identically here and in the Node SDK.
+
+  Measured caveat: the live gateway currently *tolerates* an unencoded
+  slash — encoded and unencoded requests return identical responses. So
+  this is correctness-by-spec and protection against any symbol containing
+  reserved characters, not the repair of an observed outage.
 
 ### Notes
 

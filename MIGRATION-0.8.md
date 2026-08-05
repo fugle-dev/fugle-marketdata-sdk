@@ -199,12 +199,24 @@ let holdings = client
     .send()?;
 ```
 
-### Spread contracts now work
+### Spread contracts
 
-Symbols are percent-encoded into the URL path. Spread contract symbols carry a
-`/` (e.g. `TXFC4/TXFD4`); before 0.8.0 that slash was interpolated raw and
-became a path separator, silently sending the request to a different endpoint.
-Filter for them with `.is_spread(true)` on `futopt().intraday().tickers()`.
+Symbols are now percent-encoded into the URL path. Spread contract symbols
+carry a `/` (e.g. `BRFJ6/F7`), which before 0.8.0 was interpolated raw. The
+live gateway happens to tolerate that — encoded and unencoded requests return
+the same response today — so this is correctness-by-spec (and cover for any
+symbol containing reserved characters) rather than a fix for a current outage.
+
+Filter for spread contracts with `.is_spread(true)` on
+`futopt().intraday().tickers()`.
+
+### `serial` fields are strings
+
+`lastTrade.serial` and `lastTrial.serial` are now `Option<String>` rather than
+a numeric type. The server sends a zero-padded string on futopt
+(`"00379320"`) and a number on stock (`17738549`); both now normalise to
+`String`. If you were reading these as integers, parse at the use site — but
+note the futopt padding is fixed-width and significant.
 
 ### Expanded futopt quote
 

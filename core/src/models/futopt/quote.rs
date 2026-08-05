@@ -60,8 +60,17 @@ pub struct FutOptLastTrade {
     /// Trade timestamp (Unix milliseconds)
     #[serde(default)]
     pub time: i64,
-    /// Exchange sequence number for this trade
-    pub serial: Option<i64>,
+    /// Exchange sequence number for this trade.
+    ///
+    /// A **zero-padded string** (`"00379320"`) on futopt, despite the official
+    /// TypeScript interface declaring `serial: number`. Verified against a
+    /// live payload; the padding is fixed-width and significant, so parsing to
+    /// an integer would discard it.
+    ///
+    /// Note this differs from [`FutOptQuote::serial`] on the *same* response,
+    /// which really is a number.
+    #[serde(default, deserialize_with = "crate::models::common::deserialize_serial")]
+    pub serial: Option<String>,
 }
 
 /// Daily price limits and the reference prices they are derived from.
@@ -499,14 +508,31 @@ mod tests {
 
     #[test]
     fn test_futopt_last_trade_with_bid_ask_serial() {
+        // Shape taken from a live futopt/intraday/quote payload: the nested
+        // trade serial is a ZERO-PADDED STRING, even though the official
+        // TypeScript interface declares `serial: number`.
         let json = r#"{
-            "bid": 17549.0, "ask": 17550.0, "price": 17550.0,
-            "size": 2, "time": 1785900000000, "serial": 981234
+            "bid": 44906.0, "ask": 45777.0, "price": 45777.0,
+            "size": 1, "time": 1785901265049000, "serial": "00379320"
         }"#;
         let trade: FutOptLastTrade = serde_json::from_str(json).unwrap();
-        assert_eq!(trade.bid, Some(17549.0));
-        assert_eq!(trade.ask, Some(17550.0));
-        assert_eq!(trade.serial, Some(981234));
+        assert_eq!(trade.bid, Some(44906.0));
+        assert_eq!(trade.ask, Some(45777.0));
+        assert_eq!(
+            trade.serial.as_deref(),
+            Some("00379320"),
+            "leading zeros are fixed-width and must survive decoding"
+        );
+    }
+
+    #[test]
+    fn test_futopt_last_trade_serial_accepts_a_number_too() {
+        // Stock sends a number for the same field. Accepting both is what
+        // lets one type serve the futopt REST quote and the streaming
+        // `aggregates` frame that mirrors it.
+        let json = r#"{"price": 1.0, "size": 1, "time": 1, "serial": 17738549}"#;
+        let trade: FutOptLastTrade = serde_json::from_str(json).unwrap();
+        assert_eq!(trade.serial.as_deref(), Some("17738549"));
     }
 
     #[test]
@@ -519,11 +545,11 @@ mod tests {
             "lastPrice": 17550.0,
             "lastSize": 2,
             "isTrial": true,
-            "lastTrial": {"price": 17550.0, "size": 2, "time": 1785900000000, "serial": 5}
+            "lastTrial": {"price": 17550.0, "size": 2, "time": 1785900000000, "serial": "00000005"}
         }"#;
         let quote: FutOptQuote = serde_json::from_str(json).unwrap();
         assert!(quote.is_trial);
-        assert_eq!(quote.last_trial.unwrap().serial, Some(5));
+        assert_eq!(quote.last_trial.unwrap().serial.as_deref(), Some("00000005"));
     }
 
     #[test]
