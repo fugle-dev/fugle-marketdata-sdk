@@ -1,10 +1,25 @@
 //! Prod-environment smoke sweep.
 //!
-//! Hits every REST endpoint + every WebSocket channel against **production**
-//! with `FUGLE_API_KEY`, fully deserialising each response, and emits one
-//! JSON record per probe to stdout. Surfaces decode landmines (server sends a
-//! field in a shape the Rust type can't accept — e.g. `endSession: "1"` vs
-//! `Option<i32>`) so they can be fixed in a follow-up patch.
+//! Hits every REST endpoint + every WebSocket channel against **production**,
+//! fully deserialising each response, and emits one JSON record per probe to
+//! stdout. Surfaces decode landmines (server sends a field in a shape the Rust
+//! type can't accept — e.g. `endSession: "1"` vs `Option<i32>`) so they can be
+//! fixed in a follow-up patch.
+//!
+//! # Credentials
+//!
+//! Exactly one of these must be set:
+//!
+//! | Variable | Auth header | Where it comes from |
+//! |---|---|---|
+//! | `FUGLE_API_KEY` | `X-API-KEY` | a Fugle developer API key |
+//! | `FUGLE_SDK_TOKEN` | `X-SDK-TOKEN` | a realtime token exchanged by a broker SDK (e.g. `fubon_neo`'s `exchange_realtime_token()`) |
+//!
+//! `FUGLE_API_KEY` wins if both are set.
+//!
+//! `FUGLE_WS_BASE_URL` optionally redirects the streaming half to a
+//! broker-specific gateway (a broker SDK token is usually not accepted by the
+//! public one). Host and path prefix only — no version segment.
 //!
 //! # Run
 //! ```bash
@@ -15,6 +30,13 @@
 //! jq -c 'select(.outcome != "Pass" and .outcome != "NoData")' report.jsonl
 //! ```
 //!
+//! With a broker token (Fubon Speed mode):
+//! ```bash
+//! export FUGLE_SDK_TOKEN="$(...exchange_realtime_token...)"
+//! export FUGLE_WS_BASE_URL="wss://express.fugle.tw/marketdata"
+//! cargo run -p fugle-marketdata-core --example prod_smoke --features tokio-comp
+//! ```
+//!
 //! Exit code is non-zero if any probe is not `Pass`/`NoData`.
 
 use marketdata_core::{
@@ -23,11 +45,91 @@ use marketdata_core::{
     StockSubscription,
 };
 use marketdata_core::websocket::channels::FutOptSubscription;
+use marketdata_core::websocket::WebSocketFactory;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::task::JoinHandle;
+
+/// How the sweep authenticates.
+///
+/// A Fugle developer API key and a broker-issued realtime SDK token reach the
+/// same endpoints through different headers, so the sweep accepts either. The
+/// token path matters because some endpoints (`stock/ownership/etf-holdings`)
+/// are only granted to real brokerage accounts.
+#[derive(Clone)]
+enum Credential {
+    ApiKey(String),
+    SdkToken(String),
+}
+
+impl Credential {
+    fn from_env() -> Self {
+        // API key wins when both are set — it is the more common case and the
+        // one the docs lead with.
+        if let Ok(key) = std::env::var("FUGLE_API_KEY") {
+            if !key.trim().is_empty() {
+                return Self::ApiKey(key);
+            }
+        }
+        if let Ok(token) = std::env::var("FUGLE_SDK_TOKEN") {
+            if !token.trim().is_empty() {
+                return Self::SdkToken(token);
+            }
+        }
+        panic!(
+            "no credential: set FUGLE_API_KEY (a Fugle developer key) or \
+             FUGLE_SDK_TOKEN (a broker-issued realtime token)"
+        );
+    }
+
+    fn rest_auth(&self) -> Auth {
+        match self {
+            Self::ApiKey(k) => Auth::ApiKey(k.clone()),
+            Self::SdkToken(t) => Auth::SdkToken(t.clone()),
+        }
+    }
+
+    fn ws_auth(&self) -> AuthRequest {
+        match self {
+            Self::ApiKey(k) => AuthRequest::with_api_key(k),
+            Self::SdkToken(t) => AuthRequest::with_sdk_token(t),
+        }
+    }
+
+    /// Label for the report header. Never includes the secret.
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::ApiKey(_) => "FUGLE_API_KEY",
+            Self::SdkToken(_) => "FUGLE_SDK_TOKEN",
+        }
+    }
+}
+
+/// Build the two streaming configs, honouring `FUGLE_WS_BASE_URL`.
+///
+/// A broker-issued SDK token is generally scoped to that broker's streaming
+/// gateway rather than the public one — Fubon's Speed mode serves
+/// `wss://express.fugle.tw/marketdata`, Normal mode
+/// `wss://fubon-api.fugle.tw/marketdata`. Both are host+prefix, which is
+/// exactly what 0.8.0's `base_url` takes.
+fn ws_configs(
+    credential: &Credential,
+) -> Result<(ConnectionConfig, ConnectionConfig), MarketDataError> {
+    match std::env::var("FUGLE_WS_BASE_URL") {
+        Ok(base) if !base.trim().is_empty() => {
+            let factory = WebSocketFactory::new()
+                .base_url(base.trim())
+                .auth(credential.ws_auth());
+            Ok((factory.stock()?.build(), factory.futopt()?.build()))
+        }
+        _ => Ok((
+            ConnectionConfig::fugle_stock(credential.ws_auth()),
+            ConnectionConfig::fugle_futopt(credential.ws_auth()),
+        )),
+    }
+}
 
 /// One probe result.
 ///
@@ -117,8 +219,22 @@ where
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
-    let key = std::env::var("FUGLE_API_KEY").expect("FUGLE_API_KEY environment variable not set");
-    let rest = Arc::new(RestClient::new(Auth::ApiKey(key.clone())));
+    let credential = Credential::from_env();
+    eprintln!("auth: {}", credential.kind());
+
+    // Resolve streaming config before the REST sweep so a bad
+    // `FUGLE_WS_BASE_URL` fails immediately instead of after 30 requests.
+    let (stock_cfg, futopt_cfg) = match ws_configs(&credential) {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("FUGLE_WS_BASE_URL rejected: {e}");
+            std::process::exit(2);
+        }
+    };
+    eprintln!("ws stock:  {}", stock_cfg.url);
+    eprintln!("ws futopt: {}", futopt_cfg.url);
+
+    let rest = Arc::new(RestClient::new(credential.rest_auth()));
 
     // === REST sweep: every call on the tokio blocking pool, all in flight at
     // once. ureq is synchronous, so spawn_blocking is what gives overlap. ===
@@ -289,9 +405,12 @@ async fn main() {
     }
 
     // === WS sweep: stock + futopt connections opened concurrently. ===
+    // futopt resolves to streaming v1.1 since 0.8.0, so the frames drained
+    // here may carry `isTrial` / `derivedBid` / `derivedAsk`. A decode failure
+    // on those is exactly what this sweep is meant to catch.
     let (mut stock_rows, mut futopt_rows) = tokio::join!(
-        smoke_ws_stock(&key, "2330", "IX0001"),
-        smoke_ws_futopt(&key, &futopt_symbol),
+        smoke_ws_stock(stock_cfg, "2330", "IX0001"),
+        smoke_ws_futopt(futopt_cfg, &futopt_symbol),
     );
     rows.append(&mut stock_rows);
     rows.append(&mut futopt_rows);
@@ -314,7 +433,7 @@ async fn main() {
 /// Subscribe every stock channel on one connection, then drain frames until
 /// each channel has yielded one snapshot/data frame (force-parsed via the
 /// public `parse_channel_data`) or the global deadline passes.
-async fn smoke_ws_stock(key: &str, equity: &str, index: &str) -> Vec<Row> {
+async fn smoke_ws_stock(cfg: ConnectionConfig, equity: &str, index: &str) -> Vec<Row> {
     let want: &[(Channel, &str, &str)] = &[
         (Channel::Trades, equity, "ws stock trades"),
         (Channel::Candles, equity, "ws stock candles"),
@@ -322,7 +441,6 @@ async fn smoke_ws_stock(key: &str, equity: &str, index: &str) -> Vec<Row> {
         (Channel::Aggregates, equity, "ws stock aggregates"),
         (Channel::Indices, index, "ws stock indices"),
     ];
-    let cfg = ConnectionConfig::fugle_stock(AuthRequest::with_api_key(key));
     let client = AsyncWs::new(cfg);
     let mut rx = client.message_stream();
 
@@ -345,17 +463,13 @@ async fn smoke_ws_stock(key: &str, equity: &str, index: &str) -> Vec<Row> {
 
 /// FutOpt counterpart. Channels: trades, books, candles, aggregates (no
 /// indices on the futopt feed).
-async fn smoke_ws_futopt(key: &str, symbol: &str) -> Vec<Row> {
+async fn smoke_ws_futopt(cfg: ConnectionConfig, symbol: &str) -> Vec<Row> {
     let want: &[(FutOptChannel, &str)] = &[
         (FutOptChannel::Trades, "ws futopt trades"),
         (FutOptChannel::Books, "ws futopt books"),
         (FutOptChannel::Candles, "ws futopt candles"),
         (FutOptChannel::Aggregates, "ws futopt aggregates"),
     ];
-    // Since 0.8.0 this resolves to streaming v1.1, so the frames drained here
-    // may carry `isTrial` / `derivedBid` / `derivedAsk`. A decode failure on
-    // those is exactly what this sweep is meant to catch.
-    let cfg = ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(key));
     let client = AsyncWs::new(cfg);
     let mut rx = client.message_stream();
 
