@@ -37,7 +37,7 @@ impl<'a> StatsRequestBuilder<'a> {
         let url = format!(
             "{}/stock/historical/stats/{}",
             self.client.get_base_url(),
-            symbol
+            crate::rest::encode_symbol(&symbol)
         );
 
         // Make request

@@ -11,6 +11,9 @@ mod auth;
 mod client;
 mod error;
 mod retry;
+mod symbol_path;
+
+pub(crate) use symbol_path::encode_symbol;
 
 // Stock endpoints module
 pub mod stock;

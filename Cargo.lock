@@ -1342,6 +1342,7 @@ dependencies = [
  "indexmap 2.13.0",
  "metrics",
  "metrics-util",
+ "percent-encoding",
  "rustls",
  "rustls-native-certs",
  "rustls-pemfile",

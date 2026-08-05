@@ -69,7 +69,7 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
         let mut url = format!(
             "{}/futopt/historical/candles/{}",
             self.client.get_base_url(),
-            symbol
+            crate::rest::encode_symbol(&symbol)
         );
 
         // Add query parameters

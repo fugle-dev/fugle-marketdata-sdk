@@ -61,7 +61,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
         let mut url = format!(
             "{}/futopt/historical/daily/{}",
             self.client.get_base_url(),
-            symbol
+            crate::rest::encode_symbol(&symbol)
         );
 
         // Add query parameters

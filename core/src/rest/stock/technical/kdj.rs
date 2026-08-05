@@ -96,7 +96,7 @@ impl<'a> KdjRequestBuilder<'a> {
         let mut url = format!(
             "{}/stock/technical/kdj/{}",
             self.client.get_base_url(),
-            symbol
+            crate::rest::encode_symbol(&symbol)
         );
 
         let mut query_params = Vec::new();

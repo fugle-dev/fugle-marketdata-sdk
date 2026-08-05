@@ -48,7 +48,7 @@ impl<'a> QuoteRequestBuilder<'a> {
         })?;
 
         // Build URL
-        let mut url = format!("{}/futopt/intraday/quote/{}", self.client.get_base_url(), symbol);
+        let mut url = format!("{}/futopt/intraday/quote/{}", self.client.get_base_url(), crate::rest::encode_symbol(&symbol));
 
         // Add query parameters
         let mut query_params = Vec::new();

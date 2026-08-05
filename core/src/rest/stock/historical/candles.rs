@@ -85,7 +85,7 @@ impl<'a> HistoricalCandlesRequestBuilder<'a> {
         let mut url = format!(
             "{}/stock/historical/candles/{}",
             self.client.get_base_url(),
-            symbol
+            crate::rest::encode_symbol(&symbol)
         );
 
         // Add query parameters
