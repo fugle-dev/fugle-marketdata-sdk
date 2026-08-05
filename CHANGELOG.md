@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.1 / uniffi 0.1.0-rc.1] - 2026-08-05
+
+First release of the Python, Node and UniFFI bindings, aligned with core
+0.8.0-rc.1 and therefore with official `@fugle/marketdata` 1.5.0 /
+`fugle-marketdata` 2.5.0 from day one.
+
+Because these bindings have never shipped, **none of core's 0.8.0 breaking
+changes are breaking for them** — a binding user has never seen the 0.6-era
+`base_url` rule. The reversal described below affects only the Rust crates on
+crates.io.
+
+### Version tracks
+
+| Artifact | Registry | Version | Why |
+|---|---|---|---|
+| `fugle-marketdata` | PyPI | `3.0.0rc1` | must exceed the official package's 2.5.0 |
+| `@fugle/marketdata` | npm | `3.0.0-rc.1` | must exceed the official package's 1.5.0 |
+| C# / Go / Java / C++ | — | `0.1.0-rc.1` | never published, no namespace to supersede |
+
+### Added — Python
+
+- `RestClient(base_url=...)` takes host + path prefix only; a version segment
+  raises `TypeError` at construction, matching the official SDK.
+- `RestClient.base_url` and `client.stock.base_url` expose the resolved prefix.
+- `WebSocketClient(version={"futopt": "v1.0"})`. Omitted products get their
+  latest (stock v1.0, futopt v1.1). An unsupported pairing raises `TypeError`
+  with the official SDK's wording.
+- `client.stock.ownership.etf_holdings(...)` (async + sync). `sort` accepts
+  only `"asc"` / `"desc"`; anything else raises `ValueError` rather than being
+  dropped, since a typo would otherwise return the opposite series.
+- `futopt.intraday.tickers(is_spread=...)`.
+- `cargo test -p marketdata-py --no-default-features` now links and runs.
+  `extension-module` became an optional (default-on) feature; previously the
+  crate's Rust tests could not build at all.
+
+### Added — Node
+
+- Same surface as Python: `baseUrl` semantics, `RestClient.baseUrl` /
+  `StockClient.baseUrl` getters, `version` option (typed as
+  `StreamingVersionOptions`, so TypeScript rejects an unknown product at
+  compile time), `stock.ownership.etfHoldings(...)`, `isSpread`.
+- `types.d.ts` gains `EtfHoldingComponent` / `EtfHoldingsEntry` /
+  `EtfHoldingsResponse` — `etfHoldings` referenced `EtfHoldingsResponse` in its
+  return type without defining it.
+
+### Added — UniFFI (C# / Go / Java / C++)
+
+- `StreamingVersionRecord` for per-product version selection.
+- `stock.ownership.etf_holdings` (async + `cpp`-feature sync variant) and the
+  three ETF holdings records.
+- `RestClient.base_url` / `StockClient.base_url`, `is_spread` on futopt
+  tickers.
+
+### Fixed — UniFFI
+
+- **The crate did not compile at all**, on `main`, for an unknown span: 29
+  type errors where the mirror records had drifted from core after the
+  0.7.2/0.7.3 decode fixes loosened fields to `Option`. Mirrors now match core
+  rather than papering over absence with `unwrap_or_default()`.
+- `KdjResponse` exposed a single `period`; the endpoint has taken
+  `r_period` / `k_period` / `d_period` since 0.7.2.
+
+### Fixed — Tauri GUI
+
+- `StreamTrade` construction and an `Option<u64>` cast; the latter had been
+  broken on `main` since core loosened the futopt candle volume field.
+
+### Fixed — Python test suite
+
+- 102 of 138 tests were failing on `main`. They constructed clients
+  positionally (removed in 0.4.0), asserted the 2.x `HealthCheckConfig` shape
+  (`interval_ms` / `max_missed_pongs` — this SDK has neither), and expected
+  `ValueError` where both this SDK and the official one raise `TypeError`.
+  Now 142 passed.
+
+  Note: run `maturin develop` before `pytest` — a stale gitignored `.so` under
+  `py/fugle_marketdata/` shadows the installed wheel.
+
 ## [Rust 0.8.0-rc.1] - 2026-08-05
 
 Aligns with the official `@fugle/marketdata` 1.5.0-rc.5 and

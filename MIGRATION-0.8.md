@@ -1,7 +1,17 @@
 # Migrating to 0.8.0
 
 0.8.0 aligns the Rust SDK with the official Node / Python SDKs' 1.5.0 / 2.5.0
-release. Two changes need your attention; everything else is additive.
+release.
+
+> **Using the Python, Node, C#, Go, Java or C++ bindings?** Nothing here is a
+> migration for you. Those bindings ship for the first time at
+> `3.0.0-rc.1` (Python / Node) and `0.1.0-rc.1` (UniFFI), already carrying the
+> semantics described below — you have never seen the 0.6-era rule this
+> document walks back. Read §2 anyway: futopt streaming defaults to v1.1, so
+> you will receive trial-matching frames unless you opt out.
+
+This document is for existing users of the `fugle-marketdata` /
+`fugle-marketdata-core` crates on crates.io. Two changes need your attention; everything else is additive.
 
 | | Change | Who is affected |
 |---|---|---|

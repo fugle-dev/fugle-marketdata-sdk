@@ -2423,7 +2423,7 @@ dependencies = [
 
 [[package]]
 name = "marketdata-js"
-version = "3.0.0"
+version = "3.0.0-rc.1"
 dependencies = [
  "fugle-marketdata-core",
  "napi",
@@ -2436,7 +2436,7 @@ dependencies = [
 
 [[package]]
 name = "marketdata-py"
-version = "3.0.0"
+version = "3.0.0-rc.1"
 dependencies = [
  "fugle-marketdata-core",
  "pyo3",

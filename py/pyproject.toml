@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fugle-marketdata"
-version = "3.0.0"
+version = "3.0.0rc1"
 description = "Python bindings for Fugle marketdata-core"
 requires-python = ">=3.7"
 dependencies = [
