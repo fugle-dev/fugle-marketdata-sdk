@@ -146,7 +146,11 @@ pub struct TradesData {
     /// was never a version to gate them behind.
     ///
     /// The server omits the field entirely rather than sending `false`.
-    #[serde(rename = "isTrial", default)]
+    #[serde(
+        rename = "isTrial",
+        default,
+        deserialize_with = "crate::models::common::deserialize_bool_lenient"
+    )]
     pub is_trial: bool,
     /// Unix microseconds
     #[serde(default)]
@@ -181,7 +185,11 @@ pub struct StreamTrade {
     #[serde(default, deserialize_with = "crate::models::common::deserialize_serial")]
     pub serial: Option<String>,
     /// Whether this trade replaces a previously published one
-    #[serde(rename = "isReplaced", default)]
+    #[serde(
+        rename = "isReplaced",
+        default,
+        deserialize_with = "crate::models::common::deserialize_bool_lenient"
+    )]
     pub is_replaced: bool,
 }
 
@@ -266,7 +274,11 @@ pub struct BooksData {
     pub derived_ask: Option<PriceLevel>,
     /// Marks the frame as trial-matching (試撮) — a simulated book, not a
     /// live one. See [`TradesData::is_trial`].
-    #[serde(rename = "isTrial", default)]
+    #[serde(
+        rename = "isTrial",
+        default,
+        deserialize_with = "crate::models::common::deserialize_bool_lenient"
+    )]
     pub is_trial: bool,
     /// Unix microseconds
     #[serde(default)]
@@ -346,7 +358,11 @@ pub struct AggregatesData {
     /// this flag is the only thing distinguishing them from a real trade.
     /// Pinning [`FutOptVersion::V1_0`](crate::websocket::FutOptVersion::V1_0)
     /// does not opt out of it.
-    #[serde(rename = "isTrial", default)]
+    #[serde(
+        rename = "isTrial",
+        default,
+        deserialize_with = "crate::models::common::deserialize_bool_lenient"
+    )]
     pub is_trial: bool,
     // Timestamps
     /// Unix microseconds
@@ -616,6 +632,77 @@ mod tests {
         assert_eq!(books.derived_bid.unwrap().price, 17548.0);
         assert_eq!(books.derived_ask.unwrap().size, 8);
         assert_eq!(books.exchange.as_deref(), Some("TAIFEX"));
+    }
+
+    #[test]
+    fn test_parse_live_futopt_v1_1_books_frame() {
+        // Captured verbatim from wss://.../v1.1/futopt/streaming during an
+        // after-hours session. Two things this pins that a hand-written
+        // fixture would miss:
+        //   - `type` is "FUTURE_AH", not "FUTURE", in the night session
+        //   - derivedBid/derivedAsk are present but ZEROED when no extended
+        //     level is active — present-and-zero, not absent
+        let json = r#"{
+            "symbol": "TXFH6",
+            "type": "FUTURE_AH",
+            "exchange": "TAIFEX",
+            "bids": [{"price": 44160, "size": 2}, {"price": 44159, "size": 2}],
+            "asks": [{"price": 44161, "size": 1}, {"price": 44162, "size": 5}],
+            "derivedBid": {"price": 0, "size": 0},
+            "derivedAsk": {"price": 0, "size": 0},
+            "time": 1785919636330000
+        }"#;
+        let books: BooksData = serde_json::from_str(json).unwrap();
+        assert_eq!(books.data_type.as_deref(), Some("FUTURE_AH"));
+        assert_eq!(books.derived_bid.unwrap().price, 0.0);
+        assert_eq!(books.derived_ask.unwrap().size, 0);
+        assert!(!books.is_trial, "absent isTrial means false");
+        assert_eq!(books.serial, None, "books frames carry no serial");
+    }
+
+    #[test]
+    fn test_flags_tolerate_explicit_null() {
+        // Absent and explicit-null must behave identically. `#[serde(default)]`
+        // alone only covers absent — a literal `null` would fail with
+        // "invalid type: null, expected a boolean". The API is inconsistent
+        // about which spelling it uses for an unset optional flag, and a frame
+        // must not fail to decode over that distinction.
+        let books: BooksData = serde_json::from_str(
+            r#"{"symbol": "TXFH6", "isTrial": null, "serial": null}"#,
+        )
+        .unwrap();
+        assert!(!books.is_trial);
+
+        let trades: TradesData = serde_json::from_str(
+            r#"{"symbol": "TXFH6", "isTrial": null,
+                "trades": [{"price": 1.0, "size": 1, "isReplaced": null, "serial": null}]}"#,
+        )
+        .unwrap();
+        assert!(!trades.is_trial);
+        assert!(!trades.trades[0].is_replaced);
+        assert_eq!(trades.trades[0].serial, None);
+    }
+
+    #[test]
+    fn test_parse_live_futopt_v1_1_trades_frame() {
+        // Captured verbatim from the same session. Note the serial lives at
+        // the TOP level of the frame and is a number; the individual trade
+        // objects carry no serial at all here.
+        let json = r#"{
+            "symbol": "TXFH6",
+            "type": "FUTURE_AH",
+            "exchange": "TAIFEX",
+            "trades": [{"price": 44195, "size": 1, "bid": 44195, "ask": 44200}],
+            "total": {"tradeVolume": 8266, "totalBidMatch": 6309, "totalAskMatch": 6008},
+            "time": 1785919638455000,
+            "serial": 55110
+        }"#;
+        let trades: TradesData = serde_json::from_str(json).unwrap();
+        assert_eq!(trades.serial, Some(55110));
+        assert_eq!(trades.trades[0].price, 44195.0);
+        assert_eq!(trades.trades[0].serial, None);
+        assert!(!trades.trades[0].is_replaced);
+        assert!(!trades.is_trial);
     }
 
     #[test]

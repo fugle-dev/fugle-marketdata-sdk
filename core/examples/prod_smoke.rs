@@ -535,14 +535,25 @@ async fn smoke_ws_futopt(cfg: ConnectionConfig, symbols: &[String]) -> Vec<Row> 
     if let Err(e) = client.connect().await {
         return vec![Row { name: "ws futopt connect".into(), outcome: classify(&e) }];
     }
-    // Subscribing several contracts widens the chance of catching a frame on
-    // a thin session; the rows are still keyed by channel, so an extra symbol
-    // only helps.
+    // Subscribe BOTH sessions. Futures trade in a regular session and an
+    // after-hours (夜盤) session, and a subscription only receives the one it
+    // asked for — during the night session a regular-session subscription is
+    // acknowledged and then stays silent forever, which reads exactly like a
+    // dead feed. Taking both means the sweep gets frames whatever time it runs.
+    //
+    // Subscribing several contracts widens the chance of catching a frame on a
+    // thin session too. Rows are keyed by channel, so extra subscriptions only
+    // help.
     for (ch, _) in want {
         for symbol in symbols {
-            let _ = client
-                .subscribe_futopt(FutOptSubscription::new(ch.clone(), symbol.as_str()))
-                .await;
+            for after_hours in [false, true] {
+                let _ = client
+                    .subscribe_futopt(
+                        FutOptSubscription::new(ch.clone(), symbol.as_str())
+                            .with_after_hours(after_hours),
+                    )
+                    .await;
+            }
         }
     }
 

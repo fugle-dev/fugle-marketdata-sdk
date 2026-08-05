@@ -2,6 +2,20 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// Deserialize a boolean flag that the server may omit *or* send as `null`,
+/// treating both as `false`.
+///
+/// `#[serde(default)]` alone only covers the missing-key case; an explicit
+/// `null` still fails with "invalid type: null, expected a boolean". The
+/// marketdata API is inconsistent about which of the two it uses for absent
+/// optional flags, and a frame must not fail to decode over that distinction.
+pub(crate) fn deserialize_bool_lenient<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(false))
+}
+
 /// Deserialize an exchange sequence number that the server types
 /// inconsistently, normalising to `String`.
 ///

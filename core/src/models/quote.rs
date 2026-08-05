@@ -151,7 +151,11 @@ pub struct Quote {
 
     // === Trading session flags ===
     /// Is in trial (simulated matching) period
-    #[serde(rename = "isTrial", default)]
+    #[serde(
+        rename = "isTrial",
+        default,
+        deserialize_with = "crate::models::common::deserialize_bool_lenient"
+    )]
     pub is_trial: bool,
 
     /// Is delayed open

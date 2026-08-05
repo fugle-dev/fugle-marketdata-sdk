@@ -138,7 +138,7 @@ pub struct FutOptTradingHalt {
 ///     "priceLimits": {"price": 19250.0, "bid": 19250.0, "ask": 15750.0, "curb": 0.0},
 ///     "lastTrade": {
 ///         "bid": 17549.0, "ask": 17550.0, "price": 17550.0,
-///         "size": 2, "time": 1785900000000, "serial": 981234
+///         "size": 2, "time": 1785900000000, "serial": "00981234"
 ///     },
 ///     "tradingHalt": {"isHalted": false, "time": 0},
 ///     "isContinuous": true,
@@ -277,7 +277,11 @@ pub struct FutOptQuote {
     /// during which `last_price` / `last_size` are the trial values.
     ///
     /// Branch on this before acting on a price.
-    #[serde(rename = "isTrial", default)]
+    #[serde(
+        rename = "isTrial",
+        default,
+        deserialize_with = "crate::models::common::deserialize_bool_lenient"
+    )]
     pub is_trial: bool,
 
     /// Is delayed open
