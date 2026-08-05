@@ -585,6 +585,7 @@ module.exports.StockClient = nativeBinding.StockClient
 module.exports.StockCorporateActionsClient = nativeBinding.StockCorporateActionsClient
 module.exports.StockHistoricalClient = nativeBinding.StockHistoricalClient
 module.exports.StockIntradayClient = nativeBinding.StockIntradayClient
+module.exports.StockOwnershipClient = nativeBinding.StockOwnershipClient
 module.exports.StockSnapshotClient = nativeBinding.StockSnapshotClient
 module.exports.StockTechnicalClient = nativeBinding.StockTechnicalClient
 module.exports.StockWebSocketClient = nativeBinding.StockWebSocketClient

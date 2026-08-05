@@ -110,8 +110,12 @@ pub struct WebSocketClientOptions {
     pub bearer_token: Option<String>,
     /// SDK token for authentication
     pub sdk_token: Option<String>,
-    /// Override base URL (optional)
+    /// Override base URL (optional). Host and path prefix ONLY — the SDK
+    /// appends the version segment.
     pub base_url: Option<String>,
+    /// Per-product streaming version, e.g. `{ futopt: 'v1.0' }`.
+    /// Omitted products get their latest: stock v1.0, futopt v1.1.
+    pub version: Option<StreamingVersionOptions>,
     /// Reconnection configuration (optional)
     pub reconnect: Option<ReconnectOptions>,
     /// Health check configuration (optional)
@@ -121,6 +125,96 @@ pub struct WebSocketClientOptions {
     /// Disable ALL TLS verification (chain + hostname + expiry).
     /// Dev/testing only — exposes MITM risk. Defaults to false.
     pub tls_accept_invalid_certs: Option<bool>,
+}
+
+/// Per-product streaming version selection.
+///
+/// The official SDK takes a free-form map and validates at runtime; expressing
+/// it as a struct lets TypeScript reject an unknown product at compile time,
+/// while the string values still need checking here.
+#[napi(object)]
+pub struct StreamingVersionOptions {
+    /// Stock streaming version. Only "v1.0" is served.
+    pub stock: Option<String>,
+    /// FutOpt streaming version: "v1.0" or "v1.1" (default).
+    ///
+    /// v1.1 adds trial-matching (試撮) frames on trades / books — branch on
+    /// the frame's `isTrial` before acting on a price.
+    pub futopt: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum WsProduct {
+    Stock,
+    FutOpt,
+}
+
+/// Validate the `version` option into core's per-product enums.
+pub(crate) fn parse_ws_versions(
+    version: &Option<StreamingVersionOptions>,
+) -> napi::Result<(
+    marketdata_core::websocket::StockVersion,
+    marketdata_core::websocket::FutOptVersion,
+)> {
+    use marketdata_core::websocket::{FutOptVersion, StockVersion};
+
+    let mut stock = StockVersion::default();
+    let mut futopt = FutOptVersion::default();
+
+    if let Some(opts) = version {
+        if let Some(v) = opts.stock.as_deref() {
+            stock = match v {
+                "v1.0" => StockVersion::V1_0,
+                other => {
+                    return Err(napi::Error::from_reason(format!(
+                        "stock streaming does not support {other} (supported: v1.0). \
+                         Omit it to use v1.0."
+                    )))
+                }
+            };
+        }
+        if let Some(v) = opts.futopt.as_deref() {
+            futopt = match v {
+                "v1.0" => FutOptVersion::V1_0,
+                "v1.1" => FutOptVersion::V1_1,
+                other => {
+                    return Err(napi::Error::from_reason(format!(
+                        "futopt streaming does not support {other} (supported: v1.0, v1.1). \
+                         Omit it to use v1.1."
+                    )))
+                }
+            };
+        }
+    }
+
+    Ok((stock, futopt))
+}
+
+/// Resolve a streaming endpoint through core's factory.
+///
+/// Centralised so the two call sites cannot drift on base-URL semantics —
+/// each used to hand-roll `format!("{base}/stock/streaming")`, which is
+/// exactly the duplication 0.8.0 removes.
+pub(crate) fn build_stream_config(
+    api_key: &str,
+    base_url: Option<&str>,
+    product: WsProduct,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
+) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
+    let auth = marketdata_core::AuthRequest::with_api_key(api_key);
+    let mut factory = marketdata_core::WebSocketFactory::new()
+        .stock_version(stock_version)
+        .futopt_version(futopt_version);
+    if let Some(base) = base_url {
+        factory = factory.base_url(base);
+    }
+    let factory = factory.auth(auth);
+    let builder = match product {
+        WsProduct::Stock => factory.stock()?,
+        WsProduct::FutOpt => factory.futopt()?,
+    };
+    Ok(builder.build())
 }
 
 /// Command sent to WebSocket worker thread
@@ -170,6 +264,8 @@ struct EventCallbacks {
 pub struct WebSocketClient {
     api_key: String,
     base_url: Option<String>,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
@@ -241,6 +337,27 @@ impl WebSocketClient {
             ));
         }
 
+        let (stock_version, futopt_version) = parse_ws_versions(&options.version)?;
+
+        // Resolve both endpoints now so a bad `baseUrl` throws from the
+        // constructor rather than from `.stock.connect()` much later. Matches
+        // the official SDK, which rejects a versioned baseUrl up front.
+        for product in [WsProduct::Stock, WsProduct::FutOpt] {
+            build_stream_config(
+                options
+                    .api_key
+                    .as_deref()
+                    .or(options.bearer_token.as_deref())
+                    .or(options.sdk_token.as_deref())
+                    .unwrap_or_default(),
+                options.base_url.as_deref(),
+                product,
+                stock_version,
+                futopt_version,
+            )
+            .map_err(crate::errors::to_napi_error)?;
+        }
+
         // Extract the one provided auth method
         let api_key = options.api_key
             .or(options.bearer_token)
@@ -300,6 +417,8 @@ impl WebSocketClient {
         Ok(Self {
             api_key,
             base_url: options.base_url,
+            stock_version,
+            futopt_version,
             reconnect_config: reconnect_cfg,
             health_check_config: health_check_cfg,
             tls_config,
@@ -324,6 +443,8 @@ impl WebSocketClient {
         StockWebSocketClient::from_shared(
             self.api_key.clone(),
             self.base_url.clone(),
+            self.stock_version,
+            self.futopt_version,
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls_config.clone(),
@@ -342,6 +463,8 @@ impl WebSocketClient {
         FutOptWebSocketClient::from_shared(
             self.api_key.clone(),
             self.base_url.clone(),
+            self.stock_version,
+            self.futopt_version,
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls_config.clone(),
@@ -379,6 +502,8 @@ impl WebSocketClient {
 pub struct StockWebSocketClient {
     api_key: String,
     base_url: Option<String>,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
@@ -397,6 +522,8 @@ impl StockWebSocketClient {
     fn from_shared(
         api_key: String,
         base_url: Option<String>,
+        stock_version: marketdata_core::websocket::StockVersion,
+        futopt_version: marketdata_core::websocket::FutOptVersion,
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
@@ -408,6 +535,8 @@ impl StockWebSocketClient {
         Self {
             api_key,
             base_url,
+            stock_version,
+            futopt_version,
             reconnect_config,
             health_check_config,
             tls_config,
@@ -490,6 +619,8 @@ impl StockWebSocketClient {
         // Clone data for the worker thread
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
+        let stock_version = self.stock_version;
+        let futopt_version = self.futopt_version;
         let reconnect_config = self.reconnect_config.clone();
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
@@ -528,17 +659,19 @@ impl StockWebSocketClient {
                     }
                 };
 
-                // Build connection config. If base_url is provided, append the
-                // stock streaming path (legacy SDK parity); otherwise fall back
-                // to the production Fugle endpoint.
-                let auth = AuthRequest::with_api_key(&api_key);
-                let mut config = match base_url {
-                    Some(base) => {
-                        let url = format!("{}/stock/streaming", base.trim_end_matches('/'));
-                        ConnectionConfig::new(url, auth)
-                    }
-                    None => ConnectionConfig::fugle_stock(auth),
-                };
+                // `baseUrl` was validated in the constructor, so the only way
+                // this can fail is a client built by other means — fall back to
+                // production rather than kill the worker thread.
+                let mut config = build_stream_config(
+                    &api_key,
+                    base_url.as_deref(),
+                    WsProduct::Stock,
+                    stock_version,
+                    futopt_version,
+                )
+                .unwrap_or_else(|_| {
+                    ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
+                });
                 config.tls = tls_config;
                 let client = CoreClient::with_full_config(config, reconnect_config, health_check_config);
 
@@ -898,6 +1031,8 @@ impl StockWebSocketClient {
 pub struct FutOptWebSocketClient {
     api_key: String,
     base_url: Option<String>,
+    stock_version: marketdata_core::websocket::StockVersion,
+    futopt_version: marketdata_core::websocket::FutOptVersion,
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
@@ -914,6 +1049,8 @@ impl FutOptWebSocketClient {
     fn from_shared(
         api_key: String,
         base_url: Option<String>,
+        stock_version: marketdata_core::websocket::StockVersion,
+        futopt_version: marketdata_core::websocket::FutOptVersion,
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
@@ -925,6 +1062,8 @@ impl FutOptWebSocketClient {
         Self {
             api_key,
             base_url,
+            stock_version,
+            futopt_version,
             reconnect_config,
             health_check_config,
             tls_config,
@@ -986,6 +1125,8 @@ impl FutOptWebSocketClient {
 
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
+        let stock_version = self.stock_version;
+        let futopt_version = self.futopt_version;
         let reconnect_config = self.reconnect_config.clone();
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
@@ -1022,16 +1163,18 @@ impl FutOptWebSocketClient {
                     }
                 };
 
-                // Build connection config. If base_url is provided, append the
-                // futopt streaming path (legacy SDK parity).
-                let auth = AuthRequest::with_api_key(&api_key);
-                let mut config = match base_url {
-                    Some(base) => {
-                        let url = format!("{}/futopt/streaming", base.trim_end_matches('/'));
-                        ConnectionConfig::new(url, auth)
-                    }
-                    None => ConnectionConfig::fugle_futopt(auth),
-                };
+                // See the stock sibling: `baseUrl` was validated in the
+                // constructor, so this cannot fail for a normally-built client.
+                let mut config = build_stream_config(
+                    &api_key,
+                    base_url.as_deref(),
+                    WsProduct::FutOpt,
+                    stock_version,
+                    futopt_version,
+                )
+                .unwrap_or_else(|_| {
+                    ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
+                });
                 config.tls = tls_config;
                 let client = CoreClient::with_full_config(config, reconnect_config, health_check_config);
 

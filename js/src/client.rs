@@ -118,10 +118,23 @@ impl RestClient {
 
         let mut inner = marketdata_core::RestClient::with_tls(auth, tls).map_err(to_napi_error)?;
         if let Some(url) = options.base_url {
-            inner = inner.base_url(&url);
+            // `tryBaseUrl` semantics: a JS caller expects a bad option to throw
+            // from `new RestClient(...)`, matching the official SDK's TypeError,
+            // not to surface later from an unrelated request.
+            inner = inner.try_base_url(&url).map_err(to_napi_error)?;
         }
 
         Ok(Self { inner })
+    }
+
+    /// The prefix every request from this client is built on, fully resolved —
+    /// host, path prefix and version segment. Endpoints are appended to it.
+    ///
+    /// The version segment is chosen by the SDK rather than written by the
+    /// caller, so this is the only way to see what a client resolved to.
+    #[napi(getter)]
+    pub fn base_url(&self) -> String {
+        self.inner.resolved_base_url().to_string()
     }
 
     /// Get the stock client for accessing stock market data
@@ -186,6 +199,90 @@ impl StockClient {
     pub fn corporate_actions(&self) -> StockCorporateActionsClient {
         StockCorporateActionsClient {
             inner: self.inner.clone(),
+        }
+    }
+
+    /// Get ownership client (ETF holdings)
+    #[napi(getter)]
+    pub fn ownership(&self) -> StockOwnershipClient {
+        StockOwnershipClient {
+            inner: self.inner.clone(),
+        }
+    }
+
+    /// The fully resolved request prefix for this product client.
+    #[napi(getter)]
+    pub fn base_url(&self) -> String {
+        self.inner.resolved_base_url().to_string()
+    }
+}
+
+/// ETF holdings params (object form, matching the official SDK)
+#[napi(object)]
+pub struct EtfHoldingsParams {
+    pub symbol: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub sort: Option<String>,
+}
+
+/// Stock ownership data client
+#[napi]
+pub struct StockOwnershipClient {
+    inner: marketdata_core::RestClient,
+}
+
+#[napi]
+impl StockOwnershipClient {
+    /// Get the constituents an ETF held over a date range.
+    ///
+    /// ```javascript
+    /// await client.stock.ownership.etfHoldings({ symbol: '0050' });
+    /// await client.stock.ownership.etfHoldings({ symbol: '0050', sort: 'desc' });
+    /// ```
+    ///
+    /// @throws {Error} If `sort` is neither "asc" nor "desc"
+    #[napi(ts_return_type = "Promise<EtfHoldingsResponse>")]
+    pub async fn etf_holdings(&self, params: EtfHoldingsParams) -> napi::Result<Value> {
+        use marketdata_core::rest::stock::ownership::HoldingsSort;
+
+        // Reject an unrecognised sort rather than dropping it: a typo would
+        // otherwise return the opposite series without complaint.
+        let sort = match params.sort.as_deref() {
+            None => None,
+            Some("asc") => Some(HoldingsSort::Asc),
+            Some("desc") => Some(HoldingsSort::Desc),
+            Some(other) => {
+                return Err(napi::Error::from_reason(format!(
+                    "sort must be 'asc' or 'desc' (got '{other}')"
+                )))
+            }
+        };
+
+        let inner = self.inner.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let stock = inner.stock();
+            let ownership = stock.ownership();
+            let mut builder = ownership.etf_holdings().symbol(&params.symbol);
+            if let Some(f) = params.from {
+                builder = builder.from(&f);
+            }
+            if let Some(t) = params.to {
+                builder = builder.to(&t);
+            }
+            if let Some(sp) = sort {
+                builder = builder.sort(sp);
+            }
+            builder.send()
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
+
+        match result {
+            Ok(data) => {
+                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
+            }
+            Err(e) => Err(to_napi_error(e)),
         }
     }
 }
@@ -1125,6 +1222,7 @@ impl FutOptIntradayClient {
         exchange: Option<String>,
         after_hours: Option<bool>,
         contract_type: Option<String>,
+        is_spread: Option<bool>,
     ) -> napi::Result<Value> {
         use marketdata_core::models::futopt::{ContractType, FutOptType};
 
@@ -1172,6 +1270,9 @@ impl FutOptIntradayClient {
             }
             if let Some(ct) = ct_enum {
                 builder = builder.contract_type(ct);
+            }
+            if let Some(sp) = is_spread {
+                builder = builder.is_spread(sp);
             }
             builder.send()
         })

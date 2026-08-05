@@ -915,6 +915,47 @@ export interface CapitalChangesResponse {
   data: CapitalChange[];
 }
 
+/** One constituent of an ETF's holdings on a given date */
+export interface EtfHoldingComponent {
+  /** Constituent symbol (e.g. "2330") */
+  symbol: string;
+  /** Constituent name */
+  name: string;
+  /** Number of shares held */
+  quantity: number;
+  /** Portfolio weight, in percent */
+  weight: number;
+  /**
+   * Change in shares held versus the previous disclosure.
+   * Absent on the first date in a series — there is nothing to compare against.
+   */
+  quantityChange?: number;
+  /** Change in portfolio weight versus the previous disclosure */
+  weightChange?: number;
+}
+
+/** Holdings disclosed on a single date */
+export interface EtfHoldingsEntry {
+  /** Disclosure date (YYYY-MM-DD) */
+  date: string;
+  /** Constituents held on this date */
+  components: EtfHoldingComponent[];
+}
+
+/** Response for `stock.ownership.etfHoldings` */
+export interface EtfHoldingsResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** The ETF symbol these holdings belong to */
+  symbol: string;
+  /** Holdings by disclosure date */
+  data: EtfHoldingsEntry[];
+}
+
 /** Dividend record */
 export interface Dividend {
   /** Stock symbol */

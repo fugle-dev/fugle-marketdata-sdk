@@ -915,6 +915,47 @@ export interface CapitalChangesResponse {
   data: CapitalChange[];
 }
 
+/** One constituent of an ETF's holdings on a given date */
+export interface EtfHoldingComponent {
+  /** Constituent symbol (e.g. "2330") */
+  symbol: string;
+  /** Constituent name */
+  name: string;
+  /** Number of shares held */
+  quantity: number;
+  /** Portfolio weight, in percent */
+  weight: number;
+  /**
+   * Change in shares held versus the previous disclosure.
+   * Absent on the first date in a series — there is nothing to compare against.
+   */
+  quantityChange?: number;
+  /** Change in portfolio weight versus the previous disclosure */
+  weightChange?: number;
+}
+
+/** Holdings disclosed on a single date */
+export interface EtfHoldingsEntry {
+  /** Disclosure date (YYYY-MM-DD) */
+  date: string;
+  /** Constituents held on this date */
+  components: EtfHoldingComponent[];
+}
+
+/** Response for `stock.ownership.etfHoldings` */
+export interface EtfHoldingsResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** The ETF symbol these holdings belong to */
+  symbol: string;
+  /** Holdings by disclosure date */
+  data: EtfHoldingsEntry[];
+}
+
 /** Dividend record */
 export interface Dividend {
   /** Stock symbol */
@@ -1332,6 +1373,14 @@ export declare class RestClient {
    * ```
    */
   constructor(options: RestClientOptions)
+  /**
+   * The prefix every request from this client is built on, fully resolved —
+   * host, path prefix and version segment. Endpoints are appended to it.
+   *
+   * The version segment is chosen by the SDK rather than written by the
+   * caller, so this is the only way to see what a client resolved to.
+   */
+  get baseUrl(): string
   /** Get the stock client for accessing stock market data */
   get stock(): StockClient
   /** Get the FutOpt client for accessing futures/options market data */
@@ -1350,6 +1399,10 @@ export declare class StockClient {
   get technical(): StockTechnicalClient
   /** Get corporate actions client */
   get corporateActions(): StockCorporateActionsClient
+  /** Get ownership client (ETF holdings) */
+  get ownership(): StockOwnershipClient
+  /** The fully resolved request prefix for this product client. */
+  get baseUrl(): string
 }
 
 /** Stock corporate actions client */
@@ -1462,6 +1515,21 @@ export declare class StockIntradayClient {
    * @returns Promise resolving to an array of ticker info objects
    */
   tickers(r#type: string, exchange?: string | undefined | null, market?: string | undefined | null, industry?: string | undefined | null, isNormal?: boolean | undefined | null): Promise<TickerResponse[]>
+}
+
+/** Stock ownership data client */
+export declare class StockOwnershipClient {
+  /**
+   * Get the constituents an ETF held over a date range.
+   *
+   * ```javascript
+   * await client.stock.ownership.etfHoldings({ symbol: '0050' });
+   * await client.stock.ownership.etfHoldings({ symbol: '0050', sort: 'desc' });
+   * ```
+   *
+   * @throws {Error} If `sort` is neither "asc" nor "desc"
+   */
+  etfHoldings(params: EtfHoldingsParams): Promise<EtfHoldingsResponse>
 }
 
 /** Stock snapshot data client */
@@ -1723,6 +1791,14 @@ export declare class WebSocketClient {
   get futopt(): FutOptWebSocketClient
 }
 
+/** ETF holdings params (object form, matching the official SDK) */
+export interface EtfHoldingsParams {
+  symbol: string
+  from?: string
+  to?: string
+  sort?: string
+}
+
 /**
  * Health check options for WebSocket connections
  *
@@ -1731,15 +1807,17 @@ export declare class WebSocketClient {
  * - pingInterval: 30000
  * - maxMissedPongs: 2
  *
- * Note: `pingInterval` is named to match the official `@fugle/marketdata` SDK.
+ * Defaults: enabled=true, heartbeatTimeoutMs=35000.
  */
 export interface HealthCheckOptions {
-  /** Whether health check is enabled (default: false) */
+  /** Whether liveness detection is active (default: true in 3.0) */
   enabled?: boolean
-  /** Interval between ping messages in milliseconds (default: 30000, min: 5000) */
-  pingInterval?: number
-  /** Maximum missed pongs before disconnect (default: 2, min: 1) */
-  maxMissedPongs?: number
+  /**
+   * Maximum allowed gap between inbound frames before declaring the
+   * connection dead, in milliseconds. Default 35000 (Fugle server's
+   * 30s heartbeat + 5s buffer); floor 5000.
+   */
+  heartbeatTimeoutMs?: number
 }
 
 /**
@@ -1751,6 +1829,13 @@ export interface HealthCheckOptions {
  * - maxDelayMs: 60000
  */
 export interface ReconnectOptions {
+  /**
+   * Whether auto-reconnect is enabled (default: true when this object is
+   * supplied; when the entire `reconnect` option is omitted the binding
+   * preserves the historical Node SDK default of `false` — set this
+   * explicitly to opt in or out)
+   */
+  enabled?: boolean
   /** Maximum reconnection attempts (default: 5, min: 1) */
   maxAttempts?: number
   /** Initial reconnection delay in milliseconds (default: 1000, min: 100) */
@@ -1792,6 +1877,25 @@ export interface StockIntradayQuoteParams {
   oddLot?: boolean
 }
 
+/**
+ * Per-product streaming version selection.
+ *
+ * The official SDK takes a free-form map and validates at runtime; expressing
+ * it as a struct lets TypeScript reject an unknown product at compile time,
+ * while the string values still need checking here.
+ */
+export interface StreamingVersionOptions {
+  /** Stock streaming version. Only "v1.0" is served. */
+  stock?: string
+  /**
+   * FutOpt streaming version: "v1.0" or "v1.1" (default).
+   *
+   * v1.1 adds trial-matching (試撮) frames on trades / books — branch on
+   * the frame's `isTrial` before acting on a price.
+   */
+  futopt?: string
+}
+
 /** Plain `{ symbol }` params reused by methods that take only a symbol. */
 export interface SymbolParams {
   symbol: string
@@ -1810,8 +1914,16 @@ export interface WebSocketClientOptions {
   bearerToken?: string
   /** SDK token for authentication */
   sdkToken?: string
-  /** Override base URL (optional) */
+  /**
+   * Override base URL (optional). Host and path prefix ONLY — the SDK
+   * appends the version segment.
+   */
   baseUrl?: string
+  /**
+   * Per-product streaming version, e.g. `{ futopt: 'v1.0' }`.
+   * Omitted products get their latest: stock v1.0, futopt v1.1.
+   */
+  version?: StreamingVersionOptions
   /** Reconnection configuration (optional) */
   reconnect?: ReconnectOptions
   /** Health check configuration (optional) */
