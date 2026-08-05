@@ -507,7 +507,7 @@ async fn smoke_ws_stock(cfg: ConnectionConfig, equity: &str, index: &str) -> Vec
         return vec![Row { name: "ws stock connect".into(), outcome: classify(&e) }];
     }
     for (ch, sym, _) in want {
-        let _ = client.subscribe(StockSubscription::new(ch.clone(), *sym)).await;
+        let _ = client.subscribe(StockSubscription::new(*ch, *sym)).await;
     }
 
     let labels: BTreeMap<&str, &str> = want
@@ -549,7 +549,7 @@ async fn smoke_ws_futopt(cfg: ConnectionConfig, symbols: &[String]) -> Vec<Row> 
             for after_hours in [false, true] {
                 let _ = client
                     .subscribe_futopt(
-                        FutOptSubscription::new(ch.clone(), symbol.as_str())
+                        FutOptSubscription::new(*ch, symbol.as_str())
                             .with_after_hours(after_hours),
                     )
                     .await;

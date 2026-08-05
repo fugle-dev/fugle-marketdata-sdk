@@ -100,7 +100,7 @@ impl CallbackRegistry {
         let mut callbacks = self.callbacks.write().unwrap();
         callbacks
             .entry(event_type)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(py_callback);
 
         Ok(())

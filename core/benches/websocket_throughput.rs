@@ -86,6 +86,15 @@ fn bench_subscription_creation(c: &mut Criterion) {
 }
 
 /// Benchmark channel enum operations
+///
+/// The `*_channel_clone` cases measure `.clone()` on a `Copy` enum, which is
+/// a register move — they exist as a floor to compare the `as_str` cases
+/// against, not because cloning a channel is ever a real cost.
+#[allow(
+    clippy::clone_on_copy,
+    reason = "cloning a Copy enum is the thing being measured; \
+              removing the clone would leave the bench measuring nothing"
+)]
 fn bench_channel_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("channel_operations");
 

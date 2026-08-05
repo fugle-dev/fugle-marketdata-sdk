@@ -136,6 +136,7 @@ enum WsCommand {
 }
 
 /// Callback storage for event handlers
+#[derive(Default)]
 struct EventCallbacks {
     message: Option<JsCallback>,
     connect: Option<JsCallback>,
@@ -144,20 +145,6 @@ struct EventCallbacks {
     error: Option<JsCallback>,
     authenticated: Option<JsCallback>,
     unauthenticated: Option<JsCallback>,
-}
-
-impl Default for EventCallbacks {
-    fn default() -> Self {
-        Self {
-            message: None,
-            connect: None,
-            disconnect: None,
-            reconnect: None,
-            error: None,
-            authenticated: None,
-            unauthenticated: None,
-        }
-    }
 }
 
 /// WebSocket client for real-time market data (JavaScript wrapper)
@@ -270,7 +257,7 @@ impl WebSocketClient {
         // (or any populated reconnect object — `enabled` defaults to true
         // when the object itself is provided) to opt in.
         let reconnect_cfg = if let Some(r) = &options.reconnect {
-            let max = r.max_attempts.map(|v| v as u32).unwrap_or(DEFAULT_MAX_ATTEMPTS);
+            let max = r.max_attempts.unwrap_or(DEFAULT_MAX_ATTEMPTS);
             let initial = Duration::from_millis(
                 r.initial_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_INITIAL_DELAY_MS)
             );

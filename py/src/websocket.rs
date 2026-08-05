@@ -1273,7 +1273,7 @@ impl StockWebSocketClient {
 
             // Connect without holding GIL
             ws_client.connect().await
-                .map_err(|e| crate::errors::to_py_err(e))?;
+                .map_err(crate::errors::to_py_err)?;
 
             // Clone receiver for potential background thread
             let receiver_for_thread = Arc::clone(&receiver);

@@ -20,6 +20,12 @@
 //! ```
 
 #![deny(clippy::all)]
+// The napi surface mirrors the JavaScript call signature one-to-one: each
+// optional JS argument is a separate Rust parameter, because napi-rs has no
+// way to express "an options object" other than as positional parameters.
+// Collapsing them into a struct to satisfy the lint would change the public
+// JavaScript API, which is the one thing these bindings must not do.
+#![allow(clippy::too_many_arguments)]
 
 mod client;
 mod errors;

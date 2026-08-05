@@ -535,7 +535,7 @@ mod tests {
         let expanded = batch.expand();
         for entry in &expanded {
             assert_eq!(entry.intraday_odd_lot, Some(true));
-            assert_eq!(entry.key().contains("oddlot"), true);
+            assert!(entry.key().contains("oddlot"));
         }
     }
 

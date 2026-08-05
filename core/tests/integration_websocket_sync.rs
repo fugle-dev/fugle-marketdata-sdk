@@ -26,7 +26,7 @@ fn get_api_key() -> String {
 }
 
 fn stock_config() -> ConnectionConfig {
-    ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&get_api_key()))
+    ConnectionConfig::fugle_stock(AuthRequest::with_api_key(get_api_key()))
 }
 
 #[test]

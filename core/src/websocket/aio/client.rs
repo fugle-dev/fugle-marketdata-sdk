@@ -1719,8 +1719,8 @@ mod tests {
         emit_event(&tx, &counter, ConnectionEvent::Authenticated);
 
         // First two queued; third dropped at the sender.
-        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connecting { .. })));
-        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connected { .. })));
+        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connecting)));
+        assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connected)));
         assert!(rx.try_recv().is_err(), "third event must have been dropped");
         assert_eq!(
             counter.load(),

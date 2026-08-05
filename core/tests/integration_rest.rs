@@ -215,10 +215,7 @@ fn test_invalid_api_key() {
     if let Err(e) = result {
         println!("Expected auth error for invalid API key: {:?}", e);
         // Check that it's an authentication error
-        assert!(
-            e.is_retryable() == false,
-            "Auth errors should not be retryable"
-        );
+        assert!(!e.is_retryable(), "Auth errors should not be retryable");
     }
 }
 

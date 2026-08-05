@@ -47,11 +47,11 @@ fn aio_client_describes_both_counters_on_construction() {
         .collect();
 
     assert!(
-        descriptions.iter().any(|n| *n == COUNTER_MESSAGES),
+        descriptions.contains(&COUNTER_MESSAGES),
         "missing description for {COUNTER_MESSAGES}; got {descriptions:?}"
     );
     assert!(
-        descriptions.iter().any(|n| *n == COUNTER_EVENTS),
+        descriptions.contains(&COUNTER_EVENTS),
         "missing description for {COUNTER_EVENTS}; got {descriptions:?}"
     );
 }

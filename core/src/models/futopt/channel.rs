@@ -141,6 +141,12 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::clone_on_copy,
+        reason = "the explicit clone IS the assertion — this test exists to \
+                  pin that FutOptChannel implements both Clone and Copy, so \
+                  taking clippy's advice to drop it would delete the coverage"
+    )]
     fn test_futopt_channel_clone_copy() {
         let channel = FutOptChannel::Trades;
         let cloned = channel.clone();

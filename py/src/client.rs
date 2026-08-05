@@ -2442,6 +2442,13 @@ impl FutOptHistoricalClient {
     ///     )
     ///     ```
     #[pyo3(signature = (symbol, from_date=None, to_date=None, after_hours=false, **_extra))]
+    #[allow(
+        deprecated,
+        reason = "core deprecated this endpoint (the API always 404s), but the \
+                  binding keeps exposing it for parity with the official SDK — \
+                  removing it would be a breaking change to the Python surface, \
+                  decided separately from core's deprecation"
+    )]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
@@ -2480,6 +2487,13 @@ impl FutOptHistoricalClient {
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
     #[pyo3(signature = (symbol, from_date=None, to_date=None, after_hours=false, **_extra))]
+    #[allow(
+        deprecated,
+        reason = "core deprecated this endpoint (the API always 404s), but the \
+                  binding keeps exposing it for parity with the official SDK — \
+                  removing it would be a breaking change to the Python surface, \
+                  decided separately from core's deprecation"
+    )]
     pub fn daily(
         &self,
         py: Python<'_>,

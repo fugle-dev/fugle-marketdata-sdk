@@ -1310,6 +1310,13 @@ impl FutOptHistoricalClient {
     /// @param afterHours - Include after-hours data
     /// @returns Promise resolving to daily historical data
     #[napi(ts_return_type = "Promise<FutOptDailyResponse>")]
+    #[allow(
+        deprecated,
+        reason = "core deprecated this endpoint (the API always 404s), but the \
+                  binding keeps exposing it for parity with the official SDK — \
+                  removing it would be a breaking change to the JS surface, \
+                  decided separately from core's deprecation"
+    )]
     pub async fn daily(
         &self,
         symbol: String,
