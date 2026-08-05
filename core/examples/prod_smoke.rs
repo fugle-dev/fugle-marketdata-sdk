@@ -151,6 +151,11 @@ async fn main() {
     rest_probe!("rest stock/snapshot/actives TSE", |c: &RestClient| c
         .stock().snapshot().actives().market("TSE").trade("volume").send());
 
+    // Stock ownership (1) — new in 0.8.0. 0050 is the largest, longest-lived
+    // ETF, so it always has a holdings series to decode.
+    rest_probe!("rest stock/ownership/etf-holdings 0050", |c: &RestClient| c
+        .stock().ownership().etf_holdings().symbol("0050").send());
+
     // Stock historical (2) — StatsResponse is all-non-Option, watch closely
     rest_probe!("rest stock/historical/candles 2330", |c: &RestClient| c
         .stock().historical().candles().symbol("2330").send());
@@ -178,6 +183,10 @@ async fn main() {
         .futopt().intraday().products().typ(FutOptType::Future).send());
     rest_probe!("rest futopt/intraday/tickers FUTURE", |c: &RestClient| c
         .futopt().intraday().tickers().typ(FutOptType::Future).send());
+    // isSpread filter, new in 0.8.0.
+    rest_probe!("rest futopt/intraday/tickers FUTURE isSpread", |c: &RestClient| c
+        .futopt().intraday().tickers().typ(FutOptType::Future)
+        .after_hours().is_spread(true).send());
 
     // Resolve a live futures contract off-thread. The plain-session tickers
     // list is empty at most times; the AFTERHOURS list is populated, and a
@@ -206,6 +215,44 @@ async fn main() {
         .flatten()
         .unwrap_or_else(|| "TXFF6".to_string()) // near-month TXF as of 2026-05-16
     };
+
+    // Resolve a live SPREAD contract (價差). Its symbol carries a `/`
+    // (e.g. "TXFF6/TXFG6"), which is exactly what the 0.8.0 percent-encoding
+    // exists for: unescaped, the slash becomes a path separator and the
+    // request silently lands on a different endpoint. PROBE, not a GATE —
+    // if no spread contract is listed right now, the probe is skipped.
+    let spread_symbol = {
+        let r = rest.clone();
+        tokio::task::spawn_blocking(move || {
+            r.futopt()
+                .intraday()
+                .tickers()
+                .typ(FutOptType::Future)
+                .after_hours()
+                .is_spread(true)
+                .send()
+                .ok()
+                .and_then(|v| v.into_iter().map(|t| t.symbol).find(|s| s.contains('/')))
+        })
+        .await
+        .ok()
+        .flatten()
+    };
+
+    match &spread_symbol {
+        Some(sym) => {
+            let s = sym.clone();
+            rest_probe!("rest futopt/intraday/quote SPREAD", move |c: &RestClient| c
+                .futopt().intraday().quote().symbol(&s).send());
+            let s = sym.clone();
+            rest_probe!("rest futopt/intraday/trades SPREAD", move |c: &RestClient| c
+                .futopt().intraday().trades().symbol(&s).send());
+        }
+        None => eprintln!(
+            "note: no spread contract listed — skipping the SPREAD probes. \
+             Percent-encoding of `/` in symbols is left unverified this run."
+        ),
+    }
 
     let s = futopt_symbol.clone();
     rest_probe!("rest futopt/intraday/quote", move |c: &RestClient| c
@@ -305,6 +352,9 @@ async fn smoke_ws_futopt(key: &str, symbol: &str) -> Vec<Row> {
         (FutOptChannel::Candles, "ws futopt candles"),
         (FutOptChannel::Aggregates, "ws futopt aggregates"),
     ];
+    // Since 0.8.0 this resolves to streaming v1.1, so the frames drained here
+    // may carry `isTrial` / `derivedBid` / `derivedAsk`. A decode failure on
+    // those is exactly what this sweep is meant to catch.
     let cfg = ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(key));
     let client = AsyncWs::new(cfg);
     let mut rx = client.message_stream();

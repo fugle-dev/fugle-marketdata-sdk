@@ -7,6 +7,27 @@
 //! wrapped via `tokio::time::timeout(heartbeat_timeout, ws_read.next())`.
 //! No background polling task, no atomic activity timestamps — just
 //! plain async-native pre-emption.
+//!
+//! # Mapping from the official SDKs
+//!
+//! The official Node / Python SDKs poll on a timer and count missed pongs.
+//! Their 1.5.0 / 2.5.0 release reworked that into a freshness check ("did
+//! anything arrive since our last ping?") and added a disconnect reason —
+//! converging on what this module has done since 0.3.0. The knobs do not
+//! correspond one-to-one, so if you are porting configuration across:
+//!
+//! | Official option / behaviour | Here |
+//! |---|---|
+//! | `healthCheck.enabled` | [`HealthCheckConfig::enabled`] |
+//! | `healthCheck.interval` (ping cadence) | no equivalent — nothing is sent |
+//! | `healthCheck.maxMissedPongs` | no equivalent — nothing is counted |
+//! | `interval × maxMissedPongs` (effective deadline) | [`HealthCheckConfig::heartbeat_timeout`] |
+//! | `disconnect` event with `{ reason: 'health-check-timeout' }` | [`ConnectionEvent::HeartbeatTimeout`](crate::websocket::ConnectionEvent::HeartbeatTimeout) |
+//!
+//! The `maxMissedPongs`-of-0 bug the official SDKs clamped in 1.5.0 (a zero
+//! would disconnect a healthy connection on the first tick) cannot occur
+//! here: there is no counter to zero out, only a timeout with a floor of
+//! [`MIN_HEARTBEAT_TIMEOUT_MS`].
 
 use crate::MarketDataError;
 use std::time::Duration;
