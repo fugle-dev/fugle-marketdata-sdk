@@ -36,7 +36,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0'
+          # netstandard2.0 / net8.0 / net10.0 targets need the .NET 10 SDK.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Download unified native library artifact
         uses: actions/download-artifact@v4

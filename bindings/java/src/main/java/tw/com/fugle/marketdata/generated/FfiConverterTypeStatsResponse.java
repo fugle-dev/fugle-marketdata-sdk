@@ -20,7 +20,7 @@ public enum FfiConverterTypeStatsResponse implements FfiConverterRustBuffer<Stat
       FfiConverterDouble.INSTANCE.read(buf),
       FfiConverterDouble.INSTANCE.read(buf),
       FfiConverterDouble.INSTANCE.read(buf),
-      FfiConverterDouble.INSTANCE.read(buf),
+      FfiConverterOptionalDouble.INSTANCE.read(buf),
       FfiConverterLong.INSTANCE.read(buf),
       FfiConverterDouble.INSTANCE.read(buf),
       FfiConverterDouble.INSTANCE.read(buf),
@@ -43,7 +43,7 @@ public enum FfiConverterTypeStatsResponse implements FfiConverterRustBuffer<Stat
             FfiConverterDouble.INSTANCE.allocationSize(value.lowPrice()) +
             FfiConverterDouble.INSTANCE.allocationSize(value.closePrice()) +
             FfiConverterDouble.INSTANCE.allocationSize(value.change()) +
-            FfiConverterDouble.INSTANCE.allocationSize(value.changePercent()) +
+            FfiConverterOptionalDouble.INSTANCE.allocationSize(value.changePercent()) +
             FfiConverterLong.INSTANCE.allocationSize(value.tradeVolume()) +
             FfiConverterDouble.INSTANCE.allocationSize(value.tradeValue()) +
             FfiConverterDouble.INSTANCE.allocationSize(value.previousClose()) +
@@ -65,7 +65,7 @@ public enum FfiConverterTypeStatsResponse implements FfiConverterRustBuffer<Stat
       FfiConverterDouble.INSTANCE.write(value.lowPrice(), buf);
       FfiConverterDouble.INSTANCE.write(value.closePrice(), buf);
       FfiConverterDouble.INSTANCE.write(value.change(), buf);
-      FfiConverterDouble.INSTANCE.write(value.changePercent(), buf);
+      FfiConverterOptionalDouble.INSTANCE.write(value.changePercent(), buf);
       FfiConverterLong.INSTANCE.write(value.tradeVolume(), buf);
       FfiConverterDouble.INSTANCE.write(value.tradeValue(), buf);
       FfiConverterDouble.INSTANCE.write(value.previousClose(), buf);

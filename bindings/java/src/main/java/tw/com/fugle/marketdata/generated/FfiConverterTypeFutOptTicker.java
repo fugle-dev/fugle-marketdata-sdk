@@ -9,7 +9,7 @@ public enum FfiConverterTypeFutOptTicker implements FfiConverterRustBuffer<FutOp
   @Override
   public FutOptTicker read(ByteBuffer buf) {
     return new FutOptTicker(
-      FfiConverterString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterString.INSTANCE.read(buf),
@@ -27,7 +27,7 @@ public enum FfiConverterTypeFutOptTicker implements FfiConverterRustBuffer<FutOp
   @Override
   public long allocationSize(FutOptTicker value) {
       return (
-            FfiConverterString.INSTANCE.allocationSize(value.date()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.date()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.contractType()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.exchange()) +
             FfiConverterString.INSTANCE.allocationSize(value.symbol()) +
@@ -44,7 +44,7 @@ public enum FfiConverterTypeFutOptTicker implements FfiConverterRustBuffer<FutOp
 
   @Override
   public void write(FutOptTicker value, ByteBuffer buf) {
-      FfiConverterString.INSTANCE.write(value.date(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.date(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.contractType(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.exchange(), buf);
       FfiConverterString.INSTANCE.write(value.symbol(), buf);

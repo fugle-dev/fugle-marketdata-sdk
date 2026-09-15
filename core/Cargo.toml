@@ -2,7 +2,7 @@
 name = "fugle-marketdata-core"
 version = "0.8.0-rc.1"
 edition.workspace = true
-rust-version = "1.83"
+rust-version = "1.88"
 license.workspace = true
 description = "Internal kernel for the Fugle market data SDK. End users should depend on `fugle-marketdata` instead."
 readme = "README.md"
@@ -55,12 +55,12 @@ anyhow.workspace = true
 url.workspace = true
 
 # Sync WebSocket transport. Always present — tokio-tungstenite already pulls
-# in the same tungstenite 0.29 transitively, so async users pay no extra cost.
-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"] }
+# in the same tungstenite 0.30 transitively, so async users pay no extra cost.
+tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 
 # Async deps (gated behind `tokio-comp`).
 tokio = { workspace = true, optional = true }
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"], optional = true }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"], optional = true }
 futures-util = { workspace = true, optional = true }
 
 # Core-only dependencies (always)
@@ -71,7 +71,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # Matches the version tokio-tungstenite's rustls-tls-native-roots feature pulls in,
 # so cargo graph unifies rather than duplicating.
 rustls-native-certs = "0.8"
-rustls-pemfile = "2.0"
 exponential-backoff = "2.0"
 indexmap = "2.2"
 # Path-segment escaping for symbols. Already in the graph via `url`, so this
@@ -87,7 +86,7 @@ tracing = { version = "0.1", optional = true }
 
 # Optional `metrics` crate integration (gated behind the `metrics` feature).
 # Pinned to ^0.24 (current stable as of 2026-05). MSRV 1.71 — well below
-# core's 1.83.
+# core's 1.88.
 metrics = { version = "0.24", optional = true }
 
 [dev-dependencies]
@@ -95,7 +94,7 @@ criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 tokio-test = "0.4"
 # Async features are required for the existing integration tests + benches.
 tokio = { workspace = true }
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 futures-util.workspace = true
 # `metrics-util::debugging::DebuggingRecorder` powers the metrics smoke test
 # in `core/tests/metrics_smoke.rs`. Pinned to match the `metrics` major.

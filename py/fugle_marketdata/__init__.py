@@ -51,10 +51,7 @@ from .fugle_marketdata import (
     HealthCheckConfig,
 )
 
-try:
-    from importlib.metadata import version as _pkg_version, PackageNotFoundError
-except ImportError:  # Python 3.7 — stdlib importlib.metadata landed in 3.8
-    from importlib_metadata import version as _pkg_version, PackageNotFoundError  # type: ignore[import-not-found]
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
 try:
     __version__ = _pkg_version("fugle-marketdata")

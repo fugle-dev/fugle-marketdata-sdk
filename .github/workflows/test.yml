@@ -41,15 +41,15 @@ jobs:
   # MSRV verification (declared rust-version in core/Cargo.toml)
   # ============================================================
   rust-core-msrv:
-    name: Rust Core MSRV (1.83)
+    name: Rust Core MSRV (1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Rust 1.83
-        uses: dtolnay/rust-toolchain@1.83
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -63,7 +63,7 @@ jobs:
         run: cargo +stable generate-lockfile
 
       - name: Build core with all features on MSRV toolchain
-        run: cargo +1.83 build --locked --all-features -p fugle-marketdata-core
+        run: cargo +1.88 build --locked --all-features -p fugle-marketdata-core
 
   # ============================================================
   # Python Binding Tests
@@ -220,7 +220,11 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          # The library multi-targets net10.0, so restoring anything that
+          # references it needs the .NET 10 SDK; tests run on net8.0.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Build UniFFI library
         run: cargo build -p marketdata-uniffi
@@ -319,15 +323,16 @@ jobs:
           java-version: '21'
 
       - name: Install uniffi-bindgen-java
-        run: cargo install uniffi-bindgen-java --git https://github.com/NordSecurity/uniffi-bindgen-java --tag v0.1.0+v0.29.4
+        run: cargo install uniffi-bindgen-java --git https://github.com/IronCoreLabs/uniffi-bindgen-java --tag 0.2.1 --locked
 
       - name: Build UniFFI library
         run: cargo build -p marketdata-uniffi --release
 
       - name: Generate Java bindings
         run: |
-          uniffi-bindgen-java --library target/release/${{ matrix.lib-name }} \
-            --out-dir bindings/java/src/main/java
+          uniffi-bindgen-java generate --library target/release/${{ matrix.lib-name }} \
+            --out-dir bindings/java/src/main/java \
+            --crate marketdata_uniffi --config uniffi/uniffi.toml
 
       - name: Build Java bindings
         working-directory: bindings/java

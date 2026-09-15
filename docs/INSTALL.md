@@ -30,7 +30,7 @@ Java bindings exist in the repository but are not published yet.
 
 ## Python
 
-Wheels are built for CPython 3.7+ using the stable ABI (abi3):
+Wheels are built for CPython 3.8+ using the stable ABI (abi3):
 
 | OS | Architectures |
 |---|---|
@@ -73,7 +73,7 @@ console.log(await client.stock.intraday.quote({ symbol: '2330' }));
 
 ## C\#
 
-The package targets `netstandard2.0`, `net6.0` and `net8.0`, and bundles native
+The package targets `netstandard2.0`, `net8.0` and `net10.0`, and bundles native
 libraries for `linux-x64`, `osx-arm64`, `osx-x64` and `win-x64`.
 
 ```bash

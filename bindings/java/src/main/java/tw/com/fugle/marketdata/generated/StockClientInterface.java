@@ -12,6 +12,11 @@ import com.sun.jna.ptr.*;
 public interface StockClientInterface {
     
     /**
+     * The fully resolved request prefix for this product client.
+     */
+    public String baseUrl();
+    
+    /**
      * Access corporate actions endpoints
      */
     public StockCorporateActionsClient corporateActions();
@@ -25,6 +30,12 @@ public interface StockClientInterface {
      * Access intraday (real-time) endpoints
      */
     public StockIntradayClient intraday();
+    
+    /**
+     * Access ownership endpoints (ETF holdings, institutional trades, director
+     * holdings, TDCC distribution)
+     */
+    public StockOwnershipClient ownership();
     
     /**
      * Access snapshot (market-wide) endpoints

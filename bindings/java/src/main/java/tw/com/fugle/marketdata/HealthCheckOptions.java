@@ -1,64 +1,55 @@
 package tw.com.fugle.marketdata;
 
 /**
- * Configuration options for WebSocket health check behavior.
+ * Configuration options for WebSocket liveness detection.
  *
- * <p>This immutable class defines health check parameters using the builder pattern.
- * All fields are optional - null values indicate the default should be used by the client.
+ * <p>The client declares a connection dead when no inbound frame arrives
+ * within {@code heartbeatTimeoutMs}. The server sends a heartbeat every
+ * 30 seconds, so any value above that works.
+ *
+ * <p>All fields are optional; null means the core default.
  *
  * <p><b>Default values:</b>
  * <ul>
- *   <li>enabled: false (health checks disabled by default)</li>
- *   <li>intervalMs: 30000 (interval between ping messages in milliseconds)</li>
- *   <li>maxMissedPongs: 2 (maximum missed pong responses before disconnect)</li>
+ *   <li>enabled: true</li>
+ *   <li>heartbeatTimeoutMs: 35000 (minimum 5000)</li>
  * </ul>
  *
  * <p><b>Example usage:</b>
  * <pre>{@code
  * HealthCheckOptions options = HealthCheckOptions.builder()
  *     .enabled(true)
- *     .intervalMs(60000L)
- *     .maxMissedPongs(3L)
+ *     .heartbeatTimeoutMs(60000L)
  *     .build();
  * }</pre>
  */
 public final class HealthCheckOptions {
 
     private final Boolean enabled;
-    private final Long intervalMs;
-    private final Long maxMissedPongs;
+    private final Long heartbeatTimeoutMs;
 
-    private HealthCheckOptions(Boolean enabled, Long intervalMs, Long maxMissedPongs) {
+    private HealthCheckOptions(Boolean enabled, Long heartbeatTimeoutMs) {
         this.enabled = enabled;
-        this.intervalMs = intervalMs;
-        this.maxMissedPongs = maxMissedPongs;
+        this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     }
 
     /**
-     * Get whether health checks are enabled.
+     * Get whether liveness detection is enabled.
      *
-     * @return True if enabled, or null if using default (false)
+     * @return True if enabled, or null if using the default (true)
      */
     public Boolean getEnabled() {
         return enabled;
     }
 
     /**
-     * Get the interval in milliseconds between ping messages.
+     * Get the maximum gap between inbound frames before the connection is
+     * declared dead.
      *
-     * @return Interval in milliseconds, or null if using default (30000)
+     * @return Timeout in milliseconds, or null if using the default (35000)
      */
-    public Long getIntervalMs() {
-        return intervalMs;
-    }
-
-    /**
-     * Get the maximum number of missed pong responses before disconnect.
-     *
-     * @return Maximum missed pongs, or null if using default (2)
-     */
-    public Long getMaxMissedPongs() {
-        return maxMissedPongs;
+    public Long getHeartbeatTimeoutMs() {
+        return heartbeatTimeoutMs;
     }
 
     /**
@@ -75,15 +66,14 @@ public final class HealthCheckOptions {
      */
     public static class Builder {
         private Boolean enabled;
-        private Long intervalMs;
-        private Long maxMissedPongs;
+        private Long heartbeatTimeoutMs;
 
         private Builder() {}
 
         /**
-         * Set whether health checks are enabled.
+         * Set whether liveness detection is enabled.
          *
-         * @param enabled True to enable health checks (default: false)
+         * @param enabled True to enable (default: true)
          * @return This builder for chaining
          */
         public Builder enabled(Boolean enabled) {
@@ -92,36 +82,25 @@ public final class HealthCheckOptions {
         }
 
         /**
-         * Set the interval in milliseconds between ping messages.
+         * Set the maximum gap between inbound frames in milliseconds.
          *
-         * @param intervalMs Interval in milliseconds (default: 30000)
+         * @param heartbeatTimeoutMs Timeout in milliseconds (default: 35000, min: 5000)
          * @return This builder for chaining
          */
-        public Builder intervalMs(Long intervalMs) {
-            this.intervalMs = intervalMs;
-            return this;
-        }
-
-        /**
-         * Set the maximum number of missed pong responses before disconnect.
-         *
-         * @param maxMissedPongs Maximum missed pongs (default: 2)
-         * @return This builder for chaining
-         */
-        public Builder maxMissedPongs(Long maxMissedPongs) {
-            this.maxMissedPongs = maxMissedPongs;
+        public Builder heartbeatTimeoutMs(Long heartbeatTimeoutMs) {
+            this.heartbeatTimeoutMs = heartbeatTimeoutMs;
             return this;
         }
 
         /**
          * Build the immutable HealthCheckOptions instance.
          *
-         * <p>Validation is performed by the client builder, not here.
+         * <p>Validation is performed by the core, not here.
          *
          * @return Immutable HealthCheckOptions instance
          */
         public HealthCheckOptions build() {
-            return new HealthCheckOptions(enabled, intervalMs, maxMissedPongs);
+            return new HealthCheckOptions(enabled, heartbeatTimeoutMs);
         }
     }
 }

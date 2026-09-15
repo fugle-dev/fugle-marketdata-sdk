@@ -12,7 +12,7 @@ public enum FfiConverterTypeMacdDataPoint implements FfiConverterRustBuffer<Macd
       FfiConverterString.INSTANCE.read(buf),
       FfiConverterDouble.INSTANCE.read(buf),
       FfiConverterDouble.INSTANCE.read(buf),
-      FfiConverterDouble.INSTANCE.read(buf)
+      FfiConverterOptionalDouble.INSTANCE.read(buf)
     );
   }
 
@@ -22,7 +22,7 @@ public enum FfiConverterTypeMacdDataPoint implements FfiConverterRustBuffer<Macd
             FfiConverterString.INSTANCE.allocationSize(value.date()) +
             FfiConverterDouble.INSTANCE.allocationSize(value.macd()) +
             FfiConverterDouble.INSTANCE.allocationSize(value.signalValue()) +
-            FfiConverterDouble.INSTANCE.allocationSize(value.histogram())
+            FfiConverterOptionalDouble.INSTANCE.allocationSize(value.histogram())
       );
   }
 
@@ -31,7 +31,7 @@ public enum FfiConverterTypeMacdDataPoint implements FfiConverterRustBuffer<Macd
       FfiConverterString.INSTANCE.write(value.date(), buf);
       FfiConverterDouble.INSTANCE.write(value.macd(), buf);
       FfiConverterDouble.INSTANCE.write(value.signalValue(), buf);
-      FfiConverterDouble.INSTANCE.write(value.histogram(), buf);
+      FfiConverterOptionalDouble.INSTANCE.write(value.histogram(), buf);
   }
 }
 

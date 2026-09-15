@@ -4,10 +4,10 @@
 //! [`build_rustls_config`] helper, so a user-supplied root CA or
 //! "accept invalid certs" flag applies uniformly across the SDK.
 
-use std::io::BufReader;
 use std::sync::{Arc, OnceLock};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
 
@@ -80,8 +80,7 @@ pub fn build_rustls_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, MarketD
     let mut store = (**system_root_store()).clone();
 
     if let Some(pem) = &tls.root_cert_pem {
-        let mut reader = BufReader::new(pem.as_slice());
-        for cert_result in rustls_pemfile::certs(&mut reader) {
+        for cert_result in CertificateDer::pem_slice_iter(pem) {
             let cert = cert_result.map_err(|e| {
                 MarketDataError::ConfigError(format!("invalid TLS root cert PEM: {e}"))
             })?;
@@ -172,12 +171,26 @@ mod tests {
             root_cert_pem: Some(b"not a real pem".to_vec()),
             ..Default::default()
         };
-        // rustls-pemfile silently returns 0 certs on garbage input (not an
+        // PEM parsing skips non-PEM text, so garbage returns 0 certs (not an
         // error) — so the config builds but with no extra root added.
         // That's acceptable: the surrounding "invalid PEM" contract was
         // native-tls-specific. A clearly-invalid PEM that DOES look like
         // a cert header would fail inside the iterator.
         let cfg_ok = build_rustls_config(&cfg);
         assert!(cfg_ok.is_ok(), "garbage non-PEM should parse to zero certs, not error");
+    }
+
+    #[test]
+    fn malformed_certificate_section_is_config_error() {
+        let cfg = TlsConfig {
+            root_cert_pem: Some(
+                b"-----BEGIN CERTIFICATE-----\n!!not base64!!\n-----END CERTIFICATE-----\n".to_vec(),
+            ),
+            ..Default::default()
+        };
+        match build_rustls_config(&cfg) {
+            Err(MarketDataError::ConfigError(msg)) => assert!(msg.contains("PEM"), "{msg}"),
+            other => panic!("expected ConfigError for a malformed PEM section, got {other:?}"),
+        }
     }
 }

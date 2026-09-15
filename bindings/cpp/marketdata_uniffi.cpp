@@ -9,7 +9,7 @@ template <class> inline constexpr bool always_false_v = false;
 
 namespace {
 void ensure_initialized() {
-    auto bindings_contract_version = 26;
+    auto bindings_contract_version = 29;
     auto scaffolding_contract_version = ffi_marketdata_uniffi_uniffi_contract_version();
 
     if (bindings_contract_version != scaffolding_contract_version) {
@@ -48,10 +48,16 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_futoptclient_intraday() != 43120) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_restclient_base_url() != 36384) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_restclient_futopt() != 65348) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_restclient_stock() != 18733) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_stockclient_base_url() != 28231) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_corporate_actions() != 38783) {
@@ -63,10 +69,25 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_intraday() != 53228) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_stockclient_ownership() != 26642) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_snapshot() != 49856) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_technical() != 10974) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync() != 55271) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync() != 47248) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync() != 36269) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync() != 26807) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_connect_sync() != 3230) {
@@ -120,7 +141,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint() != 35702) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config() != 39727) {
+    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config() != 32798) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url() != 63549) {
@@ -146,7 +167,7 @@ void check_rust_call(const RustCallStatus &status, F error_cb) {
 
     case 1:
         if constexpr (!std::is_null_pointer_v<F>) {
-            error_cb(status.error_buf)->_uniffi_internal_throw_underlying();
+            error_cb(status.error_buf)->throw_underlying();
         }
         break;
 
@@ -591,6 +612,13 @@ RestClient::RestClient(const RestClient &other) : instance(nullptr) {
 
 
 
+std::string RestClient::base_url() {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterString::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_restclient_base_url,
+        nullptr,
+        ptr));
+}
 std::shared_ptr<FutOptClient> RestClient::futopt() {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterFutOptClient::lift(uniffi::rust_call(
@@ -636,6 +664,13 @@ StockClient::StockClient(const StockClient &other) : instance(nullptr) {
 
 
 
+std::string StockClient::base_url() {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterString::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockclient_base_url,
+        nullptr,
+        ptr));
+}
 std::shared_ptr<StockCorporateActionsClient> StockClient::corporate_actions() {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterStockCorporateActionsClient::lift(uniffi::rust_call(
@@ -654,6 +689,13 @@ std::shared_ptr<StockIntradayClient> StockClient::intraday() {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterStockIntradayClient::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockclient_intraday,
+        nullptr,
+        ptr));
+}
+std::shared_ptr<StockOwnershipClient> StockClient::ownership() {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterStockOwnershipClient::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockclient_ownership,
         nullptr,
         ptr));
 }
@@ -784,6 +826,65 @@ void *StockIntradayClient::_uniffi_internal_clone_pointer() const {
 
 
 
+StockOwnershipClient::StockOwnershipClient(void *ptr): instance(ptr) {}
+
+StockOwnershipClient::StockOwnershipClient(const StockOwnershipClient &other) : instance(nullptr) {
+    if (other.instance) {
+        instance = other._uniffi_internal_clone_pointer();
+    }
+}
+
+
+
+
+DirectorHoldingsResponse StockOwnershipClient::director_holdings_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterTypeDirectorHoldingsResponse::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockownershipclient_director_holdings_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+}
+EtfHoldingsResponse StockOwnershipClient::etf_holdings_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterTypeEtfHoldingsResponse::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockownershipclient_etf_holdings_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+}
+InstitutionalTradesResponse StockOwnershipClient::institutional_trades_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterTypeInstitutionalTradesResponse::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockownershipclient_institutional_trades_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+}
+TdccDistributionResponse StockOwnershipClient::tdcc_distribution_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterTypeTdccDistributionResponse::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribution_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+}
+
+StockOwnershipClient::~StockOwnershipClient() {
+    uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_free_stockownershipclient,
+        nullptr,
+        this->instance
+    );
+}
+
+void *StockOwnershipClient::_uniffi_internal_clone_pointer() const {
+    return uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_clone_stockownershipclient,
+        nullptr,
+        this->instance
+    );
+}
+
+
+
+
 StockSnapshotClient::StockSnapshotClient(void *ptr): instance(ptr) {}
 
 StockSnapshotClient::StockSnapshotClient(const StockSnapshotClient &other) : instance(nullptr) {
@@ -877,10 +978,10 @@ std::shared_ptr<WebSocketClient> WebSocketClient::new_with_endpoint(const std::s
         nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint))));
 }
 
-std::shared_ptr<WebSocketClient> WebSocketClient::new_with_full_config(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls) {
+std::shared_ptr<WebSocketClient> WebSocketClient::new_with_full_config(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version) {
     return std::shared_ptr<WebSocketClient>(new WebSocketClient(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config,
-        nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls))));
+        nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version))));
 }
 
 std::shared_ptr<WebSocketClient> WebSocketClient::new_with_url(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, const std::string &base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config) {
@@ -1227,6 +1328,29 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 namespace uniffi {
 
 
@@ -1433,6 +1557,31 @@ void FfiConverterStockIntradayClient::write(RustStream &stream, const std::share
 }
 
 uint64_t FfiConverterStockIntradayClient::allocation_size(const std::shared_ptr<StockIntradayClient> &) {
+    return 8;
+}
+
+
+
+std::shared_ptr<StockOwnershipClient> FfiConverterStockOwnershipClient::lift(void *ptr) {
+    return std::shared_ptr<StockOwnershipClient>(new StockOwnershipClient(ptr));
+}
+
+void *FfiConverterStockOwnershipClient::lower(const std::shared_ptr<StockOwnershipClient> &obj) {
+    return reinterpret_cast<StockOwnershipClient*>(obj.get())->_uniffi_internal_clone_pointer();
+}
+
+std::shared_ptr<StockOwnershipClient> FfiConverterStockOwnershipClient::read(RustStream &stream) {
+    std::uintptr_t ptr;
+    stream >> ptr;
+
+    return FfiConverterStockOwnershipClient::lift(reinterpret_cast<void *>(ptr));
+}
+
+void FfiConverterStockOwnershipClient::write(RustStream &stream, const std::shared_ptr<StockOwnershipClient> &obj) {
+    stream << reinterpret_cast<std::uintptr_t>(FfiConverterStockOwnershipClient::lower(obj));
+}
+
+uint64_t FfiConverterStockOwnershipClient::allocation_size(const std::shared_ptr<StockOwnershipClient> &) {
     return 8;
 }
 
@@ -1718,24 +1867,24 @@ RustBuffer FfiConverterTypeBbResponse::lower(const BbResponse &val) {
 BbResponse FfiConverterTypeBbResponse::read(RustStream &stream) {
     return {
         FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
         FfiConverterUInt32::read(stream),
-        FfiConverterDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
         FfiConverterSequenceTypeBbDataPoint::read(stream)
     };
 }
 
 void FfiConverterTypeBbResponse::write(RustStream &stream, const BbResponse &val) {
     FfiConverterString::write(stream, val.symbol);
-    FfiConverterString::write(stream, val.data_type);
-    FfiConverterString::write(stream, val.exchange);
-    FfiConverterString::write(stream, val.market);
-    FfiConverterString::write(stream, val.timeframe);
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterOptionalString::write(stream, val.timeframe);
     FfiConverterUInt32::write(stream, val.period);
-    FfiConverterDouble::write(stream, val.stddev);
+    FfiConverterOptionalDouble::write(stream, val.stddev);
     FfiConverterSequenceTypeBbDataPoint::write(stream, val.data);
 }
 
@@ -1743,12 +1892,12 @@ uint64_t FfiConverterTypeBbResponse::allocation_size(const BbResponse &val) {
     
     return 
         FfiConverterString::allocation_size(val.symbol) +
-        FfiConverterString::allocation_size(val.data_type) +
-        FfiConverterString::allocation_size(val.exchange) +
-        FfiConverterString::allocation_size(val.market) +
-        FfiConverterString::allocation_size(val.timeframe) +
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
         FfiConverterUInt32::allocation_size(val.period) +
-        FfiConverterDouble::allocation_size(val.stddev) +
+        FfiConverterOptionalDouble::allocation_size(val.stddev) +
         FfiConverterSequenceTypeBbDataPoint::allocation_size(val.data);
     
 }
@@ -1853,6 +2002,156 @@ uint64_t FfiConverterTypeCapitalChangesResponse::allocation_size(const CapitalCh
 }
 
 
+DirectorHolding FfiConverterTypeDirectorHolding::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeDirectorHolding::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeDirectorHolding::lower(const DirectorHolding &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeDirectorHolding::write(stream, val);
+
+    return std::move(buf);
+}
+
+DirectorHolding FfiConverterTypeDirectorHolding::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalInt64::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream)
+    };
+}
+
+void FfiConverterTypeDirectorHolding::write(RustStream &stream, const DirectorHolding &val) {
+    FfiConverterOptionalInt64::write(stream, val.order);
+    FfiConverterString::write(stream, val.title);
+    FfiConverterString::write(stream, val.name);
+    FfiConverterOptionalDouble::write(stream, val.elected_shares);
+    FfiConverterOptionalDouble::write(stream, val.held_shares);
+    FfiConverterOptionalDouble::write(stream, val.pledged_shares);
+    FfiConverterOptionalDouble::write(stream, val.pledge_ratio);
+    FfiConverterOptionalDouble::write(stream, val.related_held_shares);
+    FfiConverterOptionalDouble::write(stream, val.related_pledged_shares);
+    FfiConverterOptionalDouble::write(stream, val.related_pledge_ratio);
+}
+
+uint64_t FfiConverterTypeDirectorHolding::allocation_size(const DirectorHolding &val) {
+    
+    return 
+        FfiConverterOptionalInt64::allocation_size(val.order) +
+        FfiConverterString::allocation_size(val.title) +
+        FfiConverterString::allocation_size(val.name) +
+        FfiConverterOptionalDouble::allocation_size(val.elected_shares) +
+        FfiConverterOptionalDouble::allocation_size(val.held_shares) +
+        FfiConverterOptionalDouble::allocation_size(val.pledged_shares) +
+        FfiConverterOptionalDouble::allocation_size(val.pledge_ratio) +
+        FfiConverterOptionalDouble::allocation_size(val.related_held_shares) +
+        FfiConverterOptionalDouble::allocation_size(val.related_pledged_shares) +
+        FfiConverterOptionalDouble::allocation_size(val.related_pledge_ratio);
+    
+}
+
+
+DirectorHoldingsEntry FfiConverterTypeDirectorHoldingsEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeDirectorHoldingsEntry::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeDirectorHoldingsEntry::lower(const DirectorHoldingsEntry &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeDirectorHoldingsEntry::write(stream, val);
+
+    return std::move(buf);
+}
+
+DirectorHoldingsEntry FfiConverterTypeDirectorHoldingsEntry::read(RustStream &stream) {
+    return {
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeDirectorHolding::read(stream)
+    };
+}
+
+void FfiConverterTypeDirectorHoldingsEntry::write(RustStream &stream, const DirectorHoldingsEntry &val) {
+    FfiConverterString::write(stream, val.date);
+    FfiConverterSequenceTypeDirectorHolding::write(stream, val.directors);
+}
+
+uint64_t FfiConverterTypeDirectorHoldingsEntry::allocation_size(const DirectorHoldingsEntry &val) {
+    
+    return 
+        FfiConverterString::allocation_size(val.date) +
+        FfiConverterSequenceTypeDirectorHolding::allocation_size(val.directors);
+    
+}
+
+
+DirectorHoldingsResponse FfiConverterTypeDirectorHoldingsResponse::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeDirectorHoldingsResponse::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeDirectorHoldingsResponse::lower(const DirectorHoldingsResponse &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeDirectorHoldingsResponse::write(stream, val);
+
+    return std::move(buf);
+}
+
+DirectorHoldingsResponse FfiConverterTypeDirectorHoldingsResponse::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeDirectorHoldingsEntry::read(stream)
+    };
+}
+
+void FfiConverterTypeDirectorHoldingsResponse::write(RustStream &stream, const DirectorHoldingsResponse &val) {
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterString::write(stream, val.symbol);
+    FfiConverterSequenceTypeDirectorHoldingsEntry::write(stream, val.data);
+}
+
+uint64_t FfiConverterTypeDirectorHoldingsResponse::allocation_size(const DirectorHoldingsResponse &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterString::allocation_size(val.symbol) +
+        FfiConverterSequenceTypeDirectorHoldingsEntry::allocation_size(val.data);
+    
+}
+
+
 Dividend FfiConverterTypeDividend::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterTypeDividend::read(stream);
@@ -1948,6 +2247,144 @@ uint64_t FfiConverterTypeDividendsResponse::allocation_size(const DividendsRespo
         FfiConverterString::allocation_size(val.exchange) +
         FfiConverterString::allocation_size(val.market) +
         FfiConverterSequenceTypeDividend::allocation_size(val.data);
+    
+}
+
+
+EtfHoldingComponent FfiConverterTypeEtfHoldingComponent::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeEtfHoldingComponent::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeEtfHoldingComponent::lower(const EtfHoldingComponent &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeEtfHoldingComponent::write(stream, val);
+
+    return std::move(buf);
+}
+
+EtfHoldingComponent FfiConverterTypeEtfHoldingComponent::read(RustStream &stream) {
+    return {
+        FfiConverterString::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterDouble::read(stream),
+        FfiConverterDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream)
+    };
+}
+
+void FfiConverterTypeEtfHoldingComponent::write(RustStream &stream, const EtfHoldingComponent &val) {
+    FfiConverterString::write(stream, val.symbol);
+    FfiConverterString::write(stream, val.name);
+    FfiConverterDouble::write(stream, val.quantity);
+    FfiConverterDouble::write(stream, val.weight);
+    FfiConverterOptionalDouble::write(stream, val.quantity_change);
+    FfiConverterOptionalDouble::write(stream, val.weight_change);
+}
+
+uint64_t FfiConverterTypeEtfHoldingComponent::allocation_size(const EtfHoldingComponent &val) {
+    
+    return 
+        FfiConverterString::allocation_size(val.symbol) +
+        FfiConverterString::allocation_size(val.name) +
+        FfiConverterDouble::allocation_size(val.quantity) +
+        FfiConverterDouble::allocation_size(val.weight) +
+        FfiConverterOptionalDouble::allocation_size(val.quantity_change) +
+        FfiConverterOptionalDouble::allocation_size(val.weight_change);
+    
+}
+
+
+EtfHoldingsEntry FfiConverterTypeEtfHoldingsEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeEtfHoldingsEntry::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeEtfHoldingsEntry::lower(const EtfHoldingsEntry &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeEtfHoldingsEntry::write(stream, val);
+
+    return std::move(buf);
+}
+
+EtfHoldingsEntry FfiConverterTypeEtfHoldingsEntry::read(RustStream &stream) {
+    return {
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeEtfHoldingComponent::read(stream)
+    };
+}
+
+void FfiConverterTypeEtfHoldingsEntry::write(RustStream &stream, const EtfHoldingsEntry &val) {
+    FfiConverterString::write(stream, val.date);
+    FfiConverterSequenceTypeEtfHoldingComponent::write(stream, val.components);
+}
+
+uint64_t FfiConverterTypeEtfHoldingsEntry::allocation_size(const EtfHoldingsEntry &val) {
+    
+    return 
+        FfiConverterString::allocation_size(val.date) +
+        FfiConverterSequenceTypeEtfHoldingComponent::allocation_size(val.components);
+    
+}
+
+
+EtfHoldingsResponse FfiConverterTypeEtfHoldingsResponse::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeEtfHoldingsResponse::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeEtfHoldingsResponse::lower(const EtfHoldingsResponse &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeEtfHoldingsResponse::write(stream, val);
+
+    return std::move(buf);
+}
+
+EtfHoldingsResponse FfiConverterTypeEtfHoldingsResponse::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeEtfHoldingsEntry::read(stream)
+    };
+}
+
+void FfiConverterTypeEtfHoldingsResponse::write(RustStream &stream, const EtfHoldingsResponse &val) {
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterString::write(stream, val.symbol);
+    FfiConverterSequenceTypeEtfHoldingsEntry::write(stream, val.data);
+}
+
+uint64_t FfiConverterTypeEtfHoldingsResponse::allocation_size(const EtfHoldingsResponse &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterString::allocation_size(val.symbol) +
+        FfiConverterSequenceTypeEtfHoldingsEntry::allocation_size(val.data);
     
 }
 
@@ -2079,7 +2516,7 @@ FutOptHistoricalCandle FfiConverterTypeFutOptHistoricalCandle::read(RustStream &
         FfiConverterDouble::read(stream),
         FfiConverterDouble::read(stream),
         FfiConverterDouble::read(stream),
-        FfiConverterUInt64::read(stream),
+        FfiConverterOptionalUInt64::read(stream),
         FfiConverterOptionalUInt64::read(stream),
         FfiConverterOptionalDouble::read(stream),
         FfiConverterOptionalDouble::read(stream)
@@ -2092,7 +2529,7 @@ void FfiConverterTypeFutOptHistoricalCandle::write(RustStream &stream, const Fut
     FfiConverterDouble::write(stream, val.high);
     FfiConverterDouble::write(stream, val.low);
     FfiConverterDouble::write(stream, val.close);
-    FfiConverterUInt64::write(stream, val.volume);
+    FfiConverterOptionalUInt64::write(stream, val.volume);
     FfiConverterOptionalUInt64::write(stream, val.open_interest);
     FfiConverterOptionalDouble::write(stream, val.change);
     FfiConverterOptionalDouble::write(stream, val.change_percent);
@@ -2106,7 +2543,7 @@ uint64_t FfiConverterTypeFutOptHistoricalCandle::allocation_size(const FutOptHis
         FfiConverterDouble::allocation_size(val.high) +
         FfiConverterDouble::allocation_size(val.low) +
         FfiConverterDouble::allocation_size(val.close) +
-        FfiConverterUInt64::allocation_size(val.volume) +
+        FfiConverterOptionalUInt64::allocation_size(val.volume) +
         FfiConverterOptionalUInt64::allocation_size(val.open_interest) +
         FfiConverterOptionalDouble::allocation_size(val.change) +
         FfiConverterOptionalDouble::allocation_size(val.change_percent);
@@ -2371,7 +2808,7 @@ RustBuffer FfiConverterTypeFutOptTicker::lower(const FutOptTicker &val) {
 
 FutOptTicker FfiConverterTypeFutOptTicker::read(RustStream &stream) {
     return {
-        FfiConverterString::read(stream),
+        FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterString::read(stream),
@@ -2387,7 +2824,7 @@ FutOptTicker FfiConverterTypeFutOptTicker::read(RustStream &stream) {
 }
 
 void FfiConverterTypeFutOptTicker::write(RustStream &stream, const FutOptTicker &val) {
-    FfiConverterString::write(stream, val.date);
+    FfiConverterOptionalString::write(stream, val.date);
     FfiConverterOptionalString::write(stream, val.contract_type);
     FfiConverterOptionalString::write(stream, val.exchange);
     FfiConverterString::write(stream, val.symbol);
@@ -2404,7 +2841,7 @@ void FfiConverterTypeFutOptTicker::write(RustStream &stream, const FutOptTicker 
 uint64_t FfiConverterTypeFutOptTicker::allocation_size(const FutOptTicker &val) {
     
     return 
-        FfiConverterString::allocation_size(val.date) +
+        FfiConverterOptionalString::allocation_size(val.date) +
         FfiConverterOptionalString::allocation_size(val.contract_type) +
         FfiConverterOptionalString::allocation_size(val.exchange) +
         FfiConverterString::allocation_size(val.symbol) +
@@ -2483,23 +2920,20 @@ RustBuffer FfiConverterTypeHealthCheckConfigRecord::lower(const HealthCheckConfi
 HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::read(RustStream &stream) {
     return {
         FfiConverterBool::read(stream),
-        FfiConverterUInt64::read(stream),
         FfiConverterUInt64::read(stream)
     };
 }
 
 void FfiConverterTypeHealthCheckConfigRecord::write(RustStream &stream, const HealthCheckConfigRecord &val) {
     FfiConverterBool::write(stream, val.enabled);
-    FfiConverterUInt64::write(stream, val.interval_ms);
-    FfiConverterUInt64::write(stream, val.max_missed_pongs);
+    FfiConverterUInt64::write(stream, val.heartbeat_timeout_ms);
 }
 
 uint64_t FfiConverterTypeHealthCheckConfigRecord::allocation_size(const HealthCheckConfigRecord &val) {
     
     return 
         FfiConverterBool::allocation_size(val.enabled) +
-        FfiConverterUInt64::allocation_size(val.interval_ms) +
-        FfiConverterUInt64::allocation_size(val.max_missed_pongs);
+        FfiConverterUInt64::allocation_size(val.heartbeat_timeout_ms);
     
 }
 
@@ -2611,6 +3045,144 @@ uint64_t FfiConverterTypeHistoricalCandlesResponse::allocation_size(const Histor
         FfiConverterOptionalString::allocation_size(val.timeframe) +
         FfiConverterOptionalBool::allocation_size(val.adjusted) +
         FfiConverterSequenceTypeHistoricalCandle::allocation_size(val.data);
+    
+}
+
+
+InstitutionalInvestorTrade FfiConverterTypeInstitutionalInvestorTrade::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeInstitutionalInvestorTrade::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeInstitutionalInvestorTrade::lower(const InstitutionalInvestorTrade &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeInstitutionalInvestorTrade::write(stream, val);
+
+    return std::move(buf);
+}
+
+InstitutionalInvestorTrade FfiConverterTypeInstitutionalInvestorTrade::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream)
+    };
+}
+
+void FfiConverterTypeInstitutionalInvestorTrade::write(RustStream &stream, const InstitutionalInvestorTrade &val) {
+    FfiConverterOptionalDouble::write(stream, val.buy);
+    FfiConverterOptionalDouble::write(stream, val.sell);
+    FfiConverterOptionalDouble::write(stream, val.net);
+}
+
+uint64_t FfiConverterTypeInstitutionalInvestorTrade::allocation_size(const InstitutionalInvestorTrade &val) {
+    
+    return 
+        FfiConverterOptionalDouble::allocation_size(val.buy) +
+        FfiConverterOptionalDouble::allocation_size(val.sell) +
+        FfiConverterOptionalDouble::allocation_size(val.net);
+    
+}
+
+
+InstitutionalTradesEntry FfiConverterTypeInstitutionalTradesEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeInstitutionalTradesEntry::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeInstitutionalTradesEntry::lower(const InstitutionalTradesEntry &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeInstitutionalTradesEntry::write(stream, val);
+
+    return std::move(buf);
+}
+
+InstitutionalTradesEntry FfiConverterTypeInstitutionalTradesEntry::read(RustStream &stream) {
+    return {
+        FfiConverterString::read(stream),
+        FfiConverterOptionalTypeInstitutionalInvestorTrade::read(stream),
+        FfiConverterOptionalTypeInstitutionalInvestorTrade::read(stream),
+        FfiConverterOptionalTypeInstitutionalInvestorTrade::read(stream),
+        FfiConverterOptionalDouble::read(stream)
+    };
+}
+
+void FfiConverterTypeInstitutionalTradesEntry::write(RustStream &stream, const InstitutionalTradesEntry &val) {
+    FfiConverterString::write(stream, val.date);
+    FfiConverterOptionalTypeInstitutionalInvestorTrade::write(stream, val.foreign);
+    FfiConverterOptionalTypeInstitutionalInvestorTrade::write(stream, val.trust);
+    FfiConverterOptionalTypeInstitutionalInvestorTrade::write(stream, val.dealer);
+    FfiConverterOptionalDouble::write(stream, val.total);
+}
+
+uint64_t FfiConverterTypeInstitutionalTradesEntry::allocation_size(const InstitutionalTradesEntry &val) {
+    
+    return 
+        FfiConverterString::allocation_size(val.date) +
+        FfiConverterOptionalTypeInstitutionalInvestorTrade::allocation_size(val.foreign) +
+        FfiConverterOptionalTypeInstitutionalInvestorTrade::allocation_size(val.trust) +
+        FfiConverterOptionalTypeInstitutionalInvestorTrade::allocation_size(val.dealer) +
+        FfiConverterOptionalDouble::allocation_size(val.total);
+    
+}
+
+
+InstitutionalTradesResponse FfiConverterTypeInstitutionalTradesResponse::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeInstitutionalTradesResponse::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeInstitutionalTradesResponse::lower(const InstitutionalTradesResponse &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeInstitutionalTradesResponse::write(stream, val);
+
+    return std::move(buf);
+}
+
+InstitutionalTradesResponse FfiConverterTypeInstitutionalTradesResponse::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeInstitutionalTradesEntry::read(stream)
+    };
+}
+
+void FfiConverterTypeInstitutionalTradesResponse::write(RustStream &stream, const InstitutionalTradesResponse &val) {
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterString::write(stream, val.symbol);
+    FfiConverterSequenceTypeInstitutionalTradesEntry::write(stream, val.data);
+}
+
+uint64_t FfiConverterTypeInstitutionalTradesResponse::allocation_size(const InstitutionalTradesResponse &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterString::allocation_size(val.symbol) +
+        FfiConverterSequenceTypeInstitutionalTradesEntry::allocation_size(val.data);
     
 }
 
@@ -2789,22 +3361,26 @@ RustBuffer FfiConverterTypeKdjResponse::lower(const KdjResponse &val) {
 KdjResponse FfiConverterTypeKdjResponse::read(RustStream &stream) {
     return {
         FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterUInt32::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
         FfiConverterSequenceTypeKdjDataPoint::read(stream)
     };
 }
 
 void FfiConverterTypeKdjResponse::write(RustStream &stream, const KdjResponse &val) {
     FfiConverterString::write(stream, val.symbol);
-    FfiConverterString::write(stream, val.data_type);
-    FfiConverterString::write(stream, val.exchange);
-    FfiConverterString::write(stream, val.market);
-    FfiConverterString::write(stream, val.timeframe);
-    FfiConverterUInt32::write(stream, val.period);
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterOptionalString::write(stream, val.timeframe);
+    FfiConverterOptionalUInt32::write(stream, val.r_period);
+    FfiConverterOptionalUInt32::write(stream, val.k_period);
+    FfiConverterOptionalUInt32::write(stream, val.d_period);
     FfiConverterSequenceTypeKdjDataPoint::write(stream, val.data);
 }
 
@@ -2812,11 +3388,13 @@ uint64_t FfiConverterTypeKdjResponse::allocation_size(const KdjResponse &val) {
     
     return 
         FfiConverterString::allocation_size(val.symbol) +
-        FfiConverterString::allocation_size(val.data_type) +
-        FfiConverterString::allocation_size(val.exchange) +
-        FfiConverterString::allocation_size(val.market) +
-        FfiConverterString::allocation_size(val.timeframe) +
-        FfiConverterUInt32::allocation_size(val.period) +
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
+        FfiConverterOptionalUInt32::allocation_size(val.r_period) +
+        FfiConverterOptionalUInt32::allocation_size(val.k_period) +
+        FfiConverterOptionalUInt32::allocation_size(val.d_period) +
         FfiConverterSequenceTypeKdjDataPoint::allocation_size(val.data);
     
 }
@@ -2941,7 +3519,7 @@ MacdDataPoint FfiConverterTypeMacdDataPoint::read(RustStream &stream) {
         FfiConverterString::read(stream),
         FfiConverterDouble::read(stream),
         FfiConverterDouble::read(stream),
-        FfiConverterDouble::read(stream)
+        FfiConverterOptionalDouble::read(stream)
     };
 }
 
@@ -2949,7 +3527,7 @@ void FfiConverterTypeMacdDataPoint::write(RustStream &stream, const MacdDataPoin
     FfiConverterString::write(stream, val.date);
     FfiConverterDouble::write(stream, val.macd);
     FfiConverterDouble::write(stream, val.signal_value);
-    FfiConverterDouble::write(stream, val.histogram);
+    FfiConverterOptionalDouble::write(stream, val.histogram);
 }
 
 uint64_t FfiConverterTypeMacdDataPoint::allocation_size(const MacdDataPoint &val) {
@@ -2958,7 +3536,7 @@ uint64_t FfiConverterTypeMacdDataPoint::allocation_size(const MacdDataPoint &val
         FfiConverterString::allocation_size(val.date) +
         FfiConverterDouble::allocation_size(val.macd) +
         FfiConverterDouble::allocation_size(val.signal_value) +
-        FfiConverterDouble::allocation_size(val.histogram);
+        FfiConverterOptionalDouble::allocation_size(val.histogram);
     
 }
 
@@ -2984,10 +3562,10 @@ RustBuffer FfiConverterTypeMacdResponse::lower(const MacdResponse &val) {
 MacdResponse FfiConverterTypeMacdResponse::read(RustStream &stream) {
     return {
         FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
         FfiConverterUInt32::read(stream),
         FfiConverterUInt32::read(stream),
         FfiConverterUInt32::read(stream),
@@ -2997,10 +3575,10 @@ MacdResponse FfiConverterTypeMacdResponse::read(RustStream &stream) {
 
 void FfiConverterTypeMacdResponse::write(RustStream &stream, const MacdResponse &val) {
     FfiConverterString::write(stream, val.symbol);
-    FfiConverterString::write(stream, val.data_type);
-    FfiConverterString::write(stream, val.exchange);
-    FfiConverterString::write(stream, val.market);
-    FfiConverterString::write(stream, val.timeframe);
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterOptionalString::write(stream, val.timeframe);
     FfiConverterUInt32::write(stream, val.fast);
     FfiConverterUInt32::write(stream, val.slow);
     FfiConverterUInt32::write(stream, val.signal);
@@ -3011,10 +3589,10 @@ uint64_t FfiConverterTypeMacdResponse::allocation_size(const MacdResponse &val) 
     
     return 
         FfiConverterString::allocation_size(val.symbol) +
-        FfiConverterString::allocation_size(val.data_type) +
-        FfiConverterString::allocation_size(val.exchange) +
-        FfiConverterString::allocation_size(val.market) +
-        FfiConverterString::allocation_size(val.timeframe) +
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
         FfiConverterUInt32::allocation_size(val.fast) +
         FfiConverterUInt32::allocation_size(val.slow) +
         FfiConverterUInt32::allocation_size(val.signal) +
@@ -3202,7 +3780,7 @@ Product FfiConverterTypeProduct::read(RustStream &stream) {
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
-        FfiConverterOptionalInt64::read(stream),
+        FfiConverterOptionalDouble::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
@@ -3222,7 +3800,7 @@ void FfiConverterTypeProduct::write(RustStream &stream, const Product &val) {
     FfiConverterOptionalString::write(stream, val.name);
     FfiConverterOptionalString::write(stream, val.underlying_symbol);
     FfiConverterOptionalString::write(stream, val.contract_type);
-    FfiConverterOptionalInt64::write(stream, val.contract_size);
+    FfiConverterOptionalDouble::write(stream, val.contract_size);
     FfiConverterOptionalString::write(stream, val.underlying_type);
     FfiConverterOptionalString::write(stream, val.status_code);
     FfiConverterOptionalString::write(stream, val.trading_currency);
@@ -3243,7 +3821,7 @@ uint64_t FfiConverterTypeProduct::allocation_size(const Product &val) {
         FfiConverterOptionalString::allocation_size(val.name) +
         FfiConverterOptionalString::allocation_size(val.underlying_symbol) +
         FfiConverterOptionalString::allocation_size(val.contract_type) +
-        FfiConverterOptionalInt64::allocation_size(val.contract_size) +
+        FfiConverterOptionalDouble::allocation_size(val.contract_size) +
         FfiConverterOptionalString::allocation_size(val.underlying_type) +
         FfiConverterOptionalString::allocation_size(val.status_code) +
         FfiConverterOptionalString::allocation_size(val.trading_currency) +
@@ -3566,10 +4144,10 @@ RustBuffer FfiConverterTypeRsiResponse::lower(const RsiResponse &val) {
 RsiResponse FfiConverterTypeRsiResponse::read(RustStream &stream) {
     return {
         FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
         FfiConverterUInt32::read(stream),
         FfiConverterSequenceTypeRsiDataPoint::read(stream)
     };
@@ -3577,10 +4155,10 @@ RsiResponse FfiConverterTypeRsiResponse::read(RustStream &stream) {
 
 void FfiConverterTypeRsiResponse::write(RustStream &stream, const RsiResponse &val) {
     FfiConverterString::write(stream, val.symbol);
-    FfiConverterString::write(stream, val.data_type);
-    FfiConverterString::write(stream, val.exchange);
-    FfiConverterString::write(stream, val.market);
-    FfiConverterString::write(stream, val.timeframe);
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterOptionalString::write(stream, val.timeframe);
     FfiConverterUInt32::write(stream, val.period);
     FfiConverterSequenceTypeRsiDataPoint::write(stream, val.data);
 }
@@ -3589,10 +4167,10 @@ uint64_t FfiConverterTypeRsiResponse::allocation_size(const RsiResponse &val) {
     
     return 
         FfiConverterString::allocation_size(val.symbol) +
-        FfiConverterString::allocation_size(val.data_type) +
-        FfiConverterString::allocation_size(val.exchange) +
-        FfiConverterString::allocation_size(val.market) +
-        FfiConverterString::allocation_size(val.timeframe) +
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
         FfiConverterUInt32::allocation_size(val.period) +
         FfiConverterSequenceTypeRsiDataPoint::allocation_size(val.data);
     
@@ -3659,10 +4237,10 @@ RustBuffer FfiConverterTypeSmaResponse::lower(const SmaResponse &val) {
 SmaResponse FfiConverterTypeSmaResponse::read(RustStream &stream) {
     return {
         FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
-        FfiConverterString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
         FfiConverterUInt32::read(stream),
         FfiConverterSequenceTypeSmaDataPoint::read(stream)
     };
@@ -3670,10 +4248,10 @@ SmaResponse FfiConverterTypeSmaResponse::read(RustStream &stream) {
 
 void FfiConverterTypeSmaResponse::write(RustStream &stream, const SmaResponse &val) {
     FfiConverterString::write(stream, val.symbol);
-    FfiConverterString::write(stream, val.data_type);
-    FfiConverterString::write(stream, val.exchange);
-    FfiConverterString::write(stream, val.market);
-    FfiConverterString::write(stream, val.timeframe);
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterOptionalString::write(stream, val.timeframe);
     FfiConverterUInt32::write(stream, val.period);
     FfiConverterSequenceTypeSmaDataPoint::write(stream, val.data);
 }
@@ -3682,10 +4260,10 @@ uint64_t FfiConverterTypeSmaResponse::allocation_size(const SmaResponse &val) {
     
     return 
         FfiConverterString::allocation_size(val.symbol) +
-        FfiConverterString::allocation_size(val.data_type) +
-        FfiConverterString::allocation_size(val.exchange) +
-        FfiConverterString::allocation_size(val.market) +
-        FfiConverterString::allocation_size(val.timeframe) +
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
         FfiConverterUInt32::allocation_size(val.period) +
         FfiConverterSequenceTypeSmaDataPoint::allocation_size(val.data);
     
@@ -3837,7 +4415,7 @@ StatsResponse FfiConverterTypeStatsResponse::read(RustStream &stream) {
         FfiConverterDouble::read(stream),
         FfiConverterDouble::read(stream),
         FfiConverterDouble::read(stream),
-        FfiConverterDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
         FfiConverterInt64::read(stream),
         FfiConverterDouble::read(stream),
         FfiConverterDouble::read(stream),
@@ -3858,7 +4436,7 @@ void FfiConverterTypeStatsResponse::write(RustStream &stream, const StatsRespons
     FfiConverterDouble::write(stream, val.low_price);
     FfiConverterDouble::write(stream, val.close_price);
     FfiConverterDouble::write(stream, val.change);
-    FfiConverterDouble::write(stream, val.change_percent);
+    FfiConverterOptionalDouble::write(stream, val.change_percent);
     FfiConverterInt64::write(stream, val.trade_volume);
     FfiConverterDouble::write(stream, val.trade_value);
     FfiConverterDouble::write(stream, val.previous_close);
@@ -3880,7 +4458,7 @@ uint64_t FfiConverterTypeStatsResponse::allocation_size(const StatsResponse &val
         FfiConverterDouble::allocation_size(val.low_price) +
         FfiConverterDouble::allocation_size(val.close_price) +
         FfiConverterDouble::allocation_size(val.change) +
-        FfiConverterDouble::allocation_size(val.change_percent) +
+        FfiConverterOptionalDouble::allocation_size(val.change_percent) +
         FfiConverterInt64::allocation_size(val.trade_volume) +
         FfiConverterDouble::allocation_size(val.trade_value) +
         FfiConverterDouble::allocation_size(val.previous_close) +
@@ -3944,6 +4522,177 @@ uint64_t FfiConverterTypeStreamMessage::allocation_size(const StreamMessage &val
 }
 
 
+StreamingVersionRecord FfiConverterTypeStreamingVersionRecord::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeStreamingVersionRecord::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeStreamingVersionRecord::lower(const StreamingVersionRecord &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeStreamingVersionRecord::write(stream, val);
+
+    return std::move(buf);
+}
+
+StreamingVersionRecord FfiConverterTypeStreamingVersionRecord::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeStreamingVersionRecord::write(RustStream &stream, const StreamingVersionRecord &val) {
+    FfiConverterOptionalString::write(stream, val.stock);
+    FfiConverterOptionalString::write(stream, val.futopt);
+}
+
+uint64_t FfiConverterTypeStreamingVersionRecord::allocation_size(const StreamingVersionRecord &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.stock) +
+        FfiConverterOptionalString::allocation_size(val.futopt);
+    
+}
+
+
+TdccDistributionEntry FfiConverterTypeTdccDistributionEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeTdccDistributionEntry::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeTdccDistributionEntry::lower(const TdccDistributionEntry &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeTdccDistributionEntry::write(stream, val);
+
+    return std::move(buf);
+}
+
+TdccDistributionEntry FfiConverterTypeTdccDistributionEntry::read(RustStream &stream) {
+    return {
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeTdccDistributionLevel::read(stream)
+    };
+}
+
+void FfiConverterTypeTdccDistributionEntry::write(RustStream &stream, const TdccDistributionEntry &val) {
+    FfiConverterString::write(stream, val.date);
+    FfiConverterSequenceTypeTdccDistributionLevel::write(stream, val.distributions);
+}
+
+uint64_t FfiConverterTypeTdccDistributionEntry::allocation_size(const TdccDistributionEntry &val) {
+    
+    return 
+        FfiConverterString::allocation_size(val.date) +
+        FfiConverterSequenceTypeTdccDistributionLevel::allocation_size(val.distributions);
+    
+}
+
+
+TdccDistributionLevel FfiConverterTypeTdccDistributionLevel::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeTdccDistributionLevel::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeTdccDistributionLevel::lower(const TdccDistributionLevel &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeTdccDistributionLevel::write(stream, val);
+
+    return std::move(buf);
+}
+
+TdccDistributionLevel FfiConverterTypeTdccDistributionLevel::read(RustStream &stream) {
+    return {
+        FfiConverterString::read(stream),
+        FfiConverterOptionalInt64::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream)
+    };
+}
+
+void FfiConverterTypeTdccDistributionLevel::write(RustStream &stream, const TdccDistributionLevel &val) {
+    FfiConverterString::write(stream, val.range);
+    FfiConverterOptionalInt64::write(stream, val.holders);
+    FfiConverterOptionalDouble::write(stream, val.shares);
+    FfiConverterOptionalDouble::write(stream, val.proportion);
+}
+
+uint64_t FfiConverterTypeTdccDistributionLevel::allocation_size(const TdccDistributionLevel &val) {
+    
+    return 
+        FfiConverterString::allocation_size(val.range) +
+        FfiConverterOptionalInt64::allocation_size(val.holders) +
+        FfiConverterOptionalDouble::allocation_size(val.shares) +
+        FfiConverterOptionalDouble::allocation_size(val.proportion);
+    
+}
+
+
+TdccDistributionResponse FfiConverterTypeTdccDistributionResponse::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeTdccDistributionResponse::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeTdccDistributionResponse::lower(const TdccDistributionResponse &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeTdccDistributionResponse::write(stream, val);
+
+    return std::move(buf);
+}
+
+TdccDistributionResponse FfiConverterTypeTdccDistributionResponse::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterSequenceTypeTdccDistributionEntry::read(stream)
+    };
+}
+
+void FfiConverterTypeTdccDistributionResponse::write(RustStream &stream, const TdccDistributionResponse &val) {
+    FfiConverterOptionalString::write(stream, val.data_type);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterString::write(stream, val.symbol);
+    FfiConverterSequenceTypeTdccDistributionEntry::write(stream, val.data);
+}
+
+uint64_t FfiConverterTypeTdccDistributionResponse::allocation_size(const TdccDistributionResponse &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.data_type) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterString::allocation_size(val.symbol) +
+        FfiConverterSequenceTypeTdccDistributionEntry::allocation_size(val.data);
+    
+}
+
+
 Ticker FfiConverterTypeTicker::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterTypeTicker::read(stream);
@@ -3964,7 +4713,7 @@ RustBuffer FfiConverterTypeTicker::lower(const Ticker &val) {
 
 Ticker FfiConverterTypeTicker::read(RustStream &stream) {
     return {
-        FfiConverterString::read(stream),
+        FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
         FfiConverterOptionalString::read(stream),
@@ -4004,7 +4753,7 @@ Ticker FfiConverterTypeTicker::read(RustStream &stream) {
 }
 
 void FfiConverterTypeTicker::write(RustStream &stream, const Ticker &val) {
-    FfiConverterString::write(stream, val.date);
+    FfiConverterOptionalString::write(stream, val.date);
     FfiConverterOptionalString::write(stream, val.data_type);
     FfiConverterOptionalString::write(stream, val.exchange);
     FfiConverterOptionalString::write(stream, val.market);
@@ -4045,7 +4794,7 @@ void FfiConverterTypeTicker::write(RustStream &stream, const Ticker &val) {
 uint64_t FfiConverterTypeTicker::allocation_size(const Ticker &val) {
     
     return 
-        FfiConverterString::allocation_size(val.date) +
+        FfiConverterOptionalString::allocation_size(val.date) +
         FfiConverterOptionalString::allocation_size(val.data_type) +
         FfiConverterOptionalString::allocation_size(val.exchange) +
         FfiConverterOptionalString::allocation_size(val.market) +
@@ -4749,6 +5498,53 @@ uint64_t FfiConverterWebSocketEndpoint::allocation_size(const WebSocketEndpoint 
     return static_cast<uint64_t>(sizeof(int32_t));
 }
 
+std::optional<uint32_t> FfiConverterOptionalUInt32::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalUInt32::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalUInt32::lower(const std::optional<uint32_t>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalUInt32::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalUInt32::write(stream, val);
+
+    return buf;
+}
+
+std::optional<uint32_t> FfiConverterOptionalUInt32::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterUInt32::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalUInt32::write(RustStream &stream, const std::optional<uint32_t>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterUInt32::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalUInt32::allocation_size(const std::optional<uint32_t> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterUInt32::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
 std::optional<int32_t> FfiConverterOptionalInt32::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterOptionalInt32::read(stream);
@@ -5219,6 +6015,53 @@ uint64_t FfiConverterOptionalTypeHealthCheckConfigRecord::allocation_size(const 
     return ret;
 }
 
+std::optional<InstitutionalInvestorTrade> FfiConverterOptionalTypeInstitutionalInvestorTrade::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeInstitutionalInvestorTrade::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeInstitutionalInvestorTrade::lower(const std::optional<InstitutionalInvestorTrade>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeInstitutionalInvestorTrade::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeInstitutionalInvestorTrade::write(stream, val);
+
+    return buf;
+}
+
+std::optional<InstitutionalInvestorTrade> FfiConverterOptionalTypeInstitutionalInvestorTrade::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeInstitutionalInvestorTrade::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeInstitutionalInvestorTrade::write(RustStream &stream, const std::optional<InstitutionalInvestorTrade>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeInstitutionalInvestorTrade::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeInstitutionalInvestorTrade::allocation_size(const std::optional<InstitutionalInvestorTrade> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeInstitutionalInvestorTrade::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
 std::optional<ReconnectConfigRecord> FfiConverterOptionalTypeReconnectConfigRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterOptionalTypeReconnectConfigRecord::read(stream);
@@ -5261,6 +6104,53 @@ uint64_t FfiConverterOptionalTypeReconnectConfigRecord::allocation_size(const st
 
     if (val) {
         ret += FfiConverterTypeReconnectConfigRecord::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<StreamingVersionRecord> FfiConverterOptionalTypeStreamingVersionRecord::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeStreamingVersionRecord::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeStreamingVersionRecord::lower(const std::optional<StreamingVersionRecord>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeStreamingVersionRecord::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeStreamingVersionRecord::write(stream, val);
+
+    return buf;
+}
+
+std::optional<StreamingVersionRecord> FfiConverterOptionalTypeStreamingVersionRecord::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeStreamingVersionRecord::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeStreamingVersionRecord::write(RustStream &stream, const std::optional<StreamingVersionRecord>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeStreamingVersionRecord::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeStreamingVersionRecord::allocation_size(const std::optional<StreamingVersionRecord> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeStreamingVersionRecord::allocation_size(val.value());
     }
 
     return ret;
@@ -5608,6 +6498,108 @@ uint64_t FfiConverterSequenceTypeCapitalChange::allocation_size(const std::vecto
 }
 
 
+std::vector<DirectorHolding> FfiConverterSequenceTypeDirectorHolding::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeDirectorHolding::lower(const std::vector<DirectorHolding> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<DirectorHolding> FfiConverterSequenceTypeDirectorHolding::read(RustStream &stream) {
+    std::vector<DirectorHolding> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeDirectorHolding::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeDirectorHolding::write(RustStream &stream, const std::vector<DirectorHolding> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeDirectorHolding::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeDirectorHolding::allocation_size(const std::vector<DirectorHolding> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeDirectorHolding::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
+std::vector<DirectorHoldingsEntry> FfiConverterSequenceTypeDirectorHoldingsEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeDirectorHoldingsEntry::lower(const std::vector<DirectorHoldingsEntry> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<DirectorHoldingsEntry> FfiConverterSequenceTypeDirectorHoldingsEntry::read(RustStream &stream) {
+    std::vector<DirectorHoldingsEntry> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeDirectorHoldingsEntry::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeDirectorHoldingsEntry::write(RustStream &stream, const std::vector<DirectorHoldingsEntry> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeDirectorHoldingsEntry::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeDirectorHoldingsEntry::allocation_size(const std::vector<DirectorHoldingsEntry> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeDirectorHoldingsEntry::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
 std::vector<Dividend> FfiConverterSequenceTypeDividend::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = read(stream);
@@ -5653,6 +6645,108 @@ uint64_t FfiConverterSequenceTypeDividend::allocation_size(const std::vector<Div
 
     for (auto &elem : val) {
         size += FfiConverterTypeDividend::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
+std::vector<EtfHoldingComponent> FfiConverterSequenceTypeEtfHoldingComponent::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeEtfHoldingComponent::lower(const std::vector<EtfHoldingComponent> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<EtfHoldingComponent> FfiConverterSequenceTypeEtfHoldingComponent::read(RustStream &stream) {
+    std::vector<EtfHoldingComponent> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeEtfHoldingComponent::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeEtfHoldingComponent::write(RustStream &stream, const std::vector<EtfHoldingComponent> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeEtfHoldingComponent::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeEtfHoldingComponent::allocation_size(const std::vector<EtfHoldingComponent> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeEtfHoldingComponent::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
+std::vector<EtfHoldingsEntry> FfiConverterSequenceTypeEtfHoldingsEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeEtfHoldingsEntry::lower(const std::vector<EtfHoldingsEntry> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<EtfHoldingsEntry> FfiConverterSequenceTypeEtfHoldingsEntry::read(RustStream &stream) {
+    std::vector<EtfHoldingsEntry> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeEtfHoldingsEntry::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeEtfHoldingsEntry::write(RustStream &stream, const std::vector<EtfHoldingsEntry> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeEtfHoldingsEntry::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeEtfHoldingsEntry::allocation_size(const std::vector<EtfHoldingsEntry> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeEtfHoldingsEntry::allocation_size(elem);
     }
 
     return size;
@@ -5857,6 +6951,57 @@ uint64_t FfiConverterSequenceTypeHistoricalCandle::allocation_size(const std::ve
 
     for (auto &elem : val) {
         size += FfiConverterTypeHistoricalCandle::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
+std::vector<InstitutionalTradesEntry> FfiConverterSequenceTypeInstitutionalTradesEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeInstitutionalTradesEntry::lower(const std::vector<InstitutionalTradesEntry> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<InstitutionalTradesEntry> FfiConverterSequenceTypeInstitutionalTradesEntry::read(RustStream &stream) {
+    std::vector<InstitutionalTradesEntry> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeInstitutionalTradesEntry::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeInstitutionalTradesEntry::write(RustStream &stream, const std::vector<InstitutionalTradesEntry> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeInstitutionalTradesEntry::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeInstitutionalTradesEntry::allocation_size(const std::vector<InstitutionalTradesEntry> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeInstitutionalTradesEntry::allocation_size(elem);
     }
 
     return size;
@@ -6367,6 +7512,108 @@ uint64_t FfiConverterSequenceTypeSnapshotQuote::allocation_size(const std::vecto
 
     for (auto &elem : val) {
         size += FfiConverterTypeSnapshotQuote::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
+std::vector<TdccDistributionEntry> FfiConverterSequenceTypeTdccDistributionEntry::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeTdccDistributionEntry::lower(const std::vector<TdccDistributionEntry> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<TdccDistributionEntry> FfiConverterSequenceTypeTdccDistributionEntry::read(RustStream &stream) {
+    std::vector<TdccDistributionEntry> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeTdccDistributionEntry::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeTdccDistributionEntry::write(RustStream &stream, const std::vector<TdccDistributionEntry> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeTdccDistributionEntry::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeTdccDistributionEntry::allocation_size(const std::vector<TdccDistributionEntry> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeTdccDistributionEntry::allocation_size(elem);
+    }
+
+    return size;
+}
+
+
+std::vector<TdccDistributionLevel> FfiConverterSequenceTypeTdccDistributionLevel::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceTypeTdccDistributionLevel::lower(const std::vector<TdccDistributionLevel> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<TdccDistributionLevel> FfiConverterSequenceTypeTdccDistributionLevel::read(RustStream &stream) {
+    std::vector<TdccDistributionLevel> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterTypeTdccDistributionLevel::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceTypeTdccDistributionLevel::write(RustStream &stream, const std::vector<TdccDistributionLevel> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterTypeTdccDistributionLevel::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceTypeTdccDistributionLevel::allocation_size(const std::vector<TdccDistributionLevel> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterTypeTdccDistributionLevel::allocation_size(elem);
     }
 
     return size;

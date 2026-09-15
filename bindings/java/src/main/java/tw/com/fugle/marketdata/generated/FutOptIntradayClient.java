@@ -250,12 +250,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<List<FutOptTicker>> getTickers(String typ){
+    public CompletableFuture<List<FutOptTicker>> getTickers(String typ, Boolean isSpread){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_tickers(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(typ)
+                FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalBoolean.INSTANCE.lower(isSpread)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -431,7 +431,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * typ: "F" for futures, "O" for options
      */
     @Override
-    public List<FutOptTicker> tickersSync(String typ) throws MarketDataException {
+    public List<FutOptTicker> tickersSync(String typ, Boolean isSpread) throws MarketDataException {
             try {
                 return FfiConverterSequenceTypeFutOptTicker.INSTANCE.lift(
     callWithPointer(it -> {
@@ -440,7 +440,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_tickers_sync(
-            it, FfiConverterString.INSTANCE.lower(typ), _status);
+            it, FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalBoolean.INSTANCE.lower(isSpread), _status);
     });
     
         } catch (Exception e) {
