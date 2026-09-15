@@ -572,6 +572,7 @@ dependencies = [
  "bon",
  "criterion",
  "exponential-backoff",
+ "flate2",
  "futures-util",
  "indexmap",
  "metrics",
