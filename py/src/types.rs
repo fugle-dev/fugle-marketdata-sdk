@@ -194,55 +194,50 @@ pub fn json_value_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
 }
 
 /// Convert a Ticker to a Python dict
-#[allow(deprecated)]  // downcast deprecated in PyO3 0.27
 pub fn ticker_to_dict(py: Python<'_>, ticker: &marketdata_core::Ticker) -> PyResult<Py<PyDict>> {
     let json_val = serde_json::to_value(ticker)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Serialization error: {}", e)))?;
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
-    let dict: &Bound<'_, PyDict> = bound.downcast()
+    let dict: &Bound<'_, PyDict> = bound.cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert IntradayCandlesResponse to a Python dict
-#[allow(deprecated)]  // downcast deprecated in PyO3 0.27
 pub fn candles_to_dict(py: Python<'_>, candles: &marketdata_core::IntradayCandlesResponse) -> PyResult<Py<PyDict>> {
     let json_val = serde_json::to_value(candles)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Serialization error: {}", e)))?;
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
-    let dict: &Bound<'_, PyDict> = bound.downcast()
+    let dict: &Bound<'_, PyDict> = bound.cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert TradesResponse to a Python dict
-#[allow(deprecated)]  // downcast deprecated in PyO3 0.27
 pub fn trades_to_dict(py: Python<'_>, trades: &marketdata_core::TradesResponse) -> PyResult<Py<PyDict>> {
     let json_val = serde_json::to_value(trades)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Serialization error: {}", e)))?;
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
-    let dict: &Bound<'_, PyDict> = bound.downcast()
+    let dict: &Bound<'_, PyDict> = bound.cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert VolumesResponse to a Python dict
-#[allow(deprecated)]  // downcast deprecated in PyO3 0.27
 pub fn volumes_to_dict(py: Python<'_>, volumes: &marketdata_core::VolumesResponse) -> PyResult<Py<PyDict>> {
     let json_val = serde_json::to_value(volumes)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Serialization error: {}", e)))?;
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
-    let dict: &Bound<'_, PyDict> = bound.downcast()
+    let dict: &Bound<'_, PyDict> = bound.cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert HistoricalCandlesResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn historical_candles_to_dict(
     py: Python<'_>,
     candles: &marketdata_core::models::HistoricalCandlesResponse,
@@ -252,13 +247,12 @@ pub fn historical_candles_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert StatsResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn stats_to_dict(
     py: Python<'_>,
     stats: &marketdata_core::models::StatsResponse,
@@ -268,13 +262,12 @@ pub fn stats_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert SnapshotQuotesResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn snapshot_quotes_to_dict(
     py: Python<'_>,
     quotes: &marketdata_core::models::SnapshotQuotesResponse,
@@ -284,13 +277,12 @@ pub fn snapshot_quotes_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert MoversResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn movers_to_dict(
     py: Python<'_>,
     movers: &marketdata_core::models::MoversResponse,
@@ -300,13 +292,12 @@ pub fn movers_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert ActivesResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn actives_to_dict(
     py: Python<'_>,
     actives: &marketdata_core::models::ActivesResponse,
@@ -316,13 +307,12 @@ pub fn actives_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert a technical indicator response (SMA, RSI, KDJ, MACD, BB) to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn technical_to_dict<T: serde::Serialize>(
     py: Python<'_>,
     response: &T,
@@ -332,13 +322,12 @@ pub fn technical_to_dict<T: serde::Serialize>(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert a corporate action response (CapitalChanges, Dividends, ListingApplicants) to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn corporate_action_to_dict<T: serde::Serialize>(
     py: Python<'_>,
     response: &T,
@@ -348,13 +337,12 @@ pub fn corporate_action_to_dict<T: serde::Serialize>(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert FutOptHistoricalCandlesResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn futopt_historical_candles_to_dict(
     py: Python<'_>,
     candles: &marketdata_core::models::futopt::FutOptHistoricalCandlesResponse,
@@ -364,13 +352,12 @@ pub fn futopt_historical_candles_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }
 
 /// Convert FutOptDailyResponse to a Python dict
-#[allow(deprecated)] // downcast deprecated in PyO3 0.27
 pub fn futopt_daily_to_dict(
     py: Python<'_>,
     daily: &marketdata_core::models::futopt::FutOptDailyResponse,
@@ -380,7 +367,7 @@ pub fn futopt_daily_to_dict(
     let py_any = json_value_to_py(py, &json_val)?;
     let bound = py_any.bind(py);
     let dict: &Bound<'_, PyDict> = bound
-        .downcast()
+        .cast()
         .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict from JSON object"))?;
     Ok(dict.clone().unbind())
 }

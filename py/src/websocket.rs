@@ -218,7 +218,7 @@ fn resolve_unsubscribe_args(
 ///     max_delay_ms=30000
 /// )
 /// ```
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ReconnectConfig {
     /// Whether auto-reconnect is enabled
@@ -346,7 +346,7 @@ impl Default for ReconnectConfig {
 ///     health_check=health_check
 /// )
 /// ```
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct HealthCheckConfig {
     /// Whether liveness detection is active (default: True in 3.0)
@@ -803,7 +803,6 @@ impl StockWebSocketClient {
         // Reset stop flag
         stop_flag.store(false, Ordering::SeqCst);
 
-        #[allow(deprecated)]  // with_gil is deprecated in PyO3 0.27, use attach instead
         let handle = std::thread::spawn(move || {
             while !stop_flag.load(Ordering::SeqCst) {
                 match receiver.receive_timeout(Duration::from_millis(100)) {
@@ -1431,7 +1430,6 @@ impl StockWebSocketClient {
                 let callbacks_clone = Arc::clone(&callbacks);
                 let stop_flag = Arc::clone(&message_thread_stop);
 
-                #[allow(deprecated)]
                 let handle = std::thread::spawn(move || {
                     while !stop_flag.load(Ordering::SeqCst) {
                         match receiver_for_thread.receive_timeout(Duration::from_millis(100)) {
