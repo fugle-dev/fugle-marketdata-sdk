@@ -1,7 +1,7 @@
 # Migrating to 0.8.0
 
-0.8.0 aligns the Rust SDK with the official Node / Python SDKs' 1.5.0 / 2.5.0
-release.
+0.8.0 aligns the Rust SDK with the official Node / Python SDKs' 1.6.0 / 2.6.0
+releases.
 
 > **Using the Python, Node, C#, Go, Java or C++ bindings?** Nothing here is a
 > migration for you. Those bindings ship for the first time at
@@ -12,6 +12,7 @@ release.
 
 This document is for existing users of the `fugle-marketdata` /
 `fugle-marketdata-core` crates on crates.io. Two changes need your attention; everything else is additive.
+The minimum supported Rust version is now 1.83.
 
 | | Change | Who is affected |
 |---|---|---|
@@ -207,6 +208,17 @@ let holdings = client
     .from("2026-01-01")
     .sort(HoldingsSort::Desc)
     .send()?;
+```
+
+### New endpoints from official 1.6.0 / 2.6.0
+
+`institutional_trades`, `director_holdings` and `tdcc_distribution` sit next to
+`etf_holdings` and take the same `symbol` / `from` / `to` / `sort` parameters:
+
+```rust
+let trades = client.stock().ownership().institutional_trades().symbol("2330").send()?;
+let directors = client.stock().ownership().director_holdings().symbol("2330").send()?;
+let tdcc = client.stock().ownership().tdcc_distribution().symbol("2330").send()?;
 ```
 
 ### Spread contracts
