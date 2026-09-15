@@ -10,10 +10,17 @@ name: Release
 # Prereleases go to the same public registries as stable releases, but on
 # channels that are never selected by default: pip needs --pre, npm uses the
 # `next` dist-tag, NuGet needs --prerelease, Go needs an explicit @version.
+#
+# Running this workflow manually is a rehearsal: it builds every platform and
+# runs each publish job up to, but not including, the upload (npm
+# --dry-run, NuGet pack, Go module assembly and smoke test, PyPI wheel
+# checks). Nothing is published and no GitHub Release is created. Only a tag
+# push releases.
 on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -38,6 +45,7 @@ jobs:
       rust_version: ${{ steps.v.outputs.rust_version }}
       channel: ${{ steps.v.outputs.channel }}
       npm_tag: ${{ steps.v.outputs.npm_tag }}
+      dry_run: ${{ steps.mode.outputs.dry_run }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,13 +53,33 @@ jobs:
         with:
           python-version: '3.12'
 
+      - id: mode
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A rehearsal has no tag, so it resolves as if tagging the current
+      # bindings version.
       - id: v
-        run: python3 scripts/release-versions.py resolve --tag "$GITHUB_REF" --github-output "$GITHUB_OUTPUT"
+        run: |
+          if [[ "${{ steps.mode.outputs.dry_run }}" == "true" ]]; then
+            TAG="v$(python3 -c 'import json; print(json.load(open("js/package.json"))["version"])')"
+          else
+            TAG="$GITHUB_REF"
+          fi
+          python3 scripts/release-versions.py resolve --tag "$TAG" --github-output "$GITHUB_OUTPUT"
 
       - name: Summary
         run: |
           {
-            echo "## Release ${{ steps.v.outputs.version }} (${{ steps.v.outputs.channel }})"
+            if [[ "${{ steps.mode.outputs.dry_run }}" == "true" ]]; then
+              echo "## Rehearsal of ${{ steps.v.outputs.version }} (${{ steps.v.outputs.channel }}) — nothing will be published"
+            else
+              echo "## Release ${{ steps.v.outputs.version }} (${{ steps.v.outputs.channel }})"
+            fi
             echo ""
             echo "| Track | Version |"
             echo "|---|---|"
@@ -126,7 +154,11 @@ jobs:
           echo "| Wheel |" >> "$GITHUB_STEP_SUMMARY"; echo "|---|" >> "$GITHUB_STEP_SUMMARY"
           for w in dist/*.whl; do echo "| $(basename "$w") |" >> "$GITHUB_STEP_SUMMARY"; done
 
+      - name: Check package metadata
+        run: pipx run twine check --strict dist/*
+
       - name: Publish
+        if: needs.resolve.outputs.dry_run != 'true'
         uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
           packages-dir: dist/
@@ -138,6 +170,7 @@ jobs:
     uses: ./.github/workflows/publish-nodejs.yml
     with:
       npm_tag: ${{ needs.resolve.outputs.npm_tag }}
+      dry-run: ${{ needs.resolve.outputs.dry_run == 'true' }}
     secrets: inherit
 
   publish-nuget:
@@ -146,6 +179,7 @@ jobs:
     uses: ./.github/workflows/publish-nuget.yml
     with:
       version: ${{ needs.resolve.outputs.uniffi_version }}
+      dry-run: ${{ needs.resolve.outputs.dry_run == 'true' }}
     secrets: inherit
 
   publish-go:
@@ -154,6 +188,7 @@ jobs:
     uses: ./.github/workflows/publish-go.yml
     with:
       version: ${{ needs.resolve.outputs.uniffi_version }}
+      dry-run: ${{ needs.resolve.outputs.dry_run == 'true' }}
     secrets: inherit
 
   # Java is not distributed yet: the JNA callback path benchmarks at roughly
@@ -162,7 +197,7 @@ jobs:
   publish-java:
     name: Publish Java to GitHub Packages
     needs: [resolve, build-uniffi]
-    if: vars.PUBLISH_JAVA == 'true'
+    if: vars.PUBLISH_JAVA == 'true' && needs.resolve.outputs.dry_run != 'true'
     uses: ./.github/workflows/publish-java.yml
     with:
       version: ${{ needs.resolve.outputs.uniffi_version }}
@@ -243,7 +278,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, publish-java, pack-cpp]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.resolve.outputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -298,3 +333,24 @@ jobs:
           prerelease: ${{ needs.resolve.outputs.channel == 'prerelease' }}
           make_latest: ${{ needs.resolve.outputs.channel == 'stable' }}
           files: release-assets/*
+
+  rehearsal-summary:
+    name: Rehearsal summary
+    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, pack-cpp]
+    if: ${{ always() && needs.resolve.outputs.dry_run == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          {
+            echo "## Rehearsal results"
+            echo ""
+            echo "Nothing was published and no GitHub Release was created."
+            echo ""
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "$RESULTS" | python3 -c 'import json,sys; [print("| %s | %s |" % (k, v["result"])) for k,v in json.load(sys.stdin).items()]'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESULTS" | python3 -c 'import json,sys; bad=[k for k,v in json.load(sys.stdin).items() if v["result"]!="success"]; print("failed:",bad) if bad else None; sys.exit(1 if bad else 0)'

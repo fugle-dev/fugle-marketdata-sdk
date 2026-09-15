@@ -59,11 +59,27 @@ git tag rust-v0.8.0-rc.1
 git push origin rust-v0.8.0-rc.1
 ```
 
+## Rehearsing a release
+
+Run the **Release** workflow manually from the Actions tab, or:
+
+```bash
+gh workflow run release.yml --ref main
+```
+
+A manual run builds every platform and runs each publish job up to the
+upload: wheel checks for PyPI, `npm publish --dry-run` for every npm package,
+`dotnet pack` for NuGet, and Go module assembly plus a static-link smoke test.
+Nothing is published, no tag is needed, and no GitHub Release is created. The
+**Rehearsal summary** job fails if any step would have failed. Registry
+credentials are not needed for a rehearsal.
+
 ## Releasing the bindings
 
 1. Update `CHANGELOG.md` with the release date and make sure CI is green on
    `main`. CI checks that the committed UniFFI bindings match the Rust
-   interface.
+   interface. Rehearse the release first if the release workflow or build
+   configuration changed since the last release.
 2. Tag the bindings version and push the tag:
 
    ```bash

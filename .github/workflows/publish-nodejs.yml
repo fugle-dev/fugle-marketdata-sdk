@@ -116,8 +116,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ inputs.npm_tag }}
           DRY_RUN: ${{ inputs.dry-run }}
-          # Provenance is only generated for public repositories.
-          PROVENANCE: ${{ github.event.repository.private == false && '--provenance' || '' }}
+          # Provenance is only generated for public repositories, and a dry run
+          # has nothing to attest.
+          PROVENANCE: ${{ !inputs.dry-run && github.event.repository.private == false && '--provenance' || '' }}
         run: |
           set -euo pipefail
           FLAGS=(--access public --tag "$NPM_TAG")
