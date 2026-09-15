@@ -10,7 +10,7 @@ on:
         default: false
     outputs:
       version:
-        description: "Package version from Cargo.toml"
+        description: "UniFFI binding version from uniffi/Cargo.toml"
         value: ${{ jobs.consolidate.outputs.version }}
   workflow_dispatch:
     inputs:
@@ -152,6 +152,112 @@ jobs:
           path: bindings/cpp/
           retention-days: 5
 
+  # Go static-library matrix — powers the standalone Go module published to
+  # github.com/fugle-dev/fugle-marketdata-go. Kept apart from `build` because
+  # scripts/build-go-static-lib.sh uses a fat-LTO profile in its own target dir
+  # (target/go-static); sharing a job or cache with the cdylib build would
+  # rebuild every dependency twice.
+  build-go-static:
+    name: Build Go static lib (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: darwin_arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin_amd64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux_amd64
+          # Go on Windows links cgo with mingw-w64 gcc, which cannot consume
+          # MSVC archives, so this target is cross-compiled with mingw.
+          - os: ubuntu-latest
+            target: x86_64-pc-windows-gnu
+            platform: windows_amd64
+            mingw: true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/go-static"
+          shared-key: go-static-${{ matrix.target }}
+
+      - name: Install mingw-w64 (Windows cross build)
+        if: matrix.mingw
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Build static library
+        shell: bash
+        env:
+          CC_x86_64_pc_windows_gnu: ${{ matrix.mingw && 'x86_64-w64-mingw32-gcc' || '' }}
+          AR_x86_64_pc_windows_gnu: ${{ matrix.mingw && 'x86_64-w64-mingw32-ar' || '' }}
+        run: scripts/build-go-static-lib.sh ${{ matrix.target }} ${{ matrix.platform }} go-static
+
+      - name: Upload static library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-go-static-${{ matrix.platform }}
+          path: go-static/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 5
+
+  consolidate-go-static:
+    name: Consolidate Go Static Libraries
+    needs: build-go-static
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download per-platform static libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: uniffi-go-static-*
+          path: downloads/
+
+      - name: Arrange as <goos>_<goarch>/ and verify
+        run: |
+          mkdir -p uniffi-go-static
+          for platform in darwin_arm64 darwin_amd64 linux_amd64 windows_amd64; do
+            src="downloads/uniffi-go-static-${platform}"
+            if [[ ! -f "$src/libmarketdata_uniffi.a" || ! -s "$src/native-static-libs.txt" ]]; then
+              echo "::error::Missing static library or native-static-libs.txt for ${platform}"
+              ls -la "$src" 2>/dev/null || true
+              exit 1
+            fi
+            mv "$src" "uniffi-go-static/${platform}"
+          done
+
+          echo "## Go static libraries" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | File | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|------|------|" >> $GITHUB_STEP_SUMMARY
+          for f in uniffi-go-static/*/*.a; do
+            platform=$(basename "$(dirname "$f")")
+            echo "| ${platform} | $(basename "$f") | $(ls -lh "$f" | awk '{print $5}') |" >> $GITHUB_STEP_SUMMARY
+          done
+          find uniffi-go-static -type f -exec ls -l {} \;
+
+      - name: Upload consolidated artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-go-static
+          path: uniffi-go-static/
+          retention-days: 5
+
   consolidate:
     name: Consolidate Native Libraries
     needs: build
@@ -162,12 +268,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from Cargo.toml
+      # The UniFFI bindings (C#, Go, Java, C++) follow their own 0.x track,
+      # declared explicitly in uniffi/Cargo.toml rather than inherited from
+      # the workspace version that py/js use.
+      - name: Extract version from uniffi/Cargo.toml
         id: version
         run: |
-          VERSION=$(grep -A1 '\[workspace.package\]' Cargo.toml | grep 'version' | cut -d'"' -f2)
+          VERSION=$(grep -m1 '^version' uniffi/Cargo.toml | cut -d'"' -f2)
+          if [[ -z "$VERSION" ]]; then
+            echo "::error file=uniffi/Cargo.toml::Could not read package version"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Package version: $VERSION"
+          echo "UniFFI binding version: $VERSION"
 
       - name: Download Linux x64 artifact (default)
         uses: actions/download-artifact@v4

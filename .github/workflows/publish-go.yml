@@ -1,0 +1,213 @@
+name: Publish Go module
+
+# Assembles the standalone Go module from bindings/go + prebuilt static
+# libraries and pushes it to github.com/fugle-dev/fugle-marketdata-go, tagged
+# v<version>, so users can `go get github.com/fugle-dev/fugle-marketdata-go@v<version>`.
+#
+# Called from release.yml after build-uniffi.yml has produced the
+# `uniffi-go-static` artifact. A manual dispatch builds that artifact itself.
+#
+# Requires the secret GO_REPO_DEPLOY_KEY: the private half of an SSH deploy key
+# that has write access to fugle-dev/fugle-marketdata-go.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'UniFFI binding version to publish (e.g. 0.1.0-rc.1). Must match uniffi/Cargo.toml.'
+        required: true
+        type: string
+      dry-run:
+        description: 'Assemble and smoke-test only; do not push'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      GO_REPO_DEPLOY_KEY:
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (defaults to uniffi/Cargo.toml)'
+        required: false
+        type: string
+        default: ''
+      dry-run:
+        description: 'Assemble and smoke-test only; do not push'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  GO_REPO: fugle-dev/fugle-marketdata-go
+
+jobs:
+  # Only a manual dispatch needs to build the static libraries here. When
+  # called from release.yml, github.event_name is the caller's `push` event and
+  # the artifact already exists in the run.
+  build:
+    name: Build UniFFI libraries (manual dispatch only)
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/build-uniffi.yml
+
+  publish:
+    name: Publish Go module
+    needs: build
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          MANIFEST_VERSION=$(grep -m1 '^version' uniffi/Cargo.toml | cut -d'"' -f2)
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$MANIFEST_VERSION"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a semver version"
+            exit 1
+          fi
+          if [[ "$VERSION" != "$MANIFEST_VERSION" ]]; then
+            echo "::error file=uniffi/Cargo.toml::Requested Go version $VERSION does not match uniffi/Cargo.toml ($MANIFEST_VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing $GO_REPO v$VERSION"
+
+      - name: Download static libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-go-static
+          path: go-static/
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Assemble module
+        run: scripts/assemble-go-module.sh go-static go-module "${{ steps.version.outputs.version }}"
+
+      # Builds and runs a throwaway consumer against the assembled module on
+      # linux/amd64. Running it (not just building) matters: the generated
+      # bindings verify UniFFI API checksums at init and panic if
+      # bindings/go/marketdata/marketdata_uniffi.go is stale.
+      - name: Smoke test (linux/amd64 consumer)
+        run: |
+          mkdir -p /tmp/go-consumer
+          cd /tmp/go-consumer
+          cat > go.mod <<EOF
+          module example.com/consumer
+
+          go 1.23
+
+          require github.com/fugle-dev/fugle-marketdata-go v${{ steps.version.outputs.version }}
+
+          replace github.com/fugle-dev/fugle-marketdata-go => $GITHUB_WORKSPACE/go-module
+          EOF
+          cat > main.go <<'EOF'
+          package main
+
+          import (
+          	"fmt"
+          	"os"
+
+          	mkt "github.com/fugle-dev/fugle-marketdata-go"
+          )
+
+          func main() {
+          	client, err := mkt.NewRestClientWithApiKey("smoke-test-key")
+          	if err != nil {
+          		fmt.Println("constructor error:", err)
+          		os.Exit(1)
+          	}
+          	defer client.Destroy()
+          	fmt.Printf("ok: %T\n", client.Stock().Intraday())
+          }
+          EOF
+          CGO_ENABLED=1 go build -o consumer .
+          echo "Dynamic dependencies:"
+          ldd consumer
+          if ldd consumer | grep -q marketdata_uniffi; then
+            echo "::error::Consumer is dynamically linked to marketdata_uniffi; expected static linking"
+            exit 1
+          fi
+          env -u LD_LIBRARY_PATH ./consumer
+
+      - name: Upload assembled module
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-module-v${{ steps.version.outputs.version }}
+          path: go-module/
+          retention-days: 5
+
+      - name: Configure deploy key
+        if: ${{ !inputs.dry-run }}
+        env:
+          GO_REPO_DEPLOY_KEY: ${{ secrets.GO_REPO_DEPLOY_KEY }}
+        run: |
+          if [[ -z "$GO_REPO_DEPLOY_KEY" ]]; then
+            echo "::error::GO_REPO_DEPLOY_KEY secret is not configured"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$GO_REPO_DEPLOY_KEY" > ~/.ssh/go_repo_deploy_key
+          chmod 600 ~/.ssh/go_repo_deploy_key
+          # GitHub's published SSH host key (docs: github.com/github-ssh-key-fingerprints).
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
+          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/go_repo_deploy_key -o IdentitiesOnly=yes" >> "$GITHUB_ENV"
+
+      - name: Push to ${{ env.GO_REPO }}
+        if: ${{ !inputs.dry-run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          REMOTE="git@github.com:${GO_REPO}.git"
+
+          if [[ -n "$(git ls-remote --tags "$REMOTE" "refs/tags/$TAG")" ]]; then
+            echo "::error::Tag $TAG already exists in $GO_REPO. Go module versions are immutable; bump uniffi/Cargo.toml instead."
+            exit 1
+          fi
+
+          git clone "$REMOTE" go-repo
+          cd go-repo
+          # An empty repository has no main branch yet.
+          git checkout -B main
+
+          rsync -a --delete --exclude '.git' "$GITHUB_WORKSPACE/go-module/" ./
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit --allow-empty -m "release $TAG" \
+            -m "Assembled from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          git tag -a "$TAG" -m "fugle-marketdata-go $TAG"
+          git push --atomic origin main "refs/tags/$TAG"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          {
+            echo "## Go module v$VERSION"
+            echo ""
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "Dry run: module assembled and smoke-tested, nothing pushed."
+            else
+              echo "Pushed to [$GO_REPO](https://github.com/$GO_REPO/releases/tag/v$VERSION)."
+            fi
+            echo ""
+            echo '```bash'
+            echo "go get github.com/fugle-dev/fugle-marketdata-go@v$VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
