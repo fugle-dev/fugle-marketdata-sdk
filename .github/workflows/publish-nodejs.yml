@@ -1,33 +1,69 @@
 name: Publish Node.js to npm
 
+# Publishes @fugle/marketdata plus one optional-dependency package per
+# platform (@fugle/marketdata-<platform>). Platform packages go first so the
+# main package never points at binaries that are not on the registry yet.
+#
+# Auth: npm trusted publishing (OIDC) when configured on npmjs.com, otherwise
+# the NPM_TOKEN secret. npm validates the *calling* workflow, so register
+# `release.yml` (not this file) as the trusted publisher.
 on:
   workflow_call:
+    inputs:
+      npm_tag:
+        description: 'npm dist-tag: `next` for prereleases, `latest` for stable'
+        required: true
+        type: string
+      dry-run:
+        required: false
+        type: boolean
+        default: false
     secrets:
       NPM_TOKEN:
-        # Marked optional so forks without NPM_TOKEN (kevinypfan) can still
-        # validate release.yml — this job is gated by `if: channel == stable`
-        # upstream and is never actually invoked on a fork. The `npm publish`
-        # step will fail at runtime if NPM_TOKEN is absent, which is fine.
         required: false
   workflow_dispatch:
-    # Manual trigger requires NPM_TOKEN in repository secrets
+    inputs:
+      npm_tag:
+        description: 'npm dist-tag'
+        required: true
+        type: choice
+        options: [next, latest]
+        default: next
+      dry-run:
+        description: 'Pack and validate only, do not publish'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   publish:
-    name: Publish to npm
+    name: Publish to npm (${{ inputs.npm_tag }})
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # Required for npm provenance
+      id-token: write  # trusted publishing + provenance
       contents: read
 
     steps:
       - uses: actions/checkout@v4
 
+      # Trusted publishing needs Node >= 22.14 and npm >= 11.5.1.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm
+        run: npm install -g npm@^11.5.1 && npm --version
+
+      - name: Guard dist-tag
+        run: |
+          VERSION=$(node -p "require('./js/package.json').version")
+          case "${{ inputs.npm_tag }}" in
+            latest) [[ "$VERSION" != *-* ]] || { echo "::error::Refusing to publish prerelease $VERSION as latest"; exit 1; } ;;
+            next)   [[ "$VERSION" == *-* ]] || { echo "::error::Refusing to publish stable $VERSION as next"; exit 1; } ;;
+            *)      echo "::error::Unsupported dist-tag ${{ inputs.npm_tag }}"; exit 1 ;;
+          esac
 
       - name: Download binding artifacts
         uses: actions/download-artifact@v4
@@ -35,64 +71,73 @@ jobs:
           pattern: bindings-*
           path: js/artifacts/
 
-      - name: Organize bindings for publishing
-        working-directory: js
-        run: |
-          echo "Downloaded artifacts:"
-          find artifacts -name "*.node" -type f
-
-          # Move .node files to js root for napi prepublish
-          for dir in artifacts/bindings-*/; do
-            cp "$dir"/*.node . 2>/dev/null || true
-          done
-          rm -rf artifacts/
-
-          echo ""
-          echo "Bindings ready for publish:"
-          ls -la *.node
-
       - name: Install dependencies
         working-directory: js
         run: npm ci
 
-      - name: Prepare platform packages
+      # create-npm-dirs + artifacts + pre-publish lay out npm/<platform>/ and
+      # stamp versions and optionalDependencies. --skip-optional-publish and
+      # --no-gh-release stop napi from publishing or creating a GitHub
+      # release on its own; publishing happens explicitly below with the
+      # right dist-tag.
+      - name: Assemble platform packages
         working-directory: js
         run: |
-          # Generate optionalDependencies platform packages
-          npm run prepublishOnly
+          npx napi create-npm-dirs
+          npx napi artifacts --output-dir artifacts
+          npx napi pre-publish -t npm --no-gh-release --skip-optional-publish
+          # napi artifacts also copies every binary into js/; the main
+          # package's `files` glob would otherwise ship all of them.
+          rm -f ./*.node
 
-          echo "## Platform Packages" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Package | Files |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          for pkg_dir in npm/*/; do
-            pkg=$(basename "$pkg_dir")
-            files=$(ls -1 "$pkg_dir" | wc -l | tr -d ' ')
-            echo "| @fugle/marketdata-$pkg | $files |" >> $GITHUB_STEP_SUMMARY
-          done
-
-      - name: Publish main package with provenance
+      - name: Verify packages
         working-directory: js
-        run: npm publish --provenance --access public
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          EXPECTED=$(node -p "Object.keys(require('./package.json').optionalDependencies).length")
+          FOUND=0
+          echo "| Package | Version | Binary |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for dir in npm/*/; do
+            name=$(node -p "require('./$dir/package.json').name")
+            ver=$(node -p "require('./$dir/package.json').version")
+            bins=$(find "$dir" -maxdepth 1 -name '*.node' | wc -l | tr -d ' ')
+            echo "| $name | $ver | $bins |" >> "$GITHUB_STEP_SUMMARY"
+            [[ "$ver" == "$VERSION" ]] || { echo "::error::$name version $ver != $VERSION"; exit 1; }
+            [[ "$bins" == "1" ]] || { echo "::error::$name has $bins .node files, expected 1"; exit 1; }
+            FOUND=$((FOUND + 1))
+          done
+          [[ "$FOUND" == "$EXPECTED" ]] || { echo "::error::Found $FOUND platform packages, package.json lists $EXPECTED"; exit 1; }
+          ls ./*.node 2>/dev/null && { echo "::error::Stray .node files in js/"; exit 1; } || true
+
+      - name: Publish
+        working-directory: js
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish platform packages
-        working-directory: js
+          NPM_TAG: ${{ inputs.npm_tag }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          # Provenance is only generated for public repositories.
+          PROVENANCE: ${{ github.event.repository.private == false && '--provenance' || '' }}
         run: |
-          # Publish each platform-specific package
-          for pkg_dir in npm/*/; do
-            echo "Publishing $(basename "$pkg_dir")..."
-            cd "$pkg_dir"
-            npm publish --provenance --access public || echo "Package may already exist"
-            cd ../..
-          done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          set -euo pipefail
+          FLAGS=(--access public --tag "$NPM_TAG")
+          [[ -n "$PROVENANCE" ]] && FLAGS+=("$PROVENANCE")
+          [[ "$DRY_RUN" == "true" ]] && FLAGS+=(--dry-run)
 
-      - name: Summary
-        run: |
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Publish Result" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Main package published with provenance attestation." >> $GITHUB_STEP_SUMMARY
+          publish() {  # $1 = package dir, remaining = extra flags
+            local dir="$1"; shift
+            local name ver
+            name=$(node -p "require('./$dir/package.json').name")
+            ver=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "::notice::$name@$ver already on npm, skipping"
+              return
+            fi
+            (cd "$dir" && npm publish "${FLAGS[@]}" "$@")
+          }
+
+          for dir in npm/*/; do publish "${dir%/}"; done
+          # --ignore-scripts: prepublishOnly runs `napi prepublish`, which
+          # would try to publish the platform packages again without a tag.
+          publish . --ignore-scripts
+          echo "Published @fugle/marketdata with dist-tag \`$NPM_TAG\`$([[ "$DRY_RUN" == "true" ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
