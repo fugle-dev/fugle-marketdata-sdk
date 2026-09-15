@@ -1,0 +1,82 @@
+# Releasing
+
+This repository ships three independently versioned tracks.
+`scripts/release-versions.py` is the single source of truth for the rules
+below; CI runs it on every pull request.
+
+| Track | Manifests (must agree) | Published as | Tag |
+|---|---|---|---|
+| Bindings | `js/package.json`, `[workspace.package]` in `Cargo.toml`, `py/pyproject.toml` (PEP 440 spelling) | PyPI `fugle-marketdata`, npm `@fugle/marketdata` | `vX.Y.Z[-rc.N]` |
+| UniFFI | `uniffi/Cargo.toml`, `<Version>` in the `.csproj`, the Gradle `projectVersion` default | NuGet `Fugle.MarketData`, Go `github.com/fugle-dev/fugle-marketdata-go`, C++ tarballs | none of its own |
+| Rust crates | `core/Cargo.toml`, `rust/Cargo.toml`, the `marketdata-core` alias in `Cargo.toml` | crates.io `fugle-marketdata-core`, `fugle-marketdata` | `rust-vX.Y.Z[-rc.N]` |
+
+```bash
+python3 scripts/release-versions.py check
+```
+
+## Rules
+
+- A `v*` tag releases the **bindings** track and must equal the bindings
+  version. The Release workflow rejects anything else.
+- Every bindings release also builds and publishes the current UniFFI version.
+  Bump the UniFFI version whenever C#, Go or C++ users would see a change,
+  including core fixes they inherit. An unchanged UniFFI version is skipped by
+  NuGet (`--skip-duplicate`).
+- Pre-releases use `-rc.N`. They are published to the real registries on
+  channels users never get by default: pip needs `--pre`, npm uses the `next`
+  dist-tag, NuGet needs `--prerelease`, Go needs an explicit version.
+- The npm workflow refuses to put a pre-release on `latest` or a stable
+  version on `next`.
+- Java is built but not published. Set the repository variable
+  `PUBLISH_JAVA=true` to opt in.
+
+## One-time setup
+
+These require organization or registry admin access.
+
+| Item | Where | Value |
+|---|---|---|
+| Repository visibility | GitHub settings | Public. npm provenance and anonymous `go get` need it. |
+| Environment `release` | GitHub settings, Environments | Used by the PyPI job. Add required reviewers if you want a manual gate. |
+| PyPI trusted publisher | pypi.org, project `fugle-marketdata`, Publishing | Owner `fugle-dev`, repository `fugle-marketdata-sdk`, workflow `release.yml`, environment `release` |
+| npm trusted publisher | npmjs.com, `@fugle/marketdata` and each `@fugle/marketdata-<platform>` package | Repository `fugle-dev/fugle-marketdata-sdk`, workflow `release.yml`. Until the platform packages exist, use the `NPM_TOKEN` secret instead. |
+| `NPM_TOKEN` secret | GitHub secrets | Granular automation token with publish rights on `@fugle`. Optional once trusted publishing covers every package. |
+| `NUGET_API_KEY` secret | GitHub secrets | nuget.org API key scoped to push `Fugle.MarketData` |
+| `GO_REPO_DEPLOY_KEY` secret | GitHub secrets | Private half of a deploy key that has write access to `fugle-dev/fugle-marketdata-go` |
+| crates.io token | maintainer machine | `cargo login`; Rust crates are published by hand |
+
+npm validates the **calling** workflow, and PyPI does not accept reusable
+workflows, which is why both trusted publishers point at `release.yml`.
+
+## Releasing the Rust crates
+
+Publish the crates first when the bindings depend on an unreleased core.
+
+```bash
+python3 scripts/release-versions.py check
+cargo publish -p fugle-marketdata-core -p fugle-marketdata
+git tag rust-v0.8.0-rc.1
+git push origin rust-v0.8.0-rc.1
+```
+
+## Releasing the bindings
+
+1. Update `CHANGELOG.md` with the release date and make sure CI is green on
+   `main`. CI checks that the committed UniFFI bindings match the Rust
+   interface.
+2. Tag the bindings version and push the tag:
+
+   ```bash
+   git tag v3.0.0-rc.1
+   git push origin v3.0.0-rc.1
+   ```
+
+3. Watch the **Release** workflow. It builds every platform, publishes to
+   PyPI, npm, NuGet and the Go module repository, then creates the GitHub
+   Release with the C++ tarballs. The GitHub Release is only created when
+   every publish job succeeded.
+4. If a publish job fails, fix the cause and re-run the failed jobs. Every
+   publish step skips versions that already exist.
+5. **Verify Release** starts automatically afterwards. It installs each
+   package from its registry on Linux, macOS and Windows and constructs a
+   client. It also checks that the npm pre-release did not land on `latest`.
