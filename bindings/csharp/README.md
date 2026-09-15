@@ -4,6 +4,16 @@ C# bindings for Fugle Market Data API. Built with UniFFI for native integration.
 
 ## Installation
 
+### From NuGet
+
+```bash
+# Prerelease builds require --prerelease
+dotnet add package Fugle.MarketData --prerelease
+```
+
+The package ships native libraries for `linux-x64`, `osx-arm64`, `osx-x64`
+and `win-x64`. The C# namespace is `MarketdataUniffi`.
+
 ### From Source
 
 ```bash
