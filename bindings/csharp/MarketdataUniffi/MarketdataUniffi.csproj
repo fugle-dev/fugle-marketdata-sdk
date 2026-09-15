@@ -5,8 +5,9 @@
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- NuGet package ID is permanent once published. The C# namespace stays
-         `MarketdataUniffi` so existing `using` directives keep compiling. -->
+    <!-- NuGet package ID is permanent once published. Namespaces are unchanged
+         (`FugleMarketData` wrapper, `MarketdataUniffi` raw bindings), so existing
+         `using` directives keep compiling. -->
     <PackageId>Fugle.MarketData</PackageId>
     <Version>0.1.0-rc.1</Version>
     <Authors>Fugle Team</Authors>
