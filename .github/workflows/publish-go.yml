@@ -173,13 +173,24 @@ jobs:
           TAG="v$VERSION"
           REMOTE="git@github.com:${GO_REPO}.git"
 
-          if [[ -n "$(git ls-remote --tags "$REMOTE" "refs/tags/$TAG")" ]]; then
-            echo "::error::Tag $TAG already exists in $GO_REPO. Go module versions are immutable; bump uniffi/Cargo.toml instead."
-            exit 1
-          fi
-
           git clone "$REMOTE" go-repo
           cd go-repo
+
+          # Go module versions are immutable. A bindings release that does not
+          # bump the UniFFI version re-publishes the same version: skip it if
+          # the Go sources are unchanged, fail if they differ. Static libraries
+          # are excluded from the comparison because rebuilds are not
+          # byte-identical.
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            git checkout -q "$TAG"
+            if diff -r -q --exclude .git --exclude lib . "$GITHUB_WORKSPACE/go-module"; then
+              echo "::notice::$GO_REPO $TAG already published with identical Go sources; skipping."
+              echo "SKIPPED=true" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "::error::$GO_REPO $TAG already exists with different Go sources. Bump the version in uniffi/Cargo.toml."
+            exit 1
+          fi
           # An empty repository has no main branch yet.
           git checkout -B main
 
@@ -204,7 +215,7 @@ jobs:
             if [[ "$DRY_RUN" == "true" ]]; then
               echo "Dry run: module assembled and smoke-tested, nothing pushed."
             else
-              echo "Pushed to [$GO_REPO](https://github.com/$GO_REPO/releases/tag/v$VERSION)."
+              echo "Pushed to [$GO_REPO](https://pkg.go.dev/github.com/$GO_REPO@v$VERSION)${SKIPPED:+ (already published, skipped)}."
             fi
             echo ""
             echo '```bash'
