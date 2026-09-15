@@ -283,8 +283,10 @@ jobs:
             libfile="${rest#*:}"
             stage="fugle-marketdata-cpp-${rid}-${VERSION}"
             mkdir -p "$stage/include" "$stage/lib"
-            cp cpp-libs/uniffi-cpp-headers/marketdata_uniffi.hpp "$stage/include/"
-            cp cpp-libs/uniffi-cpp-headers/marketdata_uniffi.cpp "$stage/include/"
+            # Copy everything the generator produced: marketdata_uniffi.hpp
+            # includes marketdata_uniffi_scaffolding.hpp, which the tarballs
+            # for 3.0.0-rc.1 were missing.
+            cp cpp-libs/uniffi-cpp-headers/* "$stage/include/"
             cp "cpp-libs/${artifact}/${libfile}" "$stage/lib/"
             cat > "$stage/README.md" <<EOF
           # fugle-marketdata-cpp ${VERSION} / ${rid}
@@ -304,6 +306,28 @@ jobs:
             rm -rf "$stage"
           done
           ls -la cpp-dist/
+
+      # Compile, link and run against the packaged linux-x64 tarball, the same
+      # way Verify Release and users do, before it can be attached anywhere.
+      - name: Smoke-test linux-x64 tarball
+        env:
+          VERSION: ${{ needs.resolve.outputs.uniffi_version }}
+        run: |
+          work=$(mktemp -d)
+          tar -xzf "cpp-dist/fugle-marketdata-cpp-linux-x64-${VERSION}.tar.gz" -C "$work"
+          sdk="$work/fugle-marketdata-cpp-linux-x64-${VERSION}"
+          ls -la "$sdk/include" "$sdk/lib"
+          cat > "$work/smoke.cpp" <<'CPP'
+          #include <cstdio>
+          #include "marketdata_uniffi.hpp"
+          int main() {
+              printf("OK: C++ headers compile and the shared library links\n");
+              return 0;
+          }
+          CPP
+          c++ -std=c++20 -O2 -I"$sdk/include" "$work/smoke.cpp" "$sdk/include/marketdata_uniffi.cpp" \
+              -L"$sdk/lib" -lmarketdata_uniffi -o "$work/smoke"
+          LD_LIBRARY_PATH="$sdk/lib" "$work/smoke"
 
       - name: Upload as internal artifact
         uses: actions/upload-artifact@v4
