@@ -44,6 +44,12 @@ npm addons, NuGet package and Go static libraries no longer contain them:
 
 CI now runs `cargo audit` on every pull request.
 
+### Performance
+
+Every binding sends REST requests through core, so all of them get core's
+faster JSON decoding and connection reuse for concurrent calls. See the Rust
+0.8.0-rc.1 section.
+
 ### Distribution
 
 - Pre-releases are published to the real registries on channels that are
@@ -258,6 +264,16 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
   Precautionary — no `isTrial: null` has been observed in the wild.
 - `prod_smoke` probes for etf-holdings, the three new ownership endpoints,
   the `isSpread` filter, and spread contracts (discovered dynamically).
+
+### Performance
+
+- REST responses are buffered before JSON decoding instead of being parsed
+  byte by byte from the socket. Measured with `benches/rest_decode.rs`: a
+  stock quote takes 18% less time, 2000 historical candles 59% less, and the
+  same response gzip-encoded 82% less.
+- The HTTP agent keeps up to 16 idle connections per host instead of ureq's
+  default of one. Concurrent requests on a shared client previously opened a
+  new TCP and TLS connection each time and could exhaust local ports.
 
 ### Fixed
 
