@@ -39,6 +39,8 @@ npm addons, NuGet package and Go static libraries no longer contain them:
 - Python: PyO3 0.27 → 0.29 and pyo3-async-runtimes 0.27 → 0.29
   (RUSTSEC-2026-0176, RUSTSEC-2026-0177).
 - The unmaintained `rustls-pemfile` is replaced by rustls' built-in PEM parser.
+- UniFFI 0.29.4 drops the unmaintained `bincode` and `paste` crates from the
+  build.
 
 CI now runs `cargo audit` on every pull request.
 
@@ -107,6 +109,21 @@ CI now runs `cargo audit` on every pull request.
 - `types.d.ts` gains `EtfHoldingComponent` / `EtfHoldingsEntry` /
   `EtfHoldingsResponse` — `etfHoldings` referenced `EtfHoldingsResponse` in its
   return type without defining it.
+
+### Changed — UniFFI (C# / Go / Java / C++)
+
+- UniFFI 0.29.4 (from 0.28.3), the highest version every shipped generator
+  supports: C# v0.10.0, Go v0.5.0, C++ v0.9.0, Java 0.2.1.
+- C#: the package targets `netstandard2.0`, `net8.0` and `net10.0`. `net6.0`
+  reached end of support in November 2024 and is dropped. Generated records
+  expose sequences as arrays (`T[]`) instead of `List<T>`; the wrapper's
+  `GetTickers` / `GetTickersAsync` still return `List<T>`.
+- Go: generated constructors return `error` (untyped nil on success) instead
+  of `*MarketDataError`; use `errors.As` to inspect the concrete error.
+  `NewFugleRestClient` is unaffected.
+- Java: CI installs the generator from `IronCoreLabs/uniffi-bindgen-java`; the
+  previously referenced repository does not exist. Java is still not
+  published.
 
 ### Added — UniFFI (C# / Go / Java / C++)
 
