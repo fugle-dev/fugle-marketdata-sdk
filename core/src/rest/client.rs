@@ -378,6 +378,72 @@ impl<'a> OwnershipClient<'a> {
     ) -> crate::rest::stock::ownership::EtfHoldingsRequestBuilder<'_> {
         crate::rest::stock::ownership::EtfHoldingsRequestBuilder::new(self.client)
     }
+
+    /// Get daily trading by the three major institutional investors
+    /// (foreign, investment trust, dealer) over a date range.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
+    /// let trades = client
+    ///     .stock()
+    ///     .ownership()
+    ///     .institutional_trades()
+    ///     .symbol("2330")
+    ///     .send()?;
+    /// # Ok::<(), marketdata_core::MarketDataError>(())
+    /// ```
+    pub fn institutional_trades(
+        &self,
+    ) -> crate::rest::stock::ownership::InstitutionalTradesRequestBuilder<'_> {
+        crate::rest::stock::ownership::InstitutionalTradesRequestBuilder::new(self.client)
+    }
+
+    /// Get the monthly holdings and pledges disclosed by a company's directors
+    /// and supervisors over a date range.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
+    /// let holdings = client
+    ///     .stock()
+    ///     .ownership()
+    ///     .director_holdings()
+    ///     .symbol("2330")
+    ///     .send()?;
+    /// # Ok::<(), marketdata_core::MarketDataError>(())
+    /// ```
+    pub fn director_holdings(
+        &self,
+    ) -> crate::rest::stock::ownership::DirectorHoldingsRequestBuilder<'_> {
+        crate::rest::stock::ownership::DirectorHoldingsRequestBuilder::new(self.client)
+    }
+
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket
+    /// over a date range.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
+    /// let distribution = client
+    ///     .stock()
+    ///     .ownership()
+    ///     .tdcc_distribution()
+    ///     .symbol("2330")
+    ///     .send()?;
+    /// # Ok::<(), marketdata_core::MarketDataError>(())
+    /// ```
+    pub fn tdcc_distribution(
+        &self,
+    ) -> crate::rest::stock::ownership::TdccDistributionRequestBuilder<'_> {
+        crate::rest::stock::ownership::TdccDistributionRequestBuilder::new(self.client)
+    }
 }
 
 /// Corporate actions endpoints client
