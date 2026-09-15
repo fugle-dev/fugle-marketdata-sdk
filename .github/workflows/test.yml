@@ -220,7 +220,11 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          # The library multi-targets net10.0, so restoring anything that
+          # references it needs the .NET 10 SDK; tests run on net8.0.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Build UniFFI library
         run: cargo build -p marketdata-uniffi

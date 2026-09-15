@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net6.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -27,8 +27,8 @@
     <None Include="../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
-  <!-- IsExternalInit polyfill for records in netstandard2.0/net6.0 -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' or '$(TargetFramework)' == 'net6.0'">
+  <!-- IsExternalInit polyfill for records; net5.0+ ship the type -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <Compile Include="../Polyfills/IsExternalInit.cs" Link="Polyfills/IsExternalInit.cs" />
   </ItemGroup>
 
