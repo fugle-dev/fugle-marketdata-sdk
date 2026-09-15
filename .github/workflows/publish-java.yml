@@ -6,6 +6,10 @@ on:
       version:
         required: true
         type: string
+      dry-run:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       version:
@@ -63,7 +67,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Publish to GitHub Packages
-        if: ${{ github.event.inputs.dry-run != 'true' }}
+        if: ${{ !inputs.dry-run }}
         working-directory: bindings/java
         run: ./gradlew publish -PprojectVersion=${{ inputs.version }}
         env:
@@ -71,7 +75,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build package (dry run)
-        if: ${{ github.event.inputs.dry-run == 'true' }}
+        if: ${{ inputs.dry-run }}
         working-directory: bindings/java
         run: |
           ./gradlew build -PprojectVersion=${{ inputs.version }}

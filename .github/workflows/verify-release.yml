@@ -24,7 +24,10 @@ permissions:
 jobs:
   resolve:
     name: Resolve versions
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Only real releases (tag pushes); a rehearsal run of Release publishes nothing.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.t.outputs.tag }}

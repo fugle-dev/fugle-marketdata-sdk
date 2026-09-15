@@ -45,12 +45,13 @@ env:
   GO_REPO: fugle-dev/fugle-marketdata-go
 
 jobs:
-  # Only a manual dispatch needs to build the static libraries here. When
-  # called from release.yml, github.event_name is the caller's `push` event and
-  # the artifact already exists in the run.
+  # Only a direct manual run of this file builds the static libraries. When
+  # called from release.yml the artifact already exists in the run, and
+  # github.event_name is the caller's event (which may itself be
+  # workflow_dispatch during a rehearsal), so check the workflow file instead.
   build:
-    name: Build UniFFI libraries (manual dispatch only)
-    if: github.event_name == 'workflow_dispatch'
+    name: Build UniFFI libraries (direct run only)
+    if: contains(github.workflow_ref, '/publish-go.yml@')
     uses: ./.github/workflows/build-uniffi.yml
 
   publish:
