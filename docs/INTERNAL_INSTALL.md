@@ -94,7 +94,7 @@ client.stock.intraday.quote({ symbol: '2330' }).then(console.log);
 
 ---
 
-## C#
+## C\#
 
 Download the `.nupkg` file from the Release page and register a local NuGet
 source:
@@ -136,6 +136,7 @@ a GitHub Personal Access Token (PAT) with the `read:packages` scope.
 1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. Generate new token, check `read:packages`
 3. Export as env var:
+
    ```bash
    export GITHUB_ACTOR=your-github-username
    export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
@@ -316,6 +317,7 @@ The wheel filename encodes the target platform (e.g. `macosx_11_0_arm64`,
 The fat tarball should contain `.node` files for all platforms. If you get
 this error, re-download the tarball (it may have been truncated) and verify
 it has all binaries:
+
 ```bash
 tar -tzf fugle-marketdata-*.tgz | grep .node
 ```

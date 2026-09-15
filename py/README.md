@@ -158,6 +158,7 @@ ws = WebSocketClient(api_key="your-key", reconnect=reconnect)
 ```
 
 **ReconnectConfig Options:**
+
 - `enabled` (bool): Whether auto-reconnect is enabled (default: True)
 - `max_attempts` (int): Maximum reconnection attempts (default: 5, min: 1)
 - `initial_delay_ms` (int): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
@@ -181,6 +182,7 @@ ws = WebSocketClient(api_key="your-key", health_check=health_check)
 ```
 
 **HealthCheckConfig Options:**
+
 - `enabled` (bool): Whether health check is enabled (default: False)
 - `interval_ms` (int): Ping interval in milliseconds (default: 30000ms, min: 5000ms)
 - `max_missed_pongs` (int): Maximum missed pongs before considering connection stale (default: 2, min: 1)

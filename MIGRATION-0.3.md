@@ -171,7 +171,7 @@ If you need a non-blocking pull, `rx.try_receive()` or
 
 ## Internal architecture (for contributors)
 
-```
+```text
 core/src/websocket/
 ├── channels/             unchanged: pure parsing
 ├── config.rs             unchanged: runtime-agnostic

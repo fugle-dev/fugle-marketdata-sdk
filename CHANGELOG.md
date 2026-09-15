@@ -700,7 +700,7 @@ tokio-comp = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 - New `core/src/websocket/connection_event.rs`: runtime-free
   `ConnectionState`, `ConnectionEvent`, `emit_event`.
 - New `core/src/websocket/sync/`: blocking client backed by `tungstenite`
-  + `std::thread`. Single owner thread per connection with a bounded
+  and `std::thread`. Single owner thread per connection with a bounded
   outbound queue (`sync_channel(64)`) and `set_read_timeout`-based
   polling. Supervisor handles automatic reconnect with exponential
   backoff matching the async path.
@@ -829,6 +829,7 @@ Detection latency improves from up to 90s (3 × 30s heartbeats missed) to the
 configured `heartbeat_timeout` (default 35s).
 
 #### Breaking
+
 - `HealthCheckConfig` collapsed `interval` + `max_missed_pongs` into a single
   `heartbeat_timeout: Duration` field. Use
   `HealthCheckConfig::with_timeout(Duration::from_secs(35))?` to construct,
@@ -851,6 +852,7 @@ configured `heartbeat_timeout` (default 35s).
     `heartbeat_timeout_ms`
 
 #### Added
+
 - `MarketDataError::HeartbeatTimeout { elapsed: Duration }` — first-class
   error variant for liveness timeout (error code 3003). PyO3 binding routes
   to the existing `TimeoutError` Python exception; UniFFI binding routes to
@@ -866,6 +868,7 @@ configured `heartbeat_timeout` (default 35s).
   honoring lands; see `WEBSOCKET-SERVER-RECOMMENDATIONS.md`.
 
 #### Changed
+
 - WebSocket dispatch loop now uses `tokio::time::timeout(heartbeat_timeout,
   ws_read.next())` at the read site, replacing the background polling task.
 - `WebSocketClient` storage shifts from `Arc<HealthCheck>` to
@@ -878,6 +881,7 @@ Drop-in successor to the pure-Python `fugle-marketdata` 2.4.1 maintained at
 `pip install -U fugle-marketdata` brings you to this Rust-based rewrite.
 
 #### Changed (BREAKING)
+
 - Import path renamed from `marketdata_py` to `fugle_marketdata`, matching
   the 2.4.1 convention. A `marketdata_py` shim emits `DeprecationWarning`
   and re-exports for one release; it will be removed in 3.1.0.
@@ -885,6 +889,7 @@ Drop-in successor to the pure-Python `fugle-marketdata` 2.4.1 maintained at
   `marketdata_py.*`). Affects traceback display and pickling.
 
 #### Added
+
 - Version aligned with official 2.x series — this is the 3.0 major.
 
 ### Node.js / Java / C# / Go
@@ -896,6 +901,7 @@ rename above.
 ## [0.3.0] - 2026-02-16
 
 ### Added
+
 - Options object constructor for all language bindings (Python kwargs-only, Node.js options object, Java builder, Go functional options, C# options pattern)
 - ReconnectConfig/ReconnectionConfig exposure for WebSocket auto-reconnect control (max_attempts, initial_delay_ms, max_delay_ms)
 - HealthCheckConfig/HealthCheckOptions exposure for WebSocket health check control (enabled, interval_ms, max_missed_pongs)
@@ -907,6 +913,7 @@ rename above.
 - Configuration constants exported from core (DEFAULT_*, MIN_* constants for binding layers)
 
 ### Changed
+
 - **BREAKING**: Python constructors now require kwargs-only parameters (`RestClient(api_key=)`, not `RestClient("key")`)
 - **BREAKING**: Node.js constructors now require options object (`new RestClient({ apiKey })`, not `new RestClient('key')`)
 - **BREAKING**: Java constructors now require builder pattern (`FugleRestClient.builder().apiKey().build()`)
@@ -916,6 +923,7 @@ rename above.
 - ReconnectConfig field rename: `max_retries` → `max_attempts`, `base_delay_ms` → `initial_delay_ms`
 
 ### Deprecated
+
 - Python: Positional string constructors (`RestClient("key")`, removed in v0.4.0)
 - Python: Static methods `.with_bearer_token()` and `.with_sdk_token()` (removed in v0.4.0)
 - Node.js: String constructors (`new RestClient('key')`, removed in v0.4.0)
@@ -923,6 +931,7 @@ rename above.
 ## [0.2.0] - 2026-01-31
 
 ### Added
+
 - Multi-language SDK support (Python, Node.js, C#, Java, Go)
 - Complete REST API coverage (26+ endpoints across stock and futures/options)
   - Stock intraday: quote, ticker, candles, trades, volumes

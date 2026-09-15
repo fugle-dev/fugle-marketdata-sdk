@@ -31,7 +31,7 @@ matures, or napi-rs grows first-class blocking workers).
   PyPI [`fugle-marketdata`][pypi] package the user maintains.
 - **Cost of conversion:** rewrite all 3 `future_into_py` sites (around
   py/src/websocket.rs:1249, 1337, 1395) to `py.allow_threads(...)`
-  + drop `pyo3-async-runtimes` dep. Mechanically small.
+  and drop `pyo3-async-runtimes` dep. Mechanically small.
 - **Cost of API break:** non-trivial. Every downstream notebook /
   script / framework integration that uses `await` breaks.
 - **Verdict:** **keep tokio-comp.** The dep tree cost (tokio + a small

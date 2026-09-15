@@ -115,6 +115,7 @@ const ws = new WebSocketClient({
 ```
 
 **ReconnectOptions:**
+
 - `maxAttempts` (number): Maximum reconnection attempts (default: 5, min: 1)
 - `initialDelayMs` (number): Initial delay for exponential backoff (default: 1000, min: 100)
 - `maxDelayMs` (number): Maximum delay cap (default: 60000)
@@ -137,6 +138,7 @@ const ws = new WebSocketClient({
 ```
 
 **HealthCheckOptions:**
+
 - `enabled` (boolean): Whether health check is enabled (default: false)
 - `pingInterval` (number): Ping interval in milliseconds (default: 30000, min: 5000)
 - `maxMissedPongs` (number): Maximum missed pongs before considering connection stale (default: 2, min: 1)
