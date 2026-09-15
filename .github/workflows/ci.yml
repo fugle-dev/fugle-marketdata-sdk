@@ -55,17 +55,37 @@ jobs:
       - name: cargo publish --dry-run
         run: cargo publish --dry-run --locked -p fugle-marketdata-core -p fugle-marketdata
 
+  # Release artifacts (wheels, npm addons, NuGet, Go static libraries) are
+  # built from Cargo.lock, so a vulnerable locked dependency ships to users.
+  # Fails on vulnerabilities; unmaintained/unsound notices are reported only.
+  audit:
+    name: Security advisories (cargo audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo-audit
+        id: audit-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
+      - name: Install cargo-audit
+        if: steps.audit-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - run: cargo audit
+
   # Libraries do not ship Cargo.lock, so the MSRV contract is "some
   # dependency set builds on rust-version", not "our lockfile builds on it".
   # Resolve an MSRV-compatible lockfile with the MSRV-aware resolver, then
   # build with the declared toolchain.
   msrv:
-    name: Rust MSRV (1.83)
+    name: Rust MSRV (1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: dtolnay/rust-toolchain@1.83
+      - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-msrv
@@ -73,7 +93,7 @@ jobs:
         env:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: cargo +stable generate-lockfile
-      - run: cargo +1.83 build --locked --all-features -p fugle-marketdata-core -p fugle-marketdata
+      - run: cargo +1.88 build --locked --all-features -p fugle-marketdata-core -p fugle-marketdata
 
   python:
     name: Python binding

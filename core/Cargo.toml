@@ -2,7 +2,7 @@
 name = "fugle-marketdata-core"
 version = "0.8.0-rc.1"
 edition.workspace = true
-rust-version = "1.83"
+rust-version = "1.88"
 license.workspace = true
 description = "Internal kernel for the Fugle market data SDK. End users should depend on `fugle-marketdata` instead."
 readme = "README.md"
@@ -86,7 +86,7 @@ tracing = { version = "0.1", optional = true }
 
 # Optional `metrics` crate integration (gated behind the `metrics` feature).
 # Pinned to ^0.24 (current stable as of 2026-05). MSRV 1.71 — well below
-# core's 1.83.
+# core's 1.88.
 metrics = { version = "0.24", optional = true }
 
 [dev-dependencies]
