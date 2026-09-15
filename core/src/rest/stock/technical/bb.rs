@@ -104,10 +104,7 @@ impl<'a> BbRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        let request = self.client.agent().get(&url);
-        let request = self.client.auth().apply_to_request(request);
-
-        let response = self.client.execute(request)?;
+        let response = self.client.get(&url)?;
         let bb_response: BbResponse = crate::rest::read_json(response)?;
 
         Ok(bb_response)

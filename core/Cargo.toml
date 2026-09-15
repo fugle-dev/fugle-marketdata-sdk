@@ -64,7 +64,7 @@ tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"], 
 futures-util = { workspace = true, optional = true }
 
 # Core-only dependencies (always)
-ureq = { version = "2.12", default-features = false, features = ["json", "tls", "gzip"] }
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "gzip"] }
 # rustls pinned to ring (pure Rust crypto) to avoid aws-lc-rs pulling in C/NASM
 # via feature unification. Must match ureq's "tls" feature which also uses ring.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
@@ -91,6 +91,8 @@ metrics = { version = "0.24", optional = true }
 
 [dev-dependencies]
 flate2 = "1"
+# Test-only CA and server certificates for the HTTPS transport tests.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 tokio-test = "0.4"
 # Async features are required for the existing integration tests + benches.

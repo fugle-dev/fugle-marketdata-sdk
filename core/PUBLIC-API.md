@@ -20,8 +20,11 @@ acknowledged additions/changes per release.
 After landing an intentional public-surface change:
 
 ```bash
-cargo install cargo-public-api --locked  # one-time
-RUSTC_BOOTSTRAP=1 cargo public-api -p fugle-marketdata-core --simplified --all-features > core/PUBLIC-API.txt
+# Versions pinned in .github/workflows/public-api.yml; other nightlies render
+# some items differently and the snapshot would not match CI.
+rustup toolchain install nightly-2026-08-05 --profile minimal  # one-time
+cargo install cargo-public-api --version 0.52.0 --locked        # one-time
+RUSTC_BOOTSTRAP=1 cargo +nightly-2026-08-05 public-api -p fugle-marketdata-core --simplified --all-features > core/PUBLIC-API.txt
 ```
 
 Use `--all-features`: CI and `core/tests/public_api_snapshot.rs` both do, so a
@@ -31,6 +34,22 @@ Add an entry to the **Acknowledged changes** section below referencing the
 PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
+
+### 0.8.0-rc.1 (cont.) — ureq 3, HTTP client removed from the public API
+
+- `-` `impl From<ureq::Error> for MarketDataError` — exposed the HTTP client's
+  error type. Transport failures still surface as `ConnectionError` /
+  `TimeoutError`, and error statuses as `AuthError` / `ApiError`.
+- `-` `Auth::apply_to_request(&self, ureq::Request) -> ureq::Request` — took and
+  returned the HTTP client's request type. Credentials are now applied inside
+  the client; there is no replacement because callers never needed to build
+  requests themselves.
+- `~` `impl !Freeze for RestClient` — the ureq 3 agent holds interior
+  mutability directly. `Freeze` only affects const evaluation; `Send` and
+  `Sync` are unchanged.
+
+With no HTTP client types left in the surface, replacing the client later is
+not a breaking change.
 
 ### 0.8.0-rc.1 (cont.) — official 1.6.0 / 2.6.0 ownership endpoints
 

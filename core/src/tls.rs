@@ -1,4 +1,4 @@
-//! TLS configuration for REST (`ureq`) and WebSocket (`tokio-tungstenite`).
+//! TLS configuration for REST (`ureq`) and WebSocket (`tungstenite` / `tokio-tungstenite`).
 //!
 //! Both transports share the same [`TlsConfig`] shape and the
 //! [`build_rustls_config`] helper, so a user-supplied root CA or
@@ -31,6 +31,7 @@ pub struct TlsConfig {
 
 static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
 static SYSTEM_ROOTS: OnceLock<Arc<RootCertStore>> = OnceLock::new();
+static SYSTEM_ROOT_CERTS: OnceLock<Arc<Vec<CertificateDer<'static>>>> = OnceLock::new();
 
 fn install_crypto_provider() {
     PROVIDER_INSTALLED.get_or_init(|| {
@@ -40,25 +41,79 @@ fn install_crypto_provider() {
     });
 }
 
-fn system_root_store() -> &'static Arc<RootCertStore> {
-    SYSTEM_ROOTS.get_or_init(|| {
-        let mut store = RootCertStore::empty();
+/// OS trust store certificates, loaded once per process.
+fn system_root_certs() -> &'static Arc<Vec<CertificateDer<'static>>> {
+    SYSTEM_ROOT_CERTS.get_or_init(|| {
         // rustls-native-certs 0.8 returns CertificateResult { certs, errors }.
         // We ignore per-cert errors — reading some OS stores may fail on
         // locked-down systems, but usable roots still load.
-        let loaded = rustls_native_certs::load_native_certs();
-        for cert in loaded.certs {
-            let _ = store.add(cert);
+        Arc::new(rustls_native_certs::load_native_certs().certs)
+    })
+}
+
+fn system_root_store() -> &'static Arc<RootCertStore> {
+    SYSTEM_ROOTS.get_or_init(|| {
+        let mut store = RootCertStore::empty();
+        for cert in system_root_certs().iter() {
+            let _ = store.add(cert.clone());
         }
         Arc::new(store)
     })
 }
 
+/// Parse the extra root CA PEM and check every certificate is usable as a
+/// trust anchor, so a bad CA fails at construction with a `ConfigError`.
+fn extra_root_certs(tls: &TlsConfig) -> Result<Vec<CertificateDer<'static>>, MarketDataError> {
+    let Some(pem) = &tls.root_cert_pem else {
+        return Ok(Vec::new());
+    };
+    let mut certs = Vec::new();
+    for cert_result in CertificateDer::pem_slice_iter(pem) {
+        let cert = cert_result.map_err(|e| {
+            MarketDataError::ConfigError(format!("invalid TLS root cert PEM: {e}"))
+        })?;
+        RootCertStore::empty().add(cert.clone()).map_err(|e| {
+            MarketDataError::ConfigError(format!("failed to add root cert: {e}"))
+        })?;
+        certs.push(cert);
+    }
+    Ok(certs)
+}
+
+/// Build the TLS configuration for the REST client (ureq).
+///
+/// Mirrors [`build_rustls_config`]: the OS trust store plus any extra root CA,
+/// or no verification at all when `accept_invalid_certs` is set. ureq 3 does
+/// not take a rustls `ClientConfig`, so the same policy is expressed through
+/// its own TLS settings, with the ring crypto provider passed explicitly.
+///
+/// # Errors
+/// Returns [`MarketDataError::ConfigError`] when the extra root CA PEM is
+/// malformed or not a usable trust anchor.
+pub(crate) fn build_ureq_tls_config(tls: &TlsConfig) -> Result<ureq::tls::TlsConfig, MarketDataError> {
+    let builder = ureq::tls::TlsConfig::builder()
+        .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()));
+
+    if tls.accept_invalid_certs {
+        return Ok(builder.disable_verification(true).build());
+    }
+
+    let roots: Vec<ureq::tls::Certificate<'static>> = system_root_certs()
+        .iter()
+        .chain(extra_root_certs(tls)?.iter())
+        .map(|der| ureq::tls::Certificate::from_der(der.as_ref()).to_owned())
+        .collect();
+    Ok(builder
+        .root_certs(ureq::tls::RootCerts::new_with_certs(&roots))
+        .build())
+}
+
 /// Build a rustls [`ClientConfig`] honoring any custom root CA or
 /// `accept_invalid_certs` flag in `tls`. On default config this returns
 /// a config using the OS trust store loaded once into a process-wide
-/// `RootCertStore`. ureq's rustls integration and tokio-tungstenite's
-/// `Connector::Rustls` both consume this `Arc<ClientConfig>`.
+/// `RootCertStore`. The WebSocket clients consume this `Arc<ClientConfig>`;
+/// the REST client uses [`build_ureq_tls_config`], which applies the same
+/// policy through ureq's own TLS settings.
 ///
 /// # Errors
 /// Returns [`MarketDataError`] on parse, transport, protocol, deserialization,
@@ -178,6 +233,29 @@ mod tests {
         // a cert header would fail inside the iterator.
         let cfg_ok = build_rustls_config(&cfg);
         assert!(cfg_ok.is_ok(), "garbage non-PEM should parse to zero certs, not error");
+    }
+
+    #[test]
+    fn ureq_tls_config_builds_for_default_and_insecure() {
+        let default = build_ureq_tls_config(&TlsConfig::default()).expect("default should build");
+        assert!(!default.disable_verification());
+        let insecure = build_ureq_tls_config(&TlsConfig {
+            accept_invalid_certs: true,
+            ..Default::default()
+        })
+        .expect("insecure should build");
+        assert!(insecure.disable_verification());
+    }
+
+    #[test]
+    fn ureq_tls_config_rejects_malformed_certificate_section() {
+        let cfg = TlsConfig {
+            root_cert_pem: Some(
+                b"-----BEGIN CERTIFICATE-----\n!!not base64!!\n-----END CERTIFICATE-----\n".to_vec(),
+            ),
+            ..Default::default()
+        };
+        assert!(matches!(build_ureq_tls_config(&cfg), Err(MarketDataError::ConfigError(_))));
     }
 
     #[test]

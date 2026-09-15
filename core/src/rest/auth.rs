@@ -30,12 +30,12 @@ impl fmt::Debug for Auth {
 }
 
 impl Auth {
-    /// Apply authentication to a ureq request
-    pub fn apply_to_request(&self, request: ureq::Request) -> ureq::Request {
+    /// The HTTP header carrying this credential.
+    pub(crate) fn header(&self) -> (&'static str, String) {
         match self {
-            Auth::ApiKey(key) => request.set("X-API-KEY", key),
-            Auth::BearerToken(token) => request.set("Authorization", &format!("Bearer {}", token)),
-            Auth::SdkToken(token) => request.set("X-SDK-TOKEN", token),
+            Auth::ApiKey(key) => ("X-API-KEY", key.clone()),
+            Auth::BearerToken(token) => ("Authorization", format!("Bearer {token}")),
+            Auth::SdkToken(token) => ("X-SDK-TOKEN", token.clone()),
         }
     }
 
@@ -88,23 +88,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_auth_apply_to_request() {
-        // Test ApiKey
-        let auth = Auth::ApiKey("test_key".to_string());
-        let request = ureq::get("http://example.com");
-        let _request = auth.apply_to_request(request);
-        // Note: ureq doesn't expose headers for inspection in tests,
-        // so we just verify it compiles and doesn't panic
-
-        // Test BearerToken
-        let auth = Auth::BearerToken("test_token".to_string());
-        let request = ureq::get("http://example.com");
-        let _request = auth.apply_to_request(request);
-
-        // Test SdkToken
-        let auth = Auth::SdkToken("test_sdk_token".to_string());
-        let request = ureq::get("http://example.com");
-        let _request = auth.apply_to_request(request);
+    fn test_auth_header() {
+        assert_eq!(
+            Auth::ApiKey("test_key".into()).header(),
+            ("X-API-KEY", "test_key".to_string())
+        );
+        assert_eq!(
+            Auth::BearerToken("test_token".into()).header(),
+            ("Authorization", "Bearer test_token".to_string())
+        );
+        assert_eq!(
+            Auth::SdkToken("test_sdk_token".into()).header(),
+            ("X-SDK-TOKEN", "test_sdk_token".to_string())
+        );
     }
 
     #[test]
