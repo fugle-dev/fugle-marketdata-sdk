@@ -134,7 +134,7 @@ jobs:
       # Generate C++ headers once — output is platform-independent.
       - name: Install uniffi-bindgen-cpp
         if: matrix.rid == 'linux-x64'
-        run: cargo install uniffi-bindgen-cpp --git https://github.com/NordSecurity/uniffi-bindgen-cpp --tag v0.7.0+v0.28.3
+        run: cargo install uniffi-bindgen-cpp --git https://github.com/NordSecurity/uniffi-bindgen-cpp --tag v0.9.0+v0.29.4
 
       - name: Generate C++ bindings
         if: matrix.rid == 'linux-x64'

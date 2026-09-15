@@ -45,10 +45,11 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 
 	// Call appropriate UniFFI constructor based on auth method.
 	//
-	// The generated constructors return a concrete *MarketDataError. Keep it
-	// in a variable of that type: assigning a nil *MarketDataError to an
-	// `error` interface yields a non-nil interface, which made every call
-	// fail with "failed to create client: <nil>".
+	// uniffi-bindgen-go 0.5 returns `error` and an untyped nil on success.
+	// Older generators returned a concrete *MarketDataError; wrapping a nil
+	// pointer of that type in `error` produced a non-nil interface, which is
+	// why every call used to fail with "failed to create client: <nil>".
+	// The regression test in config_test.go guards against that shape.
 	var baseUrl *string
 	if cfg.baseUrl != "" {
 		baseUrl = &cfg.baseUrl
@@ -56,7 +57,7 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 	tls := TlsConfigRecord{}
 
 	var client *RestClient
-	var uerr *MarketDataError
+	var uerr error
 
 	switch {
 	case cfg.apiKey != "":

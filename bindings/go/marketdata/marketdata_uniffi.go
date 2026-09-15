@@ -32,7 +32,29 @@ type RustBufferI interface {
 	Capacity() uint64
 }
 
-func RustBufferFromExternal(b RustBufferI) GoRustBuffer {
+// C.RustBuffer fields exposed as an interface so they can be accessed in different Go packages.
+// See https://github.com/golang/go/issues/13467
+type ExternalCRustBuffer interface {
+	Data() unsafe.Pointer
+	Len() uint64
+	Capacity() uint64
+}
+
+func RustBufferFromC(b C.RustBuffer) ExternalCRustBuffer {
+	return GoRustBuffer{
+		inner: b,
+	}
+}
+
+func CFromRustBuffer(b ExternalCRustBuffer) C.RustBuffer {
+	return C.RustBuffer{
+		capacity: C.uint64_t(b.Capacity()),
+		len:      C.uint64_t(b.Len()),
+		data:     (*C.uchar)(b.Data()),
+	}
+}
+
+func RustBufferFromExternal(b ExternalCRustBuffer) GoRustBuffer {
 	return GoRustBuffer{
 		inner: C.RustBuffer{
 			capacity: C.uint64_t(b.Capacity()),
@@ -340,7 +362,7 @@ func init() {
 
 func uniffiCheckChecksums() {
 	// Get the bindings contract version from our ComponentInterface
-	bindingsContractVersion := 26
+	bindingsContractVersion := 29
 	// Get the scaffolding contract version by calling the into the dylib
 	scaffoldingContractVersion := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint32_t {
 		return C.ffi_marketdata_uniffi_uniffi_contract_version()
@@ -1420,7 +1442,7 @@ func (FfiConverterString) Read(reader io.Reader) string {
 	length := readInt32(reader)
 	buffer := make([]byte, length)
 	read_length, err := reader.Read(buffer)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		panic(err)
 	}
 	if read_length != int(length) {
@@ -1431,6 +1453,10 @@ func (FfiConverterString) Read(reader io.Reader) string {
 
 func (FfiConverterString) Lower(value string) C.RustBuffer {
 	return stringToRustBuffer(value)
+}
+
+func (c FfiConverterString) LowerExternal(value string) ExternalCRustBuffer {
+	return RustBufferFromC(stringToRustBuffer(value))
 }
 
 func (FfiConverterString) Write(writer io.Writer, value string) {
@@ -1460,6 +1486,10 @@ func (c FfiConverterBytes) Lower(value []byte) C.RustBuffer {
 	return LowerIntoRustBuffer[[]byte](c, value)
 }
 
+func (c FfiConverterBytes) LowerExternal(value []byte) ExternalCRustBuffer {
+	return RustBufferFromC(c.Lower(value))
+}
+
 func (c FfiConverterBytes) Write(writer io.Writer, value []byte) {
 	if len(value) > math.MaxInt32 {
 		panic("[]byte is too large to fit into Int32")
@@ -1483,7 +1513,7 @@ func (c FfiConverterBytes) Read(reader io.Reader) []byte {
 	length := readInt32(reader)
 	buffer := make([]byte, length)
 	read_length, err := reader.Read(buffer)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		panic(err)
 	}
 	if read_length != int(length) {
@@ -1645,13 +1675,13 @@ func (_ FfiDestroyerFutOptClient) Destroy(value *FutOptClient) {
 // Provides access to historical candles and daily data for futures and options.
 type FutOptHistoricalClientInterface interface {
 	// Get historical candles for a contract (sync/blocking)
-	CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, *MarketDataError)
+	CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, error)
 	// Get daily historical data for a contract (sync/blocking)
-	DailySync(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, *MarketDataError)
+	DailySync(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, error)
 	// Get historical candles for a contract (async)
-	GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, *MarketDataError)
+	GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, error)
 	// Get daily historical data for a contract (async)
-	GetDaily(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, *MarketDataError)
+	GetDaily(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, error)
 }
 
 // FutOpt historical data endpoints
@@ -1662,7 +1692,7 @@ type FutOptHistoricalClient struct {
 }
 
 // Get historical candles for a contract (sync/blocking)
-func (_self *FutOptHistoricalClient) CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, *MarketDataError) {
+func (_self *FutOptHistoricalClient) CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -1675,12 +1705,12 @@ func (_self *FutOptHistoricalClient) CandlesSync(symbol string, from *string, to
 		var _uniffiDefaultValue FutOptHistoricalCandlesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterFutOptHistoricalCandlesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterFutOptHistoricalCandlesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get daily historical data for a contract (sync/blocking)
-func (_self *FutOptHistoricalClient) DailySync(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, *MarketDataError) {
+func (_self *FutOptHistoricalClient) DailySync(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -1693,12 +1723,12 @@ func (_self *FutOptHistoricalClient) DailySync(symbol string, from *string, to *
 		var _uniffiDefaultValue FutOptDailyResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterFutOptDailyResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterFutOptDailyResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get historical candles for a contract (async)
-func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, *MarketDataError) {
+func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool) (FutOptHistoricalCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1726,11 +1756,15 @@ func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to 
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get daily historical data for a contract (async)
-func (_self *FutOptHistoricalClient) GetDaily(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, *MarketDataError) {
+func (_self *FutOptHistoricalClient) GetDaily(symbol string, from *string, to *string, afterHours bool) (FutOptDailyResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1757,6 +1791,10 @@ func (_self *FutOptHistoricalClient) GetDaily(symbol string, from *string, to *s
 			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
 		},
 	)
+
+	if err == nil {
+		return res, nil
+	}
 
 	return res, err
 }
@@ -1812,41 +1850,41 @@ func (_ FfiDestroyerFutOptHistoricalClient) Destroy(value *FutOptHistoricalClien
 // FutOpt intraday endpoints with typed model returns
 type FutOptIntradayClientInterface interface {
 	// Get candlestick data for a contract (sync/blocking)
-	CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError)
+	CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, error)
 	// Get candlestick data for a futures/options contract (async)
-	GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError)
+	GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, error)
 	// Get available products list (async)
 	//
 	// typ: "F" for futures, "O" for options
-	GetProducts(typ string) (ProductsResponse, *MarketDataError)
+	GetProducts(typ string) (ProductsResponse, error)
 	// Get quote for a futures/options contract (async)
 	//
 	// after_hours: true for after-hours session
-	GetQuote(symbol string, afterHours bool) (FutOptQuote, *MarketDataError)
+	GetQuote(symbol string, afterHours bool) (FutOptQuote, error)
 	// Get ticker info for a contract (async)
-	GetTicker(symbol string, afterHours bool) (FutOptTicker, *MarketDataError)
+	GetTicker(symbol string, afterHours bool) (FutOptTicker, error)
 	// Get batch tickers for futures/options (async)
 	//
 	// typ: "F" for futures, "O" for options
-	GetTickers(typ string, isSpread *bool) ([]FutOptTicker, *MarketDataError)
+	GetTickers(typ string, isSpread *bool) ([]FutOptTicker, error)
 	// Get trade history for a futures/options contract (async)
-	GetTrades(symbol string) (TradesResponse, *MarketDataError)
+	GetTrades(symbol string) (TradesResponse, error)
 	// Get volume breakdown by price for a futures/options contract (async)
-	GetVolumes(symbol string) (VolumesResponse, *MarketDataError)
+	GetVolumes(symbol string) (VolumesResponse, error)
 	// Get available products list (sync/blocking)
-	ProductsSync(typ string) (ProductsResponse, *MarketDataError)
+	ProductsSync(typ string) (ProductsResponse, error)
 	// Get quote for a futures/options contract (sync/blocking)
-	QuoteSync(symbol string, afterHours bool) (FutOptQuote, *MarketDataError)
+	QuoteSync(symbol string, afterHours bool) (FutOptQuote, error)
 	// Get ticker info for a contract (sync/blocking)
-	TickerSync(symbol string, afterHours bool) (FutOptTicker, *MarketDataError)
+	TickerSync(symbol string, afterHours bool) (FutOptTicker, error)
 	// Get batch tickers for futures/options (sync/blocking)
 	//
 	// typ: "F" for futures, "O" for options
-	TickersSync(typ string, isSpread *bool) ([]FutOptTicker, *MarketDataError)
+	TickersSync(typ string, isSpread *bool) ([]FutOptTicker, error)
 	// Get trade history for a contract (sync/blocking)
-	TradesSync(symbol string) (TradesResponse, *MarketDataError)
+	TradesSync(symbol string) (TradesResponse, error)
 	// Get volume breakdown by price for a contract (sync/blocking)
-	VolumesSync(symbol string) (VolumesResponse, *MarketDataError)
+	VolumesSync(symbol string) (VolumesResponse, error)
 }
 
 // FutOpt intraday endpoints with typed model returns
@@ -1855,7 +1893,7 @@ type FutOptIntradayClient struct {
 }
 
 // Get candlestick data for a contract (sync/blocking)
-func (_self *FutOptIntradayClient) CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -1868,12 +1906,12 @@ func (_self *FutOptIntradayClient) CandlesSync(symbol string, timeframe string) 
 		var _uniffiDefaultValue IntradayCandlesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterIntradayCandlesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterIntradayCandlesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get candlestick data for a futures/options contract (async)
-func (_self *FutOptIntradayClient) GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1901,13 +1939,17 @@ func (_self *FutOptIntradayClient) GetCandles(symbol string, timeframe string) (
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get available products list (async)
 //
 // typ: "F" for futures, "O" for options
-func (_self *FutOptIntradayClient) GetProducts(typ string) (ProductsResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetProducts(typ string) (ProductsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1935,13 +1977,17 @@ func (_self *FutOptIntradayClient) GetProducts(typ string) (ProductsResponse, *M
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get quote for a futures/options contract (async)
 //
 // after_hours: true for after-hours session
-func (_self *FutOptIntradayClient) GetQuote(symbol string, afterHours bool) (FutOptQuote, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetQuote(symbol string, afterHours bool) (FutOptQuote, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1969,11 +2015,15 @@ func (_self *FutOptIntradayClient) GetQuote(symbol string, afterHours bool) (Fut
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get ticker info for a contract (async)
-func (_self *FutOptIntradayClient) GetTicker(symbol string, afterHours bool) (FutOptTicker, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetTicker(symbol string, afterHours bool) (FutOptTicker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2001,13 +2051,17 @@ func (_self *FutOptIntradayClient) GetTicker(symbol string, afterHours bool) (Fu
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get batch tickers for futures/options (async)
 //
 // typ: "F" for futures, "O" for options
-func (_self *FutOptIntradayClient) GetTickers(typ string, isSpread *bool) ([]FutOptTicker, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetTickers(typ string, isSpread *bool) ([]FutOptTicker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2035,11 +2089,15 @@ func (_self *FutOptIntradayClient) GetTickers(typ string, isSpread *bool) ([]Fut
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get trade history for a futures/options contract (async)
-func (_self *FutOptIntradayClient) GetTrades(symbol string) (TradesResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetTrades(symbol string) (TradesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2067,11 +2125,15 @@ func (_self *FutOptIntradayClient) GetTrades(symbol string) (TradesResponse, *Ma
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get volume breakdown by price for a futures/options contract (async)
-func (_self *FutOptIntradayClient) GetVolumes(symbol string) (VolumesResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) GetVolumes(symbol string) (VolumesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2099,11 +2161,15 @@ func (_self *FutOptIntradayClient) GetVolumes(symbol string) (VolumesResponse, *
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get available products list (sync/blocking)
-func (_self *FutOptIntradayClient) ProductsSync(typ string) (ProductsResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) ProductsSync(typ string) (ProductsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2116,12 +2182,12 @@ func (_self *FutOptIntradayClient) ProductsSync(typ string) (ProductsResponse, *
 		var _uniffiDefaultValue ProductsResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterProductsResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterProductsResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get quote for a futures/options contract (sync/blocking)
-func (_self *FutOptIntradayClient) QuoteSync(symbol string, afterHours bool) (FutOptQuote, *MarketDataError) {
+func (_self *FutOptIntradayClient) QuoteSync(symbol string, afterHours bool) (FutOptQuote, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2134,12 +2200,12 @@ func (_self *FutOptIntradayClient) QuoteSync(symbol string, afterHours bool) (Fu
 		var _uniffiDefaultValue FutOptQuote
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterFutOptQuoteINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterFutOptQuoteINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get ticker info for a contract (sync/blocking)
-func (_self *FutOptIntradayClient) TickerSync(symbol string, afterHours bool) (FutOptTicker, *MarketDataError) {
+func (_self *FutOptIntradayClient) TickerSync(symbol string, afterHours bool) (FutOptTicker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2152,14 +2218,14 @@ func (_self *FutOptIntradayClient) TickerSync(symbol string, afterHours bool) (F
 		var _uniffiDefaultValue FutOptTicker
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterFutOptTickerINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterFutOptTickerINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get batch tickers for futures/options (sync/blocking)
 //
 // typ: "F" for futures, "O" for options
-func (_self *FutOptIntradayClient) TickersSync(typ string, isSpread *bool) ([]FutOptTicker, *MarketDataError) {
+func (_self *FutOptIntradayClient) TickersSync(typ string, isSpread *bool) ([]FutOptTicker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2172,12 +2238,12 @@ func (_self *FutOptIntradayClient) TickersSync(typ string, isSpread *bool) ([]Fu
 		var _uniffiDefaultValue []FutOptTicker
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterSequenceFutOptTickerINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterSequenceFutOptTickerINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get trade history for a contract (sync/blocking)
-func (_self *FutOptIntradayClient) TradesSync(symbol string) (TradesResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) TradesSync(symbol string) (TradesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2190,12 +2256,12 @@ func (_self *FutOptIntradayClient) TradesSync(symbol string) (TradesResponse, *M
 		var _uniffiDefaultValue TradesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterTradesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterTradesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get volume breakdown by price for a contract (sync/blocking)
-func (_self *FutOptIntradayClient) VolumesSync(symbol string) (VolumesResponse, *MarketDataError) {
+func (_self *FutOptIntradayClient) VolumesSync(symbol string) (VolumesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2208,7 +2274,7 @@ func (_self *FutOptIntradayClient) VolumesSync(symbol string) (VolumesResponse, 
 		var _uniffiDefaultValue VolumesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterVolumesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterVolumesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 func (object *FutOptIntradayClient) Destroy() {
@@ -2517,17 +2583,17 @@ func (_ FfiDestroyerStockClient) Destroy(value *StockClient) {
 // Provides access to capital changes, dividends, and listing applicants (IPO).
 type StockCorporateActionsClientInterface interface {
 	// Get capital structure changes (sync/blocking)
-	CapitalChangesSync(date *string, startDate *string, endDate *string) (CapitalChangesResponse, *MarketDataError)
+	CapitalChangesSync(date *string, startDate *string, endDate *string) (CapitalChangesResponse, error)
 	// Get dividend announcements (sync/blocking)
-	DividendsSync(date *string, startDate *string, endDate *string) (DividendsResponse, *MarketDataError)
+	DividendsSync(date *string, startDate *string, endDate *string) (DividendsResponse, error)
 	// Get capital structure changes (async)
-	GetCapitalChanges(date *string, startDate *string, endDate *string) (CapitalChangesResponse, *MarketDataError)
+	GetCapitalChanges(date *string, startDate *string, endDate *string) (CapitalChangesResponse, error)
 	// Get dividend announcements (async)
-	GetDividends(date *string, startDate *string, endDate *string) (DividendsResponse, *MarketDataError)
+	GetDividends(date *string, startDate *string, endDate *string) (DividendsResponse, error)
 	// Get IPO listing applicants (async)
-	GetListingApplicants(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, *MarketDataError)
+	GetListingApplicants(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, error)
 	// Get IPO listing applicants (sync/blocking)
-	ListingApplicantsSync(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, *MarketDataError)
+	ListingApplicantsSync(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, error)
 }
 
 // Stock corporate actions endpoints
@@ -2538,7 +2604,7 @@ type StockCorporateActionsClient struct {
 }
 
 // Get capital structure changes (sync/blocking)
-func (_self *StockCorporateActionsClient) CapitalChangesSync(date *string, startDate *string, endDate *string) (CapitalChangesResponse, *MarketDataError) {
+func (_self *StockCorporateActionsClient) CapitalChangesSync(date *string, startDate *string, endDate *string) (CapitalChangesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2551,12 +2617,12 @@ func (_self *StockCorporateActionsClient) CapitalChangesSync(date *string, start
 		var _uniffiDefaultValue CapitalChangesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterCapitalChangesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterCapitalChangesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get dividend announcements (sync/blocking)
-func (_self *StockCorporateActionsClient) DividendsSync(date *string, startDate *string, endDate *string) (DividendsResponse, *MarketDataError) {
+func (_self *StockCorporateActionsClient) DividendsSync(date *string, startDate *string, endDate *string) (DividendsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2569,12 +2635,12 @@ func (_self *StockCorporateActionsClient) DividendsSync(date *string, startDate 
 		var _uniffiDefaultValue DividendsResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterDividendsResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterDividendsResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get capital structure changes (async)
-func (_self *StockCorporateActionsClient) GetCapitalChanges(date *string, startDate *string, endDate *string) (CapitalChangesResponse, *MarketDataError) {
+func (_self *StockCorporateActionsClient) GetCapitalChanges(date *string, startDate *string, endDate *string) (CapitalChangesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2602,11 +2668,15 @@ func (_self *StockCorporateActionsClient) GetCapitalChanges(date *string, startD
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get dividend announcements (async)
-func (_self *StockCorporateActionsClient) GetDividends(date *string, startDate *string, endDate *string) (DividendsResponse, *MarketDataError) {
+func (_self *StockCorporateActionsClient) GetDividends(date *string, startDate *string, endDate *string) (DividendsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2634,11 +2704,15 @@ func (_self *StockCorporateActionsClient) GetDividends(date *string, startDate *
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get IPO listing applicants (async)
-func (_self *StockCorporateActionsClient) GetListingApplicants(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, *MarketDataError) {
+func (_self *StockCorporateActionsClient) GetListingApplicants(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2666,11 +2740,15 @@ func (_self *StockCorporateActionsClient) GetListingApplicants(date *string, sta
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get IPO listing applicants (sync/blocking)
-func (_self *StockCorporateActionsClient) ListingApplicantsSync(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, *MarketDataError) {
+func (_self *StockCorporateActionsClient) ListingApplicantsSync(date *string, startDate *string, endDate *string) (ListingApplicantsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2683,7 +2761,7 @@ func (_self *StockCorporateActionsClient) ListingApplicantsSync(date *string, st
 		var _uniffiDefaultValue ListingApplicantsResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterListingApplicantsResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterListingApplicantsResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 func (object *StockCorporateActionsClient) Destroy() {
@@ -2742,7 +2820,7 @@ func (_ FfiDestroyerStockCorporateActionsClient) Destroy(value *StockCorporateAc
 // - Sync methods block the calling thread (simpler API for scripting)
 type StockHistoricalClientInterface interface {
 	// Get historical candles for a symbol (sync/blocking)
-	CandlesSync(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, *MarketDataError)
+	CandlesSync(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, error)
 	// Get historical candles for a symbol (async)
 	//
 	// Parameters:
@@ -2750,13 +2828,13 @@ type StockHistoricalClientInterface interface {
 	// - from: Start date (YYYY-MM-DD, optional)
 	// - to: End date (YYYY-MM-DD, optional)
 	// - timeframe: "D" (day), "W" (week), "M" (month), or intraday "1", "5", "10", "15", "30", "60"
-	GetCandles(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, *MarketDataError)
+	GetCandles(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, error)
 	// Get historical stats for a symbol (async)
 	//
 	// Returns summary statistics including 52-week high/low
-	GetStats(symbol string) (StatsResponse, *MarketDataError)
+	GetStats(symbol string) (StatsResponse, error)
 	// Get historical stats for a symbol (sync/blocking)
-	StatsSync(symbol string) (StatsResponse, *MarketDataError)
+	StatsSync(symbol string) (StatsResponse, error)
 }
 
 // Stock historical endpoints with typed model returns
@@ -2769,7 +2847,7 @@ type StockHistoricalClient struct {
 }
 
 // Get historical candles for a symbol (sync/blocking)
-func (_self *StockHistoricalClient) CandlesSync(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, *MarketDataError) {
+func (_self *StockHistoricalClient) CandlesSync(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2782,7 +2860,7 @@ func (_self *StockHistoricalClient) CandlesSync(symbol string, from *string, to 
 		var _uniffiDefaultValue HistoricalCandlesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterHistoricalCandlesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterHistoricalCandlesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
@@ -2793,7 +2871,7 @@ func (_self *StockHistoricalClient) CandlesSync(symbol string, from *string, to 
 // - from: Start date (YYYY-MM-DD, optional)
 // - to: End date (YYYY-MM-DD, optional)
 // - timeframe: "D" (day), "W" (week), "M" (month), or intraday "1", "5", "10", "15", "30", "60"
-func (_self *StockHistoricalClient) GetCandles(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, *MarketDataError) {
+func (_self *StockHistoricalClient) GetCandles(symbol string, from *string, to *string, timeframe *string) (HistoricalCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2821,13 +2899,17 @@ func (_self *StockHistoricalClient) GetCandles(symbol string, from *string, to *
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get historical stats for a symbol (async)
 //
 // Returns summary statistics including 52-week high/low
-func (_self *StockHistoricalClient) GetStats(symbol string) (StatsResponse, *MarketDataError) {
+func (_self *StockHistoricalClient) GetStats(symbol string) (StatsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2855,11 +2937,15 @@ func (_self *StockHistoricalClient) GetStats(symbol string) (StatsResponse, *Mar
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get historical stats for a symbol (sync/blocking)
-func (_self *StockHistoricalClient) StatsSync(symbol string) (StatsResponse, *MarketDataError) {
+func (_self *StockHistoricalClient) StatsSync(symbol string) (StatsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2872,7 +2958,7 @@ func (_self *StockHistoricalClient) StatsSync(symbol string) (StatsResponse, *Ma
 		var _uniffiDefaultValue StatsResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterStatsResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterStatsResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 func (object *StockHistoricalClient) Destroy() {
@@ -2931,44 +3017,44 @@ func (_ FfiDestroyerStockHistoricalClient) Destroy(value *StockHistoricalClient)
 // - Sync methods block the calling thread (simpler API for scripting)
 type StockIntradayClientInterface interface {
 	// Get candlestick data for a symbol (sync/blocking)
-	CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError)
+	CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, error)
 	// Get candlestick data for a symbol (async)
 	//
 	// timeframe: "1", "5", "10", "15", "30", "60" (minutes)
 	// Returns typed IntradayCandlesResponse with OHLCV data.
-	GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError)
+	GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, error)
 	// Get quote for a symbol (async)
 	//
 	// Returns typed Quote model with all fields directly accessible.
-	GetQuote(symbol string) (Quote, *MarketDataError)
+	GetQuote(symbol string) (Quote, error)
 	// Get ticker info for a symbol (async)
 	//
 	// Returns typed Ticker model with stock metadata.
-	GetTicker(symbol string) (Ticker, *MarketDataError)
+	GetTicker(symbol string) (Ticker, error)
 	// Get batch tickers for a security type (async)
 	//
 	// typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
-	GetTickers(typ string) ([]Ticker, *MarketDataError)
+	GetTickers(typ string) ([]Ticker, error)
 	// Get trade history for a symbol (async)
 	//
 	// Returns typed TradesResponse with list of trades.
-	GetTrades(symbol string) (TradesResponse, *MarketDataError)
+	GetTrades(symbol string) (TradesResponse, error)
 	// Get volume breakdown for a symbol (async)
 	//
 	// Returns typed VolumesResponse with volume at price data.
-	GetVolumes(symbol string) (VolumesResponse, *MarketDataError)
+	GetVolumes(symbol string) (VolumesResponse, error)
 	// Get quote for a symbol (sync/blocking)
-	QuoteSync(symbol string) (Quote, *MarketDataError)
+	QuoteSync(symbol string) (Quote, error)
 	// Get ticker info for a symbol (sync/blocking)
-	TickerSync(symbol string) (Ticker, *MarketDataError)
+	TickerSync(symbol string) (Ticker, error)
 	// Get batch tickers for a security type (sync/blocking)
 	//
 	// typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
-	TickersSync(typ string) ([]Ticker, *MarketDataError)
+	TickersSync(typ string) ([]Ticker, error)
 	// Get trade history for a symbol (sync/blocking)
-	TradesSync(symbol string) (TradesResponse, *MarketDataError)
+	TradesSync(symbol string) (TradesResponse, error)
 	// Get volume breakdown for a symbol (sync/blocking)
-	VolumesSync(symbol string) (VolumesResponse, *MarketDataError)
+	VolumesSync(symbol string) (VolumesResponse, error)
 }
 
 // Stock intraday endpoints with typed model returns
@@ -2981,7 +3067,7 @@ type StockIntradayClient struct {
 }
 
 // Get candlestick data for a symbol (sync/blocking)
-func (_self *StockIntradayClient) CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError) {
+func (_self *StockIntradayClient) CandlesSync(symbol string, timeframe string) (IntradayCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -2994,7 +3080,7 @@ func (_self *StockIntradayClient) CandlesSync(symbol string, timeframe string) (
 		var _uniffiDefaultValue IntradayCandlesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterIntradayCandlesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterIntradayCandlesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
@@ -3002,7 +3088,7 @@ func (_self *StockIntradayClient) CandlesSync(symbol string, timeframe string) (
 //
 // timeframe: "1", "5", "10", "15", "30", "60" (minutes)
 // Returns typed IntradayCandlesResponse with OHLCV data.
-func (_self *StockIntradayClient) GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, *MarketDataError) {
+func (_self *StockIntradayClient) GetCandles(symbol string, timeframe string) (IntradayCandlesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3030,13 +3116,17 @@ func (_self *StockIntradayClient) GetCandles(symbol string, timeframe string) (I
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get quote for a symbol (async)
 //
 // Returns typed Quote model with all fields directly accessible.
-func (_self *StockIntradayClient) GetQuote(symbol string) (Quote, *MarketDataError) {
+func (_self *StockIntradayClient) GetQuote(symbol string) (Quote, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3064,13 +3154,17 @@ func (_self *StockIntradayClient) GetQuote(symbol string) (Quote, *MarketDataErr
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get ticker info for a symbol (async)
 //
 // Returns typed Ticker model with stock metadata.
-func (_self *StockIntradayClient) GetTicker(symbol string) (Ticker, *MarketDataError) {
+func (_self *StockIntradayClient) GetTicker(symbol string) (Ticker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3098,13 +3192,17 @@ func (_self *StockIntradayClient) GetTicker(symbol string) (Ticker, *MarketDataE
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get batch tickers for a security type (async)
 //
 // typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
-func (_self *StockIntradayClient) GetTickers(typ string) ([]Ticker, *MarketDataError) {
+func (_self *StockIntradayClient) GetTickers(typ string) ([]Ticker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3132,13 +3230,17 @@ func (_self *StockIntradayClient) GetTickers(typ string) ([]Ticker, *MarketDataE
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get trade history for a symbol (async)
 //
 // Returns typed TradesResponse with list of trades.
-func (_self *StockIntradayClient) GetTrades(symbol string) (TradesResponse, *MarketDataError) {
+func (_self *StockIntradayClient) GetTrades(symbol string) (TradesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3166,13 +3268,17 @@ func (_self *StockIntradayClient) GetTrades(symbol string) (TradesResponse, *Mar
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get volume breakdown for a symbol (async)
 //
 // Returns typed VolumesResponse with volume at price data.
-func (_self *StockIntradayClient) GetVolumes(symbol string) (VolumesResponse, *MarketDataError) {
+func (_self *StockIntradayClient) GetVolumes(symbol string) (VolumesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3200,11 +3306,15 @@ func (_self *StockIntradayClient) GetVolumes(symbol string) (VolumesResponse, *M
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get quote for a symbol (sync/blocking)
-func (_self *StockIntradayClient) QuoteSync(symbol string) (Quote, *MarketDataError) {
+func (_self *StockIntradayClient) QuoteSync(symbol string) (Quote, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3217,12 +3327,12 @@ func (_self *StockIntradayClient) QuoteSync(symbol string) (Quote, *MarketDataEr
 		var _uniffiDefaultValue Quote
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterQuoteINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterQuoteINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get ticker info for a symbol (sync/blocking)
-func (_self *StockIntradayClient) TickerSync(symbol string) (Ticker, *MarketDataError) {
+func (_self *StockIntradayClient) TickerSync(symbol string) (Ticker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3235,14 +3345,14 @@ func (_self *StockIntradayClient) TickerSync(symbol string) (Ticker, *MarketData
 		var _uniffiDefaultValue Ticker
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterTickerINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterTickerINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get batch tickers for a security type (sync/blocking)
 //
 // typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
-func (_self *StockIntradayClient) TickersSync(typ string) ([]Ticker, *MarketDataError) {
+func (_self *StockIntradayClient) TickersSync(typ string) ([]Ticker, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3255,12 +3365,12 @@ func (_self *StockIntradayClient) TickersSync(typ string) ([]Ticker, *MarketData
 		var _uniffiDefaultValue []Ticker
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterSequenceTickerINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterSequenceTickerINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get trade history for a symbol (sync/blocking)
-func (_self *StockIntradayClient) TradesSync(symbol string) (TradesResponse, *MarketDataError) {
+func (_self *StockIntradayClient) TradesSync(symbol string) (TradesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3273,12 +3383,12 @@ func (_self *StockIntradayClient) TradesSync(symbol string) (TradesResponse, *Ma
 		var _uniffiDefaultValue TradesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterTradesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterTradesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get volume breakdown for a symbol (sync/blocking)
-func (_self *StockIntradayClient) VolumesSync(symbol string) (VolumesResponse, *MarketDataError) {
+func (_self *StockIntradayClient) VolumesSync(symbol string) (VolumesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3291,7 +3401,7 @@ func (_self *StockIntradayClient) VolumesSync(symbol string) (VolumesResponse, *
 		var _uniffiDefaultValue VolumesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterVolumesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterVolumesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 func (object *StockIntradayClient) Destroy() {
@@ -3346,13 +3456,13 @@ func (_ FfiDestroyerStockIntradayClient) Destroy(value *StockIntradayClient) {
 // Stock ownership endpoints client
 type StockOwnershipClientInterface interface {
 	// Get monthly holdings and pledges disclosed by directors and supervisors (async)
-	GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (DirectorHoldingsResponse, *MarketDataError)
+	GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (DirectorHoldingsResponse, error)
 	// Get the constituents an ETF held over a date range (async)
-	GetEtfHoldings(symbol string, from *string, to *string, sort *string) (EtfHoldingsResponse, *MarketDataError)
+	GetEtfHoldings(symbol string, from *string, to *string, sort *string) (EtfHoldingsResponse, error)
 	// Get daily trading by the three major institutional investors (async)
-	GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (InstitutionalTradesResponse, *MarketDataError)
+	GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (InstitutionalTradesResponse, error)
 	// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
-	GetTdccDistribution(symbol string, from *string, to *string, sort *string) (TdccDistributionResponse, *MarketDataError)
+	GetTdccDistribution(symbol string, from *string, to *string, sort *string) (TdccDistributionResponse, error)
 }
 
 // Stock ownership endpoints client
@@ -3361,7 +3471,7 @@ type StockOwnershipClient struct {
 }
 
 // Get monthly holdings and pledges disclosed by directors and supervisors (async)
-func (_self *StockOwnershipClient) GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (DirectorHoldingsResponse, *MarketDataError) {
+func (_self *StockOwnershipClient) GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (DirectorHoldingsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3389,11 +3499,15 @@ func (_self *StockOwnershipClient) GetDirectorHoldings(symbol string, from *stri
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get the constituents an ETF held over a date range (async)
-func (_self *StockOwnershipClient) GetEtfHoldings(symbol string, from *string, to *string, sort *string) (EtfHoldingsResponse, *MarketDataError) {
+func (_self *StockOwnershipClient) GetEtfHoldings(symbol string, from *string, to *string, sort *string) (EtfHoldingsResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3421,11 +3535,15 @@ func (_self *StockOwnershipClient) GetEtfHoldings(symbol string, from *string, t
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get daily trading by the three major institutional investors (async)
-func (_self *StockOwnershipClient) GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (InstitutionalTradesResponse, *MarketDataError) {
+func (_self *StockOwnershipClient) GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (InstitutionalTradesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3453,11 +3571,15 @@ func (_self *StockOwnershipClient) GetInstitutionalTrades(symbol string, from *s
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get the weekly TDCC shareholder distribution by holding-size bracket (async)
-func (_self *StockOwnershipClient) GetTdccDistribution(symbol string, from *string, to *string, sort *string) (TdccDistributionResponse, *MarketDataError) {
+func (_self *StockOwnershipClient) GetTdccDistribution(symbol string, from *string, to *string, sort *string) (TdccDistributionResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3484,6 +3606,10 @@ func (_self *StockOwnershipClient) GetTdccDistribution(symbol string, from *stri
 			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
 		},
 	)
+
+	if err == nil {
+		return res, nil
+	}
 
 	return res, err
 }
@@ -3542,30 +3668,30 @@ func (_ FfiDestroyerStockOwnershipClient) Destroy(value *StockOwnershipClient) {
 // across entire markets.
 type StockSnapshotClientInterface interface {
 	// Get most actively traded stocks (sync/blocking)
-	ActivesSync(market string, trade *string) (ActivesResponse, *MarketDataError)
+	ActivesSync(market string, trade *string) (ActivesResponse, error)
 	// Get most actively traded stocks (async)
 	//
 	// Parameters:
 	// - market: Market code (TSE, OTC)
 	// - trade: "volume" or "value" (optional)
-	GetActives(market string, trade *string) (ActivesResponse, *MarketDataError)
+	GetActives(market string, trade *string) (ActivesResponse, error)
 	// Get top movers (gainers/losers) in a market (async)
 	//
 	// Parameters:
 	// - market: Market code (TSE, OTC)
 	// - direction: "up" for gainers, "down" for losers (optional)
 	// - change: "percent" or "value" (optional)
-	GetMovers(market string, direction *string, change *string) (MoversResponse, *MarketDataError)
+	GetMovers(market string, direction *string, change *string) (MoversResponse, error)
 	// Get market-wide snapshot quotes (async)
 	//
 	// Parameters:
 	// - market: Market code (TSE, OTC, ESB, TIB, PSB)
 	// - type_filter: Optional filter (ALL, ALLBUT0999, COMMONSTOCK)
-	GetQuotes(market string, typeFilter *string) (SnapshotQuotesResponse, *MarketDataError)
+	GetQuotes(market string, typeFilter *string) (SnapshotQuotesResponse, error)
 	// Get top movers (sync/blocking)
-	MoversSync(market string, direction *string, change *string) (MoversResponse, *MarketDataError)
+	MoversSync(market string, direction *string, change *string) (MoversResponse, error)
 	// Get market-wide snapshot quotes (sync/blocking)
-	QuotesSync(market string, typeFilter *string) (SnapshotQuotesResponse, *MarketDataError)
+	QuotesSync(market string, typeFilter *string) (SnapshotQuotesResponse, error)
 }
 
 // Stock snapshot endpoints for market-wide data
@@ -3577,7 +3703,7 @@ type StockSnapshotClient struct {
 }
 
 // Get most actively traded stocks (sync/blocking)
-func (_self *StockSnapshotClient) ActivesSync(market string, trade *string) (ActivesResponse, *MarketDataError) {
+func (_self *StockSnapshotClient) ActivesSync(market string, trade *string) (ActivesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3590,7 +3716,7 @@ func (_self *StockSnapshotClient) ActivesSync(market string, trade *string) (Act
 		var _uniffiDefaultValue ActivesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterActivesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterActivesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
@@ -3599,7 +3725,7 @@ func (_self *StockSnapshotClient) ActivesSync(market string, trade *string) (Act
 // Parameters:
 // - market: Market code (TSE, OTC)
 // - trade: "volume" or "value" (optional)
-func (_self *StockSnapshotClient) GetActives(market string, trade *string) (ActivesResponse, *MarketDataError) {
+func (_self *StockSnapshotClient) GetActives(market string, trade *string) (ActivesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3627,6 +3753,10 @@ func (_self *StockSnapshotClient) GetActives(market string, trade *string) (Acti
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
@@ -3636,7 +3766,7 @@ func (_self *StockSnapshotClient) GetActives(market string, trade *string) (Acti
 // - market: Market code (TSE, OTC)
 // - direction: "up" for gainers, "down" for losers (optional)
 // - change: "percent" or "value" (optional)
-func (_self *StockSnapshotClient) GetMovers(market string, direction *string, change *string) (MoversResponse, *MarketDataError) {
+func (_self *StockSnapshotClient) GetMovers(market string, direction *string, change *string) (MoversResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3664,6 +3794,10 @@ func (_self *StockSnapshotClient) GetMovers(market string, direction *string, ch
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
@@ -3672,7 +3806,7 @@ func (_self *StockSnapshotClient) GetMovers(market string, direction *string, ch
 // Parameters:
 // - market: Market code (TSE, OTC, ESB, TIB, PSB)
 // - type_filter: Optional filter (ALL, ALLBUT0999, COMMONSTOCK)
-func (_self *StockSnapshotClient) GetQuotes(market string, typeFilter *string) (SnapshotQuotesResponse, *MarketDataError) {
+func (_self *StockSnapshotClient) GetQuotes(market string, typeFilter *string) (SnapshotQuotesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3700,11 +3834,15 @@ func (_self *StockSnapshotClient) GetQuotes(market string, typeFilter *string) (
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get top movers (sync/blocking)
-func (_self *StockSnapshotClient) MoversSync(market string, direction *string, change *string) (MoversResponse, *MarketDataError) {
+func (_self *StockSnapshotClient) MoversSync(market string, direction *string, change *string) (MoversResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3717,12 +3855,12 @@ func (_self *StockSnapshotClient) MoversSync(market string, direction *string, c
 		var _uniffiDefaultValue MoversResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterMoversResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterMoversResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get market-wide snapshot quotes (sync/blocking)
-func (_self *StockSnapshotClient) QuotesSync(market string, typeFilter *string) (SnapshotQuotesResponse, *MarketDataError) {
+func (_self *StockSnapshotClient) QuotesSync(market string, typeFilter *string) (SnapshotQuotesResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3735,7 +3873,7 @@ func (_self *StockSnapshotClient) QuotesSync(market string, typeFilter *string) 
 		var _uniffiDefaultValue SnapshotQuotesResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterSnapshotQuotesResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterSnapshotQuotesResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 func (object *StockSnapshotClient) Destroy() {
@@ -3792,25 +3930,25 @@ func (_ FfiDestroyerStockSnapshotClient) Destroy(value *StockSnapshotClient) {
 // Provides access to SMA, RSI, KDJ, MACD, and Bollinger Bands indicators.
 type StockTechnicalClientInterface interface {
 	// Get Bollinger Bands (sync/blocking)
-	BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, *MarketDataError)
+	BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, error)
 	// Get Bollinger Bands (async)
-	GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, *MarketDataError)
+	GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, error)
 	// Get KDJ (Stochastic Oscillator) (async)
-	GetKdj(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, *MarketDataError)
+	GetKdj(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, error)
 	// Get MACD indicator (async)
-	GetMacd(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, *MarketDataError)
+	GetMacd(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, error)
 	// Get Relative Strength Index (async)
-	GetRsi(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, *MarketDataError)
+	GetRsi(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, error)
 	// Get Simple Moving Average (async)
-	GetSma(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, *MarketDataError)
+	GetSma(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, error)
 	// Get KDJ (sync/blocking)
-	KdjSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, *MarketDataError)
+	KdjSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, error)
 	// Get MACD (sync/blocking)
-	MacdSync(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, *MarketDataError)
+	MacdSync(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, error)
 	// Get Relative Strength Index (sync/blocking)
-	RsiSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, *MarketDataError)
+	RsiSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, error)
 	// Get Simple Moving Average (sync/blocking)
-	SmaSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, *MarketDataError)
+	SmaSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, error)
 }
 
 // Stock technical indicator endpoints
@@ -3821,7 +3959,7 @@ type StockTechnicalClient struct {
 }
 
 // Get Bollinger Bands (sync/blocking)
-func (_self *StockTechnicalClient) BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -3834,12 +3972,12 @@ func (_self *StockTechnicalClient) BbSync(symbol string, from *string, to *strin
 		var _uniffiDefaultValue BbResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterBbResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterBbResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get Bollinger Bands (async)
-func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (BbResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3867,11 +4005,15 @@ func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get KDJ (Stochastic Oscillator) (async)
-func (_self *StockTechnicalClient) GetKdj(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) GetKdj(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3899,11 +4041,15 @@ func (_self *StockTechnicalClient) GetKdj(symbol string, from *string, to *strin
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get MACD indicator (async)
-func (_self *StockTechnicalClient) GetMacd(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) GetMacd(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3931,11 +4077,15 @@ func (_self *StockTechnicalClient) GetMacd(symbol string, from *string, to *stri
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get Relative Strength Index (async)
-func (_self *StockTechnicalClient) GetRsi(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) GetRsi(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3963,11 +4113,15 @@ func (_self *StockTechnicalClient) GetRsi(symbol string, from *string, to *strin
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get Simple Moving Average (async)
-func (_self *StockTechnicalClient) GetSma(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) GetSma(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -3995,11 +4149,15 @@ func (_self *StockTechnicalClient) GetSma(symbol string, from *string, to *strin
 		},
 	)
 
+	if err == nil {
+		return res, nil
+	}
+
 	return res, err
 }
 
 // Get KDJ (sync/blocking)
-func (_self *StockTechnicalClient) KdjSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) KdjSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (KdjResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -4012,12 +4170,12 @@ func (_self *StockTechnicalClient) KdjSync(symbol string, from *string, to *stri
 		var _uniffiDefaultValue KdjResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterKdjResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterKdjResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get MACD (sync/blocking)
-func (_self *StockTechnicalClient) MacdSync(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) MacdSync(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (MacdResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -4030,12 +4188,12 @@ func (_self *StockTechnicalClient) MacdSync(symbol string, from *string, to *str
 		var _uniffiDefaultValue MacdResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterMacdResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterMacdResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get Relative Strength Index (sync/blocking)
-func (_self *StockTechnicalClient) RsiSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) RsiSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (RsiResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -4048,12 +4206,12 @@ func (_self *StockTechnicalClient) RsiSync(symbol string, from *string, to *stri
 		var _uniffiDefaultValue RsiResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRsiResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRsiResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Get Simple Moving Average (sync/blocking)
-func (_self *StockTechnicalClient) SmaSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, *MarketDataError) {
+func (_self *StockTechnicalClient) SmaSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (SmaResponse, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
@@ -4066,7 +4224,7 @@ func (_self *StockTechnicalClient) SmaSync(symbol string, from *string, to *stri
 		var _uniffiDefaultValue SmaResponse
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterSmaResponseINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterSmaResponseINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 func (object *StockTechnicalClient) Destroy() {
@@ -4123,16 +4281,16 @@ func (_ FfiDestroyerStockTechnicalClient) Destroy(value *StockTechnicalClient) {
 // Wraps the core WebSocketClient and forwards messages to the provided
 // WebSocketListener implementation via a background task.
 type WebSocketClientInterface interface {
-	Connect() *MarketDataError
+	Connect() error
 	Disconnect()
 	// Check if the client has been shut down
 	IsClosed() bool
 	// Check if the client is currently connected
 	IsConnected() bool
-	Ping(state *string) *MarketDataError
-	QuerySubscriptions() *MarketDataError
-	Subscribe(channel string, symbol string) *MarketDataError
-	Unsubscribe(channel string, symbol string) *MarketDataError
+	Ping(state *string) error
+	QuerySubscriptions() error
+	Subscribe(channel string, symbol string) error
+	Unsubscribe(channel string, symbol string) error
 }
 
 // WebSocket client for real-time market data streaming
@@ -4207,7 +4365,7 @@ func WebSocketClientNewWithUrl(apiKey string, listener WebSocketListener, endpoi
 	}))
 }
 
-func (_self *WebSocketClient) Connect() *MarketDataError {
+func (_self *WebSocketClient) Connect() error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4231,13 +4389,17 @@ func (_self *WebSocketClient) Connect() *MarketDataError {
 		},
 	)
 
+	if err == nil {
+		return nil
+	}
+
 	return err
 }
 
 func (_self *WebSocketClient) Disconnect() {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
-	uniffiRustCallAsync[struct{}](
+	uniffiRustCallAsync[error](
 		nil,
 		// completeFn
 		func(handle C.uint64_t, status *C.RustCallStatus) struct{} {
@@ -4280,7 +4442,7 @@ func (_self *WebSocketClient) IsConnected() bool {
 	}))
 }
 
-func (_self *WebSocketClient) Ping(state *string) *MarketDataError {
+func (_self *WebSocketClient) Ping(state *string) error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4304,10 +4466,14 @@ func (_self *WebSocketClient) Ping(state *string) *MarketDataError {
 		},
 	)
 
+	if err == nil {
+		return nil
+	}
+
 	return err
 }
 
-func (_self *WebSocketClient) QuerySubscriptions() *MarketDataError {
+func (_self *WebSocketClient) QuerySubscriptions() error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4331,10 +4497,14 @@ func (_self *WebSocketClient) QuerySubscriptions() *MarketDataError {
 		},
 	)
 
+	if err == nil {
+		return nil
+	}
+
 	return err
 }
 
-func (_self *WebSocketClient) Subscribe(channel string, symbol string) *MarketDataError {
+func (_self *WebSocketClient) Subscribe(channel string, symbol string) error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4358,10 +4528,14 @@ func (_self *WebSocketClient) Subscribe(channel string, symbol string) *MarketDa
 		},
 	)
 
+	if err == nil {
+		return nil
+	}
+
 	return err
 }
 
-func (_self *WebSocketClient) Unsubscribe(channel string, symbol string) *MarketDataError {
+func (_self *WebSocketClient) Unsubscribe(channel string, symbol string) error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4384,6 +4558,10 @@ func (_self *WebSocketClient) Unsubscribe(channel string, symbol string) *Market
 			C.ffi_marketdata_uniffi_rust_future_free_void(handle)
 		},
 	)
+
+	if err == nil {
+		return nil
+	}
 
 	return err
 }
@@ -4834,6 +5012,10 @@ func (c FfiConverterActive) Lower(value Active) C.RustBuffer {
 	return LowerIntoRustBuffer[Active](c, value)
 }
 
+func (c FfiConverterActive) LowerExternal(value Active) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Active](c, value))
+}
+
 func (c FfiConverterActive) Write(writer io.Writer, value Active) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
@@ -4891,6 +5073,10 @@ func (c FfiConverterActivesResponse) Lower(value ActivesResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[ActivesResponse](c, value)
 }
 
+func (c FfiConverterActivesResponse) LowerExternal(value ActivesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ActivesResponse](c, value))
+}
+
 func (c FfiConverterActivesResponse) Write(writer io.Writer, value ActivesResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterStringINSTANCE.Write(writer, value.Time)
@@ -4938,6 +5124,10 @@ func (c FfiConverterBbDataPoint) Read(reader io.Reader) BbDataPoint {
 
 func (c FfiConverterBbDataPoint) Lower(value BbDataPoint) C.RustBuffer {
 	return LowerIntoRustBuffer[BbDataPoint](c, value)
+}
+
+func (c FfiConverterBbDataPoint) LowerExternal(value BbDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[BbDataPoint](c, value))
 }
 
 func (c FfiConverterBbDataPoint) Write(writer io.Writer, value BbDataPoint) {
@@ -4999,6 +5189,10 @@ func (c FfiConverterBbResponse) Read(reader io.Reader) BbResponse {
 
 func (c FfiConverterBbResponse) Lower(value BbResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[BbResponse](c, value)
+}
+
+func (c FfiConverterBbResponse) LowerExternal(value BbResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[BbResponse](c, value))
 }
 
 func (c FfiConverterBbResponse) Write(writer io.Writer, value BbResponse) {
@@ -5063,6 +5257,10 @@ func (c FfiConverterCapitalChange) Lower(value CapitalChange) C.RustBuffer {
 	return LowerIntoRustBuffer[CapitalChange](c, value)
 }
 
+func (c FfiConverterCapitalChange) LowerExternal(value CapitalChange) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[CapitalChange](c, value))
+}
+
 func (c FfiConverterCapitalChange) Write(writer io.Writer, value CapitalChange) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Name)
@@ -5113,6 +5311,10 @@ func (c FfiConverterCapitalChangesResponse) Read(reader io.Reader) CapitalChange
 
 func (c FfiConverterCapitalChangesResponse) Lower(value CapitalChangesResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[CapitalChangesResponse](c, value)
+}
+
+func (c FfiConverterCapitalChangesResponse) LowerExternal(value CapitalChangesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[CapitalChangesResponse](c, value))
 }
 
 func (c FfiConverterCapitalChangesResponse) Write(writer io.Writer, value CapitalChangesResponse) {
@@ -5182,6 +5384,10 @@ func (c FfiConverterDirectorHolding) Lower(value DirectorHolding) C.RustBuffer {
 	return LowerIntoRustBuffer[DirectorHolding](c, value)
 }
 
+func (c FfiConverterDirectorHolding) LowerExternal(value DirectorHolding) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[DirectorHolding](c, value))
+}
+
 func (c FfiConverterDirectorHolding) Write(writer io.Writer, value DirectorHolding) {
 	FfiConverterOptionalInt64INSTANCE.Write(writer, value.Order)
 	FfiConverterStringINSTANCE.Write(writer, value.Title)
@@ -5229,6 +5435,10 @@ func (c FfiConverterDirectorHoldingsEntry) Read(reader io.Reader) DirectorHoldin
 
 func (c FfiConverterDirectorHoldingsEntry) Lower(value DirectorHoldingsEntry) C.RustBuffer {
 	return LowerIntoRustBuffer[DirectorHoldingsEntry](c, value)
+}
+
+func (c FfiConverterDirectorHoldingsEntry) LowerExternal(value DirectorHoldingsEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[DirectorHoldingsEntry](c, value))
 }
 
 func (c FfiConverterDirectorHoldingsEntry) Write(writer io.Writer, value DirectorHoldingsEntry) {
@@ -5279,6 +5489,10 @@ func (c FfiConverterDirectorHoldingsResponse) Read(reader io.Reader) DirectorHol
 
 func (c FfiConverterDirectorHoldingsResponse) Lower(value DirectorHoldingsResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[DirectorHoldingsResponse](c, value)
+}
+
+func (c FfiConverterDirectorHoldingsResponse) LowerExternal(value DirectorHoldingsResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[DirectorHoldingsResponse](c, value))
 }
 
 func (c FfiConverterDirectorHoldingsResponse) Write(writer io.Writer, value DirectorHoldingsResponse) {
@@ -5340,6 +5554,10 @@ func (c FfiConverterDividend) Lower(value Dividend) C.RustBuffer {
 	return LowerIntoRustBuffer[Dividend](c, value)
 }
 
+func (c FfiConverterDividend) LowerExternal(value Dividend) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Dividend](c, value))
+}
+
 func (c FfiConverterDividend) Write(writer io.Writer, value Dividend) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Name)
@@ -5390,6 +5608,10 @@ func (c FfiConverterDividendsResponse) Read(reader io.Reader) DividendsResponse 
 
 func (c FfiConverterDividendsResponse) Lower(value DividendsResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[DividendsResponse](c, value)
+}
+
+func (c FfiConverterDividendsResponse) LowerExternal(value DividendsResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[DividendsResponse](c, value))
 }
 
 func (c FfiConverterDividendsResponse) Write(writer io.Writer, value DividendsResponse) {
@@ -5448,6 +5670,10 @@ func (c FfiConverterEtfHoldingComponent) Lower(value EtfHoldingComponent) C.Rust
 	return LowerIntoRustBuffer[EtfHoldingComponent](c, value)
 }
 
+func (c FfiConverterEtfHoldingComponent) LowerExternal(value EtfHoldingComponent) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[EtfHoldingComponent](c, value))
+}
+
 func (c FfiConverterEtfHoldingComponent) Write(writer io.Writer, value EtfHoldingComponent) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterStringINSTANCE.Write(writer, value.Name)
@@ -5491,6 +5717,10 @@ func (c FfiConverterEtfHoldingsEntry) Read(reader io.Reader) EtfHoldingsEntry {
 
 func (c FfiConverterEtfHoldingsEntry) Lower(value EtfHoldingsEntry) C.RustBuffer {
 	return LowerIntoRustBuffer[EtfHoldingsEntry](c, value)
+}
+
+func (c FfiConverterEtfHoldingsEntry) LowerExternal(value EtfHoldingsEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[EtfHoldingsEntry](c, value))
 }
 
 func (c FfiConverterEtfHoldingsEntry) Write(writer io.Writer, value EtfHoldingsEntry) {
@@ -5541,6 +5771,10 @@ func (c FfiConverterEtfHoldingsResponse) Read(reader io.Reader) EtfHoldingsRespo
 
 func (c FfiConverterEtfHoldingsResponse) Lower(value EtfHoldingsResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[EtfHoldingsResponse](c, value)
+}
+
+func (c FfiConverterEtfHoldingsResponse) LowerExternal(value EtfHoldingsResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[EtfHoldingsResponse](c, value))
 }
 
 func (c FfiConverterEtfHoldingsResponse) Write(writer io.Writer, value EtfHoldingsResponse) {
@@ -5605,6 +5839,10 @@ func (c FfiConverterFutOptDailyData) Lower(value FutOptDailyData) C.RustBuffer {
 	return LowerIntoRustBuffer[FutOptDailyData](c, value)
 }
 
+func (c FfiConverterFutOptDailyData) LowerExternal(value FutOptDailyData) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptDailyData](c, value))
+}
+
 func (c FfiConverterFutOptDailyData) Write(writer io.Writer, value FutOptDailyData) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterFloat64INSTANCE.Write(writer, value.Open)
@@ -5656,6 +5894,10 @@ func (c FfiConverterFutOptDailyResponse) Read(reader io.Reader) FutOptDailyRespo
 
 func (c FfiConverterFutOptDailyResponse) Lower(value FutOptDailyResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[FutOptDailyResponse](c, value)
+}
+
+func (c FfiConverterFutOptDailyResponse) LowerExternal(value FutOptDailyResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptDailyResponse](c, value))
 }
 
 func (c FfiConverterFutOptDailyResponse) Write(writer io.Writer, value FutOptDailyResponse) {
@@ -5722,6 +5964,10 @@ func (c FfiConverterFutOptHistoricalCandle) Lower(value FutOptHistoricalCandle) 
 	return LowerIntoRustBuffer[FutOptHistoricalCandle](c, value)
 }
 
+func (c FfiConverterFutOptHistoricalCandle) LowerExternal(value FutOptHistoricalCandle) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptHistoricalCandle](c, value))
+}
+
 func (c FfiConverterFutOptHistoricalCandle) Write(writer io.Writer, value FutOptHistoricalCandle) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterFloat64INSTANCE.Write(writer, value.Open)
@@ -5779,6 +6025,10 @@ func (c FfiConverterFutOptHistoricalCandlesResponse) Lower(value FutOptHistorica
 	return LowerIntoRustBuffer[FutOptHistoricalCandlesResponse](c, value)
 }
 
+func (c FfiConverterFutOptHistoricalCandlesResponse) LowerExternal(value FutOptHistoricalCandlesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptHistoricalCandlesResponse](c, value))
+}
+
 func (c FfiConverterFutOptHistoricalCandlesResponse) Write(writer io.Writer, value FutOptHistoricalCandlesResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -5826,6 +6076,10 @@ func (c FfiConverterFutOptLastTrade) Lower(value FutOptLastTrade) C.RustBuffer {
 	return LowerIntoRustBuffer[FutOptLastTrade](c, value)
 }
 
+func (c FfiConverterFutOptLastTrade) LowerExternal(value FutOptLastTrade) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptLastTrade](c, value))
+}
+
 func (c FfiConverterFutOptLastTrade) Write(writer io.Writer, value FutOptLastTrade) {
 	FfiConverterFloat64INSTANCE.Write(writer, value.Price)
 	FfiConverterInt64INSTANCE.Write(writer, value.Size)
@@ -5866,6 +6120,10 @@ func (c FfiConverterFutOptPriceLevel) Read(reader io.Reader) FutOptPriceLevel {
 
 func (c FfiConverterFutOptPriceLevel) Lower(value FutOptPriceLevel) C.RustBuffer {
 	return LowerIntoRustBuffer[FutOptPriceLevel](c, value)
+}
+
+func (c FfiConverterFutOptPriceLevel) LowerExternal(value FutOptPriceLevel) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptPriceLevel](c, value))
 }
 
 func (c FfiConverterFutOptPriceLevel) Write(writer io.Writer, value FutOptPriceLevel) {
@@ -5978,6 +6236,10 @@ func (c FfiConverterFutOptQuote) Lower(value FutOptQuote) C.RustBuffer {
 	return LowerIntoRustBuffer[FutOptQuote](c, value)
 }
 
+func (c FfiConverterFutOptQuote) LowerExternal(value FutOptQuote) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptQuote](c, value))
+}
+
 func (c FfiConverterFutOptQuote) Write(writer io.Writer, value FutOptQuote) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.ContractType)
@@ -6072,6 +6334,10 @@ func (c FfiConverterFutOptTicker) Lower(value FutOptTicker) C.RustBuffer {
 	return LowerIntoRustBuffer[FutOptTicker](c, value)
 }
 
+func (c FfiConverterFutOptTicker) LowerExternal(value FutOptTicker) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptTicker](c, value))
+}
+
 func (c FfiConverterFutOptTicker) Write(writer io.Writer, value FutOptTicker) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.ContractType)
@@ -6126,6 +6392,10 @@ func (c FfiConverterFutOptTotalStats) Lower(value FutOptTotalStats) C.RustBuffer
 	return LowerIntoRustBuffer[FutOptTotalStats](c, value)
 }
 
+func (c FfiConverterFutOptTotalStats) LowerExternal(value FutOptTotalStats) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[FutOptTotalStats](c, value))
+}
+
 func (c FfiConverterFutOptTotalStats) Write(writer io.Writer, value FutOptTotalStats) {
 	FfiConverterInt64INSTANCE.Write(writer, value.TradeVolume)
 	FfiConverterOptionalInt64INSTANCE.Write(writer, value.TotalBidMatch)
@@ -6172,6 +6442,10 @@ func (c FfiConverterHealthCheckConfigRecord) Read(reader io.Reader) HealthCheckC
 
 func (c FfiConverterHealthCheckConfigRecord) Lower(value HealthCheckConfigRecord) C.RustBuffer {
 	return LowerIntoRustBuffer[HealthCheckConfigRecord](c, value)
+}
+
+func (c FfiConverterHealthCheckConfigRecord) LowerExternal(value HealthCheckConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[HealthCheckConfigRecord](c, value))
 }
 
 func (c FfiConverterHealthCheckConfigRecord) Write(writer io.Writer, value HealthCheckConfigRecord) {
@@ -6231,6 +6505,10 @@ func (c FfiConverterHistoricalCandle) Read(reader io.Reader) HistoricalCandle {
 
 func (c FfiConverterHistoricalCandle) Lower(value HistoricalCandle) C.RustBuffer {
 	return LowerIntoRustBuffer[HistoricalCandle](c, value)
+}
+
+func (c FfiConverterHistoricalCandle) LowerExternal(value HistoricalCandle) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[HistoricalCandle](c, value))
 }
 
 func (c FfiConverterHistoricalCandle) Write(writer io.Writer, value HistoricalCandle) {
@@ -6295,6 +6573,10 @@ func (c FfiConverterHistoricalCandlesResponse) Lower(value HistoricalCandlesResp
 	return LowerIntoRustBuffer[HistoricalCandlesResponse](c, value)
 }
 
+func (c FfiConverterHistoricalCandlesResponse) LowerExternal(value HistoricalCandlesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[HistoricalCandlesResponse](c, value))
+}
+
 func (c FfiConverterHistoricalCandlesResponse) Write(writer io.Writer, value HistoricalCandlesResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -6343,6 +6625,10 @@ func (c FfiConverterInstitutionalInvestorTrade) Read(reader io.Reader) Instituti
 
 func (c FfiConverterInstitutionalInvestorTrade) Lower(value InstitutionalInvestorTrade) C.RustBuffer {
 	return LowerIntoRustBuffer[InstitutionalInvestorTrade](c, value)
+}
+
+func (c FfiConverterInstitutionalInvestorTrade) LowerExternal(value InstitutionalInvestorTrade) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[InstitutionalInvestorTrade](c, value))
 }
 
 func (c FfiConverterInstitutionalInvestorTrade) Write(writer io.Writer, value InstitutionalInvestorTrade) {
@@ -6396,6 +6682,10 @@ func (c FfiConverterInstitutionalTradesEntry) Lower(value InstitutionalTradesEnt
 	return LowerIntoRustBuffer[InstitutionalTradesEntry](c, value)
 }
 
+func (c FfiConverterInstitutionalTradesEntry) LowerExternal(value InstitutionalTradesEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[InstitutionalTradesEntry](c, value))
+}
+
 func (c FfiConverterInstitutionalTradesEntry) Write(writer io.Writer, value InstitutionalTradesEntry) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Write(writer, value.Foreign)
@@ -6447,6 +6737,10 @@ func (c FfiConverterInstitutionalTradesResponse) Read(reader io.Reader) Institut
 
 func (c FfiConverterInstitutionalTradesResponse) Lower(value InstitutionalTradesResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[InstitutionalTradesResponse](c, value)
+}
+
+func (c FfiConverterInstitutionalTradesResponse) LowerExternal(value InstitutionalTradesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[InstitutionalTradesResponse](c, value))
 }
 
 func (c FfiConverterInstitutionalTradesResponse) Write(writer io.Writer, value InstitutionalTradesResponse) {
@@ -6506,6 +6800,10 @@ func (c FfiConverterIntradayCandle) Read(reader io.Reader) IntradayCandle {
 
 func (c FfiConverterIntradayCandle) Lower(value IntradayCandle) C.RustBuffer {
 	return LowerIntoRustBuffer[IntradayCandle](c, value)
+}
+
+func (c FfiConverterIntradayCandle) LowerExternal(value IntradayCandle) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[IntradayCandle](c, value))
 }
 
 func (c FfiConverterIntradayCandle) Write(writer io.Writer, value IntradayCandle) {
@@ -6569,6 +6867,10 @@ func (c FfiConverterIntradayCandlesResponse) Lower(value IntradayCandlesResponse
 	return LowerIntoRustBuffer[IntradayCandlesResponse](c, value)
 }
 
+func (c FfiConverterIntradayCandlesResponse) LowerExternal(value IntradayCandlesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[IntradayCandlesResponse](c, value))
+}
+
 func (c FfiConverterIntradayCandlesResponse) Write(writer io.Writer, value IntradayCandlesResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -6619,6 +6921,10 @@ func (c FfiConverterKdjDataPoint) Read(reader io.Reader) KdjDataPoint {
 
 func (c FfiConverterKdjDataPoint) Lower(value KdjDataPoint) C.RustBuffer {
 	return LowerIntoRustBuffer[KdjDataPoint](c, value)
+}
+
+func (c FfiConverterKdjDataPoint) LowerExternal(value KdjDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[KdjDataPoint](c, value))
 }
 
 func (c FfiConverterKdjDataPoint) Write(writer io.Writer, value KdjDataPoint) {
@@ -6687,6 +6993,10 @@ func (c FfiConverterKdjResponse) Lower(value KdjResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[KdjResponse](c, value)
 }
 
+func (c FfiConverterKdjResponse) LowerExternal(value KdjResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[KdjResponse](c, value))
+}
+
 func (c FfiConverterKdjResponse) Write(writer io.Writer, value KdjResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -6747,6 +7057,10 @@ func (c FfiConverterListingApplicant) Lower(value ListingApplicant) C.RustBuffer
 	return LowerIntoRustBuffer[ListingApplicant](c, value)
 }
 
+func (c FfiConverterListingApplicant) LowerExternal(value ListingApplicant) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ListingApplicant](c, value))
+}
+
 func (c FfiConverterListingApplicant) Write(writer io.Writer, value ListingApplicant) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Name)
@@ -6798,6 +7112,10 @@ func (c FfiConverterListingApplicantsResponse) Lower(value ListingApplicantsResp
 	return LowerIntoRustBuffer[ListingApplicantsResponse](c, value)
 }
 
+func (c FfiConverterListingApplicantsResponse) LowerExternal(value ListingApplicantsResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ListingApplicantsResponse](c, value))
+}
+
 func (c FfiConverterListingApplicantsResponse) Write(writer io.Writer, value ListingApplicantsResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.DataType)
 	FfiConverterStringINSTANCE.Write(writer, value.Exchange)
@@ -6845,6 +7163,10 @@ func (c FfiConverterMacdDataPoint) Read(reader io.Reader) MacdDataPoint {
 
 func (c FfiConverterMacdDataPoint) Lower(value MacdDataPoint) C.RustBuffer {
 	return LowerIntoRustBuffer[MacdDataPoint](c, value)
+}
+
+func (c FfiConverterMacdDataPoint) LowerExternal(value MacdDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[MacdDataPoint](c, value))
 }
 
 func (c FfiConverterMacdDataPoint) Write(writer io.Writer, value MacdDataPoint) {
@@ -6909,6 +7231,10 @@ func (c FfiConverterMacdResponse) Read(reader io.Reader) MacdResponse {
 
 func (c FfiConverterMacdResponse) Lower(value MacdResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[MacdResponse](c, value)
+}
+
+func (c FfiConverterMacdResponse) LowerExternal(value MacdResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[MacdResponse](c, value))
 }
 
 func (c FfiConverterMacdResponse) Write(writer io.Writer, value MacdResponse) {
@@ -6989,6 +7315,10 @@ func (c FfiConverterMover) Lower(value Mover) C.RustBuffer {
 	return LowerIntoRustBuffer[Mover](c, value)
 }
 
+func (c FfiConverterMover) LowerExternal(value Mover) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Mover](c, value))
+}
+
 func (c FfiConverterMover) Write(writer io.Writer, value Mover) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
@@ -7046,6 +7376,10 @@ func (c FfiConverterMoversResponse) Lower(value MoversResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[MoversResponse](c, value)
 }
 
+func (c FfiConverterMoversResponse) LowerExternal(value MoversResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[MoversResponse](c, value))
+}
+
 func (c FfiConverterMoversResponse) Write(writer io.Writer, value MoversResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterStringINSTANCE.Write(writer, value.Time)
@@ -7087,6 +7421,10 @@ func (c FfiConverterPriceLevel) Read(reader io.Reader) PriceLevel {
 
 func (c FfiConverterPriceLevel) Lower(value PriceLevel) C.RustBuffer {
 	return LowerIntoRustBuffer[PriceLevel](c, value)
+}
+
+func (c FfiConverterPriceLevel) LowerExternal(value PriceLevel) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[PriceLevel](c, value))
 }
 
 func (c FfiConverterPriceLevel) Write(writer io.Writer, value PriceLevel) {
@@ -7172,6 +7510,10 @@ func (c FfiConverterProduct) Lower(value Product) C.RustBuffer {
 	return LowerIntoRustBuffer[Product](c, value)
 }
 
+func (c FfiConverterProduct) LowerExternal(value Product) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Product](c, value))
+}
+
 func (c FfiConverterProduct) Write(writer io.Writer, value Product) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.ProductType)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Exchange)
@@ -7237,6 +7579,10 @@ func (c FfiConverterProductsResponse) Read(reader io.Reader) ProductsResponse {
 
 func (c FfiConverterProductsResponse) Lower(value ProductsResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[ProductsResponse](c, value)
+}
+
+func (c FfiConverterProductsResponse) LowerExternal(value ProductsResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ProductsResponse](c, value))
 }
 
 func (c FfiConverterProductsResponse) Write(writer io.Writer, value ProductsResponse) {
@@ -7401,6 +7747,10 @@ func (c FfiConverterQuote) Lower(value Quote) C.RustBuffer {
 	return LowerIntoRustBuffer[Quote](c, value)
 }
 
+func (c FfiConverterQuote) LowerExternal(value Quote) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Quote](c, value))
+}
+
 func (c FfiConverterQuote) Write(writer io.Writer, value Quote) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -7489,6 +7839,10 @@ func (c FfiConverterReconnectConfigRecord) Lower(value ReconnectConfigRecord) C.
 	return LowerIntoRustBuffer[ReconnectConfigRecord](c, value)
 }
 
+func (c FfiConverterReconnectConfigRecord) LowerExternal(value ReconnectConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ReconnectConfigRecord](c, value))
+}
+
 func (c FfiConverterReconnectConfigRecord) Write(writer io.Writer, value ReconnectConfigRecord) {
 	FfiConverterUint32INSTANCE.Write(writer, value.MaxAttempts)
 	FfiConverterUint64INSTANCE.Write(writer, value.InitialDelayMs)
@@ -7529,6 +7883,10 @@ func (c FfiConverterRsiDataPoint) Read(reader io.Reader) RsiDataPoint {
 
 func (c FfiConverterRsiDataPoint) Lower(value RsiDataPoint) C.RustBuffer {
 	return LowerIntoRustBuffer[RsiDataPoint](c, value)
+}
+
+func (c FfiConverterRsiDataPoint) LowerExternal(value RsiDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[RsiDataPoint](c, value))
 }
 
 func (c FfiConverterRsiDataPoint) Write(writer io.Writer, value RsiDataPoint) {
@@ -7587,6 +7945,10 @@ func (c FfiConverterRsiResponse) Lower(value RsiResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[RsiResponse](c, value)
 }
 
+func (c FfiConverterRsiResponse) LowerExternal(value RsiResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[RsiResponse](c, value))
+}
+
 func (c FfiConverterRsiResponse) Write(writer io.Writer, value RsiResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -7631,6 +7993,10 @@ func (c FfiConverterSmaDataPoint) Read(reader io.Reader) SmaDataPoint {
 
 func (c FfiConverterSmaDataPoint) Lower(value SmaDataPoint) C.RustBuffer {
 	return LowerIntoRustBuffer[SmaDataPoint](c, value)
+}
+
+func (c FfiConverterSmaDataPoint) LowerExternal(value SmaDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[SmaDataPoint](c, value))
 }
 
 func (c FfiConverterSmaDataPoint) Write(writer io.Writer, value SmaDataPoint) {
@@ -7687,6 +8053,10 @@ func (c FfiConverterSmaResponse) Read(reader io.Reader) SmaResponse {
 
 func (c FfiConverterSmaResponse) Lower(value SmaResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[SmaResponse](c, value)
+}
+
+func (c FfiConverterSmaResponse) LowerExternal(value SmaResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[SmaResponse](c, value))
 }
 
 func (c FfiConverterSmaResponse) Write(writer io.Writer, value SmaResponse) {
@@ -7765,6 +8135,10 @@ func (c FfiConverterSnapshotQuote) Lower(value SnapshotQuote) C.RustBuffer {
 	return LowerIntoRustBuffer[SnapshotQuote](c, value)
 }
 
+func (c FfiConverterSnapshotQuote) LowerExternal(value SnapshotQuote) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[SnapshotQuote](c, value))
+}
+
 func (c FfiConverterSnapshotQuote) Write(writer io.Writer, value SnapshotQuote) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
 	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
@@ -7820,6 +8194,10 @@ func (c FfiConverterSnapshotQuotesResponse) Read(reader io.Reader) SnapshotQuote
 
 func (c FfiConverterSnapshotQuotesResponse) Lower(value SnapshotQuotesResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[SnapshotQuotesResponse](c, value)
+}
+
+func (c FfiConverterSnapshotQuotesResponse) LowerExternal(value SnapshotQuotesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[SnapshotQuotesResponse](c, value))
 }
 
 func (c FfiConverterSnapshotQuotesResponse) Write(writer io.Writer, value SnapshotQuotesResponse) {
@@ -7910,6 +8288,10 @@ func (c FfiConverterStatsResponse) Lower(value StatsResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[StatsResponse](c, value)
 }
 
+func (c FfiConverterStatsResponse) LowerExternal(value StatsResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[StatsResponse](c, value))
+}
+
 func (c FfiConverterStatsResponse) Write(writer io.Writer, value StatsResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterStringINSTANCE.Write(writer, value.DataType)
@@ -7981,6 +8363,10 @@ func (c FfiConverterStreamMessage) Lower(value StreamMessage) C.RustBuffer {
 	return LowerIntoRustBuffer[StreamMessage](c, value)
 }
 
+func (c FfiConverterStreamMessage) LowerExternal(value StreamMessage) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[StreamMessage](c, value))
+}
+
 func (c FfiConverterStreamMessage) Write(writer io.Writer, value StreamMessage) {
 	FfiConverterStringINSTANCE.Write(writer, value.Event)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Channel)
@@ -8036,6 +8422,10 @@ func (c FfiConverterStreamingVersionRecord) Lower(value StreamingVersionRecord) 
 	return LowerIntoRustBuffer[StreamingVersionRecord](c, value)
 }
 
+func (c FfiConverterStreamingVersionRecord) LowerExternal(value StreamingVersionRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[StreamingVersionRecord](c, value))
+}
+
 func (c FfiConverterStreamingVersionRecord) Write(writer io.Writer, value StreamingVersionRecord) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Stock)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Futopt)
@@ -8075,6 +8465,10 @@ func (c FfiConverterTdccDistributionEntry) Read(reader io.Reader) TdccDistributi
 
 func (c FfiConverterTdccDistributionEntry) Lower(value TdccDistributionEntry) C.RustBuffer {
 	return LowerIntoRustBuffer[TdccDistributionEntry](c, value)
+}
+
+func (c FfiConverterTdccDistributionEntry) LowerExternal(value TdccDistributionEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TdccDistributionEntry](c, value))
 }
 
 func (c FfiConverterTdccDistributionEntry) Write(writer io.Writer, value TdccDistributionEntry) {
@@ -8122,6 +8516,10 @@ func (c FfiConverterTdccDistributionLevel) Read(reader io.Reader) TdccDistributi
 
 func (c FfiConverterTdccDistributionLevel) Lower(value TdccDistributionLevel) C.RustBuffer {
 	return LowerIntoRustBuffer[TdccDistributionLevel](c, value)
+}
+
+func (c FfiConverterTdccDistributionLevel) LowerExternal(value TdccDistributionLevel) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TdccDistributionLevel](c, value))
 }
 
 func (c FfiConverterTdccDistributionLevel) Write(writer io.Writer, value TdccDistributionLevel) {
@@ -8174,6 +8572,10 @@ func (c FfiConverterTdccDistributionResponse) Read(reader io.Reader) TdccDistrib
 
 func (c FfiConverterTdccDistributionResponse) Lower(value TdccDistributionResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[TdccDistributionResponse](c, value)
+}
+
+func (c FfiConverterTdccDistributionResponse) LowerExternal(value TdccDistributionResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TdccDistributionResponse](c, value))
 }
 
 func (c FfiConverterTdccDistributionResponse) Write(writer io.Writer, value TdccDistributionResponse) {
@@ -8322,6 +8724,10 @@ func (c FfiConverterTicker) Lower(value Ticker) C.RustBuffer {
 	return LowerIntoRustBuffer[Ticker](c, value)
 }
 
+func (c FfiConverterTicker) LowerExternal(value Ticker) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Ticker](c, value))
+}
+
 func (c FfiConverterTicker) Write(writer io.Writer, value Ticker) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -8408,6 +8814,10 @@ func (c FfiConverterTlsConfigRecord) Lower(value TlsConfigRecord) C.RustBuffer {
 	return LowerIntoRustBuffer[TlsConfigRecord](c, value)
 }
 
+func (c FfiConverterTlsConfigRecord) LowerExternal(value TlsConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TlsConfigRecord](c, value))
+}
+
 func (c FfiConverterTlsConfigRecord) Write(writer io.Writer, value TlsConfigRecord) {
 	FfiConverterOptionalBytesINSTANCE.Write(writer, value.RootCertPem)
 	FfiConverterBoolINSTANCE.Write(writer, value.AcceptInvalidCerts)
@@ -8459,6 +8869,10 @@ func (c FfiConverterTotalStats) Read(reader io.Reader) TotalStats {
 
 func (c FfiConverterTotalStats) Lower(value TotalStats) C.RustBuffer {
 	return LowerIntoRustBuffer[TotalStats](c, value)
+}
+
+func (c FfiConverterTotalStats) LowerExternal(value TotalStats) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TotalStats](c, value))
 }
 
 func (c FfiConverterTotalStats) Write(writer io.Writer, value TotalStats) {
@@ -8515,6 +8929,10 @@ func (c FfiConverterTrade) Lower(value Trade) C.RustBuffer {
 	return LowerIntoRustBuffer[Trade](c, value)
 }
 
+func (c FfiConverterTrade) LowerExternal(value Trade) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[Trade](c, value))
+}
+
 func (c FfiConverterTrade) Write(writer io.Writer, value Trade) {
 	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Bid)
 	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Ask)
@@ -8566,6 +8984,10 @@ func (c FfiConverterTradeInfo) Read(reader io.Reader) TradeInfo {
 
 func (c FfiConverterTradeInfo) Lower(value TradeInfo) C.RustBuffer {
 	return LowerIntoRustBuffer[TradeInfo](c, value)
+}
+
+func (c FfiConverterTradeInfo) LowerExternal(value TradeInfo) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TradeInfo](c, value))
 }
 
 func (c FfiConverterTradeInfo) Write(writer io.Writer, value TradeInfo) {
@@ -8624,6 +9046,10 @@ func (c FfiConverterTradesResponse) Lower(value TradesResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[TradesResponse](c, value)
 }
 
+func (c FfiConverterTradesResponse) LowerExternal(value TradesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TradesResponse](c, value))
+}
+
 func (c FfiConverterTradesResponse) Write(writer io.Writer, value TradesResponse) {
 	FfiConverterStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
@@ -8667,6 +9093,10 @@ func (c FfiConverterTradingHalt) Read(reader io.Reader) TradingHalt {
 
 func (c FfiConverterTradingHalt) Lower(value TradingHalt) C.RustBuffer {
 	return LowerIntoRustBuffer[TradingHalt](c, value)
+}
+
+func (c FfiConverterTradingHalt) LowerExternal(value TradingHalt) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[TradingHalt](c, value))
 }
 
 func (c FfiConverterTradingHalt) Write(writer io.Writer, value TradingHalt) {
@@ -8714,6 +9144,10 @@ func (c FfiConverterVolumeAtPrice) Read(reader io.Reader) VolumeAtPrice {
 
 func (c FfiConverterVolumeAtPrice) Lower(value VolumeAtPrice) C.RustBuffer {
 	return LowerIntoRustBuffer[VolumeAtPrice](c, value)
+}
+
+func (c FfiConverterVolumeAtPrice) LowerExternal(value VolumeAtPrice) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[VolumeAtPrice](c, value))
 }
 
 func (c FfiConverterVolumeAtPrice) Write(writer io.Writer, value VolumeAtPrice) {
@@ -8769,6 +9203,10 @@ func (c FfiConverterVolumesResponse) Read(reader io.Reader) VolumesResponse {
 
 func (c FfiConverterVolumesResponse) Lower(value VolumesResponse) C.RustBuffer {
 	return LowerIntoRustBuffer[VolumesResponse](c, value)
+}
+
+func (c FfiConverterVolumesResponse) LowerExternal(value VolumesResponse) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[VolumesResponse](c, value))
 }
 
 func (c FfiConverterVolumesResponse) Write(writer io.Writer, value VolumesResponse) {
@@ -9138,6 +9576,10 @@ func (c FfiConverterMarketDataError) Lower(value *MarketDataError) C.RustBuffer 
 	return LowerIntoRustBuffer[*MarketDataError](c, value)
 }
 
+func (c FfiConverterMarketDataError) LowerExternal(value *MarketDataError) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*MarketDataError](c, value))
+}
+
 func (c FfiConverterMarketDataError) Read(reader io.Reader) *MarketDataError {
 	errorID := readUint32(reader)
 
@@ -9282,6 +9724,10 @@ func (c FfiConverterWebSocketEndpoint) Lift(rb RustBufferI) WebSocketEndpoint {
 func (c FfiConverterWebSocketEndpoint) Lower(value WebSocketEndpoint) C.RustBuffer {
 	return LowerIntoRustBuffer[WebSocketEndpoint](c, value)
 }
+
+func (c FfiConverterWebSocketEndpoint) LowerExternal(value WebSocketEndpoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[WebSocketEndpoint](c, value))
+}
 func (FfiConverterWebSocketEndpoint) Read(reader io.Reader) WebSocketEndpoint {
 	id := readInt32(reader)
 	return WebSocketEndpoint(id)
@@ -9314,6 +9760,10 @@ func (_ FfiConverterOptionalUint32) Read(reader io.Reader) *uint32 {
 
 func (c FfiConverterOptionalUint32) Lower(value *uint32) C.RustBuffer {
 	return LowerIntoRustBuffer[*uint32](c, value)
+}
+
+func (c FfiConverterOptionalUint32) LowerExternal(value *uint32) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*uint32](c, value))
 }
 
 func (_ FfiConverterOptionalUint32) Write(writer io.Writer, value *uint32) {
@@ -9353,6 +9803,10 @@ func (c FfiConverterOptionalInt32) Lower(value *int32) C.RustBuffer {
 	return LowerIntoRustBuffer[*int32](c, value)
 }
 
+func (c FfiConverterOptionalInt32) LowerExternal(value *int32) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*int32](c, value))
+}
+
 func (_ FfiConverterOptionalInt32) Write(writer io.Writer, value *int32) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9388,6 +9842,10 @@ func (_ FfiConverterOptionalUint64) Read(reader io.Reader) *uint64 {
 
 func (c FfiConverterOptionalUint64) Lower(value *uint64) C.RustBuffer {
 	return LowerIntoRustBuffer[*uint64](c, value)
+}
+
+func (c FfiConverterOptionalUint64) LowerExternal(value *uint64) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*uint64](c, value))
 }
 
 func (_ FfiConverterOptionalUint64) Write(writer io.Writer, value *uint64) {
@@ -9427,6 +9885,10 @@ func (c FfiConverterOptionalInt64) Lower(value *int64) C.RustBuffer {
 	return LowerIntoRustBuffer[*int64](c, value)
 }
 
+func (c FfiConverterOptionalInt64) LowerExternal(value *int64) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*int64](c, value))
+}
+
 func (_ FfiConverterOptionalInt64) Write(writer io.Writer, value *int64) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9462,6 +9924,10 @@ func (_ FfiConverterOptionalFloat64) Read(reader io.Reader) *float64 {
 
 func (c FfiConverterOptionalFloat64) Lower(value *float64) C.RustBuffer {
 	return LowerIntoRustBuffer[*float64](c, value)
+}
+
+func (c FfiConverterOptionalFloat64) LowerExternal(value *float64) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*float64](c, value))
 }
 
 func (_ FfiConverterOptionalFloat64) Write(writer io.Writer, value *float64) {
@@ -9501,6 +9967,10 @@ func (c FfiConverterOptionalBool) Lower(value *bool) C.RustBuffer {
 	return LowerIntoRustBuffer[*bool](c, value)
 }
 
+func (c FfiConverterOptionalBool) LowerExternal(value *bool) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*bool](c, value))
+}
+
 func (_ FfiConverterOptionalBool) Write(writer io.Writer, value *bool) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9536,6 +10006,10 @@ func (_ FfiConverterOptionalString) Read(reader io.Reader) *string {
 
 func (c FfiConverterOptionalString) Lower(value *string) C.RustBuffer {
 	return LowerIntoRustBuffer[*string](c, value)
+}
+
+func (c FfiConverterOptionalString) LowerExternal(value *string) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*string](c, value))
 }
 
 func (_ FfiConverterOptionalString) Write(writer io.Writer, value *string) {
@@ -9575,6 +10049,10 @@ func (c FfiConverterOptionalBytes) Lower(value *[]byte) C.RustBuffer {
 	return LowerIntoRustBuffer[*[]byte](c, value)
 }
 
+func (c FfiConverterOptionalBytes) LowerExternal(value *[]byte) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*[]byte](c, value))
+}
+
 func (_ FfiConverterOptionalBytes) Write(writer io.Writer, value *[]byte) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9610,6 +10088,10 @@ func (_ FfiConverterOptionalFutOptLastTrade) Read(reader io.Reader) *FutOptLastT
 
 func (c FfiConverterOptionalFutOptLastTrade) Lower(value *FutOptLastTrade) C.RustBuffer {
 	return LowerIntoRustBuffer[*FutOptLastTrade](c, value)
+}
+
+func (c FfiConverterOptionalFutOptLastTrade) LowerExternal(value *FutOptLastTrade) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*FutOptLastTrade](c, value))
 }
 
 func (_ FfiConverterOptionalFutOptLastTrade) Write(writer io.Writer, value *FutOptLastTrade) {
@@ -9649,6 +10131,10 @@ func (c FfiConverterOptionalFutOptTotalStats) Lower(value *FutOptTotalStats) C.R
 	return LowerIntoRustBuffer[*FutOptTotalStats](c, value)
 }
 
+func (c FfiConverterOptionalFutOptTotalStats) LowerExternal(value *FutOptTotalStats) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*FutOptTotalStats](c, value))
+}
+
 func (_ FfiConverterOptionalFutOptTotalStats) Write(writer io.Writer, value *FutOptTotalStats) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9684,6 +10170,10 @@ func (_ FfiConverterOptionalHealthCheckConfigRecord) Read(reader io.Reader) *Hea
 
 func (c FfiConverterOptionalHealthCheckConfigRecord) Lower(value *HealthCheckConfigRecord) C.RustBuffer {
 	return LowerIntoRustBuffer[*HealthCheckConfigRecord](c, value)
+}
+
+func (c FfiConverterOptionalHealthCheckConfigRecord) LowerExternal(value *HealthCheckConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*HealthCheckConfigRecord](c, value))
 }
 
 func (_ FfiConverterOptionalHealthCheckConfigRecord) Write(writer io.Writer, value *HealthCheckConfigRecord) {
@@ -9723,6 +10213,10 @@ func (c FfiConverterOptionalInstitutionalInvestorTrade) Lower(value *Institution
 	return LowerIntoRustBuffer[*InstitutionalInvestorTrade](c, value)
 }
 
+func (c FfiConverterOptionalInstitutionalInvestorTrade) LowerExternal(value *InstitutionalInvestorTrade) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*InstitutionalInvestorTrade](c, value))
+}
+
 func (_ FfiConverterOptionalInstitutionalInvestorTrade) Write(writer io.Writer, value *InstitutionalInvestorTrade) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9758,6 +10252,10 @@ func (_ FfiConverterOptionalReconnectConfigRecord) Read(reader io.Reader) *Recon
 
 func (c FfiConverterOptionalReconnectConfigRecord) Lower(value *ReconnectConfigRecord) C.RustBuffer {
 	return LowerIntoRustBuffer[*ReconnectConfigRecord](c, value)
+}
+
+func (c FfiConverterOptionalReconnectConfigRecord) LowerExternal(value *ReconnectConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*ReconnectConfigRecord](c, value))
 }
 
 func (_ FfiConverterOptionalReconnectConfigRecord) Write(writer io.Writer, value *ReconnectConfigRecord) {
@@ -9797,6 +10295,10 @@ func (c FfiConverterOptionalStreamingVersionRecord) Lower(value *StreamingVersio
 	return LowerIntoRustBuffer[*StreamingVersionRecord](c, value)
 }
 
+func (c FfiConverterOptionalStreamingVersionRecord) LowerExternal(value *StreamingVersionRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*StreamingVersionRecord](c, value))
+}
+
 func (_ FfiConverterOptionalStreamingVersionRecord) Write(writer io.Writer, value *StreamingVersionRecord) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9832,6 +10334,10 @@ func (_ FfiConverterOptionalTlsConfigRecord) Read(reader io.Reader) *TlsConfigRe
 
 func (c FfiConverterOptionalTlsConfigRecord) Lower(value *TlsConfigRecord) C.RustBuffer {
 	return LowerIntoRustBuffer[*TlsConfigRecord](c, value)
+}
+
+func (c FfiConverterOptionalTlsConfigRecord) LowerExternal(value *TlsConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*TlsConfigRecord](c, value))
 }
 
 func (_ FfiConverterOptionalTlsConfigRecord) Write(writer io.Writer, value *TlsConfigRecord) {
@@ -9871,6 +10377,10 @@ func (c FfiConverterOptionalTotalStats) Lower(value *TotalStats) C.RustBuffer {
 	return LowerIntoRustBuffer[*TotalStats](c, value)
 }
 
+func (c FfiConverterOptionalTotalStats) LowerExternal(value *TotalStats) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*TotalStats](c, value))
+}
+
 func (_ FfiConverterOptionalTotalStats) Write(writer io.Writer, value *TotalStats) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9908,6 +10418,10 @@ func (c FfiConverterOptionalTradeInfo) Lower(value *TradeInfo) C.RustBuffer {
 	return LowerIntoRustBuffer[*TradeInfo](c, value)
 }
 
+func (c FfiConverterOptionalTradeInfo) LowerExternal(value *TradeInfo) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*TradeInfo](c, value))
+}
+
 func (_ FfiConverterOptionalTradeInfo) Write(writer io.Writer, value *TradeInfo) {
 	if value == nil {
 		writeInt8(writer, 0)
@@ -9943,6 +10457,10 @@ func (_ FfiConverterOptionalTradingHalt) Read(reader io.Reader) *TradingHalt {
 
 func (c FfiConverterOptionalTradingHalt) Lower(value *TradingHalt) C.RustBuffer {
 	return LowerIntoRustBuffer[*TradingHalt](c, value)
+}
+
+func (c FfiConverterOptionalTradingHalt) LowerExternal(value *TradingHalt) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*TradingHalt](c, value))
 }
 
 func (_ FfiConverterOptionalTradingHalt) Write(writer io.Writer, value *TradingHalt) {
@@ -9984,6 +10502,10 @@ func (c FfiConverterSequenceActive) Read(reader io.Reader) []Active {
 
 func (c FfiConverterSequenceActive) Lower(value []Active) C.RustBuffer {
 	return LowerIntoRustBuffer[[]Active](c, value)
+}
+
+func (c FfiConverterSequenceActive) LowerExternal(value []Active) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]Active](c, value))
 }
 
 func (c FfiConverterSequenceActive) Write(writer io.Writer, value []Active) {
@@ -10029,6 +10551,10 @@ func (c FfiConverterSequenceBbDataPoint) Lower(value []BbDataPoint) C.RustBuffer
 	return LowerIntoRustBuffer[[]BbDataPoint](c, value)
 }
 
+func (c FfiConverterSequenceBbDataPoint) LowerExternal(value []BbDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]BbDataPoint](c, value))
+}
+
 func (c FfiConverterSequenceBbDataPoint) Write(writer io.Writer, value []BbDataPoint) {
 	if len(value) > math.MaxInt32 {
 		panic("[]BbDataPoint is too large to fit into Int32")
@@ -10070,6 +10596,10 @@ func (c FfiConverterSequenceCapitalChange) Read(reader io.Reader) []CapitalChang
 
 func (c FfiConverterSequenceCapitalChange) Lower(value []CapitalChange) C.RustBuffer {
 	return LowerIntoRustBuffer[[]CapitalChange](c, value)
+}
+
+func (c FfiConverterSequenceCapitalChange) LowerExternal(value []CapitalChange) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]CapitalChange](c, value))
 }
 
 func (c FfiConverterSequenceCapitalChange) Write(writer io.Writer, value []CapitalChange) {
@@ -10115,6 +10645,10 @@ func (c FfiConverterSequenceDirectorHolding) Lower(value []DirectorHolding) C.Ru
 	return LowerIntoRustBuffer[[]DirectorHolding](c, value)
 }
 
+func (c FfiConverterSequenceDirectorHolding) LowerExternal(value []DirectorHolding) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]DirectorHolding](c, value))
+}
+
 func (c FfiConverterSequenceDirectorHolding) Write(writer io.Writer, value []DirectorHolding) {
 	if len(value) > math.MaxInt32 {
 		panic("[]DirectorHolding is too large to fit into Int32")
@@ -10156,6 +10690,10 @@ func (c FfiConverterSequenceDirectorHoldingsEntry) Read(reader io.Reader) []Dire
 
 func (c FfiConverterSequenceDirectorHoldingsEntry) Lower(value []DirectorHoldingsEntry) C.RustBuffer {
 	return LowerIntoRustBuffer[[]DirectorHoldingsEntry](c, value)
+}
+
+func (c FfiConverterSequenceDirectorHoldingsEntry) LowerExternal(value []DirectorHoldingsEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]DirectorHoldingsEntry](c, value))
 }
 
 func (c FfiConverterSequenceDirectorHoldingsEntry) Write(writer io.Writer, value []DirectorHoldingsEntry) {
@@ -10201,6 +10739,10 @@ func (c FfiConverterSequenceDividend) Lower(value []Dividend) C.RustBuffer {
 	return LowerIntoRustBuffer[[]Dividend](c, value)
 }
 
+func (c FfiConverterSequenceDividend) LowerExternal(value []Dividend) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]Dividend](c, value))
+}
+
 func (c FfiConverterSequenceDividend) Write(writer io.Writer, value []Dividend) {
 	if len(value) > math.MaxInt32 {
 		panic("[]Dividend is too large to fit into Int32")
@@ -10242,6 +10784,10 @@ func (c FfiConverterSequenceEtfHoldingComponent) Read(reader io.Reader) []EtfHol
 
 func (c FfiConverterSequenceEtfHoldingComponent) Lower(value []EtfHoldingComponent) C.RustBuffer {
 	return LowerIntoRustBuffer[[]EtfHoldingComponent](c, value)
+}
+
+func (c FfiConverterSequenceEtfHoldingComponent) LowerExternal(value []EtfHoldingComponent) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]EtfHoldingComponent](c, value))
 }
 
 func (c FfiConverterSequenceEtfHoldingComponent) Write(writer io.Writer, value []EtfHoldingComponent) {
@@ -10287,6 +10833,10 @@ func (c FfiConverterSequenceEtfHoldingsEntry) Lower(value []EtfHoldingsEntry) C.
 	return LowerIntoRustBuffer[[]EtfHoldingsEntry](c, value)
 }
 
+func (c FfiConverterSequenceEtfHoldingsEntry) LowerExternal(value []EtfHoldingsEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]EtfHoldingsEntry](c, value))
+}
+
 func (c FfiConverterSequenceEtfHoldingsEntry) Write(writer io.Writer, value []EtfHoldingsEntry) {
 	if len(value) > math.MaxInt32 {
 		panic("[]EtfHoldingsEntry is too large to fit into Int32")
@@ -10328,6 +10878,10 @@ func (c FfiConverterSequenceFutOptDailyData) Read(reader io.Reader) []FutOptDail
 
 func (c FfiConverterSequenceFutOptDailyData) Lower(value []FutOptDailyData) C.RustBuffer {
 	return LowerIntoRustBuffer[[]FutOptDailyData](c, value)
+}
+
+func (c FfiConverterSequenceFutOptDailyData) LowerExternal(value []FutOptDailyData) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]FutOptDailyData](c, value))
 }
 
 func (c FfiConverterSequenceFutOptDailyData) Write(writer io.Writer, value []FutOptDailyData) {
@@ -10373,6 +10927,10 @@ func (c FfiConverterSequenceFutOptHistoricalCandle) Lower(value []FutOptHistoric
 	return LowerIntoRustBuffer[[]FutOptHistoricalCandle](c, value)
 }
 
+func (c FfiConverterSequenceFutOptHistoricalCandle) LowerExternal(value []FutOptHistoricalCandle) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]FutOptHistoricalCandle](c, value))
+}
+
 func (c FfiConverterSequenceFutOptHistoricalCandle) Write(writer io.Writer, value []FutOptHistoricalCandle) {
 	if len(value) > math.MaxInt32 {
 		panic("[]FutOptHistoricalCandle is too large to fit into Int32")
@@ -10414,6 +10972,10 @@ func (c FfiConverterSequenceFutOptPriceLevel) Read(reader io.Reader) []FutOptPri
 
 func (c FfiConverterSequenceFutOptPriceLevel) Lower(value []FutOptPriceLevel) C.RustBuffer {
 	return LowerIntoRustBuffer[[]FutOptPriceLevel](c, value)
+}
+
+func (c FfiConverterSequenceFutOptPriceLevel) LowerExternal(value []FutOptPriceLevel) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]FutOptPriceLevel](c, value))
 }
 
 func (c FfiConverterSequenceFutOptPriceLevel) Write(writer io.Writer, value []FutOptPriceLevel) {
@@ -10459,6 +11021,10 @@ func (c FfiConverterSequenceFutOptTicker) Lower(value []FutOptTicker) C.RustBuff
 	return LowerIntoRustBuffer[[]FutOptTicker](c, value)
 }
 
+func (c FfiConverterSequenceFutOptTicker) LowerExternal(value []FutOptTicker) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]FutOptTicker](c, value))
+}
+
 func (c FfiConverterSequenceFutOptTicker) Write(writer io.Writer, value []FutOptTicker) {
 	if len(value) > math.MaxInt32 {
 		panic("[]FutOptTicker is too large to fit into Int32")
@@ -10500,6 +11066,10 @@ func (c FfiConverterSequenceHistoricalCandle) Read(reader io.Reader) []Historica
 
 func (c FfiConverterSequenceHistoricalCandle) Lower(value []HistoricalCandle) C.RustBuffer {
 	return LowerIntoRustBuffer[[]HistoricalCandle](c, value)
+}
+
+func (c FfiConverterSequenceHistoricalCandle) LowerExternal(value []HistoricalCandle) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]HistoricalCandle](c, value))
 }
 
 func (c FfiConverterSequenceHistoricalCandle) Write(writer io.Writer, value []HistoricalCandle) {
@@ -10545,6 +11115,10 @@ func (c FfiConverterSequenceInstitutionalTradesEntry) Lower(value []Institutiona
 	return LowerIntoRustBuffer[[]InstitutionalTradesEntry](c, value)
 }
 
+func (c FfiConverterSequenceInstitutionalTradesEntry) LowerExternal(value []InstitutionalTradesEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]InstitutionalTradesEntry](c, value))
+}
+
 func (c FfiConverterSequenceInstitutionalTradesEntry) Write(writer io.Writer, value []InstitutionalTradesEntry) {
 	if len(value) > math.MaxInt32 {
 		panic("[]InstitutionalTradesEntry is too large to fit into Int32")
@@ -10586,6 +11160,10 @@ func (c FfiConverterSequenceIntradayCandle) Read(reader io.Reader) []IntradayCan
 
 func (c FfiConverterSequenceIntradayCandle) Lower(value []IntradayCandle) C.RustBuffer {
 	return LowerIntoRustBuffer[[]IntradayCandle](c, value)
+}
+
+func (c FfiConverterSequenceIntradayCandle) LowerExternal(value []IntradayCandle) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]IntradayCandle](c, value))
 }
 
 func (c FfiConverterSequenceIntradayCandle) Write(writer io.Writer, value []IntradayCandle) {
@@ -10631,6 +11209,10 @@ func (c FfiConverterSequenceKdjDataPoint) Lower(value []KdjDataPoint) C.RustBuff
 	return LowerIntoRustBuffer[[]KdjDataPoint](c, value)
 }
 
+func (c FfiConverterSequenceKdjDataPoint) LowerExternal(value []KdjDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]KdjDataPoint](c, value))
+}
+
 func (c FfiConverterSequenceKdjDataPoint) Write(writer io.Writer, value []KdjDataPoint) {
 	if len(value) > math.MaxInt32 {
 		panic("[]KdjDataPoint is too large to fit into Int32")
@@ -10672,6 +11254,10 @@ func (c FfiConverterSequenceListingApplicant) Read(reader io.Reader) []ListingAp
 
 func (c FfiConverterSequenceListingApplicant) Lower(value []ListingApplicant) C.RustBuffer {
 	return LowerIntoRustBuffer[[]ListingApplicant](c, value)
+}
+
+func (c FfiConverterSequenceListingApplicant) LowerExternal(value []ListingApplicant) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]ListingApplicant](c, value))
 }
 
 func (c FfiConverterSequenceListingApplicant) Write(writer io.Writer, value []ListingApplicant) {
@@ -10717,6 +11303,10 @@ func (c FfiConverterSequenceMacdDataPoint) Lower(value []MacdDataPoint) C.RustBu
 	return LowerIntoRustBuffer[[]MacdDataPoint](c, value)
 }
 
+func (c FfiConverterSequenceMacdDataPoint) LowerExternal(value []MacdDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]MacdDataPoint](c, value))
+}
+
 func (c FfiConverterSequenceMacdDataPoint) Write(writer io.Writer, value []MacdDataPoint) {
 	if len(value) > math.MaxInt32 {
 		panic("[]MacdDataPoint is too large to fit into Int32")
@@ -10758,6 +11348,10 @@ func (c FfiConverterSequenceMover) Read(reader io.Reader) []Mover {
 
 func (c FfiConverterSequenceMover) Lower(value []Mover) C.RustBuffer {
 	return LowerIntoRustBuffer[[]Mover](c, value)
+}
+
+func (c FfiConverterSequenceMover) LowerExternal(value []Mover) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]Mover](c, value))
 }
 
 func (c FfiConverterSequenceMover) Write(writer io.Writer, value []Mover) {
@@ -10803,6 +11397,10 @@ func (c FfiConverterSequencePriceLevel) Lower(value []PriceLevel) C.RustBuffer {
 	return LowerIntoRustBuffer[[]PriceLevel](c, value)
 }
 
+func (c FfiConverterSequencePriceLevel) LowerExternal(value []PriceLevel) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]PriceLevel](c, value))
+}
+
 func (c FfiConverterSequencePriceLevel) Write(writer io.Writer, value []PriceLevel) {
 	if len(value) > math.MaxInt32 {
 		panic("[]PriceLevel is too large to fit into Int32")
@@ -10844,6 +11442,10 @@ func (c FfiConverterSequenceProduct) Read(reader io.Reader) []Product {
 
 func (c FfiConverterSequenceProduct) Lower(value []Product) C.RustBuffer {
 	return LowerIntoRustBuffer[[]Product](c, value)
+}
+
+func (c FfiConverterSequenceProduct) LowerExternal(value []Product) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]Product](c, value))
 }
 
 func (c FfiConverterSequenceProduct) Write(writer io.Writer, value []Product) {
@@ -10889,6 +11491,10 @@ func (c FfiConverterSequenceRsiDataPoint) Lower(value []RsiDataPoint) C.RustBuff
 	return LowerIntoRustBuffer[[]RsiDataPoint](c, value)
 }
 
+func (c FfiConverterSequenceRsiDataPoint) LowerExternal(value []RsiDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]RsiDataPoint](c, value))
+}
+
 func (c FfiConverterSequenceRsiDataPoint) Write(writer io.Writer, value []RsiDataPoint) {
 	if len(value) > math.MaxInt32 {
 		panic("[]RsiDataPoint is too large to fit into Int32")
@@ -10930,6 +11536,10 @@ func (c FfiConverterSequenceSmaDataPoint) Read(reader io.Reader) []SmaDataPoint 
 
 func (c FfiConverterSequenceSmaDataPoint) Lower(value []SmaDataPoint) C.RustBuffer {
 	return LowerIntoRustBuffer[[]SmaDataPoint](c, value)
+}
+
+func (c FfiConverterSequenceSmaDataPoint) LowerExternal(value []SmaDataPoint) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]SmaDataPoint](c, value))
 }
 
 func (c FfiConverterSequenceSmaDataPoint) Write(writer io.Writer, value []SmaDataPoint) {
@@ -10975,6 +11585,10 @@ func (c FfiConverterSequenceSnapshotQuote) Lower(value []SnapshotQuote) C.RustBu
 	return LowerIntoRustBuffer[[]SnapshotQuote](c, value)
 }
 
+func (c FfiConverterSequenceSnapshotQuote) LowerExternal(value []SnapshotQuote) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]SnapshotQuote](c, value))
+}
+
 func (c FfiConverterSequenceSnapshotQuote) Write(writer io.Writer, value []SnapshotQuote) {
 	if len(value) > math.MaxInt32 {
 		panic("[]SnapshotQuote is too large to fit into Int32")
@@ -11016,6 +11630,10 @@ func (c FfiConverterSequenceTdccDistributionEntry) Read(reader io.Reader) []Tdcc
 
 func (c FfiConverterSequenceTdccDistributionEntry) Lower(value []TdccDistributionEntry) C.RustBuffer {
 	return LowerIntoRustBuffer[[]TdccDistributionEntry](c, value)
+}
+
+func (c FfiConverterSequenceTdccDistributionEntry) LowerExternal(value []TdccDistributionEntry) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]TdccDistributionEntry](c, value))
 }
 
 func (c FfiConverterSequenceTdccDistributionEntry) Write(writer io.Writer, value []TdccDistributionEntry) {
@@ -11061,6 +11679,10 @@ func (c FfiConverterSequenceTdccDistributionLevel) Lower(value []TdccDistributio
 	return LowerIntoRustBuffer[[]TdccDistributionLevel](c, value)
 }
 
+func (c FfiConverterSequenceTdccDistributionLevel) LowerExternal(value []TdccDistributionLevel) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]TdccDistributionLevel](c, value))
+}
+
 func (c FfiConverterSequenceTdccDistributionLevel) Write(writer io.Writer, value []TdccDistributionLevel) {
 	if len(value) > math.MaxInt32 {
 		panic("[]TdccDistributionLevel is too large to fit into Int32")
@@ -11102,6 +11724,10 @@ func (c FfiConverterSequenceTicker) Read(reader io.Reader) []Ticker {
 
 func (c FfiConverterSequenceTicker) Lower(value []Ticker) C.RustBuffer {
 	return LowerIntoRustBuffer[[]Ticker](c, value)
+}
+
+func (c FfiConverterSequenceTicker) LowerExternal(value []Ticker) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]Ticker](c, value))
 }
 
 func (c FfiConverterSequenceTicker) Write(writer io.Writer, value []Ticker) {
@@ -11147,6 +11773,10 @@ func (c FfiConverterSequenceTrade) Lower(value []Trade) C.RustBuffer {
 	return LowerIntoRustBuffer[[]Trade](c, value)
 }
 
+func (c FfiConverterSequenceTrade) LowerExternal(value []Trade) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]Trade](c, value))
+}
+
 func (c FfiConverterSequenceTrade) Write(writer io.Writer, value []Trade) {
 	if len(value) > math.MaxInt32 {
 		panic("[]Trade is too large to fit into Int32")
@@ -11188,6 +11818,10 @@ func (c FfiConverterSequenceVolumeAtPrice) Read(reader io.Reader) []VolumeAtPric
 
 func (c FfiConverterSequenceVolumeAtPrice) Lower(value []VolumeAtPrice) C.RustBuffer {
 	return LowerIntoRustBuffer[[]VolumeAtPrice](c, value)
+}
+
+func (c FfiConverterSequenceVolumeAtPrice) LowerExternal(value []VolumeAtPrice) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]VolumeAtPrice](c, value))
 }
 
 func (c FfiConverterSequenceVolumeAtPrice) Write(writer io.Writer, value []VolumeAtPrice) {
@@ -11279,7 +11913,7 @@ func marketdata_uniffi_uniffiFreeGorutine(data C.uint64_t) {
 //
 // # Returns
 // A RestClient instance wrapped in Arc for thread-safe access
-func NewRestClientWithApiKey(apiKey string) (*RestClient, *MarketDataError) {
+func NewRestClientWithApiKey(apiKey string) (*RestClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_rest_client_with_api_key(FfiConverterStringINSTANCE.Lower(apiKey), _uniffiStatus)
 	})
@@ -11287,12 +11921,12 @@ func NewRestClientWithApiKey(apiKey string) (*RestClient, *MarketDataError) {
 		var _uniffiDefaultValue *RestClient
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Create a REST client with API key authentication, custom base URL, and TLS config
-func NewRestClientWithApiKeyAndTls(apiKey string, baseUrl *string, tls TlsConfigRecord) (*RestClient, *MarketDataError) {
+func NewRestClientWithApiKeyAndTls(apiKey string, baseUrl *string, tls TlsConfigRecord) (*RestClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_rest_client_with_api_key_and_tls(FfiConverterStringINSTANCE.Lower(apiKey), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterTlsConfigRecordINSTANCE.Lower(tls), _uniffiStatus)
 	})
@@ -11300,7 +11934,7 @@ func NewRestClientWithApiKeyAndTls(apiKey string, baseUrl *string, tls TlsConfig
 		var _uniffiDefaultValue *RestClient
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
@@ -11311,7 +11945,7 @@ func NewRestClientWithApiKeyAndTls(apiKey string, baseUrl *string, tls TlsConfig
 //
 // # Returns
 // A RestClient instance wrapped in Arc for thread-safe access
-func NewRestClientWithBearerToken(bearerToken string) (*RestClient, *MarketDataError) {
+func NewRestClientWithBearerToken(bearerToken string) (*RestClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_rest_client_with_bearer_token(FfiConverterStringINSTANCE.Lower(bearerToken), _uniffiStatus)
 	})
@@ -11319,12 +11953,12 @@ func NewRestClientWithBearerToken(bearerToken string) (*RestClient, *MarketDataE
 		var _uniffiDefaultValue *RestClient
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Create a REST client with bearer token authentication, custom base URL, and TLS config
-func NewRestClientWithBearerTokenAndTls(bearerToken string, baseUrl *string, tls TlsConfigRecord) (*RestClient, *MarketDataError) {
+func NewRestClientWithBearerTokenAndTls(bearerToken string, baseUrl *string, tls TlsConfigRecord) (*RestClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_rest_client_with_bearer_token_and_tls(FfiConverterStringINSTANCE.Lower(bearerToken), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterTlsConfigRecordINSTANCE.Lower(tls), _uniffiStatus)
 	})
@@ -11332,7 +11966,7 @@ func NewRestClientWithBearerTokenAndTls(bearerToken string, baseUrl *string, tls
 		var _uniffiDefaultValue *RestClient
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
@@ -11343,7 +11977,7 @@ func NewRestClientWithBearerTokenAndTls(bearerToken string, baseUrl *string, tls
 //
 // # Returns
 // A RestClient instance wrapped in Arc for thread-safe access
-func NewRestClientWithSdkToken(sdkToken string) (*RestClient, *MarketDataError) {
+func NewRestClientWithSdkToken(sdkToken string) (*RestClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_rest_client_with_sdk_token(FfiConverterStringINSTANCE.Lower(sdkToken), _uniffiStatus)
 	})
@@ -11351,12 +11985,12 @@ func NewRestClientWithSdkToken(sdkToken string) (*RestClient, *MarketDataError) 
 		var _uniffiDefaultValue *RestClient
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
 // Create a REST client with SDK token authentication, custom base URL, and TLS config
-func NewRestClientWithSdkTokenAndTls(sdkToken string, baseUrl *string, tls TlsConfigRecord) (*RestClient, *MarketDataError) {
+func NewRestClientWithSdkTokenAndTls(sdkToken string, baseUrl *string, tls TlsConfigRecord) (*RestClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_rest_client_with_sdk_token_and_tls(FfiConverterStringINSTANCE.Lower(sdkToken), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterTlsConfigRecordINSTANCE.Lower(tls), _uniffiStatus)
 	})
@@ -11364,7 +11998,7 @@ func NewRestClientWithSdkTokenAndTls(sdkToken string, baseUrl *string, tls TlsCo
 		var _uniffiDefaultValue *RestClient
 		return _uniffiDefaultValue, _uniffiErr
 	} else {
-		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), _uniffiErr
+		return FfiConverterRestClientINSTANCE.Lift(_uniffiRV), nil
 	}
 }
 
