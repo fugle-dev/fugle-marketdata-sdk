@@ -5,12 +5,24 @@ build-backend = "maturin"
 [project]
 name = "fugle-marketdata"
 version = "3.0.0rc1"
-description = "Python bindings for Fugle marketdata-core"
+description = "Fugle market data REST and WebSocket client, powered by a Rust core"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+authors = [{ name = "Fugle Team" }]
+keywords = ["fugle", "marketdata", "taiwan", "stock", "futures", "options", "websocket"]
 requires-python = ">=3.7"
 dependencies = [
     "importlib-metadata>=4.0; python_version < '3.8'",
 ]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
