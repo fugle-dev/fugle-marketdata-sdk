@@ -16,6 +16,13 @@ name: Release
 # --dry-run, NuGet pack, Go module assembly and smoke test, PyPI wheel
 # checks). Nothing is published and no GitHub Release is created. Only a tag
 # push releases.
+#
+# Each registry is opt-in through a repository variable, so registries can be
+# brought online one at a time as their credentials are configured:
+#   PUBLISH_PYPI, PUBLISH_NPM, PUBLISH_NUGET, PUBLISH_GO, PUBLISH_JAVA = true
+# A rehearsal exercises every registry regardless. To publish a registry that
+# was disabled when a tag was released, enable it and re-run that Release
+# run; every publish step skips versions that already exist.
 on:
   push:
     tags:
@@ -46,6 +53,10 @@ jobs:
       channel: ${{ steps.v.outputs.channel }}
       npm_tag: ${{ steps.v.outputs.npm_tag }}
       dry_run: ${{ steps.mode.outputs.dry_run }}
+      publish_pypi: ${{ steps.registries.outputs.pypi }}
+      publish_npm: ${{ steps.registries.outputs.npm }}
+      publish_nuget: ${{ steps.registries.outputs.nuget }}
+      publish_go: ${{ steps.registries.outputs.go }}
     steps:
       - uses: actions/checkout@v4
 
@@ -72,6 +83,28 @@ jobs:
           fi
           python3 scripts/release-versions.py resolve --tag "$TAG" --github-output "$GITHUB_OUTPUT"
 
+      - id: registries
+        env:
+          DRY_RUN: ${{ steps.mode.outputs.dry_run }}
+          PUBLISH_PYPI: ${{ vars.PUBLISH_PYPI }}
+          PUBLISH_NPM: ${{ vars.PUBLISH_NPM }}
+          PUBLISH_NUGET: ${{ vars.PUBLISH_NUGET }}
+          PUBLISH_GO: ${{ vars.PUBLISH_GO }}
+        run: |
+          enabled=0
+          for pair in pypi:PUBLISH_PYPI npm:PUBLISH_NPM nuget:PUBLISH_NUGET go:PUBLISH_GO; do
+            key=${pair%%:*}; var=${pair#*:}
+            if [[ "$DRY_RUN" == "true" || "${!var}" == "true" ]]; then
+              echo "$key=true" >> "$GITHUB_OUTPUT"; enabled=$((enabled + 1))
+            else
+              echo "$key=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          if [[ "$enabled" == "0" ]]; then
+            echo "::error::No registry is enabled. Set at least one of PUBLISH_PYPI, PUBLISH_NPM, PUBLISH_NUGET, PUBLISH_GO to true."
+            exit 1
+          fi
+
       - name: Summary
         run: |
           {
@@ -87,6 +120,13 @@ jobs:
             echo "| Node.js | ${{ steps.v.outputs.version }} (npm tag \`${{ steps.v.outputs.npm_tag }}\`) |"
             echo "| C# / Go / C++ | ${{ steps.v.outputs.uniffi_version }} |"
             echo "| Rust core (built against) | ${{ steps.v.outputs.rust_version }} |"
+            echo ""
+            echo "| Registry | Publish |"
+            echo "|---|---|"
+            echo "| PyPI | ${{ steps.registries.outputs.pypi }} |"
+            echo "| npm | ${{ steps.registries.outputs.npm }} |"
+            echo "| NuGet | ${{ steps.registries.outputs.nuget }} |"
+            echo "| Go module | ${{ steps.registries.outputs.go }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ==============================================================
@@ -125,6 +165,7 @@ jobs:
   publish-python:
     name: Publish to PyPI
     needs: [resolve, build-python]
+    if: needs.resolve.outputs.publish_pypi == 'true'
     runs-on: ubuntu-latest
     environment:
       name: release
@@ -167,6 +208,7 @@ jobs:
   publish-nodejs:
     name: Publish to npm
     needs: [resolve, build-nodejs]
+    if: needs.resolve.outputs.publish_npm == 'true'
     uses: ./.github/workflows/publish-nodejs.yml
     with:
       npm_tag: ${{ needs.resolve.outputs.npm_tag }}
@@ -176,6 +218,7 @@ jobs:
   publish-nuget:
     name: Publish to NuGet
     needs: [resolve, build-uniffi]
+    if: needs.resolve.outputs.publish_nuget == 'true'
     uses: ./.github/workflows/publish-nuget.yml
     with:
       version: ${{ needs.resolve.outputs.uniffi_version }}
@@ -185,6 +228,7 @@ jobs:
   publish-go:
     name: Publish Go module
     needs: [resolve, build-uniffi]
+    if: needs.resolve.outputs.publish_go == 'true'
     uses: ./.github/workflows/publish-go.yml
     with:
       version: ${{ needs.resolve.outputs.uniffi_version }}
@@ -299,6 +343,10 @@ jobs:
           CHANNEL: ${{ needs.resolve.outputs.channel }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
+          ON_PYPI: ${{ needs.resolve.outputs.publish_pypi }}
+          ON_NPM: ${{ needs.resolve.outputs.publish_npm }}
+          ON_NUGET: ${{ needs.resolve.outputs.publish_nuget }}
+          ON_GO: ${{ needs.resolve.outputs.publish_go }}
         run: |
           if [[ "$CHANNEL" == "prerelease" ]]; then
             PIP_PRE="--pre "; NUGET_PRE=" --prerelease"
@@ -306,6 +354,14 @@ jobs:
           else
             PIP_PRE=""; NUGET_PRE=""; BANNER=""
           fi
+          # One row per registry that this run publishes.
+          ROWS=""
+          add_row() { ROWS+="${ROWS:+$'\n'}$1"; }
+          [[ "$ON_PYPI" == "true" ]] && add_row "| Python | [\`fugle-marketdata\`](https://pypi.org/project/fugle-marketdata/${PY}/) | ${PY} | \`pip install ${PIP_PRE}\"fugle-marketdata==${PY}\"\` |"
+          [[ "$ON_NPM" == "true" ]] && add_row "| Node.js | [\`@fugle/marketdata\`](https://www.npmjs.com/package/@fugle/marketdata/v/${VERSION}) | ${VERSION} | \`npm install @fugle/marketdata@${NPM_TAG}\` |"
+          [[ "$ON_NUGET" == "true" ]] && add_row "| C# | [\`Fugle.MarketData\`](https://www.nuget.org/packages/Fugle.MarketData/${UNIFFI}) | ${UNIFFI} | \`dotnet add package Fugle.MarketData --version ${UNIFFI}\` |"
+          [[ "$ON_GO" == "true" ]] && add_row "| Go | [\`github.com/fugle-dev/fugle-marketdata-go\`](https://pkg.go.dev/github.com/fugle-dev/fugle-marketdata-go@v${UNIFFI}) | v${UNIFFI} | \`go get github.com/fugle-dev/fugle-marketdata-go@v${UNIFFI}\` |"
+
           cat > notes.md <<EOF
           ## Fugle Market Data SDK ${VERSION}
 
@@ -313,10 +369,7 @@ jobs:
 
           | Language | Package | Version | Install |
           |---|---|---|---|
-          | Python | [\`fugle-marketdata\`](https://pypi.org/project/fugle-marketdata/${PY}/) | ${PY} | \`pip install ${PIP_PRE}"fugle-marketdata==${PY}"\` |
-          | Node.js | [\`@fugle/marketdata\`](https://www.npmjs.com/package/@fugle/marketdata/v/${VERSION}) | ${VERSION} | \`npm install @fugle/marketdata@${NPM_TAG}\` |
-          | C# | [\`Fugle.MarketData\`](https://www.nuget.org/packages/Fugle.MarketData/${UNIFFI}) | ${UNIFFI} | \`dotnet add package Fugle.MarketData --version ${UNIFFI}\` |
-          | Go | [\`github.com/fugle-dev/fugle-marketdata-go\`](https://pkg.go.dev/github.com/fugle-dev/fugle-marketdata-go@v${UNIFFI}) | v${UNIFFI} | \`go get github.com/fugle-dev/fugle-marketdata-go@v${UNIFFI}\` |
+          ${ROWS}
           | C++ | tarballs attached below | ${UNIFFI} | see [docs/INSTALL.md](https://github.com/${REPO}/blob/${SHA}/docs/INSTALL.md#c) |
 
           Built against Rust core \`fugle-marketdata-core\` ${RUST}. Rust crates are released separately on crates.io.

@@ -20,8 +20,16 @@ Usage
         Prints (and optionally appends to $GITHUB_OUTPUT) the values the
         release workflow needs.
 
-The tag names a *bindings* release. Rust crates are published by hand with
-`cargo publish` and tagged `rust-vX.Y.Z`; see docs/RELEASING.md.
+    scripts/release-versions.py require-rc --track rust
+        Fail unless the given track's version is a release candidate.
+
+The tag names a *bindings* release. Rust crates are tagged `rust-vX.Y.Z` and
+released by .github/workflows/release-rust.yml; see docs/RELEASING.md.
+
+Release policy: only release candidates (`X.Y.Z-rc.N`) may be published, on
+every registry. `resolve` enforces this for the bindings and UniFFI tracks and
+`require-rc` for the Rust track. There is deliberately no flag to bypass it;
+publishing a stable version requires changing RC_ONLY below in a reviewed PR.
 """
 from __future__ import annotations
 
@@ -33,6 +41,10 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Publishing policy: release candidates only. See the module docstring.
+RC_ONLY = True
+RC = re.compile(r"^\d+\.\d+\.\d+-rc\.\d+$")
+
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
 PEP440_PRE = {"alpha": "a", "beta": "b", "rc": "rc"}
 
@@ -89,6 +101,18 @@ def check(versions: dict[str, dict[str, str]]) -> list[str]:
     return errors
 
 
+def rc_errors(versions: dict[str, dict[str, str]], tracks: list[str]) -> list[str]:
+    if not RC_ONLY:
+        return []
+    ref = {"bindings": "js/package.json", "rust": "core/Cargo.toml", "uniffi": "uniffi/Cargo.toml"}
+    return [
+        f"[{t}] {ref[t]} = {versions[t][ref[t]]!r} is not a release candidate (X.Y.Z-rc.N). "
+        "Only release candidates may be published."
+        for t in tracks
+        if not RC.match(versions[t][ref[t]])
+    ]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -96,6 +120,8 @@ def main() -> int:
     r = sub.add_parser("resolve")
     r.add_argument("--tag", required=True)
     r.add_argument("--github-output")
+    rc = sub.add_parser("require-rc")
+    rc.add_argument("--track", required=True, choices=["bindings", "rust", "uniffi"], action="append")
     args = ap.parse_args()
 
     versions = collect()
@@ -110,6 +136,17 @@ def main() -> int:
     if args.cmd == "check":
         print("All version tracks are internally consistent.")
         return 0
+    if args.cmd == "require-rc":
+        rc_errs = rc_errors(versions, args.track)
+        for e in rc_errs:
+            print(f"::error::{e}")
+        return 1 if rc_errs else 0
+
+    rc_errs = rc_errors(versions, ["bindings", "uniffi"])
+    for e in rc_errs:
+        print(f"::error::{e}")
+    if rc_errs:
+        return 1
 
     bindings = versions["bindings"]["js/package.json"]
     tag_version = args.tag.removeprefix("refs/tags/").removeprefix("v")

@@ -80,6 +80,11 @@ jobs:
             echo "::error file=uniffi/Cargo.toml::Requested Go version $VERSION does not match uniffi/Cargo.toml ($MANIFEST_VERSION)"
             exit 1
           fi
+          # Release policy: only release candidates (X.Y.Z-rc.N) may be published. See scripts/release-versions.py.
+          if [[ "${{ inputs.dry-run }}" != "true" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "::error::$VERSION is not a release candidate; only X.Y.Z-rc.N may be published"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Publishing $GO_REPO v$VERSION"
 
