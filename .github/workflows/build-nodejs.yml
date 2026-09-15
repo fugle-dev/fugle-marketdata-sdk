@@ -49,26 +49,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS x64
           - target: x86_64-apple-darwin
             os: macos-latest
-
-          # macOS ARM64
+            node_file: marketdata-js.darwin-x64.node
+            arch: x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-
-          # Linux x64 (glibc)
+            node_file: marketdata-js.darwin-arm64.node
+            arch: arm64
+          # Linux targets use napi-rs's prebuilt gcc toolchain with a
+          # glibc 2.17 sysroot, the same baseline as the manylinux2014 wheels.
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-
-          # Linux ARM64 (glibc) - requires cross-compilation
+            node_file: marketdata-js.linux-x64-gnu.node
+            arch: x86-64
+            napi_cross: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: true
-
-          # Windows x64
+            node_file: marketdata-js.linux-arm64-gnu.node
+            arch: aarch64
+            napi_cross: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            node_file: marketdata-js.win32-x64-msvc.node
 
     runs-on: ${{ matrix.os }}
 
@@ -78,7 +81,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -88,35 +91,46 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: js -> target
+          workspaces: ". -> target"
           shared-key: nodejs-release-${{ matrix.target }}
-
-      # Linux ARM64 cross-compilation setup
-      - name: Install cross-compilation tools (Linux ARM64)
-        if: matrix.cross == true
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Install npm dependencies
         working-directory: js
         run: npm ci
 
-      # Build with napi-rs
+      # Call napi directly: `npm run build -- --target X` appended the flag to
+      # the end of the build script (after `&& node scripts/postbuild.js`), so
+      # napi never saw it and every job built for its own host.
       - name: Build native addon
         working-directory: js
-        run: npm run build -- --target ${{ matrix.target }}
-        env:
-          # For Linux ARM64 cross-compilation
-          CC_aarch64_unknown_linux_gnu: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
-          CXX_aarch64_unknown_linux_gnu: ${{ matrix.cross && 'aarch64-linux-gnu-g++' || '' }}
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
+        shell: bash
+        run: npx napi build -p marketdata-js --platform --release --target ${{ matrix.target }} ${{ matrix.napi_cross && '--use-napi-cross' || '' }}
+
+      - name: Verify addon
+        working-directory: js
+        shell: bash
+        run: |
+          ls -la ./*.node
+          count=$(find . -maxdepth 1 -name '*.node' | wc -l | tr -d ' ')
+          [[ "$count" == "1" ]] || { echo "::error::expected one .node file, found $count"; exit 1; }
+          [[ -f "${{ matrix.node_file }}" ]] || { echo "::error::expected ${{ matrix.node_file }}"; exit 1; }
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            desc=$(file "${{ matrix.node_file }}")
+            echo "$desc"
+            [[ "$desc" == *"${{ matrix.arch }}"* ]] || { echo "::error::expected ${{ matrix.arch }} binary"; exit 1; }
+          fi
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            max=$(readelf -V "${{ matrix.node_file }}" | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -1)
+            echo "requires $max"
+            [[ "$(printf '%s\n' "$max" GLIBC_2.17 | sort -V | tail -1)" == "GLIBC_2.17" ]] \
+              || { echo "::error::requires $max, expected <= GLIBC_2.17"; exit 1; }
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
-          path: js/*.node
+          path: js/${{ matrix.node_file }}
           if-no-files-found: error
           retention-days: 7
 

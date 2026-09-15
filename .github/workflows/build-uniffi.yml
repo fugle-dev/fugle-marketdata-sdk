@@ -65,8 +65,31 @@ jobs:
           workspaces: ". -> target"
           shared-key: uniffi-default-release
 
+      # cargo-zigbuild links Linux targets against an older glibc.
+      - name: Install cargo-zigbuild
+        if: runner.os == 'Linux'
+        run: pip install --user cargo-zigbuild==0.23.4 ziglang==0.15.1
+
       - name: Build UniFFI cdylib
-        run: cargo build --release -p marketdata-uniffi --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            cargo zigbuild --release -p marketdata-uniffi --target ${{ matrix.target }}.2.17
+          else
+            cargo build --release -p marketdata-uniffi --target ${{ matrix.target }}
+          fi
+
+      # Linux libraries are linked against glibc 2.17 (same baseline as the
+      # manylinux2014 Python wheels) so they load on older distributions such
+      # as RHEL 8, Debian 11 and Amazon Linux 2.
+      - name: Verify glibc baseline
+        if: runner.os == 'Linux'
+        run: |
+          lib=target/${{ matrix.target }}/release/${{ matrix.lib }}
+          max=$(readelf -V "$lib" | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -1)
+          echo "$lib requires $max"
+          [[ "$(printf '%s\n' "$max" GLIBC_2.17 | sort -V | tail -1)" == "GLIBC_2.17" ]] \
+            || { echo "::error::$lib requires $max, expected <= GLIBC_2.17"; exit 1; }
 
       - name: Upload native library artifact
         uses: actions/upload-artifact@v4
@@ -121,8 +144,31 @@ jobs:
           workspaces: ". -> target"
           shared-key: uniffi-cpp-release
 
+      # cargo-zigbuild links Linux targets against an older glibc.
+      - name: Install cargo-zigbuild
+        if: runner.os == 'Linux'
+        run: pip install --user cargo-zigbuild==0.23.4 ziglang==0.15.1
+
       - name: Build UniFFI cdylib (cpp feature)
-        run: cargo build --release -p marketdata-uniffi --features cpp --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            cargo zigbuild --release -p marketdata-uniffi --features cpp --target ${{ matrix.target }}.2.17
+          else
+            cargo build --release -p marketdata-uniffi --features cpp --target ${{ matrix.target }}
+          fi
+
+      # Linux libraries are linked against glibc 2.17 (same baseline as the
+      # manylinux2014 Python wheels) so they load on older distributions such
+      # as RHEL 8, Debian 11 and Amazon Linux 2.
+      - name: Verify glibc baseline
+        if: runner.os == 'Linux'
+        run: |
+          lib=target/${{ matrix.target }}/release/${{ matrix.lib }}
+          max=$(readelf -V "$lib" | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -1)
+          echo "$lib requires $max"
+          [[ "$(printf '%s\n' "$max" GLIBC_2.17 | sort -V | tail -1)" == "GLIBC_2.17" ]] \
+            || { echo "::error::$lib requires $max, expected <= GLIBC_2.17"; exit 1; }
 
       - name: Upload native library artifact
         uses: actions/upload-artifact@v4
