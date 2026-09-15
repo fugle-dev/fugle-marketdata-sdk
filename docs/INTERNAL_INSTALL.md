@@ -41,7 +41,7 @@ then install directly from the URL:
 
 ```bash
 VERSION=0.2.0-rc.1
-pip install "https://github.com/kevinypfan/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle_marketdata-${VERSION//-/rc}-cp39-abi3-macosx_11_0_arm64.whl"
+pip install "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle_marketdata-${VERSION//-/rc}-cp39-abi3-macosx_11_0_arm64.whl"
 ```
 
 > **Note on filename**: maturin normalizes semver `0.2.0-rc.1` to PEP 440
@@ -75,7 +75,7 @@ resolution — just a single file install.
 
 ```bash
 VERSION=0.2.0-rc.1
-curl -LO "https://github.com/kevinypfan/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle-marketdata-${VERSION}.tgz"
+curl -LO "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle-marketdata-${VERSION}.tgz"
 npm install ./fugle-marketdata-${VERSION}.tgz
 ```
 
@@ -103,7 +103,7 @@ source:
 VERSION=0.2.0-rc.1
 mkdir -p ~/.nuget/fugle-internal
 curl -L -o ~/.nuget/fugle-internal/MarketdataUniffi.${VERSION}.nupkg \
-  "https://github.com/kevinypfan/fugle-marketdata-sdk/releases/download/v${VERSION}/MarketdataUniffi.${VERSION}.nupkg"
+  "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/v${VERSION}/MarketdataUniffi.${VERSION}.nupkg"
 
 dotnet nuget add source ~/.nuget/fugle-internal -n fugle-internal
 ```
@@ -147,7 +147,7 @@ a GitHub Personal Access Token (PAT) with the `read:packages` scope.
 // build.gradle.kts
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/kevinypfan/fugle-marketdata-sdk")
+        url = uri("https://maven.pkg.github.com/fugle-dev/fugle-marketdata-sdk")
         credentials {
             username = System.getenv("GITHUB_ACTOR")
             password = System.getenv("GITHUB_TOKEN")
@@ -176,7 +176,7 @@ dependencies {
 <repositories>
   <repository>
     <id>github</id>
-    <url>https://maven.pkg.github.com/kevinypfan/fugle-marketdata-sdk</url>
+    <url>https://maven.pkg.github.com/fugle-dev/fugle-marketdata-sdk</url>
   </repository>
 </repositories>
 
@@ -203,7 +203,7 @@ VERSION=0.2.0-rc.1
 # Pick the right platform: linux-x64, osx-arm64, osx-x64, win-x64
 PLATFORM=osx-arm64
 
-curl -LO "https://github.com/kevinypfan/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle-marketdata-go-${PLATFORM}-${VERSION}.tar.gz"
+curl -LO "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle-marketdata-go-${PLATFORM}-${VERSION}.tar.gz"
 mkdir -p vendor
 tar -xzf "fugle-marketdata-go-${PLATFORM}-${VERSION}.tar.gz" -C vendor/
 # This creates vendor/fugle-marketdata-go-<platform>-<version>/{src,lib,README.md}
@@ -266,7 +266,7 @@ UniFFI native library, and you compile against them directly.
 VERSION=0.2.0-rc.1
 PLATFORM=osx-arm64  # or linux-x64, osx-x64, win-x64
 
-curl -LO "https://github.com/kevinypfan/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
+curl -LO "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/v${VERSION}/fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
 tar -xzf "fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
 # Creates fugle-marketdata-cpp-<platform>-<version>/{include,lib,README.md}
 ```

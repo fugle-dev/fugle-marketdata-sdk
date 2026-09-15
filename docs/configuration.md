@@ -92,7 +92,7 @@ FugleRestClient client = FugleRestClient.builder()
 #### Go
 
 ```go
-import "github.com/fugle/marketdata-sdk-go/marketdata"
+import marketdata "github.com/fugle-dev/fugle-marketdata-go"
 
 // Default configuration
 client, err := marketdata.NewFugleRestClient(
@@ -226,7 +226,7 @@ FugleRestClient client = FugleRestClient.builder()
 #### Go
 
 ```go
-import "github.com/fugle/marketdata-sdk-go/marketdata"
+import marketdata "github.com/fugle-dev/fugle-marketdata-go"
 
 // Health check disabled by default
 client, err := marketdata.NewFugleRestClient(
@@ -349,7 +349,7 @@ FugleRestClient client = FugleRestClient.builder()
 #### Go
 
 ```go
-import "github.com/fugle/marketdata-sdk-go/marketdata"
+import marketdata "github.com/fugle-dev/fugle-marketdata-go"
 
 // API key authentication
 client, err := marketdata.NewFugleRestClient(

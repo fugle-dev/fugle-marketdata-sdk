@@ -446,14 +446,14 @@ FugleRestClient client = FugleRestClient.builder()
 
 **Before (v0.2.x):**
 ```go
-import "github.com/fugle/marketdata-sdk-go/marketdata"
+import marketdata "github.com/fugle-dev/fugle-marketdata-go"
 
 client, err := marketdata.NewRestClientWithApiKey("your-api-key")
 ```
 
 **After (v0.3.0):**
 ```go
-import "github.com/fugle/marketdata-sdk-go/marketdata"
+import marketdata "github.com/fugle-dev/fugle-marketdata-go"
 
 client, err := marketdata.NewFugleRestClient(
     marketdata.WithApiKey("your-api-key"),

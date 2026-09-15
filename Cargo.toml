@@ -1,12 +1,12 @@
 [workspace]
-members = ["core", "py", "js", "uniffi", "gui-web/src-tauri", "rust"]
+members = ["core", "py", "js", "uniffi", "rust"]
 resolver = "2"
 
 [workspace.package]
 version = "3.0.0-rc.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/fugle/fugle-marketdata-sdk"
+repository = "https://github.com/fugle-dev/fugle-marketdata-sdk"
 homepage = "https://developer.fugle.tw"
 authors = ["Fugle Team"]
 

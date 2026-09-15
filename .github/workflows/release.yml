@@ -503,7 +503,7 @@ jobs:
           ```kotlin
           repositories {
               maven {
-                  url = uri("https://maven.pkg.github.com/kevinypfan/fugle-marketdata-sdk")
+                  url = uri("https://maven.pkg.github.com/fugle-dev/fugle-marketdata-sdk")
                   credentials {
                       username = System.getenv("GITHUB_ACTOR")
                       password = System.getenv("GITHUB_TOKEN")

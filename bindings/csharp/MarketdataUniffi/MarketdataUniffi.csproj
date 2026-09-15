@@ -7,10 +7,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageId>MarketdataUniffi</PackageId>
     <Version>0.1.0-rc.1</Version>
-    <Authors>Zack Fan</Authors>
+    <Authors>Fugle Team</Authors>
     <Description>UniFFI-generated bindings for Fugle Market Data SDK</Description>
     <PackageTags>fugle;marketdata;ffi;uniffi</PackageTags>
-    <RepositoryUrl>https://github.com/kevinypfan/fugle-marketdata-sdk</RepositoryUrl>
+    <RepositoryUrl>https://github.com/fugle-dev/fugle-marketdata-sdk</RepositoryUrl>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>

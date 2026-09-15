@@ -16,7 +16,7 @@ publishing {
             pom {
                 name.set("Fugle Market Data SDK for Java")
                 description.set("UniFFI-generated Java bindings for Fugle Market Data SDK")
-                url.set("https://github.com/kevinypfan/fugle-marketdata-sdk")
+                url.set("https://github.com/fugle-dev/fugle-marketdata-sdk")
 
                 licenses {
                     license {
@@ -27,15 +27,15 @@ publishing {
 
                 developers {
                     developer {
-                        id.set("kevinypfan")
+                        id.set("fugle-dev")
                         name.set("Fugle Development Team")
                     }
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/kevinypfan/fugle-marketdata-sdk.git")
-                    developerConnection.set("scm:git:ssh://github.com:kevinypfan/fugle-marketdata-sdk.git")
-                    url.set("https://github.com/kevinypfan/fugle-marketdata-sdk")
+                    connection.set("scm:git:git://github.com/fugle-dev/fugle-marketdata-sdk.git")
+                    developerConnection.set("scm:git:ssh://github.com:fugle-dev/fugle-marketdata-sdk.git")
+                    url.set("https://github.com/fugle-dev/fugle-marketdata-sdk")
                 }
             }
         }
@@ -43,7 +43,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/kevinypfan/fugle-marketdata-sdk")
+            url = uri("https://maven.pkg.github.com/fugle-dev/fugle-marketdata-sdk")
             credentials {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
