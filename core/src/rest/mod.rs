@@ -15,6 +15,9 @@ mod symbol_path;
 
 pub(crate) use symbol_path::encode_symbol;
 
+#[cfg(test)]
+mod http_tests;
+
 /// Decode a JSON response body.
 ///
 /// Reads the whole (already decompressed) body into memory and parses it with

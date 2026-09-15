@@ -14,6 +14,9 @@ use crate::tls::{build_rustls_config, TlsConfig};
 /// 20 ms on a reused one.
 const MAX_IDLE_CONNECTIONS_PER_HOST: usize = 16;
 
+/// Network timeout applied to each phase of a request.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Main REST client with connection pooling via ureq Agent
 ///
 /// The RestClient uses ureq's Agent for automatic connection pooling and reuse.
@@ -73,10 +76,20 @@ impl RestClient {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn with_tls(auth: Auth, tls: TlsConfig) -> Result<Self, MarketDataError> {
+        Self::with_tls_and_timeout(auth, tls, REQUEST_TIMEOUT)
+    }
+
+    /// `with_tls` with a custom network timeout. Crate-internal so tests can
+    /// exercise the timeout path without waiting the full default.
+    pub(crate) fn with_tls_and_timeout(
+        auth: Auth,
+        tls: TlsConfig,
+        timeout: std::time::Duration,
+    ) -> Result<Self, MarketDataError> {
         let tls_config = build_rustls_config(&tls)?;
         let builder = ureq::AgentBuilder::new()
-            .timeout_read(std::time::Duration::from_secs(30))
-            .timeout_write(std::time::Duration::from_secs(30))
+            .timeout_read(timeout)
+            .timeout_write(timeout)
             .max_idle_connections_per_host(MAX_IDLE_CONNECTIONS_PER_HOST)
             .tls_config(tls_config);
 
