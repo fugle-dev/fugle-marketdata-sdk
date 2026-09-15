@@ -1,74 +1,183 @@
 name: CI
 
+# Runs on every pull request and on main. Linux only to keep it fast; the
+# full OS x language matrix lives in test.yml (manual) and the post-release
+# install matrix in verify-release.yml.
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
 jobs:
-  changes:
-    name: Detect Changes
+  versions:
+    name: Version tracks
+    uses: ./.github/workflows/version-check.yml
+
+  rust:
+    name: Rust (clippy, tests, publish dry-run)
     runs-on: ubuntu-latest
-    outputs:
-      core: ${{ steps.filter.outputs.core }}
-      python: ${{ steps.filter.outputs.python }}
-      nodejs: ${{ steps.filter.outputs.nodejs }}
-      csharp: ${{ steps.filter.outputs.csharp }}
-      uniffi: ${{ steps.filter.outputs.uniffi }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          filters: |
-            core:
-              - 'core/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            python:
-              - 'py/**'
-              - 'core/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            nodejs:
-              - 'js/**'
-              - 'core/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            csharp:
-              - 'uniffi/**'
-              - 'core/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            uniffi:
-              - 'uniffi/**'
-              - 'bindings/**'
-              - 'core/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-rust
+
+      - name: Clippy
+        run: >
+          cargo clippy --locked --all-targets --all-features
+          -p fugle-marketdata-core -p fugle-marketdata -p marketdata-uniffi -p marketdata-py -p marketdata-js
+          -- -D warnings
+
+      - name: Test core and facade
+        run: |
+          cargo test --locked --all-features -p fugle-marketdata-core
+          cargo test --locked -p fugle-marketdata
+
+      - name: Test UniFFI crate
+        run: cargo test --locked -p marketdata-uniffi
+
+      # Packages and verifies both crates together, so the facade resolves
+      # the unpublished core version from the local package.
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run --locked -p fugle-marketdata-core -p fugle-marketdata
+
+  # Libraries do not ship Cargo.lock, so the MSRV contract is "some
+  # dependency set builds on rust-version", not "our lockfile builds on it".
+  # Resolve an MSRV-compatible lockfile with the MSRV-aware resolver, then
+  # build with the declared toolchain.
+  msrv:
+    name: Rust MSRV (1.83)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.83
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-msrv
+      - name: Resolve MSRV-compatible dependencies
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo +stable generate-lockfile
+      - run: cargo +1.83 build --locked --all-features -p fugle-marketdata-core -p fugle-marketdata
 
   python:
-    name: Python Bindings
-    needs: changes
-    if: ${{ needs.changes.outputs.python == 'true' }}
-    uses: ./.github/workflows/python.yml
+    name: Python binding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and test
+        working-directory: py
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install maturin pytest pytest-asyncio pytest-timeout vcrpy pyyaml
+          maturin develop
+          pytest -q -k "not integration" tests --ignore=tests/benchmarks --ignore=tests/test_performance.py
 
   nodejs:
-    name: Node.js Bindings
-    needs: changes
-    if: ${{ needs.changes.outputs.nodejs == 'true' }}
-    uses: ./.github/workflows/nodejs.yml
-
-  csharp:
-    name: C# Bindings
-    needs: changes
-    if: ${{ needs.changes.outputs.csharp == 'true' }}
-    uses: ./.github/workflows/csharp.yml
+    name: Node.js binding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-nodejs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build and test
+        working-directory: js
+        run: |
+          npm ci
+          npm run build:debug
+          npx jest --ci --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
+      - name: Generated loader and types are committed
+        run: git diff --exit-code -- js/index.js js/index.d.ts
 
   uniffi:
-    name: UniFFI Bindings (C#, Go)
-    needs: changes
-    if: ${{ needs.changes.outputs.uniffi == 'true' }}
-    uses: ./.github/workflows/uniffi.yml
+    name: UniFFI bindings (C#, Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-uniffi
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
 
-  version:
-    name: Version Check
-    uses: ./.github/workflows/version-check.yml
+      - name: Build native library
+        run: cargo build --locked --release -p marketdata-uniffi
+
+      # The C# and Go sources generated by UniFFI are committed and shipped
+      # as-is. If they drift from the Rust interface, every client
+      # construction fails with a checksum mismatch at load time.
+      - name: Cache bindgen tools
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/uniffi-bindgen-cs
+            ~/.cargo/bin/uniffi-bindgen-go
+          key: bindgen-cs-v0.9.2+v0.28.3-go-v0.3.0+v0.28.3-${{ runner.os }}
+      - name: Install bindgen tools
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.9.2+v0.28.3
+          cargo install uniffi-bindgen-go --git https://github.com/NordSecurity/uniffi-bindgen-go --tag v0.3.0+v0.28.3
+      - name: Generated bindings are up to date
+        run: |
+          make gen-csharp gen-go UNIFFI_LIB=target/release/libmarketdata_uniffi.so
+          git diff --exit-code -- bindings/csharp/MarketdataUniffi/marketdata_uniffi.cs bindings/go/marketdata/ \
+            || { echo "::error::UniFFI bindings are stale. Run 'make gen-csharp gen-go' and commit the result."; exit 1; }
+
+      - name: C# tests
+        working-directory: bindings/csharp
+        run: dotnet test MarketdataUniffi.Tests --filter "Category!=Integration&TestCategory!=Integration"
+
+      # Most C# tests skip when the native library is absent, so load it for
+      # real once.
+      - name: C# native load
+        run: |
+          dotnet new console --framework net8.0 -o /tmp/cs-smoke
+          dotnet add /tmp/cs-smoke reference bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj
+          cat > /tmp/cs-smoke/Program.cs <<'CS'
+          using FugleMarketData;
+          using var client = new RestClient(new RestClientOptions { ApiKey = "smoke-test-token" });
+          if (client.Stock == null || client.FutOpt == null) throw new System.Exception("missing REST accessors");
+          System.Console.WriteLine("OK");
+          CS
+          LD_LIBRARY_PATH="$PWD/target/release" dotnet run --project /tmp/cs-smoke
+
+      - name: Go tests
+        working-directory: bindings/go/marketdata
+        env:
+          CGO_ENABLED: '1'
+        run: go test -short ./...
