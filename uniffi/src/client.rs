@@ -19,7 +19,8 @@ use crate::models::{
     // Corporate actions models
     CapitalChangesResponse, DividendsResponse, ListingApplicantsResponse,
     // Ownership models
-    EtfHoldingsResponse,
+    DirectorHoldingsResponse, EtfHoldingsResponse, InstitutionalTradesResponse,
+    TdccDistributionResponse,
     // FutOpt historical models
     FutOptHistoricalCandlesResponse, FutOptDailyResponse,
 };
@@ -132,7 +133,8 @@ impl StockClient {
         Arc::new(StockCorporateActionsClient::new(self.inner.clone()))
     }
 
-    /// Access ownership endpoints (ETF holdings)
+    /// Access ownership endpoints (ETF holdings, institutional trades, director
+    /// holdings, TDCC distribution)
     pub fn ownership(&self) -> Arc<StockOwnershipClient> {
         Arc::new(StockOwnershipClient::new(self.inner.clone()))
     }
@@ -1418,44 +1420,61 @@ impl StockOwnershipClient {
     }
 }
 
-/// Build an ETF holdings request.
+/// Parse the `sort` argument shared by every ownership endpoint.
 ///
 /// `sort` is validated rather than dropped: a typo would otherwise return the
 /// opposite series without complaint.
-fn build_etf_holdings_request(
-    client: &CoreRestClient,
-    symbol: &str,
-    from: Option<&str>,
-    to: Option<&str>,
+fn parse_holdings_sort(
     sort: Option<&str>,
-) -> Result<marketdata_core::models::EtfHoldingsResponse, marketdata_core::MarketDataError> {
+) -> Result<
+    Option<marketdata_core::rest::stock::ownership::HoldingsSort>,
+    marketdata_core::MarketDataError,
+> {
     use marketdata_core::rest::stock::ownership::HoldingsSort;
 
-    let sort = match sort {
-        None => None,
-        Some("asc") => Some(HoldingsSort::Asc),
-        Some("desc") => Some(HoldingsSort::Desc),
-        Some(other) => {
-            return Err(marketdata_core::MarketDataError::ConfigError(format!(
-                "sort must be 'asc' or 'desc' (got '{other}')"
-            )))
+    match sort {
+        None => Ok(None),
+        Some("asc") => Ok(Some(HoldingsSort::Asc)),
+        Some("desc") => Ok(Some(HoldingsSort::Desc)),
+        Some(other) => Err(marketdata_core::MarketDataError::ConfigError(format!(
+            "sort must be 'asc' or 'desc' (got '{other}')"
+        ))),
+    }
+}
+
+/// Generate one blocking request function per ownership endpoint. The core
+/// builders share a query contract but no trait, hence a macro.
+macro_rules! ownership_request {
+    ($fn_name:ident, $method:ident, $resp:ident) => {
+        fn $fn_name(
+            client: &CoreRestClient,
+            symbol: &str,
+            from: Option<&str>,
+            to: Option<&str>,
+            sort: Option<&str>,
+        ) -> Result<marketdata_core::models::$resp, marketdata_core::MarketDataError> {
+            let sort = parse_holdings_sort(sort)?;
+            let stock = client.stock();
+            let ownership = stock.ownership();
+            let mut builder = ownership.$method().symbol(symbol);
+            if let Some(f) = from {
+                builder = builder.from(f);
+            }
+            if let Some(t) = to {
+                builder = builder.to(t);
+            }
+            if let Some(s) = sort {
+                builder = builder.sort(s);
+            }
+            builder.send()
         }
     };
-
-    let stock = client.stock();
-    let ownership = stock.ownership();
-    let mut builder = ownership.etf_holdings().symbol(symbol);
-    if let Some(f) = from {
-        builder = builder.from(f);
-    }
-    if let Some(t) = to {
-        builder = builder.to(t);
-    }
-    if let Some(s) = sort {
-        builder = builder.sort(s);
-    }
-    builder.send()
 }
+
+ownership_request!(build_etf_holdings_request, etf_holdings, EtfHoldingsResponse);
+ownership_request!(build_institutional_trades_request, institutional_trades, InstitutionalTradesResponse);
+ownership_request!(build_director_holdings_request, director_holdings, DirectorHoldingsResponse);
+ownership_request!(build_tdcc_distribution_request, tdcc_distribution, TdccDistributionResponse);
 
 #[cfg(not(feature = "cpp"))]
 #[uniffi::export(async_runtime = "tokio")]
@@ -1482,6 +1501,75 @@ impl StockOwnershipClient {
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         Ok(result.into())
     }
+
+    /// Get daily trading by the three major institutional investors (async)
+    pub async fn get_institutional_trades(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<InstitutionalTradesResponse, MarketDataError> {
+        let inner = self.inner.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            build_institutional_trades_request(
+                &inner,
+                &symbol,
+                from.as_deref(),
+                to.as_deref(),
+                sort.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        Ok(result.into())
+    }
+
+    /// Get monthly holdings and pledges disclosed by directors and supervisors (async)
+    pub async fn get_director_holdings(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<DirectorHoldingsResponse, MarketDataError> {
+        let inner = self.inner.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            build_director_holdings_request(
+                &inner,
+                &symbol,
+                from.as_deref(),
+                to.as_deref(),
+                sort.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        Ok(result.into())
+    }
+
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
+    pub async fn get_tdcc_distribution(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<TdccDistributionResponse, MarketDataError> {
+        let inner = self.inner.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            build_tdcc_distribution_request(
+                &inner,
+                &symbol,
+                from.as_deref(),
+                to.as_deref(),
+                sort.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        Ok(result.into())
+    }
 }
 
 #[cfg(feature = "cpp")]
@@ -1496,6 +1584,60 @@ impl StockOwnershipClient {
         sort: Option<String>,
     ) -> Result<EtfHoldingsResponse, MarketDataError> {
         let result = build_etf_holdings_request(
+            &self.inner,
+            &symbol,
+            from.as_deref(),
+            to.as_deref(),
+            sort.as_deref(),
+        )?;
+        Ok(result.into())
+    }
+
+    /// Get daily trading by the three major institutional investors (sync/blocking)
+    pub fn institutional_trades_sync(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<InstitutionalTradesResponse, MarketDataError> {
+        let result = build_institutional_trades_request(
+            &self.inner,
+            &symbol,
+            from.as_deref(),
+            to.as_deref(),
+            sort.as_deref(),
+        )?;
+        Ok(result.into())
+    }
+
+    /// Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
+    pub fn director_holdings_sync(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<DirectorHoldingsResponse, MarketDataError> {
+        let result = build_director_holdings_request(
+            &self.inner,
+            &symbol,
+            from.as_deref(),
+            to.as_deref(),
+            sort.as_deref(),
+        )?;
+        Ok(result.into())
+    }
+
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
+    pub fn tdcc_distribution_sync(
+        &self,
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> Result<TdccDistributionResponse, MarketDataError> {
+        let result = build_tdcc_distribution_request(
             &self.inner,
             &symbol,
             from.as_deref(),
