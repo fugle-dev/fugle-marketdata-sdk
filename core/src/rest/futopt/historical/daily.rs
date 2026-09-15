@@ -86,9 +86,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let daily: FutOptDailyResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let daily: FutOptDailyResponse = crate::rest::read_json(response)?;
 
         Ok(daily)
     }

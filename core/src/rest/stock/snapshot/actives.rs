@@ -75,9 +75,7 @@ impl<'a> ActivesRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let actives: ActivesResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let actives: ActivesResponse = crate::rest::read_json(response)?;
 
         Ok(actives)
     }

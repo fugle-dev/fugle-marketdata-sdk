@@ -119,9 +119,7 @@ impl<'a> HistoricalCandlesRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let candles: HistoricalCandlesResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let candles: HistoricalCandlesResponse = crate::rest::read_json(response)?;
 
         Ok(candles)
     }

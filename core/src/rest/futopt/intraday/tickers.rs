@@ -114,9 +114,7 @@ impl<'a> TickersRequestBuilder<'a> {
             #[serde(default)]
             data: Vec<FutOptTicker>,
         }
-        let env: Envelope = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let env: Envelope = crate::rest::read_json(response)?;
 
         Ok(env.data)
     }

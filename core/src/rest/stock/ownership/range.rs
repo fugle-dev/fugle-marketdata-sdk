@@ -87,9 +87,7 @@ pub(super) fn send<T: DeserializeOwned>(
     let request = client.auth().apply_to_request(request);
 
     let response = client.execute(request)?;
-    response
-        .into_json()
-        .map_err(|e| MarketDataError::Other(e.into()))
+    crate::rest::read_json(response)
 }
 
 #[cfg(test)]

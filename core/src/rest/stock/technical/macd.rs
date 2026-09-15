@@ -119,9 +119,7 @@ impl<'a> MacdRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let macd_response: MacdResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let macd_response: MacdResponse = crate::rest::read_json(response)?;
 
         Ok(macd_response)
     }

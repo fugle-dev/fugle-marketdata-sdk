@@ -75,9 +75,7 @@ impl<'a> SnapshotQuotesRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let quotes: SnapshotQuotesResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let quotes: SnapshotQuotesResponse = crate::rest::read_json(response)?;
 
         Ok(quotes)
     }

@@ -5,6 +5,15 @@ use super::retry::{self, RetryPolicy};
 use crate::errors::MarketDataError;
 use crate::tls::{build_rustls_config, TlsConfig};
 
+/// Idle connections kept per host.
+///
+/// ureq 2 keeps one by default, so concurrent callers sharing a client (for
+/// example `Promise.all` in Node or threads in Python) open a fresh TCP + TLS
+/// connection for every overlapping request and leave sockets in TIME_WAIT.
+/// Against the live API a new connection costs roughly 60 ms versus about
+/// 20 ms on a reused one.
+const MAX_IDLE_CONNECTIONS_PER_HOST: usize = 16;
+
 /// Main REST client with connection pooling via ureq Agent
 ///
 /// The RestClient uses ureq's Agent for automatic connection pooling and reuse.
@@ -68,6 +77,7 @@ impl RestClient {
         let builder = ureq::AgentBuilder::new()
             .timeout_read(std::time::Duration::from_secs(30))
             .timeout_write(std::time::Duration::from_secs(30))
+            .max_idle_connections_per_host(MAX_IDLE_CONNECTIONS_PER_HOST)
             .tls_config(tls_config);
 
         Ok(Self {
