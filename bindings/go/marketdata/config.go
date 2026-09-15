@@ -11,13 +11,19 @@ type ReconnectConfig struct {
 	MaxDelayMs uint64
 }
 
-// HealthCheckConfig configures WebSocket health check behavior.
-// Zero values for fields mean "use default".
+// HealthCheckConfig configures WebSocket liveness detection.
+//
+// The client declares the connection dead when no inbound frame (data,
+// heartbeat or pong) arrives within HeartbeatTimeoutMs. The server sends a
+// heartbeat every 30 seconds.
+//
+// Without WithHealthCheck the client uses the core defaults, which enable
+// detection. Passing a HealthCheckConfig sets Enabled explicitly, so the Go
+// zero value (false) turns detection off.
 type HealthCheckConfig struct {
-	// Enabled controls whether health check is active (default: false)
+	// Enabled controls whether liveness detection is active
 	Enabled bool
-	// IntervalMs is the interval between ping messages in milliseconds (default: 30000, min: 5000)
-	IntervalMs uint64
-	// MaxMissedPongs is the maximum missed pongs before disconnect (default: 2, min: 1)
-	MaxMissedPongs uint64
+	// HeartbeatTimeoutMs is the maximum gap between inbound frames in
+	// milliseconds (default: 35000, min: 5000). Zero means "use default".
+	HeartbeatTimeoutMs uint64
 }

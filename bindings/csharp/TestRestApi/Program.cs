@@ -69,7 +69,7 @@ class Program
             for (int i = 0; i < Math.Min(3, candles.data.Count); i++)
             {
                 var candle = candles.data[i];
-                Console.WriteLine($"   [{i+1}] 時間: {candle.time}, O:{candle.open} H:{candle.high} L:{candle.low} C:{candle.close} V:{candle.volume}");
+                Console.WriteLine($"   [{i+1}] 時間: {candle.date}, O:{candle.open} H:{candle.high} L:{candle.low} C:{candle.close} V:{candle.volume}");
             }
             Console.WriteLine();
 

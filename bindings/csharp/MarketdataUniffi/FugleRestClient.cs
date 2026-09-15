@@ -658,8 +658,9 @@ namespace FugleMarketData
         /// Get batch tickers for futures/options (async).
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
-        public Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>> GetTickersAsync(string type)
-            => _inner.GetTickers(type);
+        /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
+        public Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>> GetTickersAsync(string type, bool? isSpread = null)
+            => _inner.GetTickers(type, isSpread);
 
         // ========== Sync Methods (Blocking) ==========
 
@@ -710,8 +711,10 @@ namespace FugleMarketData
         /// <summary>
         /// Get batch tickers for futures/options (blocking).
         /// </summary>
-        public System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker> GetTickers(string type)
-            => _inner.TickersSync(type);
+        /// <param name="type">Product type: "F" for futures, "O" for options</param>
+        /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
+        public System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker> GetTickers(string type, bool? isSpread = null)
+            => _inner.TickersSync(type, isSpread);
     }
 
     /// <summary>
