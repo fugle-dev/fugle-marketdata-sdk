@@ -124,7 +124,9 @@ jobs:
           )
 
           func main() {
-          	client, err := mkt.NewRestClientWithApiKey("smoke-test-key")
+          	// The hand-written constructor, not the generated one: it is what
+          	// users call, and it once returned a typed-nil error on success.
+          	client, err := mkt.NewFugleRestClient(mkt.WithApiKey("smoke-test-key"))
           	if err != nil {
           		fmt.Println("constructor error:", err)
           		os.Exit(1)
@@ -133,6 +135,9 @@ jobs:
           	fmt.Printf("ok: %T\n", client.Stock().Intraday())
           }
           EOF
+          # The module's go.mod may require a newer patch release than the
+          # consumer declares; let the go command reconcile it.
+          go mod tidy
           CGO_ENABLED=1 go build -o consumer .
           echo "Dynamic dependencies:"
           ldd consumer
