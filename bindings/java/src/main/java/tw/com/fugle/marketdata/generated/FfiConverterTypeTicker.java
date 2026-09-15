@@ -9,7 +9,7 @@ public enum FfiConverterTypeTicker implements FfiConverterRustBuffer<Ticker> {
   @Override
   public Ticker read(ByteBuffer buf) {
     return new Ticker(
-      FfiConverterString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
@@ -51,7 +51,7 @@ public enum FfiConverterTypeTicker implements FfiConverterRustBuffer<Ticker> {
   @Override
   public long allocationSize(Ticker value) {
       return (
-            FfiConverterString.INSTANCE.allocationSize(value.date()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.date()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.dataType()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.exchange()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.market()) +
@@ -92,7 +92,7 @@ public enum FfiConverterTypeTicker implements FfiConverterRustBuffer<Ticker> {
 
   @Override
   public void write(Ticker value, ByteBuffer buf) {
-      FfiConverterString.INSTANCE.write(value.date(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.date(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.dataType(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.exchange(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.market(), buf);

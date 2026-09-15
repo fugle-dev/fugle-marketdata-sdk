@@ -390,12 +390,12 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
      * * `reconnect_config` - Optional reconnection configuration
      * * `health_check_config` - Optional health check configuration
      * * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
-     */public static WebSocketClient newWithFullConfig(String apiKey, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls)  {
+     */public static WebSocketClient newWithFullConfig(String apiKey, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version)  {
             try {
                 return FfiConverterTypeWebSocketClient.INSTANCE.lift(
     UniffiHelpers.uniffiRustCall( _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(
-            FfiConverterString.INSTANCE.lower(apiKey), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), _status);
+            FfiConverterString.INSTANCE.lower(apiKey), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), _status);
     })
     );
             } catch (RuntimeException _e) {

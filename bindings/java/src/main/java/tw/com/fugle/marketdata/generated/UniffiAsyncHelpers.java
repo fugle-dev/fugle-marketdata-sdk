@@ -14,7 +14,7 @@ public final class UniffiAsyncHelpers {
     static final byte UNIFFI_RUST_FUTURE_POLL_READY = (byte) 0;
     static final byte UNIFFI_RUST_FUTURE_POLL_MAYBE_READY = (byte) 1;
     static final UniffiHandleMap<CompletableFuture<Byte>> uniffiContinuationHandleMap = new UniffiHandleMap<>();
-    static final UniffiHandleMap<CompletableFuture<Void>> uniffiForeignFutureHandleMap = new UniffiHandleMap<>();
+    static final UniffiHandleMap<CancelableForeignFuture> uniffiForeignFutureHandleMap = new UniffiHandleMap<>();
 
     // FFI type for Rust future continuations
     enum UniffiRustFutureContinuationCallbackImpl implements UniffiRustFutureContinuationCallback {
@@ -49,6 +49,26 @@ public final class UniffiAsyncHelpers {
             return cancelled;
         }
     } 
+
+    // helper so both the Java completable future and the job that handles it finishing and reports to Rust can be
+    // retrieved (and potentially cancelled) by handle. This allows our FreeImpl to be a parameterless singleton,
+    // preventing #19, which was caused by our FreeImpls being GCd before Rust called back into them.
+    static class CancelableForeignFuture {
+        private CompletableFuture<?> childFuture;
+        private CompletableFuture<Void> childFutureHandler;
+
+        CancelableForeignFuture(CompletableFuture<?> childFuture, CompletableFuture<Void> childFutureHandler) {
+            this.childFuture = childFuture;
+            this.childFutureHandler = childFutureHandler;
+        }
+
+        public void cancel() {
+            var successfullyCancelled = this.childFutureHandler.cancel(true);
+            if(successfullyCancelled) {
+                childFuture.cancel(true);
+            }
+        }
+    }
 
     static <T, F, E extends Exception> CompletableFuture<T> uniffiRustCallAsync(
         long rustFuture,
@@ -132,11 +152,7 @@ public final class UniffiAsyncHelpers {
         CompletableFuture<Byte> pollFuture = new CompletableFuture<>();
         var handle = uniffiContinuationHandleMap.insert(pollFuture);
         pollFunc.apply(rustFuture, UniffiRustFutureContinuationCallbackImpl.INSTANCE, handle);
-
-        // busy-wait until the poll completes
-        // TODO(java): may be more efficient to use a CountdownLatch here instead of a CF we end up busy-waiting
-        //     because of Java bugs.
-        do {} while (!pollFuture.isDone());
+        do {} while (!pollFuture.isDone()); // removing this makes futures not cancel (sometimes)
         return pollFuture.get();
     }
 }

@@ -47,14 +47,12 @@ public class ConfigOptionsTest {
     void testHealthCheckOptionsBuilder() {
         HealthCheckOptions options = HealthCheckOptions.builder()
             .enabled(true)
-            .intervalMs(60000L)
-            .maxMissedPongs(3L)
+            .heartbeatTimeoutMs(60000L)
             .build();
 
         assertNotNull(options);
         assertEquals(Boolean.TRUE, options.getEnabled());
-        assertEquals(Long.valueOf(60000L), options.getIntervalMs());
-        assertEquals(Long.valueOf(3L), options.getMaxMissedPongs());
+        assertEquals(Long.valueOf(60000L), options.getHeartbeatTimeoutMs());
     }
 
     @Test
@@ -64,8 +62,7 @@ public class ConfigOptionsTest {
 
         assertNotNull(options);
         assertNull(options.getEnabled());
-        assertNull(options.getIntervalMs());
-        assertNull(options.getMaxMissedPongs());
+        assertNull(options.getHeartbeatTimeoutMs());
     }
 
     // ========== RestClient Exactly-One-Auth Tests ==========
@@ -227,7 +224,7 @@ public class ConfigOptionsTest {
     void testWebSocketWithHealthCheckOptions() {
         HealthCheckOptions healthCheck = HealthCheckOptions.builder()
             .enabled(true)
-            .intervalMs(60000L)
+            .heartbeatTimeoutMs(60000L)
             .build();
 
         try {

@@ -14,7 +14,13 @@ public class KdjResponse {
     private String exchange;
     private String market;
     private String timeframe;
-    private Integer period;
+    /**
+     * KDJ takes three separate periods, not one. 0.7.2 added the setters
+     * after prod rejected requests that omitted them.
+     */
+    private Integer rPeriod;
+    private Integer kPeriod;
+    private Integer dPeriod;
     private List<KdjDataPoint> data;
 
     public KdjResponse(
@@ -23,7 +29,9 @@ public class KdjResponse {
         String exchange, 
         String market, 
         String timeframe, 
-        Integer period, 
+        Integer rPeriod, 
+        Integer kPeriod, 
+        Integer dPeriod, 
         List<KdjDataPoint> data
     ) {
         
@@ -37,7 +45,11 @@ public class KdjResponse {
         
         this.timeframe = timeframe;
         
-        this.period = period;
+        this.rPeriod = rPeriod;
+        
+        this.kPeriod = kPeriod;
+        
+        this.dPeriod = dPeriod;
         
         this.data = data;
     }
@@ -62,8 +74,16 @@ public class KdjResponse {
         return this.timeframe;
     }
     
-    public Integer period() {
-        return this.period;
+    public Integer rPeriod() {
+        return this.rPeriod;
+    }
+    
+    public Integer kPeriod() {
+        return this.kPeriod;
+    }
+    
+    public Integer dPeriod() {
+        return this.dPeriod;
     }
     
     public List<KdjDataPoint> data() {
@@ -84,8 +104,14 @@ public class KdjResponse {
     public void setTimeframe(String timeframe) {
         this.timeframe = timeframe;
     }
-    public void setPeriod(Integer period) {
-        this.period = period;
+    public void setRPeriod(Integer rPeriod) {
+        this.rPeriod = rPeriod;
+    }
+    public void setKPeriod(Integer kPeriod) {
+        this.kPeriod = kPeriod;
+    }
+    public void setDPeriod(Integer dPeriod) {
+        this.dPeriod = dPeriod;
     }
     public void setData(List<KdjDataPoint> data) {
         this.data = data;
@@ -108,7 +134,11 @@ public class KdjResponse {
               
               Objects.equals(timeframe, t.timeframe) && 
               
-              Objects.equals(period, t.period) && 
+              Objects.equals(rPeriod, t.rPeriod) && 
+              
+              Objects.equals(kPeriod, t.kPeriod) && 
+              
+              Objects.equals(dPeriod, t.dPeriod) && 
               
               Objects.equals(data, t.data)
               
@@ -119,7 +149,7 @@ public class KdjResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(symbol, dataType, exchange, market, timeframe, period, data);
+        return Objects.hash(symbol, dataType, exchange, market, timeframe, rPeriod, kPeriod, dPeriod, data);
     }
 }
 

@@ -441,10 +441,11 @@ public class FugleWebSocketClient implements AutoCloseable {
 
                 HealthCheckConfigRecord healthCheckRecord = null;
                 if (healthCheckOptions != null) {
+                    // Unset values map to the core defaults: enabled, and a
+                    // heartbeat timeout of 0 meaning "use 35000 ms".
                     healthCheckRecord = new HealthCheckConfigRecord(
-                        healthCheckOptions.getEnabled() != null ? healthCheckOptions.getEnabled() : false,
-                        healthCheckOptions.getIntervalMs() != null ? healthCheckOptions.getIntervalMs() : 0L,
-                        healthCheckOptions.getMaxMissedPongs() != null ? healthCheckOptions.getMaxMissedPongs() : 0L
+                        healthCheckOptions.getEnabled() != null ? healthCheckOptions.getEnabled() : true,
+                        healthCheckOptions.getHeartbeatTimeoutMs() != null ? healthCheckOptions.getHeartbeatTimeoutMs() : 0L
                     );
                 }
 

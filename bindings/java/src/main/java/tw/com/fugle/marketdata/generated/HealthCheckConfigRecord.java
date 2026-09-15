@@ -12,50 +12,38 @@ import java.util.Objects;
  */
 public class HealthCheckConfigRecord {
     /**
-     * Whether health check is enabled (default: false)
+     * Whether liveness detection is active (default: true in 3.0)
      */
     private Boolean enabled;
     /**
-     * Interval between ping messages in milliseconds (default: 30000, min: 5000)
+     * Maximum allowed gap between inbound frames before declaring the
+     * connection dead, in milliseconds. Default 35000; floor 5000.
+     * Pass 0 to use the default.
      */
-    private Long intervalMs;
-    /**
-     * Maximum missed pongs before disconnect (default: 2, min: 1)
-     */
-    private Long maxMissedPongs;
+    private Long heartbeatTimeoutMs;
 
     public HealthCheckConfigRecord(
         Boolean enabled, 
-        Long intervalMs, 
-        Long maxMissedPongs
+        Long heartbeatTimeoutMs
     ) {
         
         this.enabled = enabled;
         
-        this.intervalMs = intervalMs;
-        
-        this.maxMissedPongs = maxMissedPongs;
+        this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     }
     
     public Boolean enabled() {
         return this.enabled;
     }
     
-    public Long intervalMs() {
-        return this.intervalMs;
-    }
-    
-    public Long maxMissedPongs() {
-        return this.maxMissedPongs;
+    public Long heartbeatTimeoutMs() {
+        return this.heartbeatTimeoutMs;
     }
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
     }
-    public void setIntervalMs(Long intervalMs) {
-        this.intervalMs = intervalMs;
-    }
-    public void setMaxMissedPongs(Long maxMissedPongs) {
-        this.maxMissedPongs = maxMissedPongs;
+    public void setHeartbeatTimeoutMs(Long heartbeatTimeoutMs) {
+        this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     }
 
     
@@ -67,9 +55,7 @@ public class HealthCheckConfigRecord {
             return (
               Objects.equals(enabled, t.enabled) && 
               
-              Objects.equals(intervalMs, t.intervalMs) && 
-              
-              Objects.equals(maxMissedPongs, t.maxMissedPongs)
+              Objects.equals(heartbeatTimeoutMs, t.heartbeatTimeoutMs)
               
             );
         };
@@ -78,7 +64,7 @@ public class HealthCheckConfigRecord {
 
     @Override
     public int hashCode() {
-        return Objects.hash(enabled, intervalMs, maxMissedPongs);
+        return Objects.hash(enabled, heartbeatTimeoutMs);
     }
 }
 

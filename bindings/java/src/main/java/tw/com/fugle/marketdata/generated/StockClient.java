@@ -108,6 +108,39 @@ public class StockClient implements AutoCloseable, StockClientInterface {
 
   
     /**
+     * The fully resolved request prefix for this product client.
+     */
+    @Override
+    public String baseUrl()  {
+            try {
+                return FfiConverterString.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCall( _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockclient_base_url(
+            it, _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
      * Access corporate actions endpoints
      */
     @Override
@@ -186,6 +219,40 @@ public class StockClient implements AutoCloseable, StockClientInterface {
             return
     UniffiHelpers.uniffiRustCall( _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockclient_intraday(
+            it, _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
+     * Access ownership endpoints (ETF holdings, institutional trades, director
+     * holdings, TDCC distribution)
+     */
+    @Override
+    public StockOwnershipClient ownership()  {
+            try {
+                return FfiConverterTypeStockOwnershipClient.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCall( _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockclient_ownership(
             it, _status);
     });
     

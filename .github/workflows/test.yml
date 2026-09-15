@@ -319,15 +319,16 @@ jobs:
           java-version: '21'
 
       - name: Install uniffi-bindgen-java
-        run: cargo install uniffi-bindgen-java --git https://github.com/NordSecurity/uniffi-bindgen-java --tag v0.1.0+v0.29.4
+        run: cargo install uniffi-bindgen-java --git https://github.com/IronCoreLabs/uniffi-bindgen-java --tag 0.2.1 --locked
 
       - name: Build UniFFI library
         run: cargo build -p marketdata-uniffi --release
 
       - name: Generate Java bindings
         run: |
-          uniffi-bindgen-java --library target/release/${{ matrix.lib-name }} \
-            --out-dir bindings/java/src/main/java
+          uniffi-bindgen-java generate --library target/release/${{ matrix.lib-name }} \
+            --out-dir bindings/java/src/main/java \
+            --crate marketdata_uniffi --config uniffi/uniffi.toml
 
       - name: Build Java bindings
         working-directory: bindings/java

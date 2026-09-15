@@ -45,7 +45,7 @@ public interface FutOptIntradayClientInterface {
      *
      * typ: "F" for futures, "O" for options
      */
-    public CompletableFuture<List<FutOptTicker>> getTickers(String typ) ;
+    public CompletableFuture<List<FutOptTicker>> getTickers(String typ, Boolean isSpread) ;
     
     /**
      * Get trade history for a futures/options contract (async)
@@ -77,7 +77,7 @@ public interface FutOptIntradayClientInterface {
      *
      * typ: "F" for futures, "O" for options
      */
-    public List<FutOptTicker> tickersSync(String typ) throws MarketDataException;
+    public List<FutOptTicker> tickersSync(String typ, Boolean isSpread) throws MarketDataException;
     
     /**
      * Get trade history for a contract (sync/blocking)

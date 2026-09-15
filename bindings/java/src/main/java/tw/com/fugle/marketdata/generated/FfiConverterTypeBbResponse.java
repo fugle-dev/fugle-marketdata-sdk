@@ -10,12 +10,12 @@ public enum FfiConverterTypeBbResponse implements FfiConverterRustBuffer<BbRespo
   public BbResponse read(ByteBuffer buf) {
     return new BbResponse(
       FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterInteger.INSTANCE.read(buf),
-      FfiConverterDouble.INSTANCE.read(buf),
+      FfiConverterOptionalDouble.INSTANCE.read(buf),
       FfiConverterSequenceTypeBbDataPoint.INSTANCE.read(buf)
     );
   }
@@ -24,12 +24,12 @@ public enum FfiConverterTypeBbResponse implements FfiConverterRustBuffer<BbRespo
   public long allocationSize(BbResponse value) {
       return (
             FfiConverterString.INSTANCE.allocationSize(value.symbol()) +
-            FfiConverterString.INSTANCE.allocationSize(value.dataType()) +
-            FfiConverterString.INSTANCE.allocationSize(value.exchange()) +
-            FfiConverterString.INSTANCE.allocationSize(value.market()) +
-            FfiConverterString.INSTANCE.allocationSize(value.timeframe()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.dataType()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.exchange()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.market()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.timeframe()) +
             FfiConverterInteger.INSTANCE.allocationSize(value.period()) +
-            FfiConverterDouble.INSTANCE.allocationSize(value.stddev()) +
+            FfiConverterOptionalDouble.INSTANCE.allocationSize(value.stddev()) +
             FfiConverterSequenceTypeBbDataPoint.INSTANCE.allocationSize(value.data())
       );
   }
@@ -37,12 +37,12 @@ public enum FfiConverterTypeBbResponse implements FfiConverterRustBuffer<BbRespo
   @Override
   public void write(BbResponse value, ByteBuffer buf) {
       FfiConverterString.INSTANCE.write(value.symbol(), buf);
-      FfiConverterString.INSTANCE.write(value.dataType(), buf);
-      FfiConverterString.INSTANCE.write(value.exchange(), buf);
-      FfiConverterString.INSTANCE.write(value.market(), buf);
-      FfiConverterString.INSTANCE.write(value.timeframe(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.dataType(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.exchange(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.market(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.timeframe(), buf);
       FfiConverterInteger.INSTANCE.write(value.period(), buf);
-      FfiConverterDouble.INSTANCE.write(value.stddev(), buf);
+      FfiConverterOptionalDouble.INSTANCE.write(value.stddev(), buf);
       FfiConverterSequenceTypeBbDataPoint.INSTANCE.write(value.data(), buf);
   }
 }
