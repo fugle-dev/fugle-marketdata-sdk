@@ -76,10 +76,14 @@ cd "$ROOT"
 # rustc only prints native-static-libs when it actually links the staticlib.
 # Cleaning just this crate forces that without rebuilding its dependencies.
 cargo clean --release --target "$TARGET" -p marketdata-uniffi >/dev/null 2>&1 || true
-cargo rustc -p marketdata-uniffi --release --lib --crate-type staticlib \
+# --color never: CI sets CARGO_TERM_COLOR=always, and colour codes inside the
+# `note:` line would defeat the parsing below.
+cargo rustc --color never -p marketdata-uniffi --release --lib --crate-type staticlib \
   --target "$TARGET" -- --print native-static-libs 2>&1 | tee "$LOG"
 
-NATIVE_LIBS="$(sed -n 's/.*note: native-static-libs: //p' "$LOG" | head -1 | tr -d '\r')"
+# Strip any ANSI escapes anyway, in case colour is forced another way.
+# $'...' makes the escape byte literal so BSD sed (macOS) and GNU sed agree.
+NATIVE_LIBS="$(sed -e $'s/\x1b\\[[0-9;]*m//g' "$LOG" | sed -n 's/.*note: native-static-libs: //p' | head -1 | tr -d '\r')"
 if [[ -z "$NATIVE_LIBS" ]]; then
   echo "error: rustc did not report native-static-libs for $TARGET" >&2
   exit 1
