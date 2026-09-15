@@ -1,0 +1,254 @@
+name: Verify Release
+
+# After a Release run succeeds, install every binding the way a user would:
+# from PyPI, npm, NuGet and the Go module proxy, on Linux, macOS and Windows,
+# then load the native library and construct a client. No network calls to
+# the market data API and no credentials.
+#
+# This catches packaging bugs (missing platform binaries, wrong dist-tags,
+# stale UniFFI checksums, broken static linking), not SDK logic bugs.
+on:
+  workflow_run:
+    workflows: ['Release']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify, e.g. v3.0.0-rc.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve versions
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      python_version: ${{ steps.v.outputs.python_version }}
+      uniffi_version: ${{ steps.v.outputs.uniffi_version }}
+    steps:
+      - id: t
+        run: echo "tag=${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.t.outputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - id: v
+        run: python3 scripts/release-versions.py resolve --tag "${{ steps.t.outputs.tag }}" --github-output "$GITHUB_OUTPUT"
+
+  python:
+    name: PyPI (${{ matrix.os }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install from PyPI
+        shell: bash
+        env:
+          PY_VERSION: ${{ needs.resolve.outputs.python_version }}
+        run: |
+          # PyPI's CDN can lag a few minutes behind the upload.
+          for i in $(seq 1 20); do
+            pip install --no-cache-dir --pre "fugle-marketdata==$PY_VERSION" && exit 0
+            echo "Attempt $i failed, retrying in 30s"; sleep 30
+          done
+          exit 1
+
+      - name: Import and construct clients
+        shell: bash
+        run: |
+          python - <<'PY'
+          from fugle_marketdata import RestClient, WebSocketClient, MarketDataError
+          client = RestClient(api_key="smoke-test-token")
+          assert client.stock is not None and client.futopt is not None
+          ws = WebSocketClient(api_key="smoke-test-token")
+          assert ws.stock is not None
+          assert issubclass(MarketDataError, Exception)
+          print("OK: fugle-marketdata imports and constructs clients")
+          PY
+
+  nodejs:
+    name: npm (${{ matrix.os }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check dist-tags
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          npm view @fugle/marketdata dist-tags --json | tee tags.json
+          EXPECTED_TAG=$([[ "$VERSION" == *-* ]] && echo next || echo latest)
+          node -e "
+            const t = require('./tags.json');
+            if (t['$EXPECTED_TAG'] !== '$VERSION') { console.error('dist-tag $EXPECTED_TAG is', t['$EXPECTED_TAG']); process.exit(1); }
+            if ('$EXPECTED_TAG' === 'next' && t.latest === '$VERSION') { console.error('prerelease leaked onto latest'); process.exit(1); }
+          "
+
+      - name: Install from npm
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          mkdir smoke && cd smoke && npm init -y >/dev/null
+          for i in $(seq 1 20); do
+            npm install "@fugle/marketdata@$VERSION" && exit 0
+            echo "Attempt $i failed, retrying in 30s"; sleep 30
+          done
+          exit 1
+
+      - name: Require and construct clients
+        working-directory: smoke
+        shell: bash
+        run: |
+          node -e "
+            const { RestClient, WebSocketClient } = require('@fugle/marketdata');
+            const client = new RestClient({ apiKey: 'smoke-test-token' });
+            if (!client.stock || !client.futopt) throw new Error('missing REST accessors');
+            const ws = new WebSocketClient({ apiKey: 'smoke-test-token' });
+            if (!ws.stock) throw new Error('missing WebSocket accessor');
+            console.log('OK: @fugle/marketdata loads its native addon and constructs clients');
+          "
+
+  csharp:
+    name: NuGet (${{ matrix.os }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Create project and install from NuGet
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.uniffi_version }}
+        run: |
+          dotnet new console --framework net8.0 -o smoke
+          cd smoke
+          # NuGet indexing can take 10-15 minutes after a push.
+          for i in $(seq 1 40); do
+            dotnet add package Fugle.MarketData --version "$VERSION" && exit 0
+            echo "Attempt $i failed, retrying in 30s"; sleep 30
+          done
+          exit 1
+
+      - name: Construct client
+        working-directory: smoke
+        shell: bash
+        run: |
+          cat > Program.cs <<'CS'
+          using FugleMarketData;
+          using var client = new RestClient(new RestClientOptions { ApiKey = "smoke-test-token" });
+          if (client.Stock == null || client.FutOpt == null) throw new System.Exception("missing REST accessors");
+          System.Console.WriteLine("OK: Fugle.MarketData loads its native library and constructs clients");
+          CS
+          dotnet run
+
+  go:
+    name: Go module (${{ matrix.os }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: go get and run
+        shell: bash
+        env:
+          VERSION: v${{ needs.resolve.outputs.uniffi_version }}
+          CGO_ENABLED: '1'
+          # Fetch straight from GitHub so a just-pushed tag is visible
+          # without waiting for proxy.golang.org / sum.golang.org.
+          GOPROXY: direct
+          GONOSUMDB: github.com/fugle-dev/*
+        run: |
+          mkdir smoke && cd smoke
+          go mod init smoke
+          cat > main.go <<'GO'
+          package main
+
+          import (
+          	"fmt"
+
+          	marketdata "github.com/fugle-dev/fugle-marketdata-go"
+          )
+
+          func main() {
+          	client, err := marketdata.NewFugleRestClient(marketdata.WithApiKey("smoke-test-token"))
+          	if err != nil {
+          		panic(err)
+          	}
+          	if client == nil {
+          		panic("nil client")
+          	}
+          	fmt.Println("OK: fugle-marketdata-go links statically and constructs a client")
+          }
+          GO
+          go get "github.com/fugle-dev/fugle-marketdata-go@$VERSION"
+          go run .
+
+  cpp:
+    name: C++ tarball (linux-x64)
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download tarball from the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.uniffi_version }}
+        run: |
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern "fugle-marketdata-cpp-linux-x64-${VERSION}.tar.gz" --dir cpp-dl
+          tar -xzf cpp-dl/*.tar.gz
+          echo "SDK_DIR=$PWD/fugle-marketdata-cpp-linux-x64-${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Compile, link and run
+        run: |
+          cat > smoke.cpp <<'CPP'
+          #include <cstdio>
+          #include "marketdata_uniffi.hpp"
+          int main() {
+              printf("OK: C++ headers compile and the shared library links\n");
+              return 0;
+          }
+          CPP
+          c++ -std=c++20 -O2 -I"$SDK_DIR/include" smoke.cpp "$SDK_DIR/include/marketdata_uniffi.cpp" \
+              -L"$SDK_DIR/lib" -lmarketdata_uniffi -o smoke
+          LD_LIBRARY_PATH="$SDK_DIR/lib" ./smoke
