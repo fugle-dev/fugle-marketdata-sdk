@@ -1458,7 +1458,7 @@ export declare class FutOptWebSocketClient {
  * # JavaScript Usage
  *
  * ```javascript
- * const { RestClient } = require('@fubon/marketdata-js');
+ * const { RestClient } = require('@fugle/marketdata');
  *
  * // Create client with API key
  * const client = new RestClient('your-api-key');
@@ -1886,7 +1886,7 @@ export declare class StockWebSocketClient {
  * # JavaScript Usage
  *
  * ```javascript
- * const { WebSocketClient } = require('@fubon/marketdata-js');
+ * const { WebSocketClient } = require('@fugle/marketdata');
  *
  * // Create client with API key
  * const ws = new WebSocketClient('your-api-key');

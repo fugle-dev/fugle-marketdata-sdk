@@ -37,7 +37,7 @@ pub struct SymbolParams {
 /// # JavaScript Usage
 ///
 /// ```javascript
-/// const { RestClient } = require('@fubon/marketdata-js');
+/// const { RestClient } = require('@fugle/marketdata');
 ///
 /// // Create client with API key
 /// const client = new RestClient('your-api-key');

@@ -12,7 +12,7 @@
 //! # Usage (JavaScript/TypeScript)
 //!
 //! ```javascript
-//! const { RestClient } = require('@fubon/marketdata-js');
+//! const { RestClient } = require('@fugle/marketdata');
 //!
 //! const client = new RestClient('your-api-key');
 //! const quote = await client.stock.intraday.quote('2330');

@@ -246,7 +246,7 @@ struct EventCallbacks {
 /// # JavaScript Usage
 ///
 /// ```javascript
-/// const { WebSocketClient } = require('@fubon/marketdata-js');
+/// const { WebSocketClient } = require('@fugle/marketdata');
 ///
 /// // Create client with API key
 /// const ws = new WebSocketClient('your-api-key');

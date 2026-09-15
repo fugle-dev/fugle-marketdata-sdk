@@ -113,7 +113,7 @@ jobs:
         run: |
           npm ci
           npm run build:debug
-          npx jest --ci --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
+          npx jest --ci --forceExit --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
       - name: Generated loader and types are committed
         run: git diff --exit-code -- js/index.js js/index.d.ts
 
