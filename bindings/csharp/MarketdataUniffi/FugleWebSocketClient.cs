@@ -214,9 +214,8 @@ namespace FugleMarketData
                     if (options.HealthCheck != null)
                     {
                         healthCheckRecord = new uniffi.marketdata_uniffi.HealthCheckConfigRecord(
-                            enabled: options.HealthCheck.Enabled ?? false,
-                            intervalMs: options.HealthCheck.IntervalMs ?? 0,
-                            maxMissedPongs: options.HealthCheck.MaxMissedPongs ?? 0
+                            enabled: options.HealthCheck.Enabled ?? true,
+                            heartbeatTimeoutMs: options.HealthCheck.HeartbeatTimeoutMs ?? 0
                         );
                     }
 

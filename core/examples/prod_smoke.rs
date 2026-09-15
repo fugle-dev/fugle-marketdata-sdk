@@ -330,10 +330,18 @@ async fn main() {
     rest_probe!("rest stock/snapshot/actives TSE", |c: &RestClient| c
         .stock().snapshot().actives().market("TSE").trade("volume").send());
 
-    // Stock ownership (1) — new in 0.8.0. 0050 is the largest, longest-lived
-    // ETF, so it always has a holdings series to decode.
+    // Stock ownership (4) — new in 0.8.0. 0050 is the largest, longest-lived
+    // ETF, so it always has a holdings series to decode; 2330 has director,
+    // institutional and TDCC series. The last three are modelled from the
+    // official TS interfaces only, so watch these for payload drift.
     rest_probe!("rest stock/ownership/etf-holdings 0050", |c: &RestClient| c
         .stock().ownership().etf_holdings().symbol("0050").send());
+    rest_probe!("rest stock/ownership/institutional-trades 2330", |c: &RestClient| c
+        .stock().ownership().institutional_trades().symbol("2330").send());
+    rest_probe!("rest stock/ownership/director-holdings 2330", |c: &RestClient| c
+        .stock().ownership().director_holdings().symbol("2330").send());
+    rest_probe!("rest stock/ownership/tdcc-distribution 2330", |c: &RestClient| c
+        .stock().ownership().tdcc_distribution().symbol("2330").send());
 
     // Stock historical (2) — StatsResponse is all-non-Option, watch closely
     rest_probe!("rest stock/historical/candles 2330", |c: &RestClient| c

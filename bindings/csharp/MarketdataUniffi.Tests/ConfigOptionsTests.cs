@@ -222,8 +222,7 @@ public class ConfigOptionsTests
         var options = new FugleMarketData.HealthCheckOptions();
 
         Assert.IsNull(options.Enabled);
-        Assert.IsNull(options.IntervalMs);
-        Assert.IsNull(options.MaxMissedPongs);
+        Assert.IsNull(options.HeartbeatTimeoutMs);
     }
 
     [TestMethod]
@@ -232,13 +231,11 @@ public class ConfigOptionsTests
         var options = new FugleMarketData.HealthCheckOptions
         {
             Enabled = true,
-            IntervalMs = 20000,
-            MaxMissedPongs = 3
+            HeartbeatTimeoutMs = 20000
         };
 
         Assert.AreEqual(true, options.Enabled);
-        Assert.AreEqual(20000ul, options.IntervalMs);
-        Assert.AreEqual(3ul, options.MaxMissedPongs);
+        Assert.AreEqual(20000ul, options.HeartbeatTimeoutMs);
     }
 
     // ========== WebSocketClientOptions with nested config Tests ==========
@@ -287,8 +284,7 @@ public class ConfigOptionsTests
             HealthCheck = new FugleMarketData.HealthCheckOptions
             {
                 Enabled = true,
-                IntervalMs = 15000,
-                MaxMissedPongs = 2
+                HeartbeatTimeoutMs = 15000
             }
         };
         var listener = new TestWebSocketListener();

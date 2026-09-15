@@ -242,7 +242,8 @@ impl StockClient {
         }
     }
 
-    /// Access ownership endpoints (ETF holdings)
+    /// Access ownership endpoints (ETF holdings, institutional trades,
+    /// director holdings, TDCC distribution)
     ///
     /// Returns:
     ///     StockOwnershipClient for accessing ownership endpoints
@@ -275,8 +276,9 @@ impl StockOwnershipClient {
     ///
     /// Args:
     ///     symbol: ETF symbol (e.g. "0050") — required
-    ///     from_date: Start of the date range (YYYY-MM-DD)
-    ///     to_date: End of the date range (YYYY-MM-DD)
+    ///     from_date: Start of the date range (YYYY-MM-DD). The official SDK's
+    ///         `from_=` / `**{"from": ...}` spellings are accepted too.
+    ///     to_date: End of the date range (YYYY-MM-DD). `to=` is accepted too.
     ///     sort: "asc" (oldest first) or "desc" (newest first)
     ///
     /// Returns:
@@ -284,7 +286,7 @@ impl StockOwnershipClient {
     ///
     /// Example:
     ///     ```python
-    ///     holdings = await client.stock.ownership.etf_holdings(symbol="0050")
+    ///     data = await client.stock.ownership.etf_holdings_async(symbol="0050")
     ///     ```
     #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn etf_holdings_async<'py>(
@@ -296,36 +298,11 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.ownership.etf_holdings", &_extra);
-        let sort = parse_holdings_sort(sort)?;
-        let client = self.inner.clone();
-        future_into_py(py, async move {
-            let result = tokio::task::spawn_blocking(move || {
-                let stock = client.stock();
-                let ownership = stock.ownership();
-                let mut builder = ownership.etf_holdings().symbol(&symbol);
-                if let Some(f) = from_date {
-                    builder = builder.from(&f);
-                }
-                if let Some(t) = to_date {
-                    builder = builder.to(&t);
-                }
-                if let Some(s) = sort {
-                    builder = builder.sort(s);
-                }
-                builder.send()
-            })
-            .await
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
-
-            match result {
-                Ok(holdings) => Python::attach(|py| types::corporate_action_to_dict(py, &holdings)),
-                Err(e) => Err(errors::to_py_err(e)),
-            }
-        })
+        let query = OwnershipQuery::resolve(py, "stock.ownership.etf_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_async(py, self.inner.clone(), query, send_etf_holdings)
     }
 
-    /// Sync sibling of `etf_holdings()` for legacy fugle-marketdata callers.
+    /// Sync sibling of `etf_holdings_async()`, matching the legacy fugle-marketdata call shape.
     #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn etf_holdings(
         &self,
@@ -336,22 +313,256 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.ownership.etf_holdings", &_extra);
-        let sort = parse_holdings_sort(sort)?;
-        let inner = self.inner.clone();
-        let result = py.detach(|| {
-            let stock = inner.stock();
+        let query = OwnershipQuery::resolve(py, "stock.ownership.etf_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_sync(py, &self.inner, query, send_etf_holdings)
+    }
+
+    /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer)
+    ///
+    /// Args:
+    ///     symbol: Stock symbol (e.g. "2330") — required
+    ///     from_date: Start of the date range (YYYY-MM-DD). The official SDK's
+    ///         `from_=` / `**{"from": ...}` spellings are accepted too.
+    ///     to_date: End of the date range (YYYY-MM-DD). `to=` is accepted too.
+    ///     sort: "asc" (oldest first) or "desc" (newest first)
+    ///
+    /// Returns:
+    ///     Awaitable[dict]: institutional trades data
+    ///
+    /// Example:
+    ///     ```python
+    ///     data = await client.stock.ownership.institutional_trades_async(symbol="2330")
+    ///     ```
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn institutional_trades_async<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let query = OwnershipQuery::resolve(py, "stock.ownership.institutional_trades", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_async(py, self.inner.clone(), query, send_institutional_trades)
+    }
+
+    /// Sync sibling of `institutional_trades_async()`, matching the legacy fugle-marketdata call shape.
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn institutional_trades(
+        &self,
+        py: Python<'_>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Py<pyo3::types::PyDict>> {
+        let query = OwnershipQuery::resolve(py, "stock.ownership.institutional_trades", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_sync(py, &self.inner, query, send_institutional_trades)
+    }
+
+    /// Get monthly holdings and pledges disclosed by directors and supervisors
+    ///
+    /// Args:
+    ///     symbol: Stock symbol (e.g. "2330") — required
+    ///     from_date: Start of the date range (YYYY-MM-DD). The official SDK's
+    ///         `from_=` / `**{"from": ...}` spellings are accepted too.
+    ///     to_date: End of the date range (YYYY-MM-DD). `to=` is accepted too.
+    ///     sort: "asc" (oldest first) or "desc" (newest first)
+    ///
+    /// Returns:
+    ///     Awaitable[dict]: director holdings data
+    ///
+    /// Example:
+    ///     ```python
+    ///     data = await client.stock.ownership.director_holdings_async(symbol="2330")
+    ///     ```
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn director_holdings_async<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let query = OwnershipQuery::resolve(py, "stock.ownership.director_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_async(py, self.inner.clone(), query, send_director_holdings)
+    }
+
+    /// Sync sibling of `director_holdings_async()`, matching the legacy fugle-marketdata call shape.
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn director_holdings(
+        &self,
+        py: Python<'_>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Py<pyo3::types::PyDict>> {
+        let query = OwnershipQuery::resolve(py, "stock.ownership.director_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_sync(py, &self.inner, query, send_director_holdings)
+    }
+
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket
+    ///
+    /// Args:
+    ///     symbol: Stock symbol (e.g. "2330") — required
+    ///     from_date: Start of the date range (YYYY-MM-DD). The official SDK's
+    ///         `from_=` / `**{"from": ...}` spellings are accepted too.
+    ///     to_date: End of the date range (YYYY-MM-DD). `to=` is accepted too.
+    ///     sort: "asc" (oldest first) or "desc" (newest first)
+    ///
+    /// Returns:
+    ///     Awaitable[dict]: TDCC distribution data
+    ///
+    /// Example:
+    ///     ```python
+    ///     data = await client.stock.ownership.tdcc_distribution_async(symbol="2330")
+    ///     ```
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn tdcc_distribution_async<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let query = OwnershipQuery::resolve(py, "stock.ownership.tdcc_distribution", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_async(py, self.inner.clone(), query, send_tdcc_distribution)
+    }
+
+    /// Sync sibling of `tdcc_distribution_async()`, matching the legacy fugle-marketdata call shape.
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    pub fn tdcc_distribution(
+        &self,
+        py: Python<'_>,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Py<pyo3::types::PyDict>> {
+        let query = OwnershipQuery::resolve(py, "stock.ownership.tdcc_distribution", symbol, from_date, to_date, sort, &_extra)?;
+        ownership_sync(py, &self.inner, query, send_tdcc_distribution)
+    }
+}
+
+/// Parsed arguments shared by every `stock.ownership.*` method.
+struct OwnershipQuery {
+    symbol: String,
+    from: Option<String>,
+    to: Option<String>,
+    sort: Option<marketdata_core::rest::stock::ownership::HoldingsSort>,
+}
+
+impl OwnershipQuery {
+    /// Normalise kwargs into a query.
+    ///
+    /// The official fugle-marketdata forwards `**params` verbatim as query
+    /// parameters, so callers write `from_=` (2.6.0+ alias for the reserved
+    /// word), `**{"from": ...}` or `to=`. Those spellings land in `**_extra`
+    /// here; they are pulled out before the unknown-kwarg warning so legacy
+    /// code keeps its date range instead of silently losing it.
+    fn resolve(
+        py: Python<'_>,
+        method: &str,
+        symbol: String,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        sort: Option<String>,
+        extra: &Option<Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Self> {
+        let mut from = from_date;
+        let mut to = to_date;
+        if let Some(extra) = extra {
+            for (alias, is_from) in [("from", true), ("from_", true), ("to", false)] {
+                let Some(value) = extra.get_item(alias)? else { continue };
+                let value: Option<String> = value.extract()?;
+                extra.del_item(alias)?;
+                let slot = if is_from { &mut from } else { &mut to };
+                if slot.is_some() {
+                    let canonical = if is_from { "from_date" } else { "to_date" };
+                    return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                        "{method}() got multiple values for {canonical} (also passed as '{alias}')"
+                    )));
+                }
+                *slot = value;
+            }
+        }
+        warn_unknown_kwargs(py, method, extra);
+        Ok(Self {
+            symbol,
+            from,
+            to,
+            sort: parse_holdings_sort(sort)?,
+        })
+    }
+}
+
+macro_rules! ownership_sender {
+    ($fn_name:ident, $method:ident, $resp:ident) => {
+        fn $fn_name(
+            client: &marketdata_core::RestClient,
+            q: OwnershipQuery,
+        ) -> Result<marketdata_core::models::$resp, marketdata_core::MarketDataError> {
+            let stock = client.stock();
             let ownership = stock.ownership();
-            let mut builder = ownership.etf_holdings().symbol(&symbol);
-            if let Some(f) = from_date { builder = builder.from(&f); }
-            if let Some(t) = to_date { builder = builder.to(&t); }
-            if let Some(s) = sort { builder = builder.sort(s); }
+            let mut builder = ownership.$method().symbol(&q.symbol);
+            if let Some(f) = q.from.as_deref() {
+                builder = builder.from(f);
+            }
+            if let Some(t) = q.to.as_deref() {
+                builder = builder.to(t);
+            }
+            if let Some(s) = q.sort {
+                builder = builder.sort(s);
+            }
             builder.send()
-        });
+        }
+    };
+}
+
+ownership_sender!(send_etf_holdings, etf_holdings, EtfHoldingsResponse);
+ownership_sender!(send_institutional_trades, institutional_trades, InstitutionalTradesResponse);
+ownership_sender!(send_director_holdings, director_holdings, DirectorHoldingsResponse);
+ownership_sender!(send_tdcc_distribution, tdcc_distribution, TdccDistributionResponse);
+
+type OwnershipSend<T> =
+    fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<T, marketdata_core::MarketDataError>;
+
+fn ownership_async<'py, T: serde::Serialize + Send + 'static>(
+    py: Python<'py>,
+    client: marketdata_core::RestClient,
+    query: OwnershipQuery,
+    send: OwnershipSend<T>,
+) -> PyResult<Bound<'py, PyAny>> {
+    future_into_py(py, async move {
+        let result = tokio::task::spawn_blocking(move || send(&client, query))
+            .await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
         match result {
-            Ok(holdings) => types::corporate_action_to_dict(py, &holdings),
+            Ok(data) => Python::attach(|py| types::corporate_action_to_dict(py, &data)),
             Err(e) => Err(errors::to_py_err(e)),
         }
+    })
+}
+
+fn ownership_sync<T: serde::Serialize + Send>(
+    py: Python<'_>,
+    client: &marketdata_core::RestClient,
+    query: OwnershipQuery,
+    send: OwnershipSend<T>,
+) -> PyResult<Py<pyo3::types::PyDict>> {
+    let client = client.clone();
+    match py.detach(move || send(&client, query)) {
+        Ok(data) => types::corporate_action_to_dict(py, &data),
+        Err(e) => Err(errors::to_py_err(e)),
     }
 }
 

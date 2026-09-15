@@ -824,6 +824,12 @@ class StockOwnershipClient:
     """Stock ownership endpoints client.
 
     Access via `client.stock.ownership`.
+
+    Every method takes the same range arguments. `from_date` / `to_date` are
+    the canonical names; the official SDK's `from_=` and `to=` spellings are
+    accepted as aliases, so existing fugle-marketdata code keeps working.
+    Numeric fields in the institutional-trades, director-holdings and
+    tdcc-distribution payloads may be `None`.
     """
 
     async def etf_holdings_async(
@@ -833,22 +839,25 @@ class StockOwnershipClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get the constituents an ETF held over a date range.
 
         Args:
             symbol: ETF symbol (e.g. "0050")
-            from_date: Start of the date range (YYYY-MM-DD)
-            to_date: End of the date range (YYYY-MM-DD)
+            from_date: Start of the date range (YYYY-MM-DD); alias `from_`
+            to_date: End of the date range (YYYY-MM-DD); alias `to`
             sort: "asc" (oldest first) or "desc" (newest first)
 
         Raises:
             ValueError: sort is neither "asc" nor "desc"
+            TypeError: a date is passed under both its name and its alias
 
         Example:
             ```python
-            holdings = await client.stock.ownership.etf_holdings_async(symbol="0050")
-            for entry in holdings["data"]:
+            data = await client.stock.ownership.etf_holdings_async(symbol="0050")
+            for entry in data["data"]:
                 print(entry["date"], len(entry["components"]))
             ```
         """
@@ -861,8 +870,144 @@ class StockOwnershipClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `etf_holdings_async()`."""
+        ...
+
+    async def institutional_trades_async(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Get daily trading by the three major institutional investors.
+
+        Args:
+            symbol: Stock symbol (e.g. "2330")
+            from_date: Start of the date range (YYYY-MM-DD); alias `from_`
+            to_date: End of the date range (YYYY-MM-DD); alias `to`
+            sort: "asc" (oldest first) or "desc" (newest first)
+
+        Raises:
+            ValueError: sort is neither "asc" nor "desc"
+            TypeError: a date is passed under both its name and its alias
+
+        Example:
+            ```python
+            data = await client.stock.ownership.institutional_trades_async(symbol="2330")
+            for entry in data["data"]:
+                print(entry["date"], entry["foreign"]["net"], entry["total"])
+            ```
+        """
+        ...
+
+    def institutional_trades(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Blocking version of `institutional_trades_async()`."""
+        ...
+
+    async def director_holdings_async(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Get monthly holdings and pledges disclosed by directors and supervisors.
+
+        Args:
+            symbol: Stock symbol (e.g. "2330")
+            from_date: Start of the date range (YYYY-MM-DD); alias `from_`
+            to_date: End of the date range (YYYY-MM-DD); alias `to`
+            sort: "asc" (oldest first) or "desc" (newest first)
+
+        Raises:
+            ValueError: sort is neither "asc" nor "desc"
+            TypeError: a date is passed under both its name and its alias
+
+        Example:
+            ```python
+            data = await client.stock.ownership.director_holdings_async(symbol="2330")
+            for entry in data["data"]:  # entry["date"] is YYYY-MM
+                for d in entry["directors"]:
+                    print(d["title"], d["name"], d["heldShares"], d["pledgeRatio"])
+            ```
+        """
+        ...
+
+    def director_holdings(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Blocking version of `director_holdings_async()`."""
+        ...
+
+    async def tdcc_distribution_async(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Get the weekly TDCC shareholder distribution by holding-size bracket.
+
+        Args:
+            symbol: Stock symbol (e.g. "2330")
+            from_date: Start of the date range (YYYY-MM-DD); alias `from_`
+            to_date: End of the date range (YYYY-MM-DD); alias `to`
+            sort: "asc" (oldest first) or "desc" (newest first)
+
+        Raises:
+            ValueError: sort is neither "asc" nor "desc"
+            TypeError: a date is passed under both its name and its alias
+
+        Example:
+            ```python
+            data = await client.stock.ownership.tdcc_distribution_async(symbol="2330")
+            for entry in data["data"]:
+                for level in entry["distributions"]:
+                    print(level["range"], level["holders"], level["proportion"])
+            ```
+        """
+        ...
+
+    def tdcc_distribution(
+        self,
+        symbol: str,
+        *,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        sort: Optional[Literal["asc", "desc"]] = None,
+        from_: Optional[str] = None,
+        to: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Blocking version of `tdcc_distribution_async()`."""
         ...
 
 

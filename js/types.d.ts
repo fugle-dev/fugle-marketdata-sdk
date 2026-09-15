@@ -956,6 +956,127 @@ export interface EtfHoldingsResponse {
   data: EtfHoldingsEntry[];
 }
 
+/**
+ * Buy / sell / net shares traded by one class of institutional investor.
+ * Fields may be null when the source has no figure for that day.
+ */
+export interface InstitutionalInvestorTrade {
+  /** Shares bought */
+  buy: number | null;
+  /** Shares sold */
+  sell: number | null;
+  /** Net shares (buy - sell) */
+  net: number | null;
+}
+
+/** Institutional investor trading on a single date */
+export interface InstitutionalTradesEntry {
+  /** Trading date (YYYY-MM-DD) */
+  date: string;
+  /** Foreign investors */
+  foreign: InstitutionalInvestorTrade | null;
+  /** Investment trusts */
+  trust: InstitutionalInvestorTrade | null;
+  /** Dealers */
+  dealer: InstitutionalInvestorTrade | null;
+  /** Combined net shares across all three investor classes */
+  total: number | null;
+}
+
+/** Response for `stock.ownership.institutionalTrades` */
+export interface InstitutionalTradesResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Stock symbol */
+  symbol: string;
+  /** Trading by date */
+  data: InstitutionalTradesEntry[];
+}
+
+/** One director's or supervisor's disclosed holdings */
+export interface DirectorHolding {
+  /** Position of this director in the disclosure */
+  order: number | null;
+  /** Title (e.g. chairman, director, supervisor) */
+  title: string;
+  /** Name */
+  name: string;
+  /** Shares held when elected */
+  electedShares: number | null;
+  /** Shares currently held */
+  heldShares: number | null;
+  /** Shares pledged */
+  pledgedShares: number | null;
+  /** Pledged shares as a ratio of held shares */
+  pledgeRatio: number | null;
+  /** Shares held by related parties (spouse, minor children, nominees) */
+  relatedHeldShares: number | null;
+  /** Shares pledged by related parties */
+  relatedPledgedShares: number | null;
+  /** Related-party pledged shares as a ratio of related-party held shares */
+  relatedPledgeRatio: number | null;
+}
+
+/** Director holdings disclosed for a single month */
+export interface DirectorHoldingsEntry {
+  /** Disclosure month (YYYY-MM) */
+  date: string;
+  /** Directors and supervisors disclosed for this month */
+  directors: DirectorHolding[];
+}
+
+/** Response for `stock.ownership.directorHoldings` */
+export interface DirectorHoldingsResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Stock symbol */
+  symbol: string;
+  /** Holdings by disclosure month */
+  data: DirectorHoldingsEntry[];
+}
+
+/** One holding-size bracket of the TDCC shareholder distribution */
+export interface TdccDistributionLevel {
+  /** Holding-size bracket label, as returned by the API */
+  range: string;
+  /** Number of shareholders in this bracket */
+  holders: number | null;
+  /** Shares held by this bracket */
+  shares: number | null;
+  /** Share of total outstanding held by this bracket, in percent */
+  proportion: number | null;
+}
+
+/** TDCC shareholder distribution on a single date */
+export interface TdccDistributionEntry {
+  /** Data date (YYYY-MM-DD) */
+  date: string;
+  /** Distribution by holding-size bracket */
+  distributions: TdccDistributionLevel[];
+}
+
+/** Response for `stock.ownership.tdccDistribution` */
+export interface TdccDistributionResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Stock symbol */
+  symbol: string;
+  /** Distribution by date */
+  data: TdccDistributionEntry[];
+}
+
 /** Dividend record */
 export interface Dividend {
   /** Stock symbol */

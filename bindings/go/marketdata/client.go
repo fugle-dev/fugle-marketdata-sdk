@@ -131,9 +131,8 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		var healthCheckRecord *HealthCheckConfigRecord
 		if cfg.healthCheck != nil {
 			healthCheckRecord = &HealthCheckConfigRecord{
-				Enabled:        cfg.healthCheck.Enabled,
-				IntervalMs:     cfg.healthCheck.IntervalMs,
-				MaxMissedPongs: cfg.healthCheck.MaxMissedPongs,
+				Enabled:            cfg.healthCheck.Enabled,
+				HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
 			}
 		}
 

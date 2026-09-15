@@ -1,10 +1,12 @@
-//! ETF holdings endpoint - GET /stock/ownership/etf-holdings/{symbol}
+//! TDCC distribution endpoint - GET /stock/ownership/tdcc-distribution/{symbol}
+//!
+//! Returns the weekly TDCC (Taiwan Depository & Clearing Corporation) shareholder distribution by holding-size bracket.
 
 use super::range::{self, HoldingsSort};
-use crate::{errors::MarketDataError, models::EtfHoldingsResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, models::TdccDistributionResponse, rest::client::RestClient};
 
-/// Request builder for the ETF holdings endpoint
-pub struct EtfHoldingsRequestBuilder<'a> {
+/// Request builder for the TDCC shareholder distribution endpoint
+pub struct TdccDistributionRequestBuilder<'a> {
     client: &'a RestClient,
     symbol: Option<String>,
     from: Option<String>,
@@ -12,8 +14,8 @@ pub struct EtfHoldingsRequestBuilder<'a> {
     sort: Option<HoldingsSort>,
 }
 
-impl<'a> EtfHoldingsRequestBuilder<'a> {
-    /// Create a new ETF holdings request builder
+impl<'a> TdccDistributionRequestBuilder<'a> {
+    /// Create a new TDCC shareholder distribution request builder
     pub(crate) fn new(client: &'a RestClient) -> Self {
         Self {
             client,
@@ -24,7 +26,7 @@ impl<'a> EtfHoldingsRequestBuilder<'a> {
         }
     }
 
-    /// Set the ETF symbol (required, e.g. `"0050"`)
+    /// Set the stock symbol (required, e.g. `"2330"`)
     pub fn symbol(mut self, symbol: &str) -> Self {
         self.symbol = Some(symbol.to_string());
         self
@@ -48,15 +50,15 @@ impl<'a> EtfHoldingsRequestBuilder<'a> {
         self
     }
 
-    /// Execute the request and return the ETF holdings response
+    /// Execute the request and return the TDCC shareholder distribution response
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<EtfHoldingsResponse, MarketDataError> {
+    pub fn send(self) -> Result<TdccDistributionResponse, MarketDataError> {
         range::send(
             self.client,
-            "etf-holdings",
+            "tdcc-distribution",
             self.symbol,
             self.from,
             self.to,
@@ -71,9 +73,9 @@ mod tests {
     use crate::rest::Auth;
 
     #[test]
-    fn test_etf_holdings_builder_requires_symbol() {
+    fn test_tdcc_distribution_builder_requires_symbol() {
         let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = EtfHoldingsRequestBuilder::new(&client);
+        let builder = TdccDistributionRequestBuilder::new(&client);
 
         let result = builder.send();
         assert!(result.is_err());
@@ -84,23 +86,23 @@ mod tests {
     }
 
     #[test]
-    fn test_etf_holdings_builder_symbol() {
+    fn test_tdcc_distribution_builder_symbol() {
         let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = EtfHoldingsRequestBuilder::new(&client).symbol("0050");
+        let builder = TdccDistributionRequestBuilder::new(&client).symbol("2330");
 
-        assert_eq!(builder.symbol, Some("0050".to_string()));
+        assert_eq!(builder.symbol, Some("2330".to_string()));
     }
 
     #[test]
-    fn test_etf_holdings_builder_full_params() {
+    fn test_tdcc_distribution_builder_full_params() {
         let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = EtfHoldingsRequestBuilder::new(&client)
-            .symbol("0050")
+        let builder = TdccDistributionRequestBuilder::new(&client)
+            .symbol("2330")
             .from("2026-01-01")
             .to("2026-07-31")
             .sort(HoldingsSort::Desc);
 
-        assert_eq!(builder.symbol, Some("0050".to_string()));
+        assert_eq!(builder.symbol, Some("2330".to_string()));
         assert_eq!(builder.from, Some("2026-01-01".to_string()));
         assert_eq!(builder.to, Some("2026-07-31".to_string()));
         assert_eq!(builder.sort, Some(HoldingsSort::Desc));

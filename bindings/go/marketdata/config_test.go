@@ -33,11 +33,8 @@ func TestHealthCheckConfigDefaults(t *testing.T) {
 	if cfg.Enabled != false {
 		t.Errorf("expected Enabled default false, got %v", cfg.Enabled)
 	}
-	if cfg.IntervalMs != 0 {
-		t.Errorf("expected IntervalMs default 0 (use core default), got %d", cfg.IntervalMs)
-	}
-	if cfg.MaxMissedPongs != 0 {
-		t.Errorf("expected MaxMissedPongs default 0 (use core default), got %d", cfg.MaxMissedPongs)
+	if cfg.HeartbeatTimeoutMs != 0 {
+		t.Errorf("expected HeartbeatTimeoutMs default 0 (use core default), got %d", cfg.HeartbeatTimeoutMs)
 	}
 }
 
@@ -63,19 +60,15 @@ func TestReconnectConfigCustomValues(t *testing.T) {
 // Test 4: HealthCheckConfig custom values
 func TestHealthCheckConfigCustomValues(t *testing.T) {
 	cfg := HealthCheckConfig{
-		Enabled:        true,
-		IntervalMs:     10000,
-		MaxMissedPongs: 3,
+		Enabled:            true,
+		HeartbeatTimeoutMs: 10000,
 	}
 
 	if cfg.Enabled != true {
 		t.Errorf("expected Enabled true, got %v", cfg.Enabled)
 	}
-	if cfg.IntervalMs != 10000 {
-		t.Errorf("expected IntervalMs 10000, got %d", cfg.IntervalMs)
-	}
-	if cfg.MaxMissedPongs != 3 {
-		t.Errorf("expected MaxMissedPongs 3, got %d", cfg.MaxMissedPongs)
+	if cfg.HeartbeatTimeoutMs != 10000 {
+		t.Errorf("expected HeartbeatTimeoutMs 10000, got %d", cfg.HeartbeatTimeoutMs)
 	}
 }
 
