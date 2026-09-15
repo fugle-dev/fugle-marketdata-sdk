@@ -12,7 +12,7 @@ history. Everything else goes to stderr.
 
 Usage (run with the fubon_neo venv from your sdk-demo checkout):
 
-    DEMO=~/Project/fubon/sdk-demo
+    DEMO=/path/to/sdk-demo
     set -a; . "$DEMO/profiles/dev.env"; set +a
     export FUGLE_SDK_TOKEN=$("$DEMO/python/.venv-dev/bin/python" \\
         core/examples/fubon_token.py)
@@ -35,7 +35,7 @@ def main() -> int:
         print(
             f"fubon_neo not importable ({exc}).\n"
             "Run this with the sdk-demo venv, e.g.\n"
-            "  ~/Project/fubon/sdk-demo/python/.venv-dev/bin/python "
+            "  $DEMO/python/.venv-dev/bin/python "
             "core/examples/fubon_token.py",
             file=sys.stderr,
         )

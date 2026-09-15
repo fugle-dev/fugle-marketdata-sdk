@@ -52,7 +52,7 @@ ws = WebSocketClient(api_key="your-api-key", reconnect=reconnect)
 #### JavaScript/TypeScript
 
 ```typescript
-import { WebSocketClient } from '@fubon/marketdata-js';
+import { WebSocketClient } from '@fugle/marketdata';
 
 // Default configuration
 const ws = new WebSocketClient({ apiKey: 'your-api-key' });
@@ -188,7 +188,7 @@ ws = WebSocketClient(api_key="your-api-key", health_check=health_check)
 #### JavaScript/TypeScript
 
 ```typescript
-import { WebSocketClient } from '@fubon/marketdata-js';
+import { WebSocketClient } from '@fugle/marketdata';
 
 // Health check disabled by default
 const ws = new WebSocketClient({ apiKey: 'your-api-key' });
@@ -311,7 +311,7 @@ client = RestClient(api_key="your-api-key", base_url="https://custom.api.url")
 #### JavaScript/TypeScript
 
 ```typescript
-import { RestClient } from '@fubon/marketdata-js';
+import { RestClient } from '@fugle/marketdata';
 
 // API key authentication
 const client = new RestClient({ apiKey: 'your-api-key' });

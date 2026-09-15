@@ -386,7 +386,7 @@ python migration/migrate-python.py --path src/ --dry-run
 **Before (v0.2.x):**
 
 ```javascript
-const { RestClient, WebSocketClient } = require('@fubon/marketdata-js');
+const { RestClient, WebSocketClient } = require('@fugle/marketdata');
 
 const client = new RestClient('your-api-key');
 const ws = new WebSocketClient('your-api-key');
@@ -395,7 +395,7 @@ const ws = new WebSocketClient('your-api-key');
 **After (v0.3.0):**
 
 ```typescript
-import { RestClient, WebSocketClient } from '@fubon/marketdata-js';
+import { RestClient, WebSocketClient } from '@fugle/marketdata';
 
 const client = new RestClient({ apiKey: 'your-api-key' });
 const ws = new WebSocketClient({

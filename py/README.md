@@ -1,8 +1,16 @@
-# marketdata-py
+# fugle-marketdata
 
-Python bindings for Fugle market data streaming. Built with PyO3 for high-performance native integration.
+Fugle market data REST and WebSocket client for Python, powered by a Rust
+core through PyO3.
 
 ## Installation
+
+```bash
+pip install --pre fugle-marketdata   # 3.x pre-release
+```
+
+Wheels are published for CPython 3.7+ (abi3) on Linux glibc (x86_64,
+aarch64), macOS (x86_64, arm64) and Windows x64.
 
 ### Development Build
 
@@ -15,11 +23,11 @@ source .venv/bin/activate
 pip install maturin
 
 # Build and install in development mode
-cd marketdata-py
+cd py
 maturin develop
 ```
 
-### Production Build
+### Release Build From Source
 
 ```bash
 maturin build --release
