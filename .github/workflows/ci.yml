@@ -152,6 +152,10 @@ jobs:
         run: |
           cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.9.2+v0.28.3
           cargo install uniffi-bindgen-go --git https://github.com/NordSecurity/uniffi-bindgen-go --tag v0.3.0+v0.28.3
+      # uniffi-bindgen-cs formats its output with CSharpier when it is on
+      # PATH, so the formatter version is part of the generated file.
+      - name: Install CSharpier
+        run: dotnet tool install -g csharpier --version 0.30.6
       - name: Generated bindings are up to date
         run: |
           make gen-csharp gen-go UNIFFI_LIB=target/release/libmarketdata_uniffi.so
