@@ -60,7 +60,8 @@ workflows, which is why both trusted publishers point at `release.yml`.
 The **Release Rust crates** workflow publishes both crates with crates.io
 trusted publishing; no token is stored. Rehearse it first with
 `gh workflow run release-rust.yml --ref main`, which runs
-`cargo publish --dry-run` only. Then tag the core version:
+`cargo publish --dry-run` and a crates.io OIDC login (to check the trusted
+publisher configuration) but publishes nothing. Then tag the core version:
 
 ```bash
 python3 scripts/release-versions.py check

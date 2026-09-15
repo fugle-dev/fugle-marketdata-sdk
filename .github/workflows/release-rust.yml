@@ -5,7 +5,9 @@ name: Release Rust crates
 # stored. The tag must equal the version in core/Cargo.toml.
 #
 # Running this workflow manually is a rehearsal: it packages and verifies both
-# crates with `cargo publish --dry-run` and uploads nothing.
+# crates with `cargo publish --dry-run` and uploads nothing. It still exchanges
+# an OIDC token with crates.io, which checks the trusted publishing
+# configuration; the token is revoked when the job ends.
 #
 # One-time setup on crates.io, for each of the two crates:
 #   Settings -> Trusted Publishing -> add GitHub publisher
@@ -54,7 +56,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            echo "## Rehearsal of Rust crates $VERSION — nothing will be published" >> "$GITHUB_STEP_SUMMARY"
+            echo "## Rehearsal of Rust crates $VERSION — nothing will be published (crates.io OIDC login is still checked)" >> "$GITHUB_STEP_SUMMARY"
           else
             TAG="${GITHUB_REF#refs/tags/}"
             if [[ "$TAG" != "rust-v$VERSION" ]]; then
@@ -70,8 +72,9 @@ jobs:
       - name: cargo publish --dry-run
         run: cargo publish --dry-run --locked -p fugle-marketdata-core -p fugle-marketdata
 
+      # Runs in rehearsals too, so a missing or mismatched trusted publisher
+      # configuration shows up before a real release.
       - name: Authenticate with crates.io (OIDC)
-        if: steps.v.outputs.dry_run != 'true'
         id: auth
         uses: rust-lang/crates-io-auth-action@v1.0.5
 
