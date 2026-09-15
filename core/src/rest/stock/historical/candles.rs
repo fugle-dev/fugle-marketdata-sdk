@@ -115,10 +115,7 @@ impl<'a> HistoricalCandlesRequestBuilder<'a> {
         }
 
         // Make request
-        let request = self.client.agent().get(&url);
-        let request = self.client.auth().apply_to_request(request);
-
-        let response = self.client.execute(request)?;
+        let response = self.client.get(&url)?;
         let candles: HistoricalCandlesResponse = crate::rest::read_json(response)?;
 
         Ok(candles)

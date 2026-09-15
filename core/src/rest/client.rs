@@ -3,13 +3,15 @@
 use super::auth::Auth;
 use super::retry::{self, RetryPolicy};
 use crate::errors::MarketDataError;
-use crate::tls::{build_rustls_config, TlsConfig};
+use super::error::{status_error, transport_error};
+use crate::tls::{build_ureq_tls_config, TlsConfig};
 
 /// Idle connections kept per host.
 ///
-/// ureq 2 keeps one by default, so concurrent callers sharing a client (for
-/// example `Promise.all` in Node or threads in Python) open a fresh TCP + TLS
+/// With too few idle slots, concurrent callers sharing a client (for example
+/// `Promise.all` in Node or threads in Python) open a fresh TCP + TLS
 /// connection for every overlapping request and leave sockets in TIME_WAIT.
+/// ureq 2 kept one by default and ureq 3 keeps three.
 /// Against the live API a new connection costs roughly 60 ms versus about
 /// 20 ms on a reused one.
 const MAX_IDLE_CONNECTIONS_PER_HOST: usize = 16;
@@ -17,25 +19,26 @@ const MAX_IDLE_CONNECTIONS_PER_HOST: usize = 16;
 /// Network timeout applied to each phase of a request.
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Main REST client with connection pooling via ureq Agent
+/// Response type returned by the transport.
+pub(crate) type HttpResponse = ureq::http::Response<ureq::Body>;
+
+/// Main REST client with connection pooling.
 ///
-/// The RestClient uses ureq's Agent for automatic connection pooling and reuse.
-/// Cloning the client is cheap - it shares the same connection pool.
+/// Cloning the client is cheap: clones share the same connection pool, and
+/// the client is `Send + Sync`, so one client can serve many threads.
 ///
 /// # Connection Pooling
 ///
-/// The underlying ureq Agent maintains a connection pool that:
-/// - Reuses TCP connections across multiple requests
-/// - Reduces connection overhead for subsequent requests
-/// - Automatically handles connection lifecycle
-///
-/// # Thread Safety
-///
-/// The RestClient is NOT Send/Sync due to ureq::Agent implementation.
-/// For multi-threaded usage, create a separate client per thread.
+/// The underlying HTTP agent:
+/// - Reuses TCP and TLS connections across requests
+/// - Keeps up to 16 idle connections per host for concurrent callers
+/// - Drops idle connections after 15 seconds
 pub struct RestClient {
     agent: ureq::Agent,
-    auth: Auth,
+    /// Credential header, validated once at construction. `Err` holds the
+    /// message for a credential that is not a valid header value; it is
+    /// reported from the first request so construction stays infallible.
+    auth_header: Result<(&'static str, ureq::http::HeaderValue), String>,
     base_url: String,
     /// Optional retry policy. `None` (default) means each request is
     /// attempted exactly once and any error propagates to the caller.
@@ -86,16 +89,33 @@ impl RestClient {
         tls: TlsConfig,
         timeout: std::time::Duration,
     ) -> Result<Self, MarketDataError> {
-        let tls_config = build_rustls_config(&tls)?;
-        let builder = ureq::AgentBuilder::new()
-            .timeout_read(timeout)
-            .timeout_write(timeout)
+        let config = ureq::Agent::config_builder()
+            .tls_config(build_ureq_tls_config(&tls)?)
+            // ureq 3 reads HTTP_PROXY / HTTPS_PROXY / ALL_PROXY by default;
+            // the SDK has never done that, so keep proxies off explicitly.
+            .proxy(None)
+            // Error statuses come back as responses so their body can become
+            // the error message.
+            .http_status_as_error(false)
             .max_idle_connections_per_host(MAX_IDLE_CONNECTIONS_PER_HOST)
-            .tls_config(tls_config);
+            .timeout_connect(Some(timeout))
+            .timeout_send_request(Some(timeout))
+            .timeout_send_body(Some(timeout))
+            .timeout_recv_response(Some(timeout))
+            .timeout_recv_body(Some(timeout))
+            .build();
+
+        let (name, value) = auth.header();
+        let auth_header = ureq::http::HeaderValue::from_str(&value)
+            .map(|mut v| {
+                v.set_sensitive(true);
+                (name, v)
+            })
+            .map_err(|_| format!("{name} credential contains characters not allowed in an HTTP header"));
 
         Ok(Self {
-            agent: builder.build(),
-            auth,
+            agent: config.into(),
+            auth_header,
             base_url: crate::urls::REST_BASE.to_string(),
             retry_policy: None,
             config_error: None,
@@ -123,15 +143,12 @@ impl RestClient {
         self
     }
 
-    /// Execute a prepared `ureq::Request`, applying any installed
-    /// [`RetryPolicy`].
+    /// Send an authenticated GET, applying any installed [`RetryPolicy`].
     ///
-    /// Builders inside this crate route their `.call()` through here so
-    /// retry semantics remain centralized.
-    pub(crate) fn execute(
-        &self,
-        request: ureq::Request,
-    ) -> Result<ureq::Response, MarketDataError> {
+    /// Every endpoint builder routes its request through here, so retry,
+    /// status handling and error mapping stay in one place. Error statuses
+    /// (4xx/5xx) are returned as `Err` with the response body as message.
+    pub(crate) fn get(&self, url: &str) -> Result<HttpResponse, MarketDataError> {
         // `base_url` is an infallible builder setter, so a rejected prefix is
         // parked until here — the first point on the path that can report it.
         // Every endpoint routes its request through `execute`, so there is no
@@ -141,12 +158,33 @@ impl RestClient {
         }
 
         match self.retry_policy {
-            Some(policy) => retry::run(&policy, || {
-                let req = request.clone();
-                req.call().map_err(MarketDataError::from)
-            }),
-            None => request.call().map_err(MarketDataError::from),
+            Some(policy) => retry::run(&policy, || self.send_get(url)),
+            None => self.send_get(url),
         }
+    }
+
+    /// One GET attempt: a fresh request per call, so retries resend it.
+    fn send_get(&self, url: &str) -> Result<HttpResponse, MarketDataError> {
+        let (name, value) = self
+            .auth_header
+            .as_ref()
+            .map_err(|message| MarketDataError::ConfigError(message.clone()))?;
+        let mut response = self
+            .agent
+            .get(url)
+            .header(*name, value)
+            .call()
+            .map_err(|e| transport_error(url, e))?;
+
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let message = response
+                .body_mut()
+                .read_to_string()
+                .unwrap_or_else(|_| format!("HTTP {status}"));
+            return Err(status_error(status, message));
+        }
+        Ok(response)
     }
 
     /// Override the base URL (useful for testing or custom endpoints).
@@ -250,16 +288,6 @@ impl RestClient {
         super::futopt::FutOptClient { client: self }
     }
 
-    /// Internal helper to get the agent
-    pub(crate) fn agent(&self) -> &ureq::Agent {
-        &self.agent
-    }
-
-    /// Internal helper to get the auth
-    pub(crate) fn auth(&self) -> &Auth {
-        &self.auth
-    }
-
     /// Internal helper to get the base URL
     pub(crate) fn get_base_url(&self) -> &str {
         &self.base_url
@@ -269,12 +297,12 @@ impl RestClient {
 impl Clone for RestClient {
     /// Clone the RestClient, sharing the same connection pool
     ///
-    /// Cloning is cheap because ureq::Agent internally uses Arc for connection pool sharing.
+    /// Cloning is cheap because the agent shares its connection pool through an `Arc`.
     /// Multiple cloned clients will share the same connection pool.
     fn clone(&self) -> Self {
         Self {
             agent: self.agent.clone(),
-            auth: self.auth.clone(),
+            auth_header: self.auth_header.clone(),
             base_url: self.base_url.clone(),
             retry_policy: self.retry_policy,
             config_error: self.config_error.clone(),
@@ -687,8 +715,7 @@ mod tests {
         let client = RestClient::new(Auth::SdkToken("t".to_string()))
             .base_url("https://api.fugle.tw/marketdata/v1.0"); // <-- 0.6-era form
 
-        let request = client.agent().get("https://example.invalid/unused");
-        let msg = match client.execute(request) {
+        let msg = match client.get("https://example.invalid/unused") {
             Err(err) => err.to_string(),
             Ok(_) => panic!("a poisoned base_url must not reach the network"),
         };
@@ -804,8 +831,7 @@ mod tests {
             .base_url("https://custom.example.com/v1.0");
         let cloned = client.clone();
 
-        let request = cloned.agent().get("https://example.invalid/unused");
-        assert!(cloned.execute(request).is_err());
+        assert!(cloned.get("https://example.invalid/unused").is_err());
     }
 
     #[test]

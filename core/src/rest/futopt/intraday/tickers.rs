@@ -102,10 +102,7 @@ impl<'a> TickersRequestBuilder<'a> {
         );
 
         // Make request
-        let request = self.client.agent().get(&url);
-        let request = self.client.auth().apply_to_request(request);
-
-        let response = self.client.execute(request)?;
+        let response = self.client.get(&url)?;
         // Prod wraps the list in an envelope: {type,exchange,session,data:[…]}.
         // Decoding straight into Vec<FutOptTicker> fails with
         // "invalid type: map, expected a sequence".

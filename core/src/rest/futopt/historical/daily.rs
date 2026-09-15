@@ -82,10 +82,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
         }
 
         // Make request
-        let request = self.client.agent().get(&url);
-        let request = self.client.auth().apply_to_request(request);
-
-        let response = self.client.execute(request)?;
+        let response = self.client.get(&url)?;
         let daily: FutOptDailyResponse = crate::rest::read_json(response)?;
 
         Ok(daily)

@@ -174,8 +174,6 @@ impl core::convert::From<serde_json::error::Error> for marketdata_core::errors::
 pub fn marketdata_core::errors::MarketDataError::from(serde_json::error::Error) -> Self
 impl core::convert::From<tungstenite::error::Error> for marketdata_core::errors::MarketDataError
 pub fn marketdata_core::errors::MarketDataError::from(tungstenite::error::Error) -> Self
-impl core::convert::From<ureq::error::Error> for marketdata_core::errors::MarketDataError
-pub fn marketdata_core::errors::MarketDataError::from(ureq::error::Error) -> Self
 impl core::error::Error for marketdata_core::errors::MarketDataError
 pub fn marketdata_core::errors::MarketDataError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for marketdata_core::errors::MarketDataError
@@ -3244,7 +3242,6 @@ pub marketdata_core::rest::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::rest::Auth::BearerToken(alloc::string::String)
 pub marketdata_core::rest::Auth::SdkToken(alloc::string::String)
 impl marketdata_core::Auth
-pub fn marketdata_core::Auth::apply_to_request(&self, ureq::request::Request) -> ureq::request::Request
 pub fn marketdata_core::Auth::from_env() -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::Auth
 pub fn marketdata_core::Auth::clone(&self) -> marketdata_core::Auth
@@ -3311,7 +3308,7 @@ pub fn marketdata_core::RestClient::with_retry(self, marketdata_core::RetryPolic
 pub fn marketdata_core::RestClient::with_tls(marketdata_core::Auth, marketdata_core::tls::TlsConfig) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::RestClient
 pub fn marketdata_core::RestClient::clone(&self) -> Self
-impl core::marker::Freeze for marketdata_core::RestClient
+impl !core::marker::Freeze for marketdata_core::RestClient
 impl core::marker::Send for marketdata_core::RestClient
 impl core::marker::Sync for marketdata_core::RestClient
 impl core::marker::Unpin for marketdata_core::RestClient
@@ -4367,7 +4364,6 @@ pub marketdata_core::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::Auth::BearerToken(alloc::string::String)
 pub marketdata_core::Auth::SdkToken(alloc::string::String)
 impl marketdata_core::Auth
-pub fn marketdata_core::Auth::apply_to_request(&self, ureq::request::Request) -> ureq::request::Request
 pub fn marketdata_core::Auth::from_env() -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::Auth
 pub fn marketdata_core::Auth::clone(&self) -> marketdata_core::Auth
@@ -4697,8 +4693,6 @@ impl core::convert::From<serde_json::error::Error> for marketdata_core::errors::
 pub fn marketdata_core::errors::MarketDataError::from(serde_json::error::Error) -> Self
 impl core::convert::From<tungstenite::error::Error> for marketdata_core::errors::MarketDataError
 pub fn marketdata_core::errors::MarketDataError::from(tungstenite::error::Error) -> Self
-impl core::convert::From<ureq::error::Error> for marketdata_core::errors::MarketDataError
-pub fn marketdata_core::errors::MarketDataError::from(ureq::error::Error) -> Self
 impl core::error::Error for marketdata_core::errors::MarketDataError
 pub fn marketdata_core::errors::MarketDataError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for marketdata_core::errors::MarketDataError
@@ -5685,7 +5679,7 @@ pub fn marketdata_core::RestClient::with_retry(self, marketdata_core::RetryPolic
 pub fn marketdata_core::RestClient::with_tls(marketdata_core::Auth, marketdata_core::tls::TlsConfig) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::RestClient
 pub fn marketdata_core::RestClient::clone(&self) -> Self
-impl core::marker::Freeze for marketdata_core::RestClient
+impl !core::marker::Freeze for marketdata_core::RestClient
 impl core::marker::Send for marketdata_core::RestClient
 impl core::marker::Sync for marketdata_core::RestClient
 impl core::marker::Unpin for marketdata_core::RestClient

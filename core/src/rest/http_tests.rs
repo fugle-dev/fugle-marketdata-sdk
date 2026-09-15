@@ -131,6 +131,14 @@ fn sends_auth_header_and_accepts_gzip() {
 }
 
 #[test]
+fn credential_with_invalid_header_characters_is_config_error() {
+    let srv = server(vec![Some(raw("200 OK", QUOTE))]);
+    let c = RestClient::new(Auth::ApiKey("bad\nkey".into())).base_url(&srv.base);
+    assert!(matches!(quote(&c), Err(MarketDataError::ConfigError(_))));
+    assert!(srv.heads.lock().unwrap().is_empty(), "must not reach the network");
+}
+
+#[test]
 fn status_401_and_403_are_auth_errors_with_body() {
     for status in ["401 Unauthorized", "403 Forbidden"] {
         let srv = server(vec![Some(raw(status, r#"{"message":"Unauthorized"}"#))]);
@@ -215,3 +223,113 @@ fn proxy_environment_variables_are_ignored() {
     }
     result.expect("requests must not be routed through proxy env vars");
 }
+
+// ---------------------------------------------------------------------------
+// HTTPS: trust store, extra root CA, and disabled verification.
+
+struct Pki {
+    ca_pem: String,
+    server_config: Arc<rustls::ServerConfig>,
+}
+
+/// A throwaway CA plus a `127.0.0.1` / `localhost` server certificate it signed.
+fn pki() -> Pki {
+    use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
+    let ca_key = KeyPair::generate().unwrap();
+    let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+    let ca_issuer = rcgen::Issuer::new(ca_params, ca_key);
+
+    let leaf_key = KeyPair::generate().unwrap();
+    let leaf_params = CertificateParams::new(vec!["127.0.0.1".into(), "localhost".into()]).unwrap();
+    let leaf_cert = leaf_params.signed_by(&leaf_key, &ca_issuer).unwrap();
+
+    let key_der = rustls::pki_types::PrivateKeyDer::try_from(leaf_key.serialize_der()).unwrap();
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let server_config = rustls::ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![leaf_cert.der().clone()], key_der)
+        .unwrap();
+    Pki { ca_pem: ca_cert.pem(), server_config: Arc::new(server_config) }
+}
+
+/// HTTPS server answering every request with `QUOTE`.
+fn https_server(config: Arc<rustls::ServerConfig>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for tcp in listener.incoming().flatten() {
+            let config = config.clone();
+            thread::spawn(move || {
+                let Ok(conn) = rustls::ServerConnection::new(config) else { return };
+                let mut tls = rustls::StreamOwned::new(conn, tcp);
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = match tls.read(&mut chunk) {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => n,
+                    };
+                    buf.extend_from_slice(&chunk[..n]);
+                    while let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        buf.drain(..end + 4);
+                        if tls.write_all(&raw("200 OK", QUOTE)).is_err() || tls.flush().is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+    format!("https://127.0.0.1:{port}/marketdata")
+}
+
+fn https_client(tls: TlsConfig, base: &str) -> RestClient {
+    RestClient::with_tls(Auth::ApiKey("k".into()), tls).unwrap().base_url(base)
+}
+
+#[test]
+fn https_rejects_certificate_from_unknown_ca() {
+    let pki = pki();
+    let base = https_server(pki.server_config);
+    match quote(&https_client(TlsConfig::default(), &base)) {
+        Err(MarketDataError::ConnectionError { .. }) => {}
+        other => panic!("expected a TLS verification failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn https_accepts_certificate_from_extra_root_ca() {
+    let pki = pki();
+    let base = https_server(pki.server_config);
+    let tls = TlsConfig { root_cert_pem: Some(pki.ca_pem.into_bytes()), ..Default::default() };
+    let q = quote(&https_client(tls, &base)).expect("extra root CA should be trusted");
+    assert_eq!(q.symbol, "2330");
+}
+
+#[test]
+fn https_accept_invalid_certs_skips_verification() {
+    let pki = pki();
+    let base = https_server(pki.server_config);
+    let tls = TlsConfig { accept_invalid_certs: true, ..Default::default() };
+    let q = quote(&https_client(tls, &base)).expect("verification disabled");
+    assert_eq!(q.symbol, "2330");
+}
+
+/// Talks to the real API, so it is ignored by default:
+/// `cargo test -p fugle-marketdata-core --lib live_https -- --ignored`.
+/// Without credentials the API answers 401, which proves the TLS handshake
+/// succeeded against the OS trust store.
+#[test]
+#[ignore = "requires network access to api.fugle.tw"]
+fn live_https_uses_os_trust_store() {
+    let c = RestClient::new(Auth::ApiKey("invalid".into()));
+    match quote(&c) {
+        Err(MarketDataError::AuthError { .. }) => {}
+        other => panic!("expected 401 AuthError from the live API, got {other:?}"),
+    }
+}
+

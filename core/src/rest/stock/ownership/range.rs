@@ -83,10 +83,7 @@ pub(super) fn send<T: DeserializeOwned>(
         sort,
     );
 
-    let request = client.agent().get(&url);
-    let request = client.auth().apply_to_request(request);
-
-    let response = client.execute(request)?;
+    let response = client.get(&url)?;
     crate::rest::read_json(response)
 }
 

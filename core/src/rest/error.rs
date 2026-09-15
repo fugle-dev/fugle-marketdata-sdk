@@ -1,47 +1,33 @@
-//! Error conversion from ureq to MarketDataError
+//! Error conversion from HTTP outcomes to MarketDataError
 
 use crate::errors::MarketDataError;
 
-impl From<ureq::Error> for MarketDataError {
-    fn from(error: ureq::Error) -> Self {
-        match error {
-            // Status errors (HTTP response received with error code)
-            ureq::Error::Status(status, response) => {
-                let status_code = status;
-                let message = response
-                    .into_string()
-                    .unwrap_or_else(|_| format!("HTTP {}", status_code));
+/// Map an HTTP error status and its response body to a `MarketDataError`.
+pub(crate) fn status_error(status: u16, message: String) -> MarketDataError {
+    match status {
+        // Authentication errors
+        401 | 403 => MarketDataError::AuthError { msg: message },
+        // Everything else keeps the status; 429 and 5xx are retryable via
+        // `MarketDataError::is_retryable`.
+        _ => MarketDataError::ApiError { status, message },
+    }
+}
 
-                match status_code {
-                    // Authentication errors
-                    401 | 403 => MarketDataError::AuthError { msg: message },
-                    // Rate limiting and server errors (retryable in ApiError context)
-                    429 | 500..=599 => MarketDataError::ApiError {
-                        status: status_code,
-                        message,
-                    },
-                    // Other client/server errors
-                    _ => MarketDataError::ApiError {
-                        status: status_code,
-                        message,
-                    },
-                }
-            }
-            // Transport errors (connection issues, no HTTP response)
-            ureq::Error::Transport(transport) => {
-                let error_msg = transport.to_string();
-
-                // Check for timeout errors
-                if error_msg.contains("timed out") || error_msg.contains("timeout") {
-                    MarketDataError::TimeoutError {
-                        operation: error_msg,
-                    }
-                } else {
-                    // Other connection errors
-                    MarketDataError::ConnectionError { msg: error_msg }
-                }
-            }
-        }
+/// Map a transport-level failure (no HTTP response) to a `MarketDataError`.
+///
+/// Timeouts become `TimeoutError`; everything else is a `ConnectionError`.
+/// The request URL is prefixed so the message says where the call went.
+pub(crate) fn transport_error(url: &str, error: ureq::Error) -> MarketDataError {
+    let is_timeout = match &error {
+        ureq::Error::Timeout(_) | ureq::Error::BodyStalled => true,
+        ureq::Error::Io(io) => matches!(io.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock),
+        _ => false,
+    };
+    let message = format!("{url}: {error}");
+    if is_timeout {
+        MarketDataError::TimeoutError { operation: message }
+    } else {
+        MarketDataError::ConnectionError { msg: message }
     }
 }
 
@@ -141,5 +127,28 @@ mod tests {
         };
         assert!(err.is_retryable());
         assert!(matches!(err, MarketDataError::TimeoutError { .. }));
+    }
+
+    #[test]
+    fn status_error_maps_auth_and_api_errors() {
+        assert!(matches!(status_error(401, "x".into()), MarketDataError::AuthError { .. }));
+        assert!(matches!(status_error(403, "x".into()), MarketDataError::AuthError { .. }));
+        assert!(matches!(status_error(404, "x".into()), MarketDataError::ApiError { status: 404, .. }));
+        assert!(status_error(429, "x".into()).is_retryable());
+        assert!(status_error(502, "x".into()).is_retryable());
+        assert!(!status_error(400, "x".into()).is_retryable());
+    }
+
+    #[test]
+    fn transport_error_maps_timeouts() {
+        let t = transport_error("http://h/p", ureq::Error::Timeout(ureq::Timeout::RecvResponse));
+        assert!(matches!(t, MarketDataError::TimeoutError { .. }));
+        let io = transport_error("http://h/p", ureq::Error::Io(std::io::Error::from(std::io::ErrorKind::TimedOut)));
+        assert!(matches!(io, MarketDataError::TimeoutError { .. }));
+        let refused = transport_error("http://h/p", ureq::Error::ConnectionFailed);
+        match refused {
+            MarketDataError::ConnectionError { msg } => assert!(msg.starts_with("http://h/p: ")),
+            other => panic!("expected ConnectionError, got {other:?}"),
+        }
     }
 }

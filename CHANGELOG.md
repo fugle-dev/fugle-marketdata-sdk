@@ -206,6 +206,25 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
   declaration was nominal. CI builds the declared MSRV against an
   MSRV-aware lockfile.
 
+- **The HTTP client is no longer part of the public API.** `impl
+  From<ureq::Error> for MarketDataError` and `Auth::apply_to_request` are
+  removed. Neither was needed to call the API: transport failures still
+  surface as `ConnectionError` / `TimeoutError` and error statuses as
+  `AuthError` / `ApiError`. Replacing the HTTP client in the future is
+  therefore not a breaking change.
+
+- **ureq 2.12 → 3.4.** ureq 2 has had no release since December 2024 and
+  re-exported pre-1.0 crates such as rustls, so a rustls major bump forced
+  its own breaking changes. Observable REST behaviour is unchanged and pinned
+  by new end-to-end tests: OS trust store plus optional extra root CA,
+  `accept_invalid_certs`, error bodies on 4xx/5xx, retries, timeouts, gzip,
+  and proxy environment variables staying ignored (ureq 3 would read them by
+  default). Two small differences: idle pooled connections now close after
+  15 seconds, and a credential containing characters that are invalid in an
+  HTTP header is reported as `ConfigError` instead of a connection error.
+  Small requests cost about 1.5 µs more in ureq 3 itself; large responses are
+  unaffected.
+
 - **`tungstenite` 0.29 → 0.30.** `MarketDataError` implements
   `From<tungstenite::Error>`, so the error type in that impl changed. Client
   behaviour is unchanged.
