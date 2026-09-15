@@ -29,6 +29,19 @@ crates.io.
 | C++ | GitHub Release tarballs | `0.1.0-rc.1` | same |
 | Java | not published | `0.1.0-rc.1` | JNA callbacks benchmark far below the other bindings |
 
+### Security
+
+Dependencies with published advisories are updated, so the shipped wheels,
+npm addons, NuGet package and Go static libraries no longer contain them:
+
+- `rustls` 0.23.45 (RUSTSEC-2026-0285, TLS 1.3 handshake messages accepted
+  across encryption levels), `bytes` 1.12 (RUSTSEC-2026-0007).
+- Python: PyO3 0.27 → 0.29 and pyo3-async-runtimes 0.27 → 0.29
+  (RUSTSEC-2026-0176, RUSTSEC-2026-0177).
+- The unmaintained `rustls-pemfile` is replaced by rustls' built-in PEM parser.
+
+CI now runs `cargo audit` on every pull request.
+
 ### Distribution
 
 - Pre-releases are published to the real registries on channels that are
@@ -55,6 +68,16 @@ crates.io.
   (`director_holdings` / `directorHoldings`) and TDCC shareholding
   distribution (`tdcc_distribution` / `tdccDistribution`). C# and Go get them
   through UniFFI.
+
+### Changed — Python
+
+- **Minimum Python is 3.8** (wheels are tagged `cp38-abi3`). PyO3 0.29 no
+  longer supports 3.7, which reached end of life in June 2023. pip on
+  Python 3.7 keeps resolving to the 2.x series through `requires-python`.
+
+### Changed — Node
+
+- `engines.node` is `>= 18`, the oldest version CI tests. napi-rs 3.12.
 
 ### Added — Python
 
@@ -154,9 +177,15 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
 
   Unlike the 0.6.0 change, this failure is loud rather than silent.
 
-- **MSRV is 1.83** (`rust-version`), up from a declared 1.82 that no longer
-  built: the dependency graph needs rustc 1.83 even when resolved with the
-  MSRV-aware resolver. CI now checks the declared MSRV that way.
+- **MSRV is 1.88** (`rust-version`), up from a declared 1.82 that no longer
+  built. The current releases of `bon` and `napi` need 1.88, and a toolchain
+  without the MSRV-aware resolver would pick them up anyway, so a lower
+  declaration was nominal. CI builds the declared MSRV against an
+  MSRV-aware lockfile.
+
+- **`tungstenite` 0.29 → 0.30.** `MarketDataError` implements
+  `From<tungstenite::Error>`, so the error type in that impl changed. Client
+  behaviour is unchanged.
 
 - **`WebSocketFactory::stock()` / `::futopt()` now return `Result`**, so a
   rejected `base_url` surfaces at the earliest honest point. `RestClient`

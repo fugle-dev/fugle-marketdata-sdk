@@ -12,7 +12,7 @@ releases.
 
 This document is for existing users of the `fugle-marketdata` /
 `fugle-marketdata-core` crates on crates.io. Two changes need your attention; everything else is additive.
-The minimum supported Rust version is now 1.83.
+The minimum supported Rust version is now 1.88.
 
 | | Change | Who is affected |
 |---|---|---|
