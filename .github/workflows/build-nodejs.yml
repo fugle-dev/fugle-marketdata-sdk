@@ -57,18 +57,20 @@ jobs:
             os: macos-latest
             node_file: marketdata-js.darwin-arm64.node
             arch: arm64
-          # Linux targets use napi-rs's prebuilt gcc toolchain with a
-          # glibc 2.17 sysroot, the same baseline as the manylinux2014 wheels.
+          # Linux targets link against glibc 2.17 with cargo-zigbuild, the
+          # same baseline as the manylinux2014 wheels. napi-rs's own
+          # --use-napi-cross toolchain ships a GCC too old for ring's aarch64
+          # assembly ("ARM assembler must define __ARM_ARCH").
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             node_file: marketdata-js.linux-x64-gnu.node
             arch: x86-64
-            napi_cross: true
+            zig: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             node_file: marketdata-js.linux-arm64-gnu.node
             arch: aarch64
-            napi_cross: true
+            zig: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             node_file: marketdata-js.win32-x64-msvc.node
@@ -98,13 +100,27 @@ jobs:
         working-directory: js
         run: npm ci
 
+      - name: Install cargo-zigbuild
+        if: matrix.zig
+        run: pip install --user cargo-zigbuild==0.23.4 ziglang==0.15.1
+
       # Call napi directly: `npm run build -- --target X` appended the flag to
       # the end of the build script (after `&& node scripts/postbuild.js`), so
       # napi never saw it and every job built for its own host.
-      - name: Build native addon
+      - name: Build native addon (napi)
+        if: ${{ !matrix.zig }}
         working-directory: js
         shell: bash
-        run: npx napi build -p marketdata-js --platform --release --target ${{ matrix.target }} ${{ matrix.napi_cross && '--use-napi-cross' || '' }}
+        run: npx napi build -p marketdata-js --platform --release --target ${{ matrix.target }}
+
+      # Only the .node binary is needed from these jobs; the JS loader and
+      # typings are committed. napi_build::setup() adds nothing on Linux.
+      - name: Build native addon (cargo-zigbuild, glibc 2.17)
+        if: matrix.zig
+        shell: bash
+        run: |
+          cargo zigbuild --release -p marketdata-js --target ${{ matrix.target }}.2.17
+          cp target/${{ matrix.target }}/release/libmarketdata_js.so js/${{ matrix.node_file }}
 
       - name: Verify addon
         working-directory: js
