@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Bindings 3.0.0-rc.1 / uniffi 0.1.0-rc.1] - Unreleased
+## [Bindings 3.0.0-rc.1 / uniffi 0.1.0-rc.1] - 2026-09-16
 
 First release of the Python, Node and UniFFI bindings, aligned with core
 0.8.0-rc.1 and therefore with official `@fugle/marketdata` 1.6.0 /
@@ -51,6 +51,10 @@ faster JSON decoding and connection reuse for concurrent calls. See the Rust
 0.8.0-rc.1 section.
 
 ### Distribution
+
+- Registries come online one at a time. This release candidate is published
+  to npm first; PyPI, NuGet and the Go module follow under the same versions
+  once their publishing credentials are in place.
 
 - Pre-releases are published to the real registries on channels that are
   never selected by default: pip needs `--pre`, npm uses the `next` dist-tag
@@ -177,7 +181,7 @@ faster JSON decoding and connection reuse for concurrent calls. See the Rust
   Note: run `maturin develop` before `pytest` — a stale gitignored `.so` under
   `py/fugle_marketdata/` shadows the installed wheel.
 
-## [Rust 0.8.0-rc.1] - Unreleased
+## [Rust 0.8.0-rc.1] - 2026-09-16
 
 Aligns with the official `@fugle/marketdata` 1.6.0 and `fugle-marketdata`
 2.6.0.
