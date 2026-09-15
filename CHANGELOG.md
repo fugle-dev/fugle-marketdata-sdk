@@ -107,6 +107,9 @@ crates.io.
 - **The committed C# and Go generated bindings predated 0.8.0**, so loading
   them failed with a UniFFI checksum mismatch. They are regenerated, and CI
   now fails if they drift from the Rust interface again.
+- Go: `NewFugleRestClient` returned an error on every call (a typed-nil
+  `*MarketDataError` wrapped in `error`), and `WithBaseUrl` was stored but
+  never applied. Both are fixed.
 - C# / Go health-check options use `HeartbeatTimeoutMs`. The removed
   `IntervalMs` / `MaxMissedPongs` never had a counterpart in core and were
   silently ignored. C# `HealthCheckOptions.Enabled` now defaults to true,
