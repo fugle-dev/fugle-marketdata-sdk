@@ -1,13 +1,20 @@
 name: Release
 
+# Pushing a tag `vX.Y.Z` or `vX.Y.Z-rc.N` releases the language bindings.
+# The tag must equal the bindings version in js/package.json; every other
+# version (PEP 440 Python, UniFFI track for C#/Go/C++) is read from its
+# manifest by scripts/release-versions.py. Rust crates are published by hand
+# and tagged `rust-vX.Y.Z`, which does not match this trigger's intent; the
+# resolve job rejects any tag that is not the bindings version.
+#
+# Prereleases go to the same public registries as stable releases, but on
+# channels that are never selected by default: pip needs --pre, npm uses the
+# `next` dist-tag, NuGet needs --prerelease, Go needs an explicit @version.
 on:
   push:
     tags:
       - 'v*.*.*'
 
-# Prevent two near-simultaneous tag pushes from racing on the shared rust-cache
-# keys used by build-uniffi. Per-tag grouping lets rc.1 and rc.2 both run, but
-# never concurrently (`cancel-in-progress: false` keeps the in-flight one alive).
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -15,344 +22,157 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
-# Workflow-level permissions. Reusable workflows (publish-java, publish-nodejs,
-# create-release) need these to push to GitHub Packages, attest provenance,
-# and publish releases. Caller must grant at least as much as any callee asks.
 permissions:
-  contents: write   # create releases, upload assets
-  packages: write   # publish Java to GitHub Packages
-  id-token: write   # PyPI trusted publishing / npm provenance (stable path)
+  contents: write   # GitHub Release
+  packages: write   # Java to GitHub Packages (opt-in)
+  id-token: write   # PyPI / npm trusted publishing, npm provenance
 
 jobs:
-  # ==============================================================
-  # Extract version + channel (stable / prerelease) from tag
-  # ==============================================================
-  # A tag like `v0.2.0`        → channel=stable    (push to public registries)
-  # A tag like `v0.2.0-rc.1`   → channel=prerelease (only internal channels)
-  # The channel flag drives both publish-job gating and include_cpp build.
-  extract-version:
-    name: Extract Version from Tag
+  resolve:
+    name: Resolve versions
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      channel: ${{ steps.version.outputs.channel }}
+      version: ${{ steps.v.outputs.version }}
+      python_version: ${{ steps.v.outputs.python_version }}
+      uniffi_version: ${{ steps.v.outputs.uniffi_version }}
+      rust_version: ${{ steps.v.outputs.rust_version }}
+      channel: ${{ steps.v.outputs.channel }}
+      npm_tag: ${{ steps.v.outputs.npm_tag }}
     steps:
-      - id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          if [[ "$VERSION" == *-* ]]; then
-            echo "channel=prerelease" >> $GITHUB_OUTPUT
-          else
-            echo "channel=stable" >> $GITHUB_OUTPUT
-          fi
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - id: v
+        run: python3 scripts/release-versions.py resolve --tag "$GITHUB_REF" --github-output "$GITHUB_OUTPUT"
 
       - name: Summary
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          CHANNEL=${{ steps.version.outputs.channel }}
-          echo "## Release v$VERSION ($CHANNEL)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [[ "$CHANNEL" == "stable" ]]; then
-            echo "Starting **stable** release — will publish to PyPI, npm, NuGet, GitHub Packages (Java)." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Starting **prerelease** release — will attach artifacts to GitHub Release (Java also goes to GitHub Packages)." >> $GITHUB_STEP_SUMMARY
-          fi
+          {
+            echo "## Release ${{ steps.v.outputs.version }} (${{ steps.v.outputs.channel }})"
+            echo ""
+            echo "| Track | Version |"
+            echo "|---|---|"
+            echo "| Python | ${{ steps.v.outputs.python_version }} |"
+            echo "| Node.js | ${{ steps.v.outputs.version }} (npm tag \`${{ steps.v.outputs.npm_tag }}\`) |"
+            echo "| C# / Go / C++ | ${{ steps.v.outputs.uniffi_version }} |"
+            echo "| Rust core (built against) | ${{ steps.v.outputs.rust_version }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ==============================================================
-  # Wave 1: Build all platforms in parallel
+  # Wave 1: build every platform
   # ==============================================================
   build-python:
-    name: Build Python Wheels
-    needs: extract-version
+    name: Build Python wheels
+    needs: resolve
     uses: ./.github/workflows/build-python.yml
     with:
-      version: ${{ needs.extract-version.outputs.version }}
+      version: ${{ needs.resolve.outputs.version }}
 
   build-nodejs:
-    name: Build Node.js Native Addon
-    needs: extract-version
+    name: Build Node.js addons
+    needs: resolve
     uses: ./.github/workflows/build-nodejs.yml
     with:
-      version: ${{ needs.extract-version.outputs.version }}
+      version: ${{ needs.resolve.outputs.version }}
 
   build-uniffi:
-    name: Build UniFFI Native Libraries
-    needs: extract-version
+    name: Build UniFFI native libraries
+    needs: resolve
     uses: ./.github/workflows/build-uniffi.yml
     with:
-      # Only build cpp feature variant on prerelease channel (internal use).
-      # Public stable releases never built cpp, and we keep it that way to
-      # avoid ~18 min of extra matrix time on every stable release.
-      include_cpp: ${{ needs.extract-version.outputs.channel == 'prerelease' }}
+      # C++ has no package registry; the Release tarballs are its only
+      # distribution channel, so build it for every release.
+      include_cpp: true
 
   # ==============================================================
-  # Wave 2a: Publish to public registries (stable channel only)
+  # Wave 2: publish to registries
   # ==============================================================
+
+  # Inline rather than a reusable workflow: PyPI trusted publishing does not
+  # accept reusable workflows (pypi/warehouse#11096). Register this file,
+  # `release.yml`, with environment `release` as the trusted publisher.
   publish-python:
     name: Publish to PyPI
-    needs: [extract-version, build-python]
-    if: needs.extract-version.outputs.channel == 'stable'
-    uses: ./.github/workflows/publish-python.yml
-
-  publish-nodejs:
-    name: Publish to npm
-    needs: [extract-version, build-nodejs]
-    if: needs.extract-version.outputs.channel == 'stable'
-    uses: ./.github/workflows/publish-nodejs.yml
-    # `secrets: inherit` bypasses compile-time validation of required secrets
-    # on forks that don't have NPM_TOKEN configured. The `if:` gate keeps this
-    # job from actually running on prerelease channel, so the missing secret
-    # never matters at runtime.
-    secrets: inherit
-
-  publish-nuget:
-    name: Publish to NuGet
-    needs: [extract-version, build-uniffi]
-    if: needs.extract-version.outputs.channel == 'stable'
-    uses: ./.github/workflows/publish-nuget.yml
-    with:
-      version: ${{ needs.extract-version.outputs.version }}
-    secrets: inherit
-
-  # Java runs on both channels — it's already on GitHub Packages with
-  # GITHUB_TOKEN auth, no public registry involved even for stable releases.
-  publish-java:
-    name: Publish to GitHub Packages (Java)
-    needs: [extract-version, build-uniffi]
-    uses: ./.github/workflows/publish-java.yml
-    with:
-      version: ${{ needs.extract-version.outputs.version }}
-
-  # ==============================================================
-  # Wave 2b: Package internal artifacts (prerelease channel only)
-  # ==============================================================
-  # Each job downloads what Wave 1 produced, repackages it into a form
-  # suitable for direct download from the GitHub Release page, and uploads
-  # a uniquely-named artifact that Wave 3 attaches to the release.
-
-  pack-internal-python:
-    name: Package internal Python wheels
-    needs: [extract-version, build-python]
-    # Lenient gate — runs whenever build-python attempted to run (even with
-    # partial matrix failures). Downloads whatever wheel-* artifacts exist,
-    # so internal users still get wheels for the platforms that did build.
-    if: |
-      !cancelled() &&
-      needs.extract-version.outputs.channel == 'prerelease' &&
-      needs.build-python.result != 'skipped'
+    needs: [resolve, build-python]
     runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/project/fugle-marketdata/${{ needs.resolve.outputs.python_version }}/
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Download wheels from build-python
+      - name: Download wheels
         uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
           merge-multiple: true
-          path: ./dist
-        # Continue even if some matrix entries failed to produce wheels —
-        # `download-artifact` returns success when pattern matches zero
-        # artifacts (it just downloads nothing).
+          path: dist/
 
-      - name: List wheels
-        run: ls -la dist/ || echo "(no wheels available)"
-
-      - name: Upload as internal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: internal-python
-          path: dist/*.whl
-          retention-days: 5
-          if-no-files-found: warn
-
-  pack-internal-nodejs:
-    name: Package internal Node.js tarball (fat, all platforms)
-    needs: [extract-version, build-nodejs]
-    # Lenient gate — same rationale as pack-internal-python above.
-    if: |
-      !cancelled() &&
-      needs.extract-version.outputs.channel == 'prerelease' &&
-      needs.build-nodejs.result != 'skipped'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust (warm from build-nodejs)
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: js -> target
-          shared-key: nodejs-release-x86_64-unknown-linux-gnu
-
-      - name: Install deps
-        working-directory: js
-        run: npm ci
-
-      # Inject the tag-derived version into package.json before the local
-      # build below bakes it into js/index.js version-check literals. Must
-      # run after `npm ci` (which reads from package.json) and before
-      # `npm run build` (which regenerates index.js). --allow-same-version
-      # avoids error on stable builds where injected == current.
-      - name: Inject version into package.json
-        working-directory: js
-        run: npm version --no-git-tag-version --allow-same-version "${{ needs.extract-version.outputs.version }}"
-
-      # Run a local build to generate js/index.js + js/index.d.ts + the loader.
-      # We keep the default (pre-prepublish) loader so the resulting tarball
-      # resolves .node files by process.platform rather than via
-      # optionalDependencies (which wouldn't be installable offline).
-      # package.json is the one artifact we DO want modified (via the inject
-      # step above) — its `files` array already includes `*.node`.
-      - name: Local build (generates index.js + loader)
-        working-directory: js
-        run: npm run build
-
-      # Overwrite the just-built .node file with the full set from all
-      # platforms, so the resulting tarball contains every platform's binary.
-      - name: Download all platform binaries
-        uses: actions/download-artifact@v4
-        with:
-          pattern: bindings-*
-          path: js/artifacts/
-
-      - name: Install all platform .node files into js/ root
-        working-directory: js
-        run: |
-          rm -f *.node
-          for dir in artifacts/bindings-*; do
-            cp "$dir"/*.node .
-          done
-          ls -la *.node
-
-      - name: Pack fat main tarball
-        working-directory: js
-        run: |
-          mkdir -p ../nodejs-dist
-          npm pack --pack-destination ../nodejs-dist
-          ls -la ../nodejs-dist/
-
-      - name: Upload as internal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: internal-nodejs
-          path: nodejs-dist/*.tgz
-          retention-days: 5
-
-  pack-internal-nuget:
-    name: Package internal C# .nupkg
-    needs: [extract-version, build-uniffi]
-    if: needs.extract-version.outputs.channel == 'prerelease'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0'
-
-      - name: Download unified native library artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: uniffi-all
-          path: native-libs/
-
-      # Same layout as publish-nuget.yml so dotnet pack picks up natives.
-      - name: Copy native libraries to runtimes
-        run: |
-          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/linux-x64/native
-          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/osx-arm64/native
-          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/osx-x64/native
-          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/win-x64/native
-          cp native-libs/linux-x64/*.so bindings/csharp/MarketdataUniffi/runtimes/linux-x64/native/
-          cp native-libs/osx-arm64/*.dylib bindings/csharp/MarketdataUniffi/runtimes/osx-arm64/native/
-          cp native-libs/osx-x64/*.dylib bindings/csharp/MarketdataUniffi/runtimes/osx-x64/native/
-          cp native-libs/win-x64/*.dll bindings/csharp/MarketdataUniffi/runtimes/win-x64/native/
-
-      - name: Pack .nupkg
-        working-directory: bindings/csharp/MarketdataUniffi
-        run: dotnet pack -c Release -p:Version=${{ needs.extract-version.outputs.version }} -o nupkg
-
-      - name: Upload as internal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: internal-nuget
-          path: bindings/csharp/MarketdataUniffi/nupkg/*.nupkg
-          retention-days: 5
-
-  pack-internal-go:
-    name: Package internal Go tarballs
-    needs: [extract-version, build-uniffi]
-    if: needs.extract-version.outputs.channel == 'prerelease'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download unified native library artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: uniffi-all
-          path: native-libs/
-
-      # Build one tar.gz per platform. Each archive contains:
-      #   src/                — bindings/go/marketdata source (same for all)
-      #   lib/libmarketdata_uniffi.{so,dylib,dll}  — platform-specific
-      #   README.md           — CGO_LDFLAGS setup instructions
-      # Internal users download the tar.gz matching their platform, extract
-      # into ./vendor/, then use a `replace` directive in their go.mod.
-      - name: Assemble tarballs
+      - name: Verify wheels
         env:
-          VERSION: ${{ needs.extract-version.outputs.version }}
+          PY_VERSION: ${{ needs.resolve.outputs.python_version }}
         run: |
-          mkdir -p go-dist
-          for entry in "linux-x64:so" "osx-arm64:dylib" "osx-x64:dylib" "win-x64:dll"; do
-            rid="${entry%:*}"
-            ext="${entry#*:}"
-            stage="fugle-marketdata-go-${rid}-${VERSION}"
-            mkdir -p "$stage/src" "$stage/lib"
-            cp -r bindings/go/marketdata/. "$stage/src/"
-            # Windows lib has no "lib" prefix, handle both cases.
-            cp native-libs/${rid}/*.${ext} "$stage/lib/"
-            cat > "$stage/README.md" <<EOF
-          # fugle-marketdata-go (internal ${VERSION} / ${rid})
-
-          See docs/INTERNAL_INSTALL.md#go for full setup. TL;DR:
-
-          1. Extract this archive somewhere like ./vendor/fugle-marketdata-go/
-          2. In your go.mod, add:
-
-             replace github.com/fugle-dev/fugle-marketdata-go => ./vendor/fugle-marketdata-go/src
-
-          3. Set CGO flags before \`go build\`:
-
-             export CGO_LDFLAGS="-L\$(pwd)/vendor/fugle-marketdata-go/lib -lmarketdata_uniffi"
-
-          On macOS: export DYLD_LIBRARY_PATH=\$(pwd)/vendor/fugle-marketdata-go/lib:\$DYLD_LIBRARY_PATH
-          On Linux: export LD_LIBRARY_PATH=\$(pwd)/vendor/fugle-marketdata-go/lib:\$LD_LIBRARY_PATH
-          On Windows: add vendor\\fugle-marketdata-go\\lib to PATH
-          EOF
-            tar -czf "go-dist/${stage}.tar.gz" -C "$(dirname "$stage")" "$(basename "$stage")"
-            rm -rf "$stage"
+          ls -la dist/
+          COUNT=$(ls dist/*.whl | wc -l | tr -d ' ')
+          # linux x86_64, linux aarch64, macOS x86_64, macOS arm64, Windows x64
+          [[ "$COUNT" == "5" ]] || { echo "::error::Expected 5 wheels, found $COUNT"; exit 1; }
+          for w in dist/*.whl; do
+            [[ "$(basename "$w")" == fugle_marketdata-${PY_VERSION}-* ]] || { echo "::error::$w is not version $PY_VERSION"; exit 1; }
           done
-          ls -la go-dist/
+          echo "| Wheel |" >> "$GITHUB_STEP_SUMMARY"; echo "|---|" >> "$GITHUB_STEP_SUMMARY"
+          for w in dist/*.whl; do echo "| $(basename "$w") |" >> "$GITHUB_STEP_SUMMARY"; done
 
-      - name: Upload as internal artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
-          name: internal-go
-          path: go-dist/*.tar.gz
-          retention-days: 5
+          packages-dir: dist/
+          skip-existing: true
 
-  pack-internal-cpp:
-    name: Package internal C++ tarballs
-    needs: [extract-version, build-uniffi]
-    if: needs.extract-version.outputs.channel == 'prerelease'
+  publish-nodejs:
+    name: Publish to npm
+    needs: [resolve, build-nodejs]
+    uses: ./.github/workflows/publish-nodejs.yml
+    with:
+      npm_tag: ${{ needs.resolve.outputs.npm_tag }}
+    secrets: inherit
+
+  publish-nuget:
+    name: Publish to NuGet
+    needs: [resolve, build-uniffi]
+    uses: ./.github/workflows/publish-nuget.yml
+    with:
+      version: ${{ needs.resolve.outputs.uniffi_version }}
+    secrets: inherit
+
+  publish-go:
+    name: Publish Go module
+    needs: [resolve, build-uniffi]
+    uses: ./.github/workflows/publish-go.yml
+    with:
+      version: ${{ needs.resolve.outputs.uniffi_version }}
+    secrets: inherit
+
+  # Java is not distributed yet: the JNA callback path benchmarks at roughly
+  # a tenth of the other bindings (benchmarks/ws/REPORT.md). Set the
+  # repository variable PUBLISH_JAVA=true to opt back in.
+  publish-java:
+    name: Publish Java to GitHub Packages
+    needs: [resolve, build-uniffi]
+    if: vars.PUBLISH_JAVA == 'true'
+    uses: ./.github/workflows/publish-java.yml
+    with:
+      version: ${{ needs.resolve.outputs.uniffi_version }}
+
+  # ==============================================================
+  # C++ tarballs (attached to the GitHub Release)
+  # ==============================================================
+  pack-cpp:
+    name: Package C++ tarballs
+    needs: [resolve, build-uniffi]
     runs-on: ubuntu-latest
     steps:
       # Single download covers both the per-platform dylibs (uniffi-cpp-<target>)
@@ -369,7 +189,7 @@ jobs:
 
       - name: Assemble tarballs
         env:
-          VERSION: ${{ needs.extract-version.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.uniffi_version }}
         run: |
           mkdir -p cpp-dist
           # Map rid → source artifact dir + lib filename pattern
@@ -388,9 +208,9 @@ jobs:
             cp cpp-libs/uniffi-cpp-headers/marketdata_uniffi.cpp "$stage/include/"
             cp "cpp-libs/${artifact}/${libfile}" "$stage/lib/"
             cat > "$stage/README.md" <<EOF
-          # fugle-marketdata-cpp (internal ${VERSION} / ${rid})
+          # fugle-marketdata-cpp ${VERSION} / ${rid}
 
-          See docs/INTERNAL_INSTALL.md#c for full setup. TL;DR:
+          See docs/INSTALL.md#c for full setup. TL;DR:
 
               c++ -std=c++20 -Iinclude \\
                   include/marketdata_uniffi.cpp my_app.cpp \\
@@ -409,185 +229,72 @@ jobs:
       - name: Upload as internal artifact
         uses: actions/upload-artifact@v4
         with:
-          name: internal-cpp
+          name: release-cpp
           path: cpp-dist/*.tar.gz
           retention-days: 5
 
+
   # ==============================================================
-  # Wave 3: Create GitHub Release after all publishes & packaging
+  # Wave 3: GitHub Release
   # ==============================================================
+  # Created only when every publish job succeeded (or was skipped), so a
+  # Release page never advertises packages that are not installable. Publish
+  # steps are idempotent; re-run failed jobs to finish a partial release.
   create-release:
     name: Create GitHub Release
-    needs:
-      - extract-version
-      - publish-python
-      - publish-nodejs
-      - publish-nuget
-      - publish-java
-      - pack-internal-python
-      - pack-internal-nodejs
-      - pack-internal-nuget
-      - pack-internal-go
-      - pack-internal-cpp
-    # Gating policy differs per channel:
-    #   • Stable: all needed jobs must succeed (or be skipped) — one publish
-    #     failure is a hard stop, matching the "atomic public release" contract.
-    #   • Prerelease: ship whatever packaging jobs produced. An isolated build
-    #     failure (e.g. Python Linux wheels) shouldn't block the GitHub Release
-    #     from being created with the 5/6 languages' assets that did succeed.
-    #     The release notes will reflect partial availability.
-    if: |
-      !cancelled() && (
-        (needs.extract-version.outputs.channel == 'stable' && !contains(needs.*.result, 'failure')) ||
-        needs.extract-version.outputs.channel == 'prerelease'
-      )
+    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, publish-java, pack-cpp]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      # Create the directory unconditionally so the `files:` glob in the
-      # create-release step always has a valid path (stable channel just
-      # gets an empty dir, which softprops/action-gh-release handles fine).
-      - name: Ensure release-assets directory exists
-        run: mkdir -p release-assets
-
-      # Pull every internal-* artifact into a single flat directory so
-      # softprops/action-gh-release can attach them to the Release page.
-      # Only runs on prerelease channel (where pack-internal-* jobs actually
-      # produced artifacts).
-      - name: Download internal artifacts
-        if: needs.extract-version.outputs.channel == 'prerelease'
+      - name: Download C++ tarballs
         uses: actions/download-artifact@v4
         with:
-          pattern: internal-*
-          merge-multiple: true
-          path: ./release-assets
-
-      - name: List release assets
-        if: needs.extract-version.outputs.channel == 'prerelease'
-        run: ls -la release-assets/ || echo "(no assets — stable channel)"
+          name: release-cpp
+          path: release-assets/
 
       - name: Generate release notes
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          PY: ${{ needs.resolve.outputs.python_version }}
+          UNIFFI: ${{ needs.resolve.outputs.uniffi_version }}
+          RUST: ${{ needs.resolve.outputs.rust_version }}
+          NPM_TAG: ${{ needs.resolve.outputs.npm_tag }}
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          VERSION=${{ needs.extract-version.outputs.version }}
-          CHANNEL=${{ needs.extract-version.outputs.channel }}
-          SHA=${{ github.sha }}
-
-          if [[ "$CHANNEL" == "stable" ]]; then
-            cat > release_notes.md <<'STABLE_NOTES'
-          ## What's Changed
-
-          This release publishes version ${VERSION} across all supported platforms.
-
-          ### Installation
-
-          **Python** (via pip):
-          ```bash
-          pip install fugle-marketdata==${VERSION}
-          ```
-
-          **Node.js** (via npm):
-          ```bash
-          npm install @fugle/marketdata@${VERSION}
-          ```
-
-          **C#** (via NuGet):
-          ```bash
-          dotnet add package MarketdataUniffi --version ${VERSION}
-          ```
-
-          **Java** (via GitHub Packages):
-          Add to your `build.gradle.kts`:
-          ```kotlin
-          repositories {
-              maven {
-                  url = uri("https://maven.pkg.github.com/fugle-dev/fugle-marketdata-sdk")
-                  credentials {
-                      username = System.getenv("GITHUB_ACTOR")
-                      password = System.getenv("GITHUB_TOKEN")
-                  }
-              }
-          }
-
-          dependencies {
-              implementation("tw.com.fugle:marketdata-java:${VERSION}")
-          }
-          ```
-
-          ### Packages Published
-
-          | Platform | Package | Registry |
-          |----------|---------|----------|
-          | Python | `fugle-marketdata` | [PyPI](https://pypi.org/project/fugle-marketdata/) |
-          | Node.js | `@fugle/marketdata` | [npm](https://www.npmjs.com/package/@fugle/marketdata) |
-          | C# | `MarketdataUniffi` | [NuGet](https://www.nuget.org/packages/MarketdataUniffi/) |
-          | Java | `tw.com.fugle:marketdata-java` | GitHub Packages |
-
-          Built from commit `${SHA}`.
-          STABLE_NOTES
+          if [[ "$CHANNEL" == "prerelease" ]]; then
+            PIP_PRE="--pre "; NUGET_PRE=" --prerelease"
+            BANNER="> **Pre-release.** Package managers do not pick this up by default: pip needs \`--pre\`, npm uses the \`next\` tag, NuGet needs \`--prerelease\`, Go needs an explicit version."
           else
-            cat > release_notes.md <<'PRERELEASE_NOTES'
-          ## Internal Pre-release ${VERSION}
-
-          > **⚠️ This is a pre-release for internal trial only.** It is not published to public package registries (PyPI / npm / NuGet / Maven Central). Not recommended for production use.
-
-          See [`docs/INTERNAL_INSTALL.md`](https://github.com/${{ github.repository }}/blob/${SHA}/docs/INTERNAL_INSTALL.md) for full installation instructions.
-
-          ### Quick install
-
-          | Language | How |
-          |----------|-----|
-          | Python | Download `.whl` below, `pip install ./fugle_marketdata-*.whl` |
-          | Node.js | Download matching platform `.tgz` + main `.tgz`, `npm install` both |
-          | C# | Download `.nupkg` below, add as local nuget source |
-          | Java | Fetch from GitHub Packages (`tw.com.fugle:marketdata-java:${VERSION}`) |
-          | Go | Download matching platform `.tar.gz`, use `replace` directive |
-          | C++ | Download matching platform `.tar.gz`, `-Iinclude -Llib -lmarketdata_uniffi` |
-
-          Built from commit `${SHA}`.
-          PRERELEASE_NOTES
+            PIP_PRE=""; NUGET_PRE=""; BANNER=""
           fi
+          cat > notes.md <<EOF
+          ## Fugle Market Data SDK ${VERSION}
 
-          # Expand ${VERSION}, ${SHA}, and github expressions. Use sed rather
-          # than envsubst because envsubst would eat ${GITHUB_TOKEN} /
-          # ${GITHUB_ACTOR} literals in the Java install instructions.
-          sed -i "s|\${VERSION}|$VERSION|g" release_notes.md
-          sed -i "s|\${SHA}|$SHA|g" release_notes.md
+          ${BANNER}
+
+          | Language | Package | Version | Install |
+          |---|---|---|---|
+          | Python | [\`fugle-marketdata\`](https://pypi.org/project/fugle-marketdata/${PY}/) | ${PY} | \`pip install ${PIP_PRE}"fugle-marketdata==${PY}"\` |
+          | Node.js | [\`@fugle/marketdata\`](https://www.npmjs.com/package/@fugle/marketdata/v/${VERSION}) | ${VERSION} | \`npm install @fugle/marketdata@${NPM_TAG}\` |
+          | C# | [\`Fugle.MarketData\`](https://www.nuget.org/packages/Fugle.MarketData/${UNIFFI}) | ${UNIFFI} | \`dotnet add package Fugle.MarketData --version ${UNIFFI}\` |
+          | Go | [\`github.com/fugle-dev/fugle-marketdata-go\`](https://pkg.go.dev/github.com/fugle-dev/fugle-marketdata-go@v${UNIFFI}) | v${UNIFFI} | \`go get github.com/fugle-dev/fugle-marketdata-go@v${UNIFFI}\` |
+          | C++ | tarballs attached below | ${UNIFFI} | see [docs/INSTALL.md](https://github.com/${REPO}/blob/${SHA}/docs/INSTALL.md#c) |
+
+          Built against Rust core \`fugle-marketdata-core\` ${RUST}. Rust crates are released separately on crates.io.
+
+          See [CHANGELOG.md](https://github.com/${REPO}/blob/${SHA}/CHANGELOG.md) for details.
+          EOF
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: release_notes.md
+          body_path: notes.md
           generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(needs.extract-version.outputs.version, '-') }}
-          files: |
-            ./release-assets/*
-
-      - name: Release Summary
-        run: |
-          VERSION=${{ needs.extract-version.outputs.version }}
-          CHANNEL=${{ needs.extract-version.outputs.channel }}
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Release Complete :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** $VERSION ($CHANNEL)" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [[ "$CHANNEL" == "stable" ]]; then
-            echo "### Published to Public Registries" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Platform | Package |" >> $GITHUB_STEP_SUMMARY
-            echo "|----------|---------|" >> $GITHUB_STEP_SUMMARY
-            echo "| Python | fugle-marketdata |" >> $GITHUB_STEP_SUMMARY
-            echo "| Node.js | @fugle/marketdata |" >> $GITHUB_STEP_SUMMARY
-            echo "| C# | MarketdataUniffi |" >> $GITHUB_STEP_SUMMARY
-            echo "| Java | marketdata-java (GitHub Packages) |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### Internal Pre-release Assets" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "See the Release page for downloadable artifacts." >> $GITHUB_STEP_SUMMARY
-            echo "Java pushed to GitHub Packages with version \`$VERSION\`." >> $GITHUB_STEP_SUMMARY
-          fi
+          prerelease: ${{ needs.resolve.outputs.channel == 'prerelease' }}
+          make_latest: ${{ needs.resolve.outputs.channel == 'stable' }}
+          files: release-assets/*

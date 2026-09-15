@@ -1,24 +1,7 @@
 //! ETF holdings endpoint - GET /stock/ownership/etf-holdings/{symbol}
 
+use super::range::{self, HoldingsSort};
 use crate::{errors::MarketDataError, models::EtfHoldingsResponse, rest::client::RestClient};
-
-/// Sort order for the holdings series.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HoldingsSort {
-    /// Oldest disclosure date first
-    Asc,
-    /// Newest disclosure date first
-    Desc,
-}
-
-impl HoldingsSort {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Asc => "asc",
-            Self::Desc => "desc",
-        }
-    }
-}
 
 /// Request builder for the ETF holdings endpoint
 pub struct EtfHoldingsRequestBuilder<'a> {
@@ -71,44 +54,14 @@ impl<'a> EtfHoldingsRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<EtfHoldingsResponse, MarketDataError> {
-        let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
-            symbol: "(not provided)".to_string(),
-        })?;
-
-        // Build URL
-        let mut url = format!(
-            "{}/stock/ownership/etf-holdings/{}",
-            self.client.get_base_url(),
-            crate::rest::encode_symbol(&symbol)
-        );
-
-        // Add query parameters
-        let mut query_params = Vec::new();
-        if let Some(from) = self.from {
-            query_params.push(format!("from={}", from));
-        }
-        if let Some(to) = self.to {
-            query_params.push(format!("to={}", to));
-        }
-        if let Some(sort) = self.sort {
-            query_params.push(format!("sort={}", sort.as_str()));
-        }
-
-        if !query_params.is_empty() {
-            url.push('?');
-            url.push_str(&query_params.join("&"));
-        }
-
-        // Make request
-        let request = self.client.agent().get(&url);
-        let request = self.client.auth().apply_to_request(request);
-
-        let response = self.client.execute(request)?;
-        let data: EtfHoldingsResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
-
-        Ok(data)
+        range::send(
+            self.client,
+            "etf-holdings",
+            self.symbol,
+            self.from,
+            self.to,
+            self.sort,
+        )
     }
 }
 
@@ -151,11 +104,5 @@ mod tests {
         assert_eq!(builder.from, Some("2026-01-01".to_string()));
         assert_eq!(builder.to, Some("2026-07-31".to_string()));
         assert_eq!(builder.sort, Some(HoldingsSort::Desc));
-    }
-
-    #[test]
-    fn test_sort_serializes_to_api_values() {
-        assert_eq!(HoldingsSort::Asc.as_str(), "asc");
-        assert_eq!(HoldingsSort::Desc.as_str(), "desc");
     }
 }

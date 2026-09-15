@@ -120,85 +120,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Generate platform package stubs after all builds complete
-  prepare-packages:
-    name: Prepare Platform Packages
-    needs: [build, version]
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        working-directory: js
-        run: npm ci
-
-      # Inject version BEFORE `napi prepublish` (below) stamps sub-package
-      # manifests. --allow-same-version avoids error on stable builds where
-      # the injected value equals the current package.json literal.
-      - name: Inject version into package.json
-        working-directory: js
-        run: npm version --no-git-tag-version --allow-same-version "${{ needs.version.outputs.version }}"
-
-      # Download all built artifacts
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: js/artifacts
-          pattern: bindings-*
-          merge-multiple: false
-
-      - name: List downloaded artifacts
-        run: |
-          echo "Downloaded artifacts:"
-          find js/artifacts -name "*.node" -type f
-
-      # Move artifacts to expected locations for napi prepublish
-      - name: Organize artifacts
-        run: |
-          mkdir -p js/npm
-          for target_dir in js/artifacts/bindings-*; do
-            target=$(basename "$target_dir" | sed 's/bindings-//')
-            echo "Processing target: $target"
-            mkdir -p "js/npm/$target"
-            cp "$target_dir"/*.node "js/npm/$target/" || true
-          done
-          echo "Organized structure:"
-          find js/npm -name "*.node" -type f
-
-      # Generate platform package stubs
-      - name: Generate platform packages
-        working-directory: js
-        run: |
-          # Copy .node files to root for napi to find
-          for target_dir in npm/*/; do
-            cp "$target_dir"*.node . 2>/dev/null || true
-          done
-
-          # Run napi prepublish to generate optionalDependencies packages
-          npx napi prepublish -t npm
-
-          echo "Generated platform packages:"
-          ls -la npm/ || echo "No npm directory created"
-
-      - name: Upload platform packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-packages
-          path: |
-            js/npm/
-            js/*.node
-          if-no-files-found: warn
-          retention-days: 7
-
   summary:
     name: Build Summary
-    needs: [build, prepare-packages, version]
+    needs: [build, version]
     runs-on: ubuntu-latest
     if: always()
 

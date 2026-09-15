@@ -37,7 +37,7 @@ pub struct SymbolParams {
 /// # JavaScript Usage
 ///
 /// ```javascript
-/// const { RestClient } = require('@fubon/marketdata-js');
+/// const { RestClient } = require('@fugle/marketdata');
 ///
 /// // Create client with API key
 /// const client = new RestClient('your-api-key');
@@ -202,7 +202,7 @@ impl StockClient {
         }
     }
 
-    /// Get ownership client (ETF holdings)
+    /// Get ownership client (ETF holdings, institutional trades, director holdings, TDCC distribution)
     #[napi(getter)]
     pub fn ownership(&self) -> StockOwnershipClient {
         StockOwnershipClient {
@@ -217,9 +217,36 @@ impl StockClient {
     }
 }
 
-/// ETF holdings params (object form, matching the official SDK)
+/// `stock.ownership.etfHoldings` params (object form, matching the official SDK)
 #[napi(object)]
 pub struct EtfHoldingsParams {
+    pub symbol: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub sort: Option<String>,
+}
+
+/// `stock.ownership.institutionalTrades` params (object form, matching the official SDK)
+#[napi(object)]
+pub struct InstitutionalTradesParams {
+    pub symbol: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub sort: Option<String>,
+}
+
+/// `stock.ownership.directorHoldings` params (object form, matching the official SDK)
+#[napi(object)]
+pub struct DirectorHoldingsParams {
+    pub symbol: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub sort: Option<String>,
+}
+
+/// `stock.ownership.tdccDistribution` params (object form, matching the official SDK)
+#[napi(object)]
+pub struct TdccDistributionParams {
     pub symbol: String,
     pub from: Option<String>,
     pub to: Option<String>,
@@ -238,17 +265,79 @@ impl StockOwnershipClient {
     ///
     /// ```javascript
     /// await client.stock.ownership.etfHoldings({ symbol: '0050' });
-    /// await client.stock.ownership.etfHoldings({ symbol: '0050', sort: 'desc' });
+    /// await client.stock.ownership.etfHoldings({ symbol: '0050', from: '2026-01-01', sort: 'desc' });
     /// ```
     ///
     /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<EtfHoldingsResponse>")]
     pub async fn etf_holdings(&self, params: EtfHoldingsParams) -> napi::Result<Value> {
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        run_ownership(self.inner.clone(), query, send_etf_holdings).await
+    }
+
+    /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer).
+    ///
+    /// ```javascript
+    /// await client.stock.ownership.institutionalTrades({ symbol: '2330' });
+    /// await client.stock.ownership.institutionalTrades({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
+    /// ```
+    ///
+    /// @throws {Error} If `sort` is neither "asc" nor "desc"
+    #[napi(ts_return_type = "Promise<InstitutionalTradesResponse>")]
+    pub async fn institutional_trades(&self, params: InstitutionalTradesParams) -> napi::Result<Value> {
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        run_ownership(self.inner.clone(), query, send_institutional_trades).await
+    }
+
+    /// Get monthly holdings and pledges disclosed by directors and supervisors.
+    ///
+    /// ```javascript
+    /// await client.stock.ownership.directorHoldings({ symbol: '2330' });
+    /// await client.stock.ownership.directorHoldings({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
+    /// ```
+    ///
+    /// @throws {Error} If `sort` is neither "asc" nor "desc"
+    #[napi(ts_return_type = "Promise<DirectorHoldingsResponse>")]
+    pub async fn director_holdings(&self, params: DirectorHoldingsParams) -> napi::Result<Value> {
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        run_ownership(self.inner.clone(), query, send_director_holdings).await
+    }
+
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket.
+    ///
+    /// ```javascript
+    /// await client.stock.ownership.tdccDistribution({ symbol: '2330' });
+    /// await client.stock.ownership.tdccDistribution({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
+    /// ```
+    ///
+    /// @throws {Error} If `sort` is neither "asc" nor "desc"
+    #[napi(ts_return_type = "Promise<TdccDistributionResponse>")]
+    pub async fn tdcc_distribution(&self, params: TdccDistributionParams) -> napi::Result<Value> {
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        run_ownership(self.inner.clone(), query, send_tdcc_distribution).await
+    }
+}
+
+/// Parsed arguments shared by every `stock.ownership.*` method.
+struct OwnershipQuery {
+    symbol: String,
+    from: Option<String>,
+    to: Option<String>,
+    sort: Option<marketdata_core::rest::stock::ownership::HoldingsSort>,
+}
+
+impl OwnershipQuery {
+    fn new(
+        symbol: String,
+        from: Option<String>,
+        to: Option<String>,
+        sort: Option<String>,
+    ) -> napi::Result<Self> {
         use marketdata_core::rest::stock::ownership::HoldingsSort;
 
         // Reject an unrecognised sort rather than dropping it: a typo would
         // otherwise return the opposite series without complaint.
-        let sort = match params.sort.as_deref() {
+        let sort = match sort.as_deref() {
             None => None,
             Some("asc") => Some(HoldingsSort::Asc),
             Some("desc") => Some(HoldingsSort::Desc),
@@ -258,32 +347,50 @@ impl StockOwnershipClient {
                 )))
             }
         };
+        Ok(Self { symbol, from, to, sort })
+    }
+}
 
-        let inner = self.inner.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            let stock = inner.stock();
+macro_rules! ownership_sender {
+    ($fn_name:ident, $method:ident, $resp:ident) => {
+        fn $fn_name(
+            client: &marketdata_core::RestClient,
+            q: OwnershipQuery,
+        ) -> Result<marketdata_core::models::$resp, marketdata_core::MarketDataError> {
+            let stock = client.stock();
             let ownership = stock.ownership();
-            let mut builder = ownership.etf_holdings().symbol(&params.symbol);
-            if let Some(f) = params.from {
-                builder = builder.from(&f);
+            let mut builder = ownership.$method().symbol(&q.symbol);
+            if let Some(f) = q.from.as_deref() {
+                builder = builder.from(f);
             }
-            if let Some(t) = params.to {
-                builder = builder.to(&t);
+            if let Some(t) = q.to.as_deref() {
+                builder = builder.to(t);
             }
-            if let Some(sp) = sort {
-                builder = builder.sort(sp);
+            if let Some(s) = q.sort {
+                builder = builder.sort(s);
             }
             builder.send()
-        })
+        }
+    };
+}
+
+ownership_sender!(send_etf_holdings, etf_holdings, EtfHoldingsResponse);
+ownership_sender!(send_institutional_trades, institutional_trades, InstitutionalTradesResponse);
+ownership_sender!(send_director_holdings, director_holdings, DirectorHoldingsResponse);
+ownership_sender!(send_tdcc_distribution, tdcc_distribution, TdccDistributionResponse);
+
+async fn run_ownership<T: serde::Serialize + Send + 'static>(
+    client: marketdata_core::RestClient,
+    query: OwnershipQuery,
+    send: fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<T, marketdata_core::MarketDataError>,
+) -> napi::Result<Value> {
+    let result = tokio::task::spawn_blocking(move || send(&client, query))
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+    match result {
+        Ok(data) => serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string())),
+        Err(e) => Err(to_napi_error(e)),
     }
 }
 

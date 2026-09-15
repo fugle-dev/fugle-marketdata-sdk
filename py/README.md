@@ -1,8 +1,16 @@
-# marketdata-py
+# fugle-marketdata
 
-Python bindings for Fugle market data streaming. Built with PyO3 for high-performance native integration.
+Fugle market data REST and WebSocket client for Python, powered by a Rust
+core through PyO3.
 
 ## Installation
+
+```bash
+pip install --pre fugle-marketdata   # 3.x pre-release
+```
+
+Wheels are published for CPython 3.7+ (abi3) on Linux glibc (x86_64,
+aarch64), macOS (x86_64, arm64) and Windows x64.
 
 ### Development Build
 
@@ -15,11 +23,11 @@ source .venv/bin/activate
 pip install maturin
 
 # Build and install in development mode
-cd marketdata-py
+cd py
 maturin develop
 ```
 
-### Production Build
+### Release Build From Source
 
 ```bash
 maturin build --release
@@ -158,6 +166,7 @@ ws = WebSocketClient(api_key="your-key", reconnect=reconnect)
 ```
 
 **ReconnectConfig Options:**
+
 - `enabled` (bool): Whether auto-reconnect is enabled (default: True)
 - `max_attempts` (int): Maximum reconnection attempts (default: 5, min: 1)
 - `initial_delay_ms` (int): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
@@ -181,6 +190,7 @@ ws = WebSocketClient(api_key="your-key", health_check=health_check)
 ```
 
 **HealthCheckConfig Options:**
+
 - `enabled` (bool): Whether health check is enabled (default: False)
 - `interval_ms` (int): Ping interval in milliseconds (default: 30000ms, min: 5000ms)
 - `max_missed_pongs` (int): Maximum missed pongs before considering connection stale (default: 2, min: 1)

@@ -19,8 +19,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Pinned together: the snapshot text depends on how a given nightly's
+      # rustdoc JSON renders items (auto-trait impls changed between
+      # nightlies), and cargo-public-api only supports a range of rustdoc JSON
+      # formats. Bump both and regenerate the snapshot in the same commit.
       - name: Install nightly toolchain (rustdoc-json)
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-05
 
       - name: Cache cargo registry + target
         uses: actions/cache@v4
@@ -29,21 +35,21 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-public-api-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-public-api-0.52.0-nightly-2026-08-05-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-public-api
-        run: cargo install cargo-public-api --locked
+        run: cargo install cargo-public-api --version 0.52.0 --locked
 
       - name: Diff against committed snapshot
         env:
           RUSTC_BOOTSTRAP: 1
         run: |
-          cargo public-api -p fugle-marketdata-core --simplified --all-features \
+          cargo +nightly-2026-08-05 public-api -p fugle-marketdata-core --simplified --all-features \
             > /tmp/public-api-current.txt
           if ! diff -u core/PUBLIC-API.txt /tmp/public-api-current.txt; then
             echo "::error::Public API surface drifted from core/PUBLIC-API.txt."
             echo "If this change is intentional:"
-            echo "  1. Regenerate: cargo public-api -p fugle-marketdata-core --simplified > core/PUBLIC-API.txt"
+            echo "  1. Regenerate: cargo +nightly-2026-08-05 public-api -p fugle-marketdata-core --simplified --all-features > core/PUBLIC-API.txt"
             echo "  2. Add an acknowledgement entry to core/PUBLIC-API.md."
             echo "  3. Re-run CI."
             exit 1

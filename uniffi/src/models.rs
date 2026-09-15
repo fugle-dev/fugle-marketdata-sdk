@@ -1506,3 +1506,231 @@ impl From<core::EtfHoldingsResponse> for EtfHoldingsResponse {
         }
     }
 }
+
+/// Buy / sell / net shares traded by one class of institutional investor.
+/// Fields are `None` when the source has no figure for that day.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InstitutionalInvestorTrade {
+    pub buy: Option<f64>,
+    pub sell: Option<f64>,
+    pub net: Option<f64>,
+}
+
+impl From<core::InstitutionalInvestorTrade> for InstitutionalInvestorTrade {
+    fn from(t: core::InstitutionalInvestorTrade) -> Self {
+        Self {
+            buy: t.buy,
+            sell: t.sell,
+            net: t.net,
+        }
+    }
+}
+
+/// Institutional investor trading on a single date
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InstitutionalTradesEntry {
+    pub date: String,
+    pub foreign: Option<InstitutionalInvestorTrade>,
+    pub trust: Option<InstitutionalInvestorTrade>,
+    pub dealer: Option<InstitutionalInvestorTrade>,
+    pub total: Option<f64>,
+}
+
+impl From<core::InstitutionalTradesEntry> for InstitutionalTradesEntry {
+    fn from(e: core::InstitutionalTradesEntry) -> Self {
+        Self {
+            date: e.date,
+            foreign: e.foreign.map(Into::into),
+            trust: e.trust.map(Into::into),
+            dealer: e.dealer.map(Into::into),
+            total: e.total,
+        }
+    }
+}
+
+/// Response for `stock/ownership/institutional-trades/{symbol}`
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InstitutionalTradesResponse {
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub symbol: String,
+    pub data: Vec<InstitutionalTradesEntry>,
+}
+
+impl From<core::InstitutionalTradesResponse> for InstitutionalTradesResponse {
+    fn from(r: core::InstitutionalTradesResponse) -> Self {
+        Self {
+            data_type: r.data_type,
+            exchange: r.exchange,
+            market: r.market,
+            symbol: r.symbol,
+            data: r.data.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// One director's or supervisor's disclosed holdings
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DirectorHolding {
+    pub order: Option<i64>,
+    pub title: String,
+    pub name: String,
+    pub elected_shares: Option<f64>,
+    pub held_shares: Option<f64>,
+    pub pledged_shares: Option<f64>,
+    pub pledge_ratio: Option<f64>,
+    pub related_held_shares: Option<f64>,
+    pub related_pledged_shares: Option<f64>,
+    pub related_pledge_ratio: Option<f64>,
+}
+
+impl From<core::DirectorHolding> for DirectorHolding {
+    fn from(d: core::DirectorHolding) -> Self {
+        Self {
+            order: d.order,
+            title: d.title,
+            name: d.name,
+            elected_shares: d.elected_shares,
+            held_shares: d.held_shares,
+            pledged_shares: d.pledged_shares,
+            pledge_ratio: d.pledge_ratio,
+            related_held_shares: d.related_held_shares,
+            related_pledged_shares: d.related_pledged_shares,
+            related_pledge_ratio: d.related_pledge_ratio,
+        }
+    }
+}
+
+/// Director holdings disclosed for a single month (`date` is YYYY-MM)
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DirectorHoldingsEntry {
+    pub date: String,
+    pub directors: Vec<DirectorHolding>,
+}
+
+impl From<core::DirectorHoldingsEntry> for DirectorHoldingsEntry {
+    fn from(e: core::DirectorHoldingsEntry) -> Self {
+        Self {
+            date: e.date,
+            directors: e.directors.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Response for `stock/ownership/director-holdings/{symbol}`
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DirectorHoldingsResponse {
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub symbol: String,
+    pub data: Vec<DirectorHoldingsEntry>,
+}
+
+impl From<core::DirectorHoldingsResponse> for DirectorHoldingsResponse {
+    fn from(r: core::DirectorHoldingsResponse) -> Self {
+        Self {
+            data_type: r.data_type,
+            exchange: r.exchange,
+            market: r.market,
+            symbol: r.symbol,
+            data: r.data.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// One holding-size bracket of the TDCC shareholder distribution
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TdccDistributionLevel {
+    pub range: String,
+    pub holders: Option<i64>,
+    pub shares: Option<f64>,
+    pub proportion: Option<f64>,
+}
+
+impl From<core::TdccDistributionLevel> for TdccDistributionLevel {
+    fn from(l: core::TdccDistributionLevel) -> Self {
+        Self {
+            range: l.range,
+            holders: l.holders,
+            shares: l.shares,
+            proportion: l.proportion,
+        }
+    }
+}
+
+/// TDCC shareholder distribution on a single date
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TdccDistributionEntry {
+    pub date: String,
+    pub distributions: Vec<TdccDistributionLevel>,
+}
+
+impl From<core::TdccDistributionEntry> for TdccDistributionEntry {
+    fn from(e: core::TdccDistributionEntry) -> Self {
+        Self {
+            date: e.date,
+            distributions: e.distributions.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Response for `stock/ownership/tdcc-distribution/{symbol}`
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TdccDistributionResponse {
+    pub data_type: Option<String>,
+    pub exchange: Option<String>,
+    pub market: Option<String>,
+    pub symbol: String,
+    pub data: Vec<TdccDistributionEntry>,
+}
+
+impl From<core::TdccDistributionResponse> for TdccDistributionResponse {
+    fn from(r: core::TdccDistributionResponse) -> Self {
+        Self {
+            data_type: r.data_type,
+            exchange: r.exchange,
+            market: r.market,
+            symbol: r.symbol,
+            data: r.data.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod ownership_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn institutional_trades_keep_missing_investors_as_none() {
+        let core_resp: core::InstitutionalTradesResponse = serde_json::from_str(
+            r#"{"symbol":"2330","data":[{"date":"2026-07-31","foreign":{"buy":1,"sell":2,"net":-1},"total":null}]}"#,
+        )
+        .unwrap();
+        let resp: InstitutionalTradesResponse = core_resp.into();
+        let entry = &resp.data[0];
+        assert_eq!(entry.foreign.as_ref().unwrap().net, Some(-1.0));
+        assert!(entry.trust.is_none());
+        assert_eq!(entry.total, None);
+    }
+
+    #[test]
+    fn director_and_tdcc_records_convert_field_by_field() {
+        let directors: core::DirectorHoldingsResponse = serde_json::from_str(
+            r#"{"symbol":"2330","data":[{"date":"2026-05","directors":[{"order":1,"title":"董事長","name":"x","heldShares":1200,"pledgeRatio":null}]}]}"#,
+        )
+        .unwrap();
+        let directors: DirectorHoldingsResponse = directors.into();
+        let d = &directors.data[0].directors[0];
+        assert_eq!((d.order, d.held_shares, d.pledge_ratio), (Some(1), Some(1200.0), None));
+
+        let tdcc: core::TdccDistributionResponse = serde_json::from_str(
+            r#"{"symbol":"2330","data":[{"date":"2026-07-03","distributions":[{"range":"1-999","holders":15,"shares":250,"proportion":0.96}]}]}"#,
+        )
+        .unwrap();
+        let tdcc: TdccDistributionResponse = tdcc.into();
+        let level = &tdcc.data[0].distributions[0];
+        assert_eq!((level.range.as_str(), level.holders, level.proportion), ("1-999", Some(15), Some(0.96)));
+    }
+}

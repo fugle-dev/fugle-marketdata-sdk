@@ -23,6 +23,7 @@ A proposal for the Fugle market data WebSocket server team. This document collec
 ### What's about to change on the SDK side (context for these recommendations)
 
 The SDK is moving to a tighter, async-native liveness model:
+
 - Read-site `tokio::time::timeout(35s, ...)` replaces the polling task — no background timer, no atomics
 - A new `HeartbeatTimeout` first-class error event surfaces explicitly to user code
 - Default behaviour switches to "always on" instead of opt-in
@@ -40,7 +41,7 @@ Ordered by recommended sequencing (priority + effort tradeoff). The first three 
 
 Set `SO_KEEPALIVE` plus tuned timing on every accepted client socket. The OS will detect dead TCP connections (route blackhole, client machine crash without a FIN, NAT timeout) and free server-side resources.
 
-```
+```text
 SO_KEEPALIVE       = on
 TCP_KEEPIDLE       = 60s    # idle 60s before first probe
 TCP_KEEPINTVL      = 10s    # interval between probes
@@ -173,7 +174,7 @@ Option B is non-breaking and probably sufficient. **Defer until metrics justify 
 
 ## Suggested rollout sequence
 
-```
+```text
 Sprint  ─── Action ──────────────────────────────────  Risk    Effort
   N      Recommendation 1: TCP keepalive                Low     Low
   N      Recommendation 2: heartbeat seq number          Low     Low

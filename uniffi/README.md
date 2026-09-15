@@ -113,11 +113,13 @@ FugleWebSocketClient ws = FugleWebSocketClient.builder()
 **Configuration Options:**
 
 `ReconnectOptions.builder()`:
+
 - `maxAttempts(Integer)` - Maximum reconnection attempts (default: 5, min: 1)
 - `initialDelayMs(Long)` - Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `maxDelayMs(Long)` - Maximum delay cap (default: 60000ms)
 
 `HealthCheckOptions.builder()`:
+
 - `enabled(Boolean)` - Whether health check is enabled (default: false)
 - `intervalMs(Long)` - Ping interval in milliseconds (default: 30000ms, min: 5000ms)
 - `maxMissedPongs(Integer)` - Maximum missed pongs (default: 2, min: 1)
@@ -176,11 +178,13 @@ ws, err := marketdata.NewFugleWebSocketClient(
 **Configuration Options:**
 
 `ReconnectOptions` struct:
+
 - `MaxAttempts int` - Maximum reconnection attempts (zero = use default 5)
 - `InitialDelayMs uint64` - Initial delay for exponential backoff (zero = use default 1000ms)
 - `MaxDelayMs uint64` - Maximum delay cap (zero = use default 60000ms)
 
 `HealthCheckOptions` struct:
+
 - `Enabled bool` - Whether health check is enabled
 - `IntervalMs uint64` - Ping interval in milliseconds (zero = use default 30000ms)
 - `MaxMissedPongs int` - Maximum missed pongs (zero = use default 2)
@@ -246,11 +250,13 @@ var ws = new WebSocketClient(new WebSocketClientOptions
 **Configuration Options:**
 
 `ReconnectOptions` class:
+
 - `MaxAttempts int?` - Maximum reconnection attempts (null = use default 5)
 - `InitialDelayMs ulong?` - Initial delay for exponential backoff (null = use default 1000ms)
 - `MaxDelayMs ulong?` - Maximum delay cap (null = use default 60000ms)
 
 `HealthCheckOptions` class:
+
 - `Enabled bool?` - Whether health check is enabled (null = use default false)
 - `IntervalMs ulong?` - Ping interval in milliseconds (null = use default 30000ms)
 - `MaxMissedPongs int?` - Maximum missed pongs (null = use default 2)
@@ -262,7 +268,8 @@ var ws = new WebSocketClient(new WebSocketClientOptions
 All methods return JSON strings that can be parsed with your language's JSON library:
 
 **Stock Market Data:**
-```
+
+```text
 getStockQuote(symbol)           # Get real-time quote
 getStockTicker(symbol)          # Get symbol information
 getStockCandles(symbol, timeframe)  # Get OHLCV candles
@@ -271,7 +278,8 @@ getStockVolumes(symbol)         # Get volume by price
 ```
 
 **Futures and Options (FutOpt) Data:**
-```
+
+```text
 getFutOptQuote(symbol, afterHours)   # Get real-time quote
 getFutOptTicker(symbol)              # Get contract information
 getFutOptCandles(symbol, timeframe)  # Get OHLCV candles
@@ -282,7 +290,7 @@ getFutOptProducts(type)              # Get product listing ("F" or "O")
 
 ### WebSocket Methods
 
-```
+```text
 connect()                       # Connect to WebSocket server
 disconnect()                    # Disconnect from server
 subscribe(channel, symbol)      # Subscribe to channel
@@ -292,6 +300,7 @@ isClosed()                      # Check if client is closed
 ```
 
 **WebSocket Channels:**
+
 - `trades` - Real-time trade executions
 - `candles` - Real-time candlestick updates
 - `books` - Order book (5 levels bid/ask)
@@ -303,6 +312,7 @@ isClosed()                      # Check if client is closed
 Errors are thrown as exceptions in target languages:
 
 **Java:**
+
 ```java
 try {
     String quote = client.getStockQuote("INVALID");
@@ -314,6 +324,7 @@ try {
 ```
 
 **Go:**
+
 ```go
 quote, err := client.GetStockQuote("INVALID")
 if err != nil {
@@ -322,6 +333,7 @@ if err != nil {
 ```
 
 **C#:**
+
 ```csharp
 try
 {

@@ -956,6 +956,127 @@ export interface EtfHoldingsResponse {
   data: EtfHoldingsEntry[];
 }
 
+/**
+ * Buy / sell / net shares traded by one class of institutional investor.
+ * Fields may be null when the source has no figure for that day.
+ */
+export interface InstitutionalInvestorTrade {
+  /** Shares bought */
+  buy: number | null;
+  /** Shares sold */
+  sell: number | null;
+  /** Net shares (buy - sell) */
+  net: number | null;
+}
+
+/** Institutional investor trading on a single date */
+export interface InstitutionalTradesEntry {
+  /** Trading date (YYYY-MM-DD) */
+  date: string;
+  /** Foreign investors */
+  foreign: InstitutionalInvestorTrade | null;
+  /** Investment trusts */
+  trust: InstitutionalInvestorTrade | null;
+  /** Dealers */
+  dealer: InstitutionalInvestorTrade | null;
+  /** Combined net shares across all three investor classes */
+  total: number | null;
+}
+
+/** Response for `stock.ownership.institutionalTrades` */
+export interface InstitutionalTradesResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Stock symbol */
+  symbol: string;
+  /** Trading by date */
+  data: InstitutionalTradesEntry[];
+}
+
+/** One director's or supervisor's disclosed holdings */
+export interface DirectorHolding {
+  /** Position of this director in the disclosure */
+  order: number | null;
+  /** Title (e.g. chairman, director, supervisor) */
+  title: string;
+  /** Name */
+  name: string;
+  /** Shares held when elected */
+  electedShares: number | null;
+  /** Shares currently held */
+  heldShares: number | null;
+  /** Shares pledged */
+  pledgedShares: number | null;
+  /** Pledged shares as a ratio of held shares */
+  pledgeRatio: number | null;
+  /** Shares held by related parties (spouse, minor children, nominees) */
+  relatedHeldShares: number | null;
+  /** Shares pledged by related parties */
+  relatedPledgedShares: number | null;
+  /** Related-party pledged shares as a ratio of related-party held shares */
+  relatedPledgeRatio: number | null;
+}
+
+/** Director holdings disclosed for a single month */
+export interface DirectorHoldingsEntry {
+  /** Disclosure month (YYYY-MM) */
+  date: string;
+  /** Directors and supervisors disclosed for this month */
+  directors: DirectorHolding[];
+}
+
+/** Response for `stock.ownership.directorHoldings` */
+export interface DirectorHoldingsResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Stock symbol */
+  symbol: string;
+  /** Holdings by disclosure month */
+  data: DirectorHoldingsEntry[];
+}
+
+/** One holding-size bracket of the TDCC shareholder distribution */
+export interface TdccDistributionLevel {
+  /** Holding-size bracket label, as returned by the API */
+  range: string;
+  /** Number of shareholders in this bracket */
+  holders: number | null;
+  /** Shares held by this bracket */
+  shares: number | null;
+  /** Share of total outstanding held by this bracket, in percent */
+  proportion: number | null;
+}
+
+/** TDCC shareholder distribution on a single date */
+export interface TdccDistributionEntry {
+  /** Data date (YYYY-MM-DD) */
+  date: string;
+  /** Distribution by holding-size bracket */
+  distributions: TdccDistributionLevel[];
+}
+
+/** Response for `stock.ownership.tdccDistribution` */
+export interface TdccDistributionResponse {
+  /** Security type */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Stock symbol */
+  symbol: string;
+  /** Distribution by date */
+  data: TdccDistributionEntry[];
+}
+
 /** Dividend record */
 export interface Dividend {
   /** Stock symbol */
@@ -1337,7 +1458,7 @@ export declare class FutOptWebSocketClient {
  * # JavaScript Usage
  *
  * ```javascript
- * const { RestClient } = require('@fubon/marketdata-js');
+ * const { RestClient } = require('@fugle/marketdata');
  *
  * // Create client with API key
  * const client = new RestClient('your-api-key');
@@ -1399,7 +1520,7 @@ export declare class StockClient {
   get technical(): StockTechnicalClient
   /** Get corporate actions client */
   get corporateActions(): StockCorporateActionsClient
-  /** Get ownership client (ETF holdings) */
+  /** Get ownership client (ETF holdings, institutional trades, director holdings, TDCC distribution) */
   get ownership(): StockOwnershipClient
   /** The fully resolved request prefix for this product client. */
   get baseUrl(): string
@@ -1524,12 +1645,45 @@ export declare class StockOwnershipClient {
    *
    * ```javascript
    * await client.stock.ownership.etfHoldings({ symbol: '0050' });
-   * await client.stock.ownership.etfHoldings({ symbol: '0050', sort: 'desc' });
+   * await client.stock.ownership.etfHoldings({ symbol: '0050', from: '2026-01-01', sort: 'desc' });
    * ```
    *
    * @throws {Error} If `sort` is neither "asc" nor "desc"
    */
   etfHoldings(params: EtfHoldingsParams): Promise<EtfHoldingsResponse>
+  /**
+   * Get daily trading by the three major institutional investors (foreign, investment trust, dealer).
+   *
+   * ```javascript
+   * await client.stock.ownership.institutionalTrades({ symbol: '2330' });
+   * await client.stock.ownership.institutionalTrades({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
+   * ```
+   *
+   * @throws {Error} If `sort` is neither "asc" nor "desc"
+   */
+  institutionalTrades(params: InstitutionalTradesParams): Promise<InstitutionalTradesResponse>
+  /**
+   * Get monthly holdings and pledges disclosed by directors and supervisors.
+   *
+   * ```javascript
+   * await client.stock.ownership.directorHoldings({ symbol: '2330' });
+   * await client.stock.ownership.directorHoldings({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
+   * ```
+   *
+   * @throws {Error} If `sort` is neither "asc" nor "desc"
+   */
+  directorHoldings(params: DirectorHoldingsParams): Promise<DirectorHoldingsResponse>
+  /**
+   * Get the weekly TDCC shareholder distribution by holding-size bracket.
+   *
+   * ```javascript
+   * await client.stock.ownership.tdccDistribution({ symbol: '2330' });
+   * await client.stock.ownership.tdccDistribution({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
+   * ```
+   *
+   * @throws {Error} If `sort` is neither "asc" nor "desc"
+   */
+  tdccDistribution(params: TdccDistributionParams): Promise<TdccDistributionResponse>
 }
 
 /** Stock snapshot data client */
@@ -1732,7 +1886,7 @@ export declare class StockWebSocketClient {
  * # JavaScript Usage
  *
  * ```javascript
- * const { WebSocketClient } = require('@fubon/marketdata-js');
+ * const { WebSocketClient } = require('@fugle/marketdata');
  *
  * // Create client with API key
  * const ws = new WebSocketClient('your-api-key');
@@ -1791,7 +1945,15 @@ export declare class WebSocketClient {
   get futopt(): FutOptWebSocketClient
 }
 
-/** ETF holdings params (object form, matching the official SDK) */
+/** `stock.ownership.directorHoldings` params (object form, matching the official SDK) */
+export interface DirectorHoldingsParams {
+  symbol: string
+  from?: string
+  to?: string
+  sort?: string
+}
+
+/** `stock.ownership.etfHoldings` params (object form, matching the official SDK) */
 export interface EtfHoldingsParams {
   symbol: string
   from?: string
@@ -1818,6 +1980,14 @@ export interface HealthCheckOptions {
    * 30s heartbeat + 5s buffer); floor 5000.
    */
   heartbeatTimeoutMs?: number
+}
+
+/** `stock.ownership.institutionalTrades` params (object form, matching the official SDK) */
+export interface InstitutionalTradesParams {
+  symbol: string
+  from?: string
+  to?: string
+  sort?: string
 }
 
 /**
@@ -1899,6 +2069,14 @@ export interface StreamingVersionOptions {
 /** Plain `{ symbol }` params reused by methods that take only a symbol. */
 export interface SymbolParams {
   symbol: string
+}
+
+/** `stock.ownership.tdccDistribution` params (object form, matching the official SDK) */
+export interface TdccDistributionParams {
+  symbol: string
+  from?: string
+  to?: string
+  sort?: string
 }
 
 /**

@@ -1,16 +1,24 @@
-# marketdata-js
+# @fugle/marketdata
 
-JavaScript/TypeScript bindings for Fugle Market Data API, built with NAPI-RS.
+Fugle market data REST and WebSocket client for Node.js and TypeScript,
+powered by a Rust core through NAPI-RS.
 
 ## Installation
 
 ```bash
-# From source (requires Rust toolchain)
-cd marketdata-js
+npm install @fugle/marketdata@next   # 3.x pre-release
+```
+
+Prebuilt native addons are published for macOS (x64, arm64), Linux glibc
+(x64, arm64) and Windows x64. npm installs the matching one automatically.
+
+### From source
+
+```bash
+# Requires a Rust toolchain
+cd js
 npm install
 npm run build
-
-# The native module is built to marketdata-js.*.node
 ```
 
 ## Quick Start
@@ -18,24 +26,24 @@ npm run build
 ### REST API
 
 ```javascript
-const { RestClient } = require('@fubon/marketdata-js');
+const { RestClient } = require('@fugle/marketdata');
 
 // Create client with API key
 const client = new RestClient({ apiKey: 'your-api-key' });
 
-// Get stock quote
-const quote = client.stock.intraday.quote('2330');
+// REST methods return Promises
+const quote = await client.stock.intraday.quote({ symbol: '2330' });
 console.log('TSMC Price:', quote.closePrice);
 
 // Get futures quote
-const futoptQuote = client.futopt.intraday.quote('TXFC4');
+const futoptQuote = await client.futopt.intraday.quote('TXFC4');
 console.log('TXF Price:', futoptQuote.closePrice);
 ```
 
 ### WebSocket Streaming
 
 ```javascript
-const { WebSocketClient } = require('@fubon/marketdata-js');
+const { WebSocketClient } = require('@fugle/marketdata');
 
 // Create client
 const ws = new WebSocketClient({ apiKey: 'your-api-key' });
@@ -59,8 +67,8 @@ ws.stock.on('error', (err) => {
   console.error('Error:', err);
 });
 
-// Connect
-ws.stock.connect();
+// Connect (returns a Promise)
+await ws.stock.connect();
 
 // Disconnect after 30 seconds
 setTimeout(() => {
@@ -71,11 +79,11 @@ setTimeout(() => {
 ### TypeScript
 
 ```typescript
-import { RestClient, WebSocketClient } from '@fubon/marketdata-js';
+import { RestClient, WebSocketClient } from '@fugle/marketdata';
 
 const client = new RestClient({ apiKey: 'your-api-key' });
-const quote = client.stock.intraday.quote('2330');
-// quote is typed as Record<string, any>
+const quote = await client.stock.intraday.quote({ symbol: '2330' });
+// quote is typed as QuoteResponse
 ```
 
 ## Authentication
@@ -83,7 +91,7 @@ const quote = client.stock.intraday.quote('2330');
 Three authentication methods are supported:
 
 ```javascript
-const { RestClient } = require('@fubon/marketdata-js');
+const { RestClient } = require('@fugle/marketdata');
 
 // 1. API Key (most common)
 const client = new RestClient({ apiKey: 'your-api-key' });
@@ -102,7 +110,7 @@ const client = new RestClient({ sdkToken: 'your-sdk-token' });
 Control WebSocket automatic reconnection behavior:
 
 ```javascript
-const { WebSocketClient } = require('@fubon/marketdata-js');
+const { WebSocketClient } = require('@fugle/marketdata');
 
 const ws = new WebSocketClient({
   apiKey: 'your-key',
@@ -115,6 +123,7 @@ const ws = new WebSocketClient({
 ```
 
 **ReconnectOptions:**
+
 - `maxAttempts` (number): Maximum reconnection attempts (default: 5, min: 1)
 - `initialDelayMs` (number): Initial delay for exponential backoff (default: 1000, min: 100)
 - `maxDelayMs` (number): Maximum delay cap (default: 60000)
@@ -124,7 +133,7 @@ const ws = new WebSocketClient({
 Control WebSocket health check (ping-pong) behavior:
 
 ```javascript
-const { WebSocketClient } = require('@fubon/marketdata-js');
+const { WebSocketClient } = require('@fugle/marketdata');
 
 const ws = new WebSocketClient({
   apiKey: 'your-key',
@@ -137,6 +146,7 @@ const ws = new WebSocketClient({
 ```
 
 **HealthCheckOptions:**
+
 - `enabled` (boolean): Whether health check is enabled (default: false)
 - `pingInterval` (number): Ping interval in milliseconds (default: 30000, min: 5000)
 - `maxMissedPongs` (number): Maximum missed pongs before considering connection stale (default: 2, min: 1)
@@ -144,7 +154,7 @@ const ws = new WebSocketClient({
 ### Combined Configuration
 
 ```javascript
-const { WebSocketClient } = require('@fubon/marketdata-js');
+const { WebSocketClient } = require('@fugle/marketdata');
 
 const ws = new WebSocketClient({
   apiKey: 'your-key',
@@ -163,24 +173,28 @@ class RestClient {
 
   stock: {
     intraday: {
-      quote(symbol: string): Record<string, any>;
-      ticker(symbol: string): Record<string, any>;
-      candles(symbol: string): Record<string, any>;
-      trades(symbol: string): Record<string, any>;
-      volumes(symbol: string): Record<string, any>;
+      quote(symbol: string | { symbol: string; oddLot?: boolean }): Promise<QuoteResponse>;
+      ticker(symbol: string): Promise<TickerResponse>;
+      candles(symbol: string, timeframe?: string): Promise<CandlesResponse>;
+      trades(symbol: string): Promise<TradesResponse>;
+      volumes(symbol: string): Promise<VolumesResponse>;
     }
+    // also: historical, snapshot, technical, corporateActions, ownership
   };
 
   futopt: {
     intraday: {
-      quote(symbol: string): Record<string, any>;
-      ticker(symbol: string): Record<string, any>;
-      candles(symbol: string): Record<string, any>;
-      trades(symbol: string): Record<string, any>;
-      volumes(symbol: string): Record<string, any>;
-      products(type: 'futures' | 'options'): Record<string, any>;
+      quote(symbol: string): Promise<QuoteResponse>;
+      ticker(symbol: string): Promise<TickerResponse>;
+      candles(symbol: string, timeframe: string): Promise<CandlesResponse>;
+      trades(symbol: string): Promise<TradesResponse>;
+      volumes(symbol: string): Promise<VolumesResponse>;
+      products(type: 'FUTURE' | 'OPTION', contractType?: string): Promise<ProductsResponse>;
     }
+    // also: historical
   };
+
+  // See index.d.ts for the complete, generated type definitions.
 }
 ```
 
@@ -209,7 +223,7 @@ class WebSocketClient {
 
 class StockWebSocketClient {
   on(event: 'message' | 'connect' | 'disconnect' | 'error', handler: Function): void;
-  connect(): void;
+  connect(): Promise<void>;
   subscribe(options: { channel: string; symbol: string; oddLot?: boolean }): void;
   unsubscribe(subscriptionId: string): void;
   disconnect(): void;
@@ -236,12 +250,12 @@ interface WebSocketClientOptions {
 ## Error Handling
 
 ```javascript
-const { RestClient } = require('@fubon/marketdata-js');
+const { RestClient } = require('@fugle/marketdata');
 
 const client = new RestClient({ apiKey: 'your-api-key' });
 
 try {
-  const quote = client.stock.intraday.quote('INVALID');
+  const quote = await client.stock.intraday.quote('INVALID');
 } catch (e) {
   if (e.message.includes('[2010]')) {
     console.log('Client already closed');

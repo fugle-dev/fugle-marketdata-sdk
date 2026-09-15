@@ -21,13 +21,37 @@ After landing an intentional public-surface change:
 
 ```bash
 cargo install cargo-public-api --locked  # one-time
-cargo public-api -p fugle-marketdata-core --simplified > core/PUBLIC-API.txt
+RUSTC_BOOTSTRAP=1 cargo public-api -p fugle-marketdata-core --simplified --all-features > core/PUBLIC-API.txt
 ```
+
+Use `--all-features`: CI and `core/tests/public_api_snapshot.rs` both do, so a
+snapshot generated without it will never match.
 
 Add an entry to the **Acknowledged changes** section below referencing the
 PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
+
+### 0.8.0-rc.1 (cont.) — official 1.6.0 / 2.6.0 ownership endpoints
+
+This is also the first real snapshot. Until now `core/PUBLIC-API.txt` held
+only placeholder comments, so the regenerated file lists the whole surface,
+including items already acknowledged below and the `websocket::aio`
+`WebSocketClient` methods that were never captured.
+
+- `+` `rest::client::OwnershipClient::{institutional_trades, director_holdings,
+  tdcc_distribution}`.
+- `+` `rest::stock::ownership::{InstitutionalTradesRequestBuilder,
+  DirectorHoldingsRequestBuilder, TdccDistributionRequestBuilder}`.
+- `+` `models::{InstitutionalInvestorTrade, InstitutionalTradesEntry,
+  InstitutionalTradesResponse, DirectorHolding, DirectorHoldingsEntry,
+  DirectorHoldingsResponse, TdccDistributionLevel, TdccDistributionEntry,
+  TdccDistributionResponse}`. Numeric fields are `Option`: these models follow
+  the official TypeScript interfaces and have not been checked against live
+  payloads yet.
+- `=` `rest::stock::ownership::HoldingsSort` moved to a private `range`
+  module and is re-exported from the same public path. No caller-visible
+  change.
 
 ### 0.8.0-rc.1 — official 1.5.0 / 2.5.0 parity
 

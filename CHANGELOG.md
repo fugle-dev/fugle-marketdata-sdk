@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Bindings 3.0.0-rc.1 / uniffi 0.1.0-rc.1] - 2026-08-05
+## [Bindings 3.0.0-rc.1 / uniffi 0.1.0-rc.1] - Unreleased
 
 First release of the Python, Node and UniFFI bindings, aligned with core
-0.8.0-rc.1 and therefore with official `@fugle/marketdata` 1.5.0 /
-`fugle-marketdata` 2.5.0 from day one.
+0.8.0-rc.1 and therefore with official `@fugle/marketdata` 1.6.0 /
+`fugle-marketdata` 2.6.0 from day one.
 
 Because these bindings have never shipped, **none of core's 0.8.0 breaking
 changes are breaking for them** — a binding user has never seen the 0.6-era
@@ -22,9 +22,39 @@ crates.io.
 
 | Artifact | Registry | Version | Why |
 |---|---|---|---|
-| `fugle-marketdata` | PyPI | `3.0.0rc1` | must exceed the official package's 2.5.0 |
-| `@fugle/marketdata` | npm | `3.0.0-rc.1` | must exceed the official package's 1.5.0 |
-| C# / Go / Java / C++ | — | `0.1.0-rc.1` | never published, no namespace to supersede |
+| `fugle-marketdata` | PyPI | `3.0.0rc1` | must exceed the official package's 2.6.0 |
+| `@fugle/marketdata` | npm (`next` tag) | `3.0.0-rc.1` | must exceed the official package's 1.6.0 |
+| `Fugle.MarketData` (C#) | NuGet | `0.1.0-rc.1` | never published, no namespace to supersede |
+| `github.com/fugle-dev/fugle-marketdata-go` | Go modules | `v0.1.0-rc.1` | same |
+| C++ | GitHub Release tarballs | `0.1.0-rc.1` | same |
+| Java | not published | `0.1.0-rc.1` | JNA callbacks benchmark far below the other bindings |
+
+### Distribution
+
+- Pre-releases are published to the real registries on channels that are
+  never selected by default: pip needs `--pre`, npm uses the `next` dist-tag
+  (the official 1.x keeps `latest`), NuGet needs `--prerelease`, Go needs an
+  explicit version. See [docs/INSTALL.md](docs/INSTALL.md).
+- The NuGet package ID is `Fugle.MarketData`. C# namespaces are unchanged.
+- Go is published as a standalone module that links prebuilt static
+  libraries for `darwin/arm64`, `darwin/amd64`, `linux/amd64` and
+  `windows/amd64` (MinGW), so no `LD_LIBRARY_PATH` is needed. `linux/arm64`
+  is not supported yet.
+- npm ships one optional-dependency package per platform
+  (`@fugle/marketdata-<platform>`); PyPI wheels carry full project metadata.
+- Every release is verified after publishing by installing each package from
+  its registry on Linux, macOS and Windows. See
+  [docs/RELEASING.md](docs/RELEASING.md).
+
+### Added — all bindings
+
+- The three `stock.ownership` endpoints added by official 1.6.0 / 2.6.0,
+  with the same `from` / `to` / `sort` contract as ETF holdings:
+  institutional investors' trades (`institutional_trades` /
+  `institutionalTrades`), director and supervisor holdings
+  (`director_holdings` / `directorHoldings`) and TDCC shareholding
+  distribution (`tdcc_distribution` / `tdccDistribution`). C# and Go get them
+  through UniFFI.
 
 ### Added — Python
 
@@ -38,6 +68,9 @@ crates.io.
   only `"asc"` / `"desc"`; anything else raises `ValueError` rather than being
   dropped, since a typo would otherwise return the opposite series.
 - `futopt.intraday.tickers(is_spread=...)`.
+- Ownership methods accept the official 2.x spellings `from_=`, `to=` and
+  `**{"from": ...}`. Previously these were dropped with a warning and the
+  date range silently did not apply.
 - `cargo test -p marketdata-py --no-default-features` now links and runs.
   `extension-module` became an optional (default-on) feature; previously the
   crate's Rust tests could not build at all.
@@ -59,6 +92,9 @@ crates.io.
   three ETF holdings records.
 - `RestClient.base_url` / `StockClient.base_url`, `is_spread` on futopt
   tickers.
+- C#: `RestClient.Stock.Ownership`. The C# wrapper previously exposed no
+  ownership endpoints at all, not even ETF holdings. FutOpt `GetTickers`
+  gains `isSpread`.
 
 ### Fixed — UniFFI
 
@@ -68,6 +104,16 @@ crates.io.
   rather than papering over absence with `unwrap_or_default()`.
 - `KdjResponse` exposed a single `period`; the endpoint has taken
   `r_period` / `k_period` / `d_period` since 0.7.2.
+- **The committed C# and Go generated bindings predated 0.8.0**, so loading
+  them failed with a UniFFI checksum mismatch. They are regenerated, and CI
+  now fails if they drift from the Rust interface again.
+- Go: `NewFugleRestClient` returned an error on every call (a typed-nil
+  `*MarketDataError` wrapped in `error`), and `WithBaseUrl` was stored but
+  never applied. Both are fixed.
+- C# / Go health-check options use `HeartbeatTimeoutMs`. The removed
+  `IntervalMs` / `MaxMissedPongs` never had a counterpart in core and were
+  silently ignored. C# `HealthCheckOptions.Enabled` now defaults to true,
+  matching core.
 
 ### Fixed — Tauri GUI
 
@@ -85,11 +131,10 @@ crates.io.
   Note: run `maturin develop` before `pytest` — a stale gitignored `.so` under
   `py/fugle_marketdata/` shadows the installed wheel.
 
-## [Rust 0.8.0-rc.1] - 2026-08-05
+## [Rust 0.8.0-rc.1] - Unreleased
 
-Aligns with the official `@fugle/marketdata` 1.5.0-rc.5 and
-`fugle-marketdata` 2.5.0rc5. Released as a pre-release while the official
-SDKs are still in rc.
+Aligns with the official `@fugle/marketdata` 1.6.0 and `fugle-marketdata`
+2.6.0.
 
 See [MIGRATION-0.8.md](MIGRATION-0.8.md).
 
@@ -108,6 +153,10 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
   right for both.
 
   Unlike the 0.6.0 change, this failure is loud rather than silent.
+
+- **MSRV is 1.83** (`rust-version`), up from a declared 1.82 that no longer
+  built: the dependency graph needs rustc 1.83 even when resolved with the
+  MSRV-aware resolver. CI now checks the declared MSRV that way.
 
 - **`WebSocketFactory::stock()` / `::futopt()` now return `Result`**, so a
   rejected `base_url` surfaces at the earliest honest point. `RestClient`
@@ -131,6 +180,10 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
 
 - `stock().ownership().etf_holdings()` — `GET
   /stock/ownership/etf-holdings/{symbol}` with `from` / `to` / `sort`.
+- `stock().ownership().{institutional_trades, director_holdings,
+  tdcc_distribution}()` with their request builders and response models,
+  matching official 1.6.0 / 2.6.0. Numeric fields are `Option` because they
+  have not been checked against live payloads yet.
 - `StockVersion` / `FutOptVersion` enums and
   `WebSocketFactory::{stock_version, futopt_version}`. One enum per product
   makes an unsupported pairing unrepresentable, so unlike the official SDKs'
@@ -157,8 +210,8 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
   the absent case; a literal `null` failed the whole decode. The API
   demonstrably uses explicit nulls for unset fields on dormant contracts.
   Precautionary — no `isTrial: null` has been observed in the wild.
-- `prod_smoke` probes for etf-holdings, the `isSpread` filter, and spread
-  contracts (discovered dynamically).
+- `prod_smoke` probes for etf-holdings, the three new ownership endpoints,
+  the `isSpread` filter, and spread contracts (discovered dynamically).
 
 ### Fixed
 
@@ -193,6 +246,8 @@ See [MIGRATION-0.8.md](MIGRATION-0.8.md).
   0.3.0, and has no missed-pong counter to clamp. `health_check`'s module
   docs now carry a mapping table for anyone porting config from Node or
   Python.
+- `core/PUBLIC-API.txt` is now a real `cargo public-api` snapshot; it was a
+  placeholder, so the public-api CI check could never pass.
 - `name` / `previous_close` were dropped from the official futopt quote
   response in 1.5.0 but are retained here as `Option`, so payloads still
   carrying them keep decoding.
@@ -700,7 +755,7 @@ tokio-comp = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 - New `core/src/websocket/connection_event.rs`: runtime-free
   `ConnectionState`, `ConnectionEvent`, `emit_event`.
 - New `core/src/websocket/sync/`: blocking client backed by `tungstenite`
-  + `std::thread`. Single owner thread per connection with a bounded
+  and `std::thread`. Single owner thread per connection with a bounded
   outbound queue (`sync_channel(64)`) and `set_read_timeout`-based
   polling. Supervisor handles automatic reconnect with exponential
   backoff matching the async path.
@@ -829,6 +884,7 @@ Detection latency improves from up to 90s (3 × 30s heartbeats missed) to the
 configured `heartbeat_timeout` (default 35s).
 
 #### Breaking
+
 - `HealthCheckConfig` collapsed `interval` + `max_missed_pongs` into a single
   `heartbeat_timeout: Duration` field. Use
   `HealthCheckConfig::with_timeout(Duration::from_secs(35))?` to construct,
@@ -851,6 +907,7 @@ configured `heartbeat_timeout` (default 35s).
     `heartbeat_timeout_ms`
 
 #### Added
+
 - `MarketDataError::HeartbeatTimeout { elapsed: Duration }` — first-class
   error variant for liveness timeout (error code 3003). PyO3 binding routes
   to the existing `TimeoutError` Python exception; UniFFI binding routes to
@@ -866,6 +923,7 @@ configured `heartbeat_timeout` (default 35s).
   honoring lands; see `WEBSOCKET-SERVER-RECOMMENDATIONS.md`.
 
 #### Changed
+
 - WebSocket dispatch loop now uses `tokio::time::timeout(heartbeat_timeout,
   ws_read.next())` at the read site, replacing the background polling task.
 - `WebSocketClient` storage shifts from `Arc<HealthCheck>` to
@@ -878,6 +936,7 @@ Drop-in successor to the pure-Python `fugle-marketdata` 2.4.1 maintained at
 `pip install -U fugle-marketdata` brings you to this Rust-based rewrite.
 
 #### Changed (BREAKING)
+
 - Import path renamed from `marketdata_py` to `fugle_marketdata`, matching
   the 2.4.1 convention. A `marketdata_py` shim emits `DeprecationWarning`
   and re-exports for one release; it will be removed in 3.1.0.
@@ -885,6 +944,7 @@ Drop-in successor to the pure-Python `fugle-marketdata` 2.4.1 maintained at
   `marketdata_py.*`). Affects traceback display and pickling.
 
 #### Added
+
 - Version aligned with official 2.x series — this is the 3.0 major.
 
 ### Node.js / Java / C# / Go
@@ -896,6 +956,7 @@ rename above.
 ## [0.3.0] - 2026-02-16
 
 ### Added
+
 - Options object constructor for all language bindings (Python kwargs-only, Node.js options object, Java builder, Go functional options, C# options pattern)
 - ReconnectConfig/ReconnectionConfig exposure for WebSocket auto-reconnect control (max_attempts, initial_delay_ms, max_delay_ms)
 - HealthCheckConfig/HealthCheckOptions exposure for WebSocket health check control (enabled, interval_ms, max_missed_pongs)
@@ -907,6 +968,7 @@ rename above.
 - Configuration constants exported from core (DEFAULT_*, MIN_* constants for binding layers)
 
 ### Changed
+
 - **BREAKING**: Python constructors now require kwargs-only parameters (`RestClient(api_key=)`, not `RestClient("key")`)
 - **BREAKING**: Node.js constructors now require options object (`new RestClient({ apiKey })`, not `new RestClient('key')`)
 - **BREAKING**: Java constructors now require builder pattern (`FugleRestClient.builder().apiKey().build()`)
@@ -916,6 +978,7 @@ rename above.
 - ReconnectConfig field rename: `max_retries` → `max_attempts`, `base_delay_ms` → `initial_delay_ms`
 
 ### Deprecated
+
 - Python: Positional string constructors (`RestClient("key")`, removed in v0.4.0)
 - Python: Static methods `.with_bearer_token()` and `.with_sdk_token()` (removed in v0.4.0)
 - Node.js: String constructors (`new RestClient('key')`, removed in v0.4.0)
@@ -923,6 +986,7 @@ rename above.
 ## [0.2.0] - 2026-01-31
 
 ### Added
+
 - Multi-language SDK support (Python, Node.js, C#, Java, Go)
 - Complete REST API coverage (26+ endpoints across stock and futures/options)
   - Stock intraday: quote, ticker, candles, trades, volumes

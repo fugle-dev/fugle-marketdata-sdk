@@ -43,7 +43,12 @@ pub use candle::{
     HistoricalCandle, HistoricalCandlesResponse, IntradayCandle, IntradayCandlesResponse,
 };
 pub use historical::StatsResponse;
-pub use ownership::{EtfHoldingComponent, EtfHoldingsEntry, EtfHoldingsResponse};
+pub use ownership::{
+    DirectorHolding, DirectorHoldingsEntry, DirectorHoldingsResponse, EtfHoldingComponent,
+    EtfHoldingsEntry, EtfHoldingsResponse, InstitutionalInvestorTrade, InstitutionalTradesEntry,
+    InstitutionalTradesResponse, TdccDistributionEntry, TdccDistributionLevel,
+    TdccDistributionResponse,
+};
 pub use quote::Quote;
 pub use ticker::Ticker;
 pub use technical::{

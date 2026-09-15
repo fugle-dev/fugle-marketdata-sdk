@@ -1030,7 +1030,8 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_tickers(
         IntPtr @ptr,
-        RustBuffer @typ
+        RustBuffer @typ,
+        RustBuffer @isSpread
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -1072,6 +1073,7 @@ static class _UniFFILib
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_futoptintradayclient_tickers_sync(
         IntPtr @ptr,
         RustBuffer @typ,
+        RustBuffer @isSpread,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -1102,6 +1104,12 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_restclient_base_url(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_restclient_futopt(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -1126,6 +1134,12 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockclient_base_url(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockclient_corporate_actions(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -1139,6 +1153,12 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockclient_intraday(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockclient_ownership(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -1352,6 +1372,54 @@ static class _UniFFILib
         IntPtr @ptr,
         RustBuffer @symbol,
         ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_clone_stockownershipclient(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void uniffi_marketdata_uniffi_fn_free_stockownershipclient(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_director_holdings(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_etf_holdings(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_institutional_trades(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_tdcc_distribution(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -1582,6 +1650,7 @@ static class _UniFFILib
         RustBuffer @reconnectConfig,
         RustBuffer @healthCheckConfig,
         RustBuffer @tls,
+        RustBuffer @version,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -2128,10 +2197,16 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_volumes_sync();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_restclient_base_url();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_restclient_futopt();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_restclient_stock();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockclient_base_url();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockclient_corporate_actions();
@@ -2141,6 +2216,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockclient_intraday();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockclient_ownership();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockclient_snapshot();
@@ -2213,6 +2291,18 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_volumes_sync();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_etf_holdings();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_institutional_trades();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync();
@@ -2538,10 +2628,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_get_tickers();
-            if (checksum != 29913)
+            if (checksum != 2504)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_get_tickers` checksum `29913`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_get_tickers` checksum `2504`, library returned `{checksum}`"
                 );
             }
         }
@@ -2598,10 +2688,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_tickers_sync();
-            if (checksum != 55649)
+            if (checksum != 40960)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_tickers_sync` checksum `55649`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_tickers_sync` checksum `40960`, library returned `{checksum}`"
                 );
             }
         }
@@ -2626,6 +2716,16 @@ static class _UniFFILib
             }
         }
         {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_restclient_base_url();
+            if (checksum != 36384)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_restclient_base_url` checksum `36384`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
             var checksum = _UniFFILib.uniffi_marketdata_uniffi_checksum_method_restclient_futopt();
             if (checksum != 65348)
             {
@@ -2640,6 +2740,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_restclient_stock` checksum `18733`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockclient_base_url();
+            if (checksum != 28231)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockclient_base_url` checksum `28231`, library returned `{checksum}`"
                 );
             }
         }
@@ -2670,6 +2780,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockclient_intraday` checksum `53228`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockclient_ownership();
+            if (checksum != 26642)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockclient_ownership` checksum `26642`, library returned `{checksum}`"
                 );
             }
         }
@@ -2910,6 +3030,46 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockintradayclient_volumes_sync` checksum `8850`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings();
+            if (checksum != 13713)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings` checksum `13713`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_etf_holdings();
+            if (checksum != 24743)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_etf_holdings` checksum `24743`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_institutional_trades();
+            if (checksum != 25453)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_institutional_trades` checksum `25453`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution();
+            if (checksum != 20032)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution` checksum `20032`, library returned `{checksum}`"
                 );
             }
         }
@@ -3246,10 +3406,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config();
-            if (checksum != 39727)
+            if (checksum != 32798)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config` checksum `39727`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config` checksum `32798`, library returned `{checksum}`"
                 );
             }
         }
@@ -4131,7 +4291,7 @@ public interface IFutOptIntradayClient
     /// typ: "F" for futures, "O" for options
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task<List<FutOptTicker>> GetTickers(string @typ);
+    Task<List<FutOptTicker>> GetTickers(string @typ, bool? @isSpread);
 
     /// <summary>
     /// Get trade history for a futures/options contract (async)
@@ -4169,7 +4329,7 @@ public interface IFutOptIntradayClient
     /// typ: "F" for futures, "O" for options
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    List<FutOptTicker> TickersSync(string @typ);
+    List<FutOptTicker> TickersSync(string @typ, bool? @isSpread);
 
     /// <summary>
     /// Get trade history for a contract (sync/blocking)
@@ -4497,7 +4657,7 @@ public class FutOptIntradayClient : IFutOptIntradayClient, IDisposable
     /// typ: "F" for futures, "O" for options
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task<List<FutOptTicker>> GetTickers(string @typ)
+    public async Task<List<FutOptTicker>> GetTickers(string @typ, bool? @isSpread)
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -4505,7 +4665,8 @@ public class FutOptIntradayClient : IFutOptIntradayClient, IDisposable
             {
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_tickers(
                     thisPtr,
-                    FfiConverterString.INSTANCE.Lower(@typ)
+                    FfiConverterString.INSTANCE.Lower(@typ),
+                    FfiConverterOptionalBoolean.INSTANCE.Lower(@isSpread)
                 );
             }),
             // Poll
@@ -4684,7 +4845,7 @@ public class FutOptIntradayClient : IFutOptIntradayClient, IDisposable
     /// typ: "F" for futures, "O" for options
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public List<FutOptTicker> TickersSync(string @typ)
+    public List<FutOptTicker> TickersSync(string @typ, bool? @isSpread)
     {
         return CallWithPointer(thisPtr =>
             FfiConverterSequenceTypeFutOptTicker.INSTANCE.Lift(
@@ -4694,6 +4855,7 @@ public class FutOptIntradayClient : IFutOptIntradayClient, IDisposable
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_tickers_sync(
                             thisPtr,
                             FfiConverterString.INSTANCE.Lower(@typ),
+                            FfiConverterOptionalBoolean.INSTANCE.Lower(@isSpread),
                             ref _status
                         )
                 )
@@ -4782,6 +4944,15 @@ class FfiConverterTypeFutOptIntradayClient : FfiConverter<FutOptIntradayClient, 
 /// </summary>
 public interface IRestClient
 {
+    /// <summary>
+    /// The prefix every request from this client is built on, fully resolved —
+    /// host, path prefix and version segment.
+    ///
+    /// The version segment is chosen by the SDK rather than written by the
+    /// caller, so this is the only way to see what a client resolved to.
+    /// </summary>
+    string BaseUrl();
+
     /// <summary>
     /// Access FutOpt (futures and options) endpoints
     /// </summary>
@@ -4911,6 +5082,28 @@ public class RestClient : IRestClient, IDisposable
     }
 
     /// <summary>
+    /// The prefix every request from this client is built on, fully resolved —
+    /// host, path prefix and version segment.
+    ///
+    /// The version segment is chosen by the SDK rather than written by the
+    /// caller, so this is the only way to see what a client resolved to.
+    /// </summary>
+    public string BaseUrl()
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCall(
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_restclient_base_url(
+                            thisPtr,
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
     /// Access FutOpt (futures and options) endpoints
     /// </summary>
     public FutOptClient Futopt()
@@ -4983,6 +5176,11 @@ class FfiConverterTypeRestClient : FfiConverter<RestClient, IntPtr>
 public interface IStockClient
 {
     /// <summary>
+    /// The fully resolved request prefix for this product client.
+    /// </summary>
+    string BaseUrl();
+
+    /// <summary>
     /// Access corporate actions endpoints
     /// </summary>
     StockCorporateActionsClient CorporateActions();
@@ -4996,6 +5194,12 @@ public interface IStockClient
     /// Access intraday (real-time) endpoints
     /// </summary>
     StockIntradayClient Intraday();
+
+    /// <summary>
+    /// Access ownership endpoints (ETF holdings, institutional trades, director
+    /// holdings, TDCC distribution)
+    /// </summary>
+    StockOwnershipClient Ownership();
 
     /// <summary>
     /// Access snapshot (market-wide) endpoints
@@ -5124,6 +5328,24 @@ public class StockClient : IStockClient, IDisposable
     }
 
     /// <summary>
+    /// The fully resolved request prefix for this product client.
+    /// </summary>
+    public string BaseUrl()
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCall(
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockclient_base_url(
+                            thisPtr,
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
     /// Access corporate actions endpoints
     /// </summary>
     public StockCorporateActionsClient CorporateActions()
@@ -5169,6 +5391,25 @@ public class StockClient : IStockClient, IDisposable
                 _UniffiHelpers.RustCall(
                     (ref UniffiRustCallStatus _status) =>
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockclient_intraday(
+                            thisPtr,
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Access ownership endpoints (ETF holdings, institutional trades, director
+    /// holdings, TDCC distribution)
+    /// </summary>
+    public StockOwnershipClient Ownership()
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterTypeStockOwnershipClient.INSTANCE.Lift(
+                _UniffiHelpers.RustCall(
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockclient_ownership(
                             thisPtr,
                             ref _status
                         )
@@ -6649,6 +6890,398 @@ class FfiConverterTypeStockIntradayClient : FfiConverter<StockIntradayClient, In
     }
 
     public override void Write(StockIntradayClient value, BigEndianStream stream)
+    {
+        stream.WriteLong(Lower(value).ToInt64());
+    }
+}
+
+/// <summary>
+/// Stock ownership endpoints client
+/// </summary>
+public interface IStockOwnershipClient
+{
+    /// <summary>
+    /// Get monthly holdings and pledges disclosed by directors and supervisors (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<DirectorHoldingsResponse> GetDirectorHoldings(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    );
+
+    /// <summary>
+    /// Get the constituents an ETF held over a date range (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<EtfHoldingsResponse> GetEtfHoldings(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    );
+
+    /// <summary>
+    /// Get daily trading by the three major institutional investors (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<InstitutionalTradesResponse> GetInstitutionalTrades(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    );
+
+    /// <summary>
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<TdccDistributionResponse> GetTdccDistribution(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    );
+}
+
+/// <summary>
+/// Stock ownership endpoints client
+/// </summary>
+public class StockOwnershipClient : IStockOwnershipClient, IDisposable
+{
+    protected IntPtr pointer;
+    private int _wasDestroyed = 0;
+    private long _callCounter = 1;
+
+    public StockOwnershipClient(IntPtr pointer)
+    {
+        this.pointer = pointer;
+    }
+
+    ~StockOwnershipClient()
+    {
+        Destroy();
+    }
+
+    protected void FreeRustArcPtr()
+    {
+        _UniffiHelpers.RustCall(
+            (ref UniffiRustCallStatus status) =>
+            {
+                _UniFFILib.uniffi_marketdata_uniffi_fn_free_stockownershipclient(
+                    this.pointer,
+                    ref status
+                );
+            }
+        );
+    }
+
+    protected IntPtr CloneRustArcPtr()
+    {
+        return _UniffiHelpers.RustCall(
+            (ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_clone_stockownershipclient(
+                    this.pointer,
+                    ref status
+                );
+            }
+        );
+    }
+
+    public void Destroy()
+    {
+        // Only allow a single call to this method.
+        if (Interlocked.CompareExchange(ref _wasDestroyed, 1, 0) == 0)
+        {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (Interlocked.Decrement(ref _callCounter) == 0)
+            {
+                FreeRustArcPtr();
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        Destroy();
+        GC.SuppressFinalize(this); // Suppress finalization to avoid unnecessary GC overhead.
+    }
+
+    private void IncrementCallCounter()
+    {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        long count;
+        do
+        {
+            count = Interlocked.Read(ref _callCounter);
+            if (count == 0L)
+                throw new System.ObjectDisposedException(
+                    String.Format("'{0}' object has already been destroyed", this.GetType().Name)
+                );
+            if (count == long.MaxValue)
+                throw new System.OverflowException(
+                    String.Format("'{0}' call counter would overflow", this.GetType().Name)
+                );
+        } while (Interlocked.CompareExchange(ref _callCounter, count + 1, count) != count);
+    }
+
+    private void DecrementCallCounter()
+    {
+        // This decrement always matches the increment we performed above.
+        if (Interlocked.Decrement(ref _callCounter) == 0)
+        {
+            FreeRustArcPtr();
+        }
+    }
+
+    internal void CallWithPointer(Action<IntPtr> action)
+    {
+        IncrementCallCounter();
+        try
+        {
+            action(CloneRustArcPtr());
+        }
+        finally
+        {
+            DecrementCallCounter();
+        }
+    }
+
+    internal T CallWithPointer<T>(Func<IntPtr, T> func)
+    {
+        IncrementCallCounter();
+        try
+        {
+            return func(CloneRustArcPtr());
+        }
+        finally
+        {
+            DecrementCallCounter();
+        }
+    }
+
+    /// <summary>
+    /// Get monthly holdings and pledges disclosed by directors and supervisors (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<DirectorHoldingsResponse> GetDirectorHoldings(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    )
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_director_holdings(
+                    thisPtr,
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalString.INSTANCE.Lower(@from),
+                    FfiConverterOptionalString.INSTANCE.Lower(@to),
+                    FfiConverterOptionalString.INSTANCE.Lower(@sort)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(
+                    future,
+                    continuation,
+                    data
+                ),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+            // Lift
+            (result) => FfiConverterTypeDirectorHoldingsResponse.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Get the constituents an ETF held over a date range (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<EtfHoldingsResponse> GetEtfHoldings(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    )
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_etf_holdings(
+                    thisPtr,
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalString.INSTANCE.Lower(@from),
+                    FfiConverterOptionalString.INSTANCE.Lower(@to),
+                    FfiConverterOptionalString.INSTANCE.Lower(@sort)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(
+                    future,
+                    continuation,
+                    data
+                ),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+            // Lift
+            (result) => FfiConverterTypeEtfHoldingsResponse.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Get daily trading by the three major institutional investors (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<InstitutionalTradesResponse> GetInstitutionalTrades(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    )
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_institutional_trades(
+                    thisPtr,
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalString.INSTANCE.Lower(@from),
+                    FfiConverterOptionalString.INSTANCE.Lower(@to),
+                    FfiConverterOptionalString.INSTANCE.Lower(@sort)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(
+                    future,
+                    continuation,
+                    data
+                ),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+            // Lift
+            (result) => FfiConverterTypeInstitutionalTradesResponse.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<TdccDistributionResponse> GetTdccDistribution(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @sort
+    )
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_tdcc_distribution(
+                    thisPtr,
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalString.INSTANCE.Lower(@from),
+                    FfiConverterOptionalString.INSTANCE.Lower(@to),
+                    FfiConverterOptionalString.INSTANCE.Lower(@sort)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(
+                    future,
+                    continuation,
+                    data
+                ),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+            // Lift
+            (result) => FfiConverterTypeTdccDistributionResponse.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+}
+
+class FfiConverterTypeStockOwnershipClient : FfiConverter<StockOwnershipClient, IntPtr>
+{
+    public static FfiConverterTypeStockOwnershipClient INSTANCE =
+        new FfiConverterTypeStockOwnershipClient();
+
+    public override IntPtr Lower(StockOwnershipClient value)
+    {
+        return value.CallWithPointer(thisPtr => thisPtr);
+    }
+
+    public override StockOwnershipClient Lift(IntPtr value)
+    {
+        return new StockOwnershipClient(value);
+    }
+
+    public override StockOwnershipClient Read(BigEndianStream stream)
+    {
+        return Lift(new IntPtr(stream.ReadLong()));
+    }
+
+    public override int AllocationSize(StockOwnershipClient value)
+    {
+        return 8;
+    }
+
+    public override void Write(StockOwnershipClient value, BigEndianStream stream)
     {
         stream.WriteLong(Lower(value).ToInt64());
     }
@@ -8230,7 +8863,8 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         string? @baseUrl,
         ReconnectConfigRecord? @reconnectConfig,
         HealthCheckConfigRecord? @healthCheckConfig,
-        TlsConfigRecord? @tls
+        TlsConfigRecord? @tls,
+        StreamingVersionRecord? @version
     )
     {
         return new WebSocketClient(
@@ -8248,6 +8882,7 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                             @healthCheckConfig
                         ),
                         FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.Lower(@tls),
+                        FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.Lower(@version),
                         ref _status
                     )
             )
@@ -9056,12 +9691,12 @@ class FfiConverterTypeBbDataPoint : FfiConverterRustBuffer<BbDataPoint>
 /// </summary>
 public record BbResponse(
     string @symbol,
-    string @dataType,
-    string @exchange,
-    string @market,
-    string @timeframe,
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string? @timeframe,
     uint @period,
-    double @stddev,
+    double? @stddev,
     List<BbDataPoint> @data
 ) { }
 
@@ -9073,12 +9708,12 @@ class FfiConverterTypeBbResponse : FfiConverterRustBuffer<BbResponse>
     {
         return new BbResponse(
             @symbol: FfiConverterString.INSTANCE.Read(stream),
-            @dataType: FfiConverterString.INSTANCE.Read(stream),
-            @exchange: FfiConverterString.INSTANCE.Read(stream),
-            @market: FfiConverterString.INSTANCE.Read(stream),
-            @timeframe: FfiConverterString.INSTANCE.Read(stream),
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @timeframe: FfiConverterOptionalString.INSTANCE.Read(stream),
             @period: FfiConverterUInt32.INSTANCE.Read(stream),
-            @stddev: FfiConverterDouble.INSTANCE.Read(stream),
+            @stddev: FfiConverterOptionalDouble.INSTANCE.Read(stream),
             @data: FfiConverterSequenceTypeBbDataPoint.INSTANCE.Read(stream)
         );
     }
@@ -9087,24 +9722,24 @@ class FfiConverterTypeBbResponse : FfiConverterRustBuffer<BbResponse>
     {
         return 0
             + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@dataType)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@exchange)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@market)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@timeframe)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@timeframe)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@period)
-            + FfiConverterDouble.INSTANCE.AllocationSize(value.@stddev)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@stddev)
             + FfiConverterSequenceTypeBbDataPoint.INSTANCE.AllocationSize(value.@data);
     }
 
     public override void Write(BbResponse value, BigEndianStream stream)
     {
         FfiConverterString.INSTANCE.Write(value.@symbol, stream);
-        FfiConverterString.INSTANCE.Write(value.@dataType, stream);
-        FfiConverterString.INSTANCE.Write(value.@exchange, stream);
-        FfiConverterString.INSTANCE.Write(value.@market, stream);
-        FfiConverterString.INSTANCE.Write(value.@timeframe, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@timeframe, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@period, stream);
-        FfiConverterDouble.INSTANCE.Write(value.@stddev, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@stddev, stream);
         FfiConverterSequenceTypeBbDataPoint.INSTANCE.Write(value.@data, stream);
     }
 }
@@ -9207,6 +9842,151 @@ class FfiConverterTypeCapitalChangesResponse : FfiConverterRustBuffer<CapitalCha
 }
 
 /// <summary>
+/// One director's or supervisor's disclosed holdings
+/// </summary>
+public record DirectorHolding(
+    long? @order,
+    string @title,
+    string @name,
+    double? @electedShares,
+    double? @heldShares,
+    double? @pledgedShares,
+    double? @pledgeRatio,
+    double? @relatedHeldShares,
+    double? @relatedPledgedShares,
+    double? @relatedPledgeRatio
+) { }
+
+class FfiConverterTypeDirectorHolding : FfiConverterRustBuffer<DirectorHolding>
+{
+    public static FfiConverterTypeDirectorHolding INSTANCE = new FfiConverterTypeDirectorHolding();
+
+    public override DirectorHolding Read(BigEndianStream stream)
+    {
+        return new DirectorHolding(
+            @order: FfiConverterOptionalInt64.INSTANCE.Read(stream),
+            @title: FfiConverterString.INSTANCE.Read(stream),
+            @name: FfiConverterString.INSTANCE.Read(stream),
+            @electedShares: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @heldShares: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @pledgedShares: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @pledgeRatio: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @relatedHeldShares: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @relatedPledgedShares: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @relatedPledgeRatio: FfiConverterOptionalDouble.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(DirectorHolding value)
+    {
+        return 0
+            + FfiConverterOptionalInt64.INSTANCE.AllocationSize(value.@order)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@title)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@name)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@electedShares)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@heldShares)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@pledgedShares)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@pledgeRatio)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@relatedHeldShares)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@relatedPledgedShares)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@relatedPledgeRatio);
+    }
+
+    public override void Write(DirectorHolding value, BigEndianStream stream)
+    {
+        FfiConverterOptionalInt64.INSTANCE.Write(value.@order, stream);
+        FfiConverterString.INSTANCE.Write(value.@title, stream);
+        FfiConverterString.INSTANCE.Write(value.@name, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@electedShares, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@heldShares, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@pledgedShares, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@pledgeRatio, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@relatedHeldShares, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@relatedPledgedShares, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@relatedPledgeRatio, stream);
+    }
+}
+
+/// <summary>
+/// Director holdings disclosed for a single month (`date` is YYYY-MM)
+/// </summary>
+public record DirectorHoldingsEntry(string @date, List<DirectorHolding> @directors) { }
+
+class FfiConverterTypeDirectorHoldingsEntry : FfiConverterRustBuffer<DirectorHoldingsEntry>
+{
+    public static FfiConverterTypeDirectorHoldingsEntry INSTANCE =
+        new FfiConverterTypeDirectorHoldingsEntry();
+
+    public override DirectorHoldingsEntry Read(BigEndianStream stream)
+    {
+        return new DirectorHoldingsEntry(
+            @date: FfiConverterString.INSTANCE.Read(stream),
+            @directors: FfiConverterSequenceTypeDirectorHolding.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(DirectorHoldingsEntry value)
+    {
+        return 0
+            + FfiConverterString.INSTANCE.AllocationSize(value.@date)
+            + FfiConverterSequenceTypeDirectorHolding.INSTANCE.AllocationSize(value.@directors);
+    }
+
+    public override void Write(DirectorHoldingsEntry value, BigEndianStream stream)
+    {
+        FfiConverterString.INSTANCE.Write(value.@date, stream);
+        FfiConverterSequenceTypeDirectorHolding.INSTANCE.Write(value.@directors, stream);
+    }
+}
+
+/// <summary>
+/// Response for `stock/ownership/director-holdings/{symbol}`
+/// </summary>
+public record DirectorHoldingsResponse(
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string @symbol,
+    List<DirectorHoldingsEntry> @data
+) { }
+
+class FfiConverterTypeDirectorHoldingsResponse : FfiConverterRustBuffer<DirectorHoldingsResponse>
+{
+    public static FfiConverterTypeDirectorHoldingsResponse INSTANCE =
+        new FfiConverterTypeDirectorHoldingsResponse();
+
+    public override DirectorHoldingsResponse Read(BigEndianStream stream)
+    {
+        return new DirectorHoldingsResponse(
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @symbol: FfiConverterString.INSTANCE.Read(stream),
+            @data: FfiConverterSequenceTypeDirectorHoldingsEntry.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(DirectorHoldingsResponse value)
+    {
+        return 0
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
+            + FfiConverterSequenceTypeDirectorHoldingsEntry.INSTANCE.AllocationSize(value.@data);
+    }
+
+    public override void Write(DirectorHoldingsResponse value, BigEndianStream stream)
+    {
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterString.INSTANCE.Write(value.@symbol, stream);
+        FfiConverterSequenceTypeDirectorHoldingsEntry.INSTANCE.Write(value.@data, stream);
+    }
+}
+
+/// <summary>
 /// Dividend entry
 /// </summary>
 public record Dividend(
@@ -9300,6 +10080,144 @@ class FfiConverterTypeDividendsResponse : FfiConverterRustBuffer<DividendsRespon
         FfiConverterString.INSTANCE.Write(value.@exchange, stream);
         FfiConverterString.INSTANCE.Write(value.@market, stream);
         FfiConverterSequenceTypeDividend.INSTANCE.Write(value.@data, stream);
+    }
+}
+
+/// <summary>
+/// One constituent of an ETF's holdings on a given date
+/// </summary>
+/// <param name="quantity_change">
+/// Absent on the first date in a series — nothing to compare against.
+/// </param>
+public record EtfHoldingComponent(
+    string @symbol,
+    string @name,
+    double @quantity,
+    double @weight,
+    /// <summary>
+    /// Absent on the first date in a series — nothing to compare against.
+    /// </summary>
+    double? @quantityChange,
+    double? @weightChange
+) { }
+
+class FfiConverterTypeEtfHoldingComponent : FfiConverterRustBuffer<EtfHoldingComponent>
+{
+    public static FfiConverterTypeEtfHoldingComponent INSTANCE =
+        new FfiConverterTypeEtfHoldingComponent();
+
+    public override EtfHoldingComponent Read(BigEndianStream stream)
+    {
+        return new EtfHoldingComponent(
+            @symbol: FfiConverterString.INSTANCE.Read(stream),
+            @name: FfiConverterString.INSTANCE.Read(stream),
+            @quantity: FfiConverterDouble.INSTANCE.Read(stream),
+            @weight: FfiConverterDouble.INSTANCE.Read(stream),
+            @quantityChange: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @weightChange: FfiConverterOptionalDouble.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(EtfHoldingComponent value)
+    {
+        return 0
+            + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@name)
+            + FfiConverterDouble.INSTANCE.AllocationSize(value.@quantity)
+            + FfiConverterDouble.INSTANCE.AllocationSize(value.@weight)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@quantityChange)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@weightChange);
+    }
+
+    public override void Write(EtfHoldingComponent value, BigEndianStream stream)
+    {
+        FfiConverterString.INSTANCE.Write(value.@symbol, stream);
+        FfiConverterString.INSTANCE.Write(value.@name, stream);
+        FfiConverterDouble.INSTANCE.Write(value.@quantity, stream);
+        FfiConverterDouble.INSTANCE.Write(value.@weight, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@quantityChange, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@weightChange, stream);
+    }
+}
+
+/// <summary>
+/// Holdings disclosed on a single date
+/// </summary>
+public record EtfHoldingsEntry(string @date, List<EtfHoldingComponent> @components) { }
+
+class FfiConverterTypeEtfHoldingsEntry : FfiConverterRustBuffer<EtfHoldingsEntry>
+{
+    public static FfiConverterTypeEtfHoldingsEntry INSTANCE =
+        new FfiConverterTypeEtfHoldingsEntry();
+
+    public override EtfHoldingsEntry Read(BigEndianStream stream)
+    {
+        return new EtfHoldingsEntry(
+            @date: FfiConverterString.INSTANCE.Read(stream),
+            @components: FfiConverterSequenceTypeEtfHoldingComponent.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(EtfHoldingsEntry value)
+    {
+        return 0
+            + FfiConverterString.INSTANCE.AllocationSize(value.@date)
+            + FfiConverterSequenceTypeEtfHoldingComponent.INSTANCE.AllocationSize(
+                value.@components
+            );
+    }
+
+    public override void Write(EtfHoldingsEntry value, BigEndianStream stream)
+    {
+        FfiConverterString.INSTANCE.Write(value.@date, stream);
+        FfiConverterSequenceTypeEtfHoldingComponent.INSTANCE.Write(value.@components, stream);
+    }
+}
+
+/// <summary>
+/// Response for `stock/ownership/etf-holdings/{symbol}`
+/// </summary>
+public record EtfHoldingsResponse(
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string @symbol,
+    List<EtfHoldingsEntry> @data
+) { }
+
+class FfiConverterTypeEtfHoldingsResponse : FfiConverterRustBuffer<EtfHoldingsResponse>
+{
+    public static FfiConverterTypeEtfHoldingsResponse INSTANCE =
+        new FfiConverterTypeEtfHoldingsResponse();
+
+    public override EtfHoldingsResponse Read(BigEndianStream stream)
+    {
+        return new EtfHoldingsResponse(
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @symbol: FfiConverterString.INSTANCE.Read(stream),
+            @data: FfiConverterSequenceTypeEtfHoldingsEntry.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(EtfHoldingsResponse value)
+    {
+        return 0
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
+            + FfiConverterSequenceTypeEtfHoldingsEntry.INSTANCE.AllocationSize(value.@data);
+    }
+
+    public override void Write(EtfHoldingsResponse value, BigEndianStream stream)
+    {
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterString.INSTANCE.Write(value.@symbol, stream);
+        FfiConverterSequenceTypeEtfHoldingsEntry.INSTANCE.Write(value.@data, stream);
     }
 }
 
@@ -9413,7 +10331,7 @@ public record FutOptHistoricalCandle(
     double @high,
     double @low,
     double @close,
-    ulong @volume,
+    ulong? @volume,
     ulong? @openInterest,
     double? @change,
     double? @changePercent
@@ -9432,7 +10350,7 @@ class FfiConverterTypeFutOptHistoricalCandle : FfiConverterRustBuffer<FutOptHist
             @high: FfiConverterDouble.INSTANCE.Read(stream),
             @low: FfiConverterDouble.INSTANCE.Read(stream),
             @close: FfiConverterDouble.INSTANCE.Read(stream),
-            @volume: FfiConverterUInt64.INSTANCE.Read(stream),
+            @volume: FfiConverterOptionalUInt64.INSTANCE.Read(stream),
             @openInterest: FfiConverterOptionalUInt64.INSTANCE.Read(stream),
             @change: FfiConverterOptionalDouble.INSTANCE.Read(stream),
             @changePercent: FfiConverterOptionalDouble.INSTANCE.Read(stream)
@@ -9447,7 +10365,7 @@ class FfiConverterTypeFutOptHistoricalCandle : FfiConverterRustBuffer<FutOptHist
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@high)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@low)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@close)
-            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@volume)
+            + FfiConverterOptionalUInt64.INSTANCE.AllocationSize(value.@volume)
             + FfiConverterOptionalUInt64.INSTANCE.AllocationSize(value.@openInterest)
             + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@change)
             + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@changePercent);
@@ -9460,7 +10378,7 @@ class FfiConverterTypeFutOptHistoricalCandle : FfiConverterRustBuffer<FutOptHist
         FfiConverterDouble.INSTANCE.Write(value.@high, stream);
         FfiConverterDouble.INSTANCE.Write(value.@low, stream);
         FfiConverterDouble.INSTANCE.Write(value.@close, stream);
-        FfiConverterUInt64.INSTANCE.Write(value.@volume, stream);
+        FfiConverterOptionalUInt64.INSTANCE.Write(value.@volume, stream);
         FfiConverterOptionalUInt64.INSTANCE.Write(value.@openInterest, stream);
         FfiConverterOptionalDouble.INSTANCE.Write(value.@change, stream);
         FfiConverterOptionalDouble.INSTANCE.Write(value.@changePercent, stream);
@@ -9713,7 +10631,7 @@ class FfiConverterTypeFutOptQuote : FfiConverterRustBuffer<FutOptQuote>
 /// FutOpt ticker
 /// </summary>
 public record FutOptTicker(
-    string @date,
+    string? @date,
     string? @contractType,
     string? @exchange,
     string @symbol,
@@ -9734,7 +10652,7 @@ class FfiConverterTypeFutOptTicker : FfiConverterRustBuffer<FutOptTicker>
     public override FutOptTicker Read(BigEndianStream stream)
     {
         return new FutOptTicker(
-            @date: FfiConverterString.INSTANCE.Read(stream),
+            @date: FfiConverterOptionalString.INSTANCE.Read(stream),
             @contractType: FfiConverterOptionalString.INSTANCE.Read(stream),
             @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
             @symbol: FfiConverterString.INSTANCE.Read(stream),
@@ -9752,7 +10670,7 @@ class FfiConverterTypeFutOptTicker : FfiConverterRustBuffer<FutOptTicker>
     public override int AllocationSize(FutOptTicker value)
     {
         return 0
-            + FfiConverterString.INSTANCE.AllocationSize(value.@date)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@date)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@contractType)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
             + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
@@ -9768,7 +10686,7 @@ class FfiConverterTypeFutOptTicker : FfiConverterRustBuffer<FutOptTicker>
 
     public override void Write(FutOptTicker value, BigEndianStream stream)
     {
-        FfiConverterString.INSTANCE.Write(value.@date, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@date, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@contractType, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
         FfiConverterString.INSTANCE.Write(value.@symbol, stream);
@@ -9824,27 +10742,24 @@ class FfiConverterTypeFutOptTotalStats : FfiConverterRustBuffer<FutOptTotalStats
 /// All fields are optional — zero/false values mean "use default".
 /// </summary>
 /// <param name="enabled">
-/// Whether health check is enabled (default: false)
+/// Whether liveness detection is active (default: true in 3.0)
 /// </param>
-/// <param name="interval_ms">
-/// Interval between ping messages in milliseconds (default: 30000, min: 5000)
-/// </param>
-/// <param name="max_missed_pongs">
-/// Maximum missed pongs before disconnect (default: 2, min: 1)
+/// <param name="heartbeat_timeout_ms">
+/// Maximum allowed gap between inbound frames before declaring the
+/// connection dead, in milliseconds. Default 35000; floor 5000.
+/// Pass 0 to use the default.
 /// </param>
 public record HealthCheckConfigRecord(
     /// <summary>
-    /// Whether health check is enabled (default: false)
+    /// Whether liveness detection is active (default: true in 3.0)
     /// </summary>
     bool @enabled,
     /// <summary>
-    /// Interval between ping messages in milliseconds (default: 30000, min: 5000)
+    /// Maximum allowed gap between inbound frames before declaring the
+    /// connection dead, in milliseconds. Default 35000; floor 5000.
+    /// Pass 0 to use the default.
     /// </summary>
-    ulong @intervalMs,
-    /// <summary>
-    /// Maximum missed pongs before disconnect (default: 2, min: 1)
-    /// </summary>
-    ulong @maxMissedPongs
+    ulong @heartbeatTimeoutMs
 ) { }
 
 class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthCheckConfigRecord>
@@ -9856,8 +10771,7 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     {
         return new HealthCheckConfigRecord(
             @enabled: FfiConverterBoolean.INSTANCE.Read(stream),
-            @intervalMs: FfiConverterUInt64.INSTANCE.Read(stream),
-            @maxMissedPongs: FfiConverterUInt64.INSTANCE.Read(stream)
+            @heartbeatTimeoutMs: FfiConverterUInt64.INSTANCE.Read(stream)
         );
     }
 
@@ -9865,15 +10779,13 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     {
         return 0
             + FfiConverterBoolean.INSTANCE.AllocationSize(value.@enabled)
-            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@intervalMs)
-            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@maxMissedPongs);
+            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@heartbeatTimeoutMs);
     }
 
     public override void Write(HealthCheckConfigRecord value, BigEndianStream stream)
     {
         FfiConverterBoolean.INSTANCE.Write(value.@enabled, stream);
-        FfiConverterUInt64.INSTANCE.Write(value.@intervalMs, stream);
-        FfiConverterUInt64.INSTANCE.Write(value.@maxMissedPongs, stream);
+        FfiConverterUInt64.INSTANCE.Write(value.@heartbeatTimeoutMs, stream);
     }
 }
 
@@ -9988,6 +10900,144 @@ class FfiConverterTypeHistoricalCandlesResponse : FfiConverterRustBuffer<Histori
         FfiConverterOptionalString.INSTANCE.Write(value.@timeframe, stream);
         FfiConverterOptionalBoolean.INSTANCE.Write(value.@adjusted, stream);
         FfiConverterSequenceTypeHistoricalCandle.INSTANCE.Write(value.@data, stream);
+    }
+}
+
+/// <summary>
+/// Buy / sell / net shares traded by one class of institutional investor.
+/// Fields are `None` when the source has no figure for that day.
+/// </summary>
+public record InstitutionalInvestorTrade(double? @buy, double? @sell, double? @net) { }
+
+class FfiConverterTypeInstitutionalInvestorTrade
+    : FfiConverterRustBuffer<InstitutionalInvestorTrade>
+{
+    public static FfiConverterTypeInstitutionalInvestorTrade INSTANCE =
+        new FfiConverterTypeInstitutionalInvestorTrade();
+
+    public override InstitutionalInvestorTrade Read(BigEndianStream stream)
+    {
+        return new InstitutionalInvestorTrade(
+            @buy: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @sell: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @net: FfiConverterOptionalDouble.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(InstitutionalInvestorTrade value)
+    {
+        return 0
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@buy)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@sell)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@net);
+    }
+
+    public override void Write(InstitutionalInvestorTrade value, BigEndianStream stream)
+    {
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@buy, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@sell, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@net, stream);
+    }
+}
+
+/// <summary>
+/// Institutional investor trading on a single date
+/// </summary>
+public record InstitutionalTradesEntry(
+    string @date,
+    InstitutionalInvestorTrade? @foreign,
+    InstitutionalInvestorTrade? @trust,
+    InstitutionalInvestorTrade? @dealer,
+    double? @total
+) { }
+
+class FfiConverterTypeInstitutionalTradesEntry : FfiConverterRustBuffer<InstitutionalTradesEntry>
+{
+    public static FfiConverterTypeInstitutionalTradesEntry INSTANCE =
+        new FfiConverterTypeInstitutionalTradesEntry();
+
+    public override InstitutionalTradesEntry Read(BigEndianStream stream)
+    {
+        return new InstitutionalTradesEntry(
+            @date: FfiConverterString.INSTANCE.Read(stream),
+            @foreign: FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.Read(stream),
+            @trust: FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.Read(stream),
+            @dealer: FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.Read(stream),
+            @total: FfiConverterOptionalDouble.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(InstitutionalTradesEntry value)
+    {
+        return 0
+            + FfiConverterString.INSTANCE.AllocationSize(value.@date)
+            + FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.AllocationSize(
+                value.@foreign
+            )
+            + FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.AllocationSize(
+                value.@trust
+            )
+            + FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.AllocationSize(
+                value.@dealer
+            )
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@total);
+    }
+
+    public override void Write(InstitutionalTradesEntry value, BigEndianStream stream)
+    {
+        FfiConverterString.INSTANCE.Write(value.@date, stream);
+        FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.Write(value.@foreign, stream);
+        FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.Write(value.@trust, stream);
+        FfiConverterOptionalTypeInstitutionalInvestorTrade.INSTANCE.Write(value.@dealer, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@total, stream);
+    }
+}
+
+/// <summary>
+/// Response for `stock/ownership/institutional-trades/{symbol}`
+/// </summary>
+public record InstitutionalTradesResponse(
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string @symbol,
+    List<InstitutionalTradesEntry> @data
+) { }
+
+class FfiConverterTypeInstitutionalTradesResponse
+    : FfiConverterRustBuffer<InstitutionalTradesResponse>
+{
+    public static FfiConverterTypeInstitutionalTradesResponse INSTANCE =
+        new FfiConverterTypeInstitutionalTradesResponse();
+
+    public override InstitutionalTradesResponse Read(BigEndianStream stream)
+    {
+        return new InstitutionalTradesResponse(
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @symbol: FfiConverterString.INSTANCE.Read(stream),
+            @data: FfiConverterSequenceTypeInstitutionalTradesEntry.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(InstitutionalTradesResponse value)
+    {
+        return 0
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
+            + FfiConverterSequenceTypeInstitutionalTradesEntry.INSTANCE.AllocationSize(value.@data);
+    }
+
+    public override void Write(InstitutionalTradesResponse value, BigEndianStream stream)
+    {
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterString.INSTANCE.Write(value.@symbol, stream);
+        FfiConverterSequenceTypeInstitutionalTradesEntry.INSTANCE.Write(value.@data, stream);
     }
 }
 
@@ -10140,13 +11190,23 @@ class FfiConverterTypeKdjDataPoint : FfiConverterRustBuffer<KdjDataPoint>
 /// <summary>
 /// KDJ response
 /// </summary>
+/// <param name="r_period">
+/// KDJ takes three separate periods, not one. 0.7.2 added the setters
+/// after prod rejected requests that omitted them.
+/// </param>
 public record KdjResponse(
     string @symbol,
-    string @dataType,
-    string @exchange,
-    string @market,
-    string @timeframe,
-    uint @period,
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string? @timeframe,
+    /// <summary>
+    /// KDJ takes three separate periods, not one. 0.7.2 added the setters
+    /// after prod rejected requests that omitted them.
+    /// </summary>
+    uint? @rPeriod,
+    uint? @kPeriod,
+    uint? @dPeriod,
     List<KdjDataPoint> @data
 ) { }
 
@@ -10158,11 +11218,13 @@ class FfiConverterTypeKdjResponse : FfiConverterRustBuffer<KdjResponse>
     {
         return new KdjResponse(
             @symbol: FfiConverterString.INSTANCE.Read(stream),
-            @dataType: FfiConverterString.INSTANCE.Read(stream),
-            @exchange: FfiConverterString.INSTANCE.Read(stream),
-            @market: FfiConverterString.INSTANCE.Read(stream),
-            @timeframe: FfiConverterString.INSTANCE.Read(stream),
-            @period: FfiConverterUInt32.INSTANCE.Read(stream),
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @timeframe: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @rPeriod: FfiConverterOptionalUInt32.INSTANCE.Read(stream),
+            @kPeriod: FfiConverterOptionalUInt32.INSTANCE.Read(stream),
+            @dPeriod: FfiConverterOptionalUInt32.INSTANCE.Read(stream),
             @data: FfiConverterSequenceTypeKdjDataPoint.INSTANCE.Read(stream)
         );
     }
@@ -10171,22 +11233,26 @@ class FfiConverterTypeKdjResponse : FfiConverterRustBuffer<KdjResponse>
     {
         return 0
             + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@dataType)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@exchange)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@market)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@timeframe)
-            + FfiConverterUInt32.INSTANCE.AllocationSize(value.@period)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@timeframe)
+            + FfiConverterOptionalUInt32.INSTANCE.AllocationSize(value.@rPeriod)
+            + FfiConverterOptionalUInt32.INSTANCE.AllocationSize(value.@kPeriod)
+            + FfiConverterOptionalUInt32.INSTANCE.AllocationSize(value.@dPeriod)
             + FfiConverterSequenceTypeKdjDataPoint.INSTANCE.AllocationSize(value.@data);
     }
 
     public override void Write(KdjResponse value, BigEndianStream stream)
     {
         FfiConverterString.INSTANCE.Write(value.@symbol, stream);
-        FfiConverterString.INSTANCE.Write(value.@dataType, stream);
-        FfiConverterString.INSTANCE.Write(value.@exchange, stream);
-        FfiConverterString.INSTANCE.Write(value.@market, stream);
-        FfiConverterString.INSTANCE.Write(value.@timeframe, stream);
-        FfiConverterUInt32.INSTANCE.Write(value.@period, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@timeframe, stream);
+        FfiConverterOptionalUInt32.INSTANCE.Write(value.@rPeriod, stream);
+        FfiConverterOptionalUInt32.INSTANCE.Write(value.@kPeriod, stream);
+        FfiConverterOptionalUInt32.INSTANCE.Write(value.@dPeriod, stream);
         FfiConverterSequenceTypeKdjDataPoint.INSTANCE.Write(value.@data, stream);
     }
 }
@@ -10288,7 +11354,7 @@ class FfiConverterTypeListingApplicantsResponse : FfiConverterRustBuffer<Listing
 /// <summary>
 /// MACD data point
 /// </summary>
-public record MacdDataPoint(string @date, double @macd, double @signalValue, double @histogram) { }
+public record MacdDataPoint(string @date, double @macd, double @signalValue, double? @histogram) { }
 
 class FfiConverterTypeMacdDataPoint : FfiConverterRustBuffer<MacdDataPoint>
 {
@@ -10300,7 +11366,7 @@ class FfiConverterTypeMacdDataPoint : FfiConverterRustBuffer<MacdDataPoint>
             @date: FfiConverterString.INSTANCE.Read(stream),
             @macd: FfiConverterDouble.INSTANCE.Read(stream),
             @signalValue: FfiConverterDouble.INSTANCE.Read(stream),
-            @histogram: FfiConverterDouble.INSTANCE.Read(stream)
+            @histogram: FfiConverterOptionalDouble.INSTANCE.Read(stream)
         );
     }
 
@@ -10310,7 +11376,7 @@ class FfiConverterTypeMacdDataPoint : FfiConverterRustBuffer<MacdDataPoint>
             + FfiConverterString.INSTANCE.AllocationSize(value.@date)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@macd)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@signalValue)
-            + FfiConverterDouble.INSTANCE.AllocationSize(value.@histogram);
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@histogram);
     }
 
     public override void Write(MacdDataPoint value, BigEndianStream stream)
@@ -10318,7 +11384,7 @@ class FfiConverterTypeMacdDataPoint : FfiConverterRustBuffer<MacdDataPoint>
         FfiConverterString.INSTANCE.Write(value.@date, stream);
         FfiConverterDouble.INSTANCE.Write(value.@macd, stream);
         FfiConverterDouble.INSTANCE.Write(value.@signalValue, stream);
-        FfiConverterDouble.INSTANCE.Write(value.@histogram, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@histogram, stream);
     }
 }
 
@@ -10327,10 +11393,10 @@ class FfiConverterTypeMacdDataPoint : FfiConverterRustBuffer<MacdDataPoint>
 /// </summary>
 public record MacdResponse(
     string @symbol,
-    string @dataType,
-    string @exchange,
-    string @market,
-    string @timeframe,
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string? @timeframe,
     uint @fast,
     uint @slow,
     uint @signal,
@@ -10345,10 +11411,10 @@ class FfiConverterTypeMacdResponse : FfiConverterRustBuffer<MacdResponse>
     {
         return new MacdResponse(
             @symbol: FfiConverterString.INSTANCE.Read(stream),
-            @dataType: FfiConverterString.INSTANCE.Read(stream),
-            @exchange: FfiConverterString.INSTANCE.Read(stream),
-            @market: FfiConverterString.INSTANCE.Read(stream),
-            @timeframe: FfiConverterString.INSTANCE.Read(stream),
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @timeframe: FfiConverterOptionalString.INSTANCE.Read(stream),
             @fast: FfiConverterUInt32.INSTANCE.Read(stream),
             @slow: FfiConverterUInt32.INSTANCE.Read(stream),
             @signal: FfiConverterUInt32.INSTANCE.Read(stream),
@@ -10360,10 +11426,10 @@ class FfiConverterTypeMacdResponse : FfiConverterRustBuffer<MacdResponse>
     {
         return 0
             + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@dataType)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@exchange)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@market)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@timeframe)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@timeframe)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@fast)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@slow)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@signal)
@@ -10373,10 +11439,10 @@ class FfiConverterTypeMacdResponse : FfiConverterRustBuffer<MacdResponse>
     public override void Write(MacdResponse value, BigEndianStream stream)
     {
         FfiConverterString.INSTANCE.Write(value.@symbol, stream);
-        FfiConverterString.INSTANCE.Write(value.@dataType, stream);
-        FfiConverterString.INSTANCE.Write(value.@exchange, stream);
-        FfiConverterString.INSTANCE.Write(value.@market, stream);
-        FfiConverterString.INSTANCE.Write(value.@timeframe, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@timeframe, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@fast, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@slow, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@signal, stream);
@@ -10536,7 +11602,7 @@ public record Product(
     string? @name,
     string? @underlyingSymbol,
     string? @contractType,
-    long? @contractSize,
+    double? @contractSize,
     string? @underlyingType,
     string? @statusCode,
     string? @tradingCurrency,
@@ -10561,7 +11627,7 @@ class FfiConverterTypeProduct : FfiConverterRustBuffer<Product>
             @name: FfiConverterOptionalString.INSTANCE.Read(stream),
             @underlyingSymbol: FfiConverterOptionalString.INSTANCE.Read(stream),
             @contractType: FfiConverterOptionalString.INSTANCE.Read(stream),
-            @contractSize: FfiConverterOptionalInt64.INSTANCE.Read(stream),
+            @contractSize: FfiConverterOptionalDouble.INSTANCE.Read(stream),
             @underlyingType: FfiConverterOptionalString.INSTANCE.Read(stream),
             @statusCode: FfiConverterOptionalString.INSTANCE.Read(stream),
             @tradingCurrency: FfiConverterOptionalString.INSTANCE.Read(stream),
@@ -10583,7 +11649,7 @@ class FfiConverterTypeProduct : FfiConverterRustBuffer<Product>
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@name)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@underlyingSymbol)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@contractType)
-            + FfiConverterOptionalInt64.INSTANCE.AllocationSize(value.@contractSize)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@contractSize)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@underlyingType)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@statusCode)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@tradingCurrency)
@@ -10603,7 +11669,7 @@ class FfiConverterTypeProduct : FfiConverterRustBuffer<Product>
         FfiConverterOptionalString.INSTANCE.Write(value.@name, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@underlyingSymbol, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@contractType, stream);
-        FfiConverterOptionalInt64.INSTANCE.Write(value.@contractSize, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@contractSize, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@underlyingType, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@statusCode, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@tradingCurrency, stream);
@@ -10952,10 +12018,10 @@ class FfiConverterTypeRsiDataPoint : FfiConverterRustBuffer<RsiDataPoint>
 /// </summary>
 public record RsiResponse(
     string @symbol,
-    string @dataType,
-    string @exchange,
-    string @market,
-    string @timeframe,
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string? @timeframe,
     uint @period,
     List<RsiDataPoint> @data
 ) { }
@@ -10968,10 +12034,10 @@ class FfiConverterTypeRsiResponse : FfiConverterRustBuffer<RsiResponse>
     {
         return new RsiResponse(
             @symbol: FfiConverterString.INSTANCE.Read(stream),
-            @dataType: FfiConverterString.INSTANCE.Read(stream),
-            @exchange: FfiConverterString.INSTANCE.Read(stream),
-            @market: FfiConverterString.INSTANCE.Read(stream),
-            @timeframe: FfiConverterString.INSTANCE.Read(stream),
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @timeframe: FfiConverterOptionalString.INSTANCE.Read(stream),
             @period: FfiConverterUInt32.INSTANCE.Read(stream),
             @data: FfiConverterSequenceTypeRsiDataPoint.INSTANCE.Read(stream)
         );
@@ -10981,10 +12047,10 @@ class FfiConverterTypeRsiResponse : FfiConverterRustBuffer<RsiResponse>
     {
         return 0
             + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@dataType)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@exchange)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@market)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@timeframe)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@timeframe)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@period)
             + FfiConverterSequenceTypeRsiDataPoint.INSTANCE.AllocationSize(value.@data);
     }
@@ -10992,10 +12058,10 @@ class FfiConverterTypeRsiResponse : FfiConverterRustBuffer<RsiResponse>
     public override void Write(RsiResponse value, BigEndianStream stream)
     {
         FfiConverterString.INSTANCE.Write(value.@symbol, stream);
-        FfiConverterString.INSTANCE.Write(value.@dataType, stream);
-        FfiConverterString.INSTANCE.Write(value.@exchange, stream);
-        FfiConverterString.INSTANCE.Write(value.@market, stream);
-        FfiConverterString.INSTANCE.Write(value.@timeframe, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@timeframe, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@period, stream);
         FfiConverterSequenceTypeRsiDataPoint.INSTANCE.Write(value.@data, stream);
     }
@@ -11037,10 +12103,10 @@ class FfiConverterTypeSmaDataPoint : FfiConverterRustBuffer<SmaDataPoint>
 /// </summary>
 public record SmaResponse(
     string @symbol,
-    string @dataType,
-    string @exchange,
-    string @market,
-    string @timeframe,
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string? @timeframe,
     uint @period,
     List<SmaDataPoint> @data
 ) { }
@@ -11053,10 +12119,10 @@ class FfiConverterTypeSmaResponse : FfiConverterRustBuffer<SmaResponse>
     {
         return new SmaResponse(
             @symbol: FfiConverterString.INSTANCE.Read(stream),
-            @dataType: FfiConverterString.INSTANCE.Read(stream),
-            @exchange: FfiConverterString.INSTANCE.Read(stream),
-            @market: FfiConverterString.INSTANCE.Read(stream),
-            @timeframe: FfiConverterString.INSTANCE.Read(stream),
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @timeframe: FfiConverterOptionalString.INSTANCE.Read(stream),
             @period: FfiConverterUInt32.INSTANCE.Read(stream),
             @data: FfiConverterSequenceTypeSmaDataPoint.INSTANCE.Read(stream)
         );
@@ -11066,10 +12132,10 @@ class FfiConverterTypeSmaResponse : FfiConverterRustBuffer<SmaResponse>
     {
         return 0
             + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@dataType)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@exchange)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@market)
-            + FfiConverterString.INSTANCE.AllocationSize(value.@timeframe)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@timeframe)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@period)
             + FfiConverterSequenceTypeSmaDataPoint.INSTANCE.AllocationSize(value.@data);
     }
@@ -11077,10 +12143,10 @@ class FfiConverterTypeSmaResponse : FfiConverterRustBuffer<SmaResponse>
     public override void Write(SmaResponse value, BigEndianStream stream)
     {
         FfiConverterString.INSTANCE.Write(value.@symbol, stream);
-        FfiConverterString.INSTANCE.Write(value.@dataType, stream);
-        FfiConverterString.INSTANCE.Write(value.@exchange, stream);
-        FfiConverterString.INSTANCE.Write(value.@market, stream);
-        FfiConverterString.INSTANCE.Write(value.@timeframe, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@timeframe, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@period, stream);
         FfiConverterSequenceTypeSmaDataPoint.INSTANCE.Write(value.@data, stream);
     }
@@ -11218,7 +12284,7 @@ public record StatsResponse(
     double @lowPrice,
     double @closePrice,
     double @change,
-    double @changePercent,
+    double? @changePercent,
     long @tradeVolume,
     double @tradeValue,
     double @previousClose,
@@ -11244,7 +12310,7 @@ class FfiConverterTypeStatsResponse : FfiConverterRustBuffer<StatsResponse>
             @lowPrice: FfiConverterDouble.INSTANCE.Read(stream),
             @closePrice: FfiConverterDouble.INSTANCE.Read(stream),
             @change: FfiConverterDouble.INSTANCE.Read(stream),
-            @changePercent: FfiConverterDouble.INSTANCE.Read(stream),
+            @changePercent: FfiConverterOptionalDouble.INSTANCE.Read(stream),
             @tradeVolume: FfiConverterInt64.INSTANCE.Read(stream),
             @tradeValue: FfiConverterDouble.INSTANCE.Read(stream),
             @previousClose: FfiConverterDouble.INSTANCE.Read(stream),
@@ -11267,7 +12333,7 @@ class FfiConverterTypeStatsResponse : FfiConverterRustBuffer<StatsResponse>
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@lowPrice)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@closePrice)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@change)
-            + FfiConverterDouble.INSTANCE.AllocationSize(value.@changePercent)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@changePercent)
             + FfiConverterInt64.INSTANCE.AllocationSize(value.@tradeVolume)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@tradeValue)
             + FfiConverterDouble.INSTANCE.AllocationSize(value.@previousClose)
@@ -11288,7 +12354,7 @@ class FfiConverterTypeStatsResponse : FfiConverterRustBuffer<StatsResponse>
         FfiConverterDouble.INSTANCE.Write(value.@lowPrice, stream);
         FfiConverterDouble.INSTANCE.Write(value.@closePrice, stream);
         FfiConverterDouble.INSTANCE.Write(value.@change, stream);
-        FfiConverterDouble.INSTANCE.Write(value.@changePercent, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@changePercent, stream);
         FfiConverterInt64.INSTANCE.Write(value.@tradeVolume, stream);
         FfiConverterDouble.INSTANCE.Write(value.@tradeValue, stream);
         FfiConverterDouble.INSTANCE.Write(value.@previousClose, stream);
@@ -11352,10 +12418,191 @@ class FfiConverterTypeStreamMessage : FfiConverterRustBuffer<StreamMessage>
 }
 
 /// <summary>
+/// Per-product streaming version selection.
+///
+/// UniFFI has no way to express core's one-enum-per-product typing across
+/// C#/Go/Java/C++ at once, so this carries optional strings and validates
+/// them — the same shape the official SDK's version map has.
+/// </summary>
+/// <param name="stock">
+/// Stock streaming version. Only "v1.0" is served. None means latest.
+/// </param>
+/// <param name="futopt">
+/// FutOpt streaming version: "v1.0" or "v1.1". None means latest (v1.1).
+///
+/// v1.1 adds trial-matching (試撮) frames on trades / books — check the
+/// frame's `isTrial` before acting on a price.
+/// </param>
+public record StreamingVersionRecord(
+    /// <summary>
+    /// Stock streaming version. Only "v1.0" is served. None means latest.
+    /// </summary>
+    string? @stock,
+    /// <summary>
+    /// FutOpt streaming version: "v1.0" or "v1.1". None means latest (v1.1).
+    ///
+    /// v1.1 adds trial-matching (試撮) frames on trades / books — check the
+    /// frame's `isTrial` before acting on a price.
+    /// </summary>
+    string? @futopt
+) { }
+
+class FfiConverterTypeStreamingVersionRecord : FfiConverterRustBuffer<StreamingVersionRecord>
+{
+    public static FfiConverterTypeStreamingVersionRecord INSTANCE =
+        new FfiConverterTypeStreamingVersionRecord();
+
+    public override StreamingVersionRecord Read(BigEndianStream stream)
+    {
+        return new StreamingVersionRecord(
+            @stock: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @futopt: FfiConverterOptionalString.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(StreamingVersionRecord value)
+    {
+        return 0
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@stock)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@futopt);
+    }
+
+    public override void Write(StreamingVersionRecord value, BigEndianStream stream)
+    {
+        FfiConverterOptionalString.INSTANCE.Write(value.@stock, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@futopt, stream);
+    }
+}
+
+/// <summary>
+/// TDCC shareholder distribution on a single date
+/// </summary>
+public record TdccDistributionEntry(string @date, List<TdccDistributionLevel> @distributions) { }
+
+class FfiConverterTypeTdccDistributionEntry : FfiConverterRustBuffer<TdccDistributionEntry>
+{
+    public static FfiConverterTypeTdccDistributionEntry INSTANCE =
+        new FfiConverterTypeTdccDistributionEntry();
+
+    public override TdccDistributionEntry Read(BigEndianStream stream)
+    {
+        return new TdccDistributionEntry(
+            @date: FfiConverterString.INSTANCE.Read(stream),
+            @distributions: FfiConverterSequenceTypeTdccDistributionLevel.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(TdccDistributionEntry value)
+    {
+        return 0
+            + FfiConverterString.INSTANCE.AllocationSize(value.@date)
+            + FfiConverterSequenceTypeTdccDistributionLevel.INSTANCE.AllocationSize(
+                value.@distributions
+            );
+    }
+
+    public override void Write(TdccDistributionEntry value, BigEndianStream stream)
+    {
+        FfiConverterString.INSTANCE.Write(value.@date, stream);
+        FfiConverterSequenceTypeTdccDistributionLevel.INSTANCE.Write(value.@distributions, stream);
+    }
+}
+
+/// <summary>
+/// One holding-size bracket of the TDCC shareholder distribution
+/// </summary>
+public record TdccDistributionLevel(
+    string @range,
+    long? @holders,
+    double? @shares,
+    double? @proportion
+) { }
+
+class FfiConverterTypeTdccDistributionLevel : FfiConverterRustBuffer<TdccDistributionLevel>
+{
+    public static FfiConverterTypeTdccDistributionLevel INSTANCE =
+        new FfiConverterTypeTdccDistributionLevel();
+
+    public override TdccDistributionLevel Read(BigEndianStream stream)
+    {
+        return new TdccDistributionLevel(
+            @range: FfiConverterString.INSTANCE.Read(stream),
+            @holders: FfiConverterOptionalInt64.INSTANCE.Read(stream),
+            @shares: FfiConverterOptionalDouble.INSTANCE.Read(stream),
+            @proportion: FfiConverterOptionalDouble.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(TdccDistributionLevel value)
+    {
+        return 0
+            + FfiConverterString.INSTANCE.AllocationSize(value.@range)
+            + FfiConverterOptionalInt64.INSTANCE.AllocationSize(value.@holders)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@shares)
+            + FfiConverterOptionalDouble.INSTANCE.AllocationSize(value.@proportion);
+    }
+
+    public override void Write(TdccDistributionLevel value, BigEndianStream stream)
+    {
+        FfiConverterString.INSTANCE.Write(value.@range, stream);
+        FfiConverterOptionalInt64.INSTANCE.Write(value.@holders, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@shares, stream);
+        FfiConverterOptionalDouble.INSTANCE.Write(value.@proportion, stream);
+    }
+}
+
+/// <summary>
+/// Response for `stock/ownership/tdcc-distribution/{symbol}`
+/// </summary>
+public record TdccDistributionResponse(
+    string? @dataType,
+    string? @exchange,
+    string? @market,
+    string @symbol,
+    List<TdccDistributionEntry> @data
+) { }
+
+class FfiConverterTypeTdccDistributionResponse : FfiConverterRustBuffer<TdccDistributionResponse>
+{
+    public static FfiConverterTypeTdccDistributionResponse INSTANCE =
+        new FfiConverterTypeTdccDistributionResponse();
+
+    public override TdccDistributionResponse Read(BigEndianStream stream)
+    {
+        return new TdccDistributionResponse(
+            @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @market: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @symbol: FfiConverterString.INSTANCE.Read(stream),
+            @data: FfiConverterSequenceTypeTdccDistributionEntry.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(TdccDistributionResponse value)
+    {
+        return 0
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@symbol)
+            + FfiConverterSequenceTypeTdccDistributionEntry.INSTANCE.AllocationSize(value.@data);
+    }
+
+    public override void Write(TdccDistributionResponse value, BigEndianStream stream)
+    {
+        FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
+        FfiConverterString.INSTANCE.Write(value.@symbol, stream);
+        FfiConverterSequenceTypeTdccDistributionEntry.INSTANCE.Write(value.@data, stream);
+    }
+}
+
+/// <summary>
 /// Stock ticker info
 /// </summary>
 public record Ticker(
-    string @date,
+    string? @date,
     string? @dataType,
     string? @exchange,
     string? @market,
@@ -11400,7 +12647,7 @@ class FfiConverterTypeTicker : FfiConverterRustBuffer<Ticker>
     public override Ticker Read(BigEndianStream stream)
     {
         return new Ticker(
-            @date: FfiConverterString.INSTANCE.Read(stream),
+            @date: FfiConverterOptionalString.INSTANCE.Read(stream),
             @dataType: FfiConverterOptionalString.INSTANCE.Read(stream),
             @exchange: FfiConverterOptionalString.INSTANCE.Read(stream),
             @market: FfiConverterOptionalString.INSTANCE.Read(stream),
@@ -11442,7 +12689,7 @@ class FfiConverterTypeTicker : FfiConverterRustBuffer<Ticker>
     public override int AllocationSize(Ticker value)
     {
         return 0
-            + FfiConverterString.INSTANCE.AllocationSize(value.@date)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@date)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@dataType)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@exchange)
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@market)
@@ -11482,7 +12729,7 @@ class FfiConverterTypeTicker : FfiConverterRustBuffer<Ticker>
 
     public override void Write(Ticker value, BigEndianStream stream)
     {
-        FfiConverterString.INSTANCE.Write(value.@date, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@date, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@dataType, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@exchange, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@market, stream);
@@ -12690,6 +13937,53 @@ class FfiConverterOptionalTypeHealthCheckConfigRecord
     }
 }
 
+class FfiConverterOptionalTypeInstitutionalInvestorTrade
+    : FfiConverterRustBuffer<InstitutionalInvestorTrade?>
+{
+    public static FfiConverterOptionalTypeInstitutionalInvestorTrade INSTANCE =
+        new FfiConverterOptionalTypeInstitutionalInvestorTrade();
+
+    public override InstitutionalInvestorTrade? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterTypeInstitutionalInvestorTrade.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(InstitutionalInvestorTrade? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1
+                + FfiConverterTypeInstitutionalInvestorTrade.INSTANCE.AllocationSize(
+                    (InstitutionalInvestorTrade)value
+                );
+        }
+    }
+
+    public override void Write(InstitutionalInvestorTrade? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterTypeInstitutionalInvestorTrade.INSTANCE.Write(
+                (InstitutionalInvestorTrade)value,
+                stream
+            );
+        }
+    }
+}
+
 class FfiConverterOptionalTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectConfigRecord?>
 {
     public static FfiConverterOptionalTypeReconnectConfigRecord INSTANCE =
@@ -12730,6 +14024,53 @@ class FfiConverterOptionalTypeReconnectConfigRecord : FfiConverterRustBuffer<Rec
             stream.WriteByte(1);
             FfiConverterTypeReconnectConfigRecord.INSTANCE.Write(
                 (ReconnectConfigRecord)value,
+                stream
+            );
+        }
+    }
+}
+
+class FfiConverterOptionalTypeStreamingVersionRecord
+    : FfiConverterRustBuffer<StreamingVersionRecord?>
+{
+    public static FfiConverterOptionalTypeStreamingVersionRecord INSTANCE =
+        new FfiConverterOptionalTypeStreamingVersionRecord();
+
+    public override StreamingVersionRecord? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterTypeStreamingVersionRecord.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(StreamingVersionRecord? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1
+                + FfiConverterTypeStreamingVersionRecord.INSTANCE.AllocationSize(
+                    (StreamingVersionRecord)value
+                );
+        }
+    }
+
+    public override void Write(StreamingVersionRecord? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterTypeStreamingVersionRecord.INSTANCE.Write(
+                (StreamingVersionRecord)value,
                 stream
             );
         }
@@ -13037,6 +14378,101 @@ class FfiConverterSequenceTypeCapitalChange : FfiConverterRustBuffer<List<Capita
     }
 }
 
+class FfiConverterSequenceTypeDirectorHolding : FfiConverterRustBuffer<List<DirectorHolding>>
+{
+    public static FfiConverterSequenceTypeDirectorHolding INSTANCE =
+        new FfiConverterSequenceTypeDirectorHolding();
+
+    public override List<DirectorHolding> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<DirectorHolding>(length);
+        var readFn = FfiConverterTypeDirectorHolding.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<DirectorHolding> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeDirectorHolding.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<DirectorHolding> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeDirectorHolding.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
+class FfiConverterSequenceTypeDirectorHoldingsEntry
+    : FfiConverterRustBuffer<List<DirectorHoldingsEntry>>
+{
+    public static FfiConverterSequenceTypeDirectorHoldingsEntry INSTANCE =
+        new FfiConverterSequenceTypeDirectorHoldingsEntry();
+
+    public override List<DirectorHoldingsEntry> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<DirectorHoldingsEntry>(length);
+        var readFn = FfiConverterTypeDirectorHoldingsEntry.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<DirectorHoldingsEntry> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeDirectorHoldingsEntry.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<DirectorHoldingsEntry> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeDirectorHoldingsEntry.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
 class FfiConverterSequenceTypeDividend : FfiConverterRustBuffer<List<Dividend>>
 {
     public static FfiConverterSequenceTypeDividend INSTANCE =
@@ -13080,6 +14516,101 @@ class FfiConverterSequenceTypeDividend : FfiConverterRustBuffer<List<Dividend>>
 
         stream.WriteInt(value.Count);
         var writerFn = FfiConverterTypeDividend.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
+class FfiConverterSequenceTypeEtfHoldingComponent
+    : FfiConverterRustBuffer<List<EtfHoldingComponent>>
+{
+    public static FfiConverterSequenceTypeEtfHoldingComponent INSTANCE =
+        new FfiConverterSequenceTypeEtfHoldingComponent();
+
+    public override List<EtfHoldingComponent> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<EtfHoldingComponent>(length);
+        var readFn = FfiConverterTypeEtfHoldingComponent.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<EtfHoldingComponent> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeEtfHoldingComponent.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<EtfHoldingComponent> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeEtfHoldingComponent.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
+class FfiConverterSequenceTypeEtfHoldingsEntry : FfiConverterRustBuffer<List<EtfHoldingsEntry>>
+{
+    public static FfiConverterSequenceTypeEtfHoldingsEntry INSTANCE =
+        new FfiConverterSequenceTypeEtfHoldingsEntry();
+
+    public override List<EtfHoldingsEntry> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<EtfHoldingsEntry>(length);
+        var readFn = FfiConverterTypeEtfHoldingsEntry.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<EtfHoldingsEntry> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeEtfHoldingsEntry.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<EtfHoldingsEntry> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeEtfHoldingsEntry.INSTANCE.Write;
         value.ForEach(item => writerFn(item, stream));
     }
 }
@@ -13316,6 +14847,54 @@ class FfiConverterSequenceTypeHistoricalCandle : FfiConverterRustBuffer<List<His
 
         stream.WriteInt(value.Count);
         var writerFn = FfiConverterTypeHistoricalCandle.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
+class FfiConverterSequenceTypeInstitutionalTradesEntry
+    : FfiConverterRustBuffer<List<InstitutionalTradesEntry>>
+{
+    public static FfiConverterSequenceTypeInstitutionalTradesEntry INSTANCE =
+        new FfiConverterSequenceTypeInstitutionalTradesEntry();
+
+    public override List<InstitutionalTradesEntry> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<InstitutionalTradesEntry>(length);
+        var readFn = FfiConverterTypeInstitutionalTradesEntry.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<InstitutionalTradesEntry> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeInstitutionalTradesEntry.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<InstitutionalTradesEntry> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeInstitutionalTradesEntry.INSTANCE.Write;
         value.ForEach(item => writerFn(item, stream));
     }
 }
@@ -13784,6 +15363,102 @@ class FfiConverterSequenceTypeSnapshotQuote : FfiConverterRustBuffer<List<Snapsh
 
         stream.WriteInt(value.Count);
         var writerFn = FfiConverterTypeSnapshotQuote.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
+class FfiConverterSequenceTypeTdccDistributionEntry
+    : FfiConverterRustBuffer<List<TdccDistributionEntry>>
+{
+    public static FfiConverterSequenceTypeTdccDistributionEntry INSTANCE =
+        new FfiConverterSequenceTypeTdccDistributionEntry();
+
+    public override List<TdccDistributionEntry> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<TdccDistributionEntry>(length);
+        var readFn = FfiConverterTypeTdccDistributionEntry.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<TdccDistributionEntry> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeTdccDistributionEntry.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<TdccDistributionEntry> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeTdccDistributionEntry.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
+    }
+}
+
+class FfiConverterSequenceTypeTdccDistributionLevel
+    : FfiConverterRustBuffer<List<TdccDistributionLevel>>
+{
+    public static FfiConverterSequenceTypeTdccDistributionLevel INSTANCE =
+        new FfiConverterSequenceTypeTdccDistributionLevel();
+
+    public override List<TdccDistributionLevel> Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        var result = new List<TdccDistributionLevel>(length);
+        var readFn = FfiConverterTypeTdccDistributionLevel.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result.Add(readFn(stream));
+        }
+        return result;
+    }
+
+    public override int AllocationSize(List<TdccDistributionLevel> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterTypeTdccDistributionLevel.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(List<TdccDistributionLevel> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerFn = FfiConverterTypeTdccDistributionLevel.INSTANCE.Write;
         value.ForEach(item => writerFn(item, stream));
     }
 }

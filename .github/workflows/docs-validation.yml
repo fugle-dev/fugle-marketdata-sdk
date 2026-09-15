@@ -28,9 +28,11 @@ jobs:
         with:
           node-version: '20'
 
+      # Pinned: new markdownlint releases add rules (e.g. MD060), which would
+      # turn unrelated pull requests red overnight.
       - name: Install documentation tools
         run: |
-          npm install -g markdownlint-cli markdown-link-check
+          npm install -g markdownlint-cli@0.45.0 markdown-link-check@3.13.7
 
       - name: Lint Markdown files
         run: |

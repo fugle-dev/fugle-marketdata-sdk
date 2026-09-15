@@ -38,11 +38,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/fugle-dev/fugle-marketdata-sdk",
+    "url": "git+https://github.com/fugle-dev/fugle-marketdata-sdk.git",
     "directory": "js"
   },
   "keywords": [
-    "fubon",
+    "fugle",
     "marketdata",
     "stock",
     "futures",

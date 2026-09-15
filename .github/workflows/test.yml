@@ -31,23 +31,25 @@ jobs:
           shared-key: rust-core
 
       - name: Run core unit tests
-        run: cargo test -p marketdata-core
+        run: cargo test -p fugle-marketdata-core
 
       - name: Run core integration tests (structural only)
-        run: cargo test -p marketdata-core --test integration_rest --test integration_websocket
+        run: cargo test -p fugle-marketdata-core --test integration_rest --test integration_websocket
         continue-on-error: true
 
   # ============================================================
   # MSRV verification (declared rust-version in core/Cargo.toml)
   # ============================================================
   rust-core-msrv:
-    name: Rust Core MSRV (1.82)
+    name: Rust Core MSRV (1.83)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust 1.82
-        uses: dtolnay/rust-toolchain@1.82
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust 1.83
+        uses: dtolnay/rust-toolchain@1.83
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -55,8 +57,13 @@ jobs:
           workspaces: ". -> target"
           shared-key: rust-core-msrv
 
+      - name: Resolve MSRV-compatible dependencies
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo +stable generate-lockfile
+
       - name: Build core with all features on MSRV toolchain
-        run: cargo build --all-features -p fugle-marketdata-core
+        run: cargo +1.83 build --locked --all-features -p fugle-marketdata-core
 
   # ============================================================
   # Python Binding Tests

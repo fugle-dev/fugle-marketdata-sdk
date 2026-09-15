@@ -186,6 +186,12 @@ namespace FugleMarketData
         /// Access corporate actions endpoints (capital changes, dividends, IPO).
         /// </summary>
         public StockCorporateActionsClient CorporateActions => new StockCorporateActionsClient(_inner.CorporateActions());
+
+        /// <summary>
+        /// Access ownership endpoints (ETF holdings, institutional trades,
+        /// director holdings, TDCC distribution).
+        /// </summary>
+        public StockOwnershipClient Ownership => new StockOwnershipClient(_inner.Ownership());
     }
 
     /// <summary>
@@ -570,6 +576,99 @@ namespace FugleMarketData
     }
 
     /// <summary>
+    /// Stock ownership endpoints. Every method takes the same range arguments:
+    /// <c>from</c> / <c>to</c> in YYYY-MM-DD and <c>sort</c> of "asc" or "desc".
+    /// The native library only exports async variants for these endpoints, so
+    /// the blocking methods run the async call on the thread pool to avoid
+    /// deadlocking callers that have a synchronization context.
+    /// </summary>
+    public sealed class StockOwnershipClient
+    {
+        private readonly uniffi.marketdata_uniffi.StockOwnershipClient _inner;
+
+        internal StockOwnershipClient(uniffi.marketdata_uniffi.StockOwnershipClient inner)
+        {
+            _inner = inner;
+        }
+
+        // ========== Async Methods ==========
+
+        /// <summary>
+        /// Get the constituents an ETF held over a date range (async).
+        /// </summary>
+        /// <param name="symbol">ETF symbol (e.g. "0050")</param>
+        /// <param name="from">Range start date (optional)</param>
+        /// <param name="to">Range end date (optional)</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        public Task<uniffi.marketdata_uniffi.EtfHoldingsResponse> GetEtfHoldingsAsync(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => _inner.GetEtfHoldings(symbol, from, to, sort);
+
+        /// <summary>
+        /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (async).
+        /// </summary>
+        /// <param name="symbol">Stock symbol (e.g. "2330")</param>
+        /// <param name="from">Range start date (optional)</param>
+        /// <param name="to">Range end date (optional)</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        public Task<uniffi.marketdata_uniffi.InstitutionalTradesResponse> GetInstitutionalTradesAsync(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => _inner.GetInstitutionalTrades(symbol, from, to, sort);
+
+        /// <summary>
+        /// Get monthly holdings and pledges disclosed by directors and supervisors (async).
+        /// </summary>
+        /// <param name="symbol">Stock symbol (e.g. "2330")</param>
+        /// <param name="from">Range start date (optional)</param>
+        /// <param name="to">Range end date (optional)</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        public Task<uniffi.marketdata_uniffi.DirectorHoldingsResponse> GetDirectorHoldingsAsync(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => _inner.GetDirectorHoldings(symbol, from, to, sort);
+
+        /// <summary>
+        /// Get the weekly TDCC shareholder distribution by holding-size bracket (async).
+        /// </summary>
+        /// <param name="symbol">Stock symbol (e.g. "2330")</param>
+        /// <param name="from">Range start date (optional)</param>
+        /// <param name="to">Range end date (optional)</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        public Task<uniffi.marketdata_uniffi.TdccDistributionResponse> GetTdccDistributionAsync(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => _inner.GetTdccDistribution(symbol, from, to, sort);
+
+        // ========== Sync Methods ==========
+
+        /// <summary>
+        /// Get the constituents an ETF held over a date range (blocking).
+        /// </summary>
+        public uniffi.marketdata_uniffi.EtfHoldingsResponse GetEtfHoldings(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => Task.Run(() => GetEtfHoldingsAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (blocking).
+        /// </summary>
+        public uniffi.marketdata_uniffi.InstitutionalTradesResponse GetInstitutionalTrades(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => Task.Run(() => GetInstitutionalTradesAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Get monthly holdings and pledges disclosed by directors and supervisors (blocking).
+        /// </summary>
+        public uniffi.marketdata_uniffi.DirectorHoldingsResponse GetDirectorHoldings(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => Task.Run(() => GetDirectorHoldingsAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Get the weekly TDCC shareholder distribution by holding-size bracket (blocking).
+        /// </summary>
+        public uniffi.marketdata_uniffi.TdccDistributionResponse GetTdccDistribution(
+            string symbol, string? from = null, string? to = null, string? sort = null)
+            => Task.Run(() => GetTdccDistributionAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
     /// Futures and options market data client.
     /// </summary>
     public sealed class FutOptClient
@@ -658,8 +757,9 @@ namespace FugleMarketData
         /// Get batch tickers for futures/options (async).
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
-        public Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>> GetTickersAsync(string type)
-            => _inner.GetTickers(type);
+        /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
+        public Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>> GetTickersAsync(string type, bool? isSpread = null)
+            => _inner.GetTickers(type, isSpread);
 
         // ========== Sync Methods (Blocking) ==========
 
@@ -710,8 +810,10 @@ namespace FugleMarketData
         /// <summary>
         /// Get batch tickers for futures/options (blocking).
         /// </summary>
-        public System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker> GetTickers(string type)
-            => _inner.TickersSync(type);
+        /// <param name="type">Product type: "F" for futures, "O" for options</param>
+        /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
+        public System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker> GetTickers(string type, bool? isSpread = null)
+            => _inner.TickersSync(type, isSpread);
     }
 
     /// <summary>

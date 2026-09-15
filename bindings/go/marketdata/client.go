@@ -43,25 +43,33 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 		return nil, errors.New("provide exactly one of: WithApiKey, WithBearerToken, or WithSdkToken")
 	}
 
-	// Call appropriate UniFFI constructor based on auth method
+	// Call appropriate UniFFI constructor based on auth method.
+	//
+	// The generated constructors return a concrete *MarketDataError. Keep it
+	// in a variable of that type: assigning a nil *MarketDataError to an
+	// `error` interface yields a non-nil interface, which made every call
+	// fail with "failed to create client: <nil>".
+	var baseUrl *string
+	if cfg.baseUrl != "" {
+		baseUrl = &cfg.baseUrl
+	}
+	tls := TlsConfigRecord{}
+
 	var client *RestClient
-	var err error
+	var uerr *MarketDataError
 
-	if cfg.apiKey != "" {
-		client, err = NewRestClientWithApiKey(cfg.apiKey)
-	} else if cfg.bearerToken != "" {
-		client, err = NewRestClientWithBearerToken(cfg.bearerToken)
-	} else if cfg.sdkToken != "" {
-		client, err = NewRestClientWithSdkToken(cfg.sdkToken)
+	switch {
+	case cfg.apiKey != "":
+		client, uerr = NewRestClientWithApiKeyAndTls(cfg.apiKey, baseUrl, tls)
+	case cfg.bearerToken != "":
+		client, uerr = NewRestClientWithBearerTokenAndTls(cfg.bearerToken, baseUrl, tls)
+	default:
+		client, uerr = NewRestClientWithSdkTokenAndTls(cfg.sdkToken, baseUrl, tls)
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client: %w", err)
+	if uerr != nil {
+		return nil, fmt.Errorf("failed to create client: %w", uerr)
 	}
-
-	// TODO: Apply baseUrl when RestClient exposes base_url setter
-	// Currently baseUrl is stored but not applied (same as Python/Node.js)
-	_ = cfg.baseUrl
 
 	return client, nil
 }
@@ -131,9 +139,8 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		var healthCheckRecord *HealthCheckConfigRecord
 		if cfg.healthCheck != nil {
 			healthCheckRecord = &HealthCheckConfigRecord{
-				Enabled:        cfg.healthCheck.Enabled,
-				IntervalMs:     cfg.healthCheck.IntervalMs,
-				MaxMissedPongs: cfg.healthCheck.MaxMissedPongs,
+				Enabled:            cfg.healthCheck.Enabled,
+				HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
 			}
 		}
 

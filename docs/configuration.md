@@ -3,6 +3,7 @@
 This document provides comprehensive reference for all WebSocket configuration options available in the Fugle Market Data SDK across all supported languages.
 
 **Key Principles:**
+
 - All configuration validation happens at construction time (fail-fast)
 - Invalid configurations throw errors immediately, not at connection time
 - All config options have sensible defaults
@@ -22,6 +23,7 @@ Controls automatic reconnection behavior after WebSocket connection drops.
 | `max_delay_ms` | u64/int/number | 60000 | >= initial_delay_ms | - | Maximum backoff delay cap in milliseconds |
 
 **Constraints:**
+
 - `max_attempts` must be >= 1 (zero attempts is invalid)
 - `initial_delay_ms` must be >= 100ms (prevent connection storms)
 - `max_delay_ms` must be >= `initial_delay_ms` (logical constraint)
@@ -50,7 +52,7 @@ ws = WebSocketClient(api_key="your-api-key", reconnect=reconnect)
 #### JavaScript/TypeScript
 
 ```typescript
-import { WebSocketClient } from '@fubon/marketdata-js';
+import { WebSocketClient } from '@fugle/marketdata';
 
 // Default configuration
 const ws = new WebSocketClient({ apiKey: 'your-api-key' });
@@ -110,7 +112,7 @@ client, err := marketdata.NewFugleRestClient(
 )
 ```
 
-#### C#
+#### C\#
 
 ```csharp
 using MarketdataUniffi;
@@ -148,11 +150,13 @@ Controls WebSocket health monitoring via ping/pong messages.
 | `max_missed_pongs` | u64/int/number | 2 | 1 | - | Missed pongs before reconnect |
 
 **Constraints:**
+
 - `interval_ms` must be >= 5000ms (5 seconds) to prevent excessive overhead
 - `max_missed_pongs` must be >= 1 (at least one missed pong required to trigger reconnect)
 - Implicit constraint: timeout must be less than interval
 
 **Default Behavior:**
+
 - Health check is **disabled by default** (aligned with official Fugle SDKs)
 - Must explicitly enable if monitoring is needed
 - When enabled, sends ping every `interval_ms` milliseconds
@@ -184,7 +188,7 @@ ws = WebSocketClient(api_key="your-api-key", health_check=health_check)
 #### JavaScript/TypeScript
 
 ```typescript
-import { WebSocketClient } from '@fubon/marketdata-js';
+import { WebSocketClient } from '@fugle/marketdata';
 
 // Health check disabled by default
 const ws = new WebSocketClient({ apiKey: 'your-api-key' });
@@ -244,7 +248,7 @@ client, err := marketdata.NewFugleRestClient(
 )
 ```
 
-#### C#
+#### C\#
 
 ```csharp
 using MarketdataUniffi;
@@ -307,7 +311,7 @@ client = RestClient(api_key="your-api-key", base_url="https://custom.api.url")
 #### JavaScript/TypeScript
 
 ```typescript
-import { RestClient } from '@fubon/marketdata-js';
+import { RestClient } from '@fugle/marketdata';
 
 // API key authentication
 const client = new RestClient({ apiKey: 'your-api-key' });
@@ -367,7 +371,7 @@ client, err := marketdata.NewFugleRestClient(
 )
 ```
 
-#### C#
+#### C\#
 
 ```csharp
 using MarketdataUniffi;
@@ -397,10 +401,12 @@ When configuration validation fails, you'll see one of these error messages:
 ### Authentication Errors
 
 **"Provide exactly one of: apiKey, bearerToken, sdkToken"**
+
 - **Cause:** Zero or multiple authentication methods provided
 - **Solution:** Pass exactly one auth method
 
 **Example (Python):**
+
 ```python
 # ✗ Wrong - no auth
 client = RestClient()
@@ -417,18 +423,22 @@ client = RestClient(api_key="key")
 ### ReconnectConfig Errors
 
 **"max_attempts must be >= 1"**
+
 - **Cause:** `max_attempts` set to 0
 - **Solution:** Use at least 1 attempt
 
 **"initial_delay_ms must be >= 100ms (got {value}ms)"**
+
 - **Cause:** `initial_delay_ms` less than minimum 100ms
 - **Solution:** Use at least 100ms delay
 
 **"max_delay_ms ({value}ms) must be >= initial_delay_ms ({value}ms)"**
+
 - **Cause:** `max_delay_ms` less than `initial_delay_ms`
 - **Solution:** Ensure `max_delay_ms` >= `initial_delay_ms`
 
 **Example (JavaScript):**
+
 ```typescript
 // ✗ Wrong - max_attempts is 0
 const ws = new WebSocketClient({
@@ -453,14 +463,17 @@ const ws = new WebSocketClient({
 ### HealthCheckConfig Errors
 
 **"health_check interval must be >= 5000ms (got {value}ms)"**
+
 - **Cause:** `interval_ms` less than minimum 5000ms (5 seconds)
 - **Solution:** Use at least 5000ms interval
 
 **"max_missed_pongs must be >= 1"**
+
 - **Cause:** `max_missed_pongs` set to 0
 - **Solution:** Use at least 1 missed pong
 
 **Example (Python):**
+
 ```python
 # ✗ Wrong - interval too small
 health_check = HealthCheckConfig(enabled=True, interval_ms=2000)
@@ -487,6 +500,7 @@ Quick reference of all default values:
 | | `max_missed_pongs` | 2 | |
 
 **Default values sourced from:**
+
 - `core/src/websocket/reconnection.rs` constants
 - `core/src/websocket/health_check.rs` constants
 

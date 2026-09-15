@@ -179,11 +179,13 @@ let reconnect = ReconnectionConfig::new(
 ```
 
 **Parameters:**
+
 - `max_attempts` (u32): Maximum reconnection attempts (default: 5, range: 1+)
 - `initial_delay` (Duration): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `max_delay` (Duration): Maximum delay cap (default: 60000ms)
 
 **Validation:**
+
 - `max_attempts` must be >= 1
 - `initial_delay` must be >= 100ms (prevents connection storms)
 - `max_delay` must be >= `initial_delay` (logical constraint)
@@ -215,6 +217,7 @@ let health = HealthCheckConfig::disabled();
 ```
 
 **Parameters:**
+
 - `enabled` (bool): Whether liveness detection is active. Default `true` in 3.0
   (was `false` in 2.x).
 - `heartbeat_timeout` (Duration): Maximum allowed gap between inbound frames.
@@ -370,6 +373,7 @@ See the [API documentation](https://docs.rs/marketdata-core) for complete detail
 ### REST Endpoints
 
 **Stock Intraday:**
+
 - `client.stock().intraday().quote()` - Real-time quote
 - `client.stock().intraday().ticker()` - Symbol information
 - `client.stock().intraday().candles()` - OHLCV candles
@@ -377,6 +381,7 @@ See the [API documentation](https://docs.rs/marketdata-core) for complete detail
 - `client.stock().intraday().volumes()` - Volume by price
 
 **FutOpt Intraday:**
+
 - `client.futopt().intraday().quote()` - Real-time quote
 - `client.futopt().intraday().ticker()` - Contract information
 - `client.futopt().intraday().tickers()` - Multiple contracts

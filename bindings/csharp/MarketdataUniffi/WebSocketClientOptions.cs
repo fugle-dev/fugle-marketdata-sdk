@@ -29,28 +29,23 @@ namespace FugleMarketData
     }
 
     /// <summary>
-    /// Health check configuration for WebSocket connections.
-    /// Monitors connection health via periodic ping/pong messages.
+    /// Liveness detection for WebSocket connections.
+    /// The connection is declared dead when no inbound frame (data, heartbeat
+    /// or pong) arrives within <see cref="HeartbeatTimeoutMs"/>. The server
+    /// sends a heartbeat every 30 seconds.
     /// </summary>
     public class HealthCheckOptions
     {
         /// <summary>
-        /// Whether health check is enabled (default: false).
-        /// When enabled, the client sends periodic ping messages to verify connection health.
+        /// Whether liveness detection is enabled (default: true).
         /// </summary>
         public bool? Enabled { get; set; }
 
         /// <summary>
-        /// Interval between ping messages in milliseconds (default: 30000, min: 5000).
-        /// Lower values provide faster detection of connection issues but increase overhead.
+        /// Maximum gap between inbound frames in milliseconds before the
+        /// connection is declared dead (default: 35000, min: 5000).
         /// </summary>
-        public ulong? IntervalMs { get; set; }
-
-        /// <summary>
-        /// Maximum missed pongs before disconnect (default: 2, min: 1).
-        /// If the server fails to respond to this many consecutive pings, the connection is closed.
-        /// </summary>
-        public ulong? MaxMissedPongs { get; set; }
+        public ulong? HeartbeatTimeoutMs { get; set; }
     }
 
     /// <summary>

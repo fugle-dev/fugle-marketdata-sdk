@@ -33,11 +33,8 @@ func TestHealthCheckConfigDefaults(t *testing.T) {
 	if cfg.Enabled != false {
 		t.Errorf("expected Enabled default false, got %v", cfg.Enabled)
 	}
-	if cfg.IntervalMs != 0 {
-		t.Errorf("expected IntervalMs default 0 (use core default), got %d", cfg.IntervalMs)
-	}
-	if cfg.MaxMissedPongs != 0 {
-		t.Errorf("expected MaxMissedPongs default 0 (use core default), got %d", cfg.MaxMissedPongs)
+	if cfg.HeartbeatTimeoutMs != 0 {
+		t.Errorf("expected HeartbeatTimeoutMs default 0 (use core default), got %d", cfg.HeartbeatTimeoutMs)
 	}
 }
 
@@ -63,49 +60,63 @@ func TestReconnectConfigCustomValues(t *testing.T) {
 // Test 4: HealthCheckConfig custom values
 func TestHealthCheckConfigCustomValues(t *testing.T) {
 	cfg := HealthCheckConfig{
-		Enabled:        true,
-		IntervalMs:     10000,
-		MaxMissedPongs: 3,
+		Enabled:            true,
+		HeartbeatTimeoutMs: 10000,
 	}
 
 	if cfg.Enabled != true {
 		t.Errorf("expected Enabled true, got %v", cfg.Enabled)
 	}
-	if cfg.IntervalMs != 10000 {
-		t.Errorf("expected IntervalMs 10000, got %d", cfg.IntervalMs)
-	}
-	if cfg.MaxMissedPongs != 3 {
-		t.Errorf("expected MaxMissedPongs 3, got %d", cfg.MaxMissedPongs)
+	if cfg.HeartbeatTimeoutMs != 10000 {
+		t.Errorf("expected HeartbeatTimeoutMs 10000, got %d", cfg.HeartbeatTimeoutMs)
 	}
 }
 
 // Test 5: RestClient with ApiKey only (should not get auth error)
 func TestRestClientExactlyOneAuth_ApiKey(t *testing.T) {
-	_, err := NewFugleRestClient(WithApiKey("test-api-key"))
-
-	// May fail with network error, but should NOT be an auth validation error
-	if err != nil && strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("got auth validation error, expected network error or success: %v", err)
+	// Construction does not touch the network, so it must succeed.
+	client, err := NewFugleRestClient(WithApiKey("test-api-key"))
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected a client, got nil")
 	}
 }
 
 // Test 6: RestClient with BearerToken only (should not get auth error)
 func TestRestClientExactlyOneAuth_BearerToken(t *testing.T) {
-	_, err := NewFugleRestClient(WithBearerToken("test-bearer-token"))
-
-	// May fail with network error, but should NOT be an auth validation error
-	if err != nil && strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("got auth validation error, expected network error or success: %v", err)
+	// Construction does not touch the network, so it must succeed.
+	client, err := NewFugleRestClient(WithBearerToken("test-bearer-token"))
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected a client, got nil")
 	}
 }
 
 // Test 7: RestClient with SdkToken only (should not get auth error)
 func TestRestClientExactlyOneAuth_SdkToken(t *testing.T) {
-	_, err := NewFugleRestClient(WithSdkToken("test-sdk-token"))
+	// Construction does not touch the network, so it must succeed.
+	client, err := NewFugleRestClient(WithSdkToken("test-sdk-token"))
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected a client, got nil")
+	}
+}
 
-	// May fail with network error, but should NOT be an auth validation error
-	if err != nil && strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("got auth validation error, expected network error or success: %v", err)
+// Test 7b: WithBaseUrl is applied instead of being ignored
+func TestRestClientWithBaseUrl(t *testing.T) {
+	client, err := NewFugleRestClient(WithApiKey("test-api-key"), WithBaseUrl("https://example.invalid/marketdata"))
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	// The SDK owns the version segment and appends it to the prefix.
+	if got := client.BaseUrl(); got != "https://example.invalid/marketdata/v1.0" {
+		t.Fatalf("expected base URL to be applied, got %q", got)
 	}
 }
 

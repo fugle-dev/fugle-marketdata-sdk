@@ -9,8 +9,8 @@ on:
         type: string
     secrets:
       NUGET_API_KEY:
-        # See publish-nodejs.yml — optional for fork compatibility, the
-        # stable publish path is gated by `if: channel == stable` upstream.
+        # Optional so workflow_dispatch dry runs work without the secret;
+        # the push step fails loudly if it is missing on a real release.
         required: false
   workflow_dispatch:
     inputs:
