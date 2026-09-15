@@ -31,6 +31,8 @@ __pycache__/
 *.egg-info/
 *.egg
 dist/
+# Templates for the published Go module, not build output.
+!bindings/go/dist/
 build/
 wheels/
 *.whl

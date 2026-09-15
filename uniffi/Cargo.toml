@@ -17,7 +17,7 @@ status = "experimental"
 stability = "alpha"
 
 [lib]
-crate-type = ["lib", "cdylib"]
+crate-type = ["lib", "cdylib", "staticlib"]
 name = "marketdata_uniffi"
 
 [dependencies]
