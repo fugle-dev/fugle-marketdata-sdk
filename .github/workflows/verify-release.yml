@@ -108,8 +108,16 @@ jobs:
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          npm view @fugle/marketdata dist-tags --json | tee tags.json
           EXPECTED_TAG=$([[ "$VERSION" == *-* ]] && echo next || echo latest)
+          # The registry's metadata cache can lag several minutes behind a
+          # publish, so wait for the new dist-tag before judging it.
+          for i in $(seq 1 20); do
+            npm view @fugle/marketdata dist-tags --json --prefer-online | tee tags.json
+            if node -e "process.exit(require('./tags.json')['$EXPECTED_TAG'] === '$VERSION' ? 0 : 1)"; then
+              break
+            fi
+            echo "dist-tag $EXPECTED_TAG not updated yet (attempt $i), retrying in 30s"; sleep 30
+          done
           node -e "
             const t = require('./tags.json');
             if (t['$EXPECTED_TAG'] !== '$VERSION') { console.error('dist-tag $EXPECTED_TAG is', t['$EXPECTED_TAG']); process.exit(1); }
