@@ -147,33 +147,35 @@ jobs:
     steps:
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
-      - name: Create project and install from NuGet
+      # One consumer per shipped TFM, so both lib/net8.0 and lib/net10.0 load.
+      - name: Install from NuGet and construct client
         shell: bash
         env:
           VERSION: ${{ needs.resolve.outputs.uniffi_version }}
         run: |
-          dotnet new console --framework net8.0 -o smoke
-          cd smoke
-          # NuGet indexing can take 10-15 minutes after a push.
-          for i in $(seq 1 40); do
-            dotnet add package Fugle.MarketData --version "$VERSION" && exit 0
-            echo "Attempt $i failed, retrying in 30s"; sleep 30
-          done
-          exit 1
-
-      - name: Construct client
-        working-directory: smoke
-        shell: bash
-        run: |
-          cat > Program.cs <<'CS'
+          for fw in net8.0 net10.0; do
+            dotnet new console --framework "$fw" -o "smoke-$fw"
+            pushd "smoke-$fw" >/dev/null
+            # NuGet indexing can take 10-15 minutes after a push.
+            ok=
+            for i in $(seq 1 40); do
+              if dotnet add package Fugle.MarketData --version "$VERSION"; then ok=1; break; fi
+              echo "Attempt $i failed, retrying in 30s"; sleep 30
+            done
+            [[ -n "$ok" ]] || exit 1
+            cat > Program.cs <<'CS'
           using FugleMarketData;
           using var client = new RestClient(new RestClientOptions { ApiKey = "smoke-test-token" });
           if (client.Stock == null || client.FutOpt == null) throw new System.Exception("missing REST accessors");
           System.Console.WriteLine("OK: Fugle.MarketData loads its native library and constructs clients");
           CS
-          dotnet run
+            dotnet run
+            popd >/dev/null
+          done
 
   go:
     name: Go module (${{ matrix.os }})

@@ -110,6 +110,43 @@ public class RestClient implements AutoCloseable, RestClientInterface {
 
   
     /**
+     * The prefix every request from this client is built on, fully resolved —
+     * host, path prefix and version segment.
+     *
+     * The version segment is chosen by the SDK rather than written by the
+     * caller, so this is the only way to see what a client resolved to.
+     */
+    @Override
+    public String baseUrl()  {
+            try {
+                return FfiConverterString.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCall( _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_restclient_base_url(
+            it, _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
      * Access FutOpt (futures and options) endpoints
      */
     @Override

@@ -37,24 +37,21 @@ cargo build -p marketdata-uniffi --release
 
 ## Generating Bindings
 
-Use the `uniffi-bindgen` command to generate bindings for your target language:
+Bindings are generated in library mode from the compiled crate. The
+generators are third-party tools and must match the UniFFI version in the
+workspace (`0.29.4`):
 
 ```bash
-# Install uniffi-bindgen-go for Go bindings
-cargo install uniffi-bindgen-go --git https://github.com/AbelLykworking/uniffi-bindgen-go --tag v0.2.2+v0.28.3
+cargo install uniffi-bindgen-cs   --git https://github.com/NordSecurity/uniffi-bindgen-cs   --tag v0.10.0+v0.29.4
+cargo install uniffi-bindgen-go   --git https://github.com/NordSecurity/uniffi-bindgen-go   --tag v0.5.0+v0.29.5
+cargo install uniffi-bindgen-cpp  --git https://github.com/NordSecurity/uniffi-bindgen-cpp  --tag v0.9.0+v0.29.4
+cargo install uniffi-bindgen-java --git https://github.com/NordSecurity/uniffi-bindgen-java --tag v0.1.0+v0.29.4
 
-# Generate Go bindings
-uniffi-bindgen-go marketdata-uniffi/src/marketdata.udl -o ./bindings/go/
+# C# output is formatted with CSharpier 1.x when it is on PATH; CI pins 1.3.0
+dotnet tool install -g csharpier --version 1.3.0
 
-# For C# bindings, use uniffi-bindgen-cs
-cargo install uniffi-bindgen-cs
-uniffi-bindgen-cs marketdata-uniffi/src/marketdata.udl -o ./bindings/csharp/
-
-# For C++ bindings
-cargo run --bin uniffi-bindgen -- generate \
-  marketdata-uniffi/src/marketdata.udl \
-  --language cpp \
-  --out-dir ./bindings/cpp/
+make gen-csharp gen-go   # committed; CI fails if these drift
+make gen-cpp gen-java
 ```
 
 ## Language-Specific Usage
@@ -385,7 +382,7 @@ Parse with your language's JSON library (e.g., `Jackson` for Java, `encoding/jso
 
 ## Dependencies
 
-- UniFFI 0.28
+- UniFFI 0.29.4
 - marketdata-core (internal)
 
 ## License

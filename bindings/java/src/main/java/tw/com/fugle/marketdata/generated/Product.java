@@ -15,7 +15,7 @@ public class Product {
     private String name;
     private String underlyingSymbol;
     private String contractType;
-    private Long contractSize;
+    private Double contractSize;
     private String underlyingType;
     private String statusCode;
     private String tradingCurrency;
@@ -33,7 +33,7 @@ public class Product {
         String name, 
         String underlyingSymbol, 
         String contractType, 
-        Long contractSize, 
+        Double contractSize, 
         String underlyingType, 
         String statusCode, 
         String tradingCurrency, 
@@ -102,7 +102,7 @@ public class Product {
         return this.contractType;
     }
     
-    public Long contractSize() {
+    public Double contractSize() {
         return this.contractSize;
     }
     
@@ -159,7 +159,7 @@ public class Product {
     public void setContractType(String contractType) {
         this.contractType = contractType;
     }
-    public void setContractSize(Long contractSize) {
+    public void setContractSize(Double contractSize) {
         this.contractSize = contractSize;
     }
     public void setUnderlyingType(String underlyingType) {

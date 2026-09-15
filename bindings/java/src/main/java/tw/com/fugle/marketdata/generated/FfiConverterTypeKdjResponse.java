@@ -10,11 +10,13 @@ public enum FfiConverterTypeKdjResponse implements FfiConverterRustBuffer<KdjRes
   public KdjResponse read(ByteBuffer buf) {
     return new KdjResponse(
       FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterInteger.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalInteger.INSTANCE.read(buf),
+      FfiConverterOptionalInteger.INSTANCE.read(buf),
+      FfiConverterOptionalInteger.INSTANCE.read(buf),
       FfiConverterSequenceTypeKdjDataPoint.INSTANCE.read(buf)
     );
   }
@@ -23,11 +25,13 @@ public enum FfiConverterTypeKdjResponse implements FfiConverterRustBuffer<KdjRes
   public long allocationSize(KdjResponse value) {
       return (
             FfiConverterString.INSTANCE.allocationSize(value.symbol()) +
-            FfiConverterString.INSTANCE.allocationSize(value.dataType()) +
-            FfiConverterString.INSTANCE.allocationSize(value.exchange()) +
-            FfiConverterString.INSTANCE.allocationSize(value.market()) +
-            FfiConverterString.INSTANCE.allocationSize(value.timeframe()) +
-            FfiConverterInteger.INSTANCE.allocationSize(value.period()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.dataType()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.exchange()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.market()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.timeframe()) +
+            FfiConverterOptionalInteger.INSTANCE.allocationSize(value.rPeriod()) +
+            FfiConverterOptionalInteger.INSTANCE.allocationSize(value.kPeriod()) +
+            FfiConverterOptionalInteger.INSTANCE.allocationSize(value.dPeriod()) +
             FfiConverterSequenceTypeKdjDataPoint.INSTANCE.allocationSize(value.data())
       );
   }
@@ -35,11 +39,13 @@ public enum FfiConverterTypeKdjResponse implements FfiConverterRustBuffer<KdjRes
   @Override
   public void write(KdjResponse value, ByteBuffer buf) {
       FfiConverterString.INSTANCE.write(value.symbol(), buf);
-      FfiConverterString.INSTANCE.write(value.dataType(), buf);
-      FfiConverterString.INSTANCE.write(value.exchange(), buf);
-      FfiConverterString.INSTANCE.write(value.market(), buf);
-      FfiConverterString.INSTANCE.write(value.timeframe(), buf);
-      FfiConverterInteger.INSTANCE.write(value.period(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.dataType(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.exchange(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.market(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.timeframe(), buf);
+      FfiConverterOptionalInteger.INSTANCE.write(value.rPeriod(), buf);
+      FfiConverterOptionalInteger.INSTANCE.write(value.kPeriod(), buf);
+      FfiConverterOptionalInteger.INSTANCE.write(value.dPeriod(), buf);
       FfiConverterSequenceTypeKdjDataPoint.INSTANCE.write(value.data(), buf);
   }
 }

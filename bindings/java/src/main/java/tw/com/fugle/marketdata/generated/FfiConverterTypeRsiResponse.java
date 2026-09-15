@@ -10,10 +10,10 @@ public enum FfiConverterTypeRsiResponse implements FfiConverterRustBuffer<RsiRes
   public RsiResponse read(ByteBuffer buf) {
     return new RsiResponse(
       FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
-      FfiConverterString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterInteger.INSTANCE.read(buf),
       FfiConverterSequenceTypeRsiDataPoint.INSTANCE.read(buf)
     );
@@ -23,10 +23,10 @@ public enum FfiConverterTypeRsiResponse implements FfiConverterRustBuffer<RsiRes
   public long allocationSize(RsiResponse value) {
       return (
             FfiConverterString.INSTANCE.allocationSize(value.symbol()) +
-            FfiConverterString.INSTANCE.allocationSize(value.dataType()) +
-            FfiConverterString.INSTANCE.allocationSize(value.exchange()) +
-            FfiConverterString.INSTANCE.allocationSize(value.market()) +
-            FfiConverterString.INSTANCE.allocationSize(value.timeframe()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.dataType()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.exchange()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.market()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.timeframe()) +
             FfiConverterInteger.INSTANCE.allocationSize(value.period()) +
             FfiConverterSequenceTypeRsiDataPoint.INSTANCE.allocationSize(value.data())
       );
@@ -35,10 +35,10 @@ public enum FfiConverterTypeRsiResponse implements FfiConverterRustBuffer<RsiRes
   @Override
   public void write(RsiResponse value, ByteBuffer buf) {
       FfiConverterString.INSTANCE.write(value.symbol(), buf);
-      FfiConverterString.INSTANCE.write(value.dataType(), buf);
-      FfiConverterString.INSTANCE.write(value.exchange(), buf);
-      FfiConverterString.INSTANCE.write(value.market(), buf);
-      FfiConverterString.INSTANCE.write(value.timeframe(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.dataType(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.exchange(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.market(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.timeframe(), buf);
       FfiConverterInteger.INSTANCE.write(value.period(), buf);
       FfiConverterSequenceTypeRsiDataPoint.INSTANCE.write(value.data(), buf);
   }

@@ -54,8 +54,8 @@ class Program
             // 3. 取得成交明細
             Console.WriteLine("3. 取得 2330 成交明細 (前 3 筆)...");
             var trades = await client.Stock.Intraday.GetTradesAsync("2330");
-            Console.WriteLine($"   共 {trades.data.Count} 筆成交");
-            for (int i = 0; i < Math.Min(3, trades.data.Count); i++)
+            Console.WriteLine($"   共 {trades.data.Length} 筆成交");
+            for (int i = 0; i < Math.Min(3, trades.data.Length); i++)
             {
                 var trade = trades.data[i];
                 Console.WriteLine($"   [{i+1}] 價格: {trade.price}, 數量: {trade.size}, 時間: {trade.time}");
@@ -65,8 +65,8 @@ class Program
             // 4. 取得 K 線資料
             Console.WriteLine("4. 取得 2330 五分鐘 K 線 (前 3 根)...");
             var candles = await client.Stock.Intraday.GetCandlesAsync("2330", "5");
-            Console.WriteLine($"   共 {candles.data.Count} 根 K 線");
-            for (int i = 0; i < Math.Min(3, candles.data.Count); i++)
+            Console.WriteLine($"   共 {candles.data.Length} 根 K 線");
+            for (int i = 0; i < Math.Min(3, candles.data.Length); i++)
             {
                 var candle = candles.data[i];
                 Console.WriteLine($"   [{i+1}] 時間: {candle.date}, O:{candle.open} H:{candle.high} L:{candle.low} C:{candle.close} V:{candle.volume}");

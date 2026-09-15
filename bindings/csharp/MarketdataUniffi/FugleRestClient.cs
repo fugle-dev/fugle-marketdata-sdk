@@ -255,8 +255,8 @@ namespace FugleMarketData
         /// </summary>
         /// <param name="type">Security type (e.g., "EQUITY", "INDEX", "ETF")</param>
         /// <returns>List of tickers matching the type filter</returns>
-        public Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.Ticker>> GetTickersAsync(string type)
-            => _inner.GetTickers(type);
+        public async Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.Ticker>> GetTickersAsync(string type)
+            => new System.Collections.Generic.List<uniffi.marketdata_uniffi.Ticker>(await _inner.GetTickers(type).ConfigureAwait(false));
 
         // ========== Sync Methods (Blocking) ==========
 
@@ -305,7 +305,7 @@ namespace FugleMarketData
         /// Get batch tickers for a security type (blocking).
         /// </summary>
         public System.Collections.Generic.List<uniffi.marketdata_uniffi.Ticker> GetTickers(string type)
-            => _inner.TickersSync(type);
+            => new System.Collections.Generic.List<uniffi.marketdata_uniffi.Ticker>(_inner.TickersSync(type));
     }
 
     /// <summary>
@@ -758,8 +758,8 @@ namespace FugleMarketData
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
         /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
-        public Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>> GetTickersAsync(string type, bool? isSpread = null)
-            => _inner.GetTickers(type, isSpread);
+        public async Task<System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>> GetTickersAsync(string type, bool? isSpread = null)
+            => new System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>(await _inner.GetTickers(type, isSpread).ConfigureAwait(false));
 
         // ========== Sync Methods (Blocking) ==========
 
@@ -813,7 +813,7 @@ namespace FugleMarketData
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
         /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
         public System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker> GetTickers(string type, bool? isSpread = null)
-            => _inner.TickersSync(type, isSpread);
+            => new System.Collections.Generic.List<uniffi.marketdata_uniffi.FutOptTicker>(_inner.TickersSync(type, isSpread));
     }
 
     /// <summary>

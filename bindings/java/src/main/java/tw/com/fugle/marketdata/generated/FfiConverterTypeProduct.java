@@ -15,7 +15,7 @@ public enum FfiConverterTypeProduct implements FfiConverterRustBuffer<Product> {
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
-      FfiConverterOptionalLong.INSTANCE.read(buf),
+      FfiConverterOptionalDouble.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
@@ -37,7 +37,7 @@ public enum FfiConverterTypeProduct implements FfiConverterRustBuffer<Product> {
             FfiConverterOptionalString.INSTANCE.allocationSize(value.name()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.underlyingSymbol()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.contractType()) +
-            FfiConverterOptionalLong.INSTANCE.allocationSize(value.contractSize()) +
+            FfiConverterOptionalDouble.INSTANCE.allocationSize(value.contractSize()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.underlyingType()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.statusCode()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.tradingCurrency()) +
@@ -58,7 +58,7 @@ public enum FfiConverterTypeProduct implements FfiConverterRustBuffer<Product> {
       FfiConverterOptionalString.INSTANCE.write(value.name(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.underlyingSymbol(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.contractType(), buf);
-      FfiConverterOptionalLong.INSTANCE.write(value.contractSize(), buf);
+      FfiConverterOptionalDouble.INSTANCE.write(value.contractSize(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.underlyingType(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.statusCode(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.tradingCurrency(), buf);
