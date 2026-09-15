@@ -56,14 +56,15 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@^11.5.1 && npm --version
 
-      - name: Guard dist-tag
+      # Release policy: only release candidates (X.Y.Z-rc.N) may be published. See scripts/release-versions.py.
+      # Release candidates go to `next` only, never `latest`.
+      - name: Guard version and dist-tag
         run: |
           VERSION=$(node -p "require('./js/package.json').version")
-          case "${{ inputs.npm_tag }}" in
-            latest) [[ "$VERSION" != *-* ]] || { echo "::error::Refusing to publish prerelease $VERSION as latest"; exit 1; } ;;
-            next)   [[ "$VERSION" == *-* ]] || { echo "::error::Refusing to publish stable $VERSION as next"; exit 1; } ;;
-            *)      echo "::error::Unsupported dist-tag ${{ inputs.npm_tag }}"; exit 1 ;;
-          esac
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] \
+            || { echo "::error::$VERSION is not a release candidate; only X.Y.Z-rc.N may be published"; exit 1; }
+          [[ "${{ inputs.npm_tag }}" == "next" ]] \
+            || { echo "::error::Release candidates are published to the next dist-tag only, not ${{ inputs.npm_tag }}"; exit 1; }
 
       - name: Download binding artifacts
         uses: actions/download-artifact@v4

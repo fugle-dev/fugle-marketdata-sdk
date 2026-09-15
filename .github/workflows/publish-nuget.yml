@@ -69,6 +69,13 @@ jobs:
           echo "Verifying native library structure..."
           find bindings/csharp/MarketdataUniffi/runtimes -type f -exec ls -lh {} \;
 
+      # Release policy: only release candidates (X.Y.Z-rc.N) may be published. See scripts/release-versions.py.
+      - name: Guard version
+        if: ${{ !inputs.dry-run }}
+        run: |
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] \
+            || { echo "::error::${{ inputs.version }} is not a release candidate; only X.Y.Z-rc.N may be published"; exit 1; }
+
       - name: Pack NuGet package
         working-directory: bindings/csharp/MarketdataUniffi
         run: |

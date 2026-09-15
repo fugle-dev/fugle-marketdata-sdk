@@ -6,15 +6,21 @@ below; CI runs it on every pull request.
 
 | Track | Manifests (must agree) | Published as | Tag |
 |---|---|---|---|
-| Bindings | `js/package.json`, `[workspace.package]` in `Cargo.toml`, `py/pyproject.toml` (PEP 440 spelling) | PyPI `fugle-marketdata`, npm `@fugle/marketdata` | `vX.Y.Z[-rc.N]` |
+| Bindings | `js/package.json`, `[workspace.package]` in `Cargo.toml`, `py/pyproject.toml` (PEP 440 spelling) | PyPI `fugle-marketdata`, npm `@fugle/marketdata` | `vX.Y.Z-rc.N` |
 | UniFFI | `uniffi/Cargo.toml`, `<Version>` in the `.csproj`, the Gradle `projectVersion` default | NuGet `Fugle.MarketData`, Go `github.com/fugle-dev/fugle-marketdata-go`, C++ tarballs | none of its own |
-| Rust crates | `core/Cargo.toml`, `rust/Cargo.toml`, the `marketdata-core` alias in `Cargo.toml` | crates.io `fugle-marketdata-core`, `fugle-marketdata` | `rust-vX.Y.Z[-rc.N]` |
+| Rust crates | `core/Cargo.toml`, `rust/Cargo.toml`, the `marketdata-core` alias in `Cargo.toml` | crates.io `fugle-marketdata-core`, `fugle-marketdata` | `rust-vX.Y.Z-rc.N` |
 
 ```bash
 python3 scripts/release-versions.py check
 ```
 
 ## Rules
+
+- **Only release candidates (`X.Y.Z-rc.N`) may be published, on every
+  registry.** `scripts/release-versions.py` rejects any other bindings, UniFFI
+  or Rust version before anything is built, and each publish workflow checks
+  again. There is no flag to bypass this; a stable release needs a reviewed
+  change to `RC_ONLY` in that script and to the publish workflow guards.
 
 - A `v*` tag releases the **bindings** track and must equal the bindings
   version. The Release workflow rejects anything else.

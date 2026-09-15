@@ -52,6 +52,8 @@ jobs:
         id: v
         run: |
           python3 scripts/release-versions.py check
+          # Release policy: only release candidates may be published.
+          python3 scripts/release-versions.py require-rc --track rust
           VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("core/Cargo.toml","rb"))["package"]["version"])')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then

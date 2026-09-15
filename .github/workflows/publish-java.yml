@@ -66,6 +66,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      # Release policy: only release candidates (X.Y.Z-rc.N) may be published. See scripts/release-versions.py.
+      - name: Guard version
+        if: ${{ !inputs.dry-run }}
+        run: |
+          [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] \
+            || { echo "::error::${{ inputs.version }} is not a release candidate; only X.Y.Z-rc.N may be published"; exit 1; }
+
       - name: Publish to GitHub Packages
         if: ${{ !inputs.dry-run }}
         working-directory: bindings/java
