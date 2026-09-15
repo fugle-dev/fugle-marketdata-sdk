@@ -677,7 +677,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockclient_ownership()
 		})
-		if checksum != 53152 {
+		if checksum != 26642 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockclient_ownership: UniFFI API checksum mismatch")
 		}
@@ -900,11 +900,38 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings()
+		})
+		if checksum != 13713 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_etf_holdings()
 		})
 		if checksum != 24743 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_etf_holdings: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_institutional_trades()
+		})
+		if checksum != 25453 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_institutional_trades: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution()
+		})
+		if checksum != 20032 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution: UniFFI API checksum mismatch")
 		}
 	}
 	{
@@ -2350,7 +2377,8 @@ type StockClientInterface interface {
 	Historical() *StockHistoricalClient
 	// Access intraday (real-time) endpoints
 	Intraday() *StockIntradayClient
-	// Access ownership endpoints (ETF holdings)
+	// Access ownership endpoints (ETF holdings, institutional trades, director
+	// holdings, TDCC distribution)
 	Ownership() *StockOwnershipClient
 	// Access snapshot (market-wide) endpoints
 	Snapshot() *StockSnapshotClient
@@ -2405,7 +2433,8 @@ func (_self *StockClient) Intraday() *StockIntradayClient {
 	}))
 }
 
-// Access ownership endpoints (ETF holdings)
+// Access ownership endpoints (ETF holdings, institutional trades, director
+// holdings, TDCC distribution)
 func (_self *StockClient) Ownership() *StockOwnershipClient {
 	_pointer := _self.ffiObject.incrementPointer("*StockClient")
 	defer _self.ffiObject.decrementPointer()
@@ -3316,13 +3345,51 @@ func (_ FfiDestroyerStockIntradayClient) Destroy(value *StockIntradayClient) {
 
 // Stock ownership endpoints client
 type StockOwnershipClientInterface interface {
+	// Get monthly holdings and pledges disclosed by directors and supervisors (async)
+	GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (DirectorHoldingsResponse, *MarketDataError)
 	// Get the constituents an ETF held over a date range (async)
 	GetEtfHoldings(symbol string, from *string, to *string, sort *string) (EtfHoldingsResponse, *MarketDataError)
+	// Get daily trading by the three major institutional investors (async)
+	GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (InstitutionalTradesResponse, *MarketDataError)
+	// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
+	GetTdccDistribution(symbol string, from *string, to *string, sort *string) (TdccDistributionResponse, *MarketDataError)
 }
 
 // Stock ownership endpoints client
 type StockOwnershipClient struct {
 	ffiObject FfiObject
+}
+
+// Get monthly holdings and pledges disclosed by directors and supervisors (async)
+func (_self *StockOwnershipClient) GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (DirectorHoldingsResponse, *MarketDataError) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	res, err := uniffiRustCallAsync[MarketDataError](
+		FfiConverterMarketDataErrorINSTANCE,
+		// completeFn
+		func(handle C.uint64_t, status *C.RustCallStatus) RustBufferI {
+			res := C.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(handle, status)
+			return GoRustBuffer{
+				inner: res,
+			}
+		},
+		// liftFn
+		func(ffi RustBufferI) DirectorHoldingsResponse {
+			return FfiConverterDirectorHoldingsResponseINSTANCE.Lift(ffi)
+		},
+		C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_director_holdings(
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort)),
+		// pollFn
+		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
+		},
+		// freeFn
+		func(handle C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
+		},
+	)
+
+	return res, err
 }
 
 // Get the constituents an ETF held over a date range (async)
@@ -3343,6 +3410,70 @@ func (_self *StockOwnershipClient) GetEtfHoldings(symbol string, from *string, t
 			return FfiConverterEtfHoldingsResponseINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_etf_holdings(
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort)),
+		// pollFn
+		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
+		},
+		// freeFn
+		func(handle C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
+		},
+	)
+
+	return res, err
+}
+
+// Get daily trading by the three major institutional investors (async)
+func (_self *StockOwnershipClient) GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (InstitutionalTradesResponse, *MarketDataError) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	res, err := uniffiRustCallAsync[MarketDataError](
+		FfiConverterMarketDataErrorINSTANCE,
+		// completeFn
+		func(handle C.uint64_t, status *C.RustCallStatus) RustBufferI {
+			res := C.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(handle, status)
+			return GoRustBuffer{
+				inner: res,
+			}
+		},
+		// liftFn
+		func(ffi RustBufferI) InstitutionalTradesResponse {
+			return FfiConverterInstitutionalTradesResponseINSTANCE.Lift(ffi)
+		},
+		C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_institutional_trades(
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort)),
+		// pollFn
+		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
+		},
+		// freeFn
+		func(handle C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
+		},
+	)
+
+	return res, err
+}
+
+// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
+func (_self *StockOwnershipClient) GetTdccDistribution(symbol string, from *string, to *string, sort *string) (TdccDistributionResponse, *MarketDataError) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	res, err := uniffiRustCallAsync[MarketDataError](
+		FfiConverterMarketDataErrorINSTANCE,
+		// completeFn
+		func(handle C.uint64_t, status *C.RustCallStatus) RustBufferI {
+			res := C.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(handle, status)
+			return GoRustBuffer{
+				inner: res,
+			}
+		},
+		// liftFn
+		func(ffi RustBufferI) TdccDistributionResponse {
+			return FfiConverterTdccDistributionResponseINSTANCE.Lift(ffi)
+		},
+		C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_tdcc_distribution(
 			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
@@ -4997,6 +5128,173 @@ func (_ FfiDestroyerCapitalChangesResponse) Destroy(value CapitalChangesResponse
 	value.Destroy()
 }
 
+// One director's or supervisor's disclosed holdings
+type DirectorHolding struct {
+	Order                *int64
+	Title                string
+	Name                 string
+	ElectedShares        *float64
+	HeldShares           *float64
+	PledgedShares        *float64
+	PledgeRatio          *float64
+	RelatedHeldShares    *float64
+	RelatedPledgedShares *float64
+	RelatedPledgeRatio   *float64
+}
+
+func (r *DirectorHolding) Destroy() {
+	FfiDestroyerOptionalInt64{}.Destroy(r.Order)
+	FfiDestroyerString{}.Destroy(r.Title)
+	FfiDestroyerString{}.Destroy(r.Name)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.ElectedShares)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.HeldShares)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.PledgedShares)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.PledgeRatio)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.RelatedHeldShares)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.RelatedPledgedShares)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.RelatedPledgeRatio)
+}
+
+type FfiConverterDirectorHolding struct{}
+
+var FfiConverterDirectorHoldingINSTANCE = FfiConverterDirectorHolding{}
+
+func (c FfiConverterDirectorHolding) Lift(rb RustBufferI) DirectorHolding {
+	return LiftFromRustBuffer[DirectorHolding](c, rb)
+}
+
+func (c FfiConverterDirectorHolding) Read(reader io.Reader) DirectorHolding {
+	return DirectorHolding{
+		FfiConverterOptionalInt64INSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterDirectorHolding) Lower(value DirectorHolding) C.RustBuffer {
+	return LowerIntoRustBuffer[DirectorHolding](c, value)
+}
+
+func (c FfiConverterDirectorHolding) Write(writer io.Writer, value DirectorHolding) {
+	FfiConverterOptionalInt64INSTANCE.Write(writer, value.Order)
+	FfiConverterStringINSTANCE.Write(writer, value.Title)
+	FfiConverterStringINSTANCE.Write(writer, value.Name)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.ElectedShares)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.HeldShares)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.PledgedShares)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.PledgeRatio)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.RelatedHeldShares)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.RelatedPledgedShares)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.RelatedPledgeRatio)
+}
+
+type FfiDestroyerDirectorHolding struct{}
+
+func (_ FfiDestroyerDirectorHolding) Destroy(value DirectorHolding) {
+	value.Destroy()
+}
+
+// Director holdings disclosed for a single month (`date` is YYYY-MM)
+type DirectorHoldingsEntry struct {
+	Date      string
+	Directors []DirectorHolding
+}
+
+func (r *DirectorHoldingsEntry) Destroy() {
+	FfiDestroyerString{}.Destroy(r.Date)
+	FfiDestroyerSequenceDirectorHolding{}.Destroy(r.Directors)
+}
+
+type FfiConverterDirectorHoldingsEntry struct{}
+
+var FfiConverterDirectorHoldingsEntryINSTANCE = FfiConverterDirectorHoldingsEntry{}
+
+func (c FfiConverterDirectorHoldingsEntry) Lift(rb RustBufferI) DirectorHoldingsEntry {
+	return LiftFromRustBuffer[DirectorHoldingsEntry](c, rb)
+}
+
+func (c FfiConverterDirectorHoldingsEntry) Read(reader io.Reader) DirectorHoldingsEntry {
+	return DirectorHoldingsEntry{
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterSequenceDirectorHoldingINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterDirectorHoldingsEntry) Lower(value DirectorHoldingsEntry) C.RustBuffer {
+	return LowerIntoRustBuffer[DirectorHoldingsEntry](c, value)
+}
+
+func (c FfiConverterDirectorHoldingsEntry) Write(writer io.Writer, value DirectorHoldingsEntry) {
+	FfiConverterStringINSTANCE.Write(writer, value.Date)
+	FfiConverterSequenceDirectorHoldingINSTANCE.Write(writer, value.Directors)
+}
+
+type FfiDestroyerDirectorHoldingsEntry struct{}
+
+func (_ FfiDestroyerDirectorHoldingsEntry) Destroy(value DirectorHoldingsEntry) {
+	value.Destroy()
+}
+
+// Response for `stock/ownership/director-holdings/{symbol}`
+type DirectorHoldingsResponse struct {
+	DataType *string
+	Exchange *string
+	Market   *string
+	Symbol   string
+	Data     []DirectorHoldingsEntry
+}
+
+func (r *DirectorHoldingsResponse) Destroy() {
+	FfiDestroyerOptionalString{}.Destroy(r.DataType)
+	FfiDestroyerOptionalString{}.Destroy(r.Exchange)
+	FfiDestroyerOptionalString{}.Destroy(r.Market)
+	FfiDestroyerString{}.Destroy(r.Symbol)
+	FfiDestroyerSequenceDirectorHoldingsEntry{}.Destroy(r.Data)
+}
+
+type FfiConverterDirectorHoldingsResponse struct{}
+
+var FfiConverterDirectorHoldingsResponseINSTANCE = FfiConverterDirectorHoldingsResponse{}
+
+func (c FfiConverterDirectorHoldingsResponse) Lift(rb RustBufferI) DirectorHoldingsResponse {
+	return LiftFromRustBuffer[DirectorHoldingsResponse](c, rb)
+}
+
+func (c FfiConverterDirectorHoldingsResponse) Read(reader io.Reader) DirectorHoldingsResponse {
+	return DirectorHoldingsResponse{
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterSequenceDirectorHoldingsEntryINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterDirectorHoldingsResponse) Lower(value DirectorHoldingsResponse) C.RustBuffer {
+	return LowerIntoRustBuffer[DirectorHoldingsResponse](c, value)
+}
+
+func (c FfiConverterDirectorHoldingsResponse) Write(writer io.Writer, value DirectorHoldingsResponse) {
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Exchange)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Market)
+	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
+	FfiConverterSequenceDirectorHoldingsEntryINSTANCE.Write(writer, value.Data)
+}
+
+type FfiDestroyerDirectorHoldingsResponse struct{}
+
+func (_ FfiDestroyerDirectorHoldingsResponse) Destroy(value DirectorHoldingsResponse) {
+	value.Destroy()
+}
+
 // Dividend entry
 type Dividend struct {
 	Symbol         string
@@ -6010,6 +6308,158 @@ func (c FfiConverterHistoricalCandlesResponse) Write(writer io.Writer, value His
 type FfiDestroyerHistoricalCandlesResponse struct{}
 
 func (_ FfiDestroyerHistoricalCandlesResponse) Destroy(value HistoricalCandlesResponse) {
+	value.Destroy()
+}
+
+// Buy / sell / net shares traded by one class of institutional investor.
+// Fields are `None` when the source has no figure for that day.
+type InstitutionalInvestorTrade struct {
+	Buy  *float64
+	Sell *float64
+	Net  *float64
+}
+
+func (r *InstitutionalInvestorTrade) Destroy() {
+	FfiDestroyerOptionalFloat64{}.Destroy(r.Buy)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.Sell)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.Net)
+}
+
+type FfiConverterInstitutionalInvestorTrade struct{}
+
+var FfiConverterInstitutionalInvestorTradeINSTANCE = FfiConverterInstitutionalInvestorTrade{}
+
+func (c FfiConverterInstitutionalInvestorTrade) Lift(rb RustBufferI) InstitutionalInvestorTrade {
+	return LiftFromRustBuffer[InstitutionalInvestorTrade](c, rb)
+}
+
+func (c FfiConverterInstitutionalInvestorTrade) Read(reader io.Reader) InstitutionalInvestorTrade {
+	return InstitutionalInvestorTrade{
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterInstitutionalInvestorTrade) Lower(value InstitutionalInvestorTrade) C.RustBuffer {
+	return LowerIntoRustBuffer[InstitutionalInvestorTrade](c, value)
+}
+
+func (c FfiConverterInstitutionalInvestorTrade) Write(writer io.Writer, value InstitutionalInvestorTrade) {
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Buy)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Sell)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Net)
+}
+
+type FfiDestroyerInstitutionalInvestorTrade struct{}
+
+func (_ FfiDestroyerInstitutionalInvestorTrade) Destroy(value InstitutionalInvestorTrade) {
+	value.Destroy()
+}
+
+// Institutional investor trading on a single date
+type InstitutionalTradesEntry struct {
+	Date    string
+	Foreign *InstitutionalInvestorTrade
+	Trust   *InstitutionalInvestorTrade
+	Dealer  *InstitutionalInvestorTrade
+	Total   *float64
+}
+
+func (r *InstitutionalTradesEntry) Destroy() {
+	FfiDestroyerString{}.Destroy(r.Date)
+	FfiDestroyerOptionalInstitutionalInvestorTrade{}.Destroy(r.Foreign)
+	FfiDestroyerOptionalInstitutionalInvestorTrade{}.Destroy(r.Trust)
+	FfiDestroyerOptionalInstitutionalInvestorTrade{}.Destroy(r.Dealer)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.Total)
+}
+
+type FfiConverterInstitutionalTradesEntry struct{}
+
+var FfiConverterInstitutionalTradesEntryINSTANCE = FfiConverterInstitutionalTradesEntry{}
+
+func (c FfiConverterInstitutionalTradesEntry) Lift(rb RustBufferI) InstitutionalTradesEntry {
+	return LiftFromRustBuffer[InstitutionalTradesEntry](c, rb)
+}
+
+func (c FfiConverterInstitutionalTradesEntry) Read(reader io.Reader) InstitutionalTradesEntry {
+	return InstitutionalTradesEntry{
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Read(reader),
+		FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Read(reader),
+		FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterInstitutionalTradesEntry) Lower(value InstitutionalTradesEntry) C.RustBuffer {
+	return LowerIntoRustBuffer[InstitutionalTradesEntry](c, value)
+}
+
+func (c FfiConverterInstitutionalTradesEntry) Write(writer io.Writer, value InstitutionalTradesEntry) {
+	FfiConverterStringINSTANCE.Write(writer, value.Date)
+	FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Write(writer, value.Foreign)
+	FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Write(writer, value.Trust)
+	FfiConverterOptionalInstitutionalInvestorTradeINSTANCE.Write(writer, value.Dealer)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Total)
+}
+
+type FfiDestroyerInstitutionalTradesEntry struct{}
+
+func (_ FfiDestroyerInstitutionalTradesEntry) Destroy(value InstitutionalTradesEntry) {
+	value.Destroy()
+}
+
+// Response for `stock/ownership/institutional-trades/{symbol}`
+type InstitutionalTradesResponse struct {
+	DataType *string
+	Exchange *string
+	Market   *string
+	Symbol   string
+	Data     []InstitutionalTradesEntry
+}
+
+func (r *InstitutionalTradesResponse) Destroy() {
+	FfiDestroyerOptionalString{}.Destroy(r.DataType)
+	FfiDestroyerOptionalString{}.Destroy(r.Exchange)
+	FfiDestroyerOptionalString{}.Destroy(r.Market)
+	FfiDestroyerString{}.Destroy(r.Symbol)
+	FfiDestroyerSequenceInstitutionalTradesEntry{}.Destroy(r.Data)
+}
+
+type FfiConverterInstitutionalTradesResponse struct{}
+
+var FfiConverterInstitutionalTradesResponseINSTANCE = FfiConverterInstitutionalTradesResponse{}
+
+func (c FfiConverterInstitutionalTradesResponse) Lift(rb RustBufferI) InstitutionalTradesResponse {
+	return LiftFromRustBuffer[InstitutionalTradesResponse](c, rb)
+}
+
+func (c FfiConverterInstitutionalTradesResponse) Read(reader io.Reader) InstitutionalTradesResponse {
+	return InstitutionalTradesResponse{
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterSequenceInstitutionalTradesEntryINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterInstitutionalTradesResponse) Lower(value InstitutionalTradesResponse) C.RustBuffer {
+	return LowerIntoRustBuffer[InstitutionalTradesResponse](c, value)
+}
+
+func (c FfiConverterInstitutionalTradesResponse) Write(writer io.Writer, value InstitutionalTradesResponse) {
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Exchange)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Market)
+	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
+	FfiConverterSequenceInstitutionalTradesEntryINSTANCE.Write(writer, value.Data)
+}
+
+type FfiDestroyerInstitutionalTradesResponse struct{}
+
+func (_ FfiDestroyerInstitutionalTradesResponse) Destroy(value InstitutionalTradesResponse) {
 	value.Destroy()
 }
 
@@ -7597,6 +8047,149 @@ func (_ FfiDestroyerStreamingVersionRecord) Destroy(value StreamingVersionRecord
 	value.Destroy()
 }
 
+// TDCC shareholder distribution on a single date
+type TdccDistributionEntry struct {
+	Date          string
+	Distributions []TdccDistributionLevel
+}
+
+func (r *TdccDistributionEntry) Destroy() {
+	FfiDestroyerString{}.Destroy(r.Date)
+	FfiDestroyerSequenceTdccDistributionLevel{}.Destroy(r.Distributions)
+}
+
+type FfiConverterTdccDistributionEntry struct{}
+
+var FfiConverterTdccDistributionEntryINSTANCE = FfiConverterTdccDistributionEntry{}
+
+func (c FfiConverterTdccDistributionEntry) Lift(rb RustBufferI) TdccDistributionEntry {
+	return LiftFromRustBuffer[TdccDistributionEntry](c, rb)
+}
+
+func (c FfiConverterTdccDistributionEntry) Read(reader io.Reader) TdccDistributionEntry {
+	return TdccDistributionEntry{
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterSequenceTdccDistributionLevelINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterTdccDistributionEntry) Lower(value TdccDistributionEntry) C.RustBuffer {
+	return LowerIntoRustBuffer[TdccDistributionEntry](c, value)
+}
+
+func (c FfiConverterTdccDistributionEntry) Write(writer io.Writer, value TdccDistributionEntry) {
+	FfiConverterStringINSTANCE.Write(writer, value.Date)
+	FfiConverterSequenceTdccDistributionLevelINSTANCE.Write(writer, value.Distributions)
+}
+
+type FfiDestroyerTdccDistributionEntry struct{}
+
+func (_ FfiDestroyerTdccDistributionEntry) Destroy(value TdccDistributionEntry) {
+	value.Destroy()
+}
+
+// One holding-size bracket of the TDCC shareholder distribution
+type TdccDistributionLevel struct {
+	Range      string
+	Holders    *int64
+	Shares     *float64
+	Proportion *float64
+}
+
+func (r *TdccDistributionLevel) Destroy() {
+	FfiDestroyerString{}.Destroy(r.Range)
+	FfiDestroyerOptionalInt64{}.Destroy(r.Holders)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.Shares)
+	FfiDestroyerOptionalFloat64{}.Destroy(r.Proportion)
+}
+
+type FfiConverterTdccDistributionLevel struct{}
+
+var FfiConverterTdccDistributionLevelINSTANCE = FfiConverterTdccDistributionLevel{}
+
+func (c FfiConverterTdccDistributionLevel) Lift(rb RustBufferI) TdccDistributionLevel {
+	return LiftFromRustBuffer[TdccDistributionLevel](c, rb)
+}
+
+func (c FfiConverterTdccDistributionLevel) Read(reader io.Reader) TdccDistributionLevel {
+	return TdccDistributionLevel{
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterOptionalInt64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+		FfiConverterOptionalFloat64INSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterTdccDistributionLevel) Lower(value TdccDistributionLevel) C.RustBuffer {
+	return LowerIntoRustBuffer[TdccDistributionLevel](c, value)
+}
+
+func (c FfiConverterTdccDistributionLevel) Write(writer io.Writer, value TdccDistributionLevel) {
+	FfiConverterStringINSTANCE.Write(writer, value.Range)
+	FfiConverterOptionalInt64INSTANCE.Write(writer, value.Holders)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Shares)
+	FfiConverterOptionalFloat64INSTANCE.Write(writer, value.Proportion)
+}
+
+type FfiDestroyerTdccDistributionLevel struct{}
+
+func (_ FfiDestroyerTdccDistributionLevel) Destroy(value TdccDistributionLevel) {
+	value.Destroy()
+}
+
+// Response for `stock/ownership/tdcc-distribution/{symbol}`
+type TdccDistributionResponse struct {
+	DataType *string
+	Exchange *string
+	Market   *string
+	Symbol   string
+	Data     []TdccDistributionEntry
+}
+
+func (r *TdccDistributionResponse) Destroy() {
+	FfiDestroyerOptionalString{}.Destroy(r.DataType)
+	FfiDestroyerOptionalString{}.Destroy(r.Exchange)
+	FfiDestroyerOptionalString{}.Destroy(r.Market)
+	FfiDestroyerString{}.Destroy(r.Symbol)
+	FfiDestroyerSequenceTdccDistributionEntry{}.Destroy(r.Data)
+}
+
+type FfiConverterTdccDistributionResponse struct{}
+
+var FfiConverterTdccDistributionResponseINSTANCE = FfiConverterTdccDistributionResponse{}
+
+func (c FfiConverterTdccDistributionResponse) Lift(rb RustBufferI) TdccDistributionResponse {
+	return LiftFromRustBuffer[TdccDistributionResponse](c, rb)
+}
+
+func (c FfiConverterTdccDistributionResponse) Read(reader io.Reader) TdccDistributionResponse {
+	return TdccDistributionResponse{
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterSequenceTdccDistributionEntryINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterTdccDistributionResponse) Lower(value TdccDistributionResponse) C.RustBuffer {
+	return LowerIntoRustBuffer[TdccDistributionResponse](c, value)
+}
+
+func (c FfiConverterTdccDistributionResponse) Write(writer io.Writer, value TdccDistributionResponse) {
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.DataType)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Exchange)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Market)
+	FfiConverterStringINSTANCE.Write(writer, value.Symbol)
+	FfiConverterSequenceTdccDistributionEntryINSTANCE.Write(writer, value.Data)
+}
+
+type FfiDestroyerTdccDistributionResponse struct{}
+
+func (_ FfiDestroyerTdccDistributionResponse) Destroy(value TdccDistributionResponse) {
+	value.Destroy()
+}
+
 // Stock ticker info
 type Ticker struct {
 	Date                        *string
@@ -9110,6 +9703,43 @@ func (_ FfiDestroyerOptionalHealthCheckConfigRecord) Destroy(value *HealthCheckC
 	}
 }
 
+type FfiConverterOptionalInstitutionalInvestorTrade struct{}
+
+var FfiConverterOptionalInstitutionalInvestorTradeINSTANCE = FfiConverterOptionalInstitutionalInvestorTrade{}
+
+func (c FfiConverterOptionalInstitutionalInvestorTrade) Lift(rb RustBufferI) *InstitutionalInvestorTrade {
+	return LiftFromRustBuffer[*InstitutionalInvestorTrade](c, rb)
+}
+
+func (_ FfiConverterOptionalInstitutionalInvestorTrade) Read(reader io.Reader) *InstitutionalInvestorTrade {
+	if readInt8(reader) == 0 {
+		return nil
+	}
+	temp := FfiConverterInstitutionalInvestorTradeINSTANCE.Read(reader)
+	return &temp
+}
+
+func (c FfiConverterOptionalInstitutionalInvestorTrade) Lower(value *InstitutionalInvestorTrade) C.RustBuffer {
+	return LowerIntoRustBuffer[*InstitutionalInvestorTrade](c, value)
+}
+
+func (_ FfiConverterOptionalInstitutionalInvestorTrade) Write(writer io.Writer, value *InstitutionalInvestorTrade) {
+	if value == nil {
+		writeInt8(writer, 0)
+	} else {
+		writeInt8(writer, 1)
+		FfiConverterInstitutionalInvestorTradeINSTANCE.Write(writer, *value)
+	}
+}
+
+type FfiDestroyerOptionalInstitutionalInvestorTrade struct{}
+
+func (_ FfiDestroyerOptionalInstitutionalInvestorTrade) Destroy(value *InstitutionalInvestorTrade) {
+	if value != nil {
+		FfiDestroyerInstitutionalInvestorTrade{}.Destroy(*value)
+	}
+}
+
 type FfiConverterOptionalReconnectConfigRecord struct{}
 
 var FfiConverterOptionalReconnectConfigRecordINSTANCE = FfiConverterOptionalReconnectConfigRecord{}
@@ -9461,6 +10091,92 @@ func (FfiDestroyerSequenceCapitalChange) Destroy(sequence []CapitalChange) {
 	}
 }
 
+type FfiConverterSequenceDirectorHolding struct{}
+
+var FfiConverterSequenceDirectorHoldingINSTANCE = FfiConverterSequenceDirectorHolding{}
+
+func (c FfiConverterSequenceDirectorHolding) Lift(rb RustBufferI) []DirectorHolding {
+	return LiftFromRustBuffer[[]DirectorHolding](c, rb)
+}
+
+func (c FfiConverterSequenceDirectorHolding) Read(reader io.Reader) []DirectorHolding {
+	length := readInt32(reader)
+	if length == 0 {
+		return nil
+	}
+	result := make([]DirectorHolding, 0, length)
+	for i := int32(0); i < length; i++ {
+		result = append(result, FfiConverterDirectorHoldingINSTANCE.Read(reader))
+	}
+	return result
+}
+
+func (c FfiConverterSequenceDirectorHolding) Lower(value []DirectorHolding) C.RustBuffer {
+	return LowerIntoRustBuffer[[]DirectorHolding](c, value)
+}
+
+func (c FfiConverterSequenceDirectorHolding) Write(writer io.Writer, value []DirectorHolding) {
+	if len(value) > math.MaxInt32 {
+		panic("[]DirectorHolding is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(value)))
+	for _, item := range value {
+		FfiConverterDirectorHoldingINSTANCE.Write(writer, item)
+	}
+}
+
+type FfiDestroyerSequenceDirectorHolding struct{}
+
+func (FfiDestroyerSequenceDirectorHolding) Destroy(sequence []DirectorHolding) {
+	for _, value := range sequence {
+		FfiDestroyerDirectorHolding{}.Destroy(value)
+	}
+}
+
+type FfiConverterSequenceDirectorHoldingsEntry struct{}
+
+var FfiConverterSequenceDirectorHoldingsEntryINSTANCE = FfiConverterSequenceDirectorHoldingsEntry{}
+
+func (c FfiConverterSequenceDirectorHoldingsEntry) Lift(rb RustBufferI) []DirectorHoldingsEntry {
+	return LiftFromRustBuffer[[]DirectorHoldingsEntry](c, rb)
+}
+
+func (c FfiConverterSequenceDirectorHoldingsEntry) Read(reader io.Reader) []DirectorHoldingsEntry {
+	length := readInt32(reader)
+	if length == 0 {
+		return nil
+	}
+	result := make([]DirectorHoldingsEntry, 0, length)
+	for i := int32(0); i < length; i++ {
+		result = append(result, FfiConverterDirectorHoldingsEntryINSTANCE.Read(reader))
+	}
+	return result
+}
+
+func (c FfiConverterSequenceDirectorHoldingsEntry) Lower(value []DirectorHoldingsEntry) C.RustBuffer {
+	return LowerIntoRustBuffer[[]DirectorHoldingsEntry](c, value)
+}
+
+func (c FfiConverterSequenceDirectorHoldingsEntry) Write(writer io.Writer, value []DirectorHoldingsEntry) {
+	if len(value) > math.MaxInt32 {
+		panic("[]DirectorHoldingsEntry is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(value)))
+	for _, item := range value {
+		FfiConverterDirectorHoldingsEntryINSTANCE.Write(writer, item)
+	}
+}
+
+type FfiDestroyerSequenceDirectorHoldingsEntry struct{}
+
+func (FfiDestroyerSequenceDirectorHoldingsEntry) Destroy(sequence []DirectorHoldingsEntry) {
+	for _, value := range sequence {
+		FfiDestroyerDirectorHoldingsEntry{}.Destroy(value)
+	}
+}
+
 type FfiConverterSequenceDividend struct{}
 
 var FfiConverterSequenceDividendINSTANCE = FfiConverterSequenceDividend{}
@@ -9802,6 +10518,49 @@ type FfiDestroyerSequenceHistoricalCandle struct{}
 func (FfiDestroyerSequenceHistoricalCandle) Destroy(sequence []HistoricalCandle) {
 	for _, value := range sequence {
 		FfiDestroyerHistoricalCandle{}.Destroy(value)
+	}
+}
+
+type FfiConverterSequenceInstitutionalTradesEntry struct{}
+
+var FfiConverterSequenceInstitutionalTradesEntryINSTANCE = FfiConverterSequenceInstitutionalTradesEntry{}
+
+func (c FfiConverterSequenceInstitutionalTradesEntry) Lift(rb RustBufferI) []InstitutionalTradesEntry {
+	return LiftFromRustBuffer[[]InstitutionalTradesEntry](c, rb)
+}
+
+func (c FfiConverterSequenceInstitutionalTradesEntry) Read(reader io.Reader) []InstitutionalTradesEntry {
+	length := readInt32(reader)
+	if length == 0 {
+		return nil
+	}
+	result := make([]InstitutionalTradesEntry, 0, length)
+	for i := int32(0); i < length; i++ {
+		result = append(result, FfiConverterInstitutionalTradesEntryINSTANCE.Read(reader))
+	}
+	return result
+}
+
+func (c FfiConverterSequenceInstitutionalTradesEntry) Lower(value []InstitutionalTradesEntry) C.RustBuffer {
+	return LowerIntoRustBuffer[[]InstitutionalTradesEntry](c, value)
+}
+
+func (c FfiConverterSequenceInstitutionalTradesEntry) Write(writer io.Writer, value []InstitutionalTradesEntry) {
+	if len(value) > math.MaxInt32 {
+		panic("[]InstitutionalTradesEntry is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(value)))
+	for _, item := range value {
+		FfiConverterInstitutionalTradesEntryINSTANCE.Write(writer, item)
+	}
+}
+
+type FfiDestroyerSequenceInstitutionalTradesEntry struct{}
+
+func (FfiDestroyerSequenceInstitutionalTradesEntry) Destroy(sequence []InstitutionalTradesEntry) {
+	for _, value := range sequence {
+		FfiDestroyerInstitutionalTradesEntry{}.Destroy(value)
 	}
 }
 
@@ -10232,6 +10991,92 @@ type FfiDestroyerSequenceSnapshotQuote struct{}
 func (FfiDestroyerSequenceSnapshotQuote) Destroy(sequence []SnapshotQuote) {
 	for _, value := range sequence {
 		FfiDestroyerSnapshotQuote{}.Destroy(value)
+	}
+}
+
+type FfiConverterSequenceTdccDistributionEntry struct{}
+
+var FfiConverterSequenceTdccDistributionEntryINSTANCE = FfiConverterSequenceTdccDistributionEntry{}
+
+func (c FfiConverterSequenceTdccDistributionEntry) Lift(rb RustBufferI) []TdccDistributionEntry {
+	return LiftFromRustBuffer[[]TdccDistributionEntry](c, rb)
+}
+
+func (c FfiConverterSequenceTdccDistributionEntry) Read(reader io.Reader) []TdccDistributionEntry {
+	length := readInt32(reader)
+	if length == 0 {
+		return nil
+	}
+	result := make([]TdccDistributionEntry, 0, length)
+	for i := int32(0); i < length; i++ {
+		result = append(result, FfiConverterTdccDistributionEntryINSTANCE.Read(reader))
+	}
+	return result
+}
+
+func (c FfiConverterSequenceTdccDistributionEntry) Lower(value []TdccDistributionEntry) C.RustBuffer {
+	return LowerIntoRustBuffer[[]TdccDistributionEntry](c, value)
+}
+
+func (c FfiConverterSequenceTdccDistributionEntry) Write(writer io.Writer, value []TdccDistributionEntry) {
+	if len(value) > math.MaxInt32 {
+		panic("[]TdccDistributionEntry is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(value)))
+	for _, item := range value {
+		FfiConverterTdccDistributionEntryINSTANCE.Write(writer, item)
+	}
+}
+
+type FfiDestroyerSequenceTdccDistributionEntry struct{}
+
+func (FfiDestroyerSequenceTdccDistributionEntry) Destroy(sequence []TdccDistributionEntry) {
+	for _, value := range sequence {
+		FfiDestroyerTdccDistributionEntry{}.Destroy(value)
+	}
+}
+
+type FfiConverterSequenceTdccDistributionLevel struct{}
+
+var FfiConverterSequenceTdccDistributionLevelINSTANCE = FfiConverterSequenceTdccDistributionLevel{}
+
+func (c FfiConverterSequenceTdccDistributionLevel) Lift(rb RustBufferI) []TdccDistributionLevel {
+	return LiftFromRustBuffer[[]TdccDistributionLevel](c, rb)
+}
+
+func (c FfiConverterSequenceTdccDistributionLevel) Read(reader io.Reader) []TdccDistributionLevel {
+	length := readInt32(reader)
+	if length == 0 {
+		return nil
+	}
+	result := make([]TdccDistributionLevel, 0, length)
+	for i := int32(0); i < length; i++ {
+		result = append(result, FfiConverterTdccDistributionLevelINSTANCE.Read(reader))
+	}
+	return result
+}
+
+func (c FfiConverterSequenceTdccDistributionLevel) Lower(value []TdccDistributionLevel) C.RustBuffer {
+	return LowerIntoRustBuffer[[]TdccDistributionLevel](c, value)
+}
+
+func (c FfiConverterSequenceTdccDistributionLevel) Write(writer io.Writer, value []TdccDistributionLevel) {
+	if len(value) > math.MaxInt32 {
+		panic("[]TdccDistributionLevel is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(value)))
+	for _, item := range value {
+		FfiConverterTdccDistributionLevelINSTANCE.Write(writer, item)
+	}
+}
+
+type FfiDestroyerSequenceTdccDistributionLevel struct{}
+
+func (FfiDestroyerSequenceTdccDistributionLevel) Destroy(sequence []TdccDistributionLevel) {
+	for _, value := range sequence {
+		FfiDestroyerTdccDistributionLevel{}.Destroy(value)
 	}
 }
 
