@@ -102,7 +102,11 @@ mod types;
 mod websocket;
 
 /// Python module for marketdata-core bindings
-#[pymodule]
+///
+/// `gil_used = true` keeps the pre-0.28 PyO3 default. The callback and
+/// background-thread code has not been audited for free-threaded CPython, and
+/// the published wheels are abi3, which free-threaded interpreters cannot load.
+#[pymodule(gil_used = true)]
 fn fugle_marketdata(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register the main RestClient class
     m.add_class::<client::RestClient>()?;

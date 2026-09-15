@@ -30,7 +30,7 @@ Java bindings exist in the repository but are not published yet.
 
 ## Python
 
-Wheels are built for CPython 3.7+ using the stable ABI (abi3):
+Wheels are built for CPython 3.8+ using the stable ABI (abi3):
 
 | OS | Architectures |
 |---|---|

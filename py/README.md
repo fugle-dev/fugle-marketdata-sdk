@@ -9,7 +9,7 @@ core through PyO3.
 pip install --pre fugle-marketdata   # 3.x pre-release
 ```
 
-Wheels are published for CPython 3.7+ (abi3) on Linux glibc (x86_64,
+Wheels are published for CPython 3.8+ (abi3) on Linux glibc (x86_64,
 aarch64), macOS (x86_64, arm64) and Windows x64.
 
 ### Development Build
