@@ -52,6 +52,7 @@ jobs:
   python:
     name: PyPI (${{ matrix.os }})
     needs: resolve
+    if: vars.PUBLISH_PYPI == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -90,6 +91,7 @@ jobs:
   nodejs:
     name: npm (${{ matrix.os }})
     needs: resolve
+    if: vars.PUBLISH_NPM == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -142,6 +144,7 @@ jobs:
   csharp:
     name: NuGet (${{ matrix.os }})
     needs: resolve
+    if: vars.PUBLISH_NUGET == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -183,6 +186,7 @@ jobs:
   go:
     name: Go module (${{ matrix.os }})
     needs: resolve
+    if: vars.PUBLISH_GO == 'true'
     strategy:
       fail-fast: false
       matrix:

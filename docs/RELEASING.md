@@ -27,8 +27,15 @@ python3 scripts/release-versions.py check
   dist-tag, NuGet needs `--prerelease`, Go needs an explicit version.
 - The npm workflow refuses to put a pre-release on `latest` or a stable
   version on `next`.
-- Java is built but not published. Set the repository variable
-  `PUBLISH_JAVA=true` to opt in.
+- Each registry is opt-in through a repository variable (Settings → Secrets
+  and variables → Actions → Variables): `PUBLISH_PYPI`, `PUBLISH_NPM`,
+  `PUBLISH_NUGET`, `PUBLISH_GO` and `PUBLISH_JAVA`, each set to `true`. A tag
+  with no registry enabled fails early. Release notes and **Verify Release**
+  only cover the enabled registries.
+- To publish a registry that was disabled when a version was tagged, enable it
+  and re-run that tag's **Release** run. Publish steps skip versions that are
+  already on the registry.
+- Java is built but not published unless `PUBLISH_JAVA=true`.
 
 ## One-time setup
 
@@ -43,21 +50,26 @@ These require organization or registry admin access.
 | `NPM_TOKEN` secret | GitHub secrets | Granular automation token with publish rights on `@fugle`. Optional once trusted publishing covers every package. |
 | `NUGET_API_KEY` secret | GitHub secrets | nuget.org API key scoped to push `Fugle.MarketData` |
 | `GO_REPO_DEPLOY_KEY` secret | GitHub secrets | Private half of a deploy key that has write access to `fugle-dev/fugle-marketdata-go` |
-| crates.io token | maintainer machine | `cargo login`; Rust crates are published by hand |
+| crates.io trusted publisher | crates.io, each of `fugle-marketdata-core` and `fugle-marketdata`: Settings → Trusted Publishing | Owner `fugle-dev`, repository `fugle-marketdata-sdk`, workflow `release-rust.yml`, environment `release` |
 
 npm validates the **calling** workflow, and PyPI does not accept reusable
 workflows, which is why both trusted publishers point at `release.yml`.
 
 ## Releasing the Rust crates
 
-Publish the crates first when the bindings depend on an unreleased core.
+The **Release Rust crates** workflow publishes both crates with crates.io
+trusted publishing; no token is stored. Rehearse it first with
+`gh workflow run release-rust.yml --ref main`, which runs
+`cargo publish --dry-run` only. Then tag the core version:
 
 ```bash
 python3 scripts/release-versions.py check
-cargo publish -p fugle-marketdata-core -p fugle-marketdata
 git tag rust-v0.8.0-rc.1
 git push origin rust-v0.8.0-rc.1
 ```
+
+The tag must equal the version in `core/Cargo.toml`. Crates that are already
+on crates.io at that version are skipped, so a failed run can be re-run.
 
 ## Rehearsing a release
 

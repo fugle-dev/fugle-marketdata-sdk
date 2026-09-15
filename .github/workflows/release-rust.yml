@@ -1,0 +1,96 @@
+name: Release Rust crates
+
+# Pushing a tag `rust-vX.Y.Z` publishes fugle-marketdata-core and
+# fugle-marketdata to crates.io with trusted publishing (OIDC): no API token is
+# stored. The tag must equal the version in core/Cargo.toml.
+#
+# Running this workflow manually is a rehearsal: it packages and verifies both
+# crates with `cargo publish --dry-run` and uploads nothing.
+#
+# One-time setup on crates.io, for each of the two crates:
+#   Settings -> Trusted Publishing -> add GitHub publisher
+#   owner fugle-dev, repository fugle-marketdata-sdk,
+#   workflow release-rust.yml, environment release
+on:
+  push:
+    tags:
+      - 'rust-v*.*.*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-rust-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish crates to crates.io
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://crates.io/crates/fugle-marketdata
+    permissions:
+      contents: read
+      id-token: write  # crates.io trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolve version
+        id: v
+        run: |
+          python3 scripts/release-versions.py check
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("core/Cargo.toml","rb"))["package"]["version"])')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            echo "## Rehearsal of Rust crates $VERSION — nothing will be published" >> "$GITHUB_STEP_SUMMARY"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            if [[ "$TAG" != "rust-v$VERSION" ]]; then
+              echo "::error::Tag $TAG does not match core/Cargo.toml version $VERSION (expected rust-v$VERSION)"
+              exit 1
+            fi
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+            echo "## Release Rust crates $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Packages and compiles both crates against each other, so the facade
+      # resolves the core version being released rather than crates.io's.
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run --locked -p fugle-marketdata-core -p fugle-marketdata
+
+      - name: Authenticate with crates.io (OIDC)
+        if: steps.v.outputs.dry_run != 'true'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1.0.5
+
+      # One crate at a time so a re-run skips versions that already went out.
+      # cargo waits for core to appear in the index before the facade builds.
+      - name: Publish
+        if: steps.v.outputs.dry_run != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          for crate in fugle-marketdata-core fugle-marketdata; do
+            status=$(curl -s -o /dev/null -w '%{http_code}' -A "fugle-dev/fugle-marketdata-sdk release" \
+              "https://crates.io/api/v1/crates/$crate/$VERSION")
+            if [[ "$status" == "200" ]]; then
+              echo "::notice::$crate $VERSION is already on crates.io, skipping"
+              continue
+            fi
+            cargo publish --locked -p "$crate"
+            echo "- published \`$crate\` $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          done
