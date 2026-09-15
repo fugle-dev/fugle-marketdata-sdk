@@ -97,9 +97,7 @@ impl<'a> RsiRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let rsi_response: RsiResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let rsi_response: RsiResponse = crate::rest::read_json(response)?;
 
         Ok(rsi_response)
     }

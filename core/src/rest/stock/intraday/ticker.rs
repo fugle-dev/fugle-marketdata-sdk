@@ -64,9 +64,7 @@ impl<'a> TickerRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let ticker: Ticker = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let ticker: Ticker = crate::rest::read_json(response)?;
 
         Ok(ticker)
     }

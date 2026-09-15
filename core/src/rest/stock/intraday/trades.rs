@@ -114,9 +114,7 @@ impl<'a> TradesRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let trades: TradesResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let trades: TradesResponse = crate::rest::read_json(response)?;
 
         Ok(trades)
     }

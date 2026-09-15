@@ -131,9 +131,7 @@ impl<'a> KdjRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let kdj_response: KdjResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let kdj_response: KdjResponse = crate::rest::read_json(response)?;
 
         Ok(kdj_response)
     }

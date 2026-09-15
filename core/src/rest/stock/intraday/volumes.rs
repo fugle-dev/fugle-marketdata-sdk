@@ -64,9 +64,7 @@ impl<'a> VolumesRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let volumes: VolumesResponse = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let volumes: VolumesResponse = crate::rest::read_json(response)?;
 
         Ok(volumes)
     }

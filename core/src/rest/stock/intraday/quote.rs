@@ -64,9 +64,7 @@ impl<'a> QuoteRequestBuilder<'a> {
         let request = self.client.auth().apply_to_request(request);
 
         let response = self.client.execute(request)?;
-        let quote: Quote = response
-            .into_json()
-            .map_err(|e| MarketDataError::Other(e.into()))?;
+        let quote: Quote = crate::rest::read_json(response)?;
 
         Ok(quote)
     }
