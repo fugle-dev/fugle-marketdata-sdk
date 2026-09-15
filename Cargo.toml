@@ -30,10 +30,10 @@ url = "2.5"
 pyo3 = { version = "0.27", default-features = false, features = ["abi3-py37", "macros"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 
-# Node.js binding dependencies (pinned for Rust 1.87 compatibility: napi 3.4 MSRV=1.82)
-napi = { version = "=3.4.0", features = ["napi8", "async", "serde-json", "tokio_rt"] }
-napi-derive = "=3.3.0"
-napi-build = "=2.2.4"
+# Node.js binding dependencies
+napi = { version = "3.12", features = ["napi8", "async", "serde-json", "tokio_rt"] }
+napi-derive = "3.6"
+napi-build = "2.4"
 
 # UniFFI binding dependencies (for C#, Go, and Java bindings)
 # Note: Keep at 0.28 for uniffi-bindgen-go compatibility (0.4.0 requires 0.28)
