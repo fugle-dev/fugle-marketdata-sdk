@@ -37,5 +37,3 @@ public enum FfiConverterOptionalTypeTlsConfigRecord implements FfiConverterRustB
   }
 }
 
-
-

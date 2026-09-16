@@ -114,9 +114,9 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      * Get most actively traded stocks (sync/blocking)
      */
     @Override
-    public ActivesResponse activesSync(String market, String trade) throws MarketDataException {
+    public String activesSync(String market, String trade) throws MarketDataException {
             try {
-                return FfiConverterTypeActivesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -155,7 +155,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      */
     @Override
     
-    public CompletableFuture<ActivesResponse> getActives(String market, String trade){
+    public CompletableFuture<String> getActives(String market, String trade){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_actives(
@@ -167,7 +167,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeActivesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -184,7 +184,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      */
     @Override
     
-    public CompletableFuture<MoversResponse> getMovers(String market, String direction, String change){
+    public CompletableFuture<String> getMovers(String market, String direction, String change){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_movers(
@@ -196,7 +196,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeMoversResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -212,7 +212,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      */
     @Override
     
-    public CompletableFuture<SnapshotQuotesResponse> getQuotes(String market, String typeFilter){
+    public CompletableFuture<String> getQuotes(String market, String typeFilter){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_quotes(
@@ -224,7 +224,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeSnapshotQuotesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -235,9 +235,9 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      * Get top movers (sync/blocking)
      */
     @Override
-    public MoversResponse moversSync(String market, String direction, String change) throws MarketDataException {
+    public String moversSync(String market, String direction, String change) throws MarketDataException {
             try {
-                return FfiConverterTypeMoversResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -271,9 +271,9 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      * Get market-wide snapshot quotes (sync/blocking)
      */
     @Override
-    public SnapshotQuotesResponse quotesSync(String market, String typeFilter) throws MarketDataException {
+    public String quotesSync(String market, String typeFilter) throws MarketDataException {
             try {
-                return FfiConverterTypeSnapshotQuotesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     

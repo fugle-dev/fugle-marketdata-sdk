@@ -13,11 +13,12 @@ import java.util.concurrent.CompletableFuture;
  *     .apiKey("YOUR_API_KEY")
  *     .build();
  *
- * // Sync method - blocks and returns result
- * Quote quote = client.stock().intraday().getQuote("2330");
+ * // REST methods return the server's JSON response verbatim; decode it
+ * // with whatever JSON library you already use.
+ * String json = client.stock().intraday().getQuote("2330");
  *
  * // Async method - returns CompletableFuture
- * CompletableFuture<Quote> future = client.stock().intraday().getQuoteAsync("2330");
+ * CompletableFuture<String> future = client.stock().intraday().getQuoteAsync("2330");
  * }</pre>
  */
 public class FugleRestClient implements AutoCloseable {
@@ -252,9 +253,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get quote for a symbol (async).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return CompletableFuture containing Quote
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<Quote> getQuoteAsync(String symbol) {
+        public CompletableFuture<String> getQuoteAsync(String symbol) {
             return client.getQuote(symbol)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -263,9 +264,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get ticker info for a symbol (async).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return CompletableFuture containing Ticker
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<Ticker> getTickerAsync(String symbol) {
+        public CompletableFuture<String> getTickerAsync(String symbol) {
             return client.getTicker(symbol)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -274,9 +275,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get trade history for a symbol (async).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return CompletableFuture containing TradesResponse
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<TradesResponse> getTradesAsync(String symbol) {
+        public CompletableFuture<String> getTradesAsync(String symbol) {
             return client.getTrades(symbol)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -285,9 +286,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get volume breakdown for a symbol (async).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return CompletableFuture containing VolumesResponse
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<VolumesResponse> getVolumesAsync(String symbol) {
+        public CompletableFuture<String> getVolumesAsync(String symbol) {
             return client.getVolumes(symbol)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -297,9 +298,9 @@ public class FugleRestClient implements AutoCloseable {
          *
          * @param symbol Stock symbol (e.g., "2330")
          * @param timeframe Candlestick timeframe: "1", "5", "10", "15", "30", "60" (minutes)
-         * @return CompletableFuture containing IntradayCandlesResponse
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<IntradayCandlesResponse> getCandlesAsync(String symbol, String timeframe) {
+        public CompletableFuture<String> getCandlesAsync(String symbol, String timeframe) {
             return client.getCandles(symbol, timeframe)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -310,10 +311,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get quote for a symbol (sync/blocking).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return Quote
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public Quote getQuote(String symbol) {
+        public String getQuote(String symbol) {
             try {
                 return client.quoteSync(symbol);
             } catch (MarketDataException e) {
@@ -325,10 +326,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get ticker info for a symbol (sync/blocking).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return Ticker
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public Ticker getTicker(String symbol) {
+        public String getTicker(String symbol) {
             try {
                 return client.tickerSync(symbol);
             } catch (MarketDataException e) {
@@ -340,10 +341,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get trade history for a symbol (sync/blocking).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return TradesResponse
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public TradesResponse getTrades(String symbol) {
+        public String getTrades(String symbol) {
             try {
                 return client.tradesSync(symbol);
             } catch (MarketDataException e) {
@@ -355,10 +356,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get volume breakdown for a symbol (sync/blocking).
          *
          * @param symbol Stock symbol (e.g., "2330")
-         * @return VolumesResponse
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public VolumesResponse getVolumes(String symbol) {
+        public String getVolumes(String symbol) {
             try {
                 return client.volumesSync(symbol);
             } catch (MarketDataException e) {
@@ -371,10 +372,10 @@ public class FugleRestClient implements AutoCloseable {
          *
          * @param symbol Stock symbol (e.g., "2330")
          * @param timeframe Candlestick timeframe: "1", "5", "10", "15", "30", "60" (minutes)
-         * @return IntradayCandlesResponse
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public IntradayCandlesResponse getCandles(String symbol, String timeframe) {
+        public String getCandles(String symbol, String timeframe) {
             try {
                 return client.candlesSync(symbol, timeframe);
             } catch (MarketDataException e) {
@@ -400,9 +401,9 @@ public class FugleRestClient implements AutoCloseable {
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
          * @param afterHours true for after-hours session
-         * @return CompletableFuture containing FutOptQuote
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<FutOptQuote> getQuoteAsync(String symbol, Boolean afterHours) {
+        public CompletableFuture<String> getQuoteAsync(String symbol, Boolean afterHours) {
             return client.getQuote(symbol, afterHours)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -411,9 +412,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get quote for a futures/options contract (async, regular hours).
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
-         * @return CompletableFuture containing FutOptQuote
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<FutOptQuote> getQuoteAsync(String symbol) {
+        public CompletableFuture<String> getQuoteAsync(String symbol) {
             return getQuoteAsync(symbol, false);
         }
 
@@ -422,9 +423,9 @@ public class FugleRestClient implements AutoCloseable {
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
          * @param afterHours true for after-hours session
-         * @return CompletableFuture containing FutOptTicker
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<FutOptTicker> getTickerAsync(String symbol, Boolean afterHours) {
+        public CompletableFuture<String> getTickerAsync(String symbol, Boolean afterHours) {
             return client.getTicker(symbol, afterHours)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -433,9 +434,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get ticker info for a futures/options contract (async, regular hours).
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
-         * @return CompletableFuture containing FutOptTicker
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<FutOptTicker> getTickerAsync(String symbol) {
+        public CompletableFuture<String> getTickerAsync(String symbol) {
             return getTickerAsync(symbol, false);
         }
 
@@ -443,9 +444,9 @@ public class FugleRestClient implements AutoCloseable {
          * Get available products list (async).
          *
          * @param type "F" for futures, "O" for options
-         * @return CompletableFuture containing ProductsResponse
+         * @return CompletableFuture containing the response body as JSON
          */
-        public CompletableFuture<ProductsResponse> getProductsAsync(String type) {
+        public CompletableFuture<String> getProductsAsync(String type) {
             return client.getProducts(type)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
         }
@@ -457,10 +458,10 @@ public class FugleRestClient implements AutoCloseable {
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
          * @param afterHours true for after-hours session
-         * @return FutOptQuote
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public FutOptQuote getQuote(String symbol, Boolean afterHours) {
+        public String getQuote(String symbol, Boolean afterHours) {
             try {
                 return client.quoteSync(symbol, afterHours);
             } catch (MarketDataException e) {
@@ -472,10 +473,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get quote for a futures/options contract (sync/blocking, regular hours).
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
-         * @return FutOptQuote
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public FutOptQuote getQuote(String symbol) {
+        public String getQuote(String symbol) {
             return getQuote(symbol, false);
         }
 
@@ -484,10 +485,10 @@ public class FugleRestClient implements AutoCloseable {
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
          * @param afterHours true for after-hours session
-         * @return FutOptTicker
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public FutOptTicker getTicker(String symbol, Boolean afterHours) {
+        public String getTicker(String symbol, Boolean afterHours) {
             try {
                 return client.tickerSync(symbol, afterHours);
             } catch (MarketDataException e) {
@@ -499,10 +500,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get ticker info for a futures/options contract (sync/blocking, regular hours).
          *
          * @param symbol Contract symbol (e.g., "TXFA4")
-         * @return FutOptTicker
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public FutOptTicker getTicker(String symbol) {
+        public String getTicker(String symbol) {
             return getTicker(symbol, false);
         }
 
@@ -510,10 +511,10 @@ public class FugleRestClient implements AutoCloseable {
          * Get available products list (sync/blocking).
          *
          * @param type "F" for futures, "O" for options
-         * @return ProductsResponse
+         * @return the response body as JSON
          * @throws FugleException if the request fails
          */
-        public ProductsResponse getProducts(String type) {
+        public String getProducts(String type) {
             try {
                 return client.productsSync(type);
             } catch (MarketDataException e) {

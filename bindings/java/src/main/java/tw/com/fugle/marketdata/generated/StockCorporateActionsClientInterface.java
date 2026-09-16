@@ -16,32 +16,32 @@ public interface StockCorporateActionsClientInterface {
     /**
      * Get capital structure changes (sync/blocking)
      */
-    public CapitalChangesResponse capitalChangesSync(String date, String startDate, String endDate) throws MarketDataException;
+    public String capitalChangesSync(String date, String startDate, String endDate) throws MarketDataException;
     
     /**
      * Get dividend announcements (sync/blocking)
      */
-    public DividendsResponse dividendsSync(String date, String startDate, String endDate) throws MarketDataException;
+    public String dividendsSync(String date, String startDate, String endDate) throws MarketDataException;
     
     /**
      * Get capital structure changes (async)
      */
-    public CompletableFuture<CapitalChangesResponse> getCapitalChanges(String date, String startDate, String endDate) ;
+    public CompletableFuture<String> getCapitalChanges(String date, String startDate, String endDate) ;
     
     /**
      * Get dividend announcements (async)
      */
-    public CompletableFuture<DividendsResponse> getDividends(String date, String startDate, String endDate) ;
+    public CompletableFuture<String> getDividends(String date, String startDate, String endDate) ;
     
     /**
      * Get IPO listing applicants (async)
      */
-    public CompletableFuture<ListingApplicantsResponse> getListingApplicants(String date, String startDate, String endDate) ;
+    public CompletableFuture<String> getListingApplicants(String date, String startDate, String endDate) ;
     
     /**
      * Get IPO listing applicants (sync/blocking)
      */
-    public ListingApplicantsResponse listingApplicantsSync(String date, String startDate, String endDate) throws MarketDataException;
+    public String listingApplicantsSync(String date, String startDate, String endDate) throws MarketDataException;
     
 }
 

@@ -115,9 +115,9 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
      * Get historical candles for a symbol (sync/blocking)
      */
     @Override
-    public HistoricalCandlesResponse candlesSync(String symbol, String from, String to, String timeframe) throws MarketDataException {
+    public String candlesSync(String symbol, String from, String to, String timeframe) throws MarketDataException {
             try {
-                return FfiConverterTypeHistoricalCandlesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -158,7 +158,7 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
      */
     @Override
     
-    public CompletableFuture<HistoricalCandlesResponse> getCandles(String symbol, String from, String to, String timeframe){
+    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_get_candles(
@@ -170,7 +170,7 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeHistoricalCandlesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -184,7 +184,7 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
      */
     @Override
     
-    public CompletableFuture<StatsResponse> getStats(String symbol){
+    public CompletableFuture<String> getStats(String symbol){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_get_stats(
@@ -196,7 +196,7 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeStatsResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -207,9 +207,9 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
      * Get historical stats for a symbol (sync/blocking)
      */
     @Override
-    public StatsResponse statsSync(String symbol) throws MarketDataException {
+    public String statsSync(String symbol) throws MarketDataException {
             try {
-                return FfiConverterTypeStatsResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     

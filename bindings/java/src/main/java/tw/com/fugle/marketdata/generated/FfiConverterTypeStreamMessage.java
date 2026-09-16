@@ -10,6 +10,7 @@ public enum FfiConverterTypeStreamMessage implements FfiConverterRustBuffer<Stre
   public StreamMessage read(ByteBuffer buf) {
     return new StreamMessage(
       FfiConverterString.INSTANCE.read(buf),
+      FfiConverterString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
       FfiConverterOptionalString.INSTANCE.read(buf),
@@ -22,6 +23,7 @@ public enum FfiConverterTypeStreamMessage implements FfiConverterRustBuffer<Stre
   @Override
   public long allocationSize(StreamMessage value) {
       return (
+            FfiConverterString.INSTANCE.allocationSize(value.raw()) +
             FfiConverterString.INSTANCE.allocationSize(value.event()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.channel()) +
             FfiConverterOptionalString.INSTANCE.allocationSize(value.symbol()) +
@@ -34,6 +36,7 @@ public enum FfiConverterTypeStreamMessage implements FfiConverterRustBuffer<Stre
 
   @Override
   public void write(StreamMessage value, ByteBuffer buf) {
+      FfiConverterString.INSTANCE.write(value.raw(), buf);
       FfiConverterString.INSTANCE.write(value.event(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.channel(), buf);
       FfiConverterOptionalString.INSTANCE.write(value.symbol(), buf);

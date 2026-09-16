@@ -113,9 +113,9 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      * Get capital structure changes (sync/blocking)
      */
     @Override
-    public CapitalChangesResponse capitalChangesSync(String date, String startDate, String endDate) throws MarketDataException {
+    public String capitalChangesSync(String date, String startDate, String endDate) throws MarketDataException {
             try {
-                return FfiConverterTypeCapitalChangesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -149,9 +149,9 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      * Get dividend announcements (sync/blocking)
      */
     @Override
-    public DividendsResponse dividendsSync(String date, String startDate, String endDate) throws MarketDataException {
+    public String dividendsSync(String date, String startDate, String endDate) throws MarketDataException {
             try {
-                return FfiConverterTypeDividendsResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -186,7 +186,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      */
     @Override
     
-    public CompletableFuture<CapitalChangesResponse> getCapitalChanges(String date, String startDate, String endDate){
+    public CompletableFuture<String> getCapitalChanges(String date, String startDate, String endDate){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(
@@ -198,7 +198,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeCapitalChangesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -210,7 +210,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      */
     @Override
     
-    public CompletableFuture<DividendsResponse> getDividends(String date, String startDate, String endDate){
+    public CompletableFuture<String> getDividends(String date, String startDate, String endDate){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(
@@ -222,7 +222,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeDividendsResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -234,7 +234,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      */
     @Override
     
-    public CompletableFuture<ListingApplicantsResponse> getListingApplicants(String date, String startDate, String endDate){
+    public CompletableFuture<String> getListingApplicants(String date, String startDate, String endDate){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(
@@ -246,7 +246,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeListingApplicantsResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -257,9 +257,9 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      * Get IPO listing applicants (sync/blocking)
      */
     @Override
-    public ListingApplicantsResponse listingApplicantsSync(String date, String startDate, String endDate) throws MarketDataException {
+    public String listingApplicantsSync(String date, String startDate, String endDate) throws MarketDataException {
             try {
-                return FfiConverterTypeListingApplicantsResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
