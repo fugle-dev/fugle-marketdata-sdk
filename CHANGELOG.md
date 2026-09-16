@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
   require `timeframe`; the server defaults to `1`, as in 1.x.
+- **Core**: `aio::WebSocketClient::messages()` no longer needs a tokio runtime
+  context. It can be called from any thread, before or after `connect()`; the
+  message bridge now runs on the runtime that ran `connect()` instead of
+  panicking with `there is no reactor running` (#26).
 
 ### Breaking
 
