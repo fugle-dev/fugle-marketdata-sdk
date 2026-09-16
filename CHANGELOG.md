@@ -174,9 +174,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the connection silently dead (#25). Node's worker and event threads report
   it as an `error` (`Error` with `code` -1, "WebSocket <thread> thread
   panicked: ..."), followed by `disconnect({ code: null, reason })` if the
-  client was connected; `isConnected` turns false, a pending `connect()`
-  rejects with `[-1] ...`, and the connection is closed so the process can
-  exit. Python's event and message threads report it to the `error`
+  client was connected; `isConnected` turns false, a `connect()` whose
+  authentication was not yet reported rejects with `[-1] ...`, and the
+  connection is closed so the process can exit. Python's event and message threads report it to the `error`
   callbacks as `WebSocketError(message, -1)`.
 - **Core**: `aio::WebSocketClient::state()` and `is_closed_sync()` no longer
   panic with `Cannot start a runtime from within a runtime` when called on a

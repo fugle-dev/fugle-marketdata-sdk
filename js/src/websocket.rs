@@ -1110,6 +1110,7 @@ impl StockWebSocketClient {
                             closed: &closed,
                             ending: &ending,
                             reported: &panic_reported,
+                            decision: &decision,
                         },
                         "worker",
                         &*payload,
@@ -1603,6 +1604,7 @@ impl FutOptWebSocketClient {
                             closed: &closed,
                             ending: &ending,
                             reported: &panic_reported,
+                            decision: &decision,
                         },
                         "worker",
                         &*payload,
@@ -1892,6 +1894,7 @@ fn spawn_event_forwarder(
                     closed: &closed,
                     ending: &ending,
                     reported: &panic_reported,
+                    decision: &decision,
                 },
                 "event",
                 &*payload,
@@ -1918,11 +1921,13 @@ struct PanicContext<'a> {
     /// Shared by the connection's worker and event thread, so a panic on
     /// both reports one `error`.
     reported: &'a AtomicBool,
+    decision: &'a AtomicU8,
 }
 
 /// Report a panic on a connection's `thread` so the connection does not go
-/// silently dead (#25): mark it closed, fire `error` (code -1) — rejecting a
-/// still-pending `connect()` after it — and `disconnect` if it was connected.
+/// silently dead (#25): mark it closed, fire `error` (code -1) — rejecting
+/// `connect()` after it unless its authentication was already reported — and
+/// `disconnect` if it was connected.
 /// Only the first panic of a connection fires them.
 ///
 /// Both events go through [`fire_callback`], so each carries a keep-alive
@@ -1944,15 +1949,23 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
         return;
     }
 
-    fire_and_settle(
-        ctx.callbacks,
-        ctx.keep_alive,
-        "error",
-        EventArgs::Error { message: reason.clone(), code: Some(PANIC_CODE) },
-        ctx.auth,
-        AuthOutcome::Failed(format!("[{}] {}", PANIC_CODE, reason)),
-        None,
-    );
+    let error = EventArgs::Error { message: reason.clone(), code: Some(PANIC_CODE) };
+    // Reject connect() only if its authentication has not been reported yet,
+    // taking that decision so it will not be (#44); once `authenticated` has
+    // fired, connect() resolves and this is a disconnect like any other.
+    if decide(ctx.decision, AUTH_ABORTED) {
+        fire_and_settle(
+            ctx.callbacks,
+            ctx.keep_alive,
+            "error",
+            error,
+            ctx.auth,
+            AuthOutcome::Failed(format!("[{}] {}", PANIC_CODE, reason)),
+            None,
+        );
+    } else {
+        fire_callback(ctx.callbacks, ctx.keep_alive, "error", error);
+    }
     if was_connected {
         fire_callback(
             ctx.callbacks,

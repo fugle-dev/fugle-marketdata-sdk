@@ -161,6 +161,30 @@ describe.each(PRODUCTS)('%s thread panic supervision (#25)', (product, subscript
     expect(run.result).toEqual({ isConnected: true, errors: 1 });
   });
 
+  test('a worker panic right after authenticating does not turn the reported connect() into a rejection', async () => {
+    // Hold the JS thread while the connection authenticates and the worker
+    // panics, so the authenticated and error listeners are both pending when
+    // it frees up; error's was registered first and runs first.
+    const run = await runChild(
+      `${PRELUDE}
+      (async () => {
+        const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+        const events = record(ws);
+        const pending = ws.connect();
+        const until = Date.now() + 800;
+        while (Date.now() < until) {}
+        const outcome = await pending.then(() => 'resolved', (e) => 'rejected: ' + (e && e.message));
+        await waitFor(() => events.disconnect.length > 0);
+        console.log('RESULT ' + JSON.stringify({ outcome, errors: events.error.length, disconnects: events.disconnect.length, authenticated: events.authenticated.length }));
+      })();
+    `,
+      { url, site: 'ws_worker' },
+    );
+
+    expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
+    expect(run.result).toEqual({ outcome: 'resolved', errors: 1, disconnects: 1, authenticated: 1 });
+  });
+
   test('an event thread panic rejects connect(), fires error and shuts the connection down', async () => {
     const run = await runChild(
       `${PRELUDE}
