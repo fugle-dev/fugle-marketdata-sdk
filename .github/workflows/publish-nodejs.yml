@@ -56,6 +56,35 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@^11.5.1 && npm --version
 
+      # setup-node's registry-url writes
+      #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+      # into .npmrc. With no NPM_TOKEN secret that expands to an empty
+      # `_authToken=`, and npm treats the mere presence of the line as "auth is
+      # configured" — so it never starts the OIDC exchange and the publish
+      # fails as unauthenticated. See actions/setup-node#1551.
+      #
+      # `npm publish --dry-run` does not authenticate, so a rehearsal cannot
+      # catch this; strip the line whenever there is no token to put in it.
+      - name: Clear placeholder auth line when publishing over OIDC
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -n "$NPM_TOKEN" ]]; then
+            echo "NPM_TOKEN is set; keeping token auth." && exit 0
+          fi
+          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          if [[ -f "$npmrc" ]]; then
+            grep -v '_authToken' "$npmrc" > "$npmrc.tmp" || true
+            mv "$npmrc.tmp" "$npmrc"
+            # Confirm rather than assume: a silently failed edit here would
+            # surface as an authentication error mid-publish.
+            if grep -q '_authToken' "$npmrc"; then
+              echo "::error::Could not remove the placeholder _authToken line from $npmrc"
+              exit 1
+            fi
+          fi
+          echo "Publishing over OIDC; no token auth line in $npmrc."
+
       # Release policy: only release candidates (X.Y.Z-rc.N) may be published. See scripts/release-versions.py.
       # Release candidates go to `next` only, never `latest`.
       - name: Guard version and dist-tag
@@ -152,6 +181,8 @@ jobs:
       - name: Publish
         working-directory: js
         env:
+          # Empty when publishing over OIDC; npm then falls back to the
+          # trusted-publisher exchange.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ inputs.npm_tag }}
           DRY_RUN: ${{ inputs.dry-run }}
