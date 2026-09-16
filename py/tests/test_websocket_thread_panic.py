@@ -92,3 +92,26 @@ async def test_connect_async_message_thread_panic_fires_error(server, monkeypatc
         _assert_panic_error(recorder, "message")
     finally:
         await ws.disconnect_async()
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_callbacks_still_fire_after_registry_lock_poisoned(product, monkeypatch):
+    # A panic while the callback registry's write lock is held poisons it.
+    # The registry must keep working, or reporting an error through it would
+    # panic again and kill the reporting thread silently.
+    monkeypatch.setenv(PANIC_ENV, "ws_callback_poison")
+    # Nothing listens here, so connect() fails and core emits `Error`.
+    ws = product_ws("ws://127.0.0.1:9", product)
+    recorder = Recorder(ws)
+    with pytest.raises(BaseException, match="ws_callback_poison"):
+        ws.off("reconnect")
+
+    ws.on("message", lambda msg: None)  # write lock, still usable
+    with pytest.raises(Exception):
+        ws.connect()
+
+    recorder.wait_for("error", TIMEOUT_S)
+    (err,) = recorder.args_of("error")[0]
+    assert isinstance(err, WebSocketError)
+    assert err.args[1] != -1, "the error came from a panicked thread, not core"

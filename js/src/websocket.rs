@@ -891,6 +891,7 @@ impl StockWebSocketClient {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
         let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
+        let panic_reported = Arc::new(AtomicBool::new(false));
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
@@ -987,6 +988,7 @@ impl StockWebSocketClient {
                         Arc::clone(&dispatch_ended),
                         test_panic.clone(),
                         Arc::clone(&decision),
+                        Arc::clone(&panic_reported),
                     );
 
                     // Core's connect().await returns once authenticated. Its
@@ -1107,6 +1109,7 @@ impl StockWebSocketClient {
                             connected: &connected,
                             closed: &closed,
                             ending: &ending,
+                            reported: &panic_reported,
                         },
                         "worker",
                         &*payload,
@@ -1386,6 +1389,7 @@ impl FutOptWebSocketClient {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
         let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
+        let panic_reported = Arc::new(AtomicBool::new(false));
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
@@ -1478,6 +1482,7 @@ impl FutOptWebSocketClient {
                         Arc::clone(&dispatch_ended),
                         test_panic.clone(),
                         Arc::clone(&decision),
+                        Arc::clone(&panic_reported),
                     );
 
                     // Core's connect().await returns once authenticated. Its
@@ -1597,6 +1602,7 @@ impl FutOptWebSocketClient {
                             connected: &connected,
                             closed: &closed,
                             ending: &ending,
+                            reported: &panic_reported,
                         },
                         "worker",
                         &*payload,
@@ -1769,6 +1775,7 @@ fn spawn_event_forwarder(
     dispatch_ended: Arc<AtomicBool>,
     test_panic: Option<String>,
     decision: AuthDecision,
+    panic_reported: Arc<AtomicBool>,
 ) {
     use marketdata_core::websocket::ConnectionEvent;
 
@@ -1884,6 +1891,7 @@ fn spawn_event_forwarder(
                     connected: &connected,
                     closed: &closed,
                     ending: &ending,
+                    reported: &panic_reported,
                 },
                 "event",
                 &*payload,
@@ -1907,11 +1915,15 @@ struct PanicContext<'a> {
     connected: &'a AtomicBool,
     closed: &'a AtomicBool,
     ending: &'a AtomicBool,
+    /// Shared by the connection's worker and event thread, so a panic on
+    /// both reports one `error`.
+    reported: &'a AtomicBool,
 }
 
 /// Report a panic on a connection's `thread` so the connection does not go
 /// silently dead (#25): mark it closed, fire `error` (code -1) — rejecting a
 /// still-pending `connect()` after it — and `disconnect` if it was connected.
+/// Only the first panic of a connection fires them.
 ///
 /// Both events go through [`fire_callback`], so each carries a keep-alive
 /// clone and is delivered before the process may exit (#30). `ending` is set
@@ -1927,6 +1939,10 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
     ctx.ending.store(true, Ordering::SeqCst);
     let was_connected = ctx.connected.swap(false, Ordering::SeqCst);
     ctx.closed.store(true, Ordering::SeqCst);
+    // The other thread already reported this connection's end.
+    if ctx.reported.swap(true, Ordering::SeqCst) {
+        return;
+    }
 
     fire_and_settle(
         ctx.callbacks,
