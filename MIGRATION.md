@@ -55,6 +55,7 @@ to rewrite call sites:
 | `stock.intraday.tickers(type=...)` | ✅ restored — was missing in early Rust SDK |
 | `futopt.intraday.tickers(type=...)` | ✅ restored |
 | `futopt.intraday.products(type=...)` | ✅ restored on Python (Node already had it) |
+| Node REST object params, e.g. `quote({ symbol: '2330', type: 'oddlot' })` | ✅ every REST method; keys other than `symbol` / `market` are sent verbatim as query params |
 | `quote(..., oddLot=true)` (Node REST) | ✅ second positional arg `quote(symbol, oddLot?)` |
 | WebSocket `subscribe({ channel, symbol })` | ✅ |
 | WebSocket `subscribe({ channel, symbols: [...] })` | ✅ batch supported |
@@ -164,22 +165,34 @@ the Python side leans into native dict ergonomics. If you have a shared
 test/lint that asserts both behave identically, you will need to special-case
 the language.
 
-#### 4. Node REST methods take positional args (not single object param)
+#### 4. Node REST methods also take positional args
 
 The legacy `@fugle/marketdata` Node SDK takes a single object param for every
-REST method. This SDK uses positional arguments, matching the napi-rs idiom.
+REST method, and that shape still works unchanged: the path param (`symbol`,
+or `market` for `stock.snapshot.*`) goes into the path and every other key is
+forwarded verbatim as a query param, so any param in the API docs is
+reachable. This SDK additionally accepts positional arguments.
 
 ```javascript
-// Legacy
+// Legacy — still works
 const quote = await rest.stock.intraday.quote({ symbol: '2330', type: 'oddlot' });
-const candles = await rest.stock.intraday.candles({ symbol: '2330', timeframe: 5 });
+const trades = await rest.stock.intraday.trades({ symbol: '2330', limit: 5 });
 
-// This SDK
-const quote = await rest.stock.intraday.quote('2330', true);  // oddLot=true
+// Positional
+const quote = await rest.stock.intraday.quote('2330', true);  // odd lot
 const candles = await rest.stock.intraday.candles('2330', '5');
 ```
 
-The `type: 'oddlot'` flag becomes the second positional `oddLot` boolean.
+The positional form only covers the most common params (for example,
+`trades` has no positional `limit`); use the object form for the rest.
+
+Two small differences from the legacy object form, neither of which the API
+distinguishes in practice:
+
+- A key set to `null` is dropped, like `undefined`. The legacy SDK sent it as
+  a bare key with no value (`?offset`).
+- Query params keep the order they appear in the object. The legacy SDK sorted
+  them alphabetically.
 
 #### 5. Auto-reconnect is opt-in (matches the legacy SDKs)
 
@@ -231,7 +244,34 @@ Rust core. If you actually relied on the no-timeout behaviour you will see
 new `TimeoutError` exceptions — the fix is to retry at the application
 layer.
 
-#### 8. Python `connect()` raises on auth failure (vs legacy's `unauthenticated` event)
+#### 8. Node REST rejects on HTTP errors instead of resolving the error body
+
+The legacy Node SDK resolves whatever JSON the server returns, including a
+4xx/5xx error body such as
+`{ "statusCode": 404, "message": "Resource Not Found" }`. This SDK
+**rejects** instead, with an `Error` whose message carries an error code and
+the server's body:
+
+- `[2003] API error (status 404): {"message":"Resource Not Found",...}`
+- `[2002] Authentication error: {...}` for 401 / 403
+
+Code that checks `statusCode` inside `.then()` must move that handling into
+`.catch()` / `try`, otherwise the rejection goes unhandled.
+
+```javascript
+// Legacy
+const res = await rest.stock.intraday.quote({ symbol: 'NOPE' });
+if (res.statusCode) { /* handle error */ }
+
+// This SDK
+try {
+  const quote = await rest.stock.intraday.quote({ symbol: 'NOPE' });
+} catch (err) {
+  // err.message: "[2003] API error (status 404): {...}"
+}
+```
+
+#### 9. Python `connect()` raises on auth failure (vs legacy's `unauthenticated` event)
 
 Both this SDK and the legacy SDK block in `connect()` until the server has
 either accepted or rejected authentication. The difference is **how a

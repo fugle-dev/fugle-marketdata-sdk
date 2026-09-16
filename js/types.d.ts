@@ -1497,55 +1497,294 @@ export interface FutOptDailyResponse {
 }
 
 // ============================================================================
+// REST Params (object form)
+// ============================================================================
+//
+// Every REST method also accepts a single params object, the call shape of the
+// legacy `@fugle/marketdata` 1.x SDK and of the examples on developer.fugle.tw.
+// The path param (`symbol` or `market`) is taken out and every other key is
+// sent verbatim as a query param, so keys use the API's own names. The listed
+// keys are the documented ones; any other key is forwarded too.
+
+type Timeframe = 'D' | 'W' | 'M' | '1' | '3' | '5' | '10' | '15' | '30' | '60';
+type IntradayTimeframe = '1' | '5' | '10' | '15' | '30' | '60';
+type SnapshotMarket = 'TSE' | 'OTC' | 'ESB' | 'TIB' | 'PSB';
+type SnapshotType = 'ALL' | 'ALLBUT0999' | 'COMMONSTOCK';
+
+/** Params for `stock.intraday.tickers` */
+export interface RestStockIntradayTickersParams {
+  type: string;
+  exchange?: string;
+  market?: string;
+  industry?: string;
+  isNormal?: boolean;
+  isAttention?: boolean;
+  isDisposition?: boolean;
+  isHalted?: boolean;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.intraday.ticker` */
+export interface RestStockIntradayTickerParams {
+  symbol: string;
+  type?: 'oddlot';
+  [key: string]: unknown;
+}
+
+/** Params for `stock.intraday.quote` */
+export interface RestStockIntradayQuoteParams {
+  symbol: string;
+  type?: 'oddlot';
+  /** Same as `type: 'oddlot'`; kept for 3.0.0-rc callers. */
+  oddLot?: boolean;
+  [key: string]: unknown;
+}
+
+/** @deprecated Use `RestStockIntradayQuoteParams`. */
+export type StockIntradayQuoteParams = RestStockIntradayQuoteParams;
+
+/** Params for `stock.intraday.candles` */
+export interface RestStockIntradayCandlesParams {
+  symbol: string;
+  type?: 'oddlot';
+  timeframe?: IntradayTimeframe;
+  sort?: 'asc' | 'desc';
+  [key: string]: unknown;
+}
+
+/** Params for `stock.intraday.trades` */
+export interface RestStockIntradayTradesParams {
+  symbol: string;
+  type?: 'oddlot';
+  offset?: number;
+  limit?: number;
+  sort?: 'asc' | 'desc';
+  isTrial?: boolean;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.intraday.volumes` */
+export interface RestStockIntradayVolumesParams {
+  symbol: string;
+  type?: 'oddlot';
+  [key: string]: unknown;
+}
+
+/** Params for `stock.historical.candles` */
+export interface RestStockHistoricalCandlesParams {
+  symbol: string;
+  from?: string;
+  to?: string;
+  timeframe?: Timeframe;
+  fields?: string;
+  sort?: 'asc' | 'desc';
+  adjusted?: boolean;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.historical.stats` */
+export interface RestStockHistoricalStatsParams {
+  symbol: string;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.snapshot.quotes` */
+export interface RestStockSnapshotQuotesParams {
+  market: SnapshotMarket;
+  type?: SnapshotType;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.snapshot.movers` */
+export interface RestStockSnapshotMoversParams {
+  market: SnapshotMarket;
+  direction: 'up' | 'down';
+  change: 'percent' | 'value';
+  type?: SnapshotType;
+  gt?: number;
+  gte?: number;
+  lt?: number;
+  lte?: number;
+  eq?: number;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.snapshot.actives` */
+export interface RestStockSnapshotActivesParams {
+  market: SnapshotMarket;
+  trade: 'volume' | 'value';
+  type?: SnapshotType;
+  [key: string]: unknown;
+}
+
+interface RestStockTechnicalBaseParams {
+  symbol: string;
+  from?: string;
+  to?: string;
+  timeframe?: Timeframe;
+  [key: string]: unknown;
+}
+
+/** Params for `stock.technical.sma` */
+export interface RestStockTechnicalSmaParams extends RestStockTechnicalBaseParams {
+  period: number;
+}
+
+/** Params for `stock.technical.rsi` */
+export interface RestStockTechnicalRsiParams extends RestStockTechnicalBaseParams {
+  period: number;
+}
+
+/** Params for `stock.technical.kdj` */
+export interface RestStockTechnicalKdjParams extends RestStockTechnicalBaseParams {
+  rPeriod: number;
+  kPeriod: number;
+  dPeriod: number;
+}
+
+/** Params for `stock.technical.macd` */
+export interface RestStockTechnicalMacdParams extends RestStockTechnicalBaseParams {
+  fast: number;
+  slow: number;
+  signal: number;
+}
+
+/** Params for `stock.technical.bb` */
+export interface RestStockTechnicalBbParams extends RestStockTechnicalBaseParams {
+  period: number;
+}
+
+interface RestStockCorporateActionsParams {
+  start_date?: string;
+  end_date?: string;
+  sort?: 'asc' | 'desc';
+  [key: string]: unknown;
+}
+
+/** Params for `stock.corporateActions.capitalChanges` */
+export type RestStockCorporateActionsCapitalChangesParams = RestStockCorporateActionsParams;
+/** Params for `stock.corporateActions.dividends` */
+export type RestStockCorporateActionsDividendsParams = RestStockCorporateActionsParams;
+/** Params for `stock.corporateActions.listingApplicants` */
+export type RestStockCorporateActionsListingApplicantsParams = RestStockCorporateActionsParams;
+
+/** Params for `futopt.intraday.products` */
+export interface RestFutOptIntradayProductsParams {
+  type: FutOptType;
+  exchange?: 'TAIFEX';
+  session?: 'REGULAR' | 'AFTERHOURS';
+  contractType?: ContractType;
+  status?: 'N' | 'P' | 'U';
+  [key: string]: unknown;
+}
+
+/** Params for `futopt.intraday.tickers` */
+export interface RestFutOptIntradayTickersParams {
+  type: FutOptType;
+  exchange?: 'TAIFEX';
+  session?: 'REGULAR' | 'AFTERHOURS';
+  product?: string;
+  contractType?: ContractType;
+  isSpread?: boolean;
+  [key: string]: unknown;
+}
+
+interface RestFutOptIntradaySymbolParams {
+  symbol: string;
+  session?: 'afterhours';
+  [key: string]: unknown;
+}
+
+/** Params for `futopt.intraday.quote` */
+export type RestFutOptIntradayQuoteParams = RestFutOptIntradaySymbolParams;
+/** Params for `futopt.intraday.ticker` */
+export type RestFutOptIntradayTickerParams = RestFutOptIntradaySymbolParams;
+/** Params for `futopt.intraday.volumes` */
+export type RestFutOptIntradayVolumesParams = RestFutOptIntradaySymbolParams;
+
+/** Params for `futopt.intraday.candles` */
+export interface RestFutOptIntradayCandlesParams extends RestFutOptIntradaySymbolParams {
+  timeframe?: IntradayTimeframe;
+}
+
+/** Params for `futopt.intraday.trades` */
+export interface RestFutOptIntradayTradesParams extends RestFutOptIntradaySymbolParams {
+  offset?: number;
+  limit?: number;
+  isTrial?: boolean;
+}
+
+/** Params for `futopt.historical.candles` */
+export interface RestFutOptHistoricalCandlesParams {
+  symbol: string;
+  contractMonth?: string;
+  from?: string;
+  to?: string;
+  timeframe?: Timeframe;
+  fields?: string;
+  session?: 'afterhours';
+  [key: string]: unknown;
+}
+
+/** Params for `futopt.historical.daily` */
+export interface RestFutOptHistoricalDailyParams {
+  symbol: string;
+  from?: string;
+  to?: string;
+  session?: 'afterhours';
+  [key: string]: unknown;
+}
+
+// ============================================================================
 // Client Interfaces
 // ============================================================================
 
 /** Stock historical client interface */
 export interface StockHistoricalClient {
   /** Get historical candles for a stock */
-  candles(symbol: string, from?: string, to?: string, timeframe?: string): Promise<HistoricalCandlesResponse>;
+  candles(symbol: string | RestStockHistoricalCandlesParams, from?: string, to?: string, timeframe?: string): Promise<HistoricalCandlesResponse>;
   /** Get historical stats for a stock */
-  stats(symbol: string): Promise<StatsResponse>;
+  stats(symbol: string | RestStockHistoricalStatsParams): Promise<StatsResponse>;
 }
 
 /** Stock snapshot client interface */
 export interface StockSnapshotClient {
   /** Get snapshot quotes for a market */
-  quotes(market: string, typeFilter?: string): Promise<SnapshotQuotesResponse>;
+  quotes(market: string | RestStockSnapshotQuotesParams, typeFilter?: string): Promise<SnapshotQuotesResponse>;
   /** Get movers (top gainers/losers) for a market */
-  movers(market: string, direction?: string, change?: string): Promise<MoversResponse>;
+  movers(market: string | RestStockSnapshotMoversParams, direction?: string, change?: string): Promise<MoversResponse>;
   /** Get most actively traded stocks for a market */
-  actives(market: string, trade?: string): Promise<ActivesResponse>;
+  actives(market: string | RestStockSnapshotActivesParams, trade?: string): Promise<ActivesResponse>;
 }
 
 /** Stock technical client interface */
 export interface StockTechnicalClient {
   /** Get SMA for a stock */
-  sma(symbol: string, from?: string, to?: string, timeframe?: string, period?: number): Promise<SmaResponse>;
+  sma(symbol: string | RestStockTechnicalSmaParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<SmaResponse>;
   /** Get RSI for a stock */
-  rsi(symbol: string, from?: string, to?: string, timeframe?: string, period?: number): Promise<RsiResponse>;
+  rsi(symbol: string | RestStockTechnicalRsiParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<RsiResponse>;
   /** Get KDJ for a stock */
-  kdj(symbol: string, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number): Promise<KdjResponse>;
+  kdj(symbol: string | RestStockTechnicalKdjParams, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number): Promise<KdjResponse>;
   /** Get MACD for a stock */
-  macd(symbol: string, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
+  macd(symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
   /** Get Bollinger Bands for a stock */
-  bb(symbol: string, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number): Promise<BbResponse>;
+  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number): Promise<BbResponse>;
 }
 
 /** Stock corporate actions client interface */
 export interface StockCorporateActionsClient {
   /** Get capital changes */
-  capitalChanges(date?: string, startDate?: string, endDate?: string): Promise<CapitalChangesResponse>;
+  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string): Promise<CapitalChangesResponse>;
   /** Get dividends */
-  dividends(date?: string, startDate?: string, endDate?: string): Promise<DividendsResponse>;
+  dividends(date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string): Promise<DividendsResponse>;
   /** Get listing applicants */
-  listingApplicants(date?: string, startDate?: string, endDate?: string): Promise<ListingApplicantsResponse>;
+  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string): Promise<ListingApplicantsResponse>;
 }
 
 /** FutOpt historical client interface */
 export interface FutOptHistoricalClient {
   /** Get historical candles for a FutOpt contract */
-  candles(symbol: string, from?: string, to?: string, timeframe?: string, afterHours?: boolean): Promise<FutOptHistoricalCandlesResponse>;
+  candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean): Promise<FutOptHistoricalCandlesResponse>;
   /** Get daily historical data for a FutOpt contract */
-  daily(symbol: string, from?: string, to?: string, afterHours?: boolean): Promise<FutOptDailyResponse>;
+  daily(symbol: string | RestFutOptHistoricalDailyParams, from?: string, to?: string, afterHours?: boolean): Promise<FutOptDailyResponse>;
 }

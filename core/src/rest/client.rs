@@ -262,6 +262,74 @@ impl RestClient {
         &self.base_url
     }
 
+    /// Send a GET to `path` with an arbitrary query string and return the
+    /// response body as-is.
+    ///
+    /// The typed builders under [`stock`](Self::stock) and
+    /// [`futopt`](Self::futopt) only emit the query params they declare. This
+    /// is the escape hatch for bindings that forward caller-supplied params
+    /// verbatim, the way the official Node SDK does, so a param the API
+    /// documents is reachable without an SDK release.
+    ///
+    /// Each `path` element is one URL path segment and each query key and
+    /// value is percent-encoded, so a spread symbol such as `TXFC4/TXFD4`
+    /// stays a single segment. Auth, retry and status handling are the same
+    /// as for the typed builders.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::ApiKey("my-key".to_string()));
+    /// let trades = client.get_json(
+    ///     &["stock", "intraday", "trades", "2330"],
+    ///     &[("limit", "5"), ("isTrial", "false")],
+    /// )?;
+    /// # Ok::<(), marketdata_core::MarketDataError>(())
+    /// ```
+    ///
+    /// # Errors
+    /// Same as the typed builders' `send()`: [`MarketDataError::ApiError`] on
+    /// a non-2xx status, transport and timeout errors, and
+    /// [`MarketDataError::Other`] if the body is not JSON.
+    ///
+    /// Hidden from the docs and the public-API baseline: it exists for the
+    /// bindings, not as a supported Rust API, and bypasses every typed check.
+    #[doc(hidden)]
+    pub fn get_json<K, V>(
+        &self,
+        path: &[&str],
+        query: &[(K, V)],
+    ) -> Result<serde_json::Value, MarketDataError>
+    where
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let url = self.endpoint_url(path, query);
+        let response = self.get(&url)?;
+        super::read_json(response)
+    }
+
+    /// Build `{base}/{segment}/...?{key}={value}&...`, encoding every part.
+    fn endpoint_url<K, V>(&self, path: &[&str], query: &[(K, V)]) -> String
+    where
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let mut url = self.base_url.clone();
+        for segment in path {
+            url.push('/');
+            url.push_str(&super::encode_symbol(segment));
+        }
+        for (i, (key, value)) in query.iter().enumerate() {
+            url.push(if i == 0 { '?' } else { '&' });
+            url.push_str(&super::encode_symbol(key.as_ref()));
+            url.push('=');
+            url.push_str(&super::encode_symbol(value.as_ref()));
+        }
+        url
+    }
+
     /// Access stock-related endpoints
     ///
     /// # Example
@@ -686,6 +754,26 @@ mod tests {
     fn test_rest_client_creation() {
         let client = RestClient::new(Auth::SdkToken("test-token".to_string()));
         assert_eq!(client.get_base_url(), "https://api.fugle.tw/marketdata/v1.0");
+    }
+
+    #[test]
+    fn test_endpoint_url_encodes_segments_and_query() {
+        let client = RestClient::new(Auth::SdkToken("t".to_string()));
+        let url = client.endpoint_url(
+            &["futopt", "intraday", "quote", "TXFC4/TXFD4"],
+            &[("session", "afterhours"), ("a b", "x&y=z")],
+        );
+        assert_eq!(
+            url,
+            "https://api.fugle.tw/marketdata/v1.0/futopt/intraday/quote/TXFC4%2FTXFD4?session=afterhours&a%20b=x%26y%3Dz"
+        );
+    }
+
+    #[test]
+    fn test_endpoint_url_without_query() {
+        let client = RestClient::new(Auth::SdkToken("t".to_string()));
+        let url = client.endpoint_url::<&str, &str>(&["stock", "corporate-actions", "dividends"], &[]);
+        assert_eq!(url, "https://api.fugle.tw/marketdata/v1.0/stock/corporate-actions/dividends");
     }
 
     #[test]

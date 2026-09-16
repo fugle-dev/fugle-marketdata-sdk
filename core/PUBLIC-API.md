@@ -35,6 +35,14 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — raw GET for verbatim query params (#16)
+
+- No surface change. `RestClient::get_json` is `pub` so the Node binding can
+  forward the legacy `{ symbol, ...query }` object verbatim, but it is
+  `#[doc(hidden)]`: it bypasses every typed check and is not a supported Rust
+  API, so it stays out of the docs and out of `PUBLIC-API.txt`. It may change
+  or disappear without a changelog entry.
+
 ### 0.9.0-rc.1 — REST responses pass through verbatim (#10)
 
 The typed response models leave the return path. They were on it as a
