@@ -1,29 +1,27 @@
 //! REST client wrapper types for UniFFI bindings
 //!
-//! This module provides Arc-wrapped client types that can be safely passed across FFI boundaries.
-//! All methods return typed models (Quote, Ticker, etc.) via async methods.
+//! This module provides Arc-wrapped client types that can be safely passed
+//! across FFI boundaries.
+//!
+//! Every REST method returns the server's JSON response verbatim, as a string.
+//! UniFFI cannot carry a dynamic JSON value across the FFI boundary, and the
+//! mirrored structs this module used to return were a hand-maintained copy of
+//! `marketdata_core::models` that had drifted badly — `FutOptQuote` alone was
+//! missing 11 fields. Handing the body over untouched removes that whole class
+//! of bug; callers decode it with their platform's JSON library.
+//!
 //! Sync variants are provided for simple use cases.
 
 use std::sync::Arc;
 use marketdata_core::{Auth, RestClient as CoreRestClient};
 use crate::errors::MarketDataError;
-use crate::models::{
-    Quote, Ticker, TradesResponse, IntradayCandlesResponse, VolumesResponse,
-    FutOptQuote, FutOptTicker, ProductsResponse,
-    // Historical models
-    HistoricalCandlesResponse, StatsResponse,
-    // Snapshot models
-    SnapshotQuotesResponse, MoversResponse, ActivesResponse,
-    // Technical indicator models
-    SmaResponse, RsiResponse, KdjResponse, MacdResponse, BbResponse,
-    // Corporate actions models
-    CapitalChangesResponse, DividendsResponse, ListingApplicantsResponse,
-    // Ownership models
-    DirectorHoldingsResponse, EtfHoldingsResponse, InstitutionalTradesResponse,
-    TdccDistributionResponse,
-    // FutOpt historical models
-    FutOptHistoricalCandlesResponse, FutOptDailyResponse,
-};
+
+/// Serialise a decoded response body back to a JSON string for the FFI boundary.
+fn to_json(value: &serde_json::Value) -> Result<String, MarketDataError> {
+    serde_json::to_string(value).map_err(|e| MarketDataError::Other {
+        msg: format!("Failed to serialize response: {}", e),
+    })
+}
 
 // ============================================================================
 // RestClient - Main entry point
@@ -169,7 +167,7 @@ impl StockIntradayClient {
     /// Get quote for a symbol (async)
     ///
     /// Returns typed Quote model with all fields directly accessible.
-    pub async fn get_quote(&self, symbol: String) -> Result<Quote, MarketDataError> {
+    pub async fn get_quote(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().intraday().quote().symbol(&symbol).send()
@@ -177,13 +175,13 @@ impl StockIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get ticker info for a symbol (async)
     ///
     /// Returns typed Ticker model with stock metadata.
-    pub async fn get_ticker(&self, symbol: String) -> Result<Ticker, MarketDataError> {
+    pub async fn get_ticker(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().intraday().ticker().symbol(&symbol).send()
@@ -191,13 +189,13 @@ impl StockIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get trade history for a symbol (async)
     ///
     /// Returns typed TradesResponse with list of trades.
-    pub async fn get_trades(&self, symbol: String) -> Result<TradesResponse, MarketDataError> {
+    pub async fn get_trades(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().intraday().trades().symbol(&symbol).send()
@@ -205,14 +203,14 @@ impl StockIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get candlestick data for a symbol (async)
     ///
     /// timeframe: "1", "5", "10", "15", "30", "60" (minutes)
     /// Returns typed IntradayCandlesResponse with OHLCV data.
-    pub async fn get_candles(&self, symbol: String, timeframe: String) -> Result<IntradayCandlesResponse, MarketDataError> {
+    pub async fn get_candles(&self, symbol: String, timeframe: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().intraday().candles()
@@ -223,13 +221,13 @@ impl StockIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get volume breakdown for a symbol (async)
     ///
     /// Returns typed VolumesResponse with volume at price data.
-    pub async fn get_volumes(&self, symbol: String) -> Result<VolumesResponse, MarketDataError> {
+    pub async fn get_volumes(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().intraday().volumes().symbol(&symbol).send()
@@ -237,13 +235,13 @@ impl StockIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get batch tickers for a security type (async)
     ///
     /// typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
-    pub async fn get_tickers(&self, typ: String) -> Result<Vec<Ticker>, MarketDataError> {
+    pub async fn get_tickers(&self, typ: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().intraday().tickers()
@@ -252,52 +250,52 @@ impl StockIntradayClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into_iter().map(|t| t.into()).collect())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
 
     /// Get quote for a symbol (sync/blocking)
-    pub fn quote_sync(&self, symbol: String) -> Result<Quote, MarketDataError> {
+    pub fn quote_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().quote().symbol(&symbol).send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get ticker info for a symbol (sync/blocking)
-    pub fn ticker_sync(&self, symbol: String) -> Result<Ticker, MarketDataError> {
+    pub fn ticker_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().ticker().symbol(&symbol).send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get trade history for a symbol (sync/blocking)
-    pub fn trades_sync(&self, symbol: String) -> Result<TradesResponse, MarketDataError> {
+    pub fn trades_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().trades().symbol(&symbol).send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get candlestick data for a symbol (sync/blocking)
-    pub fn candles_sync(&self, symbol: String, timeframe: String) -> Result<IntradayCandlesResponse, MarketDataError> {
+    pub fn candles_sync(&self, symbol: String, timeframe: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().candles()
             .symbol(&symbol)
             .timeframe(&timeframe)
             .send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get volume breakdown for a symbol (sync/blocking)
-    pub fn volumes_sync(&self, symbol: String) -> Result<VolumesResponse, MarketDataError> {
+    pub fn volumes_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().volumes().symbol(&symbol).send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get batch tickers for a security type (sync/blocking)
     ///
     /// typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
-    pub fn tickers_sync(&self, typ: String) -> Result<Vec<Ticker>, MarketDataError> {
+    pub fn tickers_sync(&self, typ: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().tickers()
             .typ(&typ)
             .send()?;
-        Ok(result.into_iter().map(|t| t.into()).collect())
+        to_json(&result)
     }
 }
 
@@ -339,7 +337,7 @@ impl StockHistoricalClient {
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
-    ) -> Result<HistoricalCandlesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_historical_candles_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref())
@@ -347,13 +345,13 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get historical stats for a symbol (async)
     ///
     /// Returns summary statistics including 52-week high/low
-    pub async fn get_stats(&self, symbol: String) -> Result<StatsResponse, MarketDataError> {
+    pub async fn get_stats(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.stock().historical().stats().symbol(&symbol).send()
@@ -361,7 +359,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
@@ -373,15 +371,15 @@ impl StockHistoricalClient {
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
-    ) -> Result<HistoricalCandlesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_historical_candles_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get historical stats for a symbol (sync/blocking)
-    pub fn stats_sync(&self, symbol: String) -> Result<StatsResponse, MarketDataError> {
+    pub fn stats_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().historical().stats().symbol(&symbol).send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 }
 
@@ -418,7 +416,7 @@ impl StockSnapshotClient {
         &self,
         market: String,
         type_filter: Option<String>,
-    ) -> Result<SnapshotQuotesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_snapshot_quotes_request(&inner, &market, type_filter.as_deref())
@@ -426,7 +424,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get top movers (gainers/losers) in a market (async)
@@ -440,7 +438,7 @@ impl StockSnapshotClient {
         market: String,
         direction: Option<String>,
         change: Option<String>,
-    ) -> Result<MoversResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_snapshot_movers_request(&inner, &market, direction.as_deref(), change.as_deref())
@@ -448,7 +446,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get most actively traded stocks (async)
@@ -460,7 +458,7 @@ impl StockSnapshotClient {
         &self,
         market: String,
         trade: Option<String>,
-    ) -> Result<ActivesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_snapshot_actives_request(&inner, &market, trade.as_deref())
@@ -468,7 +466,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
@@ -478,9 +476,9 @@ impl StockSnapshotClient {
         &self,
         market: String,
         type_filter: Option<String>,
-    ) -> Result<SnapshotQuotesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_snapshot_quotes_request(&self.inner, &market, type_filter.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get top movers (sync/blocking)
@@ -489,9 +487,9 @@ impl StockSnapshotClient {
         market: String,
         direction: Option<String>,
         change: Option<String>,
-    ) -> Result<MoversResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_snapshot_movers_request(&self.inner, &market, direction.as_deref(), change.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get most actively traded stocks (sync/blocking)
@@ -499,9 +497,9 @@ impl StockSnapshotClient {
         &self,
         market: String,
         trade: Option<String>,
-    ) -> Result<ActivesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_snapshot_actives_request(&self.inner, &market, trade.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 }
 
@@ -536,14 +534,14 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> Result<SmaResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_sma_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get Relative Strength Index (async)
@@ -554,14 +552,14 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> Result<RsiResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_rsi_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get KDJ (Stochastic Oscillator) (async)
@@ -572,14 +570,14 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> Result<KdjResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_kdj_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get MACD indicator (async)
@@ -592,14 +590,14 @@ impl StockTechnicalClient {
         fast: Option<u32>,
         slow: Option<u32>,
         signal: Option<u32>,
-    ) -> Result<MacdResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_macd_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), fast, slow, signal)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get Bollinger Bands (async)
@@ -611,14 +609,14 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>,
         stddev: Option<f64>,
-    ) -> Result<BbResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_bb_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
@@ -631,9 +629,9 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> Result<SmaResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_sma_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get Relative Strength Index (sync/blocking)
@@ -644,9 +642,9 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> Result<RsiResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_rsi_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get KDJ (sync/blocking)
@@ -657,9 +655,9 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> Result<KdjResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_kdj_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get MACD (sync/blocking)
@@ -672,9 +670,9 @@ impl StockTechnicalClient {
         fast: Option<u32>,
         slow: Option<u32>,
         signal: Option<u32>,
-    ) -> Result<MacdResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_macd_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), fast, slow, signal)?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get Bollinger Bands (sync/blocking)
@@ -686,9 +684,9 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>,
         stddev: Option<f64>,
-    ) -> Result<BbResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_bb_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)?;
-        Ok(result.into())
+        to_json(&result)
     }
 }
 
@@ -721,14 +719,14 @@ impl StockCorporateActionsClient {
         date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> Result<CapitalChangesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_capital_changes_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get dividend announcements (async)
@@ -737,14 +735,14 @@ impl StockCorporateActionsClient {
         date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> Result<DividendsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_dividends_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get IPO listing applicants (async)
@@ -753,14 +751,14 @@ impl StockCorporateActionsClient {
         date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> Result<ListingApplicantsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_listing_applicants_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
@@ -771,9 +769,9 @@ impl StockCorporateActionsClient {
         date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> Result<CapitalChangesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_capital_changes_request(&self.inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get dividend announcements (sync/blocking)
@@ -782,9 +780,9 @@ impl StockCorporateActionsClient {
         date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> Result<DividendsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_dividends_request(&self.inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get IPO listing applicants (sync/blocking)
@@ -793,9 +791,9 @@ impl StockCorporateActionsClient {
         date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> Result<ListingApplicantsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_listing_applicants_request(&self.inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())?;
-        Ok(result.into())
+        to_json(&result)
     }
 }
 
@@ -849,7 +847,7 @@ impl FutOptIntradayClient {
     /// Get quote for a futures/options contract (async)
     ///
     /// after_hours: true for after-hours session
-    pub async fn get_quote(&self, symbol: String, after_hours: bool) -> Result<FutOptQuote, MarketDataError> {
+    pub async fn get_quote(&self, symbol: String, after_hours: bool) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             let mut builder = inner.futopt().intraday().quote().symbol(&symbol);
@@ -861,11 +859,11 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get ticker info for a contract (async)
-    pub async fn get_ticker(&self, symbol: String, after_hours: bool) -> Result<FutOptTicker, MarketDataError> {
+    pub async fn get_ticker(&self, symbol: String, after_hours: bool) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             let mut builder = inner.futopt().intraday().ticker().symbol(&symbol);
@@ -877,13 +875,13 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get available products list (async)
     ///
     /// typ: "F" for futures, "O" for options
-    pub async fn get_products(&self, typ: String) -> Result<ProductsResponse, MarketDataError> {
+    pub async fn get_products(&self, typ: String) -> Result<String, MarketDataError> {
         let futopt_type = parse_futopt_type(&typ)?;
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
@@ -892,11 +890,11 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
 
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get candlestick data for a futures/options contract (async)
-    pub async fn get_candles(&self, symbol: String, timeframe: String) -> Result<IntradayCandlesResponse, MarketDataError> {
+    pub async fn get_candles(&self, symbol: String, timeframe: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.futopt().intraday().candles()
@@ -906,11 +904,11 @@ impl FutOptIntradayClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get trade history for a futures/options contract (async)
-    pub async fn get_trades(&self, symbol: String) -> Result<TradesResponse, MarketDataError> {
+    pub async fn get_trades(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.futopt().intraday().trades()
@@ -919,11 +917,11 @@ impl FutOptIntradayClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get volume breakdown by price for a futures/options contract (async)
-    pub async fn get_volumes(&self, symbol: String) -> Result<VolumesResponse, MarketDataError> {
+    pub async fn get_volumes(&self, symbol: String) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             inner.futopt().intraday().volumes()
@@ -932,7 +930,7 @@ impl FutOptIntradayClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get batch tickers for futures/options (async)
@@ -942,7 +940,7 @@ impl FutOptIntradayClient {
         &self,
         typ: String,
         is_spread: Option<bool>,
-    ) -> Result<Vec<FutOptTicker>, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let futopt_type = parse_futopt_type(&typ)?;
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
@@ -954,61 +952,61 @@ impl FutOptIntradayClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into_iter().map(|t| t.into()).collect())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
 
     /// Get quote for a futures/options contract (sync/blocking)
-    pub fn quote_sync(&self, symbol: String, after_hours: bool) -> Result<FutOptQuote, MarketDataError> {
+    pub fn quote_sync(&self, symbol: String, after_hours: bool) -> Result<String, MarketDataError> {
         let mut builder = self.inner.futopt().intraday().quote().symbol(&symbol);
         if after_hours {
             builder = builder.after_hours();
         }
         let result = builder.send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get ticker info for a contract (sync/blocking)
-    pub fn ticker_sync(&self, symbol: String, after_hours: bool) -> Result<FutOptTicker, MarketDataError> {
+    pub fn ticker_sync(&self, symbol: String, after_hours: bool) -> Result<String, MarketDataError> {
         let mut builder = self.inner.futopt().intraday().ticker().symbol(&symbol);
         if after_hours {
             builder = builder.after_hours();
         }
         let result = builder.send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get available products list (sync/blocking)
-    pub fn products_sync(&self, typ: String) -> Result<ProductsResponse, MarketDataError> {
+    pub fn products_sync(&self, typ: String) -> Result<String, MarketDataError> {
         let futopt_type = parse_futopt_type(&typ)?;
         let result = self.inner.futopt().intraday().products().typ(futopt_type).send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get candlestick data for a contract (sync/blocking)
-    pub fn candles_sync(&self, symbol: String, timeframe: String) -> Result<IntradayCandlesResponse, MarketDataError> {
+    pub fn candles_sync(&self, symbol: String, timeframe: String) -> Result<String, MarketDataError> {
         let result = self.inner.futopt().intraday().candles()
             .symbol(&symbol)
             .timeframe(&timeframe)
             .send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get trade history for a contract (sync/blocking)
-    pub fn trades_sync(&self, symbol: String) -> Result<TradesResponse, MarketDataError> {
+    pub fn trades_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.futopt().intraday().trades()
             .symbol(&symbol)
             .send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get volume breakdown by price for a contract (sync/blocking)
-    pub fn volumes_sync(&self, symbol: String) -> Result<VolumesResponse, MarketDataError> {
+    pub fn volumes_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.futopt().intraday().volumes()
             .symbol(&symbol)
             .send()?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get batch tickers for futures/options (sync/blocking)
@@ -1018,14 +1016,14 @@ impl FutOptIntradayClient {
         &self,
         typ: String,
         is_spread: Option<bool>,
-    ) -> Result<Vec<FutOptTicker>, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let futopt_type = parse_futopt_type(&typ)?;
         let mut builder = self.inner.futopt().intraday().tickers().typ(futopt_type);
         if let Some(sp) = is_spread {
             builder = builder.is_spread(sp);
         }
         let result = builder.send()?;
-        Ok(result.into_iter().map(|t| t.into()).collect())
+        to_json(&result)
     }
 }
 
@@ -1060,14 +1058,14 @@ impl FutOptHistoricalClient {
         to: Option<String>,
         timeframe: Option<String>,
         after_hours: bool,
-    ) -> Result<FutOptHistoricalCandlesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_futopt_historical_candles_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), after_hours)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get daily historical data for a contract (async)
@@ -1077,14 +1075,14 @@ impl FutOptHistoricalClient {
         from: Option<String>,
         to: Option<String>,
         after_hours: bool,
-    ) -> Result<FutOptDailyResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_futopt_daily_request(&inner, &symbol, from.as_deref(), to.as_deref(), after_hours)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     // ========== Sync Methods (Blocking) ==========
@@ -1097,9 +1095,9 @@ impl FutOptHistoricalClient {
         to: Option<String>,
         timeframe: Option<String>,
         after_hours: bool,
-    ) -> Result<FutOptHistoricalCandlesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_futopt_historical_candles_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), after_hours)?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get daily historical data for a contract (sync/blocking)
@@ -1109,9 +1107,9 @@ impl FutOptHistoricalClient {
         from: Option<String>,
         to: Option<String>,
         after_hours: bool,
-    ) -> Result<FutOptDailyResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_futopt_daily_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), after_hours)?;
-        Ok(result.into())
+        to_json(&result)
     }
 }
 
@@ -1140,7 +1138,7 @@ fn build_historical_candles_request(
     from: Option<&str>,
     to: Option<&str>,
     timeframe: Option<&str>,
-) -> Result<marketdata_core::models::HistoricalCandlesResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let historical = client.stock().historical();
     let mut builder = historical.candles().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1154,7 +1152,7 @@ fn build_snapshot_quotes_request(
     client: &CoreRestClient,
     market: &str,
     type_filter: Option<&str>,
-) -> Result<marketdata_core::models::SnapshotQuotesResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let snapshot = client.stock().snapshot();
     let mut builder = snapshot.quotes().market(market);
     if let Some(tf) = type_filter { builder = builder.type_filter(tf); }
@@ -1167,7 +1165,7 @@ fn build_snapshot_movers_request(
     market: &str,
     direction: Option<&str>,
     change: Option<&str>,
-) -> Result<marketdata_core::models::MoversResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let snapshot = client.stock().snapshot();
     let mut builder = snapshot.movers().market(market);
     if let Some(d) = direction { builder = builder.direction(d); }
@@ -1180,7 +1178,7 @@ fn build_snapshot_actives_request(
     client: &CoreRestClient,
     market: &str,
     trade: Option<&str>,
-) -> Result<marketdata_core::models::ActivesResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let snapshot = client.stock().snapshot();
     let mut builder = snapshot.actives().market(market);
     if let Some(t) = trade { builder = builder.trade(t); }
@@ -1195,7 +1193,7 @@ fn build_sma_request(
     to: Option<&str>,
     timeframe: Option<&str>,
     period: Option<u32>,
-) -> Result<marketdata_core::models::SmaResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.sma().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1213,7 +1211,7 @@ fn build_rsi_request(
     to: Option<&str>,
     timeframe: Option<&str>,
     period: Option<u32>,
-) -> Result<marketdata_core::models::RsiResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.rsi().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1231,7 +1229,7 @@ fn build_kdj_request(
     to: Option<&str>,
     timeframe: Option<&str>,
     period: Option<u32>,
-) -> Result<marketdata_core::models::KdjResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.kdj().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1251,7 +1249,7 @@ fn build_macd_request(
     fast: Option<u32>,
     slow: Option<u32>,
     signal: Option<u32>,
-) -> Result<marketdata_core::models::MacdResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.macd().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1272,7 +1270,7 @@ fn build_bb_request(
     timeframe: Option<&str>,
     period: Option<u32>,
     stddev: Option<f64>,
-) -> Result<marketdata_core::models::BbResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.bb().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1289,7 +1287,7 @@ fn build_capital_changes_request(
     date: Option<&str>,
     start_date: Option<&str>,
     end_date: Option<&str>,
-) -> Result<marketdata_core::models::CapitalChangesResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let corporate = client.stock().corporate_actions();
     let mut builder = corporate.capital_changes();
     if let Some(d) = date { builder = builder.date(d); }
@@ -1304,7 +1302,7 @@ fn build_dividends_request(
     date: Option<&str>,
     start_date: Option<&str>,
     end_date: Option<&str>,
-) -> Result<marketdata_core::models::DividendsResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let corporate = client.stock().corporate_actions();
     let mut builder = corporate.dividends();
     if let Some(d) = date { builder = builder.date(d); }
@@ -1319,7 +1317,7 @@ fn build_listing_applicants_request(
     date: Option<&str>,
     start_date: Option<&str>,
     end_date: Option<&str>,
-) -> Result<marketdata_core::models::ListingApplicantsResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let corporate = client.stock().corporate_actions();
     let mut builder = corporate.listing_applicants();
     if let Some(d) = date { builder = builder.date(d); }
@@ -1336,7 +1334,7 @@ fn build_futopt_historical_candles_request(
     to: Option<&str>,
     timeframe: Option<&str>,
     after_hours: bool,
-) -> Result<marketdata_core::models::futopt::FutOptHistoricalCandlesResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let historical = client.futopt().historical();
     let mut builder = historical.candles().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1360,7 +1358,7 @@ fn build_futopt_daily_request(
     from: Option<&str>,
     to: Option<&str>,
     after_hours: bool,
-) -> Result<marketdata_core::models::futopt::FutOptDailyResponse, marketdata_core::MarketDataError> {
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let historical = client.futopt().historical();
     let mut builder = historical.daily().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
@@ -1445,14 +1443,14 @@ fn parse_holdings_sort(
 /// Generate one blocking request function per ownership endpoint. The core
 /// builders share a query contract but no trait, hence a macro.
 macro_rules! ownership_request {
-    ($fn_name:ident, $method:ident, $resp:ident) => {
+    ($fn_name:ident, $method:ident) => {
         fn $fn_name(
             client: &CoreRestClient,
             symbol: &str,
             from: Option<&str>,
             to: Option<&str>,
             sort: Option<&str>,
-        ) -> Result<marketdata_core::models::$resp, marketdata_core::MarketDataError> {
+        ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
             let sort = parse_holdings_sort(sort)?;
             let stock = client.stock();
             let ownership = stock.ownership();
@@ -1471,10 +1469,10 @@ macro_rules! ownership_request {
     };
 }
 
-ownership_request!(build_etf_holdings_request, etf_holdings, EtfHoldingsResponse);
-ownership_request!(build_institutional_trades_request, institutional_trades, InstitutionalTradesResponse);
-ownership_request!(build_director_holdings_request, director_holdings, DirectorHoldingsResponse);
-ownership_request!(build_tdcc_distribution_request, tdcc_distribution, TdccDistributionResponse);
+ownership_request!(build_etf_holdings_request, etf_holdings);
+ownership_request!(build_institutional_trades_request, institutional_trades);
+ownership_request!(build_director_holdings_request, director_holdings);
+ownership_request!(build_tdcc_distribution_request, tdcc_distribution);
 
 #[cfg(not(feature = "cpp"))]
 #[uniffi::export(async_runtime = "tokio")]
@@ -1486,7 +1484,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<EtfHoldingsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_etf_holdings_request(
@@ -1499,7 +1497,7 @@ impl StockOwnershipClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get daily trading by the three major institutional investors (async)
@@ -1509,7 +1507,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<InstitutionalTradesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_institutional_trades_request(
@@ -1522,7 +1520,7 @@ impl StockOwnershipClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get monthly holdings and pledges disclosed by directors and supervisors (async)
@@ -1532,7 +1530,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<DirectorHoldingsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_director_holdings_request(
@@ -1545,7 +1543,7 @@ impl StockOwnershipClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
@@ -1555,7 +1553,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<TdccDistributionResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
             build_tdcc_distribution_request(
@@ -1568,7 +1566,7 @@ impl StockOwnershipClient {
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
-        Ok(result.into())
+        to_json(&result)
     }
 }
 
@@ -1582,7 +1580,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<EtfHoldingsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_etf_holdings_request(
             &self.inner,
             &symbol,
@@ -1590,7 +1588,7 @@ impl StockOwnershipClient {
             to.as_deref(),
             sort.as_deref(),
         )?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get daily trading by the three major institutional investors (sync/blocking)
@@ -1600,7 +1598,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<InstitutionalTradesResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_institutional_trades_request(
             &self.inner,
             &symbol,
@@ -1608,7 +1606,7 @@ impl StockOwnershipClient {
             to.as_deref(),
             sort.as_deref(),
         )?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
@@ -1618,7 +1616,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<DirectorHoldingsResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_director_holdings_request(
             &self.inner,
             &symbol,
@@ -1626,7 +1624,7 @@ impl StockOwnershipClient {
             to.as_deref(),
             sort.as_deref(),
         )?;
-        Ok(result.into())
+        to_json(&result)
     }
 
     /// Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
@@ -1636,7 +1634,7 @@ impl StockOwnershipClient {
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> Result<TdccDistributionResponse, MarketDataError> {
+    ) -> Result<String, MarketDataError> {
         let result = build_tdcc_distribution_request(
             &self.inner,
             &symbol,
@@ -1644,6 +1642,6 @@ impl StockOwnershipClient {
             to.as_deref(),
             sort.as_deref(),
         )?;
-        Ok(result.into())
+        to_json(&result)
     }
 }
