@@ -2,7 +2,7 @@
 
 use crate::{
     errors::MarketDataError,
-    models::futopt::{ContractType, FutOptTicker, FutOptType},
+    models::futopt::{ContractType, FutOptType},
     rest::client::RestClient,
 };
 
@@ -72,7 +72,7 @@ impl<'a> TickersRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<Vec<FutOptTicker>, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         // type is required for tickers endpoint
         let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(
             "type parameter is required for tickers endpoint".to_string(),
@@ -103,17 +103,7 @@ impl<'a> TickersRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        // Prod wraps the list in an envelope: {type,exchange,session,data:[…]}.
-        // Decoding straight into Vec<FutOptTicker> fails with
-        // "invalid type: map, expected a sequence".
-        #[derive(serde::Deserialize)]
-        struct Envelope {
-            #[serde(default)]
-            data: Vec<FutOptTicker>,
-        }
-        let env: Envelope = crate::rest::read_json(response)?;
-
-        Ok(env.data)
+        crate::rest::read_json(response)
     }
 }
 
@@ -175,18 +165,19 @@ mod tests {
     }
 
     #[test]
-    fn test_tickers_envelope_extraction() {
-        // Prod shape: object envelope, not a bare array.
+    fn test_tickers_envelope_is_passed_through() {
+        // Prod shape: object envelope, not a bare array. Earlier releases
+        // unwrapped this to `Vec<FutOptTicker>`, which dropped the sibling
+        // metadata and diverged from the official SDK. The envelope now
+        // reaches the caller untouched.
         let body = r#"{"type":"FUTURE","exchange":"TAIFEX","session":"REGULAR",
             "data":[{"symbol":"TXFD6","date":"2026-04-16"}]}"#;
-        #[derive(serde::Deserialize)]
-        struct Envelope {
-            #[serde(default)]
-            data: Vec<FutOptTicker>,
-        }
-        let env: Envelope = serde_json::from_str(body).unwrap();
-        assert_eq!(env.data.len(), 1);
-        assert_eq!(env.data[0].symbol, "TXFD6");
+        let raw: serde_json::Value = serde_json::from_str(body).unwrap();
+
+        assert_eq!(raw["type"], "FUTURE");
+        assert_eq!(raw["session"], "REGULAR");
+        assert_eq!(raw["data"].as_array().unwrap().len(), 1);
+        assert_eq!(raw["data"][0]["symbol"], "TXFD6");
     }
 
     #[test]

@@ -2,7 +2,6 @@
 
 use crate::{
     errors::MarketDataError,
-    models::ListingApplicantsResponse,
     rest::client::RestClient,
 };
 
@@ -48,7 +47,7 @@ impl<'a> ListingApplicantsRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<ListingApplicantsResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         // Build URL
         let mut url = format!(
             "{}/stock/corporate-actions/listing-applicants",
@@ -74,9 +73,7 @@ impl<'a> ListingApplicantsRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let data: ListingApplicantsResponse = crate::rest::read_json(response)?;
-
-        Ok(data)
+        crate::rest::read_json(response)
     }
 }
 

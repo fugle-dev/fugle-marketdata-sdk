@@ -1,6 +1,6 @@
 //! Daily historical endpoint - GET /futopt/historical/daily/{symbol}
 
-use crate::{errors::MarketDataError, models::futopt::FutOptDailyResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for FutOpt daily historical endpoint
 pub struct FutOptDailyRequestBuilder<'a> {
@@ -52,7 +52,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<FutOptDailyResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -83,9 +83,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let daily: FutOptDailyResponse = crate::rest::read_json(response)?;
-
-        Ok(daily)
+        crate::rest::read_json(response)
     }
 }
 

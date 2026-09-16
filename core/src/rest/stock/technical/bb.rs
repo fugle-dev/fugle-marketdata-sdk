@@ -1,7 +1,7 @@
 //! BB endpoint - GET /stock/technical/bb/{symbol}
 //! Will be completed in Task 2
 
-use crate::{errors::MarketDataError, models::BbResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for Bollinger Bands (BB) endpoint
 pub struct BbRequestBuilder<'a> {
@@ -71,7 +71,7 @@ impl<'a> BbRequestBuilder<'a> {
     /// on transport failure, [`MarketDataError::ApiError`] on a non-2xx HTTP
     /// status, and [`MarketDataError::DeserializationError`] or
     /// [`MarketDataError::Other`] if the body fails to decode.
-    pub fn send(self) -> Result<BbResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -105,8 +105,6 @@ impl<'a> BbRequestBuilder<'a> {
         }
 
         let response = self.client.get(&url)?;
-        let bb_response: BbResponse = crate::rest::read_json(response)?;
-
-        Ok(bb_response)
+        crate::rest::read_json(response)
     }
 }

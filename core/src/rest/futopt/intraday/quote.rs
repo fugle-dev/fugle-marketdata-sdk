@@ -2,7 +2,6 @@
 
 use crate::{
     errors::MarketDataError,
-    models::futopt::FutOptQuote,
     rest::client::RestClient,
 };
 
@@ -42,7 +41,7 @@ impl<'a> QuoteRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<FutOptQuote, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -63,9 +62,7 @@ impl<'a> QuoteRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let quote: FutOptQuote = crate::rest::read_json(response)?;
-
-        Ok(quote)
+        crate::rest::read_json(response)
     }
 }
 

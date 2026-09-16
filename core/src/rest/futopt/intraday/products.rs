@@ -2,7 +2,7 @@
 
 use crate::{
     errors::MarketDataError,
-    models::futopt::{ContractType, FutOptType, ProductsResponse},
+    models::futopt::{ContractType, FutOptType},
     rest::client::RestClient,
 };
 
@@ -63,7 +63,7 @@ impl<'a> ProductsRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<ProductsResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         // type is required for products endpoint
         let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(
             "type parameter is required for products endpoint".to_string(),
@@ -91,9 +91,7 @@ impl<'a> ProductsRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let products: ProductsResponse = crate::rest::read_json(response)?;
-
-        Ok(products)
+        crate::rest::read_json(response)
     }
 }
 

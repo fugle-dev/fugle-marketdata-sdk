@@ -3,7 +3,7 @@
 //! Returns monthly shareholdings and pledges disclosed by a company's directors and supervisors.
 
 use super::range::{self, HoldingsSort};
-use crate::{errors::MarketDataError, models::DirectorHoldingsResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for the director holdings endpoint
 pub struct DirectorHoldingsRequestBuilder<'a> {
@@ -55,7 +55,7 @@ impl<'a> DirectorHoldingsRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<DirectorHoldingsResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         range::send(
             self.client,
             "director-holdings",

@@ -2,7 +2,6 @@
 
 use crate::{
     errors::MarketDataError,
-    models::VolumesResponse,
     rest::client::RestClient,
 };
 
@@ -40,7 +39,7 @@ impl<'a> VolumesRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<VolumesResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -61,9 +60,7 @@ impl<'a> VolumesRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let volumes: VolumesResponse = crate::rest::read_json(response)?;
-
-        Ok(volumes)
+        crate::rest::read_json(response)
     }
 }
 

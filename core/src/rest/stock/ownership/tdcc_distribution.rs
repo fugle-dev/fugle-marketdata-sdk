@@ -3,7 +3,7 @@
 //! Returns the weekly TDCC (Taiwan Depository & Clearing Corporation) shareholder distribution by holding-size bracket.
 
 use super::range::{self, HoldingsSort};
-use crate::{errors::MarketDataError, models::TdccDistributionResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for the TDCC shareholder distribution endpoint
 pub struct TdccDistributionRequestBuilder<'a> {
@@ -55,7 +55,7 @@ impl<'a> TdccDistributionRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<TdccDistributionResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         range::send(
             self.client,
             "tdcc-distribution",

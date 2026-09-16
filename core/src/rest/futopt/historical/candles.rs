@@ -1,6 +1,6 @@
 //! Historical candles endpoint - GET /futopt/historical/candles/{symbol}
 
-use crate::{errors::MarketDataError, models::futopt::FutOptHistoricalCandlesResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for FutOpt historical candles endpoint
 pub struct FutOptHistoricalCandlesRequestBuilder<'a> {
@@ -60,7 +60,7 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<FutOptHistoricalCandlesResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -94,9 +94,7 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let candles: FutOptHistoricalCandlesResponse = crate::rest::read_json(response)?;
-
-        Ok(candles)
+        crate::rest::read_json(response)
     }
 }
 
