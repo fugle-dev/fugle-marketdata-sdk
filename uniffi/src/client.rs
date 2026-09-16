@@ -569,11 +569,13 @@ impl StockTechnicalClient {
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
+        r_period: Option<u32>,
+        k_period: Option<u32>,
+        d_period: Option<u32>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_kdj_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
+            build_kdj_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), r_period, k_period, d_period)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
@@ -654,9 +656,11 @@ impl StockTechnicalClient {
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
+        r_period: Option<u32>,
+        k_period: Option<u32>,
+        d_period: Option<u32>,
     ) -> Result<String, MarketDataError> {
-        let result = build_kdj_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)?;
+        let result = build_kdj_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), r_period, k_period, d_period)?;
         to_json(&result)
     }
 
@@ -1228,14 +1232,18 @@ fn build_kdj_request(
     from: Option<&str>,
     to: Option<&str>,
     timeframe: Option<&str>,
-    period: Option<u32>,
+    r_period: Option<u32>,
+    k_period: Option<u32>,
+    d_period: Option<u32>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.kdj().symbol(symbol);
     if let Some(f) = from { builder = builder.from(f); }
     if let Some(t) = to { builder = builder.to(t); }
     if let Some(tf) = timeframe { builder = builder.timeframe(tf); }
-    if let Some(p) = period { builder = builder.period(p); }
+    if let Some(p) = r_period { builder = builder.r_period(p); }
+    if let Some(p) = k_period { builder = builder.k_period(p); }
+    if let Some(p) = d_period { builder = builder.d_period(p); }
     builder.send()
 }
 

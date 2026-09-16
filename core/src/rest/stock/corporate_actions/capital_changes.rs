@@ -48,6 +48,13 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
         // Build URL
         let mut url = format!(
             "{}/stock/corporate-actions/capital-changes",
@@ -56,14 +63,14 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
 
         // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(date) = self.date {
+        if let Some(date) = &self.date {
             query_params.push(format!("date={}", date));
         }
-        if let Some(start_date) = self.start_date {
-            query_params.push(format!("startDate={}", start_date));
+        if let Some(start_date) = &self.start_date {
+            query_params.push(format!("start_date={}", start_date));
         }
-        if let Some(end_date) = self.end_date {
-            query_params.push(format!("endDate={}", end_date));
+        if let Some(end_date) = &self.end_date {
+            query_params.push(format!("end_date={}", end_date));
         }
 
         if !query_params.is_empty() {
@@ -71,9 +78,7 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
     }
 }
 
@@ -111,5 +116,22 @@ mod tests {
 
         assert_eq!(builder.start_date, Some("2024-01-01".to_string()));
         assert_eq!(builder.end_date, Some("2024-01-31".to_string()));
+    }
+
+    #[test]
+    fn test_capital_changes_url_uses_snake_case_date_range() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = CapitalChangesRequestBuilder::new(&client)
+            .start_date("2026-08-01")
+            .end_date("2026-09-30")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/corporate-actions/capital-changes?start_date=2026-08-01&end_date=2026-09-30",
+                client.get_base_url()
+            )
+        );
     }
 }

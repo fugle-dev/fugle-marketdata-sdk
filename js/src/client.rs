@@ -817,7 +817,9 @@ impl StockTechnicalClient {
     /// @param from - Start date (YYYY-MM-DD)
     /// @param to - End date (YYYY-MM-DD)
     /// @param timeframe - Timeframe ("D", "W", "M")
-    /// @param period - KDJ period (e.g., 9)
+    /// @param rPeriod - RSV period (e.g., 9)
+    /// @param kPeriod - K smoothing period (e.g., 3)
+    /// @param dPeriod - D smoothing period (e.g., 3)
     /// @returns Promise resolving to KDJ data
     #[napi(ts_return_type = "Promise<KdjResponse>")]
     pub async fn kdj(
@@ -826,7 +828,9 @@ impl StockTechnicalClient {
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
+        r_period: Option<u32>,
+        k_period: Option<u32>,
+        d_period: Option<u32>,
     ) -> napi::Result<Value> {
         let inner = self.inner.clone();
 
@@ -843,8 +847,14 @@ impl StockTechnicalClient {
             if let Some(tf) = timeframe {
                 builder = builder.timeframe(&tf);
             }
-            if let Some(p) = period {
-                builder = builder.period(p);
+            if let Some(p) = r_period {
+                builder = builder.r_period(p);
+            }
+            if let Some(p) = k_period {
+                builder = builder.k_period(p);
+            }
+            if let Some(p) = d_period {
+                builder = builder.d_period(p);
             }
             builder.send()
         })

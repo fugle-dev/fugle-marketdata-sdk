@@ -26,7 +26,7 @@ public interface StockTechnicalClientInterface {
     /**
      * Get KDJ (Stochastic Oscillator) (async)
      */
-    public CompletableFuture<String> getKdj(String symbol, String from, String to, String timeframe, Integer period) ;
+    public CompletableFuture<String> getKdj(String symbol, String from, String to, String timeframe, Integer rPeriod, Integer kPeriod, Integer dPeriod) ;
     
     /**
      * Get MACD indicator (async)
@@ -46,7 +46,7 @@ public interface StockTechnicalClientInterface {
     /**
      * Get KDJ (sync/blocking)
      */
-    public String kdjSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException;
+    public String kdjSync(String symbol, String from, String to, String timeframe, Integer rPeriod, Integer kPeriod, Integer dPeriod) throws MarketDataException;
     
     /**
      * Get MACD (sync/blocking)

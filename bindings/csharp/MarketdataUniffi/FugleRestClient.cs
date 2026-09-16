@@ -467,8 +467,9 @@ namespace FugleMarketData
         /// Get KDJ Stochastic Oscillator (async).
         /// </summary>
         public Task<string> GetKdjAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, uint? period = null)
-            => _inner.GetKdj(symbol, from, to, timeframe, period);
+            string symbol, string? from = null, string? to = null, string? timeframe = null,
+            uint? rPeriod = null, uint? kPeriod = null, uint? dPeriod = null)
+            => _inner.GetKdj(symbol, from, to, timeframe, rPeriod, kPeriod, dPeriod);
 
         /// <summary>
         /// Get MACD indicator (async).
@@ -506,8 +507,9 @@ namespace FugleMarketData
         /// Get KDJ Stochastic Oscillator (blocking).
         /// </summary>
         public string GetKdj(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, uint? period = null)
-            => _inner.KdjSync(symbol, from, to, timeframe, period);
+            string symbol, string? from = null, string? to = null, string? timeframe = null,
+            uint? rPeriod = null, uint? kPeriod = null, uint? dPeriod = null)
+            => _inner.KdjSync(symbol, from, to, timeframe, rPeriod, kPeriod, dPeriod);
 
         /// <summary>
         /// Get MACD indicator (blocking).

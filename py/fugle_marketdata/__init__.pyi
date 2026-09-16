@@ -677,7 +677,9 @@ class StockTechnicalClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
+        r_period: Optional[int] = None,
+        k_period: Optional[int] = None,
+        d_period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Get KDJ (Stochastic Oscillator) data.
 
@@ -686,7 +688,9 @@ class StockTechnicalClient:
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-            period: KDJ period
+            r_period: RSV period (e.g., 9)
+            k_period: K smoothing period (e.g., 3)
+            d_period: D smoothing period (e.g., 3)
 
         Returns:
             KDJ indicator data with K, D, J values
@@ -787,7 +791,9 @@ class StockTechnicalClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
+        r_period: Optional[int] = None,
+        k_period: Optional[int] = None,
+        d_period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Blocking version of `kdj()`."""
         ...

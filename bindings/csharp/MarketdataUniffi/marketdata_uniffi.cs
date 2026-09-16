@@ -1527,7 +1527,9 @@ static class _UniFFILib
         RustBuffer @from,
         RustBuffer @to,
         RustBuffer @timeframe,
-        RustBuffer @period
+        RustBuffer @rPeriod,
+        RustBuffer @kPeriod,
+        RustBuffer @dPeriod
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -1569,7 +1571,9 @@ static class _UniFFILib
         RustBuffer @from,
         RustBuffer @to,
         RustBuffer @timeframe,
-        RustBuffer @period,
+        RustBuffer @rPeriod,
+        RustBuffer @kPeriod,
+        RustBuffer @dPeriod,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -3159,10 +3163,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_kdj();
-            if (checksum != 20134)
+            if (checksum != 42166)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_kdj` checksum `20134`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_kdj` checksum `42166`, library returned `{checksum}`"
                 );
             }
         }
@@ -3199,10 +3203,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync();
-            if (checksum != 26276)
+            if (checksum != 57078)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync` checksum `26276`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync` checksum `57078`, library returned `{checksum}`"
                 );
             }
         }
@@ -7636,7 +7640,9 @@ public interface IStockTechnicalClient
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period
+        uint? @rPeriod,
+        uint? @kPeriod,
+        uint? @dPeriod
     );
 
     /// <summary>
@@ -7681,7 +7687,15 @@ public interface IStockTechnicalClient
     /// Get KDJ (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string KdjSync(string @symbol, string? @from, string? @to, string? @timeframe, uint? @period);
+    string KdjSync(
+        string @symbol,
+        string? @from,
+        string? @to,
+        string? @timeframe,
+        uint? @rPeriod,
+        uint? @kPeriod,
+        uint? @dPeriod
+    );
 
     /// <summary>
     /// Get MACD (sync/blocking)
@@ -7924,7 +7938,9 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period
+        uint? @rPeriod,
+        uint? @kPeriod,
+        uint? @dPeriod
     )
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
@@ -7937,7 +7953,9 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
                     FfiConverterOptionalString.INSTANCE.Lower(@from),
                     FfiConverterOptionalString.INSTANCE.Lower(@to),
                     FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
-                    FfiConverterOptionalUInt32.INSTANCE.Lower(@period)
+                    FfiConverterOptionalUInt32.INSTANCE.Lower(@rPeriod),
+                    FfiConverterOptionalUInt32.INSTANCE.Lower(@kPeriod),
+                    FfiConverterOptionalUInt32.INSTANCE.Lower(@dPeriod)
                 );
             }),
             // Poll
@@ -8128,7 +8146,9 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period
+        uint? @rPeriod,
+        uint? @kPeriod,
+        uint? @dPeriod
     )
     {
         return CallWithPointer(thisPtr =>
@@ -8142,7 +8162,9 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
                             FfiConverterOptionalString.INSTANCE.Lower(@from),
                             FfiConverterOptionalString.INSTANCE.Lower(@to),
                             FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
-                            FfiConverterOptionalUInt32.INSTANCE.Lower(@period),
+                            FfiConverterOptionalUInt32.INSTANCE.Lower(@rPeriod),
+                            FfiConverterOptionalUInt32.INSTANCE.Lower(@kPeriod),
+                            FfiConverterOptionalUInt32.INSTANCE.Lower(@dPeriod),
                             ref _status
                         )
                 )

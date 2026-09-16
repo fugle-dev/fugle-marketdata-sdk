@@ -1525,7 +1525,7 @@ export interface StockTechnicalClient {
   /** Get RSI for a stock */
   rsi(symbol: string, from?: string, to?: string, timeframe?: string, period?: number): Promise<RsiResponse>;
   /** Get KDJ for a stock */
-  kdj(symbol: string, from?: string, to?: string, timeframe?: string, period?: number): Promise<KdjResponse>;
+  kdj(symbol: string, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number): Promise<KdjResponse>;
   /** Get MACD for a stock */
   macd(symbol: string, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
   /** Get Bollinger Bands for a stock */

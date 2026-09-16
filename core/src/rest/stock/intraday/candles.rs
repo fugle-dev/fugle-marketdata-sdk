@@ -48,20 +48,27 @@ impl<'a> CandlesRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let symbol = self.symbol.as_deref().ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
 
         // Build URL
-        let mut url = format!("{}/stock/intraday/candles/{}", self.client.get_base_url(), crate::rest::encode_symbol(&symbol));
+        let mut url = format!("{}/stock/intraday/candles/{}", self.client.get_base_url(), crate::rest::encode_symbol(symbol));
 
         // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(timeframe) = self.timeframe {
+        if let Some(timeframe) = &self.timeframe {
             query_params.push(format!("timeframe={}", timeframe));
         }
-        if let Some(odd_lot) = self.odd_lot {
-            query_params.push(format!("oddLot={}", odd_lot));
+        if self.odd_lot == Some(true) {
+            query_params.push("type=oddlot".to_string());
         }
 
         if !query_params.is_empty() {
@@ -69,9 +76,7 @@ impl<'a> CandlesRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
     }
 }
 
@@ -101,5 +106,17 @@ mod tests {
         assert_eq!(builder.symbol, Some("2330".to_string()));
         assert_eq!(builder.timeframe, Some("5".to_string()));
         assert_eq!(builder.odd_lot, Some(false));
+    }
+
+    #[test]
+    fn test_candles_url_odd_lot_uses_type_param() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let base = client.get_base_url().to_string();
+
+        let url = CandlesRequestBuilder::new(&client).symbol("2330").odd_lot(true).url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/candles/2330?type=oddlot", base));
+
+        let url = CandlesRequestBuilder::new(&client).symbol("2330").odd_lot(false).url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/candles/2330", base));
     }
 }

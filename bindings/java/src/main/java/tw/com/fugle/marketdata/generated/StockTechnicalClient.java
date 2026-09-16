@@ -174,12 +174,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getKdj(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getKdj(String symbol, String from, String to, String timeframe, Integer rPeriod, Integer kPeriod, Integer dPeriod){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_kdj(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(rPeriod), FfiConverterOptionalInteger.INSTANCE.lower(kPeriod), FfiConverterOptionalInteger.INSTANCE.lower(dPeriod)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -269,7 +269,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get KDJ (sync/blocking)
      */
     @Override
-    public String kdjSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String kdjSync(String symbol, String from, String to, String timeframe, Integer rPeriod, Integer kPeriod, Integer dPeriod) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -278,7 +278,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_kdj_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(rPeriod), FfiConverterOptionalInteger.INSTANCE.lower(kPeriod), FfiConverterOptionalInteger.INSTANCE.lower(dPeriod), _status);
     });
     
         } catch (Exception e) {

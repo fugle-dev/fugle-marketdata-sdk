@@ -1525,7 +1525,7 @@ export interface StockTechnicalClient {
   /** Get RSI for a stock */
   rsi(symbol: string, from?: string, to?: string, timeframe?: string, period?: number): Promise<RsiResponse>;
   /** Get KDJ for a stock */
-  kdj(symbol: string, from?: string, to?: string, timeframe?: string, period?: number): Promise<KdjResponse>;
+  kdj(symbol: string, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number): Promise<KdjResponse>;
   /** Get MACD for a stock */
   macd(symbol: string, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
   /** Get Bollinger Bands for a stock */
@@ -2028,10 +2028,12 @@ export declare class StockTechnicalClient {
    * @param from - Start date (YYYY-MM-DD)
    * @param to - End date (YYYY-MM-DD)
    * @param timeframe - Timeframe ("D", "W", "M")
-   * @param period - KDJ period (e.g., 9)
+   * @param rPeriod - RSV period (e.g., 9)
+   * @param kPeriod - K smoothing period (e.g., 3)
+   * @param dPeriod - D smoothing period (e.g., 3)
    * @returns Promise resolving to KDJ data
    */
-  kdj(symbol: string, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null): Promise<KdjResponse>
+  kdj(symbol: string, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, rPeriod?: number | undefined | null, kPeriod?: number | undefined | null, dPeriod?: number | undefined | null): Promise<KdjResponse>
   /**
    * Get MACD (Moving Average Convergence Divergence) for a stock
    *
