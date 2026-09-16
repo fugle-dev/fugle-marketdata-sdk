@@ -7,11 +7,11 @@
 
 use crate::models::WebSocketMessage;
 use crate::websocket::connection_event::{
-    emit_disconnected, emit_event, peer_close_disconnect, DisconnectLatch,
+    emit_disconnected, emit_event, peer_close_disconnect, will_reconnect_after, DisconnectLatch,
 };
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, parse_binary_frame, parse_text_frame,
-    AuthOutcome,
+    AuthHandshake, AuthOutcome,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
@@ -193,21 +193,24 @@ pub(crate) fn do_auth_handshake(
     ws: &mut SyncWs,
     config: &ConnectionConfig,
     message_tx: &mpsc::SyncSender<WebSocketMessage>,
-) -> Result<(), MarketDataError> {
+) -> AuthHandshake {
     // Send auth frame
-    let auth_json = frame_auth(config.auth.clone())?;
-    ws.send(Message::Text(auth_json.into())).map_err(|e| {
-        MarketDataError::ConnectionError {
+    let auth_json = match frame_auth(config.auth.clone()) {
+        Ok(json) => json,
+        Err(e) => return AuthHandshake::Failed(e),
+    };
+    if let Err(e) = ws.send(Message::Text(auth_json.into())) {
+        return AuthHandshake::Failed(MarketDataError::ConnectionError {
             msg: format!("Failed to send auth frame: {e}"),
-        }
-    })?;
+        });
+    }
 
     // Read auth response with overall wall-clock timeout
     set_read_timeout(ws, Some(AUTH_TIMEOUT));
     let deadline = Instant::now() + AUTH_TIMEOUT;
     loop {
         if Instant::now() >= deadline {
-            return Err(MarketDataError::TimeoutError {
+            return AuthHandshake::Failed(MarketDataError::TimeoutError {
                 operation: "WebSocket authentication".to_string(),
             });
         }
@@ -218,16 +221,18 @@ pub(crate) fn do_auth_handshake(
                 if let Ok(ws_msg) = parsed {
                     let _ = message_tx.try_send(ws_msg.clone());
                     match classify_auth_response(&ws_msg) {
-                        AuthOutcome::Authenticated => return Ok(()),
-                        AuthOutcome::Failed(msg) => {
-                            return Err(MarketDataError::AuthError { msg });
+                        AuthOutcome::Authenticated(data) => {
+                            return AuthHandshake::Authenticated(data);
+                        }
+                        AuthOutcome::Failed { message, data } => {
+                            return AuthHandshake::Rejected { message, data };
                         }
                         AuthOutcome::Pending => continue,
                     }
                 }
             }
             Ok(Message::Close(_)) => {
-                return Err(MarketDataError::ConnectionError {
+                return AuthHandshake::Failed(MarketDataError::ConnectionError {
                     msg: "Stream closed during authentication".to_string(),
                 });
             }
@@ -239,12 +244,18 @@ pub(crate) fn do_auth_handshake(
                 continue;
             }
             Err(e) => {
-                return Err(MarketDataError::ConnectionError {
+                return AuthHandshake::Failed(MarketDataError::ConnectionError {
                     msg: format!("Auth read error: {e}"),
                 });
             }
         }
     }
+}
+
+/// The `will_reconnect` for a close observed by the owner thread.
+fn will_reconnect(shared: &OwnerShared, intent: DisconnectIntent, code: Option<u16>) -> bool {
+    let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
+    will_reconnect_after(&mgr, intent, code, shared.should_stop.load(Ordering::SeqCst))
 }
 
 /// The owner loop. Reads frames + drains outbound queue + emits events.
@@ -377,6 +388,7 @@ fn owner_loop(
                         code,
                         reason,
                         intent,
+                        will_reconnect(shared, intent, code),
                     );
                 }
                 // Unlike the graceful path at the loop top, there is no
@@ -409,6 +421,7 @@ fn owner_loop(
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
+                        will_reconnect(shared, DisconnectIntent::Network, None),
                     );
                 }
                 return None;
@@ -436,6 +449,7 @@ fn owner_loop(
                     None,
                     err_msg,
                     DisconnectIntent::Network,
+                    will_reconnect(shared, DisconnectIntent::Network, None),
                 );
                 return None;
             }
@@ -444,9 +458,29 @@ fn owner_loop(
         // 2. Heartbeat liveness check
         if let Some(window) = heartbeat_window {
             if last_activity.elapsed() > window {
+                // A caller-initiated shutdown reports the close itself.
+                if shared.should_stop.load(Ordering::SeqCst) {
+                    return None;
+                }
+                warn!(
+                    target: "fugle_marketdata::ws",
+                    elapsed_ms = window.as_millis() as u64,
+                    "heartbeat timeout: no inbound frame in window"
+                );
                 emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::HeartbeatTimeout {
                     elapsed: window,
                 });
+                // Through the latch, so a racing `disconnect()` cannot
+                // report this connection's close a second time (#47).
+                emit_disconnected(
+                    &shared.event_tx,
+                    &shared.events_dropped,
+                    &shared.disconnect_latch,
+                    None,
+                    format!("Heartbeat timeout after {}ms", window.as_millis()),
+                    DisconnectIntent::Network,
+                    will_reconnect(shared, DisconnectIntent::Network, None),
+                );
                 return None;
             }
         }
@@ -456,10 +490,25 @@ fn owner_loop(
             match write_rx.try_recv() {
                 Ok(json) => {
                     if let Err(e) = ws.send(Message::Text(json.into())) {
+                        // A failed write ends this connection just like a
+                        // failed read: report `Error`, then `Disconnected`.
+                        if shared.should_stop.load(Ordering::SeqCst) {
+                            return None;
+                        }
+                        let err_msg = format!("WebSocket write error: {e}");
                         emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
-                            message: format!("WebSocket write error: {e}"),
+                            message: err_msg.clone(),
                             code: 2002,
                         });
+                        emit_disconnected(
+                            &shared.event_tx,
+                            &shared.events_dropped,
+                            &shared.disconnect_latch,
+                            None,
+                            err_msg,
+                            DisconnectIntent::Network,
+                            will_reconnect(shared, DisconnectIntent::Network, None),
+                        );
                         return None;
                     }
                 }
@@ -476,20 +525,42 @@ fn owner_loop(
 }
 
 /// Run the auth handshake on a freshly-reconnected stream and emit lifecycle events.
+///
+/// If `should_stop` is set while connecting, the new connection is dropped
+/// without emitting further events and `ClientClosed` is returned.
 fn reconnect_and_authenticate(
     shared: &Arc<OwnerShared>,
 ) -> Result<(SyncWs, mpsc::Receiver<String>), MarketDataError> {
+    let stopping = || shared.should_stop.load(Ordering::SeqCst);
+
     set_state(shared, ConnectionState::Connecting);
     emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Connecting {
     });
 
     let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config))?;
+    if stopping() {
+        return Err(MarketDataError::ClientClosed);
+    }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws reconnected");
     emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Connected {
     });
 
     set_state(shared, ConnectionState::Authenticating);
-    do_auth_handshake(&mut ws, &shared.config, &shared.message_tx)?;
+    let handshake = do_auth_handshake(&mut ws, &shared.config, &shared.message_tx);
+    if stopping() {
+        return Err(MarketDataError::ClientClosed);
+    }
+    let data = match handshake {
+        AuthHandshake::Authenticated(data) => data,
+        AuthHandshake::Rejected { message, data } => {
+            emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Unauthenticated {
+                message: message.clone(),
+                data,
+            });
+            return Err(MarketDataError::AuthError { msg: message });
+        }
+        AuthHandshake::Failed(e) => return Err(e),
+    };
 
     // Build fresh write channel + install into shared slot
     let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY);
@@ -513,6 +584,7 @@ fn reconnect_and_authenticate(
     shared.disconnect_latch.reset();
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
     emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Authenticated {
+        data,
     });
     Ok((ws, write_rx))
 }
@@ -550,17 +622,12 @@ pub(crate) fn run_supervisor(
             mgr.should_reconnect(close_code)
         };
         if !should_reconnect {
-            let attempts = {
-                let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
-                mgr.current_attempt()
-            };
+            // Already reported as `Disconnected { will_reconnect: false }`;
+            // no attempt was made, so there is no `ReconnectFailed`.
             set_state(&shared, ConnectionState::Closed {
                 code: close_code,
                 reason: "Non-retriable error".to_string(),
                 intent: DisconnectIntent::Network,
-            });
-            emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::ReconnectFailed {
-                attempts,
             });
             return;
         }
@@ -607,15 +674,18 @@ pub(crate) fn run_supervisor(
             });
 
             std::thread::sleep(d);
+            // `disconnect()` during the backoff: nothing further is emitted.
+            if shared.should_stop.load(Ordering::SeqCst) {
+                return;
+            }
 
             match reconnect_and_authenticate(&shared) {
                 Ok(pair) => break Some(pair),
+                // Stopped mid-attempt; the shutdown path owns the close.
+                Err(_) if shared.should_stop.load(Ordering::SeqCst) => return,
                 Err(e) => {
-                    if let MarketDataError::AuthError { msg } = &e {
-                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Unauthenticated {
-                            message: msg.clone(),
-                        });
-                    } else {
+                    // A rejection was already reported as `Unauthenticated`.
+                    if !matches!(e, MarketDataError::AuthError { .. }) {
                         emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                             message: e.to_string(),
                             code: e.to_error_code(),

@@ -103,6 +103,15 @@ struct ClientHandle {
 pub struct MockWsServer {
     addr: SocketAddr,
     clients: Vec<ClientHandle>,
+    /// Frame sent in reply to every client `auth` request. Shared with the
+    /// per-client tasks so [`Self::set_auth_response`] applies to auth
+    /// requests that arrive after the call.
+    auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
+}
+
+/// Default reply to an `auth` request: `{"event":"authenticated"}`.
+fn default_auth_response() -> serde_json::Value {
+    serde_json::json!({ "event": "authenticated" })
 }
 
 enum MockInjection {
@@ -142,6 +151,7 @@ impl MockWsServer {
         // matching halves and dispatches them as connections arrive.
         let mut clients = Vec::with_capacity(capacity);
         let mut accept_seeds = Vec::with_capacity(capacity);
+        let auth_response = Arc::new(std::sync::Mutex::new(default_auth_response()));
 
         for _ in 0..capacity {
             let pending_sub_ids: Arc<Mutex<VecDeque<String>>> =
@@ -158,6 +168,7 @@ impl MockWsServer {
                 pending_sub_ids,
                 inject_rx,
                 drop_rx,
+                auth_response: Arc::clone(&auth_response),
             });
         }
 
@@ -165,7 +176,23 @@ impl MockWsServer {
             run_accept_loop(listener, accept_seeds).await;
         });
 
-        Self { addr, clients }
+        Self {
+            addr,
+            clients,
+            auth_response,
+        }
+    }
+
+    /// Replace the frame every client receives in reply to its `auth`
+    /// request (default `{"event":"authenticated"}`). Applies to auth
+    /// requests received after the call, so set it before `connect()`.
+    ///
+    /// Examples: `{"event":"authenticated","data":{"message":"ok"}}` for a
+    /// success carrying `data`, or
+    /// `{"event":"error","data":{"message":"Invalid token"}}` for a
+    /// rejection.
+    pub fn set_auth_response(&self, frame: serde_json::Value) {
+        *self.auth_response.lock().expect("auth_response lock poisoned") = frame;
     }
 
     /// `ws://127.0.0.1:<port>/marketdata/v1.0/stock/streaming`.
@@ -315,6 +342,7 @@ struct AcceptSeed {
     pending_sub_ids: Arc<Mutex<VecDeque<String>>>,
     inject_rx: mpsc::UnboundedReceiver<MockInjection>,
     drop_rx: oneshot::Receiver<()>,
+    auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
 }
 
 /// Convenience: spin up a fresh single-client [`MockWsServer`] and a
@@ -367,6 +395,7 @@ async fn run_client_loop(
         pending_sub_ids,
         mut inject_rx,
         mut drop_rx,
+        auth_response,
     } = seed;
 
     loop {
@@ -386,7 +415,10 @@ async fn run_client_loop(
                             let event = json.get("event").and_then(|v| v.as_str()).unwrap_or("");
                             match event {
                                 "auth" => {
-                                    let ack = serde_json::json!({ "event": "authenticated" });
+                                    let ack = auth_response
+                                        .lock()
+                                        .expect("auth_response lock poisoned")
+                                        .clone();
                                     let _ = ws.send(Message::Text(ack.to_string().into())).await;
                                 }
                                 "subscribe" => {

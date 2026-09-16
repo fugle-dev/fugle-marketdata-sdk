@@ -22,7 +22,7 @@
 //! | `healthCheck.interval` (ping cadence) | no equivalent — nothing is sent |
 //! | `healthCheck.maxMissedPongs` | no equivalent — nothing is counted |
 //! | `interval × maxMissedPongs` (effective deadline) | [`HealthCheckConfig::heartbeat_timeout`] |
-//! | `disconnect` event with `{ reason: 'health-check-timeout' }` | [`ConnectionEvent::HeartbeatTimeout`](crate::websocket::ConnectionEvent::HeartbeatTimeout) |
+//! | `disconnect` event with `{ reason: 'health-check-timeout' }` | [`ConnectionEvent::HeartbeatTimeout`](crate::websocket::ConnectionEvent::HeartbeatTimeout), then `Disconnected { intent: Network }` |
 //!
 //! The `maxMissedPongs`-of-0 bug the official SDKs clamped in 1.5.0 (a zero
 //! would disconnect a healthy connection on the first tick) cannot occur
@@ -56,7 +56,8 @@ pub const MIN_HEARTBEAT_TIMEOUT_MS: u64 = 5_000;
 /// connection dead: if no inbound frame (heartbeat, data, anything)
 /// arrives within `heartbeat_timeout`, the dispatch path emits
 /// [`ConnectionEvent::HeartbeatTimeout`](crate::websocket::ConnectionEvent::HeartbeatTimeout)
-/// and exits, which lets the reconnect manager take over.
+/// followed by `Disconnected { intent: Network }` and exits, which lets the
+/// reconnect manager take over.
 #[derive(Debug, Clone)]
 pub struct HealthCheckConfig {
     /// Whether liveness detection is active. Default: `true` (changed

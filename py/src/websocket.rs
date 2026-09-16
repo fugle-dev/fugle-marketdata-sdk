@@ -1015,7 +1015,7 @@ impl StockWebSocketClient {
                                             ConnectionEvent::Error { message, code } => {
                                                 callbacks_for_events.invoke_error(py, &message, code);
                                             }
-                                            ConnectionEvent::Disconnected { code, reason, intent: _ } => {
+                                            ConnectionEvent::Disconnected { code, reason, .. } => {
                                                 callbacks_for_events.invoke_disconnect(py, code, &reason);
                                             }
                                             ConnectionEvent::ReconnectFailed { attempts } => {
@@ -1025,22 +1025,11 @@ impl StockWebSocketClient {
                                                     -1,
                                                 );
                                             }
-                                            ConnectionEvent::Authenticated => {
+                                            ConnectionEvent::Authenticated { .. } => {
                                                 callbacks_for_events.invoke_authenticated(py);
                                             }
-                                            ConnectionEvent::Unauthenticated { message } => {
+                                            ConnectionEvent::Unauthenticated { message, .. } => {
                                                 callbacks_for_events.invoke_unauthenticated(py, &message);
-                                            }
-                                            ConnectionEvent::HeartbeatTimeout { elapsed } => {
-                                                // Reuse on_disconnect with a synthesized reason; a
-                                                // dedicated on_heartbeat_timeout callback can be
-                                                // added in a follow-up if user code needs to
-                                                // discriminate beyond the reason string.
-                                                callbacks_for_events.invoke_disconnect(
-                                                    py,
-                                                    None,
-                                                    &format!("Heartbeat timeout after {:?}", elapsed),
-                                                );
                                             }
                                             _ => {} // Connecting, Connected handled elsewhere
                                         }
@@ -1799,7 +1788,7 @@ impl FutOptWebSocketClient {
                                             ConnectionEvent::Error { message, code } => {
                                                 callbacks_for_events.invoke_error(py, &message, code);
                                             }
-                                            ConnectionEvent::Disconnected { code, reason, intent: _ } => {
+                                            ConnectionEvent::Disconnected { code, reason, .. } => {
                                                 callbacks_for_events.invoke_disconnect(py, code, &reason);
                                             }
                                             ConnectionEvent::ReconnectFailed { attempts } => {
@@ -1809,22 +1798,11 @@ impl FutOptWebSocketClient {
                                                     -1,
                                                 );
                                             }
-                                            ConnectionEvent::Authenticated => {
+                                            ConnectionEvent::Authenticated { .. } => {
                                                 callbacks_for_events.invoke_authenticated(py);
                                             }
-                                            ConnectionEvent::Unauthenticated { message } => {
+                                            ConnectionEvent::Unauthenticated { message, .. } => {
                                                 callbacks_for_events.invoke_unauthenticated(py, &message);
-                                            }
-                                            ConnectionEvent::HeartbeatTimeout { elapsed } => {
-                                                // Reuse on_disconnect with a synthesized reason; a
-                                                // dedicated on_heartbeat_timeout callback can be
-                                                // added in a follow-up if user code needs to
-                                                // discriminate beyond the reason string.
-                                                callbacks_for_events.invoke_disconnect(
-                                                    py,
-                                                    None,
-                                                    &format!("Heartbeat timeout after {:?}", elapsed),
-                                                );
                                             }
                                             _ => {} // Connecting, Connected handled elsewhere
                                         }

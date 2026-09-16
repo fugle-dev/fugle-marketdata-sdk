@@ -503,7 +503,9 @@ fn test_subscribe_multiple_symbols() {
 /// artificially-short heartbeat_timeout (5s) against the live server,
 /// which sends a heartbeat every 30s. The test asserts:
 /// 1. We receive a `HeartbeatTimeout` event within reasonable bounds.
-/// 2. The reconnect path subsequently fires a `Reconnecting` event.
+/// 2. It is immediately followed by `Disconnected { intent: Network,
+///    will_reconnect: true }` (#47).
+/// 3. The reconnect path subsequently fires a `Reconnecting` event.
 ///
 /// This deliberately produces false-disconnects against the production
 /// server (5s < 30s), so it must be `#[ignore]`'d — run manually before
@@ -530,6 +532,7 @@ fn test_heartbeat_timeout_triggers_reconnect_in_real_env() {
         // Reconnecting.
         let events = client.events();
         let mut saw_heartbeat_timeout = false;
+        let mut event_after_timeout = None;
         let mut saw_reconnecting = false;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
 
@@ -553,6 +556,13 @@ fn test_heartbeat_timeout_triggers_reconnect_in_real_env() {
                     println!("Got HeartbeatTimeout after {:?}", elapsed);
                     saw_heartbeat_timeout = true;
                 }
+                Some(Ok(ev)) if saw_heartbeat_timeout && event_after_timeout.is_none() => {
+                    event_after_timeout = Some(ev.clone());
+                    if let ConnectionEvent::Reconnecting { .. } = ev {
+                        saw_reconnecting = true;
+                        break;
+                    }
+                }
                 Some(Ok(ConnectionEvent::Reconnecting { attempt, .. })) => {
                     println!("Got Reconnecting (attempt {})", attempt);
                     saw_reconnecting = true;
@@ -569,6 +579,18 @@ fn test_heartbeat_timeout_triggers_reconnect_in_real_env() {
         assert!(
             saw_heartbeat_timeout,
             "Expected HeartbeatTimeout within 30s with 5s heartbeat_timeout against a 30s heartbeat server",
+        );
+        assert!(
+            matches!(
+                event_after_timeout,
+                Some(ConnectionEvent::Disconnected {
+                    intent: marketdata_core::DisconnectIntent::Network,
+                    will_reconnect: true,
+                    ..
+                })
+            ),
+            "Expected Disconnected {{ Network, will_reconnect: true }} right after HeartbeatTimeout, got {:?}",
+            event_after_timeout,
         );
         assert!(
             saw_reconnecting,

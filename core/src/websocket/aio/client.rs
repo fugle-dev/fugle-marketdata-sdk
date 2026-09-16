@@ -7,7 +7,7 @@ use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
-    frame_auth, frame_request, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
+    frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
     frame_unsubscribe,
 };
 use crate::websocket::{
@@ -21,9 +21,8 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{timeout, Duration};
 use tokio_tungstenite::connect_async_tls_with_config;
-use tokio_tungstenite::tungstenite::Message;
 
 /// WebSocket client for real-time market data
 pub struct WebSocketClient {
@@ -294,12 +293,17 @@ impl WebSocketClient {
     ///
     /// Event types:
     /// - `Connecting` - Connection attempt started
-    /// - `Connected` - WebSocket connection established
-    /// - `Authenticated` - Authentication successful
-    /// - `Disconnected { code, reason }` - Connection closed
+    /// - `Connected` - WebSocket connection established, not yet authenticated
+    /// - `Authenticated { data }` - Authentication successful
+    /// - `Unauthenticated { message, data }` - Credentials rejected
+    /// - `Disconnected { code, reason, intent, will_reconnect }` - Connection closed
     /// - `Reconnecting { attempt }` - Reconnection attempt started
     /// - `ReconnectFailed { attempts }` - Reconnection failed after max attempts
+    /// - `HeartbeatTimeout { elapsed }` - Liveness window elapsed (precedes `Disconnected`)
     /// - `Error { message, code }` - Error occurred
+    ///
+    /// See [`connection_event`](crate::websocket::connection_event) for the
+    /// ordering guarantees.
     ///
     /// # Example
     ///
@@ -542,26 +546,20 @@ impl WebSocketClient {
             *state = ConnectionState::Authenticating;
         }
 
-        // Send authentication message
-        let auth_json = frame_auth(self.config.auth.clone())?;
-
-        ws_sink
-            .send(Message::Text(auth_json.into()))
-            .await
-            .map_err(MarketDataError::from)?;
-
-        // Wait for authenticated event or timeout. All messages during auth
-        // phase are forwarded to the message channel (shared helper with
-        // try_connect; see aio/reconnect.rs).
-        let auth_result = crate::websocket::aio::reconnect::await_auth_response(
+        // Send the auth frame and wait for the verdict. All messages during
+        // the auth phase are forwarded to the message channel (shared helper
+        // with try_connect; see aio/reconnect.rs).
+        let handshake = crate::websocket::aio::reconnect::authenticate(
+            &mut ws_sink,
             &mut ws_read,
+            &self.config,
             &self.message_tx,
             Duration::from_secs(10),
         )
         .await;
 
-        match auth_result {
-            Ok(Ok(())) => {
+        match handshake {
+            AuthHandshake::Authenticated(data) => {
                 // Store the write half for sending messages
                 {
                     let mut sink_guard = self.ws_sink.lock().await;
@@ -579,6 +577,7 @@ impl WebSocketClient {
                 self.disconnect_latch.reset();
                 crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Authenticated {
+                    data,
                 });
 
                 // Spawn dispatch task to handle incoming messages (uses read half).
@@ -588,30 +587,20 @@ impl WebSocketClient {
 
                 Ok(())
             }
-            Ok(Err(e)) => {
+            AuthHandshake::Rejected { message, data } => {
                 {
                     let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
-                // Server-rejected credentials → emit Unauthenticated so old SDK
-                // listeners on `unauthenticated` keep working. Other failures
-                // (network, parse, etc.) still go through the generic Error event.
-                if let MarketDataError::AuthError { msg } = &e {
-                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Unauthenticated {
-                        message: msg.clone(),
-                    });
-                } else {
-                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
-                        message: e.to_string(),
-                        code: e.to_error_code(),
-                    });
-                }
-                Err(e)
+                // Server-rejected credentials are reported only as
+                // Unauthenticated, never as a generic Error.
+                emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Unauthenticated {
+                    message: message.clone(),
+                    data,
+                });
+                Err(MarketDataError::AuthError { msg: message })
             }
-            Err(_) => {
-                let err = MarketDataError::TimeoutError {
-                    operation: "WebSocket authentication".to_string(),
-                };
+            AuthHandshake::Failed(err) => {
                 {
                     let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
@@ -745,6 +734,7 @@ impl WebSocketClient {
             Some(1000),
             "Normal closure".to_string(),
             DisconnectIntent::Client,
+            false,
         );
 
         close_result
@@ -886,6 +876,7 @@ impl WebSocketClient {
             Some(1006),
             "Force closed".to_string(),
             DisconnectIntent::Client,
+            false,
         );
 
         Ok(())
@@ -1172,6 +1163,7 @@ impl WebSocketClient {
                     messages_dropped.clone(),
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&disconnect_latch),
+                    Arc::clone(&reconnection),
                 )
                 .await;
 
@@ -1201,6 +1193,7 @@ impl WebSocketClient {
                     Arc::clone(&subscriptions),
                     message_tx.clone(),
                     Arc::clone(&disconnect_latch),
+                    Arc::clone(&shutdown_requested),
                 )
                 .await
                 {
@@ -1259,124 +1252,6 @@ impl WebSocketClient {
             }),
         }
     }
-
-    /// Internal: Automatic reconnection flow (&self version)
-    ///
-    /// Implements exponential backoff retry logic with subscription restoration.
-    /// Note: The dispatch loop uses the standalone `try_reconnect` function instead,
-    /// which operates on owned Arcs for Send compatibility with tokio::spawn.
-    #[allow(dead_code)]
-    async fn auto_reconnect(&self, close_code: Option<u16>) -> Result<(), MarketDataError> {
-        let should_reconnect = {
-            let reconnection = self.reconnection.lock().await;
-            reconnection.should_reconnect(close_code)
-        };
-
-        if !should_reconnect {
-            // Not retriable - update state and send event
-            {
-                let mut state = write_state(&self.state);
-                *state = ConnectionState::Closed {
-                    code: close_code,
-                    reason: "Non-retriable error".to_string(),
-                    intent: DisconnectIntent::Network,
-                };
-            }
-
-            let attempts = {
-                let reconnection = self.reconnection.lock().await;
-                reconnection.current_attempt()
-            };
-
-            emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::ReconnectFailed {
-                attempts,
-            });
-            return Err(MarketDataError::ConnectionError {
-                msg: format!("Non-retriable close code: {:?}", close_code),
-            });
-        }
-
-        // Attempt reconnection with exponential backoff. Liveness
-        // detection is per-dispatch-task, so reconnecting transparently
-        // restarts it via the new dispatch task — no separate
-        // pause/resume needed.
-        loop {
-            let delay = {
-                let mut reconnection = self.reconnection.lock().await;
-                reconnection.next_delay()
-            };
-
-            match delay {
-                Some(d) => {
-                    let attempt = {
-                        let reconnection = self.reconnection.lock().await;
-                        reconnection.current_attempt()
-                    };
-
-                    // Update state to Reconnecting
-                    {
-                        let mut state = write_state(&self.state);
-                        *state = ConnectionState::Reconnecting { attempt };
-                    }
-                    crate::tracing_compat::warn!(
-                        target: "fugle_marketdata::ws",
-                        attempt,
-                        "ws manual reconnect attempt"
-                    );
-                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Reconnecting {
-                        attempt,
-                    });
-
-                    // Wait before reconnecting
-                    sleep(d).await;
-
-                    // Try to connect
-                    match self.connect().await {
-                        Ok(()) => {
-                            // Reset reconnection manager on success
-                            {
-                                let mut reconnection = self.reconnection.lock().await;
-                                reconnection.reset();
-                            }
-
-                            // Resubscribe all
-                            let _ = self.resubscribe_all().await;
-
-                            return Ok(());
-                        }
-                        Err(_) => {
-                            // Continue loop to next attempt
-                            continue;
-                        }
-                    }
-                }
-                None => {
-                    // Max attempts reached
-                    {
-                        let mut state = write_state(&self.state);
-                        *state = ConnectionState::Closed {
-                            code: close_code,
-                            reason: "Max reconnection attempts reached".to_string(),
-                            intent: DisconnectIntent::Network,
-                        };
-                    }
-
-                    let attempts = {
-                        let reconnection = self.reconnection.lock().await;
-                        reconnection.current_attempt()
-                    };
-
-                    emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::ReconnectFailed {
-                        attempts,
-                    });
-
-                    return Err(MarketDataError::ConnectionError {
-                        msg: "Max reconnection attempts reached".to_string(),
-                    });
-                }
-            }
-        }
-    }
 }
 
 // `run_writer_task` is now in `aio::writer` (PR2 split).
@@ -1409,14 +1284,18 @@ mod tests {
         // Test all event variants exist and can be created
         let _connecting = ConnectionEvent::Connecting;
         let _connected = ConnectionEvent::Connected;
-        let _authenticated = ConnectionEvent::Authenticated;
+        let _authenticated = ConnectionEvent::Authenticated {
+            data: serde_json::Value::Null,
+        };
         let _unauthenticated = ConnectionEvent::Unauthenticated {
             message: "Invalid credentials".to_string(),
+            data: serde_json::Value::Null,
         };
         let _disconnected = ConnectionEvent::Disconnected {
             code: Some(1000),
             reason: "Normal closure".to_string(),
             intent: DisconnectIntent::Client,
+            will_reconnect: false,
         };
         let _reconnecting = ConnectionEvent::Reconnecting {
             attempt: 1,
@@ -1879,7 +1758,9 @@ mod tests {
         assert_eq!(counter.load(), 0);
 
         // 3rd send would block on plain `send`; emit_event must drop instead.
-        emit_event(&tx, &counter, ConnectionEvent::Authenticated);
+        emit_event(&tx, &counter, ConnectionEvent::Authenticated {
+            data: serde_json::Value::Null,
+        });
 
         // First two queued; third dropped at the sender.
         assert!(matches!(rx.recv(), Ok(ConnectionEvent::Connecting)));

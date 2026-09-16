@@ -15,13 +15,38 @@ use crate::websocket::SubscriptionManager;
 use crate::MarketDataError;
 
 /// Classification of the inbound auth response.
+#[derive(Debug, PartialEq)]
 pub(crate) enum AuthOutcome {
-    /// Server accepted the credentials. Caller should transition to `Connected`.
-    Authenticated,
+    /// Server accepted the credentials. Carries the frame's `data`
+    /// (`Null` when absent). Caller should transition to `Connected`.
+    Authenticated(serde_json::Value),
     /// Server rejected the credentials. Caller should emit `Unauthenticated`.
-    Failed(String),
+    Failed {
+        /// Server-provided rejection message.
+        message: String,
+        /// The frame's `data` (`Null` when absent).
+        data: serde_json::Value,
+    },
     /// Frame is not an auth-related event. Caller should keep reading.
     Pending,
+}
+
+/// Result of a complete auth handshake. Shared by the async and sync clients
+/// so both map it to the same lifecycle events.
+#[derive(Debug)]
+pub(crate) enum AuthHandshake {
+    /// Server accepted the credentials; emit `Authenticated { data }`.
+    Authenticated(serde_json::Value),
+    /// Server rejected the credentials; emit `Unauthenticated { message, data }`
+    /// and fail `connect()` with `AuthError`.
+    Rejected {
+        /// Server-provided rejection message.
+        message: String,
+        /// The rejection frame's `data` (`Null` when absent).
+        data: serde_json::Value,
+    },
+    /// Transport, timeout or protocol failure before a verdict; emit `Error`.
+    Failed(MarketDataError),
 }
 
 /// Serialize an auth request frame.
@@ -123,12 +148,14 @@ pub(crate) fn parse_binary_frame(data: &[u8]) -> Result<WebSocketMessage, Market
 
 /// Classify a frame received during the auth handshake.
 pub(crate) fn classify_auth_response(msg: &WebSocketMessage) -> AuthOutcome {
+    let data = || msg.data.clone().unwrap_or(serde_json::Value::Null);
     if msg.is_authenticated() {
-        AuthOutcome::Authenticated
+        AuthOutcome::Authenticated(data())
     } else if msg.is_error() {
-        AuthOutcome::Failed(
-            msg.error_message().unwrap_or_else(|| "Unknown error".to_string()),
-        )
+        AuthOutcome::Failed {
+            message: msg.error_message().unwrap_or_else(|| "Unknown error".to_string()),
+            data: data(),
+        }
     } else {
         AuthOutcome::Pending
     }
@@ -236,6 +263,54 @@ mod tests {
 
     fn parse_msg(json: &str) -> WebSocketMessage {
         serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn classify_authenticated_with_data() {
+        let msg = parse_msg(r#"{"event":"authenticated","data":{"message":"Authenticated successfully"}}"#);
+        assert_eq!(
+            classify_auth_response(&msg),
+            AuthOutcome::Authenticated(serde_json::json!({"message":"Authenticated successfully"}))
+        );
+    }
+
+    #[test]
+    fn classify_authenticated_without_data_is_null() {
+        let msg = parse_msg(r#"{"event":"authenticated"}"#);
+        assert_eq!(
+            classify_auth_response(&msg),
+            AuthOutcome::Authenticated(serde_json::Value::Null)
+        );
+    }
+
+    #[test]
+    fn classify_error_with_data() {
+        let msg = parse_msg(r#"{"event":"error","data":{"message":"Invalid token"}}"#);
+        assert_eq!(
+            classify_auth_response(&msg),
+            AuthOutcome::Failed {
+                message: "Invalid token".to_string(),
+                data: serde_json::json!({"message":"Invalid token"}),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_error_without_data() {
+        let msg = parse_msg(r#"{"event":"error"}"#);
+        assert_eq!(
+            classify_auth_response(&msg),
+            AuthOutcome::Failed {
+                message: "Unknown error".to_string(),
+                data: serde_json::Value::Null,
+            }
+        );
+    }
+
+    #[test]
+    fn classify_other_event_is_pending() {
+        let msg = parse_msg(r#"{"event":"pong"}"#);
+        assert_eq!(classify_auth_response(&msg), AuthOutcome::Pending);
     }
 
     #[test]
