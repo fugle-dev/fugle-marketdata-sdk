@@ -120,10 +120,14 @@ const CASES = [
     '/futopt/intraday/volumes/TXFC4', { session: 'afterhours' }],
 
   // futopt.historical
-  ['futopt.historical.candles', (c) => c.futopt.historical.candles({ symbol: 'TXFC4', from: '2026-08-01', session: 'afterhours' }),
-    '/futopt/historical/candles/TXFC4', { from: '2026-08-01', session: 'afterhours' }],
-  ['futopt.historical.daily', (c) => c.futopt.historical.daily({ symbol: 'TXFC4', to: '2026-09-01' }),
-    '/futopt/historical/daily/TXFC4', { to: '2026-09-01' }],
+  ['futopt.historical.candles', (c) => c.futopt.historical.candles({ symbol: 'TXF', from: '2026-08-01', contractMonth: '1!', fields: 'open,close', sort: 'desc', session: 'AFTERHOURS' }),
+    '/futopt/historical/candles/TXF', { from: '2026-08-01', contractMonth: '1!', fields: 'open,close', sort: 'desc', session: 'AFTERHOURS' }],
+  ['futopt.historical.candles with product', (c) => c.futopt.historical.candles({ product: 'TXF', contractMonth: '202609' }),
+    '/futopt/historical/candles/TXF', { contractMonth: '202609' }],
+  ['futopt.historical.daily', (c) => c.futopt.historical.daily({ symbol: 'TXF', date: '2026-09-15', session: 'afterhours' }),
+    '/futopt/historical/daily/TXF', { date: '2026-09-15', session: 'afterhours' }],
+  ['futopt.historical.daily with product', (c) => c.futopt.historical.daily({ product: 'TXF' }),
+    '/futopt/historical/daily/TXF', {}],
 ];
 
 describe('object params are forwarded verbatim', () => {
@@ -169,6 +173,13 @@ describe('positional calls are unchanged', () => {
     ['dividends with range', (c) => c.stock.corporateActions.dividends(undefined, '2026-08-01', '2026-09-30'),
       '/stock/corporate-actions/dividends', { start_date: '2026-08-01', end_date: '2026-09-30' }],
     ['futopt tickers', (c) => c.futopt.intraday.tickers('FUTURE'), '/futopt/intraday/tickers', { type: 'FUTURE' }],
+    ['futopt historical candles', (c) => c.futopt.historical.candles('TXF', '2026-09-01', '2026-09-15', '5', true, '2!', 'close', 'asc'),
+      '/futopt/historical/candles/TXF',
+      { from: '2026-09-01', to: '2026-09-15', contractMonth: '2!', fields: 'close', timeframe: '5', sort: 'asc', session: 'afterhours' }],
+    ['futopt historical daily', (c) => c.futopt.historical.daily('TXF', '2026-09-15', true),
+      '/futopt/historical/daily/TXF', { date: '2026-09-15', session: 'afterhours' }],
+    ['futopt historical daily regular session', (c) => c.futopt.historical.daily('TXF', undefined, false),
+      '/futopt/historical/daily/TXF', {}],
   ])('%s', async (_name, call, path, query) => {
     await call(ctx.client);
     expect(ctx.lastRequest()).toEqual({ path: `/v1.0${path}`, query });

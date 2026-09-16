@@ -846,42 +846,44 @@ namespace FugleMarketData
         // ========== Async Methods ==========
 
         /// <summary>
-        /// Get historical candles for a futures/options contract (async).
+        /// Get historical candles for a futures/options product (async).
         /// </summary>
-        /// <param name="symbol">Contract symbol</param>
+        /// <param name="symbol">Product code, e.g. "TXF" (a contract code such as "TXFC4" returns 404)</param>
         /// <param name="from">Start date in YYYY-MM-DD format (optional)</param>
         /// <param name="to">End date in YYYY-MM-DD format (optional)</param>
         /// <param name="timeframe">Timeframe (optional)</param>
         /// <param name="afterHours">True for after-hours session</param>
+        /// <param name="contractMonth">"YYYYMM", or a continuous contract: "1!" (server default), "2!", "3!"</param>
+        /// <param name="fields">Comma-separated fields, e.g. "open,high,low,close,volume" (optional)</param>
+        /// <param name="sort">"asc" or "desc" (optional)</param>
         public Task<string> GetCandlesAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, bool afterHours = false)
-            => _inner.GetCandles(symbol, from, to, timeframe, afterHours);
+            string symbol, string? from = null, string? to = null, string? timeframe = null, bool afterHours = false,
+            string? contractMonth = null, string? fields = null, string? sort = null)
+            => _inner.GetCandles(symbol, from, to, timeframe, afterHours, contractMonth, fields, sort);
 
         /// <summary>
-        /// Get daily historical data for a futures/options contract (async).
+        /// Get one trading day's daily quotes for every contract month of a futures/options product (async).
         /// </summary>
-        /// <param name="symbol">Contract symbol</param>
-        /// <param name="from">Start date in YYYY-MM-DD format (optional)</param>
-        /// <param name="to">End date in YYYY-MM-DD format (optional)</param>
+        /// <param name="symbol">Product code, e.g. "TXF" (a contract code such as "TXFC4" returns 404)</param>
+        /// <param name="date">Trading date in YYYY-MM-DD format; the server defaults to today (optional)</param>
         /// <param name="afterHours">True for after-hours session</param>
-        public Task<string> GetDailyAsync(
-            string symbol, string? from = null, string? to = null, bool afterHours = false)
-            => _inner.GetDaily(symbol, from, to, afterHours);
+        public Task<string> GetDailyAsync(string symbol, string? date = null, bool afterHours = false)
+            => _inner.GetDaily(symbol, date, afterHours);
 
         // ========== Sync Methods ==========
 
         /// <summary>
-        /// Get historical candles for a futures/options contract (blocking).
+        /// Get historical candles for a futures/options product (blocking).
         /// </summary>
         public string GetCandles(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, bool afterHours = false)
-            => _inner.CandlesSync(symbol, from, to, timeframe, afterHours);
+            string symbol, string? from = null, string? to = null, string? timeframe = null, bool afterHours = false,
+            string? contractMonth = null, string? fields = null, string? sort = null)
+            => _inner.CandlesSync(symbol, from, to, timeframe, afterHours, contractMonth, fields, sort);
 
         /// <summary>
-        /// Get daily historical data for a futures/options contract (blocking).
+        /// Get one trading day's daily quotes for every contract month of a futures/options product (blocking).
         /// </summary>
-        public string GetDaily(
-            string symbol, string? from = null, string? to = null, bool afterHours = false)
-            => _inner.DailySync(symbol, from, to, afterHours);
+        public string GetDaily(string symbol, string? date = null, bool afterHours = false)
+            => _inner.DailySync(symbol, date, afterHours);
     }
 }

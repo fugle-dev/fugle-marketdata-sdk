@@ -14,24 +14,27 @@ import com.sun.jna.ptr.*;
 public interface FutOptHistoricalClientInterface {
     
     /**
-     * Get historical candles for a contract (sync/blocking)
+     * Get historical candles for a product such as "TXF" (sync/blocking)
      */
-    public String candlesSync(String symbol, String from, String to, String timeframe, Boolean afterHours) throws MarketDataException;
+    public String candlesSync(String symbol, String from, String to, String timeframe, Boolean afterHours, String contractMonth, String fields, String sort) throws MarketDataException;
     
     /**
-     * Get daily historical data for a contract (sync/blocking)
+     * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
      */
-    public String dailySync(String symbol, String from, String to, Boolean afterHours) throws MarketDataException;
+    public String dailySync(String symbol, String date, Boolean afterHours) throws MarketDataException;
     
     /**
-     * Get historical candles for a contract (async)
+     * Get historical candles for a product such as "TXF" (async)
+     *
+     * `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
+     * default, "2!", "3!").
      */
-    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe, Boolean afterHours) ;
+    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe, Boolean afterHours, String contractMonth, String fields, String sort) ;
     
     /**
-     * Get daily historical data for a contract (async)
+     * Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
      */
-    public CompletableFuture<String> getDaily(String symbol, String from, String to, Boolean afterHours) ;
+    public CompletableFuture<String> getDaily(String symbol, String date, Boolean afterHours) ;
     
 }
 

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value`. `Rest*Params` types are exported for each method.
 - **Rust**: `RestClient::get_json(path, query)` sends a GET with an arbitrary
   query string and returns the body as-is.
+- **Node**: `futopt.historical.*` object params accept the product code as
+  `product` (the API's own name) as well as `symbol`.
 
 ### Changed
 
@@ -27,6 +29,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+> **Release order:** the `futopt/historical` changes below follow
+> fugle-realtime #727. Publish this release only after #727 is live in
+> production; against the old server, `session=afterhours` is ignored and
+> after-hours queries silently return the regular session.
+
+- **All languages**: `futopt.historical.daily()` takes a single `date`
+  (Python `date=`) in place of `from` / `to`. The endpoint returns one trading
+  day with a row per contract month; the old range params were never honoured
+  by the server. Python raises `TypeError` if `from_date` / `to_date` are
+  still passed. Core no longer marks `daily()` deprecated: the "always 404"
+  was caused by passing a contract code instead of a product code.
+- **All languages**: `futopt.historical.candles()` gains `contractMonth` /
+  `fields` / `sort` (Python `contract_month` / `fields` / `sort`). Appended
+  to the JS positional signature and the Python kwargs; in the C# / Go / Java
+  generated bindings the extra positional parameters change the signature.
+- **All languages**: `futopt.historical.*` after-hours now sends
+  `session=afterhours` instead of `afterHours=true`, which the server ignored.
+- **Rust**: `FutOptHistoricalCandlesResponse`, `FutOptHistoricalCandle`,
+  `FutOptDailyResponse` and `FutOptDailyData` follow the #727 response shape:
+  `product` replaces `symbol`, `session` / `contractMonth` are added, candle
+  prices are optional (the `fields` param selects them), and daily rows are
+  per contract month with `openPrice` / `highPrice` / … / `volumeSpread`.
+  The Node `.d.ts` types change the same way.
 - **All languages**: `stock.technical.kdj()` takes `rPeriod` / `kPeriod` /
   `dPeriod` (Python `r_period` / `k_period` / `d_period`) in place of
   `period`. The API rejects `period` with HTTP 400, so the method could not

@@ -468,18 +468,25 @@ async fn main() {
     rest_probe!("rest futopt/intraday/volumes", move |c: &RestClient| c
         .futopt().intraday().volumes().symbol(&s).send());
 
-    // FutOpt historical candles: uses the *continuous* product code (e.g.
-    // "TXF"), NOT the month contract ("TXFF6") that intraday wants — derive
-    // it by stripping the 2-char month/year suffix.
+    // FutOpt historical: the path takes the *product* code (e.g. "TXF"), NOT
+    // the month contract ("TXFF6") that intraday wants — a contract code is a
+    // 404. Derive it by stripping the 2-char month/year suffix.
     let hist_sym = if futopt_symbol.len() > 2 {
         futopt_symbol[..futopt_symbol.len() - 2].to_string()
     } else {
         futopt_symbol.clone()
     };
+    let s = hist_sym.clone();
     rest_probe!("rest futopt/historical/candles", move |c: &RestClient| c
-        .futopt().historical().candles().symbol(&hist_sym).send());
-    // futopt/historical/daily intentionally NOT probed: endpoint is not
-    // provided by the live API (always HTTP 404) — deprecated in 0.7.3.
+        .futopt().historical().candles().symbol(&s).send());
+    let s = hist_sym.clone();
+    rest_probe!("rest futopt/historical/candles 1! AFTERHOURS", move |c: &RestClient| c
+        .futopt().historical().candles().symbol(&s).contract_month("1!").after_hours(true).send());
+    let s = hist_sym.clone();
+    rest_probe!("rest futopt/historical/daily", move |c: &RestClient| c
+        .futopt().historical().daily().symbol(&s).send());
+    rest_probe!("rest futopt/historical/daily AFTERHOURS", move |c: &RestClient| c
+        .futopt().historical().daily().symbol(&hist_sym).after_hours(true).send());
 
     let mut rows: Vec<Row> = Vec::new();
     for h in handles {

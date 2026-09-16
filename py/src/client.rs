@@ -2714,28 +2714,33 @@ pub struct FutOptHistoricalClient {
 
 #[pymethods]
 impl FutOptHistoricalClient {
-    /// Get historical candles for a FutOpt contract
+    /// Get historical candles for a FutOpt product
     ///
     /// Args:
-    ///     symbol: Contract symbol (e.g., "TXFC4" for TAIEX futures)
+    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
-    ///     after_hours: Whether to include after-hours session data (default: False)
+    ///     after_hours: Query the after-hours session (default: False)
+    ///     contract_month: "YYYYMM", or a continuous contract: "1!" (server default), "2!", "3!"
+    ///     fields: Comma-separated fields, e.g. "open,high,low,close,volume"
+    ///     sort: "asc" or "desc"
     ///
     /// Returns:
     ///     Awaitable[dict]: Historical candles data
     ///
     /// Example:
     ///     ```python
-    ///     candles = await client.futopt.historical.candles(
-    ///         "TXFC4",
-    ///         from_date="2024-01-01",
-    ///         to_date="2024-01-31",
+    ///     candles = await client.futopt.historical.candles_async(
+    ///         "TXF",
+    ///         contract_month="202609",
+    ///         from_date="2026-09-01",
+    ///         to_date="2026-09-15",
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
@@ -2743,28 +2748,18 @@ impl FutOptHistoricalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: bool,
+        contract_month: Option<String>,
+        fields: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "futopt.historical.candles", &_extra);
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
-                let futopt = client.futopt();
-                let historical = futopt.historical();
-                let mut builder = historical.candles().symbol(&symbol);
-                if let Some(f) = from_date {
-                    builder = builder.from(&f);
-                }
-                if let Some(t) = to_date {
-                    builder = builder.to(&t);
-                }
-                if let Some(tf) = timeframe {
-                    builder = builder.timeframe(&tf);
-                }
-                if after_hours {
-                    builder = builder.after_hours(true);
-                }
-                builder.send()
+                let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort };
+                query.send(&client)
             })
             .await
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
@@ -2777,7 +2772,8 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles(
         &self,
         py: Python<'_>,
@@ -2785,81 +2781,55 @@ impl FutOptHistoricalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: bool,
+        contract_month: Option<String>,
+        fields: Option<String>,
+        sort: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "futopt.historical.candles", &_extra);
         let inner = self.inner.clone();
-        let result = py.detach(|| {
-            let futopt = inner.futopt();
-            let historical = futopt.historical();
-            let mut builder = historical.candles().symbol(&symbol);
-            if let Some(f) = from_date { builder = builder.from(&f); }
-            if let Some(t) = to_date { builder = builder.to(&t); }
-            if let Some(tf) = timeframe { builder = builder.timeframe(&tf); }
-            if after_hours { builder = builder.after_hours(true); }
-            builder.send()
-        });
+        let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort };
+        let result = py.detach(|| query.send(&inner));
         match result {
             Ok(candles) => types::value_to_dict(py, &candles),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
 
-    /// Get daily historical data for a FutOpt contract
+    /// Get one trading day's daily quotes for every contract month of a FutOpt product
     ///
     /// Args:
-    ///     symbol: Contract symbol (e.g., "TXFC4" for TAIEX futures)
-    ///     from_date: Start date (YYYY-MM-DD)
-    ///     to_date: End date (YYYY-MM-DD)
-    ///     after_hours: Whether to include after-hours session data (default: False)
+    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+    ///     date: Trading date (YYYY-MM-DD); the server defaults to today
+    ///     after_hours: Query the after-hours session (default: False)
     ///
     /// Returns:
-    ///     Awaitable[dict]: Daily historical data with settlement prices
+    ///     Awaitable[dict]: Daily quotes, one row per contract month
+    ///
+    /// Raises:
+    ///     TypeError: If `from_date` / `to_date` are passed — the endpoint takes a single `date`
     ///
     /// Example:
     ///     ```python
-    ///     daily = await client.futopt.historical.daily(
-    ///         "TXFC4",
-    ///         from_date="2024-01-01",
-    ///         to_date="2024-01-31"
-    ///     )
+    ///     daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, after_hours=false, **_extra))]
-    #[allow(
-        deprecated,
-        reason = "core deprecated this endpoint (the API always 404s), but the \
-                  binding keeps exposing it for parity with the official SDK — \
-                  removing it would be a breaking change to the Python surface, \
-                  decided separately from core's deprecation"
-    )]
+    #[pyo3(signature = (symbol, date=None, after_hours=false, **_extra))]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        from_date: Option<String>,
-        to_date: Option<String>,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        date: Option<String>,
+        after_hours: bool,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
+        reject_daily_range_kwargs(&_extra)?;
         warn_unknown_kwargs(py, "futopt.historical.daily", &_extra);
         let client = self.inner.clone();
         future_into_py(py, async move {
-            let result = tokio::task::spawn_blocking(move || {
-                let futopt = client.futopt();
-                let historical = futopt.historical();
-                let mut builder = historical.daily().symbol(&symbol);
-                if let Some(f) = from_date {
-                    builder = builder.from(&f);
-                }
-                if let Some(t) = to_date {
-                    builder = builder.to(&t);
-                }
-                if after_hours {
-                    builder = builder.after_hours(true);
-                }
-                builder.send()
-            })
-            .await
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
+            let result = tokio::task::spawn_blocking(move || send_futopt_daily(&client, &symbol, date.as_deref(), after_hours))
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
                 Ok(daily) => Python::attach(|py| types::value_to_dict(py, &daily)),
@@ -2869,38 +2839,82 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, after_hours=false, **_extra))]
-    #[allow(
-        deprecated,
-        reason = "core deprecated this endpoint (the API always 404s), but the \
-                  binding keeps exposing it for parity with the official SDK — \
-                  removing it would be a breaking change to the Python surface, \
-                  decided separately from core's deprecation"
-    )]
+    #[pyo3(signature = (symbol, date=None, after_hours=false, **_extra))]
     pub fn daily(
         &self,
         py: Python<'_>,
         symbol: String,
-        from_date: Option<String>,
-        to_date: Option<String>,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        date: Option<String>,
+        after_hours: bool,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
+        reject_daily_range_kwargs(&_extra)?;
         warn_unknown_kwargs(py, "futopt.historical.daily", &_extra);
         let inner = self.inner.clone();
-        let result = py.detach(|| {
-            let futopt = inner.futopt();
-            let historical = futopt.historical();
-            let mut builder = historical.daily().symbol(&symbol);
-            if let Some(f) = from_date { builder = builder.from(&f); }
-            if let Some(t) = to_date { builder = builder.to(&t); }
-            if after_hours { builder = builder.after_hours(true); }
-            builder.send()
-        });
+        let result = py.detach(|| send_futopt_daily(&inner, &symbol, date.as_deref(), after_hours));
         match result {
             Ok(daily) => types::value_to_dict(py, &daily),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
+}
+
+/// Arguments shared by `futopt.historical.candles` and its `_async` sibling.
+struct FutOptCandlesQuery {
+    symbol: String,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    timeframe: Option<String>,
+    after_hours: bool,
+    contract_month: Option<String>,
+    fields: Option<String>,
+    sort: Option<String>,
+}
+
+impl FutOptCandlesQuery {
+    fn send(self, client: &marketdata_core::RestClient) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
+        let futopt = client.futopt();
+        let historical = futopt.historical();
+        let mut builder = historical.candles().symbol(&self.symbol);
+        if let Some(f) = &self.from_date { builder = builder.from(f); }
+        if let Some(t) = &self.to_date { builder = builder.to(t); }
+        if let Some(tf) = &self.timeframe { builder = builder.timeframe(tf); }
+        if self.after_hours { builder = builder.after_hours(true); }
+        if let Some(cm) = &self.contract_month { builder = builder.contract_month(cm); }
+        if let Some(f) = &self.fields { builder = builder.fields(f); }
+        if let Some(s) = &self.sort { builder = builder.sort(s); }
+        builder.send()
+    }
+}
+
+fn send_futopt_daily(
+    client: &marketdata_core::RestClient,
+    symbol: &str,
+    date: Option<&str>,
+    after_hours: bool,
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
+    let futopt = client.futopt();
+    let historical = futopt.historical();
+    let mut builder = historical.daily().symbol(symbol);
+    if let Some(d) = date { builder = builder.date(d); }
+    if after_hours { builder = builder.after_hours(true); }
+    builder.send()
+}
+
+/// `futopt.historical.daily` used to take a date range. The endpoint returns a
+/// single trading day, so a range cannot be translated; left to the generic
+/// unknown-kwarg warning it would be ignored and today's data returned instead.
+fn reject_daily_range_kwargs(extra: &Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
+    let Some(extra) = extra else { return Ok(()) };
+    for key in ["from_date", "to_date", "from_", "from", "to"] {
+        if extra.contains(key)? {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "futopt.historical.daily() no longer accepts `{key}`: the endpoint returns a single \
+                 trading day. Pass `date=\"YYYY-MM-DD\"` instead."
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

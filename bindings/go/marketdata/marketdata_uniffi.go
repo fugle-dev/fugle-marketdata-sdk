@@ -474,7 +474,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync()
 		})
-		if checksum != 48618 {
+		if checksum != 48969 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync: UniFFI API checksum mismatch")
 		}
@@ -483,7 +483,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync()
 		})
-		if checksum != 46955 {
+		if checksum != 9970 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync: UniFFI API checksum mismatch")
 		}
@@ -492,7 +492,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_candles()
 		})
-		if checksum != 40036 {
+		if checksum != 29989 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_candles: UniFFI API checksum mismatch")
 		}
@@ -501,7 +501,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily()
 		})
-		if checksum != 24353 {
+		if checksum != 22534 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily: UniFFI API checksum mismatch")
 		}
@@ -1650,14 +1650,17 @@ func (_ FfiDestroyerFutOptClient) Destroy(value *FutOptClient) {
 //
 // Provides access to historical candles and daily data for futures and options.
 type FutOptHistoricalClientInterface interface {
-	// Get historical candles for a contract (sync/blocking)
-	CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool) (string, error)
-	// Get daily historical data for a contract (sync/blocking)
-	DailySync(symbol string, from *string, to *string, afterHours bool) (string, error)
-	// Get historical candles for a contract (async)
-	GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool) (string, error)
-	// Get daily historical data for a contract (async)
-	GetDaily(symbol string, from *string, to *string, afterHours bool) (string, error)
+	// Get historical candles for a product such as "TXF" (sync/blocking)
+	CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool, contractMonth *string, fields *string, sort *string) (string, error)
+	// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+	DailySync(symbol string, date *string, afterHours bool) (string, error)
+	// Get historical candles for a product such as "TXF" (async)
+	//
+	// `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
+	// default, "2!", "3!").
+	GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool, contractMonth *string, fields *string, sort *string) (string, error)
+	// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
+	GetDaily(symbol string, date *string, afterHours bool) (string, error)
 }
 
 // FutOpt historical data endpoints
@@ -1667,14 +1670,14 @@ type FutOptHistoricalClient struct {
 	ffiObject FfiObject
 }
 
-// Get historical candles for a contract (sync/blocking)
-func (_self *FutOptHistoricalClient) CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool) (string, error) {
+// Get historical candles for a product such as "TXF" (sync/blocking)
+func (_self *FutOptHistoricalClient) CandlesSync(symbol string, from *string, to *string, timeframe *string, afterHours bool, contractMonth *string, fields *string, sort *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterBoolINSTANCE.Lower(afterHours), _uniffiStatus),
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterBoolINSTANCE.Lower(afterHours), FfiConverterOptionalStringINSTANCE.Lower(contractMonth), FfiConverterOptionalStringINSTANCE.Lower(fields), FfiConverterOptionalStringINSTANCE.Lower(sort), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -1685,14 +1688,14 @@ func (_self *FutOptHistoricalClient) CandlesSync(symbol string, from *string, to
 	}
 }
 
-// Get daily historical data for a contract (sync/blocking)
-func (_self *FutOptHistoricalClient) DailySync(symbol string, from *string, to *string, afterHours bool) (string, error) {
+// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+func (_self *FutOptHistoricalClient) DailySync(symbol string, date *string, afterHours bool) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterBoolINSTANCE.Lower(afterHours), _uniffiStatus),
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterBoolINSTANCE.Lower(afterHours), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -1703,8 +1706,11 @@ func (_self *FutOptHistoricalClient) DailySync(symbol string, from *string, to *
 	}
 }
 
-// Get historical candles for a contract (async)
-func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool) (string, error) {
+// Get historical candles for a product such as "TXF" (async)
+//
+// `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
+// default, "2!", "3!").
+func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to *string, timeframe *string, afterHours bool, contractMonth *string, fields *string, sort *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1721,7 +1727,7 @@ func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to 
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_candles(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterBoolINSTANCE.Lower(afterHours)),
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterBoolINSTANCE.Lower(afterHours), FfiConverterOptionalStringINSTANCE.Lower(contractMonth), FfiConverterOptionalStringINSTANCE.Lower(fields), FfiConverterOptionalStringINSTANCE.Lower(sort)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -1739,8 +1745,8 @@ func (_self *FutOptHistoricalClient) GetCandles(symbol string, from *string, to 
 	return res, err
 }
 
-// Get daily historical data for a contract (async)
-func (_self *FutOptHistoricalClient) GetDaily(symbol string, from *string, to *string, afterHours bool) (string, error) {
+// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
+func (_self *FutOptHistoricalClient) GetDaily(symbol string, date *string, afterHours bool) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1757,7 +1763,7 @@ func (_self *FutOptHistoricalClient) GetDaily(symbol string, from *string, to *s
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterBoolINSTANCE.Lower(afterHours)),
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterBoolINSTANCE.Lower(afterHours)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
