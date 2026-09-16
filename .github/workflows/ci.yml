@@ -133,7 +133,7 @@ jobs:
         run: |
           npm ci
           npm run build:debug
-          npx jest --ci --forceExit --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
+          npx jest --ci --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
       - name: Type declarations match the wire format
         working-directory: js
         run: npm run check:dts

@@ -100,6 +100,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`[2001] WebSocket error: ...`) when the peer tears the transport down
   without a clean close (e.g. no TLS close_notify), nor a second
   `Disconnected { intent: Server }` for the peer's Close ack (#22).
+- **Node**: a WebSocket client kept the process alive forever once any
+  listener was registered with `on()`, even without connecting and after
+  `disconnect()`, so scripts and Jest never exited. Listeners no longer hold
+  the event loop; only an open connection does, as with 1.x. The process can
+  exit after `disconnect()`, a failed `connect()`, or a server close / network
+  loss with no reconnect left — in that last case `isConnected` now also turns
+  `false` (#30).
 - Long JSON decimals could decode to the neighbouring double, so a value
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its

@@ -8,7 +8,8 @@
 //! - Commands (connect, subscribe, disconnect) are sent via crossbeam channel
 //! - Events (message, connect, disconnect, error) are delivered via ThreadsafeFunction callbacks
 
-use napi::bindgen_prelude::Unknown;
+use napi::bindgen_prelude::{PromiseRaw, Unknown};
+use napi::Env;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::Status;
 
@@ -21,7 +22,11 @@ use napi::Status;
 /// ```js
 /// stock.on('message', (data) => console.log(JSON.parse(data)));
 /// ```
-pub type EventTsfn = ThreadsafeFunction<String, Unknown<'static>, String, Status, false>;
+///
+/// `Weak = true`: a registered listener does not keep the Node event loop
+/// alive, matching an EventEmitter listener. An open connection does, via
+/// the [`KeepAlive`] handle held for the connection's lifetime (#30).
+pub type EventTsfn = ThreadsafeFunction<String, Unknown<'static>, String, Status, false, true>;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
@@ -32,6 +37,39 @@ use std::time::Duration;
 /// Default CalleeHandled = true means the callee (JS function) handles errors.
 /// We use Arc<ThreadsafeFunction> to allow cloning for use across threads.
 pub type JsCallback = Arc<EventTsfn>;
+
+/// Strong (ref'd) threadsafe function whose only job is to keep the Node
+/// event loop alive while a connection is open. Never called: dropping it
+/// releases the handle, from any thread, and lets the process exit (#30).
+type KeepAlive = ThreadsafeFunction<(), (), (), Status, false>;
+
+/// Worker-thread signal that authentication finished (or why it failed).
+type AuthRx = tokio::sync::oneshot::Receiver<Result<(), String>>;
+
+/// Promise returned by `connect()`: resolves once the worker has
+/// authenticated. A failure to start the worker rejects it too, so
+/// `connect()` never throws synchronously.
+fn auth_promise<'env>(
+    env: &'env Env,
+    started: napi::Result<AuthRx>,
+) -> napi::Result<PromiseRaw<'env, ()>> {
+    env.spawn_future(async move {
+        match started?.await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
+            Err(_) => Err(napi::Error::from_reason(
+                "Worker thread terminated before authentication signal",
+            )),
+        }
+    })
+}
+
+fn loop_keep_alive(env: &Env) -> napi::Result<KeepAlive> {
+    env.create_function_from_closure::<(), (), _>("fugleWsKeepAlive", |_| Ok(()))?
+        .build_threadsafe_function::<()>()
+        .callee_handled::<false>()
+        .build()
+}
 
 /// Reconnection options for WebSocket clients
 ///
@@ -600,8 +638,14 @@ impl StockWebSocketClient {
     /// On rejection, the Promise carries the underlying error message. The
     /// `connect` event callback also fires after the Promise resolves, so
     /// existing callback-style code keeps working.
-    #[napi]
-    pub async fn connect(&self) -> napi::Result<()> {
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
+        auth_promise(env, self.start_worker(env))
+    }
+
+    /// Spawn the worker thread; the receiver fires once it has authenticated.
+    fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+        let keep_alive = loop_keep_alive(env)?;
         // Create command channel
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
 
@@ -697,7 +741,17 @@ impl StockWebSocketClient {
                 // Monitor state events for reconnect/error callbacks
                 let events = Arc::clone(client.state_events());
                 let callbacks_for_events = Arc::clone(&callbacks);
+                // Set once core stops for good (server close or network loss
+                // with no reconnect left). The message channel stays open
+                // while `client` lives, so the worker needs this to exit and
+                // release `keep_alive` (#30).
+                let dispatch_ended = Arc::new(AtomicBool::new(false));
+                let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
                 std::thread::spawn(move || {
+                    // Held until the event channel closes (the core client
+                    // is dropped when the worker exits), i.e. after the last
+                    // callback — including `disconnect` — has been queued.
+                    let _keep_alive = keep_alive;
                     loop {
                         let event = {
                             let rx = events.blocking_lock();
@@ -718,6 +772,8 @@ impl StockWebSocketClient {
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
                                         fire_callback(&callbacks_for_events, "error", format!("Reconnection failed after {} attempts", attempts));
+                                        // Core's dispatch task has ended for good.
+                                        dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                     }
                                     ConnectionEvent::Authenticated => {
                                         fire_callback(&callbacks_for_events, "authenticated", "authenticated".to_string());
@@ -749,6 +805,12 @@ impl StockWebSocketClient {
 
                 // Main event loop
                 loop {
+                    if dispatch_ended.load(Ordering::SeqCst) {
+                        connected.store(false, Ordering::SeqCst);
+                        closed.store(true, Ordering::SeqCst);
+                        break;
+                    }
+
                     // Check for commands (non-blocking)
                     match cmd_rx.try_recv() {
                         Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
@@ -817,15 +879,7 @@ impl StockWebSocketClient {
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
-        // Await the auth signal from the worker thread so the returned
-        // Promise resolves only after authentication completes.
-        match auth_rx.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
-            Err(_) => Err(napi::Error::from_reason(
-                "Worker thread terminated before authentication signal",
-            )),
-        }
+        Ok(auth_rx)
     }
 
     /// Subscribe to a channel
@@ -1119,8 +1173,14 @@ impl FutOptWebSocketClient {
     ///
     /// Returns a Promise that resolves when authentication completes.
     /// See `StockWebSocketClient::connect` for the rationale and example.
-    #[napi]
-    pub async fn connect(&self) -> napi::Result<()> {
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
+        auth_promise(env, self.start_worker(env))
+    }
+
+    /// Spawn the worker thread; the receiver fires once it has authenticated.
+    fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+        let keep_alive = loop_keep_alive(env)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
 
         {
@@ -1206,7 +1266,15 @@ impl FutOptWebSocketClient {
                 // Monitor state events for reconnect/error callbacks
                 let events = Arc::clone(client.state_events());
                 let callbacks_for_events = Arc::clone(&callbacks);
+                // Set once core stops for good (server close or network loss
+                // with no reconnect left). The message channel stays open
+                // while `client` lives, so the worker needs this to exit and
+                // release `keep_alive` (#30).
+                let dispatch_ended = Arc::new(AtomicBool::new(false));
+                let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
                 std::thread::spawn(move || {
+                    // See StockWebSocketClient::connect.
+                    let _keep_alive = keep_alive;
                     loop {
                         let event = {
                             let rx = events.blocking_lock();
@@ -1227,6 +1295,8 @@ impl FutOptWebSocketClient {
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
                                         fire_callback(&callbacks_for_events, "error", format!("Reconnection failed after {} attempts", attempts));
+                                        // Core's dispatch task has ended for good.
+                                        dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                     }
                                     ConnectionEvent::Authenticated => {
                                         fire_callback(&callbacks_for_events, "authenticated", "authenticated".to_string());
@@ -1258,6 +1328,12 @@ impl FutOptWebSocketClient {
 
                 // Main event loop
                 loop {
+                    if dispatch_ended.load(Ordering::SeqCst) {
+                        connected.store(false, Ordering::SeqCst);
+                        closed.store(true, Ordering::SeqCst);
+                        break;
+                    }
+
                     // Check for commands (non-blocking)
                     match cmd_rx.try_recv() {
                         Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
@@ -1325,13 +1401,7 @@ impl FutOptWebSocketClient {
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
-        match auth_rx.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
-            Err(_) => Err(napi::Error::from_reason(
-                "Worker thread terminated before authentication signal",
-            )),
-        }
+        Ok(auth_rx)
     }
 
     /// Subscribe to a channel
