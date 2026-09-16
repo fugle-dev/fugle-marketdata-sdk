@@ -452,6 +452,10 @@ impl WebSocketClient {
 
     /// Connect to WebSocket server and authenticate
     ///
+    /// A no-op returning `Ok(())` while this client's dispatch task is still
+    /// running (connected, or auto-reconnecting), matching the sync client.
+    /// Use [`reconnect`](Self::reconnect) to replace a live connection.
+    ///
     /// # Errors
     ///
     /// Returns error if:
@@ -467,6 +471,12 @@ impl WebSocketClient {
         // Check if client is closed - cannot reconnect a closed client
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
+        }
+        // A second dispatch task would orphan the first, whose later close
+        // would then be reported through the shared latch as this new
+        // connection's `Disconnected` (#41).
+        if self.dispatch_task_running().await {
+            return Ok(());
         }
 
         // Every background task — dispatch, writer and the `messages()`
@@ -787,6 +797,24 @@ impl WebSocketClient {
         }
     }
 
+    /// True while the dispatch task (dispatch loop + auto-reconnect) runs.
+    async fn dispatch_task_running(&self) -> bool {
+        self.dispatch_handle
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
+    }
+
+    /// Abort the dispatch task and wait until it is gone. `emit_event` never
+    /// awaits, so an abort cannot leave an emit half done.
+    async fn stop_dispatch_task(&self) {
+        if let Some(h) = self.dispatch_handle.lock().await.take() {
+            h.abort();
+            let _ = h.await;
+        }
+    }
+
     /// Force-abort both background tasks. Called on drain timeout.
     async fn abort_background_tasks(&self) {
         if let Some(h) = self.writer_handle.lock().await.take() {
@@ -1024,11 +1052,19 @@ impl WebSocketClient {
     ///
     /// From CONTEXT.md: "支援 reconnect() 方法讓使用者手動觸發重連"
     /// Resets reconnection manager and attempts fresh connection.
+    ///
+    /// A live connection (or an auto-reconnect in progress) is torn down
+    /// first without emitting `Disconnected`, matching the sync client.
     pub async fn reconnect(&self) -> Result<(), MarketDataError> {
         // Check if client is closed - cannot reconnect a closed client
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
         }
+
+        // Stop the old dispatch task before `connect()` re-arms the latch,
+        // so its socket's close cannot claim the new connection's
+        // `Disconnected` (#41).
+        self.stop_dispatch_task().await;
 
         // Reset reconnection manager for fresh attempt
         {

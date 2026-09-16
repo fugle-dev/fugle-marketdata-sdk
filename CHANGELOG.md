@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a second `disconnect()`, no longer emits another `Disconnected`; the state
   still becomes `Closed`. A successful reconnect starts a new connection that
   reports its own close (#41).
+- **Core**: `aio::WebSocketClient::connect()` while the client is connected
+  (or auto-reconnecting) is a no-op returning `Ok(())`, and `reconnect()`
+  stops the running connection before opening a new one, as the sync client
+  already did. Previously both left the old dispatch task running, whose
+  later close was reported as the new connection's `Disconnected` (#41).
 
 ### Breaking
 

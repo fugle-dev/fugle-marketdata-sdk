@@ -83,128 +83,23 @@ pub struct MockServerHandle {
 /// handshake (responds `{"event":"authenticated"}` to whatever the
 /// client sends first), then applies `behaviour`.
 pub async fn spawn(behaviour: AfterAuth) -> MockServerHandle {
+    spawn_sequence(vec![behaviour]).await
+}
+
+/// Like [`spawn`], but accepts one connection per entry, in order, each
+/// served with its own behaviour (e.g. to follow a client `reconnect()`).
+pub async fn spawn_sequence(behaviours: Vec<AfterAuth>) -> MockServerHandle {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().expect("local_addr").port();
     let url = format!("ws://127.0.0.1:{}/", port);
     let (done_tx, done_rx) = mpsc::unbounded_channel();
 
-    let behaviour = Arc::new(behaviour);
-
     tokio::spawn(async move {
-        if let Ok((stream, _)) = listener.accept().await {
-            let ws = match tokio_tungstenite::accept_async(stream).await {
-                Ok(ws) => ws,
-                Err(_) => {
-                    let _ = done_tx.send(());
-                    return;
-                }
+        for behaviour in behaviours {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
             };
-            let (mut sink, mut stream) = ws.split();
-
-            // Auth handshake: read first text frame, send "authenticated".
-            if let Some(Ok(_first)) = stream.next().await {
-                let _ = sink
-                    .send(Message::Text(
-                        r#"{"event":"authenticated"}"#.to_string().into(),
-                    ))
-                    .await;
-            }
-
-            match (*behaviour).clone() {
-                AfterAuth::Idle => loop {
-                    match stream.next().await {
-                        Some(Ok(Message::Close(_))) => {
-                            // tungstenite already queued the RFC-6455 Close
-                            // ack; flush it so the client actually gets it
-                            // (a second `send(Close)` would fail and drop
-                            // the socket without the ack).
-                            let _ = sink.close().await;
-                            break;
-                        }
-                        Some(Ok(_)) => continue,
-                        _ => break,
-                    }
-                },
-                AfterAuth::FloodData { count } => {
-                    for i in 0..count {
-                        let payload = format!(
-                            r#"{{"event":"data","channel":"trades","symbol":"X","id":"{}","data":{{"i":{}}}}}"#,
-                            i, i
-                        );
-                        if sink.send(Message::Text(payload.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    // After the burst, idle until the client closes.
-                    while let Some(msg) = stream.next().await {
-                        if let Ok(Message::Close(_)) = msg {
-                            let _ = sink.send(Message::Close(None)).await;
-                            break;
-                        }
-                    }
-                }
-                AfterAuth::ServerCloseAfter {
-                    delay_ms,
-                    code,
-                    reason,
-                } => {
-                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    let frame = CloseFrame {
-                        code: CloseCode::from(code),
-                        reason: reason.into(),
-                    };
-                    let _ = sink.send(Message::Close(Some(frame))).await;
-                    // Wait for the client's Close ack so the read half
-                    // gets the proper handshake completion event.
-                    while let Some(msg) = stream.next().await {
-                        if let Ok(Message::Close(_)) = msg {
-                            break;
-                        }
-                    }
-                }
-                AfterAuth::ServerCloseOnNotify { notify, delay_ms } => {
-                    notify.notified().await;
-                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    let _ = sink.send(Message::Close(None)).await;
-                    while let Some(Ok(msg)) = stream.next().await {
-                        if let Message::Close(_) = msg {
-                            break;
-                        }
-                    }
-                }
-                AfterAuth::DropOnClientClose => {
-                    while let Some(Ok(msg)) = stream.next().await {
-                        if let Message::Close(_) = msg {
-                            if let Ok(mut ws) = sink.reunite(stream) {
-                                use tokio::io::AsyncWriteExt;
-                                let _ = ws.get_mut().shutdown().await;
-                            }
-                            break;
-                        }
-                    }
-                }
-                AfterAuth::ServerDropAfter { delay_ms } => {
-                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    // Reunite + close the underlying transport without
-                    // sending a Close frame to simulate a network drop.
-                    // Reuniting via SinkExt::reunite requires owning both
-                    // halves; the WebSocketStream returned from `unsplit`
-                    // can then be shutdown explicitly.
-                    if let Ok(ws) = sink.reunite(stream) {
-                        let mut inner = ws;
-                        // `WebSocketStream::get_mut()` exposes the
-                        // underlying `MaybeTlsStream<TcpStream>`. Calling
-                        // `shutdown()` triggers an immediate FIN on the
-                        // OS socket so the client's read half wakes up
-                        // with EOF instead of waiting for keep-alive.
-                        use tokio::io::AsyncWriteExt;
-                        let _ = inner.get_mut().shutdown().await;
-                        drop(inner);
-                    }
-                }
-            }
-
-            let _ = done_tx.send(());
+            tokio::spawn(serve(stream, Arc::new(behaviour), done_tx.clone()));
         }
     });
 
@@ -212,4 +107,124 @@ pub async fn spawn(behaviour: AfterAuth) -> MockServerHandle {
         url,
         done_rx: Mutex::new(done_rx),
     }
+}
+
+async fn serve(
+    stream: tokio::net::TcpStream,
+    behaviour: Arc<AfterAuth>,
+    done_tx: mpsc::UnboundedSender<()>,
+) {
+    let ws = match tokio_tungstenite::accept_async(stream).await {
+        Ok(ws) => ws,
+        Err(_) => {
+            let _ = done_tx.send(());
+            return;
+        }
+    };
+    let (mut sink, mut stream) = ws.split();
+
+    // Auth handshake: read first text frame, send "authenticated".
+    if let Some(Ok(_first)) = stream.next().await {
+        let _ = sink
+            .send(Message::Text(
+                r#"{"event":"authenticated"}"#.to_string().into(),
+            ))
+            .await;
+    }
+
+    match (*behaviour).clone() {
+        AfterAuth::Idle => loop {
+            match stream.next().await {
+                Some(Ok(Message::Close(_))) => {
+                    // tungstenite already queued the RFC-6455 Close
+                    // ack; flush it so the client actually gets it
+                    // (a second `send(Close)` would fail and drop
+                    // the socket without the ack).
+                    let _ = sink.close().await;
+                    break;
+                }
+                Some(Ok(_)) => continue,
+                _ => break,
+            }
+        },
+        AfterAuth::FloodData { count } => {
+            for i in 0..count {
+                let payload = format!(
+                    r#"{{"event":"data","channel":"trades","symbol":"X","id":"{}","data":{{"i":{}}}}}"#,
+                    i, i
+                );
+                if sink.send(Message::Text(payload.into())).await.is_err() {
+                    break;
+                }
+            }
+            // After the burst, idle until the client closes.
+            while let Some(msg) = stream.next().await {
+                if let Ok(Message::Close(_)) = msg {
+                    let _ = sink.send(Message::Close(None)).await;
+                    break;
+                }
+            }
+        }
+        AfterAuth::ServerCloseAfter {
+            delay_ms,
+            code,
+            reason,
+        } => {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            let frame = CloseFrame {
+                code: CloseCode::from(code),
+                reason: reason.into(),
+            };
+            let _ = sink.send(Message::Close(Some(frame))).await;
+            // Wait for the client's Close ack so the read half
+            // gets the proper handshake completion event.
+            while let Some(msg) = stream.next().await {
+                if let Ok(Message::Close(_)) = msg {
+                    break;
+                }
+            }
+        }
+        AfterAuth::ServerCloseOnNotify { notify, delay_ms } => {
+            notify.notified().await;
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            let _ = sink.send(Message::Close(None)).await;
+            while let Some(Ok(msg)) = stream.next().await {
+                if let Message::Close(_) = msg {
+                    break;
+                }
+            }
+        }
+        AfterAuth::DropOnClientClose => {
+            while let Some(Ok(msg)) = stream.next().await {
+                if let Message::Close(_) = msg {
+                    if let Ok(mut ws) = sink.reunite(stream) {
+                        use tokio::io::AsyncWriteExt;
+                        let _ = ws.get_mut().shutdown().await;
+                    }
+                    break;
+                }
+            }
+        }
+        AfterAuth::ServerDropAfter { delay_ms } => {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            // Reunite + close the underlying transport without
+            // sending a Close frame to simulate a network drop.
+            // Reuniting via SinkExt::reunite requires owning both
+            // halves; the WebSocketStream returned from `unsplit`
+            // can then be shutdown explicitly.
+            if let Ok(ws) = sink.reunite(stream) {
+                let mut inner = ws;
+                // `WebSocketStream::get_mut()` exposes the
+                // underlying `MaybeTlsStream<TcpStream>`. Calling
+                // `shutdown()` triggers an immediate FIN on the
+                // OS socket so the client's read half wakes up
+                // with EOF instead of waiting for keep-alive.
+                use tokio::io::AsyncWriteExt;
+                let _ = inner.get_mut().shutdown().await;
+                drop(inner);
+            }
+        }
+    }
+
+    let _ = done_tx.send(());
 }
