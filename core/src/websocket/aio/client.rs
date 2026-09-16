@@ -418,6 +418,14 @@ impl WebSocketClient {
     /// the one bound by [`connect`](Self::connect), else the ambient one.
     /// Without either, the bridge stays pending until `connect` binds one.
     fn try_attach_bridge(&self) {
+        // Lock order makes a concurrent `messages()` / first `connect()` on
+        // different threads always spawn the bridge: `runtime_handle` is
+        // read while holding `pending_bridge`, and `bind_runtime` writes
+        // `runtime_handle` before taking `pending_bridge`. If this call
+        // reads `None`, that write comes later, so `bind_runtime`'s own
+        // attach blocks until this lock is released and then finds the
+        // bridge still pending. If `bind_runtime` attaches first and finds
+        // nothing pending, the handle is already written for this read.
         let mut pending = self.pending_bridge.lock().expect("pending_bridge poisoned");
         if pending.is_none() {
             return;
