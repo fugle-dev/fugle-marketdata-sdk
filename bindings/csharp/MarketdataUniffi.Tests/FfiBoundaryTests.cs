@@ -65,12 +65,12 @@ public class FfiBoundaryTests
     {
         SkipIfNativeLibraryUnavailable();
 
-        using var client = new FugleMarketData.RestClient("test-api-key");
+        using var server = new LoopbackServer(
+            """{"message":"Resource not found","statusCode":404}""", statusCode: 404);
+        using var client = server.NewClient();
 
-        await Assert.ThrowsExceptionAsync<Exception>(async () =>
-        {
-            await client.Stock.Intraday.GetQuoteAsync("INVALID_SYMBOL_12345");
-        });
+        await AssertEx.ThrowsAnyAsync(() =>
+            client.Stock.Intraday.GetQuoteAsync("INVALID_SYMBOL_12345"));
     }
 
     [TestMethod]
@@ -165,17 +165,16 @@ public class FfiBoundaryTests
     {
         SkipIfNativeLibraryUnavailable();
 
-        using var client = new FugleMarketData.RestClient("test-key");
+        using var server = new LoopbackServer(
+            """{"message":"URI Too Long","statusCode":414}""", statusCode: 414);
+        using var client = server.NewClient();
 
         // Try extremely long symbol (potential buffer overflow)
         var longSymbol = new string('A', 10000);
 
-        await Assert.ThrowsExceptionAsync<Exception>(async () =>
-        {
-            await client.Stock.Intraday.GetQuoteAsync(longSymbol);
-        });
-
-        // Should throw exception, not crash
+        // Should surface an error, not crash or corrupt memory.
+        await AssertEx.ThrowsAnyAsync(() =>
+            client.Stock.Intraday.GetQuoteAsync(longSymbol));
     }
 
     [TestMethod]
@@ -237,23 +236,15 @@ public class FfiBoundaryTests
     {
         SkipIfNativeLibraryUnavailable();
 
-        using var client = new FugleMarketData.RestClient("test-key");
+        using var server = new LoopbackServer(
+            """{"message":"Unauthorized","statusCode":401}""", statusCode: 401);
+        using var client = server.NewClient();
 
         // Cause an error
-        try
-        {
-            await client.Stock.Intraday.GetQuoteAsync("INVALID");
-        }
-        catch
-        {
-            // Expected
-        }
+        await AssertEx.ThrowsAnyAsync(() => client.Stock.Intraday.GetQuoteAsync("INVALID"));
 
-        // Client should still be usable (should not crash)
-        await Assert.ThrowsExceptionAsync<Exception>(async () =>
-        {
-            await client.Stock.Intraday.GetQuoteAsync("2330");
-        });
+        // The client must survive it and still be able to make a request.
+        await AssertEx.ThrowsAnyAsync(() => client.Stock.Intraday.GetQuoteAsync("2330"));
     }
 
     [TestMethod]

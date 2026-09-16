@@ -32,8 +32,8 @@ namespace FugleMarketData
         /// If not provided, uses the default Fugle MarketData API URL.
         /// </summary>
         /// <remarks>
-        /// Note: BaseUrl override is not yet fully implemented in the underlying library.
-        /// This property is stored for future use.
+        /// Pass the host and path prefix only — a version segment such as
+        /// "/v1.0" is rejected.
         /// </remarks>
         public string? BaseUrl { get; set; }
     }

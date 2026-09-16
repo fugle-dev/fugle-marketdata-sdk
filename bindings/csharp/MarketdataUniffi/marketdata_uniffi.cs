@@ -9534,17 +9534,59 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
 /// <param name="raw">
 /// The frame verbatim, as received on the wire.
 /// </param>
+/// <param name="event">
+/// Event type: "data", "subscribed", "error", "authenticated", "pong".
+/// </param>
+/// <param name="channel">
+/// Channel name, for data events.
+/// </param>
+/// <param name="symbol">
+/// Symbol, for data events.
+/// </param>
+/// <param name="id">
+/// Subscription id, for subscribed events.
+/// </param>
+/// <param name="data_json">
+/// The `data` member of the frame, still encoded as JSON.
+/// </param>
+/// <param name="error_code">
+/// Error code, for error events.
+/// </param>
+/// <param name="error_message">
+/// Error message, for error events.
+/// </param>
 public record StreamMessage(
     /// <summary>
     /// The frame verbatim, as received on the wire.
     /// </summary>
     string @raw,
+    /// <summary>
+    /// Event type: "data", "subscribed", "error", "authenticated", "pong".
+    /// </summary>
     string @event,
+    /// <summary>
+    /// Channel name, for data events.
+    /// </summary>
     string? @channel,
+    /// <summary>
+    /// Symbol, for data events.
+    /// </summary>
     string? @symbol,
+    /// <summary>
+    /// Subscription id, for subscribed events.
+    /// </summary>
     string? @id,
+    /// <summary>
+    /// The `data` member of the frame, still encoded as JSON.
+    /// </summary>
     string? @dataJson,
+    /// <summary>
+    /// Error code, for error events.
+    /// </summary>
     int? @errorCode,
+    /// <summary>
+    /// Error message, for error events.
+    /// </summary>
     string? @errorMessage
 ) { }
 

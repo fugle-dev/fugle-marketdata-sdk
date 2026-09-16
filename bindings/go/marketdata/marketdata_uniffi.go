@@ -5041,13 +5041,20 @@ func (_ FfiDestroyerReconnectConfigRecord) Destroy(value ReconnectConfigRecord) 
 // are a convenience, not the source of truth.
 type StreamMessage struct {
 	// The frame verbatim, as received on the wire.
-	Raw          string
-	Event        string
-	Channel      *string
-	Symbol       *string
-	Id           *string
-	DataJson     *string
-	ErrorCode    *int32
+	Raw string
+	// Event type: "data", "subscribed", "error", "authenticated", "pong".
+	Event string
+	// Channel name, for data events.
+	Channel *string
+	// Symbol, for data events.
+	Symbol *string
+	// Subscription id, for subscribed events.
+	Id *string
+	// The `data` member of the frame, still encoded as JSON.
+	DataJson *string
+	// Error code, for error events.
+	ErrorCode *int32
+	// Error message, for error events.
 	ErrorMessage *string
 }
 

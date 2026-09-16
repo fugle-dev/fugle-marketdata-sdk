@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace MarketdataUniffi.Tests;
@@ -218,7 +219,8 @@ public class RestClientTests
         var quote = await client.Stock.Intraday.GetQuoteAsync("2330");
 
         Assert.IsNotNull(quote);
-        Assert.AreEqual("2330", quote.symbol);
+        // REST methods hand back the server's JSON verbatim.
+        Assert.AreEqual("2330", JsonDocument.Parse(quote).RootElement.GetProperty("symbol").GetString());
     }
 
     [TestMethod]
@@ -238,6 +240,6 @@ public class RestClientTests
         var ticker = await client.Stock.Intraday.GetTickerAsync("2330");
 
         Assert.IsNotNull(ticker);
-        Assert.AreEqual("2330", ticker.symbol);
+        Assert.AreEqual("2330", JsonDocument.Parse(ticker).RootElement.GetProperty("symbol").GetString());
     }
 }

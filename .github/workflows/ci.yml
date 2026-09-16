@@ -194,8 +194,13 @@ jobs:
           git diff --exit-code -- bindings/csharp/MarketdataUniffi/marketdata_uniffi.cs bindings/go/marketdata/ \
             || { echo "::error::UniFFI bindings are stale. Run 'make gen-csharp gen-go' and commit the result."; exit 1; }
 
+      # Without the native library on the loader path every test that builds
+      # a client hits Assert.Inconclusive and silently skips — 36 of 55 used
+      # to do exactly that, so most of this suite never ran in CI.
       - name: C# tests
         working-directory: bindings/csharp
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: dotnet test MarketdataUniffi.Tests --filter "Category!=Integration&TestCategory!=Integration"
 
       # Most C# tests skip when the native library is absent, so load it for

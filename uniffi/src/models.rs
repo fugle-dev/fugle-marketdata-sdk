@@ -26,12 +26,19 @@ use marketdata_core::models as core;
 pub struct StreamMessage {
     /// The frame verbatim, as received on the wire.
     pub raw: String,
+    /// Event type: "data", "subscribed", "error", "authenticated", "pong".
     pub event: String,
+    /// Channel name, for data events.
     pub channel: Option<String>,
+    /// Symbol, for data events.
     pub symbol: Option<String>,
+    /// Subscription id, for subscribed events.
     pub id: Option<String>,
+    /// The `data` member of the frame, still encoded as JSON.
     pub data_json: Option<String>,
+    /// Error code, for error events.
     pub error_code: Option<i32>,
+    /// Error message, for error events.
     pub error_message: Option<String>,
 }
 
