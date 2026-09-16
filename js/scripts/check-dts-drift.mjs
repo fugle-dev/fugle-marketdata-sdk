@@ -331,6 +331,11 @@ function main() {
     if (Object.prototype.hasOwnProperty.call(INTENTIONALLY_UNMAPPED, interfaceName)) {
       continue;
     }
+    // `Rest*Params`: the legacy object-form request params, one per REST
+    // method — inputs the caller constructs, not server response shapes.
+    if (/^Rest\w+Params$/.test(interfaceName)) {
+      continue;
+    }
 
     const structName = INTERFACE_TO_STRUCT[interfaceName];
     if (!structName) {

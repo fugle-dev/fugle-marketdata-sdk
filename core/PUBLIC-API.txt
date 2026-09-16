@@ -3303,6 +3303,7 @@ pub struct marketdata_core::rest::RestClient
 impl marketdata_core::RestClient
 pub fn marketdata_core::RestClient::base_url(self, &str) -> Self
 pub fn marketdata_core::RestClient::futopt(&self) -> marketdata_core::rest::futopt::FutOptClient<'_>
+pub fn marketdata_core::RestClient::get_json<K, V>(&self, &[&str], &[(K, V)]) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError> where K: core::convert::AsRef<str>, V: core::convert::AsRef<str>
 pub fn marketdata_core::RestClient::new(marketdata_core::Auth) -> Self
 pub fn marketdata_core::RestClient::resolved_base_url(&self) -> &str
 pub fn marketdata_core::RestClient::stock(&self) -> marketdata_core::rest::StockClient<'_>
@@ -5676,6 +5677,7 @@ pub struct marketdata_core::RestClient
 impl marketdata_core::RestClient
 pub fn marketdata_core::RestClient::base_url(self, &str) -> Self
 pub fn marketdata_core::RestClient::futopt(&self) -> marketdata_core::rest::futopt::FutOptClient<'_>
+pub fn marketdata_core::RestClient::get_json<K, V>(&self, &[&str], &[(K, V)]) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError> where K: core::convert::AsRef<str>, V: core::convert::AsRef<str>
 pub fn marketdata_core::RestClient::new(marketdata_core::Auth) -> Self
 pub fn marketdata_core::RestClient::resolved_base_url(&self) -> &str
 pub fn marketdata_core::RestClient::stock(&self) -> marketdata_core::rest::StockClient<'_>

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Node**: every REST method accepts the legacy `@fugle/marketdata` 1.x
+  object param, e.g. `stock.intraday.trades({ symbol: '2330', limit: 5 })`.
+  The path param (`symbol` / `market`) goes into the path and every other key
+  is forwarded verbatim as a query param, so params the positional form lacks
+  (`type=oddlot`, `limit`, `sort`, `session=afterhours`, `product`, movers'
+  `gt`/`lt`, …) are reachable. Previously only `quote` and `ownership.*`
+  accepted an object; every other method threw `Failed to convert JavaScript
+  value`. `Rest*Params` types are exported for each method.
+- **Rust**: `RestClient::get_json(path, query)` sends a GET with an arbitrary
+  query string and returns the body as-is.
+
+### Changed
+
+- **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
+  require `timeframe`; the server defaults to `1`, as in 1.x.
+
 ### Breaking
 
 - **All languages**: `stock.technical.kdj()` takes `rPeriod` / `kPeriod` /

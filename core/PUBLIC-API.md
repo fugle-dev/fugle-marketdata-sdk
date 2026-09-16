@@ -35,6 +35,16 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — raw GET for verbatim query params (#16)
+
+- `+` `RestClient::get_json(&self, &[&str], &[(K, V)])` — sends a GET to an
+  arbitrary path with an arbitrary query string and returns the body as-is.
+  The typed builders only emit the params they declare; the Node binding
+  uses this to forward the legacy `{ symbol, ...query }` object verbatim, as
+  the official 1.x SDK does, so every documented query param is reachable.
+  Path segments and query keys/values are percent-encoded; auth, retry and
+  status handling match the typed builders.
+
 ### 0.9.0-rc.1 — REST responses pass through verbatim (#10)
 
 The typed response models leave the return path. They were on it as a

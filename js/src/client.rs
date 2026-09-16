@@ -5,25 +5,141 @@
 
 use crate::errors::to_napi_error;
 use crate::websocket::RestClientOptions;
-use napi::Either;
 use napi_derive::napi;
-use serde_json::Value;
+use napi::bindgen_prelude::{FromNapiValue, TypeName, ValueType};
+use napi::{check_status, sys};
+use serde_json::{Map, Value};
 
 // ---------------------------------------------------------------------------
 // Legacy fugle-marketdata-node compatibility helpers
 //
 // The legacy `@fugle/marketdata` SDK calls REST methods with a single object
-// argument (e.g. `stock.intraday.quote({ symbol: '2330' })`). Our binding
-// originally only accepted positional strings; the helper structs and
-// `Either<String, _>` parameter types let both shapes coexist without
-// breaking existing positional callers.
+// argument (e.g. `stock.intraday.quote({ symbol: '2330', type: 'oddlot' })`)
+// and forwards every key except the path param verbatim as a query param.
+// Every REST method here accepts that object as its first argument and does
+// the same through `RestClient::get_json`; a string first argument keeps the
+// positional form, which goes through the typed builders.
 // ---------------------------------------------------------------------------
 
-/// Stock intraday quote params (object form)
-#[napi(object)]
-pub struct StockIntradayQuoteParams {
-    pub symbol: String,
-    pub odd_lot: Option<bool>,
+/// The first argument of a REST method: positional, or the legacy params object.
+///
+/// Converted while napi reads the arguments, so a wrong type (a number, an
+/// array, a `Buffer`) throws synchronously like any other argument type error
+/// rather than surfacing later as a rejected promise.
+pub enum RestArg {
+    Positional(String),
+    Params(Map<String, Value>),
+}
+
+impl RestArg {
+    /// Unwrap a required first argument (`undefined` / `null` arrive as `None`).
+    fn required(arg: Option<Self>, name: &str) -> napi::Result<Self> {
+        arg.ok_or_else(|| napi::Error::from_reason(format!("`{name}` is required")))
+    }
+}
+
+impl TypeName for RestArg {
+    fn type_name() -> &'static str {
+        "string | object"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for RestArg {
+    unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
+        let invalid = || {
+            napi::Error::new(
+                napi::Status::InvalidArg,
+                "expected a string or a params object".to_string(),
+            )
+        };
+        let mut ty = 0;
+        check_status!(unsafe { sys::napi_typeof(env, value, &mut ty) })?;
+        match ty {
+            sys::ValueType::napi_string => Ok(Self::Positional(unsafe { String::from_napi_value(env, value)? })),
+            sys::ValueType::napi_object => {
+                let checks: [unsafe fn(sys::napi_env, sys::napi_value, *mut bool) -> sys::napi_status; 3] =
+                    [sys::napi_is_array, sys::napi_is_buffer, sys::napi_is_typedarray];
+                for check in checks {
+                    let mut hit = false;
+                    check_status!(unsafe { check(env, value, &mut hit) })?;
+                    if hit {
+                        return Err(invalid());
+                    }
+                }
+                Ok(Self::Params(unsafe { Map::from_napi_value(env, value)? }))
+            }
+            _ => Err(invalid()),
+        }
+    }
+}
+
+/// Send the legacy object form: `params[path_key]` becomes the last path
+/// segment and every other entry is forwarded as a query param.
+async fn get_with_params(
+    client: &marketdata_core::RestClient,
+    path: &[&str],
+    path_key: Option<&str>,
+    mut params: Map<String, Value>,
+) -> napi::Result<Value> {
+    let mut segments: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+    if let Some(key) = path_key {
+        match params.remove(key).as_ref().and_then(scalar_to_string) {
+            Some(value) => segments.push(value),
+            None => {
+                return Err(napi::Error::from_reason(format!(
+                    "`{key}` is required and must be a string"
+                )))
+            }
+        }
+    }
+    let query = query_pairs(params)?;
+
+    let client = client.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
+        client.get_json(&segments, &query)
+    })
+    .await
+    .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
+
+    result.map_err(to_napi_error)
+}
+
+/// Flatten params into query pairs the way the legacy SDK's `query-string`
+/// does: `null` entries are skipped and an array repeats its key per element.
+fn query_pairs(params: Map<String, Value>) -> napi::Result<Vec<(String, String)>> {
+    let mut pairs = Vec::new();
+    for (key, value) in params {
+        let items = match value {
+            Value::Array(items) => items,
+            other => vec![other],
+        };
+        for item in items {
+            if item.is_null() {
+                continue;
+            }
+            let Some(item) = scalar_to_string(&item) else {
+                return Err(napi::Error::from_reason(format!(
+                    "`{key}` must be a string, number, boolean or an array of them"
+                )));
+            };
+            pairs.push((key.clone(), item));
+        }
+    }
+    Ok(pairs)
+}
+
+fn scalar_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
 }
 
 /// Plain `{ symbol }` params reused by methods that take only a symbol.
@@ -406,21 +522,34 @@ impl StockIntradayClient {
     /// ```javascript
     /// // Object shape (matches legacy SDK README)
     /// await client.stock.intraday.quote({ symbol: '2330' });
-    /// await client.stock.intraday.quote({ symbol: '2330', oddLot: true });
+    /// await client.stock.intraday.quote({ symbol: '2330', type: 'oddlot' });
     ///
     /// // Positional shape
     /// await client.stock.intraday.quote('2330');
     /// await client.stock.intraday.quote('2330', true);
     /// ```
-    #[napi(ts_return_type = "Promise<QuoteResponse>")]
-    pub async fn quote(
-        &self,
-        symbol: Either<String, StockIntradayQuoteParams>,
-        odd_lot: Option<bool>,
-    ) -> napi::Result<Value> {
-        let (symbol, effective_odd_lot) = match symbol {
-            Either::A(s) => (s, odd_lot),
-            Either::B(p) => (p.symbol, p.odd_lot.or(odd_lot)),
+    #[napi(
+        ts_return_type = "Promise<QuoteResponse>",
+        ts_args_type = "symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean"
+    )]
+    pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Value> {
+        let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(symbol) => (symbol, odd_lot),
+            RestArg::Params(mut params) => {
+                // `oddLot` is this SDK's own spelling from 3.0.0-rc, not an
+                // API param; forwarded as-is the server would ignore it and
+                // return board-lot data.
+                let params_odd_lot = match params.remove("oddLot") {
+                    Some(Value::Bool(b)) => Some(b),
+                    _ => None,
+                };
+                if params_odd_lot.or(odd_lot) == Some(true) {
+                    params
+                        .entry("type")
+                        .or_insert_with(|| Value::String("oddlot".to_string()));
+                }
+                return get_with_params(&self.inner, &["stock", "intraday", "quote"], Some("symbol"), params).await;
+            }
         };
 
         let inner = self.inner.clone();
@@ -445,8 +574,16 @@ impl StockIntradayClient {
     ///
     /// @param symbol - Stock symbol (e.g., "2330" for TSMC)
     /// @returns Promise resolving to Ticker object with last trade info
-    #[napi(ts_return_type = "Promise<TickerResponse>")]
-    pub async fn ticker(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<TickerResponse>",
+        ts_args_type = "symbol: string | RestStockIntradayTickerParams"
+    )]
+    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "ticker"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -463,18 +600,26 @@ impl StockIntradayClient {
     /// @param symbol - Stock symbol (e.g., "2330" for TSMC)
     /// @param timeframe - Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)
     /// @returns Promise resolving to Candles response with OHLCV data
-    #[napi(ts_return_type = "Promise<CandlesResponse>")]
-    pub async fn candles(&self, symbol: String, timeframe: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<CandlesResponse>",
+        ts_args_type = "symbol: string | RestStockIntradayCandlesParams, timeframe?: string"
+    )]
+    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "candles"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
-            inner
-                .stock()
-                .intraday()
-                .candles()
-                .symbol(&symbol)
-                .timeframe(&timeframe)
-                .send()
+            let stock = inner.stock();
+            let intraday = stock.intraday();
+            let mut builder = intraday.candles().symbol(&symbol);
+            if let Some(tf) = &timeframe {
+                builder = builder.timeframe(tf);
+            }
+            builder.send()
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
@@ -486,8 +631,16 @@ impl StockIntradayClient {
     ///
     /// @param symbol - Stock symbol (e.g., "2330" for TSMC)
     /// @returns Promise resolving to Trades response with recent trade history
-    #[napi(ts_return_type = "Promise<TradesResponse>")]
-    pub async fn trades(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<TradesResponse>",
+        ts_args_type = "symbol: string | RestStockIntradayTradesParams"
+    )]
+    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "trades"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -503,8 +656,16 @@ impl StockIntradayClient {
     ///
     /// @param symbol - Stock symbol (e.g., "2330" for TSMC)
     /// @returns Promise resolving to Volumes response with volume at each price level
-    #[napi(ts_return_type = "Promise<VolumesResponse>")]
-    pub async fn volumes(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<VolumesResponse>",
+        ts_args_type = "symbol: string | RestStockIntradayVolumesParams"
+    )]
+    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "volumes"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -526,16 +687,21 @@ impl StockIntradayClient {
     /// @returns Promise resolving to an array of ticker info objects
     #[napi(
         ts_return_type = "Promise<TickersResponse>",
-        ts_args_type = "type: string, exchange?: string, market?: string, industry?: string, isNormal?: boolean"
+        ts_args_type = "type: string | RestStockIntradayTickersParams, exchange?: string, market?: string, industry?: string, isNormal?: boolean"
     )]
     pub async fn tickers(
         &self,
-        r#type: String,
+        r#type: Option<RestArg>,
         exchange: Option<String>,
         market: Option<String>,
         industry: Option<String>,
         is_normal: Option<bool>,
     ) -> napi::Result<Value> {
+        let r#type = match RestArg::required(r#type, "type")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "tickers"], None, params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -578,14 +744,22 @@ impl StockHistoricalClient {
     /// @param to - End date (YYYY-MM-DD)
     /// @param timeframe - Timeframe ("D", "W", "M", "1", "5", etc.)
     /// @returns Promise resolving to historical candles data
-    #[napi(ts_return_type = "Promise<HistoricalCandlesResponse>")]
+    #[napi(
+        ts_return_type = "Promise<HistoricalCandlesResponse>",
+        ts_args_type = "symbol: string | RestStockHistoricalCandlesParams, from?: string, to?: string, timeframe?: string"
+    )]
     pub async fn candles(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "candles"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -613,8 +787,16 @@ impl StockHistoricalClient {
     ///
     /// @param symbol - Stock symbol (e.g., "2330")
     /// @returns Promise resolving to historical stats data
-    #[napi(ts_return_type = "Promise<StatsResponse>")]
-    pub async fn stats(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<StatsResponse>",
+        ts_args_type = "symbol: string | RestStockHistoricalStatsParams"
+    )]
+    pub async fn stats(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "stats"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -640,8 +822,16 @@ impl StockSnapshotClient {
     /// @param market - Market code (e.g., "TSE", "OTC")
     /// @param typeFilter - Optional type filter (e.g., "ALL", "COMMONSTOCK")
     /// @returns Promise resolving to snapshot quotes data
-    #[napi(ts_return_type = "Promise<SnapshotQuotesResponse>")]
-    pub async fn quotes(&self, market: String, type_filter: Option<String>) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<SnapshotQuotesResponse>",
+        ts_args_type = "market: string | RestStockSnapshotQuotesParams, typeFilter?: string"
+    )]
+    pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<String>) -> napi::Result<Value> {
+        let market = match RestArg::required(market, "market")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "quotes"], Some("market"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -665,13 +855,21 @@ impl StockSnapshotClient {
     /// @param direction - Direction filter ("up" or "down")
     /// @param change - Change type ("percent" or "value")
     /// @returns Promise resolving to movers data
-    #[napi(ts_return_type = "Promise<MoversResponse>")]
+    #[napi(
+        ts_return_type = "Promise<MoversResponse>",
+        ts_args_type = "market: string | RestStockSnapshotMoversParams, direction?: string, change?: string"
+    )]
     pub async fn movers(
         &self,
-        market: String,
+        market: Option<RestArg>,
         direction: Option<String>,
         change: Option<String>,
     ) -> napi::Result<Value> {
+        let market = match RestArg::required(market, "market")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "movers"], Some("market"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -697,8 +895,16 @@ impl StockSnapshotClient {
     /// @param market - Market code (e.g., "TSE", "OTC")
     /// @param trade - Trade type filter ("volume" or "value")
     /// @returns Promise resolving to actives data
-    #[napi(ts_return_type = "Promise<ActivesResponse>")]
-    pub async fn actives(&self, market: String, trade: Option<String>) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<ActivesResponse>",
+        ts_args_type = "market: string | RestStockSnapshotActivesParams, trade?: string"
+    )]
+    pub async fn actives(&self, market: Option<RestArg>, trade: Option<String>) -> napi::Result<Value> {
+        let market = match RestArg::required(market, "market")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "actives"], Some("market"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -733,15 +939,23 @@ impl StockTechnicalClient {
     /// @param timeframe - Timeframe ("D", "W", "M")
     /// @param period - SMA period (e.g., 20)
     /// @returns Promise resolving to SMA data
-    #[napi(ts_return_type = "Promise<SmaResponse>")]
+    #[napi(
+        ts_return_type = "Promise<SmaResponse>",
+        ts_args_type = "symbol: string | RestStockTechnicalSmaParams, from?: string, to?: string, timeframe?: string, period?: number"
+    )]
     pub async fn sma(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "sma"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -776,15 +990,23 @@ impl StockTechnicalClient {
     /// @param timeframe - Timeframe ("D", "W", "M")
     /// @param period - RSI period (e.g., 14)
     /// @returns Promise resolving to RSI data
-    #[napi(ts_return_type = "Promise<RsiResponse>")]
+    #[napi(
+        ts_return_type = "Promise<RsiResponse>",
+        ts_args_type = "symbol: string | RestStockTechnicalRsiParams, from?: string, to?: string, timeframe?: string, period?: number"
+    )]
     pub async fn rsi(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "rsi"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -821,10 +1043,13 @@ impl StockTechnicalClient {
     /// @param kPeriod - K smoothing period (e.g., 3)
     /// @param dPeriod - D smoothing period (e.g., 3)
     /// @returns Promise resolving to KDJ data
-    #[napi(ts_return_type = "Promise<KdjResponse>")]
+    #[napi(
+        ts_return_type = "Promise<KdjResponse>",
+        ts_args_type = "symbol: string | RestStockTechnicalKdjParams, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number"
+    )]
     pub async fn kdj(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
@@ -832,6 +1057,11 @@ impl StockTechnicalClient {
         k_period: Option<u32>,
         d_period: Option<u32>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "kdj"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -874,10 +1104,13 @@ impl StockTechnicalClient {
     /// @param slow - Slow EMA period (default: 26)
     /// @param signal - Signal line period (default: 9)
     /// @returns Promise resolving to MACD data
-    #[napi(ts_return_type = "Promise<MacdResponse>")]
+    #[napi(
+        ts_return_type = "Promise<MacdResponse>",
+        ts_args_type = "symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number"
+    )]
     pub async fn macd(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
@@ -885,6 +1118,11 @@ impl StockTechnicalClient {
         slow: Option<u32>,
         signal: Option<u32>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "macd"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -926,16 +1164,24 @@ impl StockTechnicalClient {
     /// @param period - SMA period (default: 20)
     /// @param stddev - Standard deviation multiplier (default: 2.0)
     /// @returns Promise resolving to Bollinger Bands data
-    #[napi(ts_return_type = "Promise<BbResponse>")]
+    #[napi(
+        ts_return_type = "Promise<BbResponse>",
+        ts_args_type = "symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number"
+    )]
     pub async fn bb(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
         stddev: Option<f64>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "bb"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -980,13 +1226,22 @@ impl StockCorporateActionsClient {
     /// @param startDate - Start date for range query (YYYY-MM-DD)
     /// @param endDate - End date for range query (YYYY-MM-DD)
     /// @returns Promise resolving to capital changes data
-    #[napi(ts_return_type = "Promise<CapitalChangesResponse>")]
+    #[napi(
+        ts_return_type = "Promise<CapitalChangesResponse>",
+        ts_args_type = "date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string"
+    )]
     pub async fn capital_changes(
         &self,
-        date: Option<String>,
+        date: Option<RestArg>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> napi::Result<Value> {
+        let date = match date {
+            Some(RestArg::Positional(date)) => Some(date),
+            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], None, params).await,
+            None => None,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1016,13 +1271,22 @@ impl StockCorporateActionsClient {
     /// @param startDate - Start date for range query (YYYY-MM-DD)
     /// @param endDate - End date for range query (YYYY-MM-DD)
     /// @returns Promise resolving to dividends data
-    #[napi(ts_return_type = "Promise<DividendsResponse>")]
+    #[napi(
+        ts_return_type = "Promise<DividendsResponse>",
+        ts_args_type = "date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string"
+    )]
     pub async fn dividends(
         &self,
-        date: Option<String>,
+        date: Option<RestArg>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> napi::Result<Value> {
+        let date = match date {
+            Some(RestArg::Positional(date)) => Some(date),
+            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], None, params).await,
+            None => None,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1052,13 +1316,22 @@ impl StockCorporateActionsClient {
     /// @param startDate - Start date for range query (YYYY-MM-DD)
     /// @param endDate - End date for range query (YYYY-MM-DD)
     /// @returns Promise resolving to listing applicants data
-    #[napi(ts_return_type = "Promise<ListingApplicantsResponse>")]
+    #[napi(
+        ts_return_type = "Promise<ListingApplicantsResponse>",
+        ts_args_type = "date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string"
+    )]
     pub async fn listing_applicants(
         &self,
-        date: Option<String>,
+        date: Option<RestArg>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> napi::Result<Value> {
+        let date = match date {
+            Some(RestArg::Positional(date)) => Some(date),
+            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], None, params).await,
+            None => None,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1128,8 +1401,16 @@ impl FutOptIntradayClient {
     /// console.log(quote.lastPrice);  // 17550.0
     /// console.log(quote.symbol);     // "TXFC4"
     /// ```
-    #[napi(ts_return_type = "Promise<FutOptQuoteResponse>")]
-    pub async fn quote(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<FutOptQuoteResponse>",
+        ts_args_type = "symbol: string | RestFutOptIntradayQuoteParams"
+    )]
+    pub async fn quote(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "quote"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1145,8 +1426,16 @@ impl FutOptIntradayClient {
     ///
     /// @param symbol - Contract symbol (e.g., "TXFC4")
     /// @returns Promise resolving to Ticker object with last trade info
-    #[napi(ts_return_type = "Promise<FutOptTickerResponse>")]
-    pub async fn ticker(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<FutOptTickerResponse>",
+        ts_args_type = "symbol: string | RestFutOptIntradayTickerParams"
+    )]
+    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "ticker"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1163,18 +1452,26 @@ impl FutOptIntradayClient {
     /// @param symbol - Contract symbol (e.g., "TXFC4")
     /// @param timeframe - Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)
     /// @returns Promise resolving to Candles response with OHLCV data
-    #[napi(ts_return_type = "Promise<CandlesResponse>")]
-    pub async fn candles(&self, symbol: String, timeframe: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<CandlesResponse>",
+        ts_args_type = "symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string"
+    )]
+    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "candles"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
-            inner
-                .futopt()
-                .intraday()
-                .candles()
-                .symbol(&symbol)
-                .timeframe(&timeframe)
-                .send()
+            let futopt = inner.futopt();
+            let intraday = futopt.intraday();
+            let mut builder = intraday.candles().symbol(&symbol);
+            if let Some(tf) = &timeframe {
+                builder = builder.timeframe(tf);
+            }
+            builder.send()
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
@@ -1186,8 +1483,16 @@ impl FutOptIntradayClient {
     ///
     /// @param symbol - Contract symbol (e.g., "TXFC4")
     /// @returns Promise resolving to Trades response with recent trade history
-    #[napi(ts_return_type = "Promise<TradesResponse>")]
-    pub async fn trades(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<TradesResponse>",
+        ts_args_type = "symbol: string | RestFutOptIntradayTradesParams"
+    )]
+    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "trades"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1203,8 +1508,16 @@ impl FutOptIntradayClient {
     ///
     /// @param symbol - Contract symbol (e.g., "TXFC4")
     /// @returns Promise resolving to Volumes response with volume at each price level
-    #[napi(ts_return_type = "Promise<VolumesResponse>")]
-    pub async fn volumes(&self, symbol: String) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<VolumesResponse>",
+        ts_args_type = "symbol: string | RestFutOptIntradayVolumesParams"
+    )]
+    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "volumes"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1225,16 +1538,21 @@ impl FutOptIntradayClient {
     /// @returns Promise resolving to an array of FutOpt ticker info objects
     #[napi(
         ts_return_type = "Promise<FutOptTickersResponse>",
-        ts_args_type = "type: FutOptType, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean"
+        ts_args_type = "type: FutOptType | RestFutOptIntradayTickersParams, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean"
     )]
     pub async fn tickers(
         &self,
-        typ: String,
+        typ: Option<RestArg>,
         exchange: Option<String>,
         after_hours: Option<bool>,
         contract_type: Option<String>,
         is_spread: Option<bool>,
     ) -> napi::Result<Value> {
+        let typ = match RestArg::required(typ, "type")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "tickers"], None, params).await,
+        };
+
         use marketdata_core::models::futopt::{ContractType, FutOptType};
 
         let fut_opt_type = match typ.to_uppercase().as_str() {
@@ -1298,8 +1616,16 @@ impl FutOptIntradayClient {
     /// @param typ - Type: "FUTURE" or "OPTION" (required)
     /// @param contractType - Contract type filter (optional): "I" (index), "R" (rate), "B" (bond), "C" (currency), "S" (stock), "E" (ETF)
     /// @returns Promise resolving to Products response with available contracts
-    #[napi(ts_return_type = "Promise<ProductsResponse>", ts_args_type = "type: FutOptType, contractType?: ContractType")]
-    pub async fn products(&self, typ: String, contract_type: Option<String>) -> napi::Result<Value> {
+    #[napi(
+        ts_return_type = "Promise<ProductsResponse>",
+        ts_args_type = "type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType"
+    )]
+    pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<String>) -> napi::Result<Value> {
+        let typ = match RestArg::required(typ, "type")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "products"], None, params).await,
+        };
+
         use marketdata_core::models::futopt::{ContractType, FutOptType};
 
         // Parse typ parameter before spawn_blocking
@@ -1366,15 +1692,23 @@ impl FutOptHistoricalClient {
     /// @param timeframe - Timeframe ("D", "W", "M", "1", "5", etc.)
     /// @param afterHours - Include after-hours data
     /// @returns Promise resolving to historical candles data
-    #[napi(ts_return_type = "Promise<FutOptHistoricalCandlesResponse>")]
+    #[napi(
+        ts_return_type = "Promise<FutOptHistoricalCandlesResponse>",
+        ts_args_type = "symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean"
+    )]
     pub async fn candles(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
         after_hours: Option<bool>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "historical", "candles"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1408,7 +1742,10 @@ impl FutOptHistoricalClient {
     /// @param to - End date (YYYY-MM-DD)
     /// @param afterHours - Include after-hours data
     /// @returns Promise resolving to daily historical data
-    #[napi(ts_return_type = "Promise<FutOptDailyResponse>")]
+    #[napi(
+        ts_return_type = "Promise<FutOptDailyResponse>",
+        ts_args_type = "symbol: string | RestFutOptHistoricalDailyParams, from?: string, to?: string, afterHours?: boolean"
+    )]
     #[allow(
         deprecated,
         reason = "core deprecated this endpoint (the API always 404s), but the \
@@ -1418,11 +1755,16 @@ impl FutOptHistoricalClient {
     )]
     pub async fn daily(
         &self,
-        symbol: String,
+        symbol: Option<RestArg>,
         from: Option<String>,
         to: Option<String>,
         after_hours: Option<bool>,
     ) -> napi::Result<Value> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "historical", "daily"], Some("symbol"), params).await,
+        };
+
         let inner = self.inner.clone();
 
         let result = tokio::task::spawn_blocking(move || {
