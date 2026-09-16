@@ -89,7 +89,7 @@ fn error_to_napi(
     Ok(error)
 }
 use napi_derive::napi;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU8, Ordering}};
 use std::thread;
 use std::time::Duration;
 
@@ -128,6 +128,39 @@ type AuthRx = tokio::sync::oneshot::Receiver<AuthOutcome>;
 /// The pending `connect()` settlement, shared by the worker and the event
 /// thread: whichever settles first takes it, so a Promise settles once.
 type AuthSlot = Arc<Mutex<Option<AuthTx>>>;
+
+/// Who decided how the initial authentication of a connection is reported
+/// (#44): the forwarder on `Authenticated`, or the worker aborting because
+/// disconnect() was called while authenticating. Whichever moves it off
+/// `AUTH_PENDING` first wins, so `authenticated` never fires for a
+/// connection whose `connect()` rejects as aborted.
+type AuthDecision = Arc<AtomicU8>;
+const AUTH_PENDING: u8 = 0;
+const AUTH_REPORTED: u8 = 1;
+const AUTH_ABORTED: u8 = 2;
+
+/// Move `decision` from pending to `to`; false if the other side decided.
+fn decide(decision: &AtomicU8, to: u8) -> bool {
+    decision
+        .compare_exchange(AUTH_PENDING, to, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}
+
+/// Test-only delay after the worker's `client.connect()` returns, before it
+/// checks for an abort (#44): `FUGLE_MARKETDATA_TEST_DELAY_AFTER_CONNECT_MS`,
+/// read on the JS thread when connecting. Debug builds only.
+#[cfg(debug_assertions)]
+fn test_delay_after_connect() -> Option<Duration> {
+    std::env::var("FUGLE_MARKETDATA_TEST_DELAY_AFTER_CONNECT_MS")
+        .ok()
+        .and_then(|ms| ms.parse().ok())
+        .map(Duration::from_millis)
+}
+
+#[cfg(not(debug_assertions))]
+fn test_delay_after_connect() -> Option<Duration> {
+    None
+}
 
 /// Settle the pending `connect()`, if it has not been settled already.
 fn settle(slot: &AuthSlot, outcome: AuthOutcome) {
@@ -856,6 +889,8 @@ impl StockWebSocketClient {
         let keep_alive = loop_keep_alive(env)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
+        let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
+        let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
         let auth: AuthSlot = Arc::new(Mutex::new(Some(auth_tx)));
@@ -944,6 +979,7 @@ impl StockWebSocketClient {
                     Arc::clone(&connected),
                     Arc::clone(&ending),
                     Arc::clone(&dispatch_ended),
+                    Arc::clone(&decision),
                 );
 
                 // Core's connect().await returns once authenticated. Its
@@ -954,12 +990,16 @@ impl StockWebSocketClient {
                     return;
                 }
 
+                if let Some(delay) = delay_after_connect {
+                    thread::sleep(delay);
+                }
+
                 // disconnect() arrived while authenticating, and connect() may
                 // already have started a newer worker that is joining this
                 // one: abandon the connection instead of reporting success
-                // (#44). The forwarder skips `Authenticated` once `ending` is
-                // set; if it got there first, this is an ordinary disconnect.
-                if ending.load(Ordering::SeqCst) {
+                // (#44) — unless the forwarder already reported it, in which
+                // case the queued Disconnect ends it like any other.
+                if ending.load(Ordering::SeqCst) && decide(&decision, AUTH_ABORTED) {
                     let _ = rt.block_on(client.disconnect());
                     connected.store(false, Ordering::SeqCst);
                     closed.store(true, Ordering::SeqCst);
@@ -1326,6 +1366,8 @@ impl FutOptWebSocketClient {
         let keep_alive = loop_keep_alive(env)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
+        let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
+        let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
         let auth: AuthSlot = Arc::new(Mutex::new(Some(auth_tx)));
@@ -1410,6 +1452,7 @@ impl FutOptWebSocketClient {
                     Arc::clone(&connected),
                     Arc::clone(&ending),
                     Arc::clone(&dispatch_ended),
+                    Arc::clone(&decision),
                 );
 
                 // Core's connect().await returns once authenticated. Its
@@ -1420,12 +1463,16 @@ impl FutOptWebSocketClient {
                     return;
                 }
 
+                if let Some(delay) = delay_after_connect {
+                    thread::sleep(delay);
+                }
+
                 // disconnect() arrived while authenticating, and connect() may
                 // already have started a newer worker that is joining this
                 // one: abandon the connection instead of reporting success
-                // (#44). The forwarder skips `Authenticated` once `ending` is
-                // set; if it got there first, this is an ordinary disconnect.
-                if ending.load(Ordering::SeqCst) {
+                // (#44) — unless the forwarder already reported it, in which
+                // case the queued Disconnect ends it like any other.
+                if ending.load(Ordering::SeqCst) && decide(&decision, AUTH_ABORTED) {
                     let _ = rt.block_on(client.disconnect());
                     connected.store(false, Ordering::SeqCst);
                     closed.store(true, Ordering::SeqCst);
@@ -1682,6 +1729,7 @@ fn spawn_event_forwarder(
     connected: Arc<AtomicBool>,
     ending: Arc<AtomicBool>,
     dispatch_ended: Arc<AtomicBool>,
+    decision: AuthDecision,
 ) {
     use marketdata_core::websocket::ConnectionEvent;
 
@@ -1696,9 +1744,22 @@ fn spawn_event_forwarder(
                 fire_callback(&callbacks, &keep_alive, "connect", EventArgs::None);
             }
             ConnectionEvent::Authenticated { data } => {
-                // Given up by disconnect() while authenticating (#44).
-                if ending.load(Ordering::SeqCst) {
-                    continue;
+                // The initial authentication: decide, atomically with the
+                // worker's abort, whether it is reported (#44).
+                if decision.load(Ordering::SeqCst) == AUTH_PENDING {
+                    if ending.load(Ordering::SeqCst) {
+                        // disconnect() came first. The queued Disconnect
+                        // closes the connection; nothing else settles.
+                        if decide(&decision, AUTH_ABORTED) {
+                            settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                        }
+                        continue;
+                    }
+                    if !decide(&decision, AUTH_REPORTED) {
+                        continue; // the worker aborted first
+                    }
+                } else if decision.load(Ordering::SeqCst) == AUTH_ABORTED || ending.load(Ordering::SeqCst) {
+                    continue; // a re-authentication after the connection was given up
                 }
                 connected.store(true, Ordering::SeqCst);
                 fire_and_settle(

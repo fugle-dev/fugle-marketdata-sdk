@@ -181,6 +181,21 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
     ]);
   });
 
+  test('disconnect listener receives code null when the connection ends without a close code', async () => {
+    await setup();
+    const calls = recordEvents(ws);
+    await ws.connect();
+
+    // Drop the TCP connection without a close frame.
+    for (const socket of wss.clients) socket.terminate();
+    await waitFor(() => names(calls).includes('disconnect'), 'disconnect');
+
+    const [, [event]] = calls.find(([name]) => name === 'disconnect');
+    expect(event.code).toBeNull();
+    expect(typeof event.reason).toBe('string');
+    expect(Object.keys(event).sort()).toEqual(['code', 'reason']);
+  });
+
   test('reconnect listener receives { attempt }; authenticated fires again without re-settling connect()', async () => {
     await setup({ reconnect: { enabled: true, maxAttempts: 3, initialDelayMs: 100, maxDelayMs: 100 } });
     const calls = recordEvents(ws);
