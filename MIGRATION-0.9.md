@@ -202,7 +202,26 @@ Behaviour you may have worked around:
   to learn that the client has stopped, instead of re-running
   `ReconnectionManager::should_reconnect` yourself.
 
-## 9. C#, Go, C++, Java: WebSocket listener
+## 9. Python: connection callbacks
+
+`authenticated` and `unauthenticated` receive the server frame's `data`
+(`dict`, or `None` when the frame has none):
+
+```python
+# Before
+ws.stock.on("authenticated", lambda msg: ...)      # {"event": "authenticated"}
+ws.stock.on("unauthenticated", lambda message: ...)  # "Invalid authentication credentials"
+
+# After
+ws.stock.on("authenticated", lambda data: ...)     # {"message": "Authenticated successfully"}
+ws.stock.on("unauthenticated", lambda data: data["message"])
+```
+
+`connect` fires when the WebSocket opens, before authentication, so it also
+fires for a rejected key; wait for `authenticated` if you need an
+authenticated connection.
+
+## 10. C#, Go, C++, Java: WebSocket listener
 
 The listener now forwards core's connection events one-to-one, so it gains
 two methods and `on_disconnected` gains a parameter. Every listener

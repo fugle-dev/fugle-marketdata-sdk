@@ -212,27 +212,22 @@ impl CallbackRegistry {
         self.invoke(py, EventType::Error, &args);
     }
 
-    /// Invoke authenticated callbacks with the server's authenticated ack
-    /// message, matching the 2.4.1 SDK's `authenticated(message)` arity.
-    /// Core currently doesn't propagate the raw ack payload, so we pass a
-    /// minimal `{"event": "authenticated"}` dict; full payload propagation
-    /// can follow when core's `ConnectionEvent::Authenticated` carries data.
-    pub fn invoke_authenticated(&self, py: Python<'_>) {
-        let msg_dict = pyo3::types::PyDict::new(py);
-        msg_dict
-            .set_item("event", "authenticated")
-            .expect("Failed to set event");
-        let msg_obj: Py<PyAny> = msg_dict.unbind().into_any();
-        let args = pyo3::types::PyTuple::new(py, [msg_obj]).expect("Failed to create tuple");
-        self.invoke(py, EventType::Authenticated, &args);
+    /// Invoke authenticated callbacks with the `data` of the server's
+    /// authenticated frame (`dict`, or `None` when the frame has none).
+    pub fn invoke_authenticated(&self, py: Python<'_>, data: &serde_json::Value) {
+        self.invoke_with_data(py, EventType::Authenticated, data);
     }
 
-    /// Invoke unauthenticated callbacks with the rejection message
-    pub fn invoke_unauthenticated(&self, py: Python<'_>, message: &str) {
-        use pyo3::IntoPyObject;
-        let msg_obj: Py<PyAny> = message.into_pyobject(py).expect("Failed to convert message").unbind().into_any();
-        let args = pyo3::types::PyTuple::new(py, [msg_obj]).expect("Failed to create tuple");
-        self.invoke(py, EventType::Unauthenticated, &args);
+    /// Invoke unauthenticated callbacks with the `data` of the server's
+    /// rejection frame (`dict`, or `None` when the frame has none).
+    pub fn invoke_unauthenticated(&self, py: Python<'_>, data: &serde_json::Value) {
+        self.invoke_with_data(py, EventType::Unauthenticated, data);
+    }
+
+    fn invoke_with_data(&self, py: Python<'_>, event_type: EventType, data: &serde_json::Value) {
+        let data_obj = crate::types::json_value_to_py(py, data).unwrap_or_else(|_| py.None());
+        let args = pyo3::types::PyTuple::new(py, [data_obj]).expect("Failed to create tuple");
+        self.invoke(py, event_type, &args);
     }
 }
 
