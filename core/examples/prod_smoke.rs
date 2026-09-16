@@ -245,10 +245,18 @@ async fn discover_futopt_symbol(rest: Arc<RestClient>) -> String {
             .send()
             .ok()
             .and_then(|v| {
-                v.iter()
-                    .map(|t| t.symbol.clone())
+                // `tickers()` now returns the raw envelope; the ticker list
+                // lives under `data`.
+                let symbols: Vec<String> = v["data"]
+                    .as_array()?
+                    .iter()
+                    .filter_map(|t| t["symbol"].as_str().map(str::to_string))
+                    .collect();
+                symbols
+                    .iter()
                     .find(|s| s.starts_with("TXF"))
-                    .or_else(|| v.into_iter().next().map(|t| t.symbol))
+                    .cloned()
+                    .or_else(|| symbols.into_iter().next())
             })
     })
     .await
@@ -415,7 +423,14 @@ async fn main() {
                 .is_spread(true)
                 .send()
                 .ok()
-                .and_then(|v| v.into_iter().map(|t| t.symbol).find(|s| s.contains('/')))
+                .and_then(|v| {
+                    // Envelope, not a bare array — see `discover_futopt_symbol`.
+                    v["data"]
+                        .as_array()?
+                        .iter()
+                        .find_map(|t| t["symbol"].as_str().filter(|s| s.contains('/')))
+                        .map(str::to_string)
+                })
         })
         .await
         .ok()
