@@ -28,22 +28,22 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
     // 1. Get stock quote
     println!("1. Stock Quote (2330 TSMC):");
     let quote = client.stock().intraday().quote().symbol("2330").send()?;
-    println!("   Close Price: {:?}", quote.close_price);
-    println!("   Change: {:?}", quote.change);
-    println!("   Change %: {:?}", quote.change_percent);
-    if let Some(ref total) = quote.total {
-        println!("   Volume: {:?}", total.trade_volume);
-        println!("   Value: {:?}", total.trade_value);
+    println!("   Close Price: {:?}", quote["closePrice"].as_f64());
+    println!("   Change: {:?}", quote["change"].as_f64());
+    println!("   Change %: {:?}", quote["changePercent"].as_f64());
+    if !quote["total"].is_null() {
+        println!("   Volume: {:?}", quote["total"]["tradeVolume"].as_i64());
+        println!("   Value: {:?}", quote["total"]["tradeValue"].as_f64());
     }
     println!();
 
     // 2. Get stock ticker info
     println!("2. Stock Ticker Info:");
     let ticker = client.stock().intraday().ticker().symbol("2330").send()?;
-    println!("   Symbol: {}", ticker.symbol);
-    println!("   Name: {:?}", ticker.name);
-    println!("   Exchange: {:?}", ticker.exchange);
-    println!("   Type: {:?}", ticker.data_type);
+    println!("   Symbol: {}", ticker["symbol"].as_str().unwrap_or(""));
+    println!("   Name: {:?}", ticker["name"].as_str());
+    println!("   Exchange: {:?}", ticker["exchange"].as_str());
+    println!("   Type: {:?}", ticker["type"].as_str());
     println!();
 
     // 3. Get intraday candles
@@ -55,15 +55,16 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
         .symbol("2330")
         .timeframe("5")
         .send()?;
-    println!("   Total candles: {}", candles.data.len());
-    if let Some(first) = candles.data.first() {
+    let candle_data = candles["data"].as_array().cloned().unwrap_or_default();
+    println!("   Total candles: {}", candle_data.len());
+    if let Some(first) = candle_data.first() {
         println!("   First candle:");
-        println!("      Date: {}", first.date);
-        println!("      Open: {}", first.open);
-        println!("      High: {}", first.high);
-        println!("      Low: {}", first.low);
-        println!("      Close: {}", first.close);
-        println!("      Volume: {}", first.volume);
+        println!("      Date: {}", first["date"].as_str().unwrap_or(""));
+        println!("      Open: {}", first["open"].as_f64().unwrap_or(0.0));
+        println!("      High: {}", first["high"].as_f64().unwrap_or(0.0));
+        println!("      Low: {}", first["low"].as_f64().unwrap_or(0.0));
+        println!("      Close: {}", first["close"].as_f64().unwrap_or(0.0));
+        println!("      Volume: {}", first["volume"].as_i64().unwrap_or(0));
     }
     println!();
 
@@ -75,12 +76,13 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
         .trades()
         .symbol("2330")
         .send()?;
-    println!("   Total trades: {}", trades.data.len());
-    for (i, trade) in trades.data.iter().take(3).enumerate() {
+    let trade_data = trades["data"].as_array().cloned().unwrap_or_default();
+    println!("   Total trades: {}", trade_data.len());
+    for (i, trade) in trade_data.iter().take(3).enumerate() {
         println!("   Trade {}:", i + 1);
-        println!("      Price: {}", trade.price);
-        println!("      Size: {}", trade.size);
-        println!("      Time: {}", trade.time);
+        println!("      Price: {}", trade["price"].as_f64().unwrap_or(0.0));
+        println!("      Size: {}", trade["size"].as_i64().unwrap_or(0));
+        println!("      Time: {}", trade["time"].as_i64().unwrap_or(0));
     }
     println!();
 
@@ -92,9 +94,14 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
         .volumes()
         .symbol("2330")
         .send()?;
-    println!("   Price levels: {}", volumes.data.len());
-    for level in volumes.data.iter().take(3) {
-        println!("   Price {}: {} shares", level.price, level.volume);
+    let volume_data = volumes["data"].as_array().cloned().unwrap_or_default();
+    println!("   Price levels: {}", volume_data.len());
+    for level in volume_data.iter().take(3) {
+        println!(
+            "   Price {}: {} shares",
+            level["price"].as_f64().unwrap_or(0.0),
+            level["volume"].as_i64().unwrap_or(0)
+        );
     }
     println!();
 
@@ -108,9 +115,14 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
         .products()
         .typ(FutOptType::Future)
         .send()?;
-    println!("   Total products: {}", products.data.len());
-    for product in products.data.iter().take(3) {
-        println!("   - {} ({:?})", product.symbol, product.name);
+    let product_data = products["data"].as_array().cloned().unwrap_or_default();
+    println!("   Total products: {}", product_data.len());
+    for product in product_data.iter().take(3) {
+        println!(
+            "   - {} ({:?})",
+            product["symbol"].as_str().unwrap_or(""),
+            product["name"].as_str()
+        );
     }
     println!();
 

@@ -352,11 +352,11 @@ impl OwnershipQuery {
 }
 
 macro_rules! ownership_sender {
-    ($fn_name:ident, $method:ident, $resp:ident) => {
+    ($fn_name:ident, $method:ident) => {
         fn $fn_name(
             client: &marketdata_core::RestClient,
             q: OwnershipQuery,
-        ) -> Result<marketdata_core::models::$resp, marketdata_core::MarketDataError> {
+        ) -> Result<Value, marketdata_core::MarketDataError> {
             let stock = client.stock();
             let ownership = stock.ownership();
             let mut builder = ownership.$method().symbol(&q.symbol);
@@ -374,24 +374,21 @@ macro_rules! ownership_sender {
     };
 }
 
-ownership_sender!(send_etf_holdings, etf_holdings, EtfHoldingsResponse);
-ownership_sender!(send_institutional_trades, institutional_trades, InstitutionalTradesResponse);
-ownership_sender!(send_director_holdings, director_holdings, DirectorHoldingsResponse);
-ownership_sender!(send_tdcc_distribution, tdcc_distribution, TdccDistributionResponse);
+ownership_sender!(send_etf_holdings, etf_holdings);
+ownership_sender!(send_institutional_trades, institutional_trades);
+ownership_sender!(send_director_holdings, director_holdings);
+ownership_sender!(send_tdcc_distribution, tdcc_distribution);
 
-async fn run_ownership<T: serde::Serialize + Send + 'static>(
+async fn run_ownership(
     client: marketdata_core::RestClient,
     query: OwnershipQuery,
-    send: fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<T, marketdata_core::MarketDataError>,
+    send: fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<Value, marketdata_core::MarketDataError>,
 ) -> napi::Result<Value> {
     let result = tokio::task::spawn_blocking(move || send(&client, query))
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-    match result {
-        Ok(data) => serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string())),
-        Err(e) => Err(to_napi_error(e)),
-    }
+    result.map_err(to_napi_error)
 }
 
 /// Stock intraday data client
@@ -441,11 +438,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(quote) => serde_json::to_value(&quote)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday ticker for a stock symbol
@@ -462,11 +455,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(ticker) => serde_json::to_value(&ticker)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday candles for a stock symbol
@@ -490,11 +479,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(candles) => serde_json::to_value(&candles)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday trades for a stock symbol
@@ -511,11 +496,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(trades) => serde_json::to_value(&trades)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday volumes for a stock symbol
@@ -532,11 +513,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(volumes) => serde_json::to_value(&volumes)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get batch ticker list for a security type
@@ -579,11 +556,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(tickers) => serde_json::to_value(&tickers)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
@@ -630,12 +603,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get historical stats for a stock symbol
@@ -652,12 +620,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
@@ -690,12 +653,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get movers (top gainers/losers) for a market
@@ -728,12 +686,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get most actively traded stocks for a market
@@ -757,12 +710,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
@@ -814,12 +762,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get RSI (Relative Strength Index) for a stock
@@ -862,12 +805,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get KDJ (Stochastic Oscillator) for a stock
@@ -910,12 +848,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get MACD (Moving Average Convergence Divergence) for a stock
@@ -968,12 +901,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get Bollinger Bands for a stock
@@ -1021,12 +949,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
@@ -1071,12 +994,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get dividend announcements
@@ -1112,12 +1030,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get IPO listing applicants
@@ -1153,12 +1066,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
@@ -1217,11 +1125,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(quote) => serde_json::to_value(&quote)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday ticker for a futures/options contract
@@ -1238,11 +1142,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(ticker) => serde_json::to_value(&ticker)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday candles for a futures/options contract
@@ -1266,11 +1166,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(candles) => serde_json::to_value(&candles)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday trades for a futures/options contract
@@ -1287,11 +1183,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(trades) => serde_json::to_value(&trades)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get intraday volumes for a futures/options contract
@@ -1308,11 +1200,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(volumes) => serde_json::to_value(&volumes)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get batch ticker list for a FutOpt contract type
@@ -1386,11 +1274,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(tickers) => serde_json::to_value(&tickers)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get product list for futures/options
@@ -1446,11 +1330,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(products) => serde_json::to_value(&products)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
@@ -1502,12 +1382,7 @@ impl FutOptHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 
     /// Get daily historical data for a futures/options contract
@@ -1552,12 +1427,7 @@ impl FutOptHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        match result {
-            Ok(data) => {
-                serde_json::to_value(&data).map_err(|e| napi::Error::from_reason(e.to_string()))
-            }
-            Err(e) => Err(to_napi_error(e)),
-        }
+        result.map_err(to_napi_error)
     }
 }
 
