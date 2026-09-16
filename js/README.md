@@ -55,20 +55,25 @@ ws.stock.on('message', (data) => {
 });
 
 ws.stock.on('connect', () => {
-  console.log('Connected!');
-  ws.stock.subscribe({ channel: 'trades', symbol: '2330' });
+  console.log('Socket open, authenticating...');
 });
 
-ws.stock.on('disconnect', (reason) => {
-  console.log('Disconnected:', reason);
+ws.stock.on('authenticated', (data) => {
+  console.log('Authenticated:', data.message);
+});
+
+ws.stock.on('disconnect', ({ code, reason }) => {
+  console.log('Disconnected:', code, reason);
 });
 
 ws.stock.on('error', (err) => {
-  console.error('Error:', err);
+  console.error('Error:', err.code, err.message);
 });
 
-// Connect (returns a Promise)
+// Connect: resolves with the server's authenticated data, or rejects with
+// the server's data object when the credentials are rejected
 await ws.stock.connect();
+ws.stock.subscribe({ channel: 'trades', symbol: '2330' });
 
 // Disconnect after 30 seconds
 setTimeout(() => {
@@ -222,8 +227,9 @@ class WebSocketClient {
 }
 
 class StockWebSocketClient {
-  on(event: 'message' | 'connect' | 'disconnect' | 'error', handler: Function): void;
-  connect(): Promise<void>;
+  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void;
+  connect(): Promise<WebSocketAuthData | undefined>;
+  ping(params?: string | { state?: unknown }): void;
   subscribe(options: { channel: string; symbol: string; oddLot?: boolean }): void;
   unsubscribe(subscriptionId: string): void;
   disconnect(): void;

@@ -98,6 +98,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The event channel's delivery guarantees are documented on the
   `websocket::connection_event` module.
+- **Node**: WebSocket listener arguments, `connect()` settlement and `ping()`
+  match `@fugle/marketdata` 1.x (#23). Every event is now forwarded from
+  core's connection events. See
+  [MIGRATION.md](MIGRATION.md#12-node-websocket-events-match-1x).
+  - `connect` fires with no arguments when the socket opens, before
+    authentication (was `"connected"`, after authentication).
+  - `authenticated` / `unauthenticated` receive the server's `data` object
+    (was the string `"authenticated"` / the error message); a failed
+    authentication fires `connect` then `unauthenticated`, no longer `error`.
+  - `connect()` resolves with the server's `authenticated` `data`, and on
+    rejected credentials rejects with the server's `data` object instead of
+    `Error("[2002] ...")`. Other failures still reject with
+    `Error("[code] message")`.
+  - `disconnect` receives `{ code, reason }` (`code` is `null` without a close
+    code) instead of a JSON string; `reconnect` receives `{ attempt }`.
+  - `error` receives an `Error` whose `message` has no `[code]` prefix, with
+    the numeric code as `err.code` (absent for "Reconnection failed after N
+    attempts"). Without an `error` listener errors are ignored.
+  - `ping()` accepts an object sent verbatim as the frame's `data`, e.g.
+    `ping({ state: 'x' })`; a string is still sent as `{ state }`.
 - **Python**: WebSocket `authenticated` and `unauthenticated` callbacks
   receive the server frame's `data` — a `dict`, or `None` when the frame has
   none — instead of `{"event": "authenticated"}` and the rejection message
@@ -173,7 +193,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auto-reconnect follows, or after a failed auth still works, and `isClosed`
   turns back to false on the new connection. A `connect()` that is still
   authenticating when `disconnect()` is called now rejects with
-  `[2010] Connection aborted` and fires no `connect` event, instead of
+  `[2010] Connection aborted` and fires no `authenticated` event, instead of
   resolving and connecting anyway (#44).
 
 - Intraday `quote` / `ticker` / `candles` / `trades` / `volumes` sent

@@ -130,7 +130,7 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       `
       const { WebSocketClient } = require('./');
       const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
-      ws.on('disconnect', (reason) => console.log('DISCONNECT ' + reason));
+      ws.on('disconnect', (event) => console.log('DISCONNECT ' + JSON.stringify(event)));
       ws.connect().then(() => ws.disconnect());
     `,
       { env: { URL: url } },
@@ -147,7 +147,7 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       `
       const { WebSocketClient } = require('./');
       const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
-      ws.on('disconnect', (reason) => console.log('DISCONNECT ' + reason));
+      ws.on('disconnect', (event) => console.log('DISCONNECT ' + JSON.stringify(event)));
       ws.connect().then(() => console.log('CONNECTED'));
     `,
       {
@@ -224,7 +224,7 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       })[${JSON.stringify(product)}];
       ws.on('disconnect', () => console.log('DISCONNECT'));
       ws.on('reconnect', () => console.log('RECONNECT'));
-      ws.on('error', (err) => console.log('ERROR ' + err));
+      ws.on('error', (err) => console.log('ERROR ' + err.message));
       ws.connect().then(() => console.log('CONNECTED'));
     `,
       {

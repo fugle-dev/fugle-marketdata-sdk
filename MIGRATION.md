@@ -60,8 +60,10 @@ to rewrite call sites:
 | WebSocket `subscribe({ channel, symbol })` | ✅ |
 | WebSocket `subscribe({ channel, symbols: [...] })` | ✅ batch supported |
 | WebSocket `unsubscribe({ id })` / `unsubscribe({ ids: [...] })` | ✅ |
-| WebSocket `on('authenticated', cb)` / `on('unauthenticated', cb)` | ✅ restored — old listeners would silently fail without this |
-| WebSocket `ping(state?)` | ✅ public method |
+| WebSocket `on('authenticated', cb)` / `on('unauthenticated', cb)` | ✅ restored, with the server's `data` object as the argument (Node) |
+| Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
+| Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
+| WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
 | Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working |
 | `HealthCheckConfig.ping_interval` (Py) / `pingInterval` (JS) | ✅ kept the old field name |
@@ -337,6 +339,46 @@ auto-reconnect is off, is fine.
 ws.stock.on('disconnect', () => {
   ws.stock.connect().catch(console.error);
 });
+```
+
+#### 12. Node WebSocket events match 1.x
+
+Listener arguments and `connect()` settlement follow `@fugle/marketdata` 1.x,
+so 1.x listeners work unchanged:
+
+| Event / call | Arguments |
+|---|---|
+| `connect` | none — fires when the socket opens, before authentication |
+| `authenticated` | the server's `data` object |
+| `unauthenticated` | the server's `data` object (fires after `connect`) |
+| `connect()` | resolves with the `authenticated` `data`; rejects with the `unauthenticated` `data` object |
+| `disconnect` | `{ code, reason }` (`code` is `null` when the connection ended without one) |
+| `ping(params)` | `params` sent as the frame's `data` |
+
+Two differences remain from 1.x's `error` event:
+
+- **The `error` argument is an `Error` with a numeric `code`.** Its `message`
+  is the plain description, without a `[code]` prefix — read the code from
+  `err.code` (absent for "Reconnection failed after N attempts"). 1.x passed
+  the socket's native error. A `connect()` that fails for a reason other than
+  rejected credentials still rejects with `Error("[code] message")`.
+- **No `error` listener means errors are ignored.** 1.x's EventEmitter threw
+  an unhandled `'error'` event and could crash the process; this SDK never
+  does.
+
+This SDK also has a `reconnect` event (1.x had no auto-reconnect), receiving
+`{ attempt }`.
+
+```javascript
+ws.stock.on('authenticated', (data) => console.log(data.message));
+ws.stock.on('disconnect', ({ code, reason }) => console.log(code, reason));
+ws.stock.on('error', (err) => console.error(err.code, err.message));
+
+try {
+  const data = await ws.stock.connect();
+} catch (e) {
+  // rejected credentials: e is the server's data, e.g. { message: '...' }
+}
 ```
 
 ### New things the legacy SDKs did not have
