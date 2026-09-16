@@ -35,7 +35,8 @@ function closeServer(wss) {
 
 /**
  * Run `script` in a child Node process. Resolves with `exited: false` if it is
- * still running after `timeoutMs` (the child is then killed).
+ * still running after `timeoutMs` (the child is then killed). `lineAt` maps
+ * each distinct stdout line to when it first arrived; `exitAt` is exit time.
  */
 function runChild(script, { env = {}, timeoutMs = 5000, onLine } = {}) {
   return new Promise((resolve) => {
@@ -45,10 +46,12 @@ function runChild(script, { env = {}, timeoutMs = 5000, onLine } = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const lines = [];
+    const lineAt = {};
     let stderr = '';
     child.stdout.on('data', (chunk) => {
       for (const line of chunk.toString().split('\n').filter(Boolean)) {
         lines.push(line);
+        if (!(line in lineAt)) lineAt[line] = Date.now();
         if (onLine) onLine(line);
       }
     });
@@ -58,7 +61,7 @@ function runChild(script, { env = {}, timeoutMs = 5000, onLine } = {}) {
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
-      resolve({ exited: signal === null, code, lines, stderr });
+      resolve({ exited: signal === null, code, lines, lineAt, exitAt: Date.now(), stderr });
     });
   });
 }
@@ -193,16 +196,78 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
     });
   }, 70000);
 
-  test('a failed connect lets the process exit', async () => {
+  test('a failed connect lets the process exit after delivering the error event', async () => {
     const result = await runChild(`
       const { WebSocketClient } = require('./');
       const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: 'ws://127.0.0.1:1' })[${JSON.stringify(product)}];
-      ws.on('error', () => {});
+      ws.on('error', () => console.log('ERROR'));
       ws.connect().catch(() => console.log('REJECTED'));
     `);
 
     expectChild(result, () => {
-      expect(result.lines).toContain('REJECTED');
+      expect(result.lines).toEqual(expect.arrayContaining(['REJECTED', 'ERROR']));
+      expect(result).toMatchObject({ exited: true, code: 0 });
+    });
+  });
+
+  // `dispatch_ended` must only follow `ReconnectFailed`: a disconnect that core
+  // is still going to retry must not release the worker or the keep-alive.
+  test('stays alive through the reconnect backoff, then exits once reconnection fails', async () => {
+    const BACKOFF_MS = 1000;
+    const result = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({
+        apiKey: 'test-key',
+        baseUrl: process.env.URL,
+        reconnect: { enabled: true, maxAttempts: 1, initialDelayMs: ${BACKOFF_MS}, maxDelayMs: ${BACKOFF_MS} },
+      })[${JSON.stringify(product)}];
+      ws.on('disconnect', () => console.log('DISCONNECT'));
+      ws.on('reconnect', () => console.log('RECONNECT'));
+      ws.on('error', (err) => console.log('ERROR ' + err));
+      ws.connect().then(() => console.log('CONNECTED'));
+    `,
+      {
+        env: { URL: url },
+        timeoutMs: 15000,
+        // Drop the connection and stop listening, so the retry after the
+        // backoff is refused and core gives up.
+        onLine: (line) => {
+          if (line === 'CONNECTED') {
+            for (const socket of wss.clients) socket.terminate();
+            wss.close();
+          }
+        },
+      },
+    );
+
+    expectChild(result, () => {
+      expect(result.lines).toEqual(expect.arrayContaining(['DISCONNECT', 'RECONNECT']));
+      expect(result.lines[result.lines.length - 1]).toMatch(/^ERROR Reconnection failed/);
+      expect(result).toMatchObject({ exited: true, code: 0 });
+      // Alive for the whole backoff window after the drop.
+      expect(result.exitAt - result.lineAt.DISCONNECT).toBeGreaterThanOrEqual(BACKOFF_MS * 0.8);
+    });
+  }, 20000);
+
+  test('an exception thrown by a listener still surfaces as uncaughtException', async () => {
+    const result = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      process.on('uncaughtException', (err) => console.log('UNCAUGHT ' + err.message + ' ' + err.custom));
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+      ws.on('disconnect', () => {
+        const err = new Error('boom');
+        err.custom = 42;
+        throw err;
+      });
+      ws.connect().then(() => ws.disconnect());
+    `,
+      { env: { URL: url } },
+    );
+
+    expectChild(result, () => {
+      expect(result.lines).toEqual(['UNCAUGHT boom 42']);
       expect(result).toMatchObject({ exited: true, code: 0 });
     });
   });
