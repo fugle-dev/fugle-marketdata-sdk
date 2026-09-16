@@ -5,7 +5,9 @@ use crate::metrics_compat::DropCounter;
 use crate::models::WebSocketMessage;
 use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::WsStream;
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::connection_event::{
+    emit_disconnected, emit_event, peer_close_disconnect, DisconnectLatch,
+};
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, SubscriptionManager};
 use futures_util::StreamExt;
@@ -55,6 +57,7 @@ pub(crate) async fn dispatch_messages(
     subscriptions: Arc<SubscriptionManager>,
     messages_dropped: DropCounter,
     shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
+    disconnect_latch: Arc<DisconnectLatch>,
 ) -> Option<u16> {
     loop {
         // Read-site liveness: if `heartbeat_timeout` is set, the next
@@ -90,11 +93,14 @@ pub(crate) async fn dispatch_messages(
                 // here would race ahead of it (the client-initiated
                 // local socket close manifests as EOF on the read half).
                 if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
-                    emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
-                        code: None,
-                        reason: "Connection closed".to_string(),
-                        intent: DisconnectIntent::Network,
-                    });
+                    emit_disconnected(
+                        &event_tx,
+                        &events_dropped,
+                        &disconnect_latch,
+                        None,
+                        "Connection closed".to_string(),
+                        DisconnectIntent::Network,
+                    );
                 }
                 return None;
             }
@@ -168,28 +174,23 @@ pub(crate) async fn dispatch_messages(
             }
             Ok(Message::Close(close_frame)) => {
                 let code = close_frame.as_ref().map(|cf| cf.code.into());
-
-                // After a caller-initiated `disconnect()` this Close is the
-                // peer's ack of ours, not a server-initiated close: the
-                // shutdown path emits the canonical
-                // `Disconnected { intent: Client }` itself (#22).
-                if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
-                    return code;
-                }
-
-                // Server initiated close - RFC 6455 compliant handling
-                let reason = close_frame
-                    .as_ref()
-                    .map(|cf| cf.reason.to_string())
-                    .unwrap_or_else(|| "Server initiated close".to_string());
-
-                // Send disconnected event with close details
-                emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
+                // The flag and the emit are not atomic: `disconnect()` may
+                // set the flag right after this check. The latch keeps the
+                // shutdown path from reporting the same close again (#41).
+                if let Some((code, reason, intent)) = peer_close_disconnect(
                     code,
-                    reason,
-                    intent: DisconnectIntent::Server,
-                });
-
+                    close_frame.as_ref().map(|cf| cf.reason.to_string()),
+                    shutdown_requested.load(std::sync::atomic::Ordering::SeqCst),
+                ) {
+                    emit_disconnected(
+                        &event_tx,
+                        &events_dropped,
+                        &disconnect_latch,
+                        code,
+                        reason,
+                        intent,
+                    );
+                }
                 return code;
             }
             Ok(Message::Ping(_)) => {
@@ -217,11 +218,14 @@ pub(crate) async fn dispatch_messages(
                     message: err_msg.clone(),
                     code: 2001,
                 });
-                emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
-                    code: None,
-                    reason: err_msg,
-                    intent: DisconnectIntent::Network,
-                });
+                emit_disconnected(
+                    &event_tx,
+                    &events_dropped,
+                    &disconnect_latch,
+                    None,
+                    err_msg,
+                    DisconnectIntent::Network,
+                );
                 return None;
             }
             Ok(Message::Frame(_)) => {

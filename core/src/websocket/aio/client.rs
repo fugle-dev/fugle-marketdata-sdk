@@ -4,8 +4,8 @@ use crate::models::{Channel, SubscribeRequest, WebSocketMessage, WebSocketReques
 use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::run_writer_task;
-use crate::websocket::aio::{WsSink, WsStream};
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
+use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
     frame_auth, frame_request, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
     frame_unsubscribe,
@@ -19,7 +19,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::{mpsc, Arc};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration};
 use tokio_tungstenite::connect_async_tls_with_config;
@@ -28,7 +28,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// WebSocket client for real-time market data
 pub struct WebSocketClient {
     config: ConnectionConfig,
-    state: Arc<RwLock<ConnectionState>>,
+    state: SharedState,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     event_rx: Arc<Mutex<mpsc::Receiver<ConnectionEvent>>>,
     /// Write half of the WebSocket stream (held by the writer task during
@@ -76,6 +76,9 @@ pub struct WebSocketClient {
     /// looping back into the reconnect path after the next dispatch
     /// return. Cleared on construction.
     shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
+    /// Ensures a single `Disconnected` per connection when the dispatch
+    /// task and a caller-initiated close observe the same close (#41).
+    disconnect_latch: Arc<DisconnectLatch>,
     // Internal handles
     dispatch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -159,7 +162,7 @@ impl WebSocketClient {
 
         Self {
             config,
-            state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
+            state: Arc::new(std::sync::RwLock::new(ConnectionState::Disconnected)),
             event_tx,
             event_rx: Arc::new(Mutex::new(event_rx)),
             ws_sink: Arc::new(Mutex::new(None)),
@@ -173,6 +176,7 @@ impl WebSocketClient {
             messages_dropped,
             events_dropped,
             shutdown_requested: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            disconnect_latch: Arc::new(DisconnectLatch::default()),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
             pending_bridge: Arc::new(std::sync::Mutex::new(None)),
@@ -218,6 +222,9 @@ impl WebSocketClient {
 
     /// Get current connection state (snapshot)
     ///
+    /// Never blocks on the runtime: callable from any thread, including a
+    /// tokio worker, and returns the real state outside a runtime too.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -232,22 +239,12 @@ impl WebSocketClient {
     /// assert_eq!(client.state(), ConnectionState::Disconnected);
     /// ```
     pub fn state(&self) -> ConnectionState {
-        // This is a blocking call, but state reads are fast
-        // In a real async context, use state_async() instead
-        tokio::runtime::Handle::try_current()
-            .ok()
-            .and_then(|handle| {
-                handle.block_on(async {
-                    let state = self.state.read().await;
-                    Some(state.clone())
-                })
-            })
-            .unwrap_or(ConnectionState::Disconnected)
+        read_state(&self.state).clone()
     }
 
-    /// Get current connection state (async version)
+    /// Get current connection state. Same as [`state`](Self::state).
     pub async fn state_async(&self) -> ConnectionState {
-        let state = self.state.read().await;
+        let state = read_state(&self.state);
         state.clone()
     }
 
@@ -272,24 +269,15 @@ impl WebSocketClient {
     /// # }
     /// ```
     pub async fn is_closed(&self) -> bool {
-        let state = self.state.read().await;
+        let state = read_state(&self.state);
         matches!(*state, ConnectionState::Closed { .. })
     }
 
-    /// Sync version of is_closed() for FFI
+    /// Sync version of [`is_closed`](Self::is_closed) for FFI.
     ///
-    /// Returns true if the client has been closed. Returns false if
-    /// unable to determine state (e.g., no tokio runtime).
+    /// Callable from any thread, on or off a tokio runtime.
     pub fn is_closed_sync(&self) -> bool {
-        tokio::runtime::Handle::try_current()
-            .ok()
-            .and_then(|handle| {
-                handle.block_on(async {
-                    let state = self.state.read().await;
-                    Some(matches!(*state, ConnectionState::Closed { .. }))
-                })
-            })
-            .unwrap_or(false)
+        matches!(*read_state(&self.state), ConnectionState::Closed { .. })
     }
 
     /// Get reference to event receiver
@@ -464,6 +452,10 @@ impl WebSocketClient {
 
     /// Connect to WebSocket server and authenticate
     ///
+    /// A no-op returning `Ok(())` while this client's dispatch task is still
+    /// running (connected, or auto-reconnecting), matching the sync client.
+    /// Use [`reconnect`](Self::reconnect) to replace a live connection.
+    ///
     /// # Errors
     ///
     /// Returns error if:
@@ -480,6 +472,12 @@ impl WebSocketClient {
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
         }
+        // A second dispatch task would orphan the first, whose later close
+        // would then be reported through the shared latch as this new
+        // connection's `Disconnected` (#41).
+        if self.dispatch_task_running().await {
+            return Ok(());
+        }
 
         // Every background task — dispatch, writer and the `messages()`
         // bridge — runs on the runtime driving this call.
@@ -487,7 +485,7 @@ impl WebSocketClient {
 
         // Update state to Connecting
         {
-            let mut state = self.state.write().await;
+            let mut state = write_state(&self.state);
             *state = ConnectionState::Connecting;
         }
         emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Connecting {
@@ -506,7 +504,7 @@ impl WebSocketClient {
             Ok(Err(e)) => {
                 let err: MarketDataError = e.into();
                 {
-                    let mut state = self.state.write().await;
+                    let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
@@ -520,7 +518,7 @@ impl WebSocketClient {
                     operation: "WebSocket connect".to_string(),
                 };
                 {
-                    let mut state = self.state.write().await;
+                    let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
@@ -540,7 +538,7 @@ impl WebSocketClient {
 
         // Update state to Authenticating
         {
-            let mut state = self.state.write().await;
+            let mut state = write_state(&self.state);
             *state = ConnectionState::Authenticating;
         }
 
@@ -575,9 +573,10 @@ impl WebSocketClient {
                 self.start_writer_task().await;
 
                 {
-                    let mut state = self.state.write().await;
+                    let mut state = write_state(&self.state);
                     *state = ConnectionState::Connected;
                 }
+                self.disconnect_latch.reset();
                 crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Authenticated {
                 });
@@ -591,7 +590,7 @@ impl WebSocketClient {
             }
             Ok(Err(e)) => {
                 {
-                    let mut state = self.state.write().await;
+                    let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
                 // Server-rejected credentials → emit Unauthenticated so old SDK
@@ -614,7 +613,7 @@ impl WebSocketClient {
                     operation: "WebSocket authentication".to_string(),
                 };
                 {
-                    let mut state = self.state.write().await;
+                    let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Error {
@@ -640,9 +639,12 @@ impl WebSocketClient {
     /// timeout the dispatch and writer tasks are forcibly aborted and
     /// the connection is force-closed.
     ///
-    /// The emitted [`ConnectionEvent::Disconnected`] always carries
+    /// The emitted [`ConnectionEvent::Disconnected`] carries
     /// [`DisconnectIntent::Client`] regardless of whether the drain
-    /// completed in time.
+    /// completed in time. It is emitted at most once per connection: if the
+    /// connection was already reported lost (a server Close or transport
+    /// error, including one racing this call) or this client was already
+    /// disconnected, no further `Disconnected` is emitted.
     ///
     /// # Errors
     ///
@@ -726,7 +728,7 @@ impl WebSocketClient {
 
         // 7. Update state to Closed (always, even if close failed)
         {
-            let mut state = self.state.write().await;
+            let mut state = write_state(&self.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Normal closure".to_string(),
@@ -734,12 +736,16 @@ impl WebSocketClient {
             };
         }
 
-        // 8. Emit the Client-intent Disconnected event.
-        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1000),
-            reason: "Normal closure".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        // 8. Emit the Client-intent Disconnected event, unless the dispatch
+        //    task already reported this connection's close (#41).
+        emit_disconnected(
+            &self.event_tx,
+            &self.events_dropped,
+            &self.disconnect_latch,
+            Some(1000),
+            "Normal closure".to_string(),
+            DisconnectIntent::Client,
+        );
 
         close_result
     }
@@ -791,6 +797,24 @@ impl WebSocketClient {
         }
     }
 
+    /// True while the dispatch task (dispatch loop + auto-reconnect) runs.
+    async fn dispatch_task_running(&self) -> bool {
+        self.dispatch_handle
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
+    }
+
+    /// Abort the dispatch task and wait until it is gone. `emit_event` never
+    /// awaits, so an abort cannot leave an emit half done.
+    async fn stop_dispatch_task(&self) {
+        if let Some(h) = self.dispatch_handle.lock().await.take() {
+            h.abort();
+            let _ = h.await;
+        }
+    }
+
     /// Force-abort both background tasks. Called on drain timeout.
     async fn abort_background_tasks(&self) {
         if let Some(h) = self.writer_handle.lock().await.take() {
@@ -806,6 +830,10 @@ impl WebSocketClient {
     /// Force close without waiting for handshake
     ///
     /// Use when graceful close is not possible or times out.
+    ///
+    /// Like [`disconnect`](Self::disconnect), emits
+    /// [`ConnectionEvent::Disconnected`] only if this connection has not
+    /// already reported one.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
@@ -843,7 +871,7 @@ impl WebSocketClient {
 
         // Update state
         {
-            let mut state = self.state.write().await;
+            let mut state = write_state(&self.state);
             *state = ConnectionState::Closed {
                 code: Some(1006), // Abnormal closure
                 reason: "Force closed".to_string(),
@@ -851,18 +879,21 @@ impl WebSocketClient {
             };
         }
 
-        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1006),
-            reason: "Force closed".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        emit_disconnected(
+            &self.event_tx,
+            &self.events_dropped,
+            &self.disconnect_latch,
+            Some(1006),
+            "Force closed".to_string(),
+            DisconnectIntent::Client,
+        );
 
         Ok(())
     }
 
     /// Check if currently connected
     pub async fn is_connected(&self) -> bool {
-        let state = self.state.read().await;
+        let state = read_state(&self.state);
         matches!(*state, ConnectionState::Connected)
     }
 
@@ -1021,11 +1052,19 @@ impl WebSocketClient {
     ///
     /// From CONTEXT.md: "支援 reconnect() 方法讓使用者手動觸發重連"
     /// Resets reconnection manager and attempts fresh connection.
+    ///
+    /// A live connection (or an auto-reconnect in progress) is torn down
+    /// first without emitting `Disconnected`, matching the sync client.
     pub async fn reconnect(&self) -> Result<(), MarketDataError> {
         // Check if client is closed - cannot reconnect a closed client
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
         }
+
+        // Stop the old dispatch task before `connect()` re-arms the latch,
+        // so its socket's close cannot claim the new connection's
+        // `Disconnected` (#41).
+        self.stop_dispatch_task().await;
 
         // Reset reconnection manager for fresh attempt
         {
@@ -1117,6 +1156,7 @@ impl WebSocketClient {
         let messages_dropped = self.messages_dropped.clone();
         let events_dropped = self.events_dropped.clone();
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
+        let disconnect_latch = Arc::clone(&self.disconnect_latch);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -1131,6 +1171,7 @@ impl WebSocketClient {
                     Arc::clone(&subscriptions),
                     messages_dropped.clone(),
                     Arc::clone(&shutdown_requested),
+                    Arc::clone(&disconnect_latch),
                 )
                 .await;
 
@@ -1159,6 +1200,7 @@ impl WebSocketClient {
                     Arc::clone(&writer_handle),
                     Arc::clone(&subscriptions),
                     message_tx.clone(),
+                    Arc::clone(&disconnect_latch),
                 )
                 .await
                 {
@@ -1233,7 +1275,7 @@ impl WebSocketClient {
         if !should_reconnect {
             // Not retriable - update state and send event
             {
-                let mut state = self.state.write().await;
+                let mut state = write_state(&self.state);
                 *state = ConnectionState::Closed {
                     code: close_code,
                     reason: "Non-retriable error".to_string(),
@@ -1273,7 +1315,7 @@ impl WebSocketClient {
 
                     // Update state to Reconnecting
                     {
-                        let mut state = self.state.write().await;
+                        let mut state = write_state(&self.state);
                         *state = ConnectionState::Reconnecting { attempt };
                     }
                     crate::tracing_compat::warn!(
@@ -1311,7 +1353,7 @@ impl WebSocketClient {
                 None => {
                     // Max attempts reached
                     {
-                        let mut state = self.state.write().await;
+                        let mut state = write_state(&self.state);
                         *state = ConnectionState::Closed {
                             code: close_code,
                             reason: "Max reconnection attempts reached".to_string(),
@@ -1410,7 +1452,7 @@ mod tests {
 
         // Manually change state for testing
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connecting;
         }
 
@@ -1452,7 +1494,7 @@ mod tests {
 
         // Manually set to Connected for testing
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
 
@@ -1467,19 +1509,19 @@ mod tests {
 
         // Test state transitions
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connecting;
         }
         assert_eq!(client.state_async().await, ConnectionState::Connecting);
 
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Authenticating;
         }
         assert_eq!(client.state_async().await, ConnectionState::Authenticating);
 
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
         assert_eq!(client.state_async().await, ConnectionState::Connected);
@@ -1516,7 +1558,7 @@ mod tests {
 
         // Manually set to Connected for testing
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
 
@@ -1649,7 +1691,7 @@ mod tests {
 
         // Manually set to Closed state for testing
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Normal closure".to_string(),
@@ -1670,7 +1712,7 @@ mod tests {
 
         // Set to Closed state
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
@@ -1695,7 +1737,7 @@ mod tests {
 
         // Set to Closed state
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
@@ -1715,7 +1757,7 @@ mod tests {
 
         // Set to Closed state
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
@@ -1735,7 +1777,7 @@ mod tests {
 
         // Set to Closed state
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
@@ -1758,7 +1800,7 @@ mod tests {
 
         // Set to Closed state
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Closed {
                 code: Some(1000),
                 reason: "Test closure".to_string(),
@@ -1772,14 +1814,53 @@ mod tests {
         assert!(matches!(result, Err(MarketDataError::ClientClosed)));
     }
 
-    #[test]
-    fn test_is_closed_sync() {
-        // Note: This test runs without a tokio runtime context
+    fn closed_client() -> WebSocketClient {
         let config = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test-key"));
         let client = WebSocketClient::new(config);
+        *write_state(&client.state) = ConnectionState::Closed {
+            code: Some(1000),
+            reason: "Normal closure".to_string(),
+            intent: DisconnectIntent::Client,
+        };
+        client
+    }
 
-        // Without a runtime, is_closed_sync should return false
+    fn assert_sync_getters_see_closed(client: &WebSocketClient) {
+        assert!(matches!(client.state(), ConnectionState::Closed { .. }));
+        assert!(client.is_closed_sync());
+    }
+
+    #[test]
+    fn test_is_closed_sync() {
+        let config = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::new(config);
         assert!(!client.is_closed_sync());
+    }
+
+    /// #33: off any runtime, the sync getters used to report a fake
+    /// `Disconnected` / not-closed.
+    #[test]
+    fn sync_getters_read_real_state_off_runtime() {
+        assert_sync_getters_see_closed(&closed_client());
+    }
+
+    /// #33: on a runtime thread, the sync getters used to panic with
+    /// `Cannot start a runtime from within a runtime`.
+    #[tokio::test(flavor = "current_thread")]
+    async fn sync_getters_do_not_panic_on_current_thread_runtime() {
+        assert_sync_getters_see_closed(&closed_client());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn sync_getters_do_not_panic_on_multi_thread_runtime() {
+        let client = closed_client();
+        assert_sync_getters_see_closed(&client);
+        // Also from a worker task, not just the test's block_on thread.
+        let client = Arc::new(client);
+        let worker = Arc::clone(&client);
+        tokio::spawn(async move { assert_sync_getters_see_closed(&worker) })
+            .await
+            .expect("worker task");
     }
 
     #[test]
@@ -2010,7 +2091,7 @@ mod disconnect_tests {
 
         // Manually set to Connected for testing
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
 
@@ -2036,7 +2117,7 @@ mod disconnect_tests {
 
         // Manually set to Connected
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
 
@@ -2068,7 +2149,7 @@ mod disconnect_tests {
 
         // Manually set to Connected
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
 
@@ -2094,7 +2175,7 @@ mod disconnect_tests {
 
         // Manually set to Connected
         {
-            let mut state = client.state.write().await;
+            let mut state = write_state(&client.state);
             *state = ConnectionState::Connected;
         }
 

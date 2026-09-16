@@ -4,7 +4,7 @@
 //! `message_stream()` (which returns a tokio receiver).
 
 use crate::models::{Channel, SubscribeRequest, WebSocketMessage, WebSocketRequest};
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
     frame_request, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
 };
@@ -95,6 +95,7 @@ impl WebSocketClient {
             message_tx,
             write_tx_slot: Mutex::new(None),
             should_stop: Arc::new(AtomicBool::new(false)),
+            disconnect_latch: DisconnectLatch::default(),
             messages_dropped,
             events_dropped,
         });
@@ -215,6 +216,7 @@ impl WebSocketClient {
         *self.shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = Some(write_tx);
 
         self.set_state(ConnectionState::Connected);
+        self.shared.disconnect_latch.reset();
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
         emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Authenticated {
         });
@@ -273,7 +275,12 @@ impl WebSocketClient {
     /// 5. On timeout: leave the thread to wind down on its own (it has
     ///    already been instructed to stop and will not resurrect the
     ///    connection); detach the handle.
-    /// 6. Emit `Disconnected { intent: Client }` and update state.
+    /// 6. Update state and emit `Disconnected { intent: Client }`.
+    ///
+    /// `Disconnected` is emitted at most once per connection: if the
+    /// connection was already reported lost (a server Close or transport
+    /// error, including one racing this call) or this client was already
+    /// disconnected, step 6 emits nothing.
     ///
     /// `timeout_dur` of zero is valid and behaves as "fire-and-forget":
     /// the call returns immediately, the supervisor exits in the
@@ -335,16 +342,23 @@ impl WebSocketClient {
             reason: "Normal closure".to_string(),
             intent: DisconnectIntent::Client,
         });
-        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1000),
-            reason: "Normal closure".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        emit_disconnected(
+            &self.shared.event_tx,
+            &self.shared.events_dropped,
+            &self.shared.disconnect_latch,
+            Some(1000),
+            "Normal closure".to_string(),
+            DisconnectIntent::Client,
+        );
 
         Ok(())
     }
 
     /// Force-close without waiting for the supervisor.
+    ///
+    /// Like [`disconnect`](Self::disconnect), emits
+    /// [`ConnectionEvent::Disconnected`] only if this connection has not
+    /// already reported one.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
@@ -365,11 +379,14 @@ impl WebSocketClient {
             reason: "Force closed".to_string(),
             intent: DisconnectIntent::Client,
         });
-        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1006),
-            reason: "Force closed".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        emit_disconnected(
+            &self.shared.event_tx,
+            &self.shared.events_dropped,
+            &self.shared.disconnect_latch,
+            Some(1006),
+            "Force closed".to_string(),
+            DisconnectIntent::Client,
+        );
 
         Ok(())
     }

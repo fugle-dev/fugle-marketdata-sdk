@@ -6,7 +6,9 @@
 //! WebSocket+queue+state in place.
 
 use crate::models::WebSocketMessage;
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::connection_event::{
+    emit_disconnected, emit_event, peer_close_disconnect, DisconnectLatch,
+};
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, parse_binary_frame, parse_text_frame,
     AuthOutcome,
@@ -98,6 +100,9 @@ pub(crate) struct OwnerShared {
     /// callers pick up the new channel via `.lock().clone()`.
     pub write_tx_slot: Mutex<Option<mpsc::SyncSender<String>>>,
     pub should_stop: Arc<AtomicBool>,
+    /// Ensures a single `Disconnected` per connection when this thread and
+    /// a caller-initiated close observe the same close (#41).
+    pub disconnect_latch: DisconnectLatch,
     /// Drop counter for the inbound message channel (drop-newest backpressure).
     /// Exposed via `WebSocketClient::messages_dropped_total`. Mirrors to
     /// `metrics_compat::COUNTER_MESSAGES_DROPPED` when the `metrics` feature
@@ -356,23 +361,29 @@ fn owner_loop(
             Ok(Message::Close(frame)) => {
                 let code = frame.as_ref().map(|cf| u16::from(cf.code));
                 // `should_stop` is checked before the read, so a caller's
-                // `disconnect()` can land while this read is blocked. The
-                // Close is then the peer answering a shutdown already in
-                // progress; `shutdown_with_timeout()` emits the canonical
-                // `Disconnected { intent: Client }` itself (#22).
-                if shared.should_stop.load(Ordering::SeqCst) {
-                    let _ = ws.close(None);
-                    return code;
-                }
-                let reason = frame
-                    .as_ref()
-                    .map(|cf| cf.reason.to_string())
-                    .unwrap_or_else(|| "Server initiated close".to_string());
-                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
+                // `disconnect()` can land while this read is blocked; the
+                // shutdown path then reports the close as `Client` (#22).
+                // The check and the emit are not atomic, so the latch keeps
+                // both sides from reporting it (#41).
+                if let Some((code, reason, intent)) = peer_close_disconnect(
                     code,
-                    reason,
-                    intent: DisconnectIntent::Server,
-                });
+                    frame.as_ref().map(|cf| cf.reason.to_string()),
+                    shared.should_stop.load(Ordering::SeqCst),
+                ) {
+                    emit_disconnected(
+                        &shared.event_tx,
+                        &shared.events_dropped,
+                        &shared.disconnect_latch,
+                        code,
+                        reason,
+                        intent,
+                    );
+                }
+                // Unlike the graceful path at the loop top, there is no
+                // write-queue drain here even when `should_stop` is set: the
+                // peer closed first, so tungstenite is in `ClosedByPeer` and
+                // rejects further data frames with `SendAfterClosing`.
+                // `close` only flushes the Close reply it already queued.
                 let _ = ws.close(None);
                 return code;
             }
@@ -391,11 +402,14 @@ fn owner_loop(
                 // `Disconnected { intent: Client }` itself, mirroring
                 // the async `dispatch.rs` short-circuit.
                 if !shared.should_stop.load(Ordering::SeqCst) {
-                    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
-                        code: None,
-                        reason: "Connection closed".to_string(),
-                        intent: DisconnectIntent::Network,
-                    });
+                    emit_disconnected(
+                        &shared.event_tx,
+                        &shared.events_dropped,
+                        &shared.disconnect_latch,
+                        None,
+                        "Connection closed".to_string(),
+                        DisconnectIntent::Network,
+                    );
                 }
                 return None;
             }
@@ -415,11 +429,14 @@ fn owner_loop(
                     message: err_msg.clone(),
                     code: 2001,
                 });
-                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
-                    code: None,
-                    reason: err_msg,
-                    intent: DisconnectIntent::Network,
-                });
+                emit_disconnected(
+                    &shared.event_tx,
+                    &shared.events_dropped,
+                    &shared.disconnect_latch,
+                    None,
+                    err_msg,
+                    DisconnectIntent::Network,
+                );
                 return None;
             }
         }
@@ -493,6 +510,7 @@ fn reconnect_and_authenticate(
     }
 
     set_state(shared, ConnectionState::Connected);
+    shared.disconnect_latch.reset();
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
     emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Authenticated {
     });

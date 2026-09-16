@@ -23,15 +23,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`etf_holdings_sync`, `institutional_trades_sync`, `director_holdings_sync`,
   `tdcc_distribution_sync`) that only the C++ binding had, so ownership offers
   both async and sync like every other REST client (#32).
+- **Java**: `client.stock().ownership()` returns a wrapper with
+  `getEtfHoldings` / `getInstitutionalTrades` / `getDirectorHoldings` /
+  `getTdccDistribution` (blocking) and their `*Async` counterparts, throwing
+  `FugleException` like the other wrappers. Previously Java callers had to use
+  the generated `StockOwnershipClient` directly (#37).
 
 ### Changed
 
+- **C#**: the blocking `Stock.Ownership.Get*` methods call the native `*Sync`
+  exports directly instead of running the async call via `Task.Run` (#37).
 - **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
   require `timeframe`; the server defaults to `1`, as in 1.x.
 - **Core**: `aio::WebSocketClient::messages()` no longer needs a tokio runtime
   context. It can be called from any thread, before or after `connect()`; the
   message bridge now runs on the runtime that ran `connect()` instead of
   panicking with `there is no reactor running` (#26).
+- **All languages**: a WebSocket connection emits `Disconnected` (the
+  `disconnect` callback in the bindings) at most once. A server Close or
+  transport error that raced `disconnect()` could emit it twice, once with
+  `Server` / `Network` intent and once with `Client`. As a consequence,
+  `disconnect()` / `force_close()` on a connection already reported lost, or
+  a second `disconnect()`, no longer emits another `Disconnected`; the state
+  still becomes `Closed`. A successful reconnect starts a new connection that
+  reports its own close (#41).
+- **Core**: `aio::WebSocketClient::connect()` while the client is connected
+  (or auto-reconnecting) is a no-op returning `Ok(())`, and `reconnect()`
+  stops the running connection before opening a new one, as the sync client
+  already did. Previously both left the old dispatch task running, whose
+  later close was reported as the new connection's `Disconnected` (#41).
 
 ### Breaking
 
@@ -69,6 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Core**: `aio::WebSocketClient::state()` and `is_closed_sync()` no longer
+  panic with `Cannot start a runtime from within a runtime` when called on a
+  tokio runtime thread, and no longer report a fake `Disconnected` /
+  not-closed when called outside a runtime. They now read the state directly
+  from any thread (#33).
 - **All languages**: REST query values are form-urlencoded, in the typed
   builders and in the Node object form alike. A value was interpolated into
   the URL as-is, so one carrying `&`, `=`, `#`, `+` or a space split into
@@ -117,6 +142,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit after `disconnect()`, a failed `connect()`, or a server close / network
   loss with no reconnect left — in that last case `isConnected` now also turns
   `false` (#30).
+- **Python**: the synchronous WebSocket methods (`connect`, `disconnect`,
+  `subscribe`, `unsubscribe`, `subscriptions`, `ping`, `is_connected`,
+  `is_closed`) on stock and futopt release the GIL while they wait.
+  `disconnect()` could deadlock forever when called while `message` callbacks
+  were being delivered, and `disconnect_async()` likewise; a server running on
+  a Python thread of the same process could never answer `connect()`. These
+  methods are no longer serialized by the GIL, so calls on one client from
+  several threads can now interleave (#39).
 - Long JSON decimals could decode to the neighbouring double, so a value
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its
