@@ -112,3 +112,64 @@ describe.each(PRODUCTS)('%s worker thread', (product, subscription) => {
     expect(ws.isConnected).toBe(true);
   });
 });
+
+/** Collect every `disconnect` / `error` callback invocation. */
+function recordLifecycle(ws) {
+  const events = { disconnect: [], error: [] };
+  ws.on('disconnect', (reason) => events.disconnect.push(reason));
+  ws.on('error', (err) => events.error.push(err));
+  return events;
+}
+
+/**
+ * Wait until `events.disconnect` has at least one entry, then keep watching
+ * for `quietMs` so a late duplicate still shows up in the assertion.
+ */
+async function waitForDisconnect(events, { timeoutMs = 5000, quietMs = 500 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (events.disconnect.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error(`no "disconnect" within ${timeoutMs}ms; got ${JSON.stringify(events)}`);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  await new Promise((r) => setTimeout(r, quietMs));
+}
+
+describe.each(PRODUCTS)('%s disconnect events (#22)', (product) => {
+  let wss;
+  let ws;
+
+  beforeEach(async () => {
+    wss = await startServer();
+    const { port } = wss.address();
+    const client = new WebSocketClient({ apiKey: 'test-key', baseUrl: `ws://127.0.0.1:${port}` });
+    ws = client[product];
+  });
+
+  afterEach(async () => {
+    await closeServer(wss);
+  });
+
+  test('disconnect() fires disconnect exactly once and no error', async () => {
+    const events = recordLifecycle(ws);
+    await ws.connect();
+
+    ws.disconnect();
+    await waitForDisconnect(events);
+
+    expect(events.disconnect).toEqual(['{"code":1000,"reason":"Normal closure"}']);
+    expect(events.error).toEqual([]);
+    expect(ws.isConnected).toBe(false);
+  });
+
+  test('server-initiated close fires disconnect exactly once', async () => {
+    const events = recordLifecycle(ws);
+    await ws.connect();
+
+    for (const socket of wss.clients) socket.close(1001, 'going away');
+    await waitForDisconnect(events);
+
+    expect(events.disconnect).toEqual(['{"code":1001,"reason":"going away"}']);
+  });
+});

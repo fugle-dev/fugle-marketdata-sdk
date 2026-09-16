@@ -37,7 +37,36 @@ pub enum AfterAuth {
     },
     /// After a brief delay, drop the TCP socket without a Close handshake.
     ServerDropAfter { delay_ms: u64 },
+    /// Wait for `notify`, then after `delay_ms` send a Close frame. Lets a
+    /// test land the server's Close while the client is mid-shutdown.
+    ServerCloseOnNotify {
+        notify: Arc<tokio::sync::Notify>,
+        delay_ms: u64,
+    },
+    /// Idle until the client sends Close, then drop the TCP socket
+    /// without acking it (a peer that skips the closing handshake).
+    DropOnClientClose,
 }
+
+/// Collect items from `recv` until none arrives for [`QUIET`], capped at
+/// [`DRAIN_LIMIT`] overall. Used to assert an event did *not* fire without
+/// betting on one fixed sleep being long enough.
+pub fn drain_until_quiet<T>(mut recv: impl FnMut(std::time::Duration) -> Option<T>) -> Vec<T> {
+    let deadline = std::time::Instant::now() + DRAIN_LIMIT;
+    let mut items = Vec::new();
+    while std::time::Instant::now() < deadline {
+        match recv(QUIET) {
+            Some(item) => items.push(item),
+            None => break,
+        }
+    }
+    items
+}
+
+/// Silence window after which [`drain_until_quiet`] stops.
+pub const QUIET: std::time::Duration = std::time::Duration::from_millis(500);
+/// Upper bound on a single [`drain_until_quiet`] call.
+pub const DRAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Handle returned to the test for inspecting / driving the server.
 pub struct MockServerHandle {
@@ -85,9 +114,11 @@ pub async fn spawn(behaviour: AfterAuth) -> MockServerHandle {
                 AfterAuth::Idle => loop {
                     match stream.next().await {
                         Some(Ok(Message::Close(_))) => {
-                            // Echo the Close frame so the client gets a
-                            // proper RFC-6455 ack.
-                            let _ = sink.send(Message::Close(None)).await;
+                            // tungstenite already queued the RFC-6455 Close
+                            // ack; flush it so the client actually gets it
+                            // (a second `send(Close)` would fail and drop
+                            // the socket without the ack).
+                            let _ = sink.close().await;
                             break;
                         }
                         Some(Ok(_)) => continue,
@@ -127,6 +158,27 @@ pub async fn spawn(behaviour: AfterAuth) -> MockServerHandle {
                     // gets the proper handshake completion event.
                     while let Some(msg) = stream.next().await {
                         if let Ok(Message::Close(_)) = msg {
+                            break;
+                        }
+                    }
+                }
+                AfterAuth::ServerCloseOnNotify { notify, delay_ms } => {
+                    notify.notified().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    let _ = sink.send(Message::Close(None)).await;
+                    while let Some(Ok(msg)) = stream.next().await {
+                        if let Message::Close(_) = msg {
+                            break;
+                        }
+                    }
+                }
+                AfterAuth::DropOnClientClose => {
+                    while let Some(Ok(msg)) = stream.next().await {
+                        if let Message::Close(_) = msg {
+                            if let Ok(mut ws) = sink.reunite(stream) {
+                                use tokio::io::AsyncWriteExt;
+                                let _ = ws.get_mut().shutdown().await;
+                            }
                             break;
                         }
                     }

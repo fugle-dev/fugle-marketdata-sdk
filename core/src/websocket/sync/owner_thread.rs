@@ -355,6 +355,15 @@ fn owner_loop(
             }
             Ok(Message::Close(frame)) => {
                 let code = frame.as_ref().map(|cf| u16::from(cf.code));
+                // `should_stop` is checked before the read, so a caller's
+                // `disconnect()` can land while this read is blocked. The
+                // Close is then the peer answering a shutdown already in
+                // progress; `shutdown_with_timeout()` emits the canonical
+                // `Disconnected { intent: Client }` itself (#22).
+                if shared.should_stop.load(Ordering::SeqCst) {
+                    let _ = ws.close(None);
+                    return code;
+                }
                 let reason = frame
                     .as_ref()
                     .map(|cf| cf.reason.to_string())
@@ -398,18 +407,19 @@ fn owner_loop(
                 // observe abnormal closes the same way they observe
                 // clean closes. Mirrors the async `dispatch.rs` Err
                 // arm. Suppressed when caller initiated shutdown.
+                if shared.should_stop.load(Ordering::SeqCst) {
+                    return None;
+                }
                 let err_msg = format!("WebSocket read error: {e}");
                 emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
                     message: err_msg.clone(),
                     code: 2001,
                 });
-                if !shared.should_stop.load(Ordering::SeqCst) {
-                    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
-                        code: None,
-                        reason: err_msg,
-                        intent: DisconnectIntent::Network,
-                    });
-                }
+                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Disconnected {
+                    code: None,
+                    reason: err_msg,
+                    intent: DisconnectIntent::Network,
+                });
                 return None;
             }
         }
