@@ -17,8 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gt`/`lt`, …) are reachable. Previously only `quote` and `ownership.*`
   accepted an object; every other method threw `Failed to convert JavaScript
   value`. `Rest*Params` types are exported for each method.
-- **Rust**: `RestClient::get_json(path, query)` sends a GET with an arbitrary
-  query string and returns the body as-is.
 - **Node**: `futopt.historical.*` object params accept the product code as
   `product` (the API's own name) as well as `symbol`.
 
@@ -65,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corporate actions `dividends` / `capital-changes` / `listing-applicants`
   sent `startDate` / `endDate` instead of `start_date` / `end_date`.
   `dividends` silently ignored the range; the other two failed with HTTP 400.
+- **Node**: the WebSocket worker thread panicked right after `connect()`
+  resolved (`there is no reactor running`), so no `message` ever arrived and a
+  later `subscribe()` threw `Failed to send subscribe command`. Stock and
+  futopt were both affected (#13).
+- **Python**: the synchronous `connect()` on stock and futopt panicked the same
+  way before connecting. `connect_async()` was unaffected.
+- Long JSON decimals could decode to the neighbouring double, so a value
+  such as `51.708947112827516` arrived as `51.70894711282752` — not the number
+  `JSON.parse` gives for the same body. serde_json now uses its
+  correctly-rounded float parser (`float_roundtrip`) in every binding.
 
 ## [Bindings 3.0.0-rc.2 / core 0.9.0-rc.1 / uniffi 0.2.0-rc.1] - 2026-09-16
 
