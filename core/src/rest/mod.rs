@@ -53,3 +53,23 @@ pub use client::{IntradayClient, RestClient, StockClient};
 pub use futopt::{FutOptClient, FutOptIntradayClient};
 pub use retry::RetryPolicy;
 pub use stock::snapshot::SnapshotClient;
+
+#[cfg(test)]
+mod tests {
+    /// Long decimals must land on the same double as a correctly-rounded parser
+    /// (and JavaScript's `JSON.parse`). serde_json's default fast float parser
+    /// can pick an adjacent double; the `float_roundtrip` feature fixes that.
+    #[test]
+    fn json_floats_parse_correctly_rounded() {
+        let body = br#"[51.708947112827516, -9.419062495727303, 2441.4726242670918]"#;
+        let parsed: Vec<f64> = serde_json::from_slice(body).unwrap();
+        let expected = [
+            51.708947112827516_f64,
+            -9.419062495727303,
+            2441.4726242670918,
+        ];
+        for (got, want) in parsed.iter().zip(expected) {
+            assert_eq!(got.to_bits(), want.to_bits(), "got {got}, want {want}");
+        }
+    }
+}

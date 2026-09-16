@@ -904,9 +904,6 @@ impl StockWebSocketClient {
             self.health_check_config.to_core(),
         );
 
-        // Get message receiver before connect
-        let receiver = ws_client.messages();
-
         // Get event channel reference before ws_client is moved into Arc
         let events = Arc::clone(ws_client.state_events());
 
@@ -921,6 +918,14 @@ impl StockWebSocketClient {
         let runtime = runtime_guard.as_ref().ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
         })?;
+
+        // Get message receiver before connect. `messages()` spawns its bridge
+        // task with `tokio::spawn`, so it must run inside the runtime context —
+        // this is a plain Python thread, not a tokio one (#13).
+        let receiver = {
+            let _guard = runtime.enter();
+            ws_client.messages()
+        };
 
         // Connect synchronously (blocking the current thread)
         let result = runtime.block_on(async {
@@ -1765,9 +1770,6 @@ impl FutOptWebSocketClient {
             self.health_check_config.to_core(),
         );
 
-        // Get message receiver before connect
-        let receiver = ws_client.messages();
-
         // Get event channel reference before ws_client is moved into Arc
         let events = Arc::clone(ws_client.state_events());
 
@@ -1780,6 +1782,14 @@ impl FutOptWebSocketClient {
         let runtime = runtime_guard.as_ref().ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
         })?;
+
+        // Get message receiver before connect. `messages()` spawns its bridge
+        // task with `tokio::spawn`, so it must run inside the runtime context —
+        // this is a plain Python thread, not a tokio one (#13).
+        let receiver = {
+            let _guard = runtime.enter();
+            ws_client.messages()
+        };
 
         let result = runtime.block_on(async {
             ws_client.connect().await
