@@ -8,7 +8,8 @@
 //! - Commands (connect, subscribe, disconnect) are sent via crossbeam channel
 //! - Events (message, connect, disconnect, error) are delivered via ThreadsafeFunction callbacks
 
-use napi::bindgen_prelude::Unknown;
+use napi::bindgen_prelude::{PromiseRaw, Unknown};
+use napi::Env;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::Status;
 
@@ -21,7 +22,11 @@ use napi::Status;
 /// ```js
 /// stock.on('message', (data) => console.log(JSON.parse(data)));
 /// ```
-pub type EventTsfn = ThreadsafeFunction<String, Unknown<'static>, String, Status, false>;
+///
+/// `Weak = true`: a registered listener does not keep the Node event loop
+/// alive, matching an EventEmitter listener. An open connection does, via
+/// the [`KeepAlive`] handle held for the connection's lifetime (#30).
+pub type EventTsfn = ThreadsafeFunction<String, Unknown<'static>, String, Status, false, true>;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
@@ -32,6 +37,46 @@ use std::time::Duration;
 /// Default CalleeHandled = true means the callee (JS function) handles errors.
 /// We use Arc<ThreadsafeFunction> to allow cloning for use across threads.
 pub type JsCallback = Arc<EventTsfn>;
+
+/// Keeps the Node event loop alive while a connection is open (#30).
+///
+/// Wraps a strong (ref'd) threadsafe function that is never called; the loop
+/// is released when the last clone drops. The worker thread and the event
+/// thread each hold a clone, and so does every callback [`fire_callback`]
+/// queues — dropped on the JS thread only after that callback has returned.
+/// The final event (`disconnect`, a connect `error`, …) therefore always runs
+/// before the process is allowed to exit, whichever event turns out to be
+/// last and whether or not any listener is registered.
+type KeepAlive = Arc<ThreadsafeFunction<(), (), (), Status, false>>;
+
+/// Worker-thread signal that authentication finished (or why it failed).
+type AuthRx = tokio::sync::oneshot::Receiver<Result<(), String>>;
+
+/// Promise returned by `connect()`: resolves once the worker has
+/// authenticated. A failure to start the worker rejects it too, so
+/// `connect()` never throws synchronously.
+fn auth_promise<'env>(
+    env: &'env Env,
+    started: napi::Result<AuthRx>,
+) -> napi::Result<PromiseRaw<'env, ()>> {
+    env.spawn_future(async move {
+        match started?.await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
+            Err(_) => Err(napi::Error::from_reason(
+                "Worker thread terminated before authentication signal",
+            )),
+        }
+    })
+}
+
+fn loop_keep_alive(env: &Env) -> napi::Result<KeepAlive> {
+    env.create_function_from_closure::<(), (), _>("fugleWsKeepAlive", |_| Ok(()))?
+        .build_threadsafe_function::<()>()
+        .callee_handled::<false>()
+        .build()
+        .map(Arc::new)
+}
 
 /// Reconnection options for WebSocket clients
 ///
@@ -600,8 +645,14 @@ impl StockWebSocketClient {
     /// On rejection, the Promise carries the underlying error message. The
     /// `connect` event callback also fires after the Promise resolves, so
     /// existing callback-style code keeps working.
-    #[napi]
-    pub async fn connect(&self) -> napi::Result<()> {
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
+        auth_promise(env, self.start_worker(env))
+    }
+
+    /// Spawn the worker thread; the receiver fires once it has authenticated.
+    fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+        let keep_alive = loop_keep_alive(env)?;
         // Create command channel
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
 
@@ -654,7 +705,7 @@ impl StockWebSocketClient {
                     Err(e) => {
                         let msg = format!("Failed to create runtime: {}", e);
                         let _ = auth_tx.send(Err(msg.clone()));
-                        fire_callback(&callbacks, "error", msg);
+                        fire_callback(&callbacks, &keep_alive, "error", msg);
                         return;
                     }
                 };
@@ -683,7 +734,7 @@ impl StockWebSocketClient {
                 if let Err(e) = connect_result {
                     let msg = format!("[{}] {}", e.to_error_code(), e);
                     let _ = auth_tx.send(Err(msg.clone()));
-                    fire_callback(&callbacks, "error", msg);
+                    fire_callback(&callbacks, &keep_alive, "error", msg);
                     return;
                 }
 
@@ -692,12 +743,20 @@ impl StockWebSocketClient {
 
                 // Mark as connected
                 connected.store(true, Ordering::SeqCst);
-                fire_callback(&callbacks, "connect", "connected".to_string());
+                fire_callback(&callbacks, &keep_alive, "connect", "connected".to_string());
 
                 // Monitor state events for reconnect/error callbacks
                 let events = Arc::clone(client.state_events());
                 let callbacks_for_events = Arc::clone(&callbacks);
+                // Set once core stops for good (server close or network loss
+                // with no reconnect left). The message channel stays open
+                // while `client` lives, so the worker needs this to exit and
+                // let go of `keep_alive` (#30).
+                let dispatch_ended = Arc::new(AtomicBool::new(false));
+                let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
+                let keep_alive_for_events = Arc::clone(&keep_alive);
                 std::thread::spawn(move || {
+                    let keep_alive = keep_alive_for_events;
                     loop {
                         let event = {
                             let rx = events.blocking_lock();
@@ -708,26 +767,28 @@ impl StockWebSocketClient {
                                 use marketdata_core::websocket::ConnectionEvent;
                                 match event {
                                     ConnectionEvent::Reconnecting { attempt } => {
-                                        fire_callback(&callbacks_for_events, "reconnect", format!("{{\"attempt\":{}}}", attempt));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "reconnect", format!("{{\"attempt\":{}}}", attempt));
                                     }
                                     ConnectionEvent::Error { message, code } => {
-                                        fire_callback(&callbacks_for_events, "error", format!("[{}] {}", code, message));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
                                     }
                                     ConnectionEvent::Disconnected { code, reason, intent: _ } => {
-                                        fire_callback(&callbacks_for_events, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
-                                        fire_callback(&callbacks_for_events, "error", format!("Reconnection failed after {} attempts", attempts));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("Reconnection failed after {} attempts", attempts));
+                                        // Core's dispatch task has ended for good.
+                                        dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                     }
                                     ConnectionEvent::Authenticated => {
-                                        fire_callback(&callbacks_for_events, "authenticated", "authenticated".to_string());
+                                        fire_callback(&callbacks_for_events, &keep_alive, "authenticated", "authenticated".to_string());
                                     }
                                     ConnectionEvent::Unauthenticated { message } => {
-                                        fire_callback(&callbacks_for_events, "unauthenticated", message);
+                                        fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
                                     }
                                     ConnectionEvent::HeartbeatTimeout { elapsed } => {
                                         // Reuse "disconnect" callback with synthesized reason
-                                        fire_callback(&callbacks_for_events, "disconnect",
+                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect",
                                             format!("{{\"code\":null,\"reason\":\"Heartbeat timeout after {:?}\"}}", elapsed));
                                     }
                                     _ => {}
@@ -749,6 +810,12 @@ impl StockWebSocketClient {
 
                 // Main event loop
                 loop {
+                    if dispatch_ended.load(Ordering::SeqCst) {
+                        connected.store(false, Ordering::SeqCst);
+                        closed.store(true, Ordering::SeqCst);
+                        break;
+                    }
+
                     // Check for commands (non-blocking)
                     match cmd_rx.try_recv() {
                         Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
@@ -800,7 +867,7 @@ impl StockWebSocketClient {
                             // The frame verbatim: re-serializing the routing
                             // struct would drop unknown fields and emit nulls
                             // for the ones the server omitted.
-                            fire_callback(&callbacks, "message", msg.raw);
+                            fire_callback(&callbacks, &keep_alive, "message", msg.raw);
                         }
                         Ok(None) => {
                             // Timeout, continue loop
@@ -817,15 +884,7 @@ impl StockWebSocketClient {
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
-        // Await the auth signal from the worker thread so the returned
-        // Promise resolves only after authentication completes.
-        match auth_rx.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
-            Err(_) => Err(napi::Error::from_reason(
-                "Worker thread terminated before authentication signal",
-            )),
-        }
+        Ok(auth_rx)
     }
 
     /// Subscribe to a channel
@@ -1009,8 +1068,11 @@ impl StockWebSocketClient {
 
     /// Check if client has been closed
     ///
-    /// Returns true if disconnect() has been called and client is closed.
-    /// Once closed, the client cannot be reused - create a new instance.
+    /// Returns true once the connection has closed: after disconnect(), or
+    /// after the server or network ended it with no reconnect left.
+    /// Create a new instance rather than reconnecting a closed client. Note
+    /// that calling connect() again is not blocked today, and isClosed stays
+    /// true on the new connection (#44).
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
@@ -1119,8 +1181,14 @@ impl FutOptWebSocketClient {
     ///
     /// Returns a Promise that resolves when authentication completes.
     /// See `StockWebSocketClient::connect` for the rationale and example.
-    #[napi]
-    pub async fn connect(&self) -> napi::Result<()> {
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
+        auth_promise(env, self.start_worker(env))
+    }
+
+    /// Spawn the worker thread; the receiver fires once it has authenticated.
+    fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+        let keep_alive = loop_keep_alive(env)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
 
         {
@@ -1167,7 +1235,7 @@ impl FutOptWebSocketClient {
                     Err(e) => {
                         let msg = format!("Failed to create runtime: {}", e);
                         let _ = auth_tx.send(Err(msg.clone()));
-                        fire_callback(&callbacks, "error", msg);
+                        fire_callback(&callbacks, &keep_alive, "error", msg);
                         return;
                     }
                 };
@@ -1194,19 +1262,27 @@ impl FutOptWebSocketClient {
                 if let Err(e) = connect_result {
                     let msg = format!("[{}] {}", e.to_error_code(), e);
                     let _ = auth_tx.send(Err(msg.clone()));
-                    fire_callback(&callbacks, "error", msg);
+                    fire_callback(&callbacks, &keep_alive, "error", msg);
                     return;
                 }
 
                 let _ = auth_tx.send(Ok(()));
 
                 connected.store(true, Ordering::SeqCst);
-                fire_callback(&callbacks, "connect", "connected".to_string());
+                fire_callback(&callbacks, &keep_alive, "connect", "connected".to_string());
 
                 // Monitor state events for reconnect/error callbacks
                 let events = Arc::clone(client.state_events());
                 let callbacks_for_events = Arc::clone(&callbacks);
+                // Set once core stops for good (server close or network loss
+                // with no reconnect left). The message channel stays open
+                // while `client` lives, so the worker needs this to exit and
+                // let go of `keep_alive` (#30).
+                let dispatch_ended = Arc::new(AtomicBool::new(false));
+                let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
+                let keep_alive_for_events = Arc::clone(&keep_alive);
                 std::thread::spawn(move || {
+                    let keep_alive = keep_alive_for_events;
                     loop {
                         let event = {
                             let rx = events.blocking_lock();
@@ -1217,26 +1293,28 @@ impl FutOptWebSocketClient {
                                 use marketdata_core::websocket::ConnectionEvent;
                                 match event {
                                     ConnectionEvent::Reconnecting { attempt } => {
-                                        fire_callback(&callbacks_for_events, "reconnect", format!("{{\"attempt\":{}}}", attempt));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "reconnect", format!("{{\"attempt\":{}}}", attempt));
                                     }
                                     ConnectionEvent::Error { message, code } => {
-                                        fire_callback(&callbacks_for_events, "error", format!("[{}] {}", code, message));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
                                     }
                                     ConnectionEvent::Disconnected { code, reason, intent: _ } => {
-                                        fire_callback(&callbacks_for_events, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
-                                        fire_callback(&callbacks_for_events, "error", format!("Reconnection failed after {} attempts", attempts));
+                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("Reconnection failed after {} attempts", attempts));
+                                        // Core's dispatch task has ended for good.
+                                        dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                     }
                                     ConnectionEvent::Authenticated => {
-                                        fire_callback(&callbacks_for_events, "authenticated", "authenticated".to_string());
+                                        fire_callback(&callbacks_for_events, &keep_alive, "authenticated", "authenticated".to_string());
                                     }
                                     ConnectionEvent::Unauthenticated { message } => {
-                                        fire_callback(&callbacks_for_events, "unauthenticated", message);
+                                        fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
                                     }
                                     ConnectionEvent::HeartbeatTimeout { elapsed } => {
                                         // Reuse "disconnect" callback with synthesized reason
-                                        fire_callback(&callbacks_for_events, "disconnect",
+                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect",
                                             format!("{{\"code\":null,\"reason\":\"Heartbeat timeout after {:?}\"}}", elapsed));
                                     }
                                     _ => {}
@@ -1258,6 +1336,12 @@ impl FutOptWebSocketClient {
 
                 // Main event loop
                 loop {
+                    if dispatch_ended.load(Ordering::SeqCst) {
+                        connected.store(false, Ordering::SeqCst);
+                        closed.store(true, Ordering::SeqCst);
+                        break;
+                    }
+
                     // Check for commands (non-blocking)
                     match cmd_rx.try_recv() {
                         Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
@@ -1308,7 +1392,7 @@ impl FutOptWebSocketClient {
                             // The frame verbatim: re-serializing the routing
                             // struct would drop unknown fields and emit nulls
                             // for the ones the server omitted.
-                            fire_callback(&callbacks, "message", msg.raw);
+                            fire_callback(&callbacks, &keep_alive, "message", msg.raw);
                         }
                         Ok(None) => {
                             // Timeout, continue loop
@@ -1325,13 +1409,7 @@ impl FutOptWebSocketClient {
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
-        match auth_rx.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
-            Err(_) => Err(napi::Error::from_reason(
-                "Worker thread terminated before authentication signal",
-            )),
-        }
+        Ok(auth_rx)
     }
 
     /// Subscribe to a channel
@@ -1511,20 +1589,30 @@ impl FutOptWebSocketClient {
 
     /// Check if client has been closed
     ///
-    /// Returns true if disconnect() has been called and client is closed.
-    /// Once closed, the client cannot be reused - create a new instance.
+    /// Returns true once the connection has closed: after disconnect(), or
+    /// after the server or network ended it with no reconnect left.
+    /// Create a new instance rather than reconnecting a closed client. Note
+    /// that calling connect() again is not blocked today, and isClosed stays
+    /// true on the new connection (#44).
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
     }
 }
 
-/// Helper function to fire callbacks from worker thread
+/// Queue `event` for the registered JS listener, if any.
 ///
-/// Uses Arc::clone to get a reference to the callback, allowing safe use from
-/// any thread. The ThreadsafeFunction with CalleeHandled=true (default) uses
-/// call(Ok(data), mode) to pass data to JavaScript.
-fn fire_callback(callbacks: &Arc<Mutex<EventCallbacks>>, event: &str, data: String) {
+/// Callable from any thread. The listener's threadsafe function is weak, so
+/// the call carries a `keep_alive` clone that is dropped on the JS thread
+/// once the listener has returned (see [`KeepAlive`]). An exception the
+/// listener throws is handed back unchanged, which napi-rs reports as an
+/// uncaught exception exactly as a plain `call()` would.
+fn fire_callback(
+    callbacks: &Arc<Mutex<EventCallbacks>>,
+    keep_alive: &KeepAlive,
+    event: &str,
+    data: String,
+) {
     if let Ok(cb) = callbacks.lock() {
         let callback = match event {
             "message" => cb.message.as_ref(),
@@ -1538,10 +1626,11 @@ fn fire_callback(callbacks: &Arc<Mutex<EventCallbacks>>, event: &str, data: Stri
         };
 
         if let Some(callback) = callback {
-            // Clone the Arc (not the callback itself) for thread-safe access
-            let callback_ref = Arc::clone(callback);
-            // In napi-rs 3.x with CalleeHandled=true (default), call() takes Result<T, ErrorStatus>
-            callback_ref.call(data, ThreadsafeFunctionCallMode::NonBlocking);
+            let keep_alive = Arc::clone(keep_alive);
+            callback.call_with_return_value(data, ThreadsafeFunctionCallMode::NonBlocking, move |result, _env| {
+                drop(keep_alive);
+                result.map(|_| ())
+            });
         }
     }
 }

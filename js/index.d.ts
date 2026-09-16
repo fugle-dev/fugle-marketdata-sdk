@@ -2006,8 +2006,11 @@ export declare class FutOptWebSocketClient {
   /**
    * Check if client has been closed
    *
-   * Returns true if disconnect() has been called and client is closed.
-   * Once closed, the client cannot be reused - create a new instance.
+   * Returns true once the connection has closed: after disconnect(), or
+   * after the server or network ended it with no reconnect left.
+   * Create a new instance rather than reconnecting a closed client. Note
+   * that calling connect() again is not blocked today, and isClosed stays
+   * true on the new connection (#44).
    */
   get isClosed(): boolean
 }
@@ -2436,8 +2439,11 @@ export declare class StockWebSocketClient {
   /**
    * Check if client has been closed
    *
-   * Returns true if disconnect() has been called and client is closed.
-   * Once closed, the client cannot be reused - create a new instance.
+   * Returns true once the connection has closed: after disconnect(), or
+   * after the server or network ended it with no reconnect left.
+   * Create a new instance rather than reconnecting a closed client. Note
+   * that calling connect() again is not blocked today, and isClosed stays
+   * true on the new connection (#44).
    */
   get isClosed(): boolean
 }
