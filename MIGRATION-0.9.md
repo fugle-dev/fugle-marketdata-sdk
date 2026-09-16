@@ -202,6 +202,49 @@ Behaviour you may have worked around:
   to learn that the client has stopped, instead of re-running
   `ReconnectionManager::should_reconnect` yourself.
 
+## 9. C#, Go, C++, Java: WebSocket listener
+
+The listener now forwards core's connection events one-to-one, so it gains
+two methods and `on_disconnected` gains a parameter. Every listener
+implementation has to be updated to compile.
+
+```csharp
+// Before
+public void OnConnected() { }
+public void OnDisconnected() { }
+
+// After
+public void OnConnected() { }                              // transport up, not yet authenticated
+public void OnAuthenticated(string? dataJson) { }          // server accepted the credentials
+public void OnUnauthenticated(string? dataJson) { }        // server rejected them
+public void OnDisconnected(bool willReconnect) { }
+```
+
+| | C# | Go | Java | C++ |
+|---|---|---|---|---|
+| authenticated | `OnAuthenticated(string? dataJson)` | `OnAuthenticated(dataJson *string)` | `onAuthenticated(String dataJson)` | `on_authenticated(std::optional<std::string>)` |
+| unauthenticated | `OnUnauthenticated(string? dataJson)` | `OnUnauthenticated(dataJson *string)` | `onUnauthenticated(String dataJson)` | `on_unauthenticated(std::optional<std::string>)` |
+| disconnected | `OnDisconnected(bool willReconnect)` | `OnDisconnected(willReconnect bool)` | `onDisconnected(Boolean willReconnect)` | `on_disconnected(bool)` |
+
+`dataJson` is the `data` member of the server's frame, still encoded as JSON,
+and null (`nil`, `std::nullopt`) when the frame has none. For a rejection the
+server's message is under `message`.
+
+Behaviour you may have relied on:
+
+- `on_connected` used to mean "connected and authenticated" and fired once.
+  It now fires as soon as the transport is up and again after each successful
+  reconnect. Move "ready" logic to `on_authenticated`.
+- A credential rejection used to arrive as `on_error("Unauthenticated: ...")`.
+  It now arrives only as `on_unauthenticated`; `connect()` still fails.
+- `on_disconnected` fires once per connection. With reconnect enabled it also
+  fires for a connection that is about to be re-established
+  (`willReconnect == true`); only `false` — or `on_reconnect_failed` — means
+  the client has stopped.
+- Go `StreamingClient` keeps `Messages()` / `Errors()` open across a
+  reconnect. Java's pull mode and Go's `Errors()` report a rejection as
+  `Unauthenticated: <dataJson>`.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

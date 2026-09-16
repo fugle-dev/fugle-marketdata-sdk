@@ -852,6 +852,7 @@ static class _UniFFILib
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void UniffiCallbackInterfaceWebSocketListenerMethod1(
         ulong @uniffiHandle,
+        RustBuffer @dataJson,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -859,7 +860,7 @@ static class _UniFFILib
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void UniffiCallbackInterfaceWebSocketListenerMethod2(
         ulong @uniffiHandle,
-        RustBuffer @message,
+        RustBuffer @dataJson,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -867,7 +868,7 @@ static class _UniFFILib
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void UniffiCallbackInterfaceWebSocketListenerMethod3(
         ulong @uniffiHandle,
-        RustBuffer @errorMessage,
+        sbyte @willReconnect,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -875,13 +876,29 @@ static class _UniFFILib
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void UniffiCallbackInterfaceWebSocketListenerMethod4(
         ulong @uniffiHandle,
-        uint @attempt,
+        RustBuffer @message,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void UniffiCallbackInterfaceWebSocketListenerMethod5(
+        ulong @uniffiHandle,
+        RustBuffer @errorMessage,
+        IntPtr @uniffiOutReturn,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void UniffiCallbackInterfaceWebSocketListenerMethod6(
+        ulong @uniffiHandle,
+        uint @attempt,
+        IntPtr @uniffiOutReturn,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void UniffiCallbackInterfaceWebSocketListenerMethod7(
         ulong @uniffiHandle,
         uint @attempts,
         IntPtr @uniffiOutReturn,
@@ -892,6 +909,8 @@ static class _UniFFILib
     public struct UniffiVTableCallbackInterfaceWebSocketListener
     {
         public IntPtr @onConnected;
+        public IntPtr @onAuthenticated;
+        public IntPtr @onUnauthenticated;
         public IntPtr @onDisconnected;
         public IntPtr @onMessage;
         public IntPtr @onError;
@@ -1788,8 +1807,23 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(
+        IntPtr @ptr,
+        RustBuffer @dataJson,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(
+        IntPtr @ptr,
+        RustBuffer @dataJson,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(
         IntPtr @ptr,
+        sbyte @willReconnect,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -2441,6 +2475,12 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected();
@@ -3419,60 +3459,80 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
-            if (checksum != 56842)
+            if (checksum != 42437)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected` checksum `56842`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected` checksum `42437`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated();
+            if (checksum != 51034)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated` checksum `51034`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated();
+            if (checksum != 29216)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated` checksum `29216`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected();
-            if (checksum != 54477)
+            if (checksum != 44379)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected` checksum `54477`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected` checksum `44379`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message();
-            if (checksum != 54327)
+            if (checksum != 4936)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message` checksum `54327`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message` checksum `4936`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();
-            if (checksum != 64085)
+            if (checksum != 33187)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error` checksum `64085`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error` checksum `33187`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting();
-            if (checksum != 63646)
+            if (checksum != 12322)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting` checksum `63646`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting` checksum `12322`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed();
-            if (checksum != 36342)
+            if (checksum != 46093)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed` checksum `36342`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed` checksum `46093`, library returned `{checksum}`"
                 );
             }
         }
@@ -9100,8 +9160,14 @@ class FfiConverterTypeWebSocketClient : FfiConverter<WebSocketClient, IntPtr>
 /// public void OnConnected() {
 /// Console.WriteLine("Connected!");
 /// }
-/// public void OnDisconnected() {
-/// Console.WriteLine("Disconnected");
+/// public void OnAuthenticated(string? dataJson) {
+/// Console.WriteLine("Authenticated");
+/// }
+/// public void OnUnauthenticated(string? dataJson) {
+/// Console.WriteLine($"Rejected: {dataJson}");
+/// }
+/// public void OnDisconnected(bool willReconnect) {
+/// Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
 /// }
 /// public void OnMessage(StreamMessage message) {
 /// Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -9115,14 +9181,38 @@ class FfiConverterTypeWebSocketClient : FfiConverter<WebSocketClient, IntPtr>
 public interface WebSocketListener
 {
     /// <summary>
-    /// Called when WebSocket connection is established
+    /// Called when the transport is established, before the server has
+    /// answered the auth frame. Fires again on every successful reconnect.
+    /// Wait for `on_authenticated` before treating the connection as usable.
     /// </summary>
     void OnConnected();
 
     /// <summary>
-    /// Called when WebSocket connection is closed
+    /// Called when the server accepts the credentials.
+    ///
+    /// `data_json` is the `data` member of the server's `authenticated`
+    /// frame, still encoded as JSON, or `None` when the frame has none.
     /// </summary>
-    void OnDisconnected();
+    void OnAuthenticated(string? @dataJson);
+
+    /// <summary>
+    /// Called when the server rejects the credentials. `connect()` also
+    /// fails with an auth error; no `on_error` is emitted for the rejection.
+    ///
+    /// `data_json` is the `data` member of the server's rejection frame
+    /// (the server's message is under `message`), still encoded as JSON, or
+    /// `None` when the frame has none.
+    /// </summary>
+    void OnUnauthenticated(string? @dataJson);
+
+    /// <summary>
+    /// Called when the connection is closed, at most once per connection.
+    ///
+    /// `will_reconnect` is `true` when the client will try to reconnect
+    /// (`on_reconnecting` follows unless `disconnect()` is called first) and
+    /// `false` when this connection's lifecycle has ended.
+    /// </summary>
+    void OnDisconnected(bool @willReconnect);
 
     /// <summary>
     /// Called when a message is received
@@ -9140,7 +9230,8 @@ public interface WebSocketListener
     void OnReconnecting(uint @attempt);
 
     /// <summary>
-    /// Called when all reconnection attempts are exhausted
+    /// Called when all reconnection attempts are exhausted. Terminal: no
+    /// further lifecycle callbacks follow for this connection.
     /// </summary>
     void OnReconnectFailed(uint @attempts);
 }
@@ -9159,8 +9250,14 @@ public interface WebSocketListener
 /// public void OnConnected() {
 /// Console.WriteLine("Connected!");
 /// }
-/// public void OnDisconnected() {
-/// Console.WriteLine("Disconnected");
+/// public void OnAuthenticated(string? dataJson) {
+/// Console.WriteLine("Authenticated");
+/// }
+/// public void OnUnauthenticated(string? dataJson) {
+/// Console.WriteLine($"Rejected: {dataJson}");
+/// }
+/// public void OnDisconnected(bool willReconnect) {
+/// Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
 /// }
 /// public void OnMessage(StreamMessage message) {
 /// Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -9287,7 +9384,9 @@ public class WebSocketListenerImpl : WebSocketListener, IDisposable
     }
 
     /// <summary>
-    /// Called when WebSocket connection is established
+    /// Called when the transport is established, before the server has
+    /// answered the auth frame. Fires again on every successful reconnect.
+    /// Wait for `on_authenticated` before treating the connection as usable.
     /// </summary>
     public void OnConnected()
     {
@@ -9303,15 +9402,62 @@ public class WebSocketListenerImpl : WebSocketListener, IDisposable
     }
 
     /// <summary>
-    /// Called when WebSocket connection is closed
+    /// Called when the server accepts the credentials.
+    ///
+    /// `data_json` is the `data` member of the server's `authenticated`
+    /// frame, still encoded as JSON, or `None` when the frame has none.
     /// </summary>
-    public void OnDisconnected()
+    public void OnAuthenticated(string? @dataJson)
+    {
+        CallWithPointer(thisPtr =>
+            _UniffiHelpers.RustCall(
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(
+                        thisPtr,
+                        FfiConverterOptionalString.INSTANCE.Lower(@dataJson),
+                        ref _status
+                    )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Called when the server rejects the credentials. `connect()` also
+    /// fails with an auth error; no `on_error` is emitted for the rejection.
+    ///
+    /// `data_json` is the `data` member of the server's rejection frame
+    /// (the server's message is under `message`), still encoded as JSON, or
+    /// `None` when the frame has none.
+    /// </summary>
+    public void OnUnauthenticated(string? @dataJson)
+    {
+        CallWithPointer(thisPtr =>
+            _UniffiHelpers.RustCall(
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(
+                        thisPtr,
+                        FfiConverterOptionalString.INSTANCE.Lower(@dataJson),
+                        ref _status
+                    )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Called when the connection is closed, at most once per connection.
+    ///
+    /// `will_reconnect` is `true` when the client will try to reconnect
+    /// (`on_reconnecting` follows unless `disconnect()` is called first) and
+    /// `false` when this connection's lifecycle has ended.
+    /// </summary>
+    public void OnDisconnected(bool @willReconnect)
     {
         CallWithPointer(thisPtr =>
             _UniffiHelpers.RustCall(
                 (ref UniffiRustCallStatus _status) =>
                     _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(
                         thisPtr,
+                        FfiConverterBoolean.INSTANCE.Lower(@willReconnect),
                         ref _status
                     )
             )
@@ -9370,7 +9516,8 @@ public class WebSocketListenerImpl : WebSocketListener, IDisposable
     }
 
     /// <summary>
-    /// Called when all reconnection attempts are exhausted
+    /// Called when all reconnection attempts are exhausted. Terminal: no
+    /// further lifecycle callbacks follow for this connection.
     /// </summary>
     public void OnReconnectFailed(uint @attempts)
     {
@@ -9411,8 +9558,9 @@ class UniffiCallbackInterfaceWebSocketListener
         }
     }
 
-    static void OnDisconnected(
+    static void OnAuthenticated(
         ulong @uniffiHandle,
+        RustBuffer @dataJson,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     )
@@ -9425,7 +9573,53 @@ class UniffiCallbackInterfaceWebSocketListener
             )
         )
         {
-            uniffiObject.OnDisconnected();
+            uniffiObject.OnAuthenticated(FfiConverterOptionalString.INSTANCE.Lift(@dataJson));
+        }
+        else
+        {
+            throw new InternalException($"No callback in handlemap '{handle}'");
+        }
+    }
+
+    static void OnUnauthenticated(
+        ulong @uniffiHandle,
+        RustBuffer @dataJson,
+        IntPtr @uniffiOutReturn,
+        ref UniffiRustCallStatus _uniffi_out_err
+    )
+    {
+        var handle = @uniffiHandle;
+        if (
+            FfiConverterTypeWebSocketListener.INSTANCE.handleMap.TryGet(
+                handle,
+                out var uniffiObject
+            )
+        )
+        {
+            uniffiObject.OnUnauthenticated(FfiConverterOptionalString.INSTANCE.Lift(@dataJson));
+        }
+        else
+        {
+            throw new InternalException($"No callback in handlemap '{handle}'");
+        }
+    }
+
+    static void OnDisconnected(
+        ulong @uniffiHandle,
+        sbyte @willReconnect,
+        IntPtr @uniffiOutReturn,
+        ref UniffiRustCallStatus _uniffi_out_err
+    )
+    {
+        var handle = @uniffiHandle;
+        if (
+            FfiConverterTypeWebSocketListener.INSTANCE.handleMap.TryGet(
+                handle,
+                out var uniffiObject
+            )
+        )
+        {
+            uniffiObject.OnDisconnected(FfiConverterBoolean.INSTANCE.Lift(@willReconnect));
         }
         else
         {
@@ -9533,15 +9727,19 @@ class UniffiCallbackInterfaceWebSocketListener
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod0 _m0 =
         new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod0(OnConnected);
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod1 _m1 =
-        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod1(OnDisconnected);
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod1(OnAuthenticated);
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod2 _m2 =
-        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod2(OnMessage);
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod2(OnUnauthenticated);
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod3 _m3 =
-        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod3(OnError);
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod3(OnDisconnected);
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod4 _m4 =
-        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod4(OnReconnecting);
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod4(OnMessage);
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod5 _m5 =
-        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod5(OnReconnectFailed);
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod5(OnError);
+    static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod6 _m6 =
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod6(OnReconnecting);
+    static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod7 _m7 =
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod7(OnReconnectFailed);
     static _UniFFILib.UniffiCallbackInterfaceFree _callback_interface_free =
         new _UniFFILib.UniffiCallbackInterfaceFree(UniffiFree);
 
@@ -9549,11 +9747,13 @@ class UniffiCallbackInterfaceWebSocketListener
         new _UniFFILib.UniffiVTableCallbackInterfaceWebSocketListener
         {
             @onConnected = Marshal.GetFunctionPointerForDelegate(_m0),
-            @onDisconnected = Marshal.GetFunctionPointerForDelegate(_m1),
-            @onMessage = Marshal.GetFunctionPointerForDelegate(_m2),
-            @onError = Marshal.GetFunctionPointerForDelegate(_m3),
-            @onReconnecting = Marshal.GetFunctionPointerForDelegate(_m4),
-            @onReconnectFailed = Marshal.GetFunctionPointerForDelegate(_m5),
+            @onAuthenticated = Marshal.GetFunctionPointerForDelegate(_m1),
+            @onUnauthenticated = Marshal.GetFunctionPointerForDelegate(_m2),
+            @onDisconnected = Marshal.GetFunctionPointerForDelegate(_m3),
+            @onMessage = Marshal.GetFunctionPointerForDelegate(_m4),
+            @onError = Marshal.GetFunctionPointerForDelegate(_m5),
+            @onReconnecting = Marshal.GetFunctionPointerForDelegate(_m6),
+            @onReconnectFailed = Marshal.GetFunctionPointerForDelegate(_m7),
             @uniffiFree = Marshal.GetFunctionPointerForDelegate(_callback_interface_free),
         };
 

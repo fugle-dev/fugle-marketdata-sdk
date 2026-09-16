@@ -27,6 +27,8 @@ struct RustCallStatus {
 #endif
 struct UniffiVTableCallbackInterfaceWebSocketListener {
     void * on_connected;
+    void * on_authenticated;
+    void * on_unauthenticated;
     void * on_disconnected;
     void * on_message;
     void * on_error;
@@ -119,7 +121,9 @@ void * uniffi_marketdata_uniffi_fn_clone_websocketlistener(void * ptr, RustCallS
 void uniffi_marketdata_uniffi_fn_free_websocketlistener(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_init_callback_vtable_websocketlistener(const UniffiVTableCallbackInterfaceWebSocketListener & vtable);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_connected(void * ptr, RustCallStatus *out_status);
-void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(void * ptr, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(void * ptr, RustBuffer data_json, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(void * ptr, RustBuffer data_json, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(void * ptr, int8_t will_reconnect, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_message(void * ptr, RustBuffer message, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(void * ptr, RustBuffer error_message, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(void * ptr, uint32_t attempt, RustCallStatus *out_status);
@@ -199,6 +203,8 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscrip
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated();
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();

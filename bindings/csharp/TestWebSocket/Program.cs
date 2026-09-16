@@ -22,14 +22,24 @@ class MyListener : IWebSocketListener
 
     public void OnConnected()
     {
-        IsConnected = true;
-        Console.WriteLine("✓ 已連線!");
+        Console.WriteLine("✓ 已連線，等待認證...");
     }
 
-    public void OnDisconnected()
+    public void OnAuthenticated(string? dataJson)
+    {
+        IsConnected = true;
+        Console.WriteLine("✓ 認證成功!");
+    }
+
+    public void OnUnauthenticated(string? dataJson)
+    {
+        Console.WriteLine($"✗ 認證失敗: {dataJson}");
+    }
+
+    public void OnDisconnected(bool willReconnect)
     {
         IsConnected = false;
-        Console.WriteLine("✓ 已斷線!");
+        Console.WriteLine(willReconnect ? "⟳ 已斷線，準備重新連線" : "✓ 已斷線!");
     }
 
     public void OnMessage(StreamMessage message)

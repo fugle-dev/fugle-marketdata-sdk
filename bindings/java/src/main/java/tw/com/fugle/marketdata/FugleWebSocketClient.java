@@ -19,8 +19,14 @@ import java.util.concurrent.*;
  *     public void onConnected() {
  *         System.out.println("Connected!");
  *     }
- *     public void onDisconnected() {
- *         System.out.println("Disconnected");
+ *     public void onAuthenticated(String dataJson) {
+ *         System.out.println("Authenticated");
+ *     }
+ *     public void onUnauthenticated(String dataJson) {
+ *         System.err.println("Rejected: " + dataJson);
+ *     }
+ *     public void onDisconnected(Boolean willReconnect) {
+ *         System.out.println("Disconnected (will reconnect: " + willReconnect + ")");
  *     }
  *     public void onMessage(StreamMessage message) {
  *         System.out.println("Event: " + message.event());
@@ -488,7 +494,19 @@ public class FugleWebSocketClient implements AutoCloseable {
         }
 
         @Override
-        public void onDisconnected() {
+        public void onAuthenticated(String dataJson) {
+            // No action needed in pull mode
+        }
+
+        @Override
+        public void onUnauthenticated(String dataJson) {
+            // Credential rejection surfaces on the error queue, as it did
+            // when it was reported through onError.
+            errorQueue.offer("Unauthenticated: " + (dataJson == null ? "" : dataJson));
+        }
+
+        @Override
+        public void onDisconnected(Boolean willReconnect) {
             // No action needed in pull mode
         }
 

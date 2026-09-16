@@ -35,6 +35,11 @@ type MessageChannel struct {
 	errors   chan error
 	done     chan struct{}
 	once     sync.Once
+	// mu keeps Close from closing messages/errors while a callback is
+	// sending on them: senders hold the read lock, Close takes the write
+	// lock after closing done, which releases any sender blocked on a full
+	// buffer.
+	mu sync.RWMutex
 }
 
 // NewMessageChannel creates a channel-based message receiver
@@ -63,9 +68,43 @@ func (mc *MessageChannel) Errors() <-chan error {
 func (mc *MessageChannel) Close() {
 	mc.once.Do(func() {
 		close(mc.done)
+		mc.mu.Lock()
+		defer mc.mu.Unlock()
 		close(mc.messages)
 		close(mc.errors)
 	})
+}
+
+// sendMessage delivers message unless the channel has been closed.
+func (mc *MessageChannel) sendMessage(message StreamMessage) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	select {
+	case <-mc.done:
+		return
+	default:
+	}
+	select {
+	case mc.messages <- message:
+	case <-mc.done:
+		// Channel closed, drop message
+	}
+}
+
+// sendError delivers err unless the channel has been closed.
+func (mc *MessageChannel) sendError(err error) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	select {
+	case <-mc.done:
+		return
+	default:
+	}
+	select {
+	case mc.errors <- err:
+	case <-mc.done:
+		// Channel closed, drop error
+	}
 }
 
 // channelListener implements WebSocketListener, forwarding to channels
@@ -78,30 +117,41 @@ var _ WebSocketListener = (*channelListener)(nil)
 
 // OnConnected implements WebSocketListener
 func (l *channelListener) OnConnected() {
-	// Connection established - could send event on separate channel if needed
+	// Transport established - authentication follows
+}
+
+// OnAuthenticated implements WebSocketListener
+func (l *channelListener) OnAuthenticated(dataJson *string) {
+	// Connection usable - could send event on separate channel if needed
+}
+
+// OnUnauthenticated implements WebSocketListener
+func (l *channelListener) OnUnauthenticated(dataJson *string) {
+	data := ""
+	if dataJson != nil {
+		data = *dataJson
+	}
+	l.ch.sendError(fmt.Errorf("unauthenticated: %s", data))
 }
 
 // OnDisconnected implements WebSocketListener
-func (l *channelListener) OnDisconnected() {
-	l.ch.Close()
+//
+// The channels stay open while the client reconnects, so a range over
+// Messages() keeps receiving once the connection is restored.
+func (l *channelListener) OnDisconnected(willReconnect bool) {
+	if !willReconnect {
+		l.ch.Close()
+	}
 }
 
 // OnMessage implements WebSocketListener
 func (l *channelListener) OnMessage(message StreamMessage) {
-	select {
-	case l.ch.messages <- message:
-	case <-l.ch.done:
-		// Channel closed, drop message
-	}
+	l.ch.sendMessage(message)
 }
 
 // OnError implements WebSocketListener
 func (l *channelListener) OnError(errorMessage string) {
-	select {
-	case l.ch.errors <- fmt.Errorf("websocket error: %s", errorMessage):
-	case <-l.ch.done:
-		// Channel closed, drop error
-	}
+	l.ch.sendError(fmt.Errorf("websocket error: %s", errorMessage))
 }
 
 // OnReconnecting implements WebSocketListener
@@ -110,11 +160,11 @@ func (l *channelListener) OnReconnecting(attempt uint32) {
 }
 
 // OnReconnectFailed implements WebSocketListener
+//
+// Terminal: no Disconnected follows, so the channels are closed here.
 func (l *channelListener) OnReconnectFailed(attempts uint32) {
-	select {
-	case l.ch.errors <- fmt.Errorf("all %d reconnection attempts exhausted", attempts):
-	case <-l.ch.done:
-	}
+	l.ch.sendError(fmt.Errorf("all %d reconnection attempts exhausted", attempts))
+	l.ch.Close()
 }
 
 // StreamingClient wraps WebSocketClient with channel-based API

@@ -18,6 +18,8 @@ public class UniffiCallbackInterfaceWebSocketListener {
     UniffiCallbackInterfaceWebSocketListener() {
         vtable = new UniffiVTableCallbackInterfaceWebSocketListener.UniffiByValue(
             onConnected.INSTANCE,
+            onAuthenticated.INSTANCE,
+            onUnauthenticated.INSTANCE,
             onDisconnected.INSTANCE,
             onMessage.INSTANCE,
             onError.INSTANCE,
@@ -50,15 +52,16 @@ public class UniffiCallbackInterfaceWebSocketListener {
         }
     }
     
-    public static class onDisconnected implements UniffiCallbackInterfaceWebSocketListenerMethod1 {
-        public static final onDisconnected INSTANCE = new onDisconnected();
-        private onDisconnected() {}
+    public static class onAuthenticated implements UniffiCallbackInterfaceWebSocketListenerMethod1 {
+        public static final onAuthenticated INSTANCE = new onAuthenticated();
+        private onAuthenticated() {}
 
         @Override
-        public void callback(long uniffiHandle,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
+        public void callback(long uniffiHandle,RustBuffer.ByValue dataJson,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
             var uniffiObj = FfiConverterTypeWebSocketListener.INSTANCE.handleMap.get(uniffiHandle);
             Supplier<Void> makeCall = () -> {
-                uniffiObj.onDisconnected(
+                uniffiObj.onAuthenticated(
+                    FfiConverterOptionalString.INSTANCE.lift(dataJson)
                 );
                 return null;
             };
@@ -67,7 +70,43 @@ public class UniffiCallbackInterfaceWebSocketListener {
         }
     }
     
-    public static class onMessage implements UniffiCallbackInterfaceWebSocketListenerMethod2 {
+    public static class onUnauthenticated implements UniffiCallbackInterfaceWebSocketListenerMethod2 {
+        public static final onUnauthenticated INSTANCE = new onUnauthenticated();
+        private onUnauthenticated() {}
+
+        @Override
+        public void callback(long uniffiHandle,RustBuffer.ByValue dataJson,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
+            var uniffiObj = FfiConverterTypeWebSocketListener.INSTANCE.handleMap.get(uniffiHandle);
+            Supplier<Void> makeCall = () -> {
+                uniffiObj.onUnauthenticated(
+                    FfiConverterOptionalString.INSTANCE.lift(dataJson)
+                );
+                return null;
+            };
+            Consumer<Void> writeReturn = (nothing) -> {};
+            UniffiHelpers.uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn);
+        }
+    }
+    
+    public static class onDisconnected implements UniffiCallbackInterfaceWebSocketListenerMethod3 {
+        public static final onDisconnected INSTANCE = new onDisconnected();
+        private onDisconnected() {}
+
+        @Override
+        public void callback(long uniffiHandle,byte willReconnect,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
+            var uniffiObj = FfiConverterTypeWebSocketListener.INSTANCE.handleMap.get(uniffiHandle);
+            Supplier<Void> makeCall = () -> {
+                uniffiObj.onDisconnected(
+                    FfiConverterBoolean.INSTANCE.lift(willReconnect)
+                );
+                return null;
+            };
+            Consumer<Void> writeReturn = (nothing) -> {};
+            UniffiHelpers.uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn);
+        }
+    }
+    
+    public static class onMessage implements UniffiCallbackInterfaceWebSocketListenerMethod4 {
         public static final onMessage INSTANCE = new onMessage();
         private onMessage() {}
 
@@ -85,7 +124,7 @@ public class UniffiCallbackInterfaceWebSocketListener {
         }
     }
     
-    public static class onError implements UniffiCallbackInterfaceWebSocketListenerMethod3 {
+    public static class onError implements UniffiCallbackInterfaceWebSocketListenerMethod5 {
         public static final onError INSTANCE = new onError();
         private onError() {}
 
@@ -103,7 +142,7 @@ public class UniffiCallbackInterfaceWebSocketListener {
         }
     }
     
-    public static class onReconnecting implements UniffiCallbackInterfaceWebSocketListenerMethod4 {
+    public static class onReconnecting implements UniffiCallbackInterfaceWebSocketListenerMethod6 {
         public static final onReconnecting INSTANCE = new onReconnecting();
         private onReconnecting() {}
 
@@ -121,7 +160,7 @@ public class UniffiCallbackInterfaceWebSocketListener {
         }
     }
     
-    public static class onReconnectFailed implements UniffiCallbackInterfaceWebSocketListenerMethod5 {
+    public static class onReconnectFailed implements UniffiCallbackInterfaceWebSocketListenerMethod7 {
         public static final onReconnectFailed INSTANCE = new onReconnectFailed();
         private onReconnectFailed() {}
 
