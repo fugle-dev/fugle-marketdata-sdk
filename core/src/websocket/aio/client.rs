@@ -5,7 +5,7 @@ use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{WsSink, WsStream};
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
     frame_auth, frame_request, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
     frame_unsubscribe,
@@ -76,6 +76,9 @@ pub struct WebSocketClient {
     /// looping back into the reconnect path after the next dispatch
     /// return. Cleared on construction.
     shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
+    /// Ensures a single `Disconnected` per connection when the dispatch
+    /// task and a caller-initiated close observe the same close (#41).
+    disconnect_latch: Arc<DisconnectLatch>,
     // Internal handles
     dispatch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -173,6 +176,7 @@ impl WebSocketClient {
             messages_dropped,
             events_dropped,
             shutdown_requested: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            disconnect_latch: Arc::new(DisconnectLatch::default()),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
             pending_bridge: Arc::new(std::sync::Mutex::new(None)),
@@ -464,6 +468,10 @@ impl WebSocketClient {
 
     /// Connect to WebSocket server and authenticate
     ///
+    /// A no-op returning `Ok(())` while this client's dispatch task is still
+    /// running (connected, or auto-reconnecting), matching the sync client.
+    /// Use [`reconnect`](Self::reconnect) to replace a live connection.
+    ///
     /// # Errors
     ///
     /// Returns error if:
@@ -479,6 +487,12 @@ impl WebSocketClient {
         // Check if client is closed - cannot reconnect a closed client
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
+        }
+        // A second dispatch task would orphan the first, whose later close
+        // would then be reported through the shared latch as this new
+        // connection's `Disconnected` (#41).
+        if self.dispatch_task_running().await {
+            return Ok(());
         }
 
         // Every background task — dispatch, writer and the `messages()`
@@ -578,6 +592,7 @@ impl WebSocketClient {
                     let mut state = self.state.write().await;
                     *state = ConnectionState::Connected;
                 }
+                self.disconnect_latch.reset();
                 crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Authenticated {
                 });
@@ -640,9 +655,12 @@ impl WebSocketClient {
     /// timeout the dispatch and writer tasks are forcibly aborted and
     /// the connection is force-closed.
     ///
-    /// The emitted [`ConnectionEvent::Disconnected`] always carries
+    /// The emitted [`ConnectionEvent::Disconnected`] carries
     /// [`DisconnectIntent::Client`] regardless of whether the drain
-    /// completed in time.
+    /// completed in time. It is emitted at most once per connection: if the
+    /// connection was already reported lost (a server Close or transport
+    /// error, including one racing this call) or this client was already
+    /// disconnected, no further `Disconnected` is emitted.
     ///
     /// # Errors
     ///
@@ -734,12 +752,16 @@ impl WebSocketClient {
             };
         }
 
-        // 8. Emit the Client-intent Disconnected event.
-        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1000),
-            reason: "Normal closure".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        // 8. Emit the Client-intent Disconnected event, unless the dispatch
+        //    task already reported this connection's close (#41).
+        emit_disconnected(
+            &self.event_tx,
+            &self.events_dropped,
+            &self.disconnect_latch,
+            Some(1000),
+            "Normal closure".to_string(),
+            DisconnectIntent::Client,
+        );
 
         close_result
     }
@@ -791,6 +813,24 @@ impl WebSocketClient {
         }
     }
 
+    /// True while the dispatch task (dispatch loop + auto-reconnect) runs.
+    async fn dispatch_task_running(&self) -> bool {
+        self.dispatch_handle
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
+    }
+
+    /// Abort the dispatch task and wait until it is gone. `emit_event` never
+    /// awaits, so an abort cannot leave an emit half done.
+    async fn stop_dispatch_task(&self) {
+        if let Some(h) = self.dispatch_handle.lock().await.take() {
+            h.abort();
+            let _ = h.await;
+        }
+    }
+
     /// Force-abort both background tasks. Called on drain timeout.
     async fn abort_background_tasks(&self) {
         if let Some(h) = self.writer_handle.lock().await.take() {
@@ -806,6 +846,10 @@ impl WebSocketClient {
     /// Force close without waiting for handshake
     ///
     /// Use when graceful close is not possible or times out.
+    ///
+    /// Like [`disconnect`](Self::disconnect), emits
+    /// [`ConnectionEvent::Disconnected`] only if this connection has not
+    /// already reported one.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
@@ -851,11 +895,14 @@ impl WebSocketClient {
             };
         }
 
-        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1006),
-            reason: "Force closed".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        emit_disconnected(
+            &self.event_tx,
+            &self.events_dropped,
+            &self.disconnect_latch,
+            Some(1006),
+            "Force closed".to_string(),
+            DisconnectIntent::Client,
+        );
 
         Ok(())
     }
@@ -1021,11 +1068,19 @@ impl WebSocketClient {
     ///
     /// From CONTEXT.md: "支援 reconnect() 方法讓使用者手動觸發重連"
     /// Resets reconnection manager and attempts fresh connection.
+    ///
+    /// A live connection (or an auto-reconnect in progress) is torn down
+    /// first without emitting `Disconnected`, matching the sync client.
     pub async fn reconnect(&self) -> Result<(), MarketDataError> {
         // Check if client is closed - cannot reconnect a closed client
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
         }
+
+        // Stop the old dispatch task before `connect()` re-arms the latch,
+        // so its socket's close cannot claim the new connection's
+        // `Disconnected` (#41).
+        self.stop_dispatch_task().await;
 
         // Reset reconnection manager for fresh attempt
         {
@@ -1117,6 +1172,7 @@ impl WebSocketClient {
         let messages_dropped = self.messages_dropped.clone();
         let events_dropped = self.events_dropped.clone();
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
+        let disconnect_latch = Arc::clone(&self.disconnect_latch);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -1131,6 +1187,7 @@ impl WebSocketClient {
                     Arc::clone(&subscriptions),
                     messages_dropped.clone(),
                     Arc::clone(&shutdown_requested),
+                    Arc::clone(&disconnect_latch),
                 )
                 .await;
 
@@ -1159,6 +1216,7 @@ impl WebSocketClient {
                     Arc::clone(&writer_handle),
                     Arc::clone(&subscriptions),
                     message_tx.clone(),
+                    Arc::clone(&disconnect_latch),
                 )
                 .await
                 {

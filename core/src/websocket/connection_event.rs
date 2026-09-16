@@ -29,6 +29,7 @@
 //! Saturation is itself the bug signal — a healthy consumer never
 //! approaches the configured cap.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -106,6 +107,12 @@ pub enum ConnectionEvent {
     /// for local-initiated, [`Server`](DisconnectIntent::Server) for a
     /// peer Close frame, [`Network`](DisconnectIntent::Network) for
     /// transport errors / EOF / heartbeat timeout.
+    ///
+    /// Emitted **at most once per connection**: whichever side observes the
+    /// close first reports it. A server Close racing `disconnect()` yields a
+    /// single event, and calling `disconnect()` / `force_close()` after the
+    /// connection was already reported lost (or calling them twice) emits no
+    /// further `Disconnected`. A successful reconnect starts a new connection.
     Disconnected {
         /// WebSocket close code, if the peer supplied one.
         code: Option<u16>,
@@ -164,5 +171,129 @@ pub(crate) fn emit_event(
             "event channel saturated; consumer is likely stuck"
         );
         let _ = dropped_event; // suppress unused warning when tracing feature is off
+    }
+}
+
+/// Guarantees at most one [`ConnectionEvent::Disconnected`] per connection.
+///
+/// The dispatch side (server Close, transport error, EOF) and the caller
+/// side (`disconnect()` / `shutdown_with_timeout()` / `force_close()`) run
+/// on different threads and may both observe the same close. Each must win
+/// [`claim`](Self::claim) before emitting; the loser stays silent (#41).
+/// [`reset`](Self::reset) re-arms the latch once a new connection has
+/// authenticated.
+#[derive(Debug, Default)]
+pub(crate) struct DisconnectLatch(AtomicBool);
+
+impl DisconnectLatch {
+    /// Take the right to emit this connection's `Disconnected`. Returns
+    /// `false` if it was already taken.
+    pub(crate) fn claim(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    /// Re-arm for a freshly authenticated connection.
+    pub(crate) fn reset(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// [`emit_event`] a `Disconnected`, unless this connection already has one.
+pub(crate) fn emit_disconnected(
+    tx: &mpsc::SyncSender<ConnectionEvent>,
+    dropped: &crate::metrics_compat::DropCounter,
+    latch: &DisconnectLatch,
+    code: Option<u16>,
+    reason: String,
+    intent: DisconnectIntent,
+) {
+    if latch.claim() {
+        emit_event(tx, dropped, ConnectionEvent::Disconnected { code, reason, intent });
+    }
+}
+
+/// The `Disconnected` a peer Close frame should produce, if any.
+///
+/// Once the caller has requested shutdown, a Close is either the peer's ack
+/// of ours or a server close racing it; either way the shutdown path
+/// reports the close as `Client`, so this returns `None` (#22). Shared by
+/// the async dispatch loop and the sync owner thread.
+pub(crate) fn peer_close_disconnect(
+    code: Option<u16>,
+    reason: Option<String>,
+    shutdown_requested: bool,
+) -> Option<(Option<u16>, String, DisconnectIntent)> {
+    if shutdown_requested {
+        return None;
+    }
+    let reason = reason.unwrap_or_else(|| "Server initiated close".to_string());
+    Some((code, reason, DisconnectIntent::Server))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latch_allows_one_claim_until_reset() {
+        let latch = DisconnectLatch::default();
+        assert!(latch.claim());
+        assert!(!latch.claim());
+        latch.reset();
+        assert!(latch.claim());
+    }
+
+    #[test]
+    fn latch_admits_exactly_one_of_concurrent_claimers() {
+        for _ in 0..200 {
+            let latch = std::sync::Arc::new(DisconnectLatch::default());
+            let winners: usize = (0..4)
+                .map(|_| {
+                    let latch = std::sync::Arc::clone(&latch);
+                    std::thread::spawn(move || latch.claim())
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|h| usize::from(h.join().expect("claimer")))
+                .sum();
+            assert_eq!(winners, 1);
+        }
+    }
+
+    #[test]
+    fn emit_disconnected_sends_only_first() {
+        let (tx, rx) = mpsc::sync_channel(8);
+        let dropped = crate::metrics_compat::DropCounter::new("test_events_dropped", "localhost", "test");
+        let latch = DisconnectLatch::default();
+        emit_disconnected(&tx, &dropped, &latch, None, "server".into(), DisconnectIntent::Server);
+        emit_disconnected(&tx, &dropped, &latch, Some(1000), "client".into(), DisconnectIntent::Client);
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![ConnectionEvent::Disconnected {
+                code: None,
+                reason: "server".into(),
+                intent: DisconnectIntent::Server,
+            }]
+        );
+    }
+
+    #[test]
+    fn peer_close_is_server_intent_before_shutdown() {
+        assert_eq!(
+            peer_close_disconnect(Some(1001), Some("bye".into()), false),
+            Some((Some(1001), "bye".to_string(), DisconnectIntent::Server))
+        );
+        assert_eq!(
+            peer_close_disconnect(None, None, false),
+            Some((None, "Server initiated close".to_string(), DisconnectIntent::Server))
+        );
+    }
+
+    #[test]
+    fn peer_close_is_silent_once_shutdown_requested() {
+        assert_eq!(peer_close_disconnect(Some(1000), Some("ack".into()), true), None);
     }
 }
