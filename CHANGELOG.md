@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.2 / core 0.9.0-rc.1 / uniffi 0.2.0-rc.1] - 2026-09-16
+
+Responses are now handed to the caller exactly as the server sent them.
+
+Every language previously decoded the JSON into a hand-maintained struct and
+re-encoded it on the way out. That cost data in both directions: a field the
+struct did not declare was silently dropped, and a field the struct declared
+but the server omitted was materialised with a default. A stock quote came
+back missing `referencePrice` and `serial` while carrying a dozen invented
+`false` flags.
+
+The structs were maintained separately in four places — core's serde models,
+the UniFFI mirror, the TypeScript declarations, and a hand-written Python dict
+builder — so each one drifted on its own. An audit found 22 fields missing in
+the UniFFI mirror and 41 discrepancies in the TypeScript declarations. Two of
+those layers are now gone.
+
+### Breaking
+
+- **All languages**: REST methods return the raw response body. Rust and Node
+  get `serde_json::Value` / a plain object, Python a `dict`, and C#, Go, C++
+  and Java a JSON string to decode with their own library. Rust callers who
+  want the old static types can still `serde_json::from_value::<Quote>(v)` —
+  `marketdata_core::models` remains public.
+- **All languages**: WebSocket messages carry the frame verbatim. Node and
+  Python deliver the untouched frame; C#, Go, C++ and Java gain
+  `StreamMessage.raw` alongside the existing routing fields.
+- **All languages**: `tickers()` no longer unwraps the response envelope. It
+  used to return just the array, discarding the sibling `date` / `type` /
+  `exchange` / `market` metadata and diverging from the official SDK. The
+  array is now at `.data`.
+- **All languages**: fields the server omits are absent rather than `false`
+  or `null`. Code that relied on, say, `quote.isOpen` always being a boolean
+  must now treat it as optional.
+- **C#, Go, C++, Java**: the mirrored response records are gone. Decode the
+  returned JSON with your platform's usual library.
+- **Rust**: `send()` returns `serde_json::Value`.
+
+### Fixed
+
+- `Quote` was missing `referencePrice` and the top-level `serial`.
+  `referencePrice` is the basis the exchange computes `change`,
+  `changePercent` and the limit prices from — not `previousClose`, which
+  differs whenever the reference is adjusted. Callers could not reach it at
+  all.
+- JSON object keys were being reordered alphabetically, so responses arrived
+  as `amplitude, asks, avgPrice, …` instead of the server's own ordering.
+- Python's `stock.intraday.quote()` dropped `lastTrade`, `lastTrial`,
+  `tradingHalt`, `isContinuous`, the delayed-open/close flags, several
+  limit-price flags, and `total`'s `tradeVolumeAtBid` / `tradeVolumeAtAsk` /
+  `time`.
+- The UniFFI mirror was missing 22 fields, 11 of them on `FutOptQuote`
+  (`isOpen`, `isClose`, `isContinuous`, `tradingHalt`, `priceLimits`,
+  `lastTrial`, `serial`, `market` and more), which left futures quotes
+  largely unusable from C#, Go, C++ and Java. `FutOptTotalStats` mirrored 3
+  of 8 fields, losing `tradeValue` entirely.
+- TypeScript: four field names were simply wrong, so correct-looking code got
+  `undefined` — `FutOptHistoricalCandlesResponse.candles` (really `data`),
+  `MacdDataPoint.macd`/`.signal` (really `macdLine`/`signalLine`),
+  `KdjResponse.period` (really `rPeriod`/`kPeriod`/`dPeriod`) and
+  `IntradayCandle.time: number` (really `date: string`). Futures `quote()`
+  and `ticker()` were declared with the stock response types, and
+  `FutOptTickerResponse` and `UnsubscribeOptions` were referenced but never
+  defined. A stray Rust raw identifier (`r#type`) also made the whole
+  declaration file unparseable by `tsc`.
+- C#: `RestClientOptions.BaseUrl` was accepted and silently discarded, so a
+  client aimed at a test server still talked to production.
+
+### Testing
+
+- The "response compatibility" suites in JavaScript, Python, Go, C# and Java
+  asserted against fixture files and reflection rather than against anything
+  the SDK produced, so they could not fail. The JavaScript one was actively
+  vouching for the three fields the SDK was dropping, and the Python
+  cassettes recorded a v0.3-era API whose schema this SDK never parsed. All
+  are replaced with tests that run a real loopback HTTP server and compare
+  the SDK's output against the bytes the server sent.
+- `core/tests/model_fidelity.rs` decodes a recorded response into the
+  optional typed models and asserts every field survives the round trip.
+- `js/scripts/check-dts-drift.mjs` compares the TypeScript declarations
+  against the serde wire names in `core/src/models`, and CI now also runs
+  `tsc` over them.
+- C# tests skipped themselves when the native library was not on the loader
+  path — 36 of 55 never ran in CI. CI now sets it, and the suite passes with
+  no skips.
+
 ## [Bindings 3.0.0-rc.1 / uniffi 0.1.0-rc.1] - 2026-09-16
 
 First release of the Python, Node and UniFFI bindings, aligned with core

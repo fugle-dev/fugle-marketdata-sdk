@@ -16,6 +16,7 @@ package, jump to section 2.
 
 | Release | Guide | Headline |
 |---|---|---|
+| 0.9.0 | [MIGRATION-0.9.md](MIGRATION-0.9.md) | responses are passed through verbatim; typed response models leave the return path (**all languages**) |
 | 0.8.0 | [MIGRATION-0.8.md](MIGRATION-0.8.md) | `base_url` reverses 0.6.0 (version segment now rejected); futopt streaming defaults to v1.1 with trial frames |
 | 0.7.0 | [MIGRATION-0.7.md](MIGRATION-0.7.md) | dual-host REST/WebSocket endpoints |
 | 0.6.0 | [MIGRATION-0.6.md](MIGRATION-0.6.md) | `base_url` required the version segment — **superseded by 0.8.0** |
