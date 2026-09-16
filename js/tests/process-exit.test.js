@@ -285,7 +285,10 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
     );
 
     expectChild(result, () => {
-      expect(result.lines).toEqual(['CONNECTED', 'ERROR -1', 'DISCONNECT']);
+      // The panic follows the connection immediately, so its error and
+      // disconnect listeners may run before connect()'s continuation (#62).
+      expect([...result.lines].sort()).toEqual(['CONNECTED', 'DISCONNECT', 'ERROR -1']);
+      expect(result.lines.indexOf('ERROR -1')).toBeLessThan(result.lines.indexOf('DISCONNECT'));
       expect(result).toMatchObject({ exited: true, code: 0 });
     });
   });
