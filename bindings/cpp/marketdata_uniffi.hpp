@@ -164,6 +164,14 @@ struct FutOptHistoricalClient
     FutOptHistoricalClient &operator=(FutOptHistoricalClient &&) = delete;
 
     ~FutOptHistoricalClient();
+    /**
+     * Get historical candles for a product such as "TXF" (sync/blocking)
+     */
+    std::string candles_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, bool after_hours, std::optional<std::string> contract_month, std::optional<std::string> fields, std::optional<std::string> sort);
+    /**
+     * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+     */
+    std::string daily_sync(const std::string &symbol, std::optional<std::string> date, bool after_hours);
 
     private:
     FutOptHistoricalClient(const FutOptHistoricalClient &);
@@ -198,6 +206,36 @@ struct FutOptIntradayClient
     FutOptIntradayClient &operator=(FutOptIntradayClient &&) = delete;
 
     ~FutOptIntradayClient();
+    /**
+     * Get candlestick data for a contract (sync/blocking)
+     */
+    std::string candles_sync(const std::string &symbol, const std::string &timeframe);
+    /**
+     * Get available products list (sync/blocking)
+     */
+    std::string products_sync(const std::string &typ);
+    /**
+     * Get quote for a futures/options contract (sync/blocking)
+     */
+    std::string quote_sync(const std::string &symbol, bool after_hours);
+    /**
+     * Get ticker info for a contract (sync/blocking)
+     */
+    std::string ticker_sync(const std::string &symbol, bool after_hours);
+    /**
+     * Get batch tickers for futures/options (sync/blocking)
+     *
+     * typ: "F" for futures, "O" for options
+     */
+    std::string tickers_sync(const std::string &typ, std::optional<bool> is_spread);
+    /**
+     * Get trade history for a contract (sync/blocking)
+     */
+    std::string trades_sync(const std::string &symbol);
+    /**
+     * Get volume breakdown by price for a contract (sync/blocking)
+     */
+    std::string volumes_sync(const std::string &symbol);
 
     private:
     FutOptIntradayClient(const FutOptIntradayClient &);
@@ -349,6 +387,18 @@ struct StockCorporateActionsClient
     StockCorporateActionsClient &operator=(StockCorporateActionsClient &&) = delete;
 
     ~StockCorporateActionsClient();
+    /**
+     * Get capital structure changes (sync/blocking)
+     */
+    std::string capital_changes_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    /**
+     * Get dividend announcements (sync/blocking)
+     */
+    std::string dividends_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    /**
+     * Get IPO listing applicants (sync/blocking)
+     */
+    std::string listing_applicants_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
 
     private:
     StockCorporateActionsClient(const StockCorporateActionsClient &);
@@ -387,6 +437,14 @@ struct StockHistoricalClient
     StockHistoricalClient &operator=(StockHistoricalClient &&) = delete;
 
     ~StockHistoricalClient();
+    /**
+     * Get historical candles for a symbol (sync/blocking)
+     */
+    std::string candles_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe);
+    /**
+     * Get historical stats for a symbol (sync/blocking)
+     */
+    std::string stats_sync(const std::string &symbol);
 
     private:
     StockHistoricalClient(const StockHistoricalClient &);
@@ -425,6 +483,32 @@ struct StockIntradayClient
     StockIntradayClient &operator=(StockIntradayClient &&) = delete;
 
     ~StockIntradayClient();
+    /**
+     * Get candlestick data for a symbol (sync/blocking)
+     */
+    std::string candles_sync(const std::string &symbol, const std::string &timeframe);
+    /**
+     * Get quote for a symbol (sync/blocking)
+     */
+    std::string quote_sync(const std::string &symbol);
+    /**
+     * Get ticker info for a symbol (sync/blocking)
+     */
+    std::string ticker_sync(const std::string &symbol);
+    /**
+     * Get batch tickers for a security type (sync/blocking)
+     *
+     * typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
+     */
+    std::string tickers_sync(const std::string &typ);
+    /**
+     * Get trade history for a symbol (sync/blocking)
+     */
+    std::string trades_sync(const std::string &symbol);
+    /**
+     * Get volume breakdown for a symbol (sync/blocking)
+     */
+    std::string volumes_sync(const std::string &symbol);
 
     private:
     StockIntradayClient(const StockIntradayClient &);
@@ -512,6 +596,18 @@ struct StockSnapshotClient
     StockSnapshotClient &operator=(StockSnapshotClient &&) = delete;
 
     ~StockSnapshotClient();
+    /**
+     * Get most actively traded stocks (sync/blocking)
+     */
+    std::string actives_sync(const std::string &market, std::optional<std::string> trade);
+    /**
+     * Get top movers (sync/blocking)
+     */
+    std::string movers_sync(const std::string &market, std::optional<std::string> direction, std::optional<std::string> change);
+    /**
+     * Get market-wide snapshot quotes (sync/blocking)
+     */
+    std::string quotes_sync(const std::string &market, std::optional<std::string> type_filter);
 
     private:
     StockSnapshotClient(const StockSnapshotClient &);
@@ -548,6 +644,26 @@ struct StockTechnicalClient
     StockTechnicalClient &operator=(StockTechnicalClient &&) = delete;
 
     ~StockTechnicalClient();
+    /**
+     * Get Bollinger Bands (sync/blocking)
+     */
+    std::string bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period, std::optional<double> stddev);
+    /**
+     * Get KDJ (sync/blocking)
+     */
+    std::string kdj_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> r_period, std::optional<uint32_t> k_period, std::optional<uint32_t> d_period);
+    /**
+     * Get MACD (sync/blocking)
+     */
+    std::string macd_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> fast, std::optional<uint32_t> slow, std::optional<uint32_t> signal);
+    /**
+     * Get Relative Strength Index (sync/blocking)
+     */
+    std::string rsi_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
+    /**
+     * Get Simple Moving Average (sync/blocking)
+     */
+    std::string sma_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
 
     private:
     StockTechnicalClient(const StockTechnicalClient &);
@@ -1270,6 +1386,13 @@ struct FfiConverterUInt64 {
     static void write(RustStream &, uint64_t);
     static uint64_t allocation_size(uint64_t);
 };
+struct FfiConverterDouble {
+    static double lift(double);
+    static double lower(double);
+    static double read(RustStream &);
+    static void write(RustStream &, double);
+    static uint64_t allocation_size(double);
+};
 struct FfiConverterBool {
     static bool lift(uint8_t);
     static uint8_t lower(bool);
@@ -1479,12 +1602,33 @@ struct FfiConverterWebSocketEndpoint {
     static void write(RustStream &, const WebSocketEndpoint &);
     static uint64_t allocation_size(const WebSocketEndpoint &);
 };
+struct FfiConverterOptionalUInt32 {
+    static std::optional<uint32_t> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<uint32_t>& val);
+    static std::optional<uint32_t> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<uint32_t>& value);
+    static uint64_t allocation_size(const std::optional<uint32_t> &val);
+};
 struct FfiConverterOptionalInt32 {
     static std::optional<int32_t> lift(RustBuffer buf);
     static RustBuffer lower(const std::optional<int32_t>& val);
     static std::optional<int32_t> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<int32_t>& value);
     static uint64_t allocation_size(const std::optional<int32_t> &val);
+};
+struct FfiConverterOptionalDouble {
+    static std::optional<double> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<double>& val);
+    static std::optional<double> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<double>& value);
+    static uint64_t allocation_size(const std::optional<double> &val);
+};
+struct FfiConverterOptionalBool {
+    static std::optional<bool> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<bool>& val);
+    static std::optional<bool> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<bool>& value);
+    static uint64_t allocation_size(const std::optional<bool> &val);
 };
 struct FfiConverterOptionalString {
     static std::optional<std::string> lift(RustBuffer buf);

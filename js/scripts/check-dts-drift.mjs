@@ -295,7 +295,6 @@ const INTENTIONALLY_UNMAPPED = {
   RestClientOptions: 'client config type, not a core response struct',
   StockIntradayQuoteParams: 'request param type, not a core response struct',
   StreamingVersionOptions: 'client config type, not a core response struct',
-  SymbolParams: 'request param type, not a core response struct',
   TdccDistributionParams: 'request param type, not a core response struct',
   WebSocketClientOptions: 'client config type, not a core response struct',
   WebSocketEvent: 'type alias, not an interface with fields',

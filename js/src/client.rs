@@ -142,12 +142,6 @@ fn scalar_to_string(value: &Value) -> Option<String> {
     }
 }
 
-/// Plain `{ symbol }` params reused by methods that take only a symbol.
-#[napi(object)]
-pub struct SymbolParams {
-    pub symbol: String,
-}
-
 /// REST client for Fugle market data API (JavaScript wrapper)
 ///
 /// # JavaScript Usage
