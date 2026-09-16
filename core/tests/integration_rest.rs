@@ -52,8 +52,8 @@ fn test_stock_quote() {
 
     match result {
         Ok(quote) => {
-            assert_eq!(quote.symbol, "2330");
-            assert!(!quote.date.is_empty(), "Quote should have a date");
+            assert_eq!(quote["symbol"], "2330");
+            assert!(!quote["date"].as_str().unwrap_or("").is_empty(), "Quote should have a date");
             println!("Quote for 2330: {:?}", quote);
         }
         Err(e) => {
@@ -71,9 +71,9 @@ fn test_stock_ticker() {
 
     match result {
         Ok(ticker) => {
-            assert_eq!(ticker.symbol, "2330");
-            assert!(ticker.limit_up_price.is_some(), "Ticker should have limit up price");
-            assert!(ticker.limit_down_price.is_some(), "Ticker should have limit down price");
+            assert_eq!(ticker["symbol"], "2330");
+            assert!(!ticker["limitUpPrice"].is_null(), "Ticker should have limit up price");
+            assert!(!ticker["limitDownPrice"].is_null(), "Ticker should have limit down price");
             println!("Ticker for 2330: {:?}", ticker);
         }
         Err(e) => {
@@ -91,8 +91,11 @@ fn test_stock_trades() {
 
     match result {
         Ok(trades) => {
-            assert_eq!(trades.symbol, "2330");
-            println!("Trades for 2330: {} trades returned", trades.data.len());
+            assert_eq!(trades["symbol"], "2330");
+            println!(
+                "Trades for 2330: {} trades returned",
+                trades["data"].as_array().map_or(0, |a| a.len())
+            );
         }
         Err(e) => {
             panic!("Failed to get stock trades: {:?}", e);
@@ -115,8 +118,11 @@ fn test_stock_candles() {
 
     match result {
         Ok(candles) => {
-            assert_eq!(candles.symbol, "2330");
-            println!("Candles for 2330: {} candles returned", candles.data.len());
+            assert_eq!(candles["symbol"], "2330");
+            println!(
+                "Candles for 2330: {} candles returned",
+                candles["data"].as_array().map_or(0, |a| a.len())
+            );
         }
         Err(e) => {
             panic!("Failed to get stock candles: {:?}", e);
@@ -133,8 +139,11 @@ fn test_stock_volumes() {
 
     match result {
         Ok(volumes) => {
-            assert_eq!(volumes.symbol, "2330");
-            println!("Volumes for 2330: {} price levels", volumes.data.len());
+            assert_eq!(volumes["symbol"], "2330");
+            println!(
+                "Volumes for 2330: {} price levels",
+                volumes["data"].as_array().map_or(0, |a| a.len())
+            );
         }
         Err(e) => {
             panic!("Failed to get stock volumes: {:?}", e);
@@ -156,8 +165,9 @@ fn test_futopt_products() {
 
     match result {
         Ok(products) => {
-            assert!(!products.data.is_empty(), "Should have at least one futures product");
-            println!("Futures products: {} products returned", products.data.len());
+            let data = products["data"].as_array().cloned().unwrap_or_default();
+            assert!(!data.is_empty(), "Should have at least one futures product");
+            println!("Futures products: {} products returned", data.len());
         }
         Err(e) => {
             panic!("Failed to get futures products: {:?}", e);

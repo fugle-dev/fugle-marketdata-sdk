@@ -105,6 +105,15 @@ cleanup:
 	}
 }
 
+// printMessage 示範怎麼處理一則推送訊息。
+//
+// msg.Raw 是伺服器送來的原始 frame 原文，要完整內容就用它：
+//
+//	var frame map[string]interface{}
+//	json.Unmarshal([]byte(msg.Raw), &frame)
+//
+// Event / Channel / Symbol / DataJson 是 SDK 先解出來的路由欄位，方便
+// 分派用，不是資料的權威來源。
 func printMessage(msg mkt.StreamMessage) {
 	event := msg.Event
 	channel := ""

@@ -17,7 +17,7 @@ public interface StockSnapshotClientInterface {
     /**
      * Get most actively traded stocks (sync/blocking)
      */
-    public ActivesResponse activesSync(String market, String trade) throws MarketDataException;
+    public String activesSync(String market, String trade) throws MarketDataException;
     
     /**
      * Get most actively traded stocks (async)
@@ -26,7 +26,7 @@ public interface StockSnapshotClientInterface {
      * - market: Market code (TSE, OTC)
      * - trade: "volume" or "value" (optional)
      */
-    public CompletableFuture<ActivesResponse> getActives(String market, String trade) ;
+    public CompletableFuture<String> getActives(String market, String trade) ;
     
     /**
      * Get top movers (gainers/losers) in a market (async)
@@ -36,7 +36,7 @@ public interface StockSnapshotClientInterface {
      * - direction: "up" for gainers, "down" for losers (optional)
      * - change: "percent" or "value" (optional)
      */
-    public CompletableFuture<MoversResponse> getMovers(String market, String direction, String change) ;
+    public CompletableFuture<String> getMovers(String market, String direction, String change) ;
     
     /**
      * Get market-wide snapshot quotes (async)
@@ -45,17 +45,17 @@ public interface StockSnapshotClientInterface {
      * - market: Market code (TSE, OTC, ESB, TIB, PSB)
      * - type_filter: Optional filter (ALL, ALLBUT0999, COMMONSTOCK)
      */
-    public CompletableFuture<SnapshotQuotesResponse> getQuotes(String market, String typeFilter) ;
+    public CompletableFuture<String> getQuotes(String market, String typeFilter) ;
     
     /**
      * Get top movers (sync/blocking)
      */
-    public MoversResponse moversSync(String market, String direction, String change) throws MarketDataException;
+    public String moversSync(String market, String direction, String change) throws MarketDataException;
     
     /**
      * Get market-wide snapshot quotes (sync/blocking)
      */
-    public SnapshotQuotesResponse quotesSync(String market, String typeFilter) throws MarketDataException;
+    public String quotesSync(String market, String typeFilter) throws MarketDataException;
     
 }
 

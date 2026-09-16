@@ -98,6 +98,7 @@ mod tests {
                 channel: Some("trades".to_string()),
                 symbol: Some("2330".to_string()),
                 id: None,
+                raw: String::new(),
             };
             tx.send(msg).unwrap();
         });
@@ -133,6 +134,7 @@ mod tests {
             channel: Some("trades".to_string()),
             symbol: Some("2330".to_string()),
             id: None,
+            raw: String::new(),
         };
         tx.send(msg).unwrap();
 
@@ -159,6 +161,7 @@ mod tests {
             channel: None,
             symbol: None,
             id: None,
+            raw: String::new(),
         };
         tx.send(msg).unwrap();
 
@@ -212,6 +215,7 @@ mod tests {
             channel: None,
             symbol: None,
             id: None,
+            raw: String::new(),
         };
         tx.send(msg).unwrap();
         drop(tx);

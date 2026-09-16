@@ -112,7 +112,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<DirectorHoldingsResponse> getDirectorHoldings(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getDirectorHoldings(String symbol, String from, String to, String sort){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_director_holdings(
@@ -124,7 +124,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeDirectorHoldingsResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -136,7 +136,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<EtfHoldingsResponse> getEtfHoldings(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getEtfHoldings(String symbol, String from, String to, String sort){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_etf_holdings(
@@ -148,7 +148,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeEtfHoldingsResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -160,7 +160,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<InstitutionalTradesResponse> getInstitutionalTrades(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getInstitutionalTrades(String symbol, String from, String to, String sort){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_institutional_trades(
@@ -172,7 +172,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeInstitutionalTradesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -184,7 +184,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<TdccDistributionResponse> getTdccDistribution(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getTdccDistribution(String symbol, String from, String to, String sort){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_tdcc_distribution(
@@ -196,7 +196,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeTdccDistributionResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );

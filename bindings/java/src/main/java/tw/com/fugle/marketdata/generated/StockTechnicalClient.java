@@ -113,9 +113,9 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Bollinger Bands (sync/blocking)
      */
     @Override
-    public BbResponse bbSync(String symbol, String from, String to, String timeframe, Integer period, Double stddev) throws MarketDataException {
+    public String bbSync(String symbol, String from, String to, String timeframe, Integer period, Double stddev) throws MarketDataException {
             try {
-                return FfiConverterTypeBbResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -150,7 +150,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<BbResponse> getBb(String symbol, String from, String to, String timeframe, Integer period, Double stddev){
+    public CompletableFuture<String> getBb(String symbol, String from, String to, String timeframe, Integer period, Double stddev){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_bb(
@@ -162,7 +162,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeBbResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -174,7 +174,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<KdjResponse> getKdj(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getKdj(String symbol, String from, String to, String timeframe, Integer period){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_kdj(
@@ -186,7 +186,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeKdjResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -198,7 +198,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<MacdResponse> getMacd(String symbol, String from, String to, String timeframe, Integer fast, Integer slow, Integer signal){
+    public CompletableFuture<String> getMacd(String symbol, String from, String to, String timeframe, Integer fast, Integer slow, Integer signal){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_macd(
@@ -210,7 +210,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeMacdResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -222,7 +222,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<RsiResponse> getRsi(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getRsi(String symbol, String from, String to, String timeframe, Integer period){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_rsi(
@@ -234,7 +234,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeRsiResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -246,7 +246,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<SmaResponse> getSma(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getSma(String symbol, String from, String to, String timeframe, Integer period){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_sma(
@@ -258,7 +258,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeSmaResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -269,9 +269,9 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get KDJ (sync/blocking)
      */
     @Override
-    public KdjResponse kdjSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String kdjSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
             try {
-                return FfiConverterTypeKdjResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -305,9 +305,9 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get MACD (sync/blocking)
      */
     @Override
-    public MacdResponse macdSync(String symbol, String from, String to, String timeframe, Integer fast, Integer slow, Integer signal) throws MarketDataException {
+    public String macdSync(String symbol, String from, String to, String timeframe, Integer fast, Integer slow, Integer signal) throws MarketDataException {
             try {
-                return FfiConverterTypeMacdResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -341,9 +341,9 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Relative Strength Index (sync/blocking)
      */
     @Override
-    public RsiResponse rsiSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String rsiSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
             try {
-                return FfiConverterTypeRsiResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -377,9 +377,9 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Simple Moving Average (sync/blocking)
      */
     @Override
-    public SmaResponse smaSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String smaSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
             try {
-                return FfiConverterTypeSmaResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     

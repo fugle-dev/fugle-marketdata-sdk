@@ -2189,72 +2189,17 @@ impl FutOptWebSocketClient {
     }
 }
 
-/// Convert WebSocketMessage to Python dict
+/// Convert an inbound WebSocket frame to a Python dict.
+///
+/// The frame is decoded straight from the wire text, so the dict holds exactly
+/// what the server sent. Rebuilding it from the routing fields this SDK parses
+/// out (`event` / `channel` / `symbol` / `id` / `data`) would silently drop any
+/// field those five do not cover.
 pub fn message_to_dict(py: Python<'_>, msg: &marketdata_core::WebSocketMessage) -> PyResult<Py<PyDict>> {
-    let dict = PyDict::new(py);
-
-    dict.set_item("event", &msg.event)?;
-
-    if let Some(ref channel) = msg.channel {
-        dict.set_item("channel", channel)?;
-    }
-
-    if let Some(ref symbol) = msg.symbol {
-        dict.set_item("symbol", symbol)?;
-    }
-
-    if let Some(ref id) = msg.id {
-        dict.set_item("id", id)?;
-    }
-
-    // Convert data to Python dict if present
-    if let Some(ref data) = msg.data {
-        // data is serde_json::Value, convert to Python
-        let py_data = json_value_to_py(py, data)?;
-        dict.set_item("data", py_data)?;
-    }
-
-    Ok(dict.unbind())
-}
-
-/// Convert serde_json::Value to Py<PyAny>
-fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
-    use pyo3::IntoPyObject;
-
-    match value {
-        serde_json::Value::Null => Ok(py.None()),
-        serde_json::Value::Bool(b) => {
-            Ok(b.into_pyobject(py)?.to_owned().unbind().into_any())
-        }
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(i.into_pyobject(py)?.to_owned().unbind().into_any())
-            } else if let Some(u) = n.as_u64() {
-                Ok(u.into_pyobject(py)?.to_owned().unbind().into_any())
-            } else if let Some(f) = n.as_f64() {
-                Ok(f.into_pyobject(py)?.to_owned().unbind().into_any())
-            } else {
-                Ok(py.None())
-            }
-        }
-        serde_json::Value::String(s) => {
-            Ok(s.into_pyobject(py)?.to_owned().unbind().into_any())
-        }
-        serde_json::Value::Array(arr) => {
-            let list = pyo3::types::PyList::empty(py);
-            for item in arr {
-                list.append(json_value_to_py(py, item)?)?;
-            }
-            Ok(list.unbind().into_any())
-        }
-        serde_json::Value::Object(obj) => {
-            let dict = PyDict::new(py);
-            for (k, v) in obj {
-                dict.set_item(k, json_value_to_py(py, v)?)?;
-            }
-            Ok(dict.unbind().into_any())
-        }
-    }
+    let value: serde_json::Value = serde_json::from_str(&msg.raw).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("Malformed frame: {}", e))
+    })?;
+    crate::types::value_to_dict(py, &value)
 }
 
 #[cfg(test)]

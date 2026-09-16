@@ -115,9 +115,9 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get candlestick data for a symbol (sync/blocking)
      */
     @Override
-    public IntradayCandlesResponse candlesSync(String symbol, String timeframe) throws MarketDataException {
+    public String candlesSync(String symbol, String timeframe) throws MarketDataException {
             try {
-                return FfiConverterTypeIntradayCandlesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -155,7 +155,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<IntradayCandlesResponse> getCandles(String symbol, String timeframe){
+    public CompletableFuture<String> getCandles(String symbol, String timeframe){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_candles(
@@ -167,7 +167,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeIntradayCandlesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -181,7 +181,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<Quote> getQuote(String symbol){
+    public CompletableFuture<String> getQuote(String symbol){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quote(
@@ -193,7 +193,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeQuote.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -207,7 +207,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<Ticker> getTicker(String symbol){
+    public CompletableFuture<String> getTicker(String symbol){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_ticker(
@@ -219,7 +219,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeTicker.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -233,7 +233,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<List<Ticker>> getTickers(String typ){
+    public CompletableFuture<String> getTickers(String typ){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_tickers(
@@ -245,7 +245,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterSequenceTypeTicker.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -259,7 +259,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<TradesResponse> getTrades(String symbol){
+    public CompletableFuture<String> getTrades(String symbol){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_trades(
@@ -271,7 +271,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeTradesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -285,7 +285,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<VolumesResponse> getVolumes(String symbol){
+    public CompletableFuture<String> getVolumes(String symbol){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_volumes(
@@ -297,7 +297,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
         (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
         (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
         // lift function
-        (it) -> FfiConverterTypeVolumesResponse.INSTANCE.lift(it),
+        (it) -> FfiConverterString.INSTANCE.lift(it),
         // Error FFI converter
         new MarketDataExceptionErrorHandler()
     );
@@ -308,9 +308,9 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get quote for a symbol (sync/blocking)
      */
     @Override
-    public Quote quoteSync(String symbol) throws MarketDataException {
+    public String quoteSync(String symbol) throws MarketDataException {
             try {
-                return FfiConverterTypeQuote.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -344,9 +344,9 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get ticker info for a symbol (sync/blocking)
      */
     @Override
-    public Ticker tickerSync(String symbol) throws MarketDataException {
+    public String tickerSync(String symbol) throws MarketDataException {
             try {
-                return FfiConverterTypeTicker.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -382,9 +382,9 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
      */
     @Override
-    public List<Ticker> tickersSync(String typ) throws MarketDataException {
+    public String tickersSync(String typ) throws MarketDataException {
             try {
-                return FfiConverterSequenceTypeTicker.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -418,9 +418,9 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get trade history for a symbol (sync/blocking)
      */
     @Override
-    public TradesResponse tradesSync(String symbol) throws MarketDataException {
+    public String tradesSync(String symbol) throws MarketDataException {
             try {
-                return FfiConverterTypeTradesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     
@@ -454,9 +454,9 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get volume breakdown for a symbol (sync/blocking)
      */
     @Override
-    public VolumesResponse volumesSync(String symbol) throws MarketDataException {
+    public String volumesSync(String symbol) throws MarketDataException {
             try {
-                return FfiConverterTypeVolumesResponse.INSTANCE.lift(
+                return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
         try {
     

@@ -107,12 +107,18 @@ pub(crate) fn frame_request(req: &WebSocketRequest) -> Result<String, MarketData
 
 /// Parse an inbound text frame into a typed `WebSocketMessage`.
 pub(crate) fn parse_text_frame(text: &str) -> Result<WebSocketMessage, MarketDataError> {
-    serde_json::from_str(text).map_err(|e| MarketDataError::DeserializationError { source: e })
+    let mut msg: WebSocketMessage =
+        serde_json::from_str(text).map_err(|e| MarketDataError::DeserializationError { source: e })?;
+    msg.raw = text.to_string();
+    Ok(msg)
 }
 
 /// Parse an inbound binary frame into a typed `WebSocketMessage`.
 pub(crate) fn parse_binary_frame(data: &[u8]) -> Result<WebSocketMessage, MarketDataError> {
-    serde_json::from_slice(data).map_err(|e| MarketDataError::DeserializationError { source: e })
+    let mut msg: WebSocketMessage =
+        serde_json::from_slice(data).map_err(|e| MarketDataError::DeserializationError { source: e })?;
+    msg.raw = String::from_utf8_lossy(data).into_owned();
+    Ok(msg)
 }
 
 /// Classify a frame received during the auth handshake.

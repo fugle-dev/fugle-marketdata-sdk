@@ -2,7 +2,6 @@
 
 use crate::{
     errors::MarketDataError,
-    models::futopt::FutOptTicker,
     rest::client::RestClient,
 };
 
@@ -42,7 +41,7 @@ impl<'a> TickerRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<FutOptTicker, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -63,9 +62,7 @@ impl<'a> TickerRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let ticker: FutOptTicker = crate::rest::read_json(response)?;
-
-        Ok(ticker)
+        crate::rest::read_json(response)
     }
 }
 

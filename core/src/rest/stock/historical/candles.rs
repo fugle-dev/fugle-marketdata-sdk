@@ -1,6 +1,6 @@
 //! Historical candles endpoint - GET /stock/historical/candles/{symbol}
 
-use crate::{errors::MarketDataError, models::HistoricalCandlesResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for historical candles endpoint
 pub struct HistoricalCandlesRequestBuilder<'a> {
@@ -76,7 +76,7 @@ impl<'a> HistoricalCandlesRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<HistoricalCandlesResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -116,9 +116,7 @@ impl<'a> HistoricalCandlesRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let candles: HistoricalCandlesResponse = crate::rest::read_json(response)?;
-
-        Ok(candles)
+        crate::rest::read_json(response)
     }
 }
 

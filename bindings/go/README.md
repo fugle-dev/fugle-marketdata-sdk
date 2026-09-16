@@ -80,6 +80,7 @@ bindings and the native library disagree.
 package main
 
 import (
+    "encoding/json"
     "fmt"
     "log"
 
@@ -94,9 +95,20 @@ func main() {
     }
     defer client.Destroy()
 
-    // Get stock quote
-    quote, err := client.Stock().Intraday().GetQuote("2330")
+    // Methods return the server's JSON body; decode it into a struct that
+    // declares only the fields you use.
+    var quote struct {
+        ClosePrice *float64 `json:"closePrice"`
+        Change     *float64 `json:"change"`
+        Total      *struct {
+            TradeVolume int64 `json:"tradeVolume"`
+        } `json:"total"`
+    }
+    body, err := client.Stock().Intraday().GetQuote("2330")
     if err != nil {
+        log.Fatal(err)
+    }
+    if err := json.Unmarshal([]byte(body), &quote); err != nil {
         log.Fatal(err)
     }
     fmt.Printf("TSMC Price: %.2f\n", *quote.ClosePrice)
@@ -104,20 +116,34 @@ func main() {
     fmt.Printf("Volume: %d\n", quote.Total.TradeVolume)
 
     // Get stock ticker info
-    ticker, err := client.Stock().Intraday().GetTicker("2330")
+    var ticker struct {
+        Name string `json:"name"`
+    }
+    body, err = client.Stock().Intraday().GetTicker("2330")
     if err != nil {
         log.Fatal(err)
     }
-    fmt.Printf("Name: %s\n", *ticker.Name)
+    json.Unmarshal([]byte(body), &ticker)
+    fmt.Printf("Name: %s\n", ticker.Name)
 
     // Get intraday candles (5-minute)
     candles, err := client.Stock().Intraday().GetCandles("2330", "5")
     if err != nil {
         log.Fatal(err)
     }
-    for i, candle := range candles.Data[:3] {
+    var candleList struct {
+        Data []struct {
+            Date  string  `json:"date"`
+            Open  float64 `json:"open"`
+            High  float64 `json:"high"`
+            Low   float64 `json:"low"`
+            Close float64 `json:"close"`
+        } `json:"data"`
+    }
+    json.Unmarshal([]byte(candles), &candleList)
+    for i, candle := range candleList.Data[:3] {
         fmt.Printf("  [%d] %s: O=%.2f H=%.2f L=%.2f C=%.2f\n",
-            i+1, candle.Time, candle.Open, candle.High, candle.Low, candle.Close)
+            i+1, candle.Date, candle.Open, candle.High, candle.Low, candle.Close)
     }
 
     // Get recent trades
@@ -125,7 +151,14 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    for i, trade := range trades.Data[:5] {
+    var tradeList struct {
+        Data []struct {
+            Price float64 `json:"price"`
+            Size  int64   `json:"size"`
+        } `json:"data"`
+    }
+    json.Unmarshal([]byte(trades), &tradeList)
+    for i, trade := range tradeList.Data[:5] {
         fmt.Printf("  [%d] Price: %.2f, Size: %d\n", i+1, trade.Price, trade.Size)
     }
 
@@ -134,7 +167,11 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    fmt.Printf("Futures Price: %.2f\n", *futoptQuote.ClosePrice)
+    var fq struct {
+        ClosePrice *float64 `json:"closePrice"`
+    }
+    json.Unmarshal([]byte(futoptQuote), &fq)
+    fmt.Printf("Futures Price: %.2f\n", *fq.ClosePrice)
 }
 ```
 
@@ -460,19 +497,23 @@ func main() {
     if err != nil {
         log.Fatalf("Failed to get quote: %v", err)
     }
-    fmt.Printf("TSMC Quote: %.2f\n", *quote.LastPrice)
+    fmt.Printf("TSMC Quote: %s\n", quote)  // raw JSON
 
     ticker, err := client.Stock().Intraday().GetTicker("2330")
     if err != nil {
         log.Fatalf("Failed to get ticker: %v", err)
     }
-    fmt.Printf("Ticker: %s\n", *ticker.Name)
+    fmt.Printf("Ticker: %s\n", ticker)  // raw JSON
 
     candles, err := client.Stock().Intraday().GetCandles("2330", "5")
     if err != nil {
         log.Fatalf("Failed to get candles: %v", err)
     }
-    fmt.Printf("Candles: %d entries\n", len(candles.Data))
+    var candleCount struct {
+        Data []json.RawMessage `json:"data"`
+    }
+    json.Unmarshal([]byte(candles), &candleCount)
+    fmt.Printf("Candles: %d entries\n", len(candleCount.Data))
 
     // FutOpt data
     fmt.Println("\n=== FutOpt Market Data ===")
@@ -480,7 +521,11 @@ func main() {
     if err != nil {
         log.Fatalf("Failed to get products: %v", err)
     }
-    fmt.Printf("Futures products: %d\n", len(products.Data))
+    var productList struct {
+        Data []json.RawMessage `json:"data"`
+    }
+    json.Unmarshal([]byte(products), &productList)
+    fmt.Printf("Futures products: %d\n", len(productList.Data))
 
     fmt.Println("\nDone!")
 }

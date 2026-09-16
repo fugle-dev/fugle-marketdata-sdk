@@ -71,8 +71,8 @@ publisher configuration) but publishes nothing. Then tag the core version:
 
 ```bash
 python3 scripts/release-versions.py check
-git tag rust-v0.8.0-rc.1
-git push origin rust-v0.8.0-rc.1
+git tag rust-v0.9.0-rc.1
+git push origin rust-v0.9.0-rc.1
 ```
 
 The tag must equal the version in `core/Cargo.toml`. Crates that are already
@@ -102,8 +102,8 @@ credentials are not needed for a rehearsal.
 2. Tag the bindings version and push the tag:
 
    ```bash
-   git tag v3.0.0-rc.1
-   git push origin v3.0.0-rc.1
+   git tag v3.0.0-rc.2
+   git push origin v3.0.0-rc.2
    ```
 
 3. Watch the **Release** workflow. It builds every platform, publishes to

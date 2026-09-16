@@ -627,14 +627,14 @@ dependencies = [
 
 [[package]]
 name = "fugle-marketdata"
-version = "0.8.0-rc.1"
+version = "0.9.0-rc.1"
 dependencies = [
  "fugle-marketdata-core",
 ]
 
 [[package]]
 name = "fugle-marketdata-core"
-version = "0.8.0-rc.1"
+version = "0.9.0-rc.1"
 dependencies = [
  "anyhow",
  "bon",
@@ -1063,7 +1063,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "marketdata-js"
-version = "3.0.0-rc.1"
+version = "3.0.0-rc.2"
 dependencies = [
  "fugle-marketdata-core",
  "napi",
@@ -1076,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "marketdata-py"
-version = "3.0.0-rc.1"
+version = "3.0.0-rc.2"
 dependencies = [
  "fugle-marketdata-core",
  "pyo3",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "marketdata-uniffi"
-version = "0.1.0-rc.1"
+version = "0.2.0-rc.1"
 dependencies = [
  "fugle-marketdata-core",
  "serde_json",
@@ -1876,6 +1876,7 @@ version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",

@@ -1,6 +1,6 @@
 //! SMA endpoint - GET /stock/technical/sma/{symbol}
 
-use crate::{errors::MarketDataError, models::SmaResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for Simple Moving Average (SMA) endpoint
 pub struct SmaRequestBuilder<'a> {
@@ -60,7 +60,7 @@ impl<'a> SmaRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<SmaResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -94,9 +94,7 @@ impl<'a> SmaRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let sma_response: SmaResponse = crate::rest::read_json(response)?;
-
-        Ok(sma_response)
+        crate::rest::read_json(response)
     }
 }
 

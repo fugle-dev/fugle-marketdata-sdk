@@ -1,7 +1,7 @@
 //! MACD endpoint - GET /stock/technical/macd/{symbol}
 //! Will be completed in Task 2
 
-use crate::{errors::MarketDataError, models::MacdResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for MACD (Moving Average Convergence Divergence) endpoint
 pub struct MacdRequestBuilder<'a> {
@@ -79,7 +79,7 @@ impl<'a> MacdRequestBuilder<'a> {
     /// on transport failure, [`MarketDataError::ApiError`] on a non-2xx HTTP
     /// status, and [`MarketDataError::DeserializationError`] or
     /// [`MarketDataError::Other`] if the body fails to decode.
-    pub fn send(self) -> Result<MacdResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -116,8 +116,6 @@ impl<'a> MacdRequestBuilder<'a> {
         }
 
         let response = self.client.get(&url)?;
-        let macd_response: MacdResponse = crate::rest::read_json(response)?;
-
-        Ok(macd_response)
+        crate::rest::read_json(response)
     }
 }

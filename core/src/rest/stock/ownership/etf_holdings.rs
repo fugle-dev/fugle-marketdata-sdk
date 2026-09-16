@@ -1,7 +1,7 @@
 //! ETF holdings endpoint - GET /stock/ownership/etf-holdings/{symbol}
 
 use super::range::{self, HoldingsSort};
-use crate::{errors::MarketDataError, models::EtfHoldingsResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for the ETF holdings endpoint
 pub struct EtfHoldingsRequestBuilder<'a> {
@@ -53,7 +53,7 @@ impl<'a> EtfHoldingsRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<EtfHoldingsResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         range::send(
             self.client,
             "etf-holdings",

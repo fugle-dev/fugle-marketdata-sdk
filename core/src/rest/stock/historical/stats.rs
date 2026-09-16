@@ -1,6 +1,6 @@
 //! Historical stats endpoint - GET /stock/historical/stats/{symbol}
 
-use crate::{errors::MarketDataError, models::StatsResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for historical stats endpoint
 pub struct StatsRequestBuilder<'a> {
@@ -28,7 +28,7 @@ impl<'a> StatsRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<StatsResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -42,9 +42,7 @@ impl<'a> StatsRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let stats: StatsResponse = crate::rest::read_json(response)?;
-
-        Ok(stats)
+        crate::rest::read_json(response)
     }
 }
 

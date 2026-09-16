@@ -4,7 +4,7 @@
 
 use super::range::{self, HoldingsSort};
 use crate::{
-    errors::MarketDataError, models::InstitutionalTradesResponse, rest::client::RestClient,
+    errors::MarketDataError, rest::client::RestClient,
 };
 
 /// Request builder for the institutional trades endpoint
@@ -57,7 +57,7 @@ impl<'a> InstitutionalTradesRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<InstitutionalTradesResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         range::send(
             self.client,
             "institutional-trades",

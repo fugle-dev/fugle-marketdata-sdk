@@ -1,7 +1,7 @@
 //! KDJ endpoint - GET /stock/technical/kdj/{symbol}
 //! Will be implemented in Task 2
 
-use crate::{errors::MarketDataError, models::KdjResponse, rest::client::RestClient};
+use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for KDJ Stochastic Oscillator endpoint
 pub struct KdjRequestBuilder<'a> {
@@ -88,7 +88,7 @@ impl<'a> KdjRequestBuilder<'a> {
     /// on transport failure, [`MarketDataError::ApiError`] on a non-2xx HTTP
     /// status, and [`MarketDataError::DeserializationError`] or
     /// [`MarketDataError::Other`] if the body fails to decode.
-    pub fn send(self) -> Result<KdjResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
@@ -128,8 +128,6 @@ impl<'a> KdjRequestBuilder<'a> {
         }
 
         let response = self.client.get(&url)?;
-        let kdj_response: KdjResponse = crate::rest::read_json(response)?;
-
-        Ok(kdj_response)
+        crate::rest::read_json(response)
     }
 }

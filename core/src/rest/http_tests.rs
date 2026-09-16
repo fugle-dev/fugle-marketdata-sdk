@@ -95,7 +95,7 @@ fn client(base: &str) -> RestClient {
     RestClient::new(Auth::ApiKey("test-key".into())).base_url(base)
 }
 
-fn quote(client: &RestClient) -> Result<crate::models::Quote, MarketDataError> {
+fn quote(client: &RestClient) -> Result<serde_json::Value, MarketDataError> {
     client.stock().intraday().quote().symbol("2330").send()
 }
 
@@ -103,14 +103,14 @@ fn quote(client: &RestClient) -> Result<crate::models::Quote, MarketDataError> {
 fn success_decodes_json() {
     let srv = server(vec![Some(raw("200 OK", QUOTE))]);
     let q = quote(&client(&srv.base)).expect("200 should decode");
-    assert_eq!(q.symbol, "2330");
+    assert_eq!(q["symbol"], "2330");
 }
 
 #[test]
 fn gzip_success_decodes_json() {
     let srv = server(vec![Some(gzip_raw(QUOTE))]);
     let q = quote(&client(&srv.base)).expect("gzip 200 should decode");
-    assert_eq!(q.symbol, "2330");
+    assert_eq!(q["symbol"], "2330");
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn retry_policy_resends_after_server_error() {
     let policy = RetryPolicy::new(3, Duration::from_millis(1), Duration::from_millis(5));
     let c = client(&srv.base).with_retry(policy);
     let q = quote(&c).expect("second attempt should succeed");
-    assert_eq!(q.symbol, "2330");
+    assert_eq!(q["symbol"], "2330");
     assert_eq!(srv.heads.lock().unwrap().len(), 2);
 }
 
@@ -307,7 +307,7 @@ fn https_accepts_certificate_from_extra_root_ca() {
     let base = https_server(pki.server_config);
     let tls = TlsConfig { root_cert_pem: Some(pki.ca_pem.into_bytes()), ..Default::default() };
     let q = quote(&https_client(tls, &base)).expect("extra root CA should be trusted");
-    assert_eq!(q.symbol, "2330");
+    assert_eq!(q["symbol"], "2330");
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn https_accept_invalid_certs_skips_verification() {
     let base = https_server(pki.server_config);
     let tls = TlsConfig { accept_invalid_certs: true, ..Default::default() };
     let q = quote(&https_client(tls, &base)).expect("verification disabled");
-    assert_eq!(q.symbol, "2330");
+    assert_eq!(q["symbol"], "2330");
 }
 
 /// Talks to the real API, so it is ignored by default:

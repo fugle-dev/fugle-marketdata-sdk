@@ -506,11 +506,11 @@ impl OwnershipQuery {
 }
 
 macro_rules! ownership_sender {
-    ($fn_name:ident, $method:ident, $resp:ident) => {
+    ($fn_name:ident, $method:ident) => {
         fn $fn_name(
             client: &marketdata_core::RestClient,
             q: OwnershipQuery,
-        ) -> Result<marketdata_core::models::$resp, marketdata_core::MarketDataError> {
+        ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
             let stock = client.stock();
             let ownership = stock.ownership();
             let mut builder = ownership.$method().symbol(&q.symbol);
@@ -528,40 +528,42 @@ macro_rules! ownership_sender {
     };
 }
 
-ownership_sender!(send_etf_holdings, etf_holdings, EtfHoldingsResponse);
-ownership_sender!(send_institutional_trades, institutional_trades, InstitutionalTradesResponse);
-ownership_sender!(send_director_holdings, director_holdings, DirectorHoldingsResponse);
-ownership_sender!(send_tdcc_distribution, tdcc_distribution, TdccDistributionResponse);
+ownership_sender!(send_etf_holdings, etf_holdings);
+ownership_sender!(send_institutional_trades, institutional_trades);
+ownership_sender!(send_director_holdings, director_holdings);
+ownership_sender!(send_tdcc_distribution, tdcc_distribution);
 
-type OwnershipSend<T> =
-    fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<T, marketdata_core::MarketDataError>;
+type OwnershipSend = fn(
+    &marketdata_core::RestClient,
+    OwnershipQuery,
+) -> Result<serde_json::Value, marketdata_core::MarketDataError>;
 
-fn ownership_async<'py, T: serde::Serialize + Send + 'static>(
+fn ownership_async<'py>(
     py: Python<'py>,
     client: marketdata_core::RestClient,
     query: OwnershipQuery,
-    send: OwnershipSend<T>,
+    send: OwnershipSend,
 ) -> PyResult<Bound<'py, PyAny>> {
     future_into_py(py, async move {
         let result = tokio::task::spawn_blocking(move || send(&client, query))
             .await
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
         match result {
-            Ok(data) => Python::attach(|py| types::corporate_action_to_dict(py, &data)),
+            Ok(data) => Python::attach(|py| types::value_to_dict(py, &data)),
             Err(e) => Err(errors::to_py_err(e)),
         }
     })
 }
 
-fn ownership_sync<T: serde::Serialize + Send>(
+fn ownership_sync(
     py: Python<'_>,
     client: &marketdata_core::RestClient,
     query: OwnershipQuery,
-    send: OwnershipSend<T>,
+    send: OwnershipSend,
 ) -> PyResult<Py<pyo3::types::PyDict>> {
     let client = client.clone();
     match py.detach(move || send(&client, query)) {
-        Ok(data) => types::corporate_action_to_dict(py, &data),
+        Ok(data) => types::value_to_dict(py, &data),
         Err(e) => Err(errors::to_py_err(e)),
     }
 }
@@ -630,7 +632,7 @@ impl StockIntradayClient {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(quote) => Python::attach(|py| types::quote_to_dict(py, &quote)),
+                Ok(quote) => Python::attach(|py| types::value_to_dict(py, &quote)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -654,7 +656,7 @@ impl StockIntradayClient {
             builder.send()
         });
         match result {
-            Ok(quote) => types::quote_to_dict(py, &quote),
+            Ok(quote) => types::value_to_dict(py, &quote),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -688,7 +690,7 @@ impl StockIntradayClient {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(ticker) => Python::attach(|py| types::ticker_to_dict(py, &ticker)),
+                Ok(ticker) => Python::attach(|py| types::value_to_dict(py, &ticker)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -706,7 +708,7 @@ impl StockIntradayClient {
             intraday.ticker().symbol(&symbol).send()
         });
         match result {
-            Ok(ticker) => types::ticker_to_dict(py, &ticker),
+            Ok(ticker) => types::value_to_dict(py, &ticker),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -741,7 +743,7 @@ impl StockIntradayClient {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(candles) => Python::attach(|py| types::candles_to_dict(py, &candles)),
+                Ok(candles) => Python::attach(|py| types::value_to_dict(py, &candles)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -759,7 +761,7 @@ impl StockIntradayClient {
             intraday.candles().symbol(&symbol).timeframe(&timeframe).send()
         });
         match result {
-            Ok(candles) => types::candles_to_dict(py, &candles),
+            Ok(candles) => types::value_to_dict(py, &candles),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -793,7 +795,7 @@ impl StockIntradayClient {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(trades) => Python::attach(|py| types::trades_to_dict(py, &trades)),
+                Ok(trades) => Python::attach(|py| types::value_to_dict(py, &trades)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -811,7 +813,7 @@ impl StockIntradayClient {
             intraday.trades().symbol(&symbol).send()
         });
         match result {
-            Ok(trades) => types::trades_to_dict(py, &trades),
+            Ok(trades) => types::value_to_dict(py, &trades),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -845,7 +847,7 @@ impl StockIntradayClient {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(volumes) => Python::attach(|py| types::volumes_to_dict(py, &volumes)),
+                Ok(volumes) => Python::attach(|py| types::value_to_dict(py, &volumes)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -863,7 +865,7 @@ impl StockIntradayClient {
             intraday.volumes().symbol(&symbol).send()
         });
         match result {
-            Ok(volumes) => types::volumes_to_dict(py, &volumes),
+            Ok(volumes) => types::value_to_dict(py, &volumes),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1046,7 +1048,7 @@ impl StockHistoricalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(candles) => Python::attach(|py| types::historical_candles_to_dict(py, &candles)),
+                Ok(candles) => Python::attach(|py| types::value_to_dict(py, &candles)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1092,7 +1094,7 @@ impl StockHistoricalClient {
             builder.send()
         });
         match result {
-            Ok(candles) => types::historical_candles_to_dict(py, &candles),
+            Ok(candles) => types::value_to_dict(py, &candles),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1125,7 +1127,7 @@ impl StockHistoricalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(stats) => Python::attach(|py| types::stats_to_dict(py, &stats)),
+                Ok(stats) => Python::attach(|py| types::value_to_dict(py, &stats)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1143,7 +1145,7 @@ impl StockHistoricalClient {
             historical.stats().symbol(&symbol).send()
         });
         match result {
-            Ok(stats) => types::stats_to_dict(py, &stats),
+            Ok(stats) => types::value_to_dict(py, &stats),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1195,7 +1197,7 @@ impl StockSnapshotClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(quotes) => Python::attach(|py| types::snapshot_quotes_to_dict(py, &quotes)),
+                Ok(quotes) => Python::attach(|py| types::value_to_dict(py, &quotes)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1242,7 +1244,7 @@ impl StockSnapshotClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(movers) => Python::attach(|py| types::movers_to_dict(py, &movers)),
+                Ok(movers) => Python::attach(|py| types::value_to_dict(py, &movers)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1284,7 +1286,7 @@ impl StockSnapshotClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(actives) => Python::attach(|py| types::actives_to_dict(py, &actives)),
+                Ok(actives) => Python::attach(|py| types::value_to_dict(py, &actives)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1310,7 +1312,7 @@ impl StockSnapshotClient {
             builder.send()
         });
         match result {
-            Ok(quotes) => types::snapshot_quotes_to_dict(py, &quotes),
+            Ok(quotes) => types::value_to_dict(py, &quotes),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1339,7 +1341,7 @@ impl StockSnapshotClient {
             builder.send()
         });
         match result {
-            Ok(movers) => types::movers_to_dict(py, &movers),
+            Ok(movers) => types::value_to_dict(py, &movers),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1364,7 +1366,7 @@ impl StockSnapshotClient {
             builder.send()
         });
         match result {
-            Ok(actives) => types::actives_to_dict(py, &actives),
+            Ok(actives) => types::value_to_dict(py, &actives),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1426,7 +1428,7 @@ impl StockTechnicalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(sma) => Python::attach(|py| types::technical_to_dict(py, &sma)),
+                Ok(sma) => Python::attach(|py| types::value_to_dict(py, &sma)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1478,7 +1480,7 @@ impl StockTechnicalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(rsi) => Python::attach(|py| types::technical_to_dict(py, &rsi)),
+                Ok(rsi) => Python::attach(|py| types::value_to_dict(py, &rsi)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1530,7 +1532,7 @@ impl StockTechnicalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(kdj) => Python::attach(|py| types::technical_to_dict(py, &kdj)),
+                Ok(kdj) => Python::attach(|py| types::value_to_dict(py, &kdj)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1592,7 +1594,7 @@ impl StockTechnicalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(macd) => Python::attach(|py| types::technical_to_dict(py, &macd)),
+                Ok(macd) => Python::attach(|py| types::value_to_dict(py, &macd)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1649,7 +1651,7 @@ impl StockTechnicalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(bb) => Python::attach(|py| types::technical_to_dict(py, &bb)),
+                Ok(bb) => Python::attach(|py| types::value_to_dict(py, &bb)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1679,7 +1681,7 @@ impl StockTechnicalClient {
             builder.send()
         });
         match result {
-            Ok(sma) => types::technical_to_dict(py, &sma),
+            Ok(sma) => types::value_to_dict(py, &sma),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1708,7 +1710,7 @@ impl StockTechnicalClient {
             builder.send()
         });
         match result {
-            Ok(rsi) => types::technical_to_dict(py, &rsi),
+            Ok(rsi) => types::value_to_dict(py, &rsi),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1737,7 +1739,7 @@ impl StockTechnicalClient {
             builder.send()
         });
         match result {
-            Ok(kdj) => types::technical_to_dict(py, &kdj),
+            Ok(kdj) => types::value_to_dict(py, &kdj),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1770,7 +1772,7 @@ impl StockTechnicalClient {
             builder.send()
         });
         match result {
-            Ok(macd) => types::technical_to_dict(py, &macd),
+            Ok(macd) => types::value_to_dict(py, &macd),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1801,7 +1803,7 @@ impl StockTechnicalClient {
             builder.send()
         });
         match result {
-            Ok(bb) => types::technical_to_dict(py, &bb),
+            Ok(bb) => types::value_to_dict(py, &bb),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -1864,7 +1866,7 @@ impl StockCorporateActionsClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(changes) => Python::attach(|py| types::corporate_action_to_dict(py, &changes)),
+                Ok(changes) => Python::attach(|py| types::value_to_dict(py, &changes)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1917,7 +1919,7 @@ impl StockCorporateActionsClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(dividends) => Python::attach(|py| types::corporate_action_to_dict(py, &dividends)),
+                Ok(dividends) => Python::attach(|py| types::value_to_dict(py, &dividends)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1967,7 +1969,7 @@ impl StockCorporateActionsClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(applicants) => Python::attach(|py| types::corporate_action_to_dict(py, &applicants)),
+                Ok(applicants) => Python::attach(|py| types::value_to_dict(py, &applicants)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -1994,7 +1996,7 @@ impl StockCorporateActionsClient {
             builder.send()
         });
         match result {
-            Ok(changes) => types::corporate_action_to_dict(py, &changes),
+            Ok(changes) => types::value_to_dict(py, &changes),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2020,7 +2022,7 @@ impl StockCorporateActionsClient {
             builder.send()
         });
         match result {
-            Ok(dividends) => types::corporate_action_to_dict(py, &dividends),
+            Ok(dividends) => types::value_to_dict(py, &dividends),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2046,7 +2048,7 @@ impl StockCorporateActionsClient {
             builder.send()
         });
         match result {
-            Ok(applicants) => types::corporate_action_to_dict(py, &applicants),
+            Ok(applicants) => types::value_to_dict(py, &applicants),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2133,7 +2135,7 @@ impl FutOptIntradayClient {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(quote) => Python::attach(|py| types::futopt_quote_to_dict(py, &quote)),
+                Ok(quote) => Python::attach(|py| types::value_to_dict(py, &quote)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -2269,7 +2271,7 @@ impl FutOptIntradayClient {
             builder.send()
         });
         match result {
-            Ok(quote) => types::futopt_quote_to_dict(py, &quote),
+            Ok(quote) => types::value_to_dict(py, &quote),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2455,7 +2457,7 @@ impl FutOptIntradayClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(candles) => Python::attach(|py| types::candles_to_dict(py, &candles)),
+                Ok(candles) => Python::attach(|py| types::value_to_dict(py, &candles)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -2485,7 +2487,7 @@ impl FutOptIntradayClient {
             builder.send()
         });
         match result {
-            Ok(candles) => types::candles_to_dict(py, &candles),
+            Ok(candles) => types::value_to_dict(py, &candles),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2526,7 +2528,7 @@ impl FutOptIntradayClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(trades) => Python::attach(|py| types::trades_to_dict(py, &trades)),
+                Ok(trades) => Python::attach(|py| types::value_to_dict(py, &trades)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -2564,7 +2566,7 @@ impl FutOptIntradayClient {
             builder.send()
         });
         match result {
-            Ok(trades) => types::trades_to_dict(py, &trades),
+            Ok(trades) => types::value_to_dict(py, &trades),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2593,7 +2595,7 @@ impl FutOptIntradayClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(volumes) => Python::attach(|py| types::volumes_to_dict(py, &volumes)),
+                Ok(volumes) => Python::attach(|py| types::value_to_dict(py, &volumes)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -2619,7 +2621,7 @@ impl FutOptIntradayClient {
             builder.send()
         });
         match result {
-            Ok(volumes) => types::volumes_to_dict(py, &volumes),
+            Ok(volumes) => types::value_to_dict(py, &volumes),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2752,7 +2754,7 @@ impl FutOptHistoricalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(candles) => Python::attach(|py| types::futopt_historical_candles_to_dict(py, &candles)),
+                Ok(candles) => Python::attach(|py| types::value_to_dict(py, &candles)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -2782,7 +2784,7 @@ impl FutOptHistoricalClient {
             builder.send()
         });
         match result {
-            Ok(candles) => types::futopt_historical_candles_to_dict(py, &candles),
+            Ok(candles) => types::value_to_dict(py, &candles),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
@@ -2844,7 +2846,7 @@ impl FutOptHistoricalClient {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(daily) => Python::attach(|py| types::futopt_daily_to_dict(py, &daily)),
+                Ok(daily) => Python::attach(|py| types::value_to_dict(py, &daily)),
                 Err(e) => Err(errors::to_py_err(e)),
             }
         })
@@ -2879,7 +2881,7 @@ impl FutOptHistoricalClient {
             builder.send()
         });
         match result {
-            Ok(daily) => types::futopt_daily_to_dict(py, &daily),
+            Ok(daily) => types::value_to_dict(py, &daily),
             Err(e) => Err(errors::to_py_err(e)),
         }
     }

@@ -46,7 +46,7 @@ pub(crate) async fn await_auth_response(
         while let Some(msg_result) = ws_read.next().await {
             match msg_result {
                 Ok(Message::Text(text)) => {
-                    if let Ok(ws_msg) = serde_json::from_str::<WebSocketMessage>(&text) {
+                    if let Ok(ws_msg) = crate::websocket::protocol::parse_text_frame(&text) {
                         let _ = message_tx.send(ws_msg.clone()).await;
                         match classify_auth_response(&ws_msg) {
                             AuthOutcome::Authenticated => return Ok(()),

@@ -6,18 +6,49 @@ import java.util.Map;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 /**
- * Streaming message (simplified for FFI)
+ * An inbound streaming frame.
+ *
+ * `raw` is the frame exactly as the server sent it — decode that when you
+ * want the payload. The other fields are the routing subset this SDK parses
+ * out so callbacks can dispatch without decoding the whole frame first; they
+ * are a convenience, not the source of truth.
  */
 public class StreamMessage {
+    /**
+     * The frame verbatim, as received on the wire.
+     */
+    private String raw;
+    /**
+     * Event type: "data", "subscribed", "error", "authenticated", "pong".
+     */
     private String event;
+    /**
+     * Channel name, for data events.
+     */
     private String channel;
+    /**
+     * Symbol, for data events.
+     */
     private String symbol;
+    /**
+     * Subscription id, for subscribed events.
+     */
     private String id;
+    /**
+     * The `data` member of the frame, still encoded as JSON.
+     */
     private String dataJson;
+    /**
+     * Error code, for error events.
+     */
     private Integer errorCode;
+    /**
+     * Error message, for error events.
+     */
     private String errorMessage;
 
     public StreamMessage(
+        String raw, 
         String event, 
         String channel, 
         String symbol, 
@@ -26,6 +57,8 @@ public class StreamMessage {
         Integer errorCode, 
         String errorMessage
     ) {
+        
+        this.raw = raw;
         
         this.event = event;
         
@@ -40,6 +73,10 @@ public class StreamMessage {
         this.errorCode = errorCode;
         
         this.errorMessage = errorMessage;
+    }
+    
+    public String raw() {
+        return this.raw;
     }
     
     public String event() {
@@ -68,6 +105,9 @@ public class StreamMessage {
     
     public String errorMessage() {
         return this.errorMessage;
+    }
+    public void setRaw(String raw) {
+        this.raw = raw;
     }
     public void setEvent(String event) {
         this.event = event;
@@ -98,6 +138,8 @@ public class StreamMessage {
         if (other instanceof StreamMessage) {
             StreamMessage t = (StreamMessage) other;
             return (
+              Objects.equals(raw, t.raw) && 
+              
               Objects.equals(event, t.event) && 
               
               Objects.equals(channel, t.channel) && 
@@ -119,7 +161,7 @@ public class StreamMessage {
 
     @Override
     public int hashCode() {
-        return Objects.hash(event, channel, symbol, id, dataJson, errorCode, errorMessage);
+        return Objects.hash(raw, event, channel, symbol, id, dataJson, errorCode, errorMessage);
     }
 }
 

@@ -4,7 +4,6 @@
 
 use crate::{
     errors::MarketDataError,
-    models::MoversResponse,
     rest::client::RestClient,
 };
 
@@ -56,7 +55,7 @@ impl<'a> MoversRequestBuilder<'a> {
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
-    pub fn send(self) -> Result<MoversResponse, MarketDataError> {
+    pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
         let market = self.market.ok_or_else(|| MarketDataError::InvalidParameter {
             name: "market".to_string(),
             reason: "market is required".to_string(),
@@ -85,9 +84,7 @@ impl<'a> MoversRequestBuilder<'a> {
 
         // Make request
         let response = self.client.get(&url)?;
-        let movers: MoversResponse = crate::rest::read_json(response)?;
-
-        Ok(movers)
+        crate::rest::read_json(response)
     }
 }
 

@@ -112,7 +112,7 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install maturin pytest pytest-asyncio pytest-timeout vcrpy pyyaml
+          pip install maturin pytest pytest-asyncio pytest-timeout
           maturin develop
           pytest -q -k "not integration" tests --ignore=tests/benchmarks --ignore=tests/test_performance.py
 
@@ -134,6 +134,12 @@ jobs:
           npm ci
           npm run build:debug
           npx jest --ci --forceExit --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
+      - name: Type declarations match the wire format
+        working-directory: js
+        run: npm run check:dts
+      - name: Type declarations parse
+        working-directory: js
+        run: npx tsc --noEmit --strict --skipLibCheck index.d.ts types.d.ts
       - name: Generated loader and types are committed
         run: git diff --exit-code -- js/index.js js/index.d.ts
 
@@ -188,8 +194,13 @@ jobs:
           git diff --exit-code -- bindings/csharp/MarketdataUniffi/marketdata_uniffi.cs bindings/go/marketdata/ \
             || { echo "::error::UniFFI bindings are stale. Run 'make gen-csharp gen-go' and commit the result."; exit 1; }
 
+      # Without the native library on the loader path every test that builds
+      # a client hits Assert.Inconclusive and silently skips — 36 of 55 used
+      # to do exactly that, so most of this suite never ran in CI.
       - name: C# tests
         working-directory: bindings/csharp
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: dotnet test MarketdataUniffi.Tests --filter "Category!=Integration&TestCategory!=Integration"
 
       # Most C# tests skip when the native library is absent, so load it for

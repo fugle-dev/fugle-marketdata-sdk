@@ -219,6 +219,19 @@ pub struct WebSocketMessage {
     /// Subscription ID (for subscribed events)
     #[serde(default)]
     pub id: Option<String>,
+
+    /// The frame exactly as the server sent it.
+    ///
+    /// The fields above are the subset this SDK routes on, so re-serializing
+    /// this struct would both drop anything the server added and materialise
+    /// `null`s for the fields it left out. Bindings hand this string to the
+    /// caller instead, so the payload the application sees is byte-for-byte
+    /// what arrived on the wire.
+    ///
+    /// Skipped by serde: it is populated from the frame itself, never parsed
+    /// out of it.
+    #[serde(skip)]
+    pub raw: String,
 }
 
 impl WebSocketMessage {

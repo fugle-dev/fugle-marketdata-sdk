@@ -29,14 +29,19 @@ export interface TradeInfo {
   size: number;
   /** Trade timestamp (Unix milliseconds) */
   time: number;
+  /**
+   * Exchange sequence number. Stock sends a JSON number; futopt sends a
+   * zero-padded string (e.g. "00379320") — the padding is significant.
+   */
+  serial?: string | number;
 }
 
 /** Total trading statistics */
 export interface TotalStats {
-  /** Total trade value */
-  tradeValue: number;
+  /** Total trade value. Absent on FutOpt aggregates (no `tradeValue` key). */
+  tradeValue?: number;
   /** Total trade volume */
-  tradeVolume: number;
+  tradeVolume?: number;
   /** Volume traded at bid */
   tradeVolumeAtBid?: number;
   /** Volume traded at ask */
@@ -77,6 +82,16 @@ export interface QuoteResponse {
   symbol: string;
   /** Security name */
   name?: string;
+  /**
+   * Reference price for the session — the basis the exchange computes
+   * `change`/`changePercent` and the limit-up/limit-down prices against.
+   * Not sent by the official SDK's documented shape, but present on real
+   * payloads and distinct from `previousClose` whenever the reference is
+   * adjusted (ex-dividend, ex-rights, a resumed suspension).
+   */
+  referencePrice?: number;
+  /** Previous trading day's close price */
+  previousClose?: number;
 
   // OHLC prices with timestamps
   /** Open price */
@@ -126,38 +141,45 @@ export interface QuoteResponse {
   /** Trading halt status */
   tradingHalt?: TradingHalt;
 
-  // Limit price flags
+  // Limit price flags. All are booleans the server defaults to `false` when
+  // absent — now that responses pass through raw, an absent flag is simply
+  // not in the object, so these are optional rather than always-present.
   /** Is at limit down price */
-  isLimitDownPrice: boolean;
+  isLimitDownPrice?: boolean;
   /** Is at limit up price */
-  isLimitUpPrice: boolean;
+  isLimitUpPrice?: boolean;
   /** Is limit down bid */
-  isLimitDownBid: boolean;
+  isLimitDownBid?: boolean;
   /** Is limit up bid */
-  isLimitUpBid: boolean;
+  isLimitUpBid?: boolean;
   /** Is limit down ask */
-  isLimitDownAsk: boolean;
+  isLimitDownAsk?: boolean;
   /** Is limit up ask */
-  isLimitUpAsk: boolean;
+  isLimitUpAsk?: boolean;
   /** Is limit down halt */
-  isLimitDownHalt: boolean;
+  isLimitDownHalt?: boolean;
   /** Is limit up halt */
-  isLimitUpHalt: boolean;
+  isLimitUpHalt?: boolean;
 
-  // Trading session flags
+  // Trading session flags (same "absent = false" caveat as above)
   /** Is in trial (simulated matching) period */
-  isTrial: boolean;
+  isTrial?: boolean;
   /** Is delayed open */
-  isDelayedOpen: boolean;
+  isDelayedOpen?: boolean;
   /** Is delayed close */
-  isDelayedClose: boolean;
+  isDelayedClose?: boolean;
   /** Is continuous trading */
-  isContinuous: boolean;
+  isContinuous?: boolean;
   /** Is market open */
-  isOpen: boolean;
+  isOpen?: boolean;
   /** Is market closed */
-  isClose: boolean;
+  isClose?: boolean;
 
+  /**
+   * Exchange sequence number for this quote (distinct from
+   * `lastTrade.serial`, which numbers trades, not quote updates).
+   */
+  serial?: number;
   /** Last updated timestamp (Unix milliseconds) */
   lastUpdated?: number;
 }
@@ -168,8 +190,12 @@ export interface QuoteResponse {
  * Contains static security information and trading rules.
  */
 export interface TickerResponse {
-  /** Trading date (YYYY-MM-DD) */
-  date: string;
+  /**
+   * Trading date (YYYY-MM-DD). Absent on `intraday/tickers` list items
+   * (only `symbol`/`industry`/`name` etc.); present on the single-ticker
+   * endpoint.
+   */
+  date?: string;
   /** Security type (e.g., "EQUITY", "ODDLOT") */
   type?: string;
   /** Exchange code */
@@ -199,27 +225,28 @@ export interface TickerResponse {
   /** Previous close price */
   previousClose?: number;
 
-  // Trading rules
+  // Trading rules. Booleans the server defaults to `false` when absent;
+  // under raw passthrough an absent flag is simply not in the object.
   /** Can day trade */
-  canDayTrade: boolean;
+  canDayTrade?: boolean;
   /** Can buy day trade */
-  canBuyDayTrade: boolean;
+  canBuyDayTrade?: boolean;
   /** Can below flat margin short sell */
-  canBelowFlatMarginShortSell: boolean;
+  canBelowFlatMarginShortSell?: boolean;
   /** Can below flat SBL short sell */
-  canBelowFlatSBLShortSell: boolean;
+  canBelowFlatSBLShortSell?: boolean;
 
-  // Attention flags
+  // Attention flags (same "absent = false" caveat as above)
   /** Is attention stock */
-  isAttention: boolean;
+  isAttention?: boolean;
   /** Is disposition stock */
-  isDisposition: boolean;
+  isDisposition?: boolean;
   /** Is unusually recommended */
-  isUnusuallyRecommended: boolean;
+  isUnusuallyRecommended?: boolean;
   /** Is specific abnormally */
-  isSpecificAbnormally: boolean;
+  isSpecificAbnormally?: boolean;
   /** Is newly compiled */
-  isNewlyCompiled: boolean;
+  isNewlyCompiled?: boolean;
 
   // Trading parameters
   /** Matching interval (seconds) */
@@ -256,6 +283,25 @@ export interface TickerResponse {
   closeTime?: string;
 }
 
+/**
+ * Tickers response from intraday/tickers (batch ticker list).
+ *
+ * Previously unwrapped to a bare array; the server actually returns an
+ * envelope with sibling metadata alongside `data`.
+ */
+export interface TickersResponse {
+  /** Trading date (YYYY-MM-DD) */
+  date?: string;
+  /** Security type queried (e.g., "EQUITY") */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Ticker data */
+  data: TickerResponse[];
+}
+
 /** A single intraday candlestick bar */
 export interface IntradayCandle {
   /** Open price */
@@ -270,8 +316,8 @@ export interface IntradayCandle {
   volume: number;
   /** Average price (VWAP for the candle period) */
   average?: number;
-  /** Candle timestamp (Unix milliseconds) */
-  time: number;
+  /** Candle timestamp (ISO 8601 with timezone, e.g. "2026-04-17T09:00:00.000+08:00") */
+  date: string;
 }
 
 /**
@@ -308,6 +354,10 @@ export interface Trade {
   size: number;
   /** Trade timestamp (Unix milliseconds) */
   time: number;
+  /** Server-assigned monotonic sequence number (dedup / pagination anchor) */
+  serial?: number;
+  /** Cumulative volume at this trade (session total so far) */
+  volume?: number;
 }
 
 /**
@@ -372,40 +422,46 @@ export type ContractType = 'I' | 'R' | 'B' | 'C' | 'S' | 'E';
 /** FutOpt type */
 export type FutOptType = 'FUTURE' | 'OPTION';
 
-/** A single product entry in FutOpt products response */
+/**
+ * A single product entry in FutOpt products response.
+ *
+ * `symbol` is the only field the server is guaranteed to send — every other
+ * field is `Option`/defaulted on the core model, so treat all of them as
+ * possibly absent.
+ */
 export interface FutOptProduct {
   /** Product type (FUTURE/OPTION) */
-  type: string;
+  type?: string;
   /** Exchange code */
-  exchange: string;
+  exchange?: string;
   /** Contract symbol */
   symbol: string;
   /** Contract name */
-  name: string;
+  name?: string;
   /** Underlying symbol */
-  underlyingSymbol: string;
+  underlyingSymbol?: string;
   /** Contract type */
-  contractType: string;
+  contractType?: string;
   /** Contract size */
-  contractSize: number;
+  contractSize?: number;
   /** Status code */
-  statusCode: string;
+  statusCode?: string;
   /** Trading currency */
-  tradingCurrency: string;
+  tradingCurrency?: string;
   /** Whether quote is acceptable */
-  quoteAcceptable: boolean;
+  quoteAcceptable?: boolean;
   /** Start date */
-  startDate: string;
+  startDate?: string;
   /** Whether block trade is allowed */
-  canBlockTrade: boolean;
+  canBlockTrade?: boolean;
   /** Expiry type */
-  expiryType: string;
+  expiryType?: string;
   /** Underlying type */
-  underlyingType: string;
+  underlyingType?: string;
   /** Market close group */
-  marketCloseGroup: number;
+  marketCloseGroup?: number;
   /** End session */
-  endSession: number;
+  endSession?: number;
 }
 
 /**
@@ -415,17 +471,208 @@ export interface FutOptProduct {
  */
 export interface ProductsResponse {
   /** Trading date (YYYY-MM-DD) */
-  date: string;
+  date?: string;
   /** Product type */
-  type: string;
+  type?: string;
   /** Trading session */
-  session: string;
+  session?: string;
   /** Contract type filter applied */
-  contractType: string;
+  contractType?: string;
   /** Status filter applied */
-  status: string;
+  status?: string;
   /** Product list */
   data: FutOptProduct[];
+}
+
+/** Daily price limits and the reference prices they are derived from (FutOpt quote). */
+export interface FutOptPriceLimits {
+  /** Limit on the traded price */
+  price?: number;
+  /** Limit on the bid side */
+  bid?: number;
+  /** Limit on the ask side */
+  ask?: number;
+  /** Circuit-breaker (curb) level */
+  curb?: number;
+}
+
+/**
+ * Total trading statistics for a FutOpt quote.
+ *
+ * Which of these the server sends varies by endpoint and by session; a
+ * missing field is not an error.
+ */
+export interface FutOptTotalStats {
+  /** Total trade volume */
+  tradeVolume?: number;
+  /** Total traded value. Absent on FutOpt aggregates. */
+  tradeValue?: number;
+  /** Total volume matched at bid price */
+  totalBidMatch?: number;
+  /** Total volume matched at ask price */
+  totalAskMatch?: number;
+  /** Volume traded at the bid */
+  tradeVolumeAtBid?: number;
+  /** Volume traded at the ask */
+  tradeVolumeAtAsk?: number;
+  /** Number of transactions */
+  transaction?: number;
+  /** Timestamp (Unix milliseconds) */
+  time?: number;
+}
+
+/** Trading halt status for a FutOpt quote. */
+export interface FutOptTradingHalt {
+  /** Whether trading is currently halted */
+  isHalted?: boolean;
+  /** Timestamp of the halt state (Unix milliseconds) */
+  time?: number;
+}
+
+/**
+ * Real-time FutOpt quote from futopt/intraday/quote/{symbol}.
+ *
+ * Distinct from the stock `QuoteResponse`: carries `priceLimits`/`serial`
+ * and has no `isLimitUpPrice`-style limit-price flags (those are stock-only).
+ */
+export interface FutOptQuoteResponse {
+  /** Trading date (YYYY-MM-DD) */
+  date: string;
+  /** Contract type (FUTURE or OPTION) */
+  type?: string;
+  /** Exchange code (TAIFEX) */
+  exchange?: string;
+  /** Market */
+  market?: string;
+  /** Contract symbol (e.g., "TXFC4", "TXO18000C4") */
+  symbol: string;
+  /** Contract name. Dropped by the official SDK in 1.5.0; kept if present. */
+  name?: string;
+  /** Previous close price. Dropped by the official SDK in 1.5.0; kept if present. */
+  previousClose?: number;
+  /** Daily price limits */
+  priceLimits?: FutOptPriceLimits;
+
+  // OHLC prices with timestamps
+  /** Open price */
+  openPrice?: number;
+  /** Open time (Unix milliseconds) */
+  openTime?: number;
+  /** High price */
+  highPrice?: number;
+  /** High time (Unix milliseconds) */
+  highTime?: number;
+  /** Low price */
+  lowPrice?: number;
+  /** Low time (Unix milliseconds) */
+  lowTime?: number;
+  /** Close price */
+  closePrice?: number;
+  /** Close time (Unix milliseconds) */
+  closeTime?: number;
+
+  // Current trading info
+  /** Last traded price */
+  lastPrice?: number;
+  /** Last traded size (number of contracts) */
+  lastSize?: number;
+  /** Average price */
+  avgPrice?: number;
+  /** Price change from previous close */
+  change?: number;
+  /** Percentage change from previous close */
+  changePercent?: number;
+  /** Price amplitude */
+  amplitude?: number;
+
+  // Order book
+  /** Bid price levels (best to worst) */
+  bids: PriceLevel[];
+  /** Ask price levels (best to worst) */
+  asks: PriceLevel[];
+
+  // Aggregated stats
+  /** Total trading statistics */
+  total?: FutOptTotalStats;
+  /** Last trade information */
+  lastTrade?: TradeInfo;
+  /** Last trial match (試撮). Absent outside a trial session. */
+  lastTrial?: TradeInfo;
+  /** Trading halt status */
+  tradingHalt?: FutOptTradingHalt;
+
+  // Session flags. Booleans the server defaults to `false` when absent.
+  /**
+   * Marks the quote as trial-matching (試撮) — a simulated match, not a
+   * trade. Branch on this before acting on `lastPrice`/`lastSize`.
+   */
+  isTrial?: boolean;
+  /** Is delayed open */
+  isDelayedOpen?: boolean;
+  /** Is delayed close */
+  isDelayedClose?: boolean;
+  /** Is in continuous trading */
+  isContinuous?: boolean;
+  /** Is the session open */
+  isOpen?: boolean;
+  /** Is the session closed */
+  isClose?: boolean;
+
+  /** Exchange sequence number for this quote */
+  serial?: number;
+  /** Last updated timestamp (Unix milliseconds) */
+  lastUpdated?: number;
+}
+
+/**
+ * FutOpt contract information from futopt/intraday/ticker/{symbol}
+ * (also used as the item type of `futopt/intraday/tickers`' `data` array).
+ */
+export interface FutOptTickerResponse {
+  /**
+   * Trading date (YYYY-MM-DD). Absent on `intraday/tickers` list items;
+   * present on the single-ticker endpoint.
+   */
+  date?: string;
+  /** Contract type (FUTURE or OPTION) */
+  type?: string;
+  /** Exchange code (TAIFEX) */
+  exchange?: string;
+  /** Contract symbol (e.g., "TXFC4", "TXO18000C4") */
+  symbol: string;
+  /** Contract name (e.g., "臺股期貨 03", "臺指選擇權 18000C 03") */
+  name?: string;
+  /** Reference price (previous settlement price) */
+  referencePrice?: number;
+  /** Contract start date (YYYY-MM-DD) - when the contract starts trading */
+  startDate?: string;
+  /** Contract end date (YYYY-MM-DD) - last trading date */
+  endDate?: string;
+  /** Settlement date (YYYY-MM-DD) - when the contract settles */
+  settlementDate?: string;
+  /** Contract sub-type (e.g., "I" for Index) */
+  contractType?: string;
+  /** Whether dynamic price banding is enabled */
+  isDynamicBanding?: boolean;
+  /**
+   * Whether this is a spread (價差) contract. Spread symbols carry a `/`
+   * (e.g. "TXFC4/TXFD4").
+   */
+  isSpread?: boolean;
+  /** Flow group for trading */
+  flowGroup?: number;
+}
+
+/** Tickers response from futopt/intraday/tickers (batch ticker list). */
+export interface FutOptTickersResponse {
+  /** Queried product type (FUTURE or OPTION) */
+  type?: string;
+  /** Exchange code */
+  exchange?: string;
+  /** Queried session (REGULAR or AFTERHOURS) */
+  session?: string;
+  /** Ticker data */
+  data: FutOptTickerResponse[];
 }
 
 // ============================================================================
@@ -472,6 +719,17 @@ export interface FutOptSubscribeOptions {
   symbol: string;
   /** Include after-hours data */
   afterHours?: boolean;
+}
+
+/**
+ * Options for `unsubscribe()`, accepted alongside a bare subscription-id
+ * string. Provide either `id` (single) or `ids` (batch) — exactly one.
+ */
+export interface UnsubscribeOptions {
+  /** Single subscription id to unsubscribe from */
+  id?: string;
+  /** Batch of subscription ids to unsubscribe from */
+  ids?: string[];
 }
 
 /**
@@ -731,18 +989,21 @@ export interface SmaDataPoint {
 
 /**
  * SMA response from technical/sma/{symbol}
+ *
+ * `type`/`exchange`/`market`/`timeframe` are optional: prod responses omit
+ * them, returning only `symbol`/`period`/`data`.
  */
 export interface SmaResponse {
   /** Stock symbol */
   symbol: string;
   /** Security type */
-  type: string;
+  type?: string;
   /** Exchange code */
-  exchange: string;
+  exchange?: string;
   /** Market */
-  market: string;
+  market?: string;
   /** Timeframe */
-  timeframe: string;
+  timeframe?: string;
   /** SMA period */
   period: number;
   /** SMA data points */
@@ -759,18 +1020,21 @@ export interface RsiDataPoint {
 
 /**
  * RSI response from technical/rsi/{symbol}
+ *
+ * `type`/`exchange`/`market`/`timeframe` are optional: prod responses omit
+ * them, returning only `symbol`/`period`/`data`.
  */
 export interface RsiResponse {
   /** Stock symbol */
   symbol: string;
   /** Security type */
-  type: string;
+  type?: string;
   /** Exchange code */
-  exchange: string;
+  exchange?: string;
   /** Market */
-  market: string;
+  market?: string;
   /** Timeframe */
-  timeframe: string;
+  timeframe?: string;
   /** RSI period */
   period: number;
   /** RSI data points */
@@ -791,20 +1055,28 @@ export interface KdjDataPoint {
 
 /**
  * KDJ response from technical/kdj/{symbol}
+ *
+ * `type`/`exchange`/`market`/`timeframe` are optional: prod omits them.
+ * Prod also returns three independent periods (`rPeriod`/`kPeriod`/
+ * `dPeriod`), not a single `period`.
  */
 export interface KdjResponse {
   /** Stock symbol */
   symbol: string;
   /** Security type */
-  type: string;
+  type?: string;
   /** Exchange code */
-  exchange: string;
+  exchange?: string;
   /** Market */
-  market: string;
+  market?: string;
   /** Timeframe */
-  timeframe: string;
-  /** KDJ period */
-  period: number;
+  timeframe?: string;
+  /** RSV period */
+  rPeriod?: number;
+  /** K smoothing period */
+  kPeriod?: number;
+  /** D smoothing period */
+  dPeriod?: number;
   /** KDJ data points */
   data: KdjDataPoint[];
 }
@@ -813,28 +1085,30 @@ export interface KdjResponse {
 export interface MacdDataPoint {
   /** Date (YYYY-MM-DD) */
   date: string;
-  /** MACD line value */
-  macd: number;
-  /** Signal line value */
-  signal: number;
-  /** Histogram value (MACD - Signal) */
-  histogram: number;
+  /** MACD line value (fast EMA - slow EMA) */
+  macdLine: number;
+  /** Signal line value (EMA of MACD) */
+  signalLine: number;
+  /** Histogram value (MACD - Signal). Absent — prod does not return it. */
+  histogram?: number;
 }
 
 /**
  * MACD response from technical/macd/{symbol}
+ *
+ * `type`/`exchange`/`market`/`timeframe` are optional: prod omits them.
  */
 export interface MacdResponse {
   /** Stock symbol */
   symbol: string;
   /** Security type */
-  type: string;
+  type?: string;
   /** Exchange code */
-  exchange: string;
+  exchange?: string;
   /** Market */
-  market: string;
+  market?: string;
   /** Timeframe */
-  timeframe: string;
+  timeframe?: string;
   /** Fast EMA period */
   fast: number;
   /** Slow EMA period */
@@ -859,22 +1133,25 @@ export interface BbDataPoint {
 
 /**
  * Bollinger Bands response from technical/bb/{symbol}
+ *
+ * `type`/`exchange`/`market`/`timeframe`/`stddev` are optional: prod omits
+ * them, returning only `symbol`/`period`/`data`.
  */
 export interface BbResponse {
   /** Stock symbol */
   symbol: string;
   /** Security type */
-  type: string;
+  type?: string;
   /** Exchange code */
-  exchange: string;
+  exchange?: string;
   /** Market */
-  market: string;
+  market?: string;
   /** Timeframe */
-  timeframe: string;
+  timeframe?: string;
   /** SMA period */
   period: number;
   /** Standard deviation multiplier */
-  stddev: number;
+  stddev?: number;
   /** Bollinger Bands data points */
   data: BbDataPoint[];
 }
@@ -1155,8 +1432,12 @@ export interface FutOptHistoricalCandle {
   low: number;
   /** Close price */
   close: number;
-  /** Volume (number of contracts) */
-  volume: number;
+  /**
+   * Volume (number of contracts). Absent — the prod
+   * `futopt/historical/candles` series returns OHLC only
+   * (`{date,open,high,low,close}`), no volume.
+   */
+  volume?: number;
   /** Open interest (total outstanding contracts) */
   openInterest?: number;
   /** Price change from previous close */
@@ -1177,8 +1458,8 @@ export interface FutOptHistoricalCandlesResponse {
   exchange?: string;
   /** Timeframe (e.g., "D", "W", "M") */
   timeframe?: string;
-  /** Candle data (note: API returns as "data", renamed to "candles" in napi-rs) */
-  candles: FutOptHistoricalCandle[];
+  /** Candle data */
+  data: FutOptHistoricalCandle[];
 }
 
 /** A single FutOpt daily data point */
@@ -1322,14 +1603,14 @@ export declare class FutOptIntradayClient {
    * console.log(quote.symbol);     // "TXFC4"
    * ```
    */
-  quote(symbol: string): Promise<QuoteResponse>
+  quote(symbol: string): Promise<FutOptQuoteResponse>
   /**
    * Get intraday ticker for a futures/options contract
    *
    * @param symbol - Contract symbol (e.g., "TXFC4")
    * @returns Promise resolving to Ticker object with last trade info
    */
-  ticker(symbol: string): Promise<TickerResponse>
+  ticker(symbol: string): Promise<FutOptTickerResponse>
   /**
    * Get intraday candles for a futures/options contract
    *
@@ -1361,7 +1642,7 @@ export declare class FutOptIntradayClient {
    * @param contractType - Optional contract type code: "I" / "R" / "B" / "C" / "S" / "E"
    * @returns Promise resolving to an array of FutOpt ticker info objects
    */
-  tickers(type: FutOptType, exchange?: string, afterHours?: boolean, contractType?: ContractType): Promise<FutOptTickerResponse[]>
+  tickers(type: FutOptType, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean): Promise<FutOptTickersResponse>
   /**
    * Get product list for futures/options
    *
@@ -1636,7 +1917,7 @@ export declare class StockIntradayClient {
    * @param isNormal - Filter to normal-status tickers only
    * @returns Promise resolving to an array of ticker info objects
    */
-  tickers(r#type: string, exchange?: string | undefined | null, market?: string | undefined | null, industry?: string | undefined | null, isNormal?: boolean | undefined | null): Promise<TickerResponse[]>
+  tickers(type: string, exchange?: string, market?: string, industry?: string, isNormal?: boolean): Promise<TickersResponse>
 }
 
 /** Stock ownership data client */

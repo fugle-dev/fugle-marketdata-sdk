@@ -789,9 +789,10 @@ impl StockWebSocketClient {
                     // Check for messages (with timeout)
                     match receiver.receive_timeout(Duration::from_millis(50)) {
                         Ok(Some(msg)) => {
-                            if let Ok(json_str) = serde_json::to_string(&msg) {
-                                fire_callback(&callbacks, "message", json_str);
-                            }
+                            // The frame verbatim: re-serializing the routing
+                            // struct would drop unknown fields and emit nulls
+                            // for the ones the server omitted.
+                            fire_callback(&callbacks, "message", msg.raw);
                         }
                         Ok(None) => {
                             // Timeout, continue loop
@@ -1288,9 +1289,10 @@ impl FutOptWebSocketClient {
                     // Check for messages (with timeout)
                     match receiver.receive_timeout(Duration::from_millis(50)) {
                         Ok(Some(msg)) => {
-                            if let Ok(json_str) = serde_json::to_string(&msg) {
-                                fire_callback(&callbacks, "message", json_str);
-                            }
+                            // The frame verbatim: re-serializing the routing
+                            // struct would drop unknown fields and emit nulls
+                            // for the ones the server omitted.
+                            fire_callback(&callbacks, "message", msg.raw);
                         }
                         Ok(None) => {
                             // Timeout, continue loop

@@ -31,6 +31,17 @@ pub struct Quote {
     /// Stock name
     pub name: Option<String>,
 
+    /// Reference price for the session.
+    ///
+    /// This — not `previous_close` — is the basis the exchange computes
+    /// `change` and `change_percent` against, and the basis for the limit-up
+    /// and limit-down prices. The two differ whenever the reference is
+    /// adjusted (ex-dividend, ex-rights, a suspension resuming), so deriving
+    /// a move from `previous_close` gives the wrong answer on exactly the
+    /// days it matters.
+    #[serde(rename = "referencePrice", default)]
+    pub reference_price: Option<f64>,
+
     /// Previous trading day's close price
     #[serde(rename = "previousClose", default)]
     pub previous_close: Option<f64>,
@@ -177,6 +188,13 @@ pub struct Quote {
     /// Is market closed
     #[serde(rename = "isClose", default)]
     pub is_close: bool,
+
+    /// Exchange sequence number for this quote.
+    ///
+    /// Distinct from `last_trade.serial`, which numbers trades; this one
+    /// numbers quote updates.
+    #[serde(default)]
+    pub serial: Option<i64>,
 
     /// Last updated timestamp (Unix ms)
     #[serde(rename = "lastUpdated")]

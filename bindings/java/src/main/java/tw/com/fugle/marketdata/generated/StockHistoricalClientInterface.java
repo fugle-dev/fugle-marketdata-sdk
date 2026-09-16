@@ -18,7 +18,7 @@ public interface StockHistoricalClientInterface {
     /**
      * Get historical candles for a symbol (sync/blocking)
      */
-    public HistoricalCandlesResponse candlesSync(String symbol, String from, String to, String timeframe) throws MarketDataException;
+    public String candlesSync(String symbol, String from, String to, String timeframe) throws MarketDataException;
     
     /**
      * Get historical candles for a symbol (async)
@@ -29,19 +29,19 @@ public interface StockHistoricalClientInterface {
      * - to: End date (YYYY-MM-DD, optional)
      * - timeframe: "D" (day), "W" (week), "M" (month), or intraday "1", "5", "10", "15", "30", "60"
      */
-    public CompletableFuture<HistoricalCandlesResponse> getCandles(String symbol, String from, String to, String timeframe) ;
+    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe) ;
     
     /**
      * Get historical stats for a symbol (async)
      *
      * Returns summary statistics including 52-week high/low
      */
-    public CompletableFuture<StatsResponse> getStats(String symbol) ;
+    public CompletableFuture<String> getStats(String symbol) ;
     
     /**
      * Get historical stats for a symbol (sync/blocking)
      */
-    public StatsResponse statsSync(String symbol) throws MarketDataException;
+    public String statsSync(String symbol) throws MarketDataException;
     
 }
 
