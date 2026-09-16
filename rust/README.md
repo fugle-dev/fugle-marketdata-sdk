@@ -64,22 +64,26 @@ let client = RestClient::new(Auth::ApiKey(
     std::env::var("FUGLE_API_KEY").expect("FUGLE_API_KEY not set")
 ));
 
-// Stock quote
+// Requests return the server's JSON body as `serde_json::Value`, so a
+// field the API adds later is available without an SDK update.
 let quote = client.stock().intraday().quote().symbol("2330").send()?;
-println!("TSMC close price: {:?}", quote.close_price);
+println!("TSMC close price: {:?}", quote["closePrice"].as_f64());
 
 // Intraday candles (5-minute)
 let candles = client.stock().intraday().candles()
     .symbol("2330")
     .timeframe("5")
     .send()?;
-println!("Candles: {} entries", candles.data.len());
+println!("Candles: {} entries", candles["data"].as_array().map_or(0, |a| a.len()));
 
 // FutOpt quote
 let futopt_quote = client.futopt().intraday().quote()
     .symbol("TXFC4")
     .send()?;
-println!("Futures close price: {:?}", futopt_quote.close_price);
+println!("Futures close price: {:?}", futopt_quote["closePrice"].as_f64());
+
+// Prefer static types? The models are still public:
+//   let quote: fugle_marketdata::models::Quote = serde_json::from_value(quote)?;
 # Ok(())
 # }
 ```
@@ -419,7 +423,7 @@ use fugle_marketdata::{MarketDataError, RestClient, Auth};
 # fn main() {
 # let client = RestClient::new(Auth::ApiKey("key".into()));
 match client.stock().intraday().quote().symbol("2330").send() {
-    Ok(quote) => println!("Price: {:?}", quote.close_price),
+    Ok(quote) => println!("Price: {:?}", quote["closePrice"].as_f64()),
     Err(MarketDataError::AuthError { msg }) => eprintln!("Auth failed: {}", msg),
     Err(MarketDataError::ApiError { status, message }) => eprintln!("API {}: {}", status, message),
     Err(MarketDataError::TimeoutError { operation }) => eprintln!("Timeout: {}", operation),

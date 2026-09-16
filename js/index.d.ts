@@ -1640,8 +1640,7 @@ export declare class FutOptIntradayClient {
    * @param exchange - Optional exchange filter (e.g., "TAIFEX")
    * @param afterHours - Query after-hours session data
    * @param contractType - Optional contract type code: "I" / "R" / "B" / "C" / "S" / "E"
-   * @param isSpread - Optional filter for spread (價差) contracts
-   * @returns Promise resolving to a FutOpt tickers envelope
+   * @returns Promise resolving to an array of FutOpt ticker info objects
    */
   tickers(type: FutOptType, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean): Promise<FutOptTickersResponse>
   /**
@@ -1916,9 +1915,9 @@ export declare class StockIntradayClient {
    * @param market - Optional market filter (e.g., "TSE", "OTC")
    * @param industry - Optional industry code filter
    * @param isNormal - Filter to normal-status tickers only
-   * @returns Promise resolving to a tickers envelope
+   * @returns Promise resolving to an array of ticker info objects
    */
-  tickers(type: string, exchange?: string | undefined | null, market?: string | undefined | null, industry?: string | undefined | null, isNormal?: boolean | undefined | null): Promise<TickersResponse>
+  tickers(type: string, exchange?: string, market?: string, industry?: string, isNormal?: boolean): Promise<TickersResponse>
 }
 
 /** Stock ownership data client */

@@ -44,38 +44,54 @@ dotnet build
 ### REST API
 
 ```csharp
+using System.Text.Json;
 using FugleMarketData;
 
 // Create client with API key
 using var client = new RestClient("your-api-key");
 
-// Get stock quote
-var quote = await client.Stock.Intraday.GetQuoteAsync("2330");
-Console.WriteLine($"TSMC Price: {quote.closePrice}");
-Console.WriteLine($"Change: {quote.change}");
-Console.WriteLine($"Volume: {quote.total?.tradeVolume}");
+// Methods return the server's JSON body as a string. Parse it with
+// System.Text.Json, or deserialize into your own model types.
+var quote = JsonDocument.Parse(
+    await client.Stock.Intraday.GetQuoteAsync("2330")).RootElement;
+Console.WriteLine($"TSMC Price: {quote.GetProperty("closePrice").GetDouble()}");
+Console.WriteLine($"Change: {quote.GetProperty("change").GetDouble()}");
+Console.WriteLine($"Volume: {quote.GetProperty("total").GetProperty("tradeVolume").GetInt64()}");
+
+// Fields the server omits are absent, not null — check before reading.
+if (quote.TryGetProperty("referencePrice", out var reference))
+{
+    Console.WriteLine($"Reference: {reference.GetDouble()}");
+}
 
 // Get stock ticker info
-var ticker = await client.Stock.Intraday.GetTickerAsync("2330");
-Console.WriteLine($"Name: {ticker.name}");
+var ticker = JsonDocument.Parse(
+    await client.Stock.Intraday.GetTickerAsync("2330")).RootElement;
+Console.WriteLine($"Name: {ticker.GetProperty("name").GetString()}");
 
 // Get intraday candles (5-minute)
-var candles = await client.Stock.Intraday.GetCandlesAsync("2330", "5");
-foreach (var candle in candles.data.Take(3))
+var candles = JsonDocument.Parse(
+    await client.Stock.Intraday.GetCandlesAsync("2330", "5")).RootElement;
+foreach (var candle in candles.GetProperty("data").EnumerateArray().Take(3))
 {
-    Console.WriteLine($"  {candle.time}: O={candle.open} H={candle.high} L={candle.low} C={candle.close}");
+    Console.WriteLine($"  {candle.GetProperty("date").GetString()}: "
+        + $"O={candle.GetProperty("open").GetDouble()} "
+        + $"C={candle.GetProperty("close").GetDouble()}");
 }
 
 // Get recent trades
-var trades = await client.Stock.Intraday.GetTradesAsync("2330");
-foreach (var trade in trades.data.Take(5))
+var trades = JsonDocument.Parse(
+    await client.Stock.Intraday.GetTradesAsync("2330")).RootElement;
+foreach (var trade in trades.GetProperty("data").EnumerateArray().Take(5))
 {
-    Console.WriteLine($"  Price: {trade.price}, Size: {trade.size}");
+    Console.WriteLine($"  Price: {trade.GetProperty("price").GetDouble()}, "
+        + $"Size: {trade.GetProperty("size").GetInt64()}");
 }
 
 // FutOpt (futures/options) data
-var futoptQuote = await client.FutOpt.Intraday.GetQuoteAsync("TXFC4");
-Console.WriteLine($"Futures Price: {futoptQuote.closePrice}");
+var futoptQuote = JsonDocument.Parse(
+    await client.FutOpt.Intraday.GetQuoteAsync("TXFC4")).RootElement;
+Console.WriteLine($"Futures Price: {futoptQuote.GetProperty("closePrice").GetDouble()}");
 ```
 
 ### WebSocket Streaming
@@ -333,18 +349,20 @@ class Program
             // Stock data
             Console.WriteLine("=== Stock Market Data ===");
             var quote = await client.Stock.Intraday.GetQuoteAsync("2330");
-            Console.WriteLine($"TSMC Quote: {quote.closePrice}");
+            Console.WriteLine($"TSMC Quote: {quote}");  // raw JSON
 
             var ticker = await client.Stock.Intraday.GetTickerAsync("2330");
-            Console.WriteLine($"Ticker: {ticker.name}");
+            Console.WriteLine($"Ticker: {ticker}");
 
-            var candles = await client.Stock.Intraday.GetCandlesAsync("2330", "5");
-            Console.WriteLine($"Candles: {candles.data.Count} entries");
+            var candles = JsonDocument.Parse(
+                await client.Stock.Intraday.GetCandlesAsync("2330", "5")).RootElement;
+            Console.WriteLine($"Candles: {candles.GetProperty("data").GetArrayLength()} entries");
 
             // FutOpt data
             Console.WriteLine("\n=== FutOpt Market Data ===");
             var products = await client.FutOpt.Intraday.GetProductsAsync("F");
-            Console.WriteLine($"Futures products: {products.data.Count}");
+            Console.WriteLine($"Futures products: "
+                + JsonDocument.Parse(products).RootElement.GetProperty("data").GetArrayLength());
         }
         catch (FugleException ex)
         {

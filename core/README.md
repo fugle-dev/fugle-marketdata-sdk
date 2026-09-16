@@ -41,7 +41,7 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
     // Get stock quote
     let quote = client.stock().intraday().quote().symbol("2330").send()?;
     println!("TSMC Quote:");
-    println!("  Price: {:?}", quote.close_price);
+    println!("  Price: {:?}", quote["closePrice"].as_f64());
     println!("  Change: {:?}", quote.change);
     println!("  Volume: {:?}", quote.total.trade_volume);
 
@@ -54,13 +54,13 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
         .symbol("2330")
         .timeframe("5")
         .send()?;
-    println!("\nCandles: {} entries", candles.data.len());
+    println!("\nCandles: {} entries", candles["data"].as_array().map_or(0, |a| a.len()));
 
     // Get FutOpt quote
     let futopt_quote = client.futopt().intraday().quote()
         .symbol("TXF202502")
         .send()?;
-    println!("\nFutures Quote: {:?}", futopt_quote.close_price);
+    println!("\nFutures Quote: {:?}", futopt_quote["closePrice"].as_f64());
 
     Ok(())
 }
@@ -336,7 +336,7 @@ All operations return `Result<T, MarketDataError>`:
 use marketdata_core::MarketDataError;
 
 match client.stock().intraday().quote().symbol("2330").send() {
-    Ok(quote) => println!("Price: {:?}", quote.close_price),
+    Ok(quote) => println!("Price: {:?}", quote["closePrice"].as_f64()),
     Err(MarketDataError::AuthError { msg }) => {
         eprintln!("Authentication failed: {}", msg);
     }

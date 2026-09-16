@@ -41,32 +41,43 @@ FugleRestClient client = FugleRestClient.builder()
     .apiKey("your-api-key")
     .build();
 
+// Methods return the server's JSON body as a String. Decode it with
+// whichever JSON library you already use — Jackson shown here.
+ObjectMapper mapper = new ObjectMapper();
+
 // Get stock quote
-Quote quote = client.stock().intraday().getQuote("2330");
-System.out.printf("TSMC Price: %.2f%n", quote.closePrice());
-System.out.printf("Change: %.2f%n", quote.change());
-System.out.printf("Volume: %d%n", quote.total().tradeVolume());
+JsonNode quote = mapper.readTree(client.stock().intraday().getQuote("2330"));
+System.out.printf("TSMC Price: %.2f%n", quote.get("closePrice").asDouble());
+System.out.printf("Change: %.2f%n", quote.get("change").asDouble());
+System.out.printf("Volume: %d%n", quote.get("total").get("tradeVolume").asLong());
+
+// Fields the server omits are absent, not null — check before reading.
+if (quote.has("referencePrice")) {
+    System.out.printf("Reference: %.2f%n", quote.get("referencePrice").asDouble());
+}
 
 // Get stock ticker info
-Ticker ticker = client.stock().intraday().getTicker("2330");
-System.out.printf("Name: %s%n", ticker.name());
+JsonNode ticker = mapper.readTree(client.stock().intraday().getTicker("2330"));
+System.out.printf("Name: %s%n", ticker.get("name").asText());
 
 // Get intraday candles (5-minute)
-CandlesResponse candles = client.stock().intraday().getCandles("2330", "5");
-for (Candle candle : candles.data().subList(0, 3)) {
-    System.out.printf("  %s: O=%.2f H=%.2f L=%.2f C=%.2f%n",
-        candle.time(), candle.open(), candle.high(), candle.low(), candle.close());
+JsonNode candles = mapper.readTree(client.stock().intraday().getCandles("2330", "5"));
+for (JsonNode candle : candles.get("data")) {
+    System.out.printf("  %s: O=%.2f C=%.2f%n",
+        candle.get("date").asText(), candle.get("open").asDouble(),
+        candle.get("close").asDouble());
 }
 
 // Get recent trades
-TradesResponse trades = client.stock().intraday().getTrades("2330");
-for (Trade trade : trades.data().subList(0, 5)) {
-    System.out.printf("  Price: %.2f, Size: %d%n", trade.price(), trade.size());
+JsonNode trades = mapper.readTree(client.stock().intraday().getTrades("2330"));
+for (JsonNode trade : trades.get("data")) {
+    System.out.printf("  Price: %.2f, Size: %d%n",
+        trade.get("price").asDouble(), trade.get("size").asLong());
 }
 
 // FutOpt (futures/options) data
-Quote futoptQuote = client.futopt().intraday().getQuote("TXFC4");
-System.out.printf("Futures Price: %.2f%n", futoptQuote.closePrice());
+JsonNode futoptQuote = mapper.readTree(client.futopt().intraday().getQuote("TXFC4"));
+System.out.printf("Futures Price: %.2f%n", futoptQuote.get("closePrice").asDouble());
 ```
 
 ### WebSocket Streaming
@@ -178,52 +189,52 @@ check configs.
 
 ```java
 // Real-time quote
-Quote getQuote(String symbol)
-CompletableFuture<Quote> getQuoteAsync(String symbol)
+String getQuote(String symbol)
+CompletableFuture<String> getQuoteAsync(String symbol)
 
 // Symbol information
-Ticker getTicker(String symbol)
-CompletableFuture<Ticker> getTickerAsync(String symbol)
+String getTicker(String symbol)
+CompletableFuture<String> getTickerAsync(String symbol)
 
 // OHLCV candles (timeframe: "1", "5", "10", "15", "30", "60")
-CandlesResponse getCandles(String symbol, String timeframe)
-CompletableFuture<CandlesResponse> getCandlesAsync(String symbol, String timeframe)
+String getCandles(String symbol, String timeframe)
+CompletableFuture<String> getCandlesAsync(String symbol, String timeframe)
 
 // Trade history
-TradesResponse getTrades(String symbol)
-CompletableFuture<TradesResponse> getTradesAsync(String symbol)
+String getTrades(String symbol)
+CompletableFuture<String> getTradesAsync(String symbol)
 
 // Volume by price
-VolumesResponse getVolumes(String symbol)
-CompletableFuture<VolumesResponse> getVolumesAsync(String symbol)
+String getVolumes(String symbol)
+CompletableFuture<String> getVolumesAsync(String symbol)
 ```
 
 #### FutOpt Intraday Methods
 
 ```java
 // Real-time quote
-Quote getQuote(String symbol)
-CompletableFuture<Quote> getQuoteAsync(String symbol)
+String getQuote(String symbol)
+CompletableFuture<String> getQuoteAsync(String symbol)
 
 // Contract information
-Ticker getTicker(String symbol)
-CompletableFuture<Ticker> getTickerAsync(String symbol)
+String getTicker(String symbol)
+CompletableFuture<String> getTickerAsync(String symbol)
 
 // OHLCV candles
-CandlesResponse getCandles(String symbol, String timeframe)
-CompletableFuture<CandlesResponse> getCandlesAsync(String symbol, String timeframe)
+String getCandles(String symbol, String timeframe)
+CompletableFuture<String> getCandlesAsync(String symbol, String timeframe)
 
 // Trade history
-TradesResponse getTrades(String symbol)
-CompletableFuture<TradesResponse> getTradesAsync(String symbol)
+String getTrades(String symbol)
+CompletableFuture<String> getTradesAsync(String symbol)
 
 // Volume by price
-VolumesResponse getVolumes(String symbol)
-CompletableFuture<VolumesResponse> getVolumesAsync(String symbol)
+String getVolumes(String symbol)
+CompletableFuture<String> getVolumesAsync(String symbol)
 
 // Product listing (type: "F" for futures, "O" for options)
-ProductsResponse getProducts(String type)
-CompletableFuture<ProductsResponse> getProductsAsync(String type)
+String getProducts(String type)
+CompletableFuture<String> getProductsAsync(String type)
 ```
 
 ### FugleWebSocketClient
@@ -297,7 +308,7 @@ try {
     FugleRestClient client = FugleRestClient.builder()
         .apiKey("invalid-key")
         .build();
-    Quote quote = client.stock().intraday().getQuote("2330");
+    String quote = client.stock().intraday().getQuote("2330");
 } catch (FugleException e) {
     System.err.println("Error: " + e.getMessage());
     // Message format: "[2002] Authentication failed"
@@ -348,19 +359,21 @@ public class RestExample {
 
             // Stock data
             System.out.println("=== Stock Market Data ===");
-            Quote quote = client.stock().intraday().getQuote("2330");
-            System.out.printf("TSMC Quote: %.2f%n", quote.lastPrice());
+            String quote = client.stock().intraday().getQuote("2330");
+            System.out.printf("TSMC Quote: %s%n", quote);  // raw JSON
 
-            Ticker ticker = client.stock().intraday().getTicker("2330");
-            System.out.printf("Ticker: %s%n", ticker.name());
+            String ticker = client.stock().intraday().getTicker("2330");
+            System.out.printf("Ticker: %s%n", ticker);
 
             CandlesResponse candles = client.stock().intraday().getCandles("2330", "5");
-            System.out.printf("Candles: %d entries%n", candles.data().size());
+            System.out.printf("Candles: %d entries%n",
+                new ObjectMapper().readTree(candles).get("data").size());
 
             // FutOpt data
             System.out.println("\n=== FutOpt Market Data ===");
             ProductsResponse products = client.futopt().intraday().getProducts("F");
-            System.out.printf("Futures products: %d%n", products.data().size());
+            System.out.printf("Futures products: %d%n",
+                new ObjectMapper().readTree(products).get("data").size());
 
             // Async example
             System.out.println("\n=== Async Example ===");

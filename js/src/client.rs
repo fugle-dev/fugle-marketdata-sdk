@@ -524,10 +524,13 @@ impl StockIntradayClient {
     /// @param industry - Optional industry code filter
     /// @param isNormal - Filter to normal-status tickers only
     /// @returns Promise resolving to an array of ticker info objects
-    #[napi(ts_return_type = "Promise<TickerResponse[]>")]
+    #[napi(
+        ts_return_type = "Promise<TickersResponse>",
+        ts_args_type = "type: string, exchange?: string, market?: string, industry?: string, isNormal?: boolean"
+    )]
     pub async fn tickers(
         &self,
-        #[napi(ts_arg_type = "string")] r#type: String,
+        r#type: String,
         exchange: Option<String>,
         market: Option<String>,
         industry: Option<String>,
@@ -1115,7 +1118,7 @@ impl FutOptIntradayClient {
     /// console.log(quote.lastPrice);  // 17550.0
     /// console.log(quote.symbol);     // "TXFC4"
     /// ```
-    #[napi(ts_return_type = "Promise<QuoteResponse>")]
+    #[napi(ts_return_type = "Promise<FutOptQuoteResponse>")]
     pub async fn quote(&self, symbol: String) -> napi::Result<Value> {
         let inner = self.inner.clone();
 
@@ -1132,7 +1135,7 @@ impl FutOptIntradayClient {
     ///
     /// @param symbol - Contract symbol (e.g., "TXFC4")
     /// @returns Promise resolving to Ticker object with last trade info
-    #[napi(ts_return_type = "Promise<TickerResponse>")]
+    #[napi(ts_return_type = "Promise<FutOptTickerResponse>")]
     pub async fn ticker(&self, symbol: String) -> napi::Result<Value> {
         let inner = self.inner.clone();
 
@@ -1210,7 +1213,10 @@ impl FutOptIntradayClient {
     /// @param afterHours - Query after-hours session data
     /// @param contractType - Optional contract type code: "I" / "R" / "B" / "C" / "S" / "E"
     /// @returns Promise resolving to an array of FutOpt ticker info objects
-    #[napi(ts_return_type = "Promise<FutOptTickerResponse[]>", ts_args_type = "type: FutOptType, exchange?: string, afterHours?: boolean, contractType?: ContractType")]
+    #[napi(
+        ts_return_type = "Promise<FutOptTickersResponse>",
+        ts_args_type = "type: FutOptType, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean"
+    )]
     pub async fn tickers(
         &self,
         typ: String,
