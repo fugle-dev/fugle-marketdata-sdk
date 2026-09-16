@@ -45,13 +45,13 @@ pub(super) fn build_url(
 
     let mut query_params = Vec::new();
     if let Some(from) = from {
-        query_params.push(format!("from={}", from));
+        query_params.push(crate::rest::query_pair("from", from));
     }
     if let Some(to) = to {
-        query_params.push(format!("to={}", to));
+        query_params.push(crate::rest::query_pair("to", to));
     }
     if let Some(sort) = sort {
-        query_params.push(format!("sort={}", sort.as_str()));
+        query_params.push(crate::rest::query_pair("sort", sort.as_str()));
     }
 
     if !query_params.is_empty() {
@@ -124,6 +124,21 @@ mod tests {
                 Some(HoldingsSort::Desc),
             ),
             "https://h/v1.0/stock/ownership/tdcc-distribution/2330?from=2026-06-01&to=2026-07-03&sort=desc"
+        );
+    }
+
+    #[test]
+    fn test_build_url_encodes_date_values() {
+        assert_eq!(
+            build_url(
+                "https://h/v1.0",
+                "etf-holdings",
+                "0050",
+                Some("2026-06-01 00:00"),
+                Some("2026-07-03+08"),
+                None,
+            ),
+            "https://h/v1.0/stock/ownership/etf-holdings/0050?from=2026-06-01%2000%3A00&to=2026-07-03%2B08"
         );
     }
 }

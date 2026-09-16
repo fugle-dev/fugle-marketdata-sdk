@@ -15,6 +15,42 @@ mod symbol_path;
 
 pub(crate) use symbol_path::encode_symbol;
 
+/// Format one `key=value` query pair with `value` percent-encoded.
+///
+/// `encode_symbol` implements `encodeURIComponent`, which is exactly the
+/// escaping a query value needs too: without it a value carrying `&`, `=`,
+/// `#`, `+` or a space would split into extra params, be truncated, or make
+/// the URL invalid. `key` is not encoded — every typed builder passes a
+/// literal param name.
+pub(crate) fn query_pair(key: &str, value: impl std::fmt::Display) -> String {
+    format!("{key}={}", encode_symbol(&value.to_string()))
+}
+
+#[cfg(test)]
+mod query_pair_tests {
+    use super::query_pair;
+
+    #[test]
+    fn test_plain_values_are_unchanged() {
+        assert_eq!(query_pair("from", "2026-09-15"), "from=2026-09-15");
+        assert_eq!(query_pair("timeframe", "D"), "timeframe=D");
+        assert_eq!(query_pair("limit", 50u32), "limit=50");
+        assert_eq!(query_pair("isTrial", true), "isTrial=true");
+        assert_eq!(query_pair("stddev", 2.5f64), "stddev=2.5");
+        assert_eq!(query_pair("contractMonth", "1!"), "contractMonth=1!");
+    }
+
+    #[test]
+    fn test_reserved_characters_are_encoded() {
+        assert_eq!(query_pair("fields", "open,close"), "fields=open%2Cclose");
+        assert_eq!(query_pair("industry", "24&type=ETF"), "industry=24%26type%3DETF");
+        assert_eq!(query_pair("date", "2026-09-15#x"), "date=2026-09-15%23x");
+        assert_eq!(query_pair("to", "a+b c"), "to=a%2Bb%20c");
+        assert_eq!(query_pair("q", "100%"), "q=100%25");
+        assert_eq!(query_pair("name", "台積電"), "name=%E5%8F%B0%E7%A9%8D%E9%9B%BB");
+    }
+}
+
 #[cfg(test)]
 mod http_tests;
 

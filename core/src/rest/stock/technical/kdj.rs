@@ -112,25 +112,25 @@ impl<'a> KdjRequestBuilder<'a> {
 
         let mut query_params = Vec::new();
         if let Some(from) = &self.from {
-            query_params.push(format!("from={}", from));
+            query_params.push(crate::rest::query_pair("from", from));
         }
         if let Some(to) = &self.to {
-            query_params.push(format!("to={}", to));
+            query_params.push(crate::rest::query_pair("to", to));
         }
         if let Some(timeframe) = &self.timeframe {
-            query_params.push(format!("timeframe={}", timeframe));
+            query_params.push(crate::rest::query_pair("timeframe", timeframe));
         }
         if let Some(period) = &self.period {
-            query_params.push(format!("period={}", period));
+            query_params.push(crate::rest::query_pair("period", period));
         }
         if let Some(r_period) = &self.r_period {
-            query_params.push(format!("rPeriod={}", r_period));
+            query_params.push(crate::rest::query_pair("rPeriod", r_period));
         }
         if let Some(k_period) = &self.k_period {
-            query_params.push(format!("kPeriod={}", k_period));
+            query_params.push(crate::rest::query_pair("kPeriod", k_period));
         }
         if let Some(d_period) = &self.d_period {
-            query_params.push(format!("dPeriod={}", d_period));
+            query_params.push(crate::rest::query_pair("dPeriod", d_period));
         }
 
         if !query_params.is_empty() {

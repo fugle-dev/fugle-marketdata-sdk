@@ -64,13 +64,13 @@ impl<'a> DividendsRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(date) = &self.date {
-            query_params.push(format!("date={}", date));
+            query_params.push(crate::rest::query_pair("date", date));
         }
         if let Some(start_date) = &self.start_date {
-            query_params.push(format!("start_date={}", start_date));
+            query_params.push(crate::rest::query_pair("start_date", start_date));
         }
         if let Some(end_date) = &self.end_date {
-            query_params.push(format!("end_date={}", end_date));
+            query_params.push(crate::rest::query_pair("end_date", end_date));
         }
 
         if !query_params.is_empty() {
@@ -115,6 +115,22 @@ mod tests {
 
         assert_eq!(builder.start_date, Some("2024-01-01".to_string()));
         assert_eq!(builder.end_date, Some("2024-12-31".to_string()));
+    }
+
+    #[test]
+    fn test_dividends_url_encodes_date_value() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = DividendsRequestBuilder::new(&client)
+            .start_date("2026-08-01&end_date=2026-08-02")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/corporate-actions/dividends?start_date=2026-08-01%26end_date%3D2026-08-02",
+                client.get_base_url()
+            )
+        );
     }
 
     #[test]

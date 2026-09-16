@@ -52,7 +52,7 @@ impl<'a> VolumesRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(session) = &self.session {
-            query_params.push(format!("session={}", session));
+            query_params.push(crate::rest::query_pair("session", session));
         }
 
         if !query_params.is_empty() {

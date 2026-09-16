@@ -65,16 +65,16 @@ impl<'a> MoversRequestBuilder<'a> {
         let mut url = format!(
             "{}/stock/snapshot/movers/{}",
             self.client.get_base_url(),
-            market
+            crate::rest::encode_symbol(&market)
         );
 
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(direction) = self.direction {
-            query_params.push(format!("direction={}", direction));
+            query_params.push(crate::rest::query_pair("direction", direction));
         }
         if let Some(change) = self.change {
-            query_params.push(format!("change={}", change));
+            query_params.push(crate::rest::query_pair("change", change));
         }
 
         if !query_params.is_empty() {

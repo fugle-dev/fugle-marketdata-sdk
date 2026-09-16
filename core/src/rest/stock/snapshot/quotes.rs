@@ -46,22 +46,27 @@ impl<'a> SnapshotQuotesRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let market = self.market.ok_or_else(|| MarketDataError::InvalidParameter {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let market = self.market.as_deref().ok_or_else(|| MarketDataError::InvalidParameter {
             name: "market".to_string(),
             reason: "market is required".to_string(),
         })?;
 
-        // Build URL
         let mut url = format!(
             "{}/stock/snapshot/quotes/{}",
             self.client.get_base_url(),
-            market
+            crate::rest::encode_symbol(market)
         );
 
-        // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(type_filter) = self.type_filter {
-            query_params.push(format!("type={}", type_filter));
+        if let Some(type_filter) = &self.type_filter {
+            query_params.push(crate::rest::query_pair("type", type_filter));
         }
 
         if !query_params.is_empty() {
@@ -69,9 +74,7 @@ impl<'a> SnapshotQuotesRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
     }
 }
 
@@ -110,5 +113,36 @@ mod tests {
 
         assert_eq!(builder.market, Some("TSE".to_string()));
         assert_eq!(builder.type_filter, Some("COMMONSTOCK".to_string()));
+    }
+
+    #[test]
+    fn test_snapshot_quotes_url() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = SnapshotQuotesRequestBuilder::new(&client)
+            .market("TSE")
+            .type_filter("COMMONSTOCK")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!("{}/stock/snapshot/quotes/TSE?type=COMMONSTOCK", client.get_base_url())
+        );
+    }
+
+    #[test]
+    fn test_snapshot_quotes_url_encodes_market_path_segment() {
+        // A `/` or `?` in the path param must not change the endpoint or start the query.
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = SnapshotQuotesRequestBuilder::new(&client)
+            .market("TSE/../OTC?type=ALL")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/snapshot/quotes/TSE%2F..%2FOTC%3Ftype%3DALL",
+                client.get_base_url()
+            )
+        );
     }
 }

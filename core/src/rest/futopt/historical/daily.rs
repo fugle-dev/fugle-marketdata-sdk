@@ -69,7 +69,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
 
         let mut query_params = Vec::new();
         if let Some(date) = &self.date {
-            query_params.push(format!("date={}", date));
+            query_params.push(crate::rest::query_pair("date", date));
         }
         if self.after_hours == Some(true) {
             query_params.push("session=afterhours".to_string());
@@ -136,5 +136,24 @@ mod tests {
             .url()
             .unwrap();
         assert_eq!(url, format!("{}/futopt/historical/daily/TXF", client.get_base_url()));
+    }
+
+    #[test]
+    fn test_daily_url_encodes_date_value() {
+        // A `#` would otherwise start a fragment and drop `session`.
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = FutOptDailyRequestBuilder::new(&client)
+            .symbol("TXF")
+            .date("2026-09-15#x")
+            .after_hours(true)
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/historical/daily/TXF?date=2026-09-15%23x&session=afterhours",
+                client.get_base_url()
+            )
+        );
     }
 }

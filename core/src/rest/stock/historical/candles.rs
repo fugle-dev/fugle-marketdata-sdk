@@ -91,22 +91,22 @@ impl<'a> HistoricalCandlesRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(from) = self.from {
-            query_params.push(format!("from={}", from));
+            query_params.push(crate::rest::query_pair("from", from));
         }
         if let Some(to) = self.to {
-            query_params.push(format!("to={}", to));
+            query_params.push(crate::rest::query_pair("to", to));
         }
         if let Some(timeframe) = self.timeframe {
-            query_params.push(format!("timeframe={}", timeframe));
+            query_params.push(crate::rest::query_pair("timeframe", timeframe));
         }
         if let Some(fields) = self.fields {
-            query_params.push(format!("fields={}", fields));
+            query_params.push(crate::rest::query_pair("fields", fields));
         }
         if let Some(sort) = self.sort {
-            query_params.push(format!("sort={}", sort));
+            query_params.push(crate::rest::query_pair("sort", sort));
         }
         if let Some(adjusted) = self.adjusted {
-            query_params.push(format!("adjusted={}", adjusted));
+            query_params.push(crate::rest::query_pair("adjusted", adjusted));
         }
 
         if !query_params.is_empty() {

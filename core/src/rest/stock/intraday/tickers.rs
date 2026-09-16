@@ -68,19 +68,19 @@ impl<'a> TickersRequestBuilder<'a> {
         ))?;
 
         let mut query_params = Vec::new();
-        query_params.push(format!("type={}", typ));
+        query_params.push(crate::rest::query_pair("type", typ));
 
         if let Some(exchange) = &self.exchange {
-            query_params.push(format!("exchange={}", exchange));
+            query_params.push(crate::rest::query_pair("exchange", exchange));
         }
         if let Some(market) = &self.market {
-            query_params.push(format!("market={}", market));
+            query_params.push(crate::rest::query_pair("market", market));
         }
         if let Some(industry) = &self.industry {
-            query_params.push(format!("industry={}", industry));
+            query_params.push(crate::rest::query_pair("industry", industry));
         }
         if let Some(is_normal) = self.is_normal {
-            query_params.push(format!("isNormal={}", is_normal));
+            query_params.push(crate::rest::query_pair("isNormal", is_normal));
         }
 
         let url = format!(

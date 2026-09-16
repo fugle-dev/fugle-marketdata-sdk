@@ -319,9 +319,8 @@ impl RestClient {
         }
         for (i, (key, value)) in query.iter().enumerate() {
             url.push(if i == 0 { '?' } else { '&' });
-            url.push_str(&super::encode_symbol(key.as_ref()));
-            url.push('=');
-            url.push_str(&super::encode_symbol(value.as_ref()));
+            // Unlike the typed builders, the key here is caller-supplied too.
+            url.push_str(&super::query_pair(&super::encode_symbol(key.as_ref()), value.as_ref()));
         }
         url
     }
