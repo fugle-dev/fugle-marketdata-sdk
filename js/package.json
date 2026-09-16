@@ -33,6 +33,7 @@
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
     "validate-types": "node validate_types.js",
+    "check:dts": "node scripts/check-dts-drift.mjs",
     "test": "jest",
     "test:ci": "jest --ci --coverage"
   },
