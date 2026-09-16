@@ -107,6 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit after `disconnect()`, a failed `connect()`, or a server close / network
   loss with no reconnect left — in that last case `isConnected` now also turns
   `false` (#30).
+- **Python**: the synchronous WebSocket methods (`connect`, `disconnect`,
+  `subscribe`, `unsubscribe`, `subscriptions`, `ping`, `is_connected`,
+  `is_closed`) on stock and futopt release the GIL while they wait.
+  `disconnect()` could deadlock forever when called while `message` callbacks
+  were being delivered, and `disconnect_async()` likewise; a server running on
+  a Python thread of the same process could never answer `connect()`. These
+  methods are no longer serialized by the GIL, so calls on one client from
+  several threads can now interleave (#39).
 - Long JSON decimals could decode to the neighbouring double, so a value
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its
