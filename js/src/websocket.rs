@@ -779,7 +779,9 @@ impl StockWebSocketClient {
                             let _ = rt.block_on(client.disconnect());
                             connected.store(false, Ordering::SeqCst);
                             closed.store(true, Ordering::SeqCst);
-                            fire_callback(&callbacks, "disconnect", "disconnected".to_string());
+                            // Core's disconnect() emits `Disconnected` on the
+                            // event channel and the event thread forwards it;
+                            // firing here too duplicates the callback (#22).
                             break;
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -804,10 +806,10 @@ impl StockWebSocketClient {
                             // Timeout, continue loop
                         }
                         Err(_) => {
-                            // Channel closed
+                            // Channel closed: the dispatch task has ended and
+                            // already reported why via the event channel.
                             connected.store(false, Ordering::SeqCst);
                             closed.store(true, Ordering::SeqCst);
-                            fire_callback(&callbacks, "disconnect", "channel_closed".to_string());
                             break;
                         }
                     }
@@ -1285,7 +1287,9 @@ impl FutOptWebSocketClient {
                             let _ = rt.block_on(client.disconnect());
                             connected.store(false, Ordering::SeqCst);
                             closed.store(true, Ordering::SeqCst);
-                            fire_callback(&callbacks, "disconnect", "disconnected".to_string());
+                            // Core's disconnect() emits `Disconnected` on the
+                            // event channel and the event thread forwards it;
+                            // firing here too duplicates the callback (#22).
                             break;
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -1310,10 +1314,10 @@ impl FutOptWebSocketClient {
                             // Timeout, continue loop
                         }
                         Err(_) => {
-                            // Channel closed
+                            // Channel closed: the dispatch task has ended and
+                            // already reported why via the event channel.
                             connected.store(false, Ordering::SeqCst);
                             closed.store(true, Ordering::SeqCst);
-                            fire_callback(&callbacks, "disconnect", "channel_closed".to_string());
                             break;
                         }
                     }

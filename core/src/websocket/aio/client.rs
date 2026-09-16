@@ -1057,9 +1057,10 @@ impl WebSocketClient {
                 // `shutdown_with_timeout()` set the flag, the dispatch
                 // loop's exit must not loop back into reconnect — that
                 // would re-establish the connection the caller just asked
-                // to tear down. Ordering: this check happens after
-                // dispatch returns so any in-flight server Close frame is
-                // still observed and propagated as a `Disconnected` event.
+                // to tear down. A server Close that arrived before the flag
+                // was set has already been propagated as a `Disconnected`
+                // event; one arriving after it is the ack of our own Close
+                // and is swallowed by the dispatch loop.
                 if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
                     break;
                 }

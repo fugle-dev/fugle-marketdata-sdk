@@ -167,8 +167,17 @@ pub(crate) async fn dispatch_messages(
                 // pong via JSON message; this branch is defensive.
             }
             Ok(Message::Close(close_frame)) => {
-                // Server initiated close - RFC 6455 compliant handling
                 let code = close_frame.as_ref().map(|cf| cf.code.into());
+
+                // After a caller-initiated `disconnect()` this Close is the
+                // peer's ack of ours, not a server-initiated close: the
+                // shutdown path emits the canonical
+                // `Disconnected { intent: Client }` itself (#22).
+                if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    return code;
+                }
+
+                // Server initiated close - RFC 6455 compliant handling
                 let reason = close_frame
                     .as_ref()
                     .map(|cf| cf.reason.to_string())
@@ -194,23 +203,25 @@ pub(crate) async fn dispatch_messages(
                 // *and* `Disconnected { intent: Network }` so consumers
                 // pattern-matching on `ConnectionEvent::Disconnected`
                 // see the close exactly as they do for the clean-EOF
-                // path above. Skip when shutdown was caller-initiated:
+                // path above. Skip both when shutdown was caller-initiated:
                 // a local `shutdown_with_timeout()` typically tears
                 // down the socket which surfaces here as a transport
-                // error, and the shutdown path already emits the
-                // canonical `Disconnected { intent: Client }`.
+                // error (or a peer that skips TLS close_notify, #22),
+                // and the shutdown path already emits the canonical
+                // `Disconnected { intent: Client }`.
+                if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                    return None;
+                }
                 let err_msg = format!("WebSocket error: {}", e);
                 emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
                     message: err_msg.clone(),
                     code: 2001,
                 });
-                if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
-                    emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
-                        code: None,
-                        reason: err_msg,
-                        intent: DisconnectIntent::Network,
-                    });
-                }
+                emit_event(&event_tx, &events_dropped, ConnectionEvent::Disconnected {
+                    code: None,
+                    reason: err_msg,
+                    intent: DisconnectIntent::Network,
+                });
                 return None;
             }
             Ok(Message::Frame(_)) => {

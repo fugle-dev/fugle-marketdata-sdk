@@ -88,6 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   futopt were both affected (#13).
 - **Python**: the synchronous `connect()` on stock and futopt panicked the same
   way before connecting. `connect_async()` was unaffected.
+- **Node**: a single `disconnect()` fired the `disconnect` event three times
+  (`{"code":0,"reason":"Server initiated close"}`, `"disconnected"`,
+  `{"code":1000,"reason":"Normal closure"}`). It now fires once, with the
+  last payload; a server-initiated close likewise fires once (#22).
+- **All languages**: a caller-initiated disconnect no longer emits an error
+  (`[2001] WebSocket error: ...`) when the peer tears the transport down
+  without a clean close (e.g. no TLS close_notify), nor a second
+  `Disconnected { intent: Server }` for the peer's Close ack (#22).
 - Long JSON decimals could decode to the neighbouring double, so a value
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its

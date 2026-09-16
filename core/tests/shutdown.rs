@@ -102,3 +102,67 @@ async fn disconnect_default_drains_quickly_against_responsive_peer() {
         elapsed
     );
 }
+
+/// Drain every event emitted up to (and shortly after) a client-initiated
+/// shutdown. The receiver stays open while `client` lives, so keep reading
+/// until the channel has been quiet for `QUIET` instead of waiting for `Err`;
+/// a straggling duplicate that arrives late still lands in the result.
+async fn events_after_shutdown(client: &WebSocketClient) -> Vec<ConnectionEvent> {
+    client
+        .shutdown_with_timeout(Duration::from_millis(500))
+        .await
+        .expect("shutdown returns");
+    let events = std::sync::Arc::clone(client.state_events());
+    tokio::task::spawn_blocking(move || {
+        let rx = events.blocking_lock();
+        common::drain_until_quiet(|timeout| rx.recv_timeout(timeout).ok())
+    })
+    .await
+    .expect("drain")
+}
+
+async fn assert_single_client_disconnect(behaviour: common::AfterAuth) {
+    let server = common::spawn(behaviour).await;
+    let auth = AuthRequest::with_api_key("test-key");
+    let config = ConnectionConfig::new(server.url.clone(), auth);
+    let client = WebSocketClient::with_reconnection_config(
+        config,
+        ReconnectionConfig::disabled(),
+    );
+    client.connect().await.expect("connect");
+
+    let events = events_after_shutdown(&client).await;
+
+    let disconnects: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, ConnectionEvent::Disconnected { .. }))
+        .collect();
+    assert_eq!(disconnects.len(), 1, "expected exactly one Disconnected, got {:?}", events);
+    assert!(
+        matches!(
+            disconnects[0],
+            ConnectionEvent::Disconnected { intent: DisconnectIntent::Client, .. }
+        ),
+        "expected Client intent, got {:?}",
+        disconnects[0]
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, ConnectionEvent::Error { .. })),
+        "caller-initiated close must not emit Error, got {:?}",
+        events
+    );
+}
+
+/// #22: the peer's Close ack must not surface as a second, Server-intent
+/// `Disconnected` event.
+#[tokio::test]
+async fn shutdown_emits_single_disconnect_when_peer_acks_close() {
+    assert_single_client_disconnect(common::AfterAuth::Idle).await;
+}
+
+/// #22: a peer that tears the transport down instead of acking the Close
+/// (e.g. no TLS close_notify) must not surface as an `Error` event.
+#[tokio::test]
+async fn shutdown_emits_no_error_when_peer_drops_on_close() {
+    assert_single_client_disconnect(common::AfterAuth::DropOnClientClose).await;
+}
