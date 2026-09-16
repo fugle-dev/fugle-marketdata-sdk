@@ -11,6 +11,7 @@
 package marketdata_uniffi
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 )
@@ -172,9 +173,7 @@ func TestRestClient_GetQuote_Integration(t *testing.T) {
 		t.Fatalf("Failed to get quote: %v", err)
 	}
 
-	if quote.Symbol != "2330" {
-		t.Errorf("Expected symbol 2330, got %s", quote.Symbol)
-	}
+	assertSymbol(t, quote, "2330")
 }
 
 func TestRestClient_GetTicker_Integration(t *testing.T) {
@@ -198,9 +197,7 @@ func TestRestClient_GetTicker_Integration(t *testing.T) {
 		t.Fatalf("Failed to get ticker: %v", err)
 	}
 
-	if ticker.Symbol != "2330" {
-		t.Errorf("Expected symbol 2330, got %s", ticker.Symbol)
-	}
+	assertSymbol(t, ticker, "2330")
 }
 
 func TestRestClient_GetTrades_Integration(t *testing.T) {
@@ -224,9 +221,7 @@ func TestRestClient_GetTrades_Integration(t *testing.T) {
 		t.Fatalf("Failed to get trades: %v", err)
 	}
 
-	if trades.Symbol != "2330" {
-		t.Errorf("Expected symbol 2330, got %s", trades.Symbol)
-	}
+	assertSymbol(t, trades, "2330")
 }
 
 func TestRestClient_FutOptProducts_Integration(t *testing.T) {
@@ -251,7 +246,31 @@ func TestRestClient_FutOptProducts_Integration(t *testing.T) {
 	}
 
 	// Should return at least one product
-	if len(products.Data) == 0 {
+	var decoded struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(products), &decoded); err != nil {
+		t.Fatalf("Failed to decode products: %v", err)
+	}
+	if len(decoded.Data) == 0 {
 		t.Error("Expected at least one futures product")
+	}
+}
+
+// assertSymbol decodes a raw JSON response body and checks its `symbol` field.
+//
+// REST methods hand back the server's JSON verbatim, so tests decode it the
+// same way callers do.
+func assertSymbol(t *testing.T, body string, want string) {
+	t.Helper()
+
+	var decoded struct {
+		Symbol string `json:"symbol"`
+	}
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if decoded.Symbol != want {
+		t.Errorf("Expected symbol %s, got %s", want, decoded.Symbol)
 	}
 }
