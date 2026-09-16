@@ -706,6 +706,62 @@ struct WebSocketState {
     receiver: Arc<marketdata_core::MessageReceiver>,
 }
 
+/// Shared so blocking calls can clone it out of its lock before they block.
+type SharedRuntime = Arc<tokio::runtime::Runtime>;
+
+fn lock_err<T>(e: std::sync::PoisonError<T>) -> PyErr {
+    pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
+}
+
+// Blocking calls wait with the GIL released (#39), so they must not hold a
+// client lock either: a thread that holds the GIL could be queued on that lock
+// while the blocked call needs the GIL back to return. Locks are therefore
+// only taken briefly, to clone handles out, and never across `py.detach`.
+
+/// Clone the connected client and its runtime out of their locks.
+fn live_handles(
+    state: &Mutex<Option<WebSocketState>>,
+    runtime: &Mutex<Option<SharedRuntime>>,
+) -> PyResult<(Arc<marketdata_core::aio::WebSocketClient>, SharedRuntime)> {
+    let inner = state
+        .lock()
+        .map_err(lock_err)?
+        .as_ref()
+        .map(|s| Arc::clone(&s.inner))
+        .ok_or_else(|| {
+            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
+        })?;
+    let runtime = runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
+    })?;
+    Ok((inner, runtime))
+}
+
+/// Run `fut` to completion on `runtime` with the GIL released.
+fn block_on_detached<F>(py: Python<'_>, runtime: SharedRuntime, fut: F) -> F::Output
+where
+    F: std::future::Future + Send,
+    F::Output: Send,
+{
+    py.detach(move || runtime.block_on(fut))
+}
+
+/// Stop the message dispatch thread and wait for it with the GIL released:
+/// the thread may be waiting for the GIL to hand a frame to Python (#39).
+fn stop_message_thread(
+    py: Python<'_>,
+    stop_flag: &AtomicBool,
+    handle: &Mutex<Option<std::thread::JoinHandle<()>>>,
+) {
+    stop_flag.store(true, Ordering::SeqCst);
+    let handle = handle.lock().ok().and_then(|mut guard| guard.take());
+    if let Some(handle) = handle {
+        py.detach(move || {
+            let _ = handle.join();
+        });
+    }
+}
+
 /// Stock market WebSocket client
 ///
 /// Access via `ws.stock`
@@ -725,7 +781,7 @@ pub struct StockWebSocketClient {
     callbacks: Arc<CallbackRegistry>,
     // State is wrapped in Mutex<Option<>> for thread-safety
     state: Arc<Mutex<Option<WebSocketState>>>,
-    runtime: Arc<Mutex<Option<tokio::runtime::Runtime>>>,
+    runtime: Arc<Mutex<Option<SharedRuntime>>>,
     // Background thread control
     message_thread_stop: Arc<AtomicBool>,
     message_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
@@ -785,7 +841,7 @@ impl StockWebSocketClient {
                 .enable_all()
                 .build()
                 .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
-            *runtime_guard = Some(rt);
+            *runtime_guard = Some(Arc::new(rt));
         }
         Ok(())
     }
@@ -837,16 +893,8 @@ impl StockWebSocketClient {
     }
 
     /// Stop background message dispatch thread
-    fn stop_message_thread(&self) {
-        // Signal thread to stop
-        self.message_thread_stop.store(true, Ordering::SeqCst);
-
-        // Wait for thread to finish
-        if let Ok(mut guard) = self.message_thread_handle.lock() {
-            if let Some(handle) = guard.take() {
-                let _ = handle.join();
-            }
-        }
+    fn stop_message_thread(&self, py: Python<'_>) {
+        stop_message_thread(py, &self.message_thread_stop, &self.message_thread_handle);
     }
 }
 
@@ -910,26 +958,22 @@ impl StockWebSocketClient {
         // Clone callbacks for event dispatch
         let callbacks = Arc::clone(&self.callbacks);
 
-        // Connect with GIL released
-        // We need to do this in a scope where we have the runtime
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
+        let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
         })?;
 
-        // Get message receiver before connect. `messages()` spawns its bridge
-        // task with `tokio::spawn`, so it must run inside the runtime context —
-        // this is a plain Python thread, not a tokio one (#13).
-        let receiver = {
-            let _guard = runtime.enter();
-            ws_client.messages()
-        };
-
-        // Connect synchronously (blocking the current thread)
-        let result = runtime.block_on(async {
-            ws_client.connect().await
+        // Connect with the GIL released: the handshake and auth ack may come
+        // from a server that needs this interpreter to run (#39).
+        let (ws_client, receiver, result) = py.detach(move || {
+            // Get message receiver before connect. `messages()` spawns its bridge
+            // task with `tokio::spawn`, so it must run inside the runtime context —
+            // this is a plain Python thread, not a tokio one (#13).
+            let receiver = {
+                let _guard = runtime.enter();
+                ws_client.messages()
+            };
+            let result = runtime.block_on(ws_client.connect());
+            (ws_client, receiver, result)
         });
 
         match result {
@@ -943,10 +987,7 @@ impl StockWebSocketClient {
                     receiver,
                 };
 
-                let mut state_guard = self.state.lock().map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-                })?;
-                *state_guard = Some(state);
+                *self.state.lock().map_err(lock_err)? = Some(state);
 
                 // Start background message thread if message callbacks are registered
                 if self.has_message_callbacks() {
@@ -1021,36 +1062,34 @@ impl StockWebSocketClient {
 
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
-    pub fn disconnect(&self, _py: Python<'_>) -> PyResult<()> {
+    pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
         // Stop background message dispatch thread first.
-        self.stop_message_thread();
+        self.stop_message_thread(py);
 
-        let mut state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
+        let state = self.state.lock().map_err(lock_err)?.take();
 
-        if let Some(state) = state_guard.take() {
-            // Take ownership of the runtime so dropping it at the end of this
-            // scope aborts every spawned task (dispatch, writer, health check).
-            // Without this, those tasks keep their Arc<WebSocketClient> clones
-            // alive, the event channel never closes, and the event listener
-            // thread blocks forever on recv() — preventing Python from
-            // shutting down.
-            let mut runtime_guard = self.runtime.lock().map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-            })?;
-            let runtime = runtime_guard.take();
-            drop(runtime_guard);
+        if let Some(state) = state {
+            // Take ownership of the runtime so dropping it aborts every
+            // spawned task (dispatch, writer, health check). Without this,
+            // those tasks keep their Arc<WebSocketClient> clones alive, the
+            // event channel never closes, and the event listener thread
+            // blocks forever on recv() — preventing Python from shutting down.
+            let runtime = self.runtime.lock().map_err(lock_err)?.take();
 
             if let Some(rt) = runtime {
-                rt.block_on(async {
-                    let _ = state.inner.disconnect().await;
+                // The close handshake waits on the server, so release the GIL (#39).
+                py.detach(move || {
+                    rt.block_on(async {
+                        let _ = state.inner.disconnect().await;
+                    });
+                    // `rt` drops first → all spawned tasks aborted and futures
+                    // dropped, releasing every Arc<WebSocketClient> clone they
+                    // held. `state` drops next → core's WebSocketClient drops →
+                    // event_tx drops → the event listener thread sees Err on
+                    // recv() and exits cleanly.
+                    drop(rt);
+                    drop(state);
                 });
-                // `rt` drops here → all spawned tasks aborted and futures
-                // dropped, releasing every Arc<WebSocketClient> clone they
-                // held. `state` drops next → core's WebSocketClient drops →
-                // event_tx drops → the event listener thread sees Err on
-                // recv() and exits cleanly.
             }
 
             // Note: do NOT manually invoke_disconnect here. Core's
@@ -1065,27 +1104,12 @@ impl StockWebSocketClient {
 
     /// Check if currently connected
     #[pyo3(signature = ())]
-    pub fn is_connected(&self) -> bool {
-        let state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-
-        if state_guard.is_none() {
-            return false;
-        }
-
-        let runtime_guard = match self.runtime.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-
-        if let (Some(state), Some(runtime)) = (state_guard.as_ref(), runtime_guard.as_ref()) {
-            runtime.block_on(async {
-                state.inner.is_connected().await
-            })
-        } else {
-            false
+    pub fn is_connected(&self, py: Python<'_>) -> bool {
+        match live_handles(&self.state, &self.runtime) {
+            Ok((inner, runtime)) => {
+                block_on_detached(py, runtime, async move { inner.is_connected().await })
+            }
+            Err(_) => false,
         }
     }
 
@@ -1094,30 +1118,25 @@ impl StockWebSocketClient {
     /// Returns true if disconnect() has been called and client is closed.
     /// Once closed, the client cannot be reused - create a new instance.
     #[pyo3(signature = ())]
-    pub fn is_closed(&self) -> bool {
-        let state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-
+    pub fn is_closed(&self, py: Python<'_>) -> bool {
         // If state is None (never connected), not closed
-        let state = match state_guard.as_ref() {
-            Some(s) => s,
-            None => return false,
-        };
-
-        let runtime_guard = match self.runtime.lock() {
-            Ok(g) => g,
+        let inner = match self.state.lock() {
+            Ok(g) => match g.as_ref() {
+                Some(s) => Arc::clone(&s.inner),
+                None => return false,
+            },
             Err(_) => return false,
         };
 
-        if let Some(runtime) = runtime_guard.as_ref() {
-            runtime.block_on(async {
-                state.inner.is_closed().await
-            })
-        } else {
+        let runtime = match self.runtime.lock() {
+            Ok(g) => g.clone(),
+            Err(_) => return false,
+        };
+
+        match runtime {
+            Some(runtime) => block_on_detached(py, runtime, async move { inner.is_closed().await }),
             // If no runtime, use sync version
-            state.inner.is_closed_sync()
+            None => inner.is_closed_sync(),
         }
     }
 
@@ -1145,6 +1164,7 @@ impl StockWebSocketClient {
     #[pyo3(signature = (channel, symbol=None, *, symbols=None, odd_lot=false))]
     pub fn subscribe(
         &self,
+        py: Python<'_>,
         channel: &Bound<'_, PyAny>,
         symbol: Option<&str>,
         symbols: Option<Vec<String>>,
@@ -1163,13 +1183,7 @@ impl StockWebSocketClient {
                 ));
             };
 
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let ch = match channel_str.to_lowercase().as_str() {
             "trades" => marketdata_core::Channel::Trades,
@@ -1185,17 +1199,9 @@ impl StockWebSocketClient {
             }
         };
 
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
-
         let sub = marketdata_core::StockSubscription::new(ch, target_symbols)
             .with_odd_lot(effective_odd_lot);
-        let result = runtime.block_on(async { state.inner.subscribe(sub).await });
+        let result = block_on_detached(py, runtime, async move { inner.subscribe(sub).await });
         result.map_err(errors::to_py_err)?;
 
         Ok(())
@@ -1219,6 +1225,7 @@ impl StockWebSocketClient {
     #[pyo3(signature = (subscription_id=None, *, ids=None))]
     pub fn unsubscribe(
         &self,
+        py: Python<'_>,
         subscription_id: Option<&Bound<'_, PyAny>>,
         ids: Option<Vec<String>>,
     ) -> PyResult<()> {
@@ -1236,23 +1243,10 @@ impl StockWebSocketClient {
             resolve_unsubscribe_args(None, ids)?
         };
 
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
-
-        let result = runtime.block_on(async { state.inner.unsubscribe(target_ids).await });
+        let result =
+            block_on_detached(py, runtime, async move { inner.unsubscribe(target_ids).await });
         result.map_err(errors::to_py_err)?;
 
         Ok(())
@@ -1315,23 +1309,11 @@ impl StockWebSocketClient {
     /// Raises:
     ///     RuntimeError: If not connected
     #[pyo3(signature = ())]
-    pub fn subscriptions(&self) -> PyResult<()> {
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
+    pub fn subscriptions(&self, py: Python<'_>) -> PyResult<()> {
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let request = marketdata_core::WebSocketRequest::subscriptions();
-        runtime
-            .block_on(async { state.inner.send(request).await })
+        block_on_detached(py, runtime, async move { inner.send(request).await })
             .map_err(errors::to_py_err)
     }
 
@@ -1343,23 +1325,11 @@ impl StockWebSocketClient {
     /// Raises:
     ///     RuntimeError: If not connected
     #[pyo3(signature = (state=None))]
-    pub fn ping(&self, state: Option<String>) -> PyResult<()> {
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let st = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
+    pub fn ping(&self, py: Python<'_>, state: Option<String>) -> PyResult<()> {
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let request = marketdata_core::WebSocketRequest::ping(state);
-        runtime
-            .block_on(async { st.inner.send(request).await })
+        block_on_detached(py, runtime, async move { inner.send(request).await })
             .map_err(errors::to_py_err)
     }
 
@@ -1476,7 +1446,7 @@ impl StockWebSocketClient {
     ///     await ws.stock.disconnect_async()
     ///     ```
     pub fn disconnect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.stop_message_thread();
+        self.stop_message_thread(py);
 
         let state_arc = Arc::clone(&self.state);
 
@@ -1615,7 +1585,7 @@ pub struct FutOptWebSocketClient {
     tls: marketdata_core::TlsConfig,
     callbacks: Arc<CallbackRegistry>,
     state: Arc<Mutex<Option<WebSocketState>>>,
-    runtime: Arc<Mutex<Option<tokio::runtime::Runtime>>>,
+    runtime: Arc<Mutex<Option<SharedRuntime>>>,
     message_thread_stop: Arc<AtomicBool>,
     message_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
@@ -1685,13 +1655,8 @@ impl FutOptWebSocketClient {
         }
     }
 
-    fn stop_message_thread(&self) {
-        self.message_thread_stop.store(true, Ordering::SeqCst);
-        if let Ok(mut guard) = self.message_thread_handle.lock() {
-            if let Some(handle) = guard.take() {
-                let _ = handle.join();
-            }
-        }
+    fn stop_message_thread(&self, py: Python<'_>) {
+        stop_message_thread(py, &self.message_thread_stop, &self.message_thread_handle);
     }
 
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
@@ -1720,7 +1685,7 @@ impl FutOptWebSocketClient {
                 .enable_all()
                 .build()
                 .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
-            *runtime_guard = Some(rt);
+            *runtime_guard = Some(Arc::new(rt));
         }
         Ok(())
     }
@@ -1776,23 +1741,21 @@ impl FutOptWebSocketClient {
         // Clone callbacks for event dispatch
         let callbacks = Arc::clone(&self.callbacks);
 
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
+        let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
         })?;
 
-        // Get message receiver before connect. `messages()` spawns its bridge
-        // task with `tokio::spawn`, so it must run inside the runtime context —
-        // this is a plain Python thread, not a tokio one (#13).
-        let receiver = {
-            let _guard = runtime.enter();
-            ws_client.messages()
-        };
-
-        let result = runtime.block_on(async {
-            ws_client.connect().await
+        // Connect with the GIL released — see StockWebSocketClient::connect (#39).
+        let (ws_client, receiver, result) = py.detach(move || {
+            // Get message receiver before connect. `messages()` spawns its bridge
+            // task with `tokio::spawn`, so it must run inside the runtime context —
+            // this is a plain Python thread, not a tokio one (#13).
+            let receiver = {
+                let _guard = runtime.enter();
+                ws_client.messages()
+            };
+            let result = runtime.block_on(ws_client.connect());
+            (ws_client, receiver, result)
         });
 
         match result {
@@ -1805,10 +1768,7 @@ impl FutOptWebSocketClient {
                     receiver,
                 };
 
-                let mut state_guard = self.state.lock().map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-                })?;
-                *state_guard = Some(state);
+                *self.state.lock().map_err(lock_err)? = Some(state);
 
                 // Start background message dispatch thread if callbacks registered.
                 // Without this, raw server messages (including authenticated acks
@@ -1886,27 +1846,25 @@ impl FutOptWebSocketClient {
 
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
-    pub fn disconnect(&self, _py: Python<'_>) -> PyResult<()> {
+    pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
         // Stop background message dispatch thread first.
-        self.stop_message_thread();
+        self.stop_message_thread(py);
 
-        let mut state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
+        let state = self.state.lock().map_err(lock_err)?.take();
 
-        if let Some(state) = state_guard.take() {
+        if let Some(state) = state {
             // Take ownership of the runtime — see StockWebSocketClient::disconnect
             // for the rationale (forces all spawned tasks to drop their
             // Arc<WebSocketClient> clones so the event channel can close).
-            let mut runtime_guard = self.runtime.lock().map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-            })?;
-            let runtime = runtime_guard.take();
-            drop(runtime_guard);
+            let runtime = self.runtime.lock().map_err(lock_err)?.take();
 
             if let Some(rt) = runtime {
-                rt.block_on(async {
-                    let _ = state.inner.disconnect().await;
+                py.detach(move || {
+                    rt.block_on(async {
+                        let _ = state.inner.disconnect().await;
+                    });
+                    drop(rt);
+                    drop(state);
                 });
             }
 
@@ -1921,27 +1879,12 @@ impl FutOptWebSocketClient {
 
     /// Check if currently connected
     #[pyo3(signature = ())]
-    pub fn is_connected(&self) -> bool {
-        let state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-
-        if state_guard.is_none() {
-            return false;
-        }
-
-        let runtime_guard = match self.runtime.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-
-        if let (Some(state), Some(runtime)) = (state_guard.as_ref(), runtime_guard.as_ref()) {
-            runtime.block_on(async {
-                state.inner.is_connected().await
-            })
-        } else {
-            false
+    pub fn is_connected(&self, py: Python<'_>) -> bool {
+        match live_handles(&self.state, &self.runtime) {
+            Ok((inner, runtime)) => {
+                block_on_detached(py, runtime, async move { inner.is_connected().await })
+            }
+            Err(_) => false,
         }
     }
 
@@ -1950,30 +1893,25 @@ impl FutOptWebSocketClient {
     /// Returns true if disconnect() has been called and client is closed.
     /// Once closed, the client cannot be reused - create a new instance.
     #[pyo3(signature = ())]
-    pub fn is_closed(&self) -> bool {
-        let state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
-
+    pub fn is_closed(&self, py: Python<'_>) -> bool {
         // If state is None (never connected), not closed
-        let state = match state_guard.as_ref() {
-            Some(s) => s,
-            None => return false,
-        };
-
-        let runtime_guard = match self.runtime.lock() {
-            Ok(g) => g,
+        let inner = match self.state.lock() {
+            Ok(g) => match g.as_ref() {
+                Some(s) => Arc::clone(&s.inner),
+                None => return false,
+            },
             Err(_) => return false,
         };
 
-        if let Some(runtime) = runtime_guard.as_ref() {
-            runtime.block_on(async {
-                state.inner.is_closed().await
-            })
-        } else {
+        let runtime = match self.runtime.lock() {
+            Ok(g) => g.clone(),
+            Err(_) => return false,
+        };
+
+        match runtime {
+            Some(runtime) => block_on_detached(py, runtime, async move { inner.is_closed().await }),
             // If no runtime, use sync version
-            state.inner.is_closed_sync()
+            None => inner.is_closed_sync(),
         }
     }
 
@@ -1995,6 +1933,7 @@ impl FutOptWebSocketClient {
     #[pyo3(signature = (channel, symbol=None, *, symbols=None, after_hours=false))]
     pub fn subscribe(
         &self,
+        py: Python<'_>,
         channel: &Bound<'_, PyAny>,
         symbol: Option<&str>,
         symbols: Option<Vec<String>>,
@@ -2012,13 +1951,7 @@ impl FutOptWebSocketClient {
                 ));
             };
 
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         // Parse channel (FutOpt doesn't have indices channel)
         let ch = match channel_str.to_lowercase().as_str() {
@@ -2034,17 +1967,10 @@ impl FutOptWebSocketClient {
             }
         };
 
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
-
         let sub = marketdata_core::FutOptSubscription::new(ch, target_symbols)
             .with_after_hours(effective_after_hours);
-        let result = runtime.block_on(async { state.inner.subscribe_futopt(sub).await });
+        let result =
+            block_on_detached(py, runtime, async move { inner.subscribe_futopt(sub).await });
         result.map_err(errors::to_py_err)?;
 
         Ok(())
@@ -2057,6 +1983,7 @@ impl FutOptWebSocketClient {
     #[pyo3(signature = (subscription_id=None, *, ids=None))]
     pub fn unsubscribe(
         &self,
+        py: Python<'_>,
         subscription_id: Option<&Bound<'_, PyAny>>,
         ids: Option<Vec<String>>,
     ) -> PyResult<()> {
@@ -2074,23 +2001,10 @@ impl FutOptWebSocketClient {
             resolve_unsubscribe_args(None, ids)?
         };
 
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
-
-        let result = runtime.block_on(async { state.inner.unsubscribe(target_ids).await });
+        let result =
+            block_on_detached(py, runtime, async move { inner.unsubscribe(target_ids).await });
         result.map_err(errors::to_py_err)?;
 
         Ok(())
@@ -2150,23 +2064,11 @@ impl FutOptWebSocketClient {
     /// Raises:
     ///     RuntimeError: If not connected
     #[pyo3(signature = ())]
-    pub fn subscriptions(&self) -> PyResult<()> {
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
+    pub fn subscriptions(&self, py: Python<'_>) -> PyResult<()> {
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let request = marketdata_core::WebSocketRequest::subscriptions();
-        runtime
-            .block_on(async { state.inner.send(request).await })
+        block_on_detached(py, runtime, async move { inner.send(request).await })
             .map_err(errors::to_py_err)
     }
 
@@ -2178,23 +2080,11 @@ impl FutOptWebSocketClient {
     /// Raises:
     ///     RuntimeError: If not connected
     #[pyo3(signature = (state=None))]
-    pub fn ping(&self, state: Option<String>) -> PyResult<()> {
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let st = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-        let runtime_guard = self.runtime.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-        let runtime = runtime_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
+    pub fn ping(&self, py: Python<'_>, state: Option<String>) -> PyResult<()> {
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let request = marketdata_core::WebSocketRequest::ping(state);
-        runtime
-            .block_on(async { st.inner.send(request).await })
+        block_on_detached(py, runtime, async move { inner.send(request).await })
             .map_err(errors::to_py_err)
     }
 }

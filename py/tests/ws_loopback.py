@@ -6,11 +6,12 @@ from the client (masked) and to it (unmasked), ping/pong and close.
 
 The protocol mirrors ``js/tests/ws-worker.test.js``: ``auth`` is acked with
 ``authenticated``; ``subscribe`` is answered with ``subscribed`` plus one
-``data`` frame.
+``data`` frame. With ``flood`` it keeps sending ``data`` frames until the peer
+closes.
 
-The server runs in a child process: the blocking ``connect()`` holds the GIL
-while it waits for the handshake, so a server thread in the test process could
-never answer it (#39).
+``LoopbackServer`` runs the server in a child process; ``InProcessLoopbackServer``
+runs it on threads of the test process, which only works while the blocking
+client calls release the GIL (#39).
 """
 import base64
 import hashlib
@@ -21,6 +22,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 
 _GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -91,39 +93,75 @@ def _send_frame(conn, opcode, payload=b""):
 
 
 class _Server:
-    """Fugle-shaped WebSocket server on ``127.0.0.1`` with an ephemeral port.
+    """Fugle-shaped WebSocket server on ``127.0.0.1`` with an ephemeral port."""
 
-    Runs only inside the child process, whose exit reaps the daemon threads.
-    """
-
-    def __init__(self):
+    def __init__(self, flood=False):
+        self._flood = flood
+        self._stopped = threading.Event()
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen()
+        # A blocked accept() is not reliably woken by close(); poll instead.
+        self._listener.settimeout(0.1)
         self.port = self._listener.getsockname()[1]
 
     def start(self):
         threading.Thread(target=self._accept_loop, daemon=True).start()
 
+    def stop(self):
+        self._stopped.set()
+
     def _accept_loop(self):
-        while True:
-            conn, _ = self._listener.accept()
-            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+        with self._listener:
+            while not self._stopped.is_set():
+                try:
+                    conn, _ = self._listener.accept()
+                except socket.timeout:
+                    continue
+                conn.settimeout(None)
+                threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
 
     def _serve(self, conn):
+        send_lock = threading.Lock()
+        closed = threading.Event()
+
+        def send(opcode, payload=b""):
+            with send_lock:
+                _send_frame(conn, opcode, payload)
+
         try:
             _handshake(conn)
-            while True:
+            while not self._stopped.is_set():
                 opcode, payload = _read_frame(conn)
                 if opcode == OP_TEXT:
-                    for reply in self._replies(json.loads(payload)):
-                        _send_frame(conn, OP_TEXT, json.dumps(reply).encode())
+                    frame = json.loads(payload)
+                    for reply in self._replies(frame):
+                        send(OP_TEXT, json.dumps(reply).encode())
+                    if self._flood and frame.get("event") == "subscribe":
+                        threading.Thread(
+                            target=self._flood_data, args=(send, closed, frame), daemon=True
+                        ).start()
                 elif opcode == OP_PING:
-                    _send_frame(conn, OP_PONG, payload)
+                    send(OP_PONG, payload)
                 elif opcode == OP_CLOSE:
-                    _send_frame(conn, OP_CLOSE, payload[:2])
+                    closed.set()
+                    send(OP_CLOSE, payload[:2])
                     return
         except (ConnectionError, OSError, ValueError):
+            return
+        finally:
+            closed.set()
+            conn.close()
+
+    def _flood_data(self, send, closed, frame):
+        reply = self._replies(frame)[-1]
+        payload = json.dumps(reply).encode()
+        try:
+            while not closed.is_set() and not self._stopped.is_set():
+                send(OP_TEXT, payload)
+                # Unpaced, the client stops delivering after ~900 frames (#46).
+                time.sleep(0.001)
+        except OSError:
             return
 
     @staticmethod
@@ -148,13 +186,17 @@ class LoopbackServer:
     ``url`` is the ``base_url`` to hand the client.
     """
 
-    def __init__(self):
+    def __init__(self, flood=False):
+        self._flood = flood
         self._proc = None
         self.url = None
 
     def __enter__(self):
+        args = [sys.executable, os.path.abspath(__file__)]
+        if self._flood:
+            args.append("--flood")
         self._proc = subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__)],
+            args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
@@ -177,8 +219,23 @@ class LoopbackServer:
         self._proc.stdout.close()
 
 
+class InProcessLoopbackServer:
+    """Run ``_Server`` on threads of this process for a ``with`` block."""
+
+    def __init__(self, flood=False):
+        self._server = _Server(flood=flood)
+        self.url = f"ws://127.0.0.1:{self._server.port}"
+
+    def __enter__(self):
+        self._server.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._server.stop()
+
+
 if __name__ == "__main__":
-    server = _Server()
+    server = _Server(flood="--flood" in sys.argv[1:])
     server.start()
     print(server.port, flush=True)
     sys.stdin.read()
