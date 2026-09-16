@@ -35,6 +35,37 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### 0.9.0-rc.1 — REST responses pass through verbatim (#10)
+
+The typed response models leave the return path. They were on it as a
+lossy intermediary: a field they did not declare was silently dropped
+(`Quote` was missing `referencePrice` and `serial`), and a field they did
+declare but the server omitted was materialised with a default. See
+`MIGRATION-0.9.md`.
+
+- `~` every `*RequestBuilder::send` in `rest::**` (32 of them) — now returns
+  `Result<serde_json::Value, MarketDataError>` instead of its own response
+  model. The server's body reaches the caller untouched.
+- `~` `rest::stock::intraday::TickersRequestBuilder::send` and its futopt
+  counterpart — previously `Vec<Ticker>` / `Vec<FutOptTicker>`, unwrapped
+  from the response envelope. The envelope is now returned whole; the array
+  is under `data`. This also restores parity with the official SDK, which
+  never unwrapped it.
+- `+` `models::Quote::reference_price` — the basis the exchange computes
+  `change`, `change_percent` and the limit prices from. Not `previous_close`,
+  which differs whenever the reference is adjusted.
+- `+` `models::Quote::serial` — the quote's own sequence number, distinct
+  from `last_trade.serial`.
+- `+` `models::WebSocketMessage::raw` — the frame exactly as received.
+  Bindings hand this to the caller instead of re-serializing the routing
+  struct, which dropped unknown fields and emitted `null` for absent ones.
+
+`models` stays public and is unchanged apart from the two added `Quote`
+fields: Rust callers who want static types can `serde_json::from_value`.
+`core/tests/model_fidelity.rs` now decodes a recorded response into a model
+and asserts every field survives the round trip, so the gap that motivated
+this change cannot reopen silently.
+
 ### 0.8.0-rc.1 (cont.) — ureq 3, HTTP client removed from the public API
 
 - `-` `impl From<ureq::Error> for MarketDataError` — exposed the HTTP client's
