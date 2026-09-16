@@ -79,6 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   api-dev).
 - **All languages**: `stock.snapshot.{quotes,movers,actives}` percent-encode
   the `market` path segment, as every other path param already was.
+- **Node**: calling WebSocket `connect()` again on a client that was already
+  connected or still connecting started a second connection sharing
+  `isConnected` and the listeners, so events fired twice and `disconnect()`
+  stopped only one of them. It now rejects with `[2011] Already connected`.
+  Reconnecting after `disconnect()`, from a `disconnect` handler once no
+  auto-reconnect follows, or after a failed auth still works, and `isClosed`
+  turns back to false on the new connection (#44).
 
 - Intraday `quote` / `ticker` / `candles` / `trades` / `volumes` sent
   `oddLot=true`, which the server ignores, so odd-lot requests silently

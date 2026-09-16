@@ -1964,7 +1964,8 @@ export declare class FutOptWebSocketClient {
    * Connect to the FutOpt WebSocket server.
    *
    * Returns a Promise that resolves when authentication completes.
-   * See `StockWebSocketClient::connect` for the rationale and example.
+   * See `StockWebSocketClient::connect` for the rationale, example, and the
+   * `[2011] Already connected` rejection (#44).
    */
   connect(): Promise<void>
   /**
@@ -2007,10 +2008,9 @@ export declare class FutOptWebSocketClient {
    * Check if client has been closed
    *
    * Returns true once the connection has closed: after disconnect(), or
-   * after the server or network ended it with no reconnect left.
-   * Create a new instance rather than reconnecting a closed client. Note
-   * that calling connect() again is not blocked today, and isClosed stays
-   * true on the new connection (#44).
+   * after the server or network ended it with no reconnect left. A closed
+   * client can connect() again; isClosed turns false once the new
+   * connection starts.
    */
   get isClosed(): boolean
 }
@@ -2396,6 +2396,11 @@ export declare class StockWebSocketClient {
    * On rejection, the Promise carries the underlying error message. The
    * `connect` event callback also fires after the Promise resolves, so
    * existing callback-style code keeps working.
+   *
+   * Rejects with `[2011] Already connected` while a connection is open or
+   * being established (#44). Call disconnect() first to reconnect; calling
+   * connect() right after disconnect(), or from a `disconnect` handler once
+   * no auto-reconnect will follow, is fine.
    */
   connect(): Promise<void>
   /**
@@ -2440,10 +2445,9 @@ export declare class StockWebSocketClient {
    * Check if client has been closed
    *
    * Returns true once the connection has closed: after disconnect(), or
-   * after the server or network ended it with no reconnect left.
-   * Create a new instance rather than reconnecting a closed client. Note
-   * that calling connect() again is not blocked today, and isClosed stays
-   * true on the new connection (#44).
+   * after the server or network ended it with no reconnect left. A closed
+   * client can connect() again; isClosed turns false once the new
+   * connection starts.
    */
   get isClosed(): boolean
 }

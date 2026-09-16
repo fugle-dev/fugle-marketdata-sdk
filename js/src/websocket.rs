@@ -274,6 +274,87 @@ enum WsCommand {
     Disconnect,
 }
 
+/// Rejection for `connect()` while a connection is open or still being
+/// established (#44). JS-binding-only code; core has no counterpart.
+const ALREADY_CONNECTED: &str = "[2011] Already connected; call disconnect() first";
+
+/// The worker thread that owns a client's connection (#44).
+struct Worker {
+    tx: std::sync::mpsc::Sender<WsCommand>,
+    handle: thread::JoinHandle<()>,
+    /// Set once the connection is on its way out for good: `disconnect()` was
+    /// called, authentication failed, or core stopped with no reconnect left.
+    /// Always set *before* the JS side can observe the end (a `disconnect` /
+    /// `error` callback, a rejected `connect()`), so calling `connect()` from
+    /// there is accepted rather than racing the worker's exit.
+    ending: Arc<AtomicBool>,
+}
+
+/// A client's current worker, shared by every `ws.stock` / `ws.futopt` wrapper.
+type WorkerSlot = Arc<Mutex<Option<Worker>>>;
+
+/// Make room in `slot` for a new worker.
+///
+/// Rejects while the current worker is connecting or connected. A worker
+/// that is ending (or already gone) is taken out and its handle returned: the
+/// new worker joins it before connecting, so the old worker's final writes
+/// to the shared `connected` / `closed` flags cannot land on the new
+/// connection.
+fn claim_worker_slot(
+    slot: &mut Option<Worker>,
+) -> napi::Result<Option<thread::JoinHandle<()>>> {
+    match slot.take() {
+        None => Ok(None),
+        Some(worker)
+            if worker.ending.load(Ordering::SeqCst) || worker.handle.is_finished() =>
+        {
+            Ok(Some(worker.handle))
+        }
+        Some(worker) => {
+            *slot = Some(worker);
+            Err(napi::Error::from_reason(ALREADY_CONNECTED))
+        }
+    }
+}
+
+/// Queue `command` for the running worker.
+fn send_command(slot: &WorkerSlot, command: WsCommand, name: &str) -> napi::Result<()> {
+    let guard = slot
+        .lock()
+        .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
+    let worker = guard
+        .as_ref()
+        .ok_or_else(|| napi::Error::from_reason("Not connected. Call connect() first."))?;
+    worker
+        .tx
+        .send(command)
+        .map_err(|_| napi::Error::from_reason(format!("Failed to send {} command", name)))
+}
+
+/// Mark the worker as ending and ask it to disconnect; no-op without one.
+fn request_disconnect(slot: &WorkerSlot) -> napi::Result<()> {
+    let guard = slot
+        .lock()
+        .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
+    if let Some(worker) = guard.as_ref() {
+        worker.ending.store(true, Ordering::SeqCst);
+        let _ = worker.tx.send(WsCommand::Disconnect);
+    }
+    Ok(())
+}
+
+/// Whether core will stop for good after this disconnect instead of
+/// reconnecting — mirrors the dispatch loop's own decision.
+fn is_final_disconnect(
+    reconnect_config: &marketdata_core::ReconnectionConfig,
+    code: Option<u16>,
+    intent: Option<&marketdata_core::DisconnectIntent>,
+) -> bool {
+    matches!(intent, Some(marketdata_core::DisconnectIntent::Client))
+        || !marketdata_core::websocket::ReconnectionManager::new(reconnect_config.clone())
+            .should_reconnect(code)
+}
+
 /// Callback storage for event handlers
 #[derive(Default)]
 struct EventCallbacks {
@@ -319,11 +400,11 @@ pub struct WebSocketClient {
     stock_callbacks: Arc<Mutex<EventCallbacks>>,
     stock_connected: Arc<AtomicBool>,
     stock_closed: Arc<AtomicBool>,
-    stock_command_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<WsCommand>>>>,
+    stock_worker: WorkerSlot,
     futopt_callbacks: Arc<Mutex<EventCallbacks>>,
     futopt_connected: Arc<AtomicBool>,
     futopt_closed: Arc<AtomicBool>,
-    futopt_command_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<WsCommand>>>>,
+    futopt_worker: WorkerSlot,
 }
 
 #[napi]
@@ -470,11 +551,11 @@ impl WebSocketClient {
             stock_callbacks: Arc::new(Mutex::new(EventCallbacks::default())),
             stock_connected: Arc::new(AtomicBool::new(false)),
             stock_closed: Arc::new(AtomicBool::new(false)),
-            stock_command_tx: Arc::new(Mutex::new(None)),
+            stock_worker: Arc::new(Mutex::new(None)),
             futopt_callbacks: Arc::new(Mutex::new(EventCallbacks::default())),
             futopt_connected: Arc::new(AtomicBool::new(false)),
             futopt_closed: Arc::new(AtomicBool::new(false)),
-            futopt_command_tx: Arc::new(Mutex::new(None)),
+            futopt_worker: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -496,7 +577,7 @@ impl WebSocketClient {
             Arc::clone(&self.stock_callbacks),
             Arc::clone(&self.stock_connected),
             Arc::clone(&self.stock_closed),
-            Arc::clone(&self.stock_command_tx),
+            Arc::clone(&self.stock_worker),
         )
     }
 
@@ -516,7 +597,7 @@ impl WebSocketClient {
             Arc::clone(&self.futopt_callbacks),
             Arc::clone(&self.futopt_connected),
             Arc::clone(&self.futopt_closed),
-            Arc::clone(&self.futopt_command_tx),
+            Arc::clone(&self.futopt_worker),
         )
     }
 }
@@ -555,7 +636,7 @@ pub struct StockWebSocketClient {
     callbacks: Arc<Mutex<EventCallbacks>>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
-    command_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<WsCommand>>>>,
+    worker: WorkerSlot,
 }
 
 #[napi]
@@ -575,7 +656,7 @@ impl StockWebSocketClient {
         callbacks: Arc<Mutex<EventCallbacks>>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
-        command_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<WsCommand>>>>,
+        worker: WorkerSlot,
     ) -> Self {
         Self {
             api_key,
@@ -588,7 +669,7 @@ impl StockWebSocketClient {
             callbacks,
             connected,
             closed,
-            command_tx,
+            worker,
         }
     }
 
@@ -645,6 +726,11 @@ impl StockWebSocketClient {
     /// On rejection, the Promise carries the underlying error message. The
     /// `connect` event callback also fires after the Promise resolves, so
     /// existing callback-style code keeps working.
+    ///
+    /// Rejects with `[2011] Already connected` while a connection is open or
+    /// being established (#44). Call disconnect() first to reconnect; calling
+    /// connect() right after disconnect(), or from a `disconnect` handler once
+    /// no auto-reconnect will follow, is fine.
     #[napi(ts_return_type = "Promise<void>")]
     pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
         auth_promise(env, self.start_worker(env))
@@ -652,17 +738,15 @@ impl StockWebSocketClient {
 
     /// Spawn the worker thread; the receiver fires once it has authenticated.
     fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+        // Held until the new worker is stored, so concurrent connect() calls
+        // cannot both claim the slot (#44).
+        let mut slot = self.worker.lock().map_err(|e| {
+            napi::Error::from_reason(format!("Lock error: {}", e))
+        })?;
+        let previous = claim_worker_slot(&mut slot)?;
         let keep_alive = loop_keep_alive(env)?;
-        // Create command channel
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
-
-        // Store command sender
-        {
-            let mut tx_guard = self.command_tx.lock().map_err(|e| {
-                napi::Error::from_reason(format!("Lock error: {}", e))
-            })?;
-            *tx_guard = Some(cmd_tx);
-        }
+        let ending = Arc::new(AtomicBool::new(false));
 
         // Oneshot channel for auth completion signal back to the awaiting Promise.
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
@@ -678,9 +762,10 @@ impl StockWebSocketClient {
         let callbacks = Arc::clone(&self.callbacks);
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
+        let ending_for_worker = Arc::clone(&ending);
 
         // Spawn worker thread that owns WebSocketClient
-        thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("stock_ws_worker".to_string())
             .spawn(move || {
                 use marketdata_core::aio::WebSocketClient as CoreClient;
@@ -688,6 +773,14 @@ impl StockWebSocketClient {
                 use marketdata_core::AuthRequest;
                 use marketdata_core::models::Channel;
                 use marketdata_core::websocket::channels::StockSubscription;
+
+                let ending = ending_for_worker;
+                // A connection being reused: let the previous worker finish
+                // its teardown before this one touches the shared flags.
+                if let Some(previous) = previous {
+                    let _ = previous.join();
+                }
+                closed.store(false, Ordering::SeqCst);
 
                 // Create tokio runtime
                 // Multi-thread runtime so core's dispatch/writer/health-check
@@ -704,6 +797,7 @@ impl StockWebSocketClient {
                     Ok(rt) => rt,
                     Err(e) => {
                         let msg = format!("Failed to create runtime: {}", e);
+                        ending.store(true, Ordering::SeqCst);
                         let _ = auth_tx.send(Err(msg.clone()));
                         fire_callback(&callbacks, &keep_alive, "error", msg);
                         return;
@@ -724,7 +818,7 @@ impl StockWebSocketClient {
                     ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
                 });
                 config.tls = tls_config;
-                let client = CoreClient::with_full_config(config, reconnect_config, health_check_config);
+                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
 
                 // Connect (core's connect().await returns once authenticated)
                 let connect_result = rt.block_on(async {
@@ -733,6 +827,7 @@ impl StockWebSocketClient {
 
                 if let Err(e) = connect_result {
                     let msg = format!("[{}] {}", e.to_error_code(), e);
+                    ending.store(true, Ordering::SeqCst);
                     let _ = auth_tx.send(Err(msg.clone()));
                     fire_callback(&callbacks, &keep_alive, "error", msg);
                     return;
@@ -755,8 +850,10 @@ impl StockWebSocketClient {
                 let dispatch_ended = Arc::new(AtomicBool::new(false));
                 let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
                 let keep_alive_for_events = Arc::clone(&keep_alive);
+                let ending_for_events = Arc::clone(&ending);
                 std::thread::spawn(move || {
                     let keep_alive = keep_alive_for_events;
+                    let ending = ending_for_events;
                     loop {
                         let event = {
                             let rx = events.blocking_lock();
@@ -772,10 +869,14 @@ impl StockWebSocketClient {
                                     ConnectionEvent::Error { message, code } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
                                     }
-                                    ConnectionEvent::Disconnected { code, reason, intent: _ } => {
+                                    ConnectionEvent::Disconnected { code, reason, intent } => {
+                                        if is_final_disconnect(&reconnect_config, code, Some(&intent)) {
+                                            ending.store(true, Ordering::SeqCst);
+                                        }
                                         fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
+                                        ending.store(true, Ordering::SeqCst);
                                         fire_callback(&callbacks_for_events, &keep_alive, "error", format!("Reconnection failed after {} attempts", attempts));
                                         // Core's dispatch task has ended for good.
                                         dispatch_ended_for_events.store(true, Ordering::SeqCst);
@@ -787,6 +888,9 @@ impl StockWebSocketClient {
                                         fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
                                     }
                                     ConnectionEvent::HeartbeatTimeout { elapsed } => {
+                                        if is_final_disconnect(&reconnect_config, None, None) {
+                                            ending.store(true, Ordering::SeqCst);
+                                        }
                                         // Reuse "disconnect" callback with synthesized reason
                                         fire_callback(&callbacks_for_events, &keep_alive, "disconnect",
                                             format!("{{\"code\":null,\"reason\":\"Heartbeat timeout after {:?}\"}}", elapsed));
@@ -881,9 +985,11 @@ impl StockWebSocketClient {
                         }
                     }
                 }
+                ending.store(true, Ordering::SeqCst);
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
+        *slot = Some(Worker { tx: cmd_tx, handle, ending });
         Ok(auth_rx)
     }
 
@@ -932,22 +1038,11 @@ impl StockWebSocketClient {
 
         let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool());
 
-        let tx_guard = self.command_tx.lock().map_err(|e| {
-            napi::Error::from_reason(format!("Lock error: {}", e))
-        })?;
-
-        let tx = tx_guard.as_ref().ok_or_else(|| {
-            napi::Error::from_reason("Not connected. Call connect() first.")
-        })?;
-
-        tx.send(WsCommand::Subscribe {
+        send_command(&self.worker, WsCommand::Subscribe {
             channel: channel_str.to_string(),
             symbols: target_symbols,
             extra: odd_lot,
-        })
-        .map_err(|_| napi::Error::from_reason("Failed to send subscribe command"))?;
-
-        Ok(())
+        }, "subscribe")
     }
 
     /// Unsubscribe from a channel
@@ -992,18 +1087,7 @@ impl StockWebSocketClient {
             }
         };
 
-        let tx_guard = self.command_tx.lock().map_err(|e| {
-            napi::Error::from_reason(format!("Lock error: {}", e))
-        })?;
-
-        let tx = tx_guard.as_ref().ok_or_else(|| {
-            napi::Error::from_reason("Not connected. Call connect() first.")
-        })?;
-
-        tx.send(WsCommand::Unsubscribe { ids: target_ids })
-            .map_err(|_| napi::Error::from_reason("Failed to send unsubscribe command"))?;
-
-        Ok(())
+        send_command(&self.worker, WsCommand::Unsubscribe { ids: target_ids }, "unsubscribe")
     }
 
     /// Send a `ping` frame to the server.
@@ -1015,16 +1099,7 @@ impl StockWebSocketClient {
     /// @param state - Optional state string echoed back in the server's pong reply
     #[napi]
     pub fn ping(&self, state: Option<String>) -> napi::Result<()> {
-        let tx_guard = self
-            .command_tx
-            .lock()
-            .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
-        let tx = tx_guard
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("Not connected. Call connect() first."))?;
-        tx.send(WsCommand::Ping { state })
-            .map_err(|_| napi::Error::from_reason("Failed to send ping command"))?;
-        Ok(())
+        send_command(&self.worker, WsCommand::Ping { state }, "ping")
     }
 
     /// Ask the server for its current subscription list.
@@ -1034,30 +1109,13 @@ impl StockWebSocketClient {
     /// `@fugle/marketdata` Node SDK semantics.
     #[napi]
     pub fn subscriptions(&self) -> napi::Result<()> {
-        let tx_guard = self
-            .command_tx
-            .lock()
-            .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
-        let tx = tx_guard
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("Not connected. Call connect() first."))?;
-        tx.send(WsCommand::QuerySubscriptions)
-            .map_err(|_| napi::Error::from_reason("Failed to send subscriptions command"))?;
-        Ok(())
+        send_command(&self.worker, WsCommand::QuerySubscriptions, "subscriptions")
     }
 
     /// Disconnect from the WebSocket server
     #[napi]
     pub fn disconnect(&self) -> napi::Result<()> {
-        let tx_guard = self.command_tx.lock().map_err(|e| {
-            napi::Error::from_reason(format!("Lock error: {}", e))
-        })?;
-
-        if let Some(ref tx) = *tx_guard {
-            let _ = tx.send(WsCommand::Disconnect);
-        }
-
-        Ok(())
+        request_disconnect(&self.worker)
     }
 
     /// Check if connected
@@ -1069,10 +1127,9 @@ impl StockWebSocketClient {
     /// Check if client has been closed
     ///
     /// Returns true once the connection has closed: after disconnect(), or
-    /// after the server or network ended it with no reconnect left.
-    /// Create a new instance rather than reconnecting a closed client. Note
-    /// that calling connect() again is not blocked today, and isClosed stays
-    /// true on the new connection (#44).
+    /// after the server or network ended it with no reconnect left. A closed
+    /// client can connect() again; isClosed turns false once the new
+    /// connection starts.
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
@@ -1110,7 +1167,7 @@ pub struct FutOptWebSocketClient {
     callbacks: Arc<Mutex<EventCallbacks>>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
-    command_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<WsCommand>>>>,
+    worker: WorkerSlot,
 }
 
 #[napi]
@@ -1128,7 +1185,7 @@ impl FutOptWebSocketClient {
         callbacks: Arc<Mutex<EventCallbacks>>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
-        command_tx: Arc<Mutex<Option<std::sync::mpsc::Sender<WsCommand>>>>,
+        worker: WorkerSlot,
     ) -> Self {
         Self {
             api_key,
@@ -1141,7 +1198,7 @@ impl FutOptWebSocketClient {
             callbacks,
             connected,
             closed,
-            command_tx,
+            worker,
         }
     }
 
@@ -1180,7 +1237,8 @@ impl FutOptWebSocketClient {
     /// Connect to the FutOpt WebSocket server.
     ///
     /// Returns a Promise that resolves when authentication completes.
-    /// See `StockWebSocketClient::connect` for the rationale and example.
+    /// See `StockWebSocketClient::connect` for the rationale, example, and the
+    /// `[2011] Already connected` rejection (#44).
     #[napi(ts_return_type = "Promise<void>")]
     pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
         auth_promise(env, self.start_worker(env))
@@ -1188,15 +1246,15 @@ impl FutOptWebSocketClient {
 
     /// Spawn the worker thread; the receiver fires once it has authenticated.
     fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+        // Held until the new worker is stored, so concurrent connect() calls
+        // cannot both claim the slot (#44).
+        let mut slot = self.worker.lock().map_err(|e| {
+            napi::Error::from_reason(format!("Lock error: {}", e))
+        })?;
+        let previous = claim_worker_slot(&mut slot)?;
         let keep_alive = loop_keep_alive(env)?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
-
-        {
-            let mut tx_guard = self.command_tx.lock().map_err(|e| {
-                napi::Error::from_reason(format!("Lock error: {}", e))
-            })?;
-            *tx_guard = Some(cmd_tx);
-        }
+        let ending = Arc::new(AtomicBool::new(false));
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
 
@@ -1210,8 +1268,9 @@ impl FutOptWebSocketClient {
         let callbacks = Arc::clone(&self.callbacks);
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
+        let ending_for_worker = Arc::clone(&ending);
 
-        thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("futopt_ws_worker".to_string())
             .spawn(move || {
                 use marketdata_core::aio::WebSocketClient as CoreClient;
@@ -1219,6 +1278,14 @@ impl FutOptWebSocketClient {
                 use marketdata_core::AuthRequest;
                 use marketdata_core::models::futopt::FutOptChannel;
                 use marketdata_core::websocket::channels::FutOptSubscription;
+
+                let ending = ending_for_worker;
+                // A connection being reused: let the previous worker finish
+                // its teardown before this one touches the shared flags.
+                if let Some(previous) = previous {
+                    let _ = previous.join();
+                }
+                closed.store(false, Ordering::SeqCst);
 
                 // Multi-thread runtime so core's dispatch/writer/health-check
                 // tasks keep running while the worker loop blocks on std::mpsc
@@ -1234,6 +1301,7 @@ impl FutOptWebSocketClient {
                     Ok(rt) => rt,
                     Err(e) => {
                         let msg = format!("Failed to create runtime: {}", e);
+                        ending.store(true, Ordering::SeqCst);
                         let _ = auth_tx.send(Err(msg.clone()));
                         fire_callback(&callbacks, &keep_alive, "error", msg);
                         return;
@@ -1253,7 +1321,7 @@ impl FutOptWebSocketClient {
                     ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
                 });
                 config.tls = tls_config;
-                let client = CoreClient::with_full_config(config, reconnect_config, health_check_config);
+                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
 
                 let connect_result = rt.block_on(async {
                     client.connect().await
@@ -1261,6 +1329,7 @@ impl FutOptWebSocketClient {
 
                 if let Err(e) = connect_result {
                     let msg = format!("[{}] {}", e.to_error_code(), e);
+                    ending.store(true, Ordering::SeqCst);
                     let _ = auth_tx.send(Err(msg.clone()));
                     fire_callback(&callbacks, &keep_alive, "error", msg);
                     return;
@@ -1281,8 +1350,10 @@ impl FutOptWebSocketClient {
                 let dispatch_ended = Arc::new(AtomicBool::new(false));
                 let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
                 let keep_alive_for_events = Arc::clone(&keep_alive);
+                let ending_for_events = Arc::clone(&ending);
                 std::thread::spawn(move || {
                     let keep_alive = keep_alive_for_events;
+                    let ending = ending_for_events;
                     loop {
                         let event = {
                             let rx = events.blocking_lock();
@@ -1298,10 +1369,14 @@ impl FutOptWebSocketClient {
                                     ConnectionEvent::Error { message, code } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
                                     }
-                                    ConnectionEvent::Disconnected { code, reason, intent: _ } => {
+                                    ConnectionEvent::Disconnected { code, reason, intent } => {
+                                        if is_final_disconnect(&reconnect_config, code, Some(&intent)) {
+                                            ending.store(true, Ordering::SeqCst);
+                                        }
                                         fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
                                     ConnectionEvent::ReconnectFailed { attempts } => {
+                                        ending.store(true, Ordering::SeqCst);
                                         fire_callback(&callbacks_for_events, &keep_alive, "error", format!("Reconnection failed after {} attempts", attempts));
                                         // Core's dispatch task has ended for good.
                                         dispatch_ended_for_events.store(true, Ordering::SeqCst);
@@ -1313,6 +1388,9 @@ impl FutOptWebSocketClient {
                                         fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
                                     }
                                     ConnectionEvent::HeartbeatTimeout { elapsed } => {
+                                        if is_final_disconnect(&reconnect_config, None, None) {
+                                            ending.store(true, Ordering::SeqCst);
+                                        }
                                         // Reuse "disconnect" callback with synthesized reason
                                         fire_callback(&callbacks_for_events, &keep_alive, "disconnect",
                                             format!("{{\"code\":null,\"reason\":\"Heartbeat timeout after {:?}\"}}", elapsed));
@@ -1406,9 +1484,11 @@ impl FutOptWebSocketClient {
                         }
                     }
                 }
+                ending.store(true, Ordering::SeqCst);
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
+        *slot = Some(Worker { tx: cmd_tx, handle, ending });
         Ok(auth_rx)
     }
 
@@ -1456,22 +1536,11 @@ impl FutOptWebSocketClient {
 
         let after_hours = options.get("afterHours").and_then(|v| v.as_bool());
 
-        let tx_guard = self.command_tx.lock().map_err(|e| {
-            napi::Error::from_reason(format!("Lock error: {}", e))
-        })?;
-
-        let tx = tx_guard.as_ref().ok_or_else(|| {
-            napi::Error::from_reason("Not connected. Call connect() first.")
-        })?;
-
-        tx.send(WsCommand::Subscribe {
+        send_command(&self.worker, WsCommand::Subscribe {
             channel: channel_str.to_string(),
             symbols: target_symbols,
             extra: after_hours,
-        })
-        .map_err(|_| napi::Error::from_reason("Failed to send subscribe command"))?;
-
-        Ok(())
+        }, "subscribe")
     }
 
     /// Unsubscribe from a channel
@@ -1513,18 +1582,7 @@ impl FutOptWebSocketClient {
             }
         };
 
-        let tx_guard = self.command_tx.lock().map_err(|e| {
-            napi::Error::from_reason(format!("Lock error: {}", e))
-        })?;
-
-        let tx = tx_guard.as_ref().ok_or_else(|| {
-            napi::Error::from_reason("Not connected. Call connect() first.")
-        })?;
-
-        tx.send(WsCommand::Unsubscribe { ids: target_ids })
-            .map_err(|_| napi::Error::from_reason("Failed to send unsubscribe command"))?;
-
-        Ok(())
+        send_command(&self.worker, WsCommand::Unsubscribe { ids: target_ids }, "unsubscribe")
     }
 
     /// Send a `ping` frame to the server.
@@ -1536,16 +1594,7 @@ impl FutOptWebSocketClient {
     /// @param state - Optional state string echoed back in the server's pong reply
     #[napi]
     pub fn ping(&self, state: Option<String>) -> napi::Result<()> {
-        let tx_guard = self
-            .command_tx
-            .lock()
-            .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
-        let tx = tx_guard
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("Not connected. Call connect() first."))?;
-        tx.send(WsCommand::Ping { state })
-            .map_err(|_| napi::Error::from_reason("Failed to send ping command"))?;
-        Ok(())
+        send_command(&self.worker, WsCommand::Ping { state }, "ping")
     }
 
     /// Ask the server for its current subscription list.
@@ -1555,30 +1604,13 @@ impl FutOptWebSocketClient {
     /// `@fugle/marketdata` Node SDK semantics.
     #[napi]
     pub fn subscriptions(&self) -> napi::Result<()> {
-        let tx_guard = self
-            .command_tx
-            .lock()
-            .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
-        let tx = tx_guard
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("Not connected. Call connect() first."))?;
-        tx.send(WsCommand::QuerySubscriptions)
-            .map_err(|_| napi::Error::from_reason("Failed to send subscriptions command"))?;
-        Ok(())
+        send_command(&self.worker, WsCommand::QuerySubscriptions, "subscriptions")
     }
 
     /// Disconnect from the WebSocket server
     #[napi]
     pub fn disconnect(&self) -> napi::Result<()> {
-        let tx_guard = self.command_tx.lock().map_err(|e| {
-            napi::Error::from_reason(format!("Lock error: {}", e))
-        })?;
-
-        if let Some(ref tx) = *tx_guard {
-            let _ = tx.send(WsCommand::Disconnect);
-        }
-
-        Ok(())
+        request_disconnect(&self.worker)
     }
 
     /// Check if connected
@@ -1590,10 +1622,9 @@ impl FutOptWebSocketClient {
     /// Check if client has been closed
     ///
     /// Returns true once the connection has closed: after disconnect(), or
-    /// after the server or network ended it with no reconnect left.
-    /// Create a new instance rather than reconnecting a closed client. Note
-    /// that calling connect() again is not blocked today, and isClosed stays
-    /// true on the new connection (#44).
+    /// after the server or network ended it with no reconnect left. A closed
+    /// client can connect() again; isClosed turns false once the new
+    /// connection starts.
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
