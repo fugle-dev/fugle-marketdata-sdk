@@ -89,6 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Core**: `aio::WebSocketClient::state()` and `is_closed_sync()` no longer
+  panic with `Cannot start a runtime from within a runtime` when called on a
+  tokio runtime thread, and no longer report a fake `Disconnected` /
+  not-closed when called outside a runtime. They now read the state directly
+  from any thread (#33).
 - **All languages**: REST query values are form-urlencoded, in the typed
   builders and in the Node object form alike. A value was interpolated into
   the URL as-is, so one carrying `&`, `=`, `#`, `+` or a space split into

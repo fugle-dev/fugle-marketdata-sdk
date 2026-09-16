@@ -23,3 +23,27 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 pub(crate) type WsSink = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 /// WebSocket read half (tokio-tungstenite split stream).
 pub(crate) type WsStream = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+
+/// Connection state shared by the client and its background tasks.
+///
+/// A plain `std` lock, not a tokio one: every critical section is a single
+/// read or assignment, and the synchronous getters (`state()`,
+/// `is_closed_sync()`) must work on and off a runtime thread without
+/// `block_on` (#33). Take guards through [`read_state`] / [`write_state`]
+/// in a block that does not `.await`.
+pub(crate) type SharedState = std::sync::Arc<std::sync::RwLock<crate::websocket::ConnectionState>>;
+
+/// Read guard on [`SharedState`]. A poisoned lock still yields the value:
+/// writers only assign, so it can never be left half-updated.
+pub(crate) fn read_state(
+    state: &SharedState,
+) -> std::sync::RwLockReadGuard<'_, crate::websocket::ConnectionState> {
+    state.read().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Write guard on [`SharedState`]; see [`read_state`] for poisoning.
+pub(crate) fn write_state(
+    state: &SharedState,
+) -> std::sync::RwLockWriteGuard<'_, crate::websocket::ConnectionState> {
+    state.write().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
