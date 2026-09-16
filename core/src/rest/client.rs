@@ -317,10 +317,12 @@ impl RestClient {
             url.push('/');
             url.push_str(&super::encode_symbol(segment));
         }
-        for (i, (key, value)) in query.iter().enumerate() {
-            url.push(if i == 0 { '?' } else { '&' });
-            // Unlike the typed builders, the key here is caller-supplied too.
-            url.push_str(&super::query_pair(&super::encode_symbol(key.as_ref()), value.as_ref()));
+        if !query.is_empty() {
+            let query = url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(query.iter().map(|(k, v)| (k.as_ref(), v.as_ref())))
+                .finish();
+            url.push('?');
+            url.push_str(&query);
         }
         url
     }
@@ -760,7 +762,7 @@ mod tests {
         );
         assert_eq!(
             url,
-            "https://api.fugle.tw/marketdata/v1.0/futopt/intraday/quote/TXFC4%2FTXFD4?session=afterhours&a%20b=x%26y%3Dz"
+            "https://api.fugle.tw/marketdata/v1.0/futopt/intraday/quote/TXFC4%2FTXFD4?session=afterhours&a+b=x%26y%3Dz"
         );
     }
 

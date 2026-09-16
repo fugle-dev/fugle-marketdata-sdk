@@ -206,7 +206,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             url,
-            format!("{}/futopt/historical/candles/TXF?contractMonth=2!", client.get_base_url())
+            format!("{}/futopt/historical/candles/TXF?contractMonth=2%21", client.get_base_url())
         );
     }
 

@@ -59,12 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **All languages**: typed REST builders percent-encode every query value.
-  A value was interpolated into the URL as-is, so one carrying `&`, `=`,
-  `#`, `+` or a space split into extra params, was truncated, or made the
-  URL invalid — e.g. `industry = "24&type=ETF"` overrode `type`. Ordinary
-  values are unaffected; a comma is now sent as `%2C`, which the server
-  decodes (checked against api-dev).
+- **All languages**: REST query values are form-urlencoded, in the typed
+  builders and in the Node object form alike. A value was interpolated into
+  the URL as-is, so one carrying `&`, `=`, `#`, `+` or a space split into
+  extra params, was truncated, or made the URL invalid — e.g.
+  `industry = "24&type=ETF"` overrode `type`. Ordinary values are
+  unaffected; on the wire a comma is now `%2C`, a space `+` and `!` `%21`
+  (`contractMonth=1%21`), all of which the server decodes (checked against
+  api-dev).
 - **All languages**: `stock.snapshot.{quotes,movers,actives}` percent-encode
   the `market` path segment, as every other path param already was.
 

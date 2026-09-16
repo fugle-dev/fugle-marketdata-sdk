@@ -138,7 +138,7 @@ mod tests {
                 Some("2026-07-03+08"),
                 None,
             ),
-            "https://h/v1.0/stock/ownership/etf-holdings/0050?from=2026-06-01%2000%3A00&to=2026-07-03%2B08"
+            "https://h/v1.0/stock/ownership/etf-holdings/0050?from=2026-06-01+00%3A00&to=2026-07-03%2B08"
         );
     }
 }
