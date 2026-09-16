@@ -51,7 +51,13 @@ public class WebSocketBenchmark {
             public void onConnected() {}
 
             @Override
-            public void onDisconnected() {}
+            public void onAuthenticated(String dataJson) {}
+
+            @Override
+            public void onUnauthenticated(String dataJson) {}
+
+            @Override
+            public void onDisconnected(Boolean willReconnect) {}
 
             @Override
             @SuppressWarnings("unchecked")

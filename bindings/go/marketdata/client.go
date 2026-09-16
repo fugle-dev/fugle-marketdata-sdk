@@ -79,7 +79,8 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 //
 // Requires exactly one authentication option: WithApiKey, WithBearerToken, or WithSdkToken.
 //
-// The listener parameter receives WebSocket events (OnConnected, OnMessage, OnError, OnDisconnected).
+// The listener parameter receives WebSocket events (OnConnected, OnAuthenticated, OnUnauthenticated,
+// OnMessage, OnError, OnDisconnected, OnReconnecting, OnReconnectFailed).
 //
 // Example:
 //

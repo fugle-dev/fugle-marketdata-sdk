@@ -203,7 +203,9 @@ public class WebSocketClientTest {
     @DisplayName("WebSocketListener has required callback methods")
     void webSocketListenerHasMethods() throws NoSuchMethodException {
         assertNotNull(WebSocketListener.class.getMethod("onConnected"));
-        assertNotNull(WebSocketListener.class.getMethod("onDisconnected"));
+        assertNotNull(WebSocketListener.class.getMethod("onAuthenticated", String.class));
+        assertNotNull(WebSocketListener.class.getMethod("onUnauthenticated", String.class));
+        assertNotNull(WebSocketListener.class.getMethod("onDisconnected", Boolean.class));
         assertNotNull(WebSocketListener.class.getMethod("onMessage", StreamMessage.class));
         assertNotNull(WebSocketListener.class.getMethod("onError", String.class));
     }
@@ -233,7 +235,13 @@ public class WebSocketClientTest {
             public void onConnected() {}
 
             @Override
-            public void onDisconnected() {}
+            public void onAuthenticated(String dataJson) {}
+
+            @Override
+            public void onUnauthenticated(String dataJson) {}
+
+            @Override
+            public void onDisconnected(Boolean willReconnect) {}
 
             @Override
             public void onMessage(StreamMessage message) {}
@@ -287,7 +295,13 @@ public class WebSocketClientTest {
             public void onConnected() {}
 
             @Override
-            public void onDisconnected() {}
+            public void onAuthenticated(String dataJson) {}
+
+            @Override
+            public void onUnauthenticated(String dataJson) {}
+
+            @Override
+            public void onDisconnected(Boolean willReconnect) {}
 
             @Override
             public void onMessage(StreamMessage message) {}
@@ -414,8 +428,18 @@ public class WebSocketClientTest {
             }
 
             @Override
-            public void onDisconnected() {
-                System.out.println("Disconnected");
+            public void onAuthenticated(String dataJson) {
+                System.out.println("Authenticated");
+            }
+
+            @Override
+            public void onUnauthenticated(String dataJson) {
+                System.err.println("Rejected: " + dataJson);
+            }
+
+            @Override
+            public void onDisconnected(Boolean willReconnect) {
+                System.out.println("Disconnected (will reconnect: " + willReconnect + ")");
             }
 
             @Override

@@ -73,7 +73,9 @@ static double g_ss_mps = 0;
 class BenchListener : public WebSocketListener {
 public:
     void on_connected() override {}
-    void on_disconnected() override {}
+    void on_authenticated(std::optional<std::string>) override {}
+    void on_unauthenticated(std::optional<std::string>) override {}
+    void on_disconnected(bool) override {}
     void on_error(const std::string &msg) override {
         std::cerr << "error: " << msg << std::endl;
     }

@@ -130,7 +130,9 @@ interface UniffiLib extends Library {
     void uniffi_marketdata_uniffi_fn_free_websocketlistener(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_init_callback_vtable_websocketlistener(UniffiVTableCallbackInterfaceWebSocketListener vtable);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_connected(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
-    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
+    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(Pointer ptr, RustBuffer.ByValue dataJson, UniffiRustCallStatus uniffi_out_errmk);
+    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(Pointer ptr, RustBuffer.ByValue dataJson, UniffiRustCallStatus uniffi_out_errmk);
+    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(Pointer ptr, Byte willReconnect, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_message(Pointer ptr, RustBuffer.ByValue message, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(Pointer ptr, RustBuffer.ByValue errorMessage, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(Pointer ptr, Integer attempt, UniffiRustCallStatus uniffi_out_errmk);
@@ -294,6 +296,8 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();

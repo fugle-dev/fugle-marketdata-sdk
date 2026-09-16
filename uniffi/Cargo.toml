@@ -47,3 +47,5 @@ uniffi = { workspace = true, features = ["build"] }
 [dev-dependencies]
 # Testing utilities
 tokio = { workspace = true, features = ["macros"] }
+# In-process mock WebSocket server for lifecycle-event tests
+marketdata-core = { workspace = true, features = ["test-utils"] }

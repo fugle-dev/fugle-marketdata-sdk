@@ -200,9 +200,11 @@ type benchListener struct {
 	onErr func(string)
 }
 
-func (l *benchListener) OnConnected()                      {}
-func (l *benchListener) OnDisconnected()                   {}
+func (l *benchListener) OnConnected()                        {}
+func (l *benchListener) OnAuthenticated(dataJson *string)    {}
+func (l *benchListener) OnUnauthenticated(dataJson *string)  {}
+func (l *benchListener) OnDisconnected(willReconnect bool)   {}
 func (l *benchListener) OnMessage(message mkt.StreamMessage) { l.onMsg(message) }
-func (l *benchListener) OnError(errorMessage string)       { l.onErr(errorMessage) }
-func (l *benchListener) OnReconnecting(attempt uint32)     {}
-func (l *benchListener) OnReconnectFailed(attempts uint32) {}
+func (l *benchListener) OnError(errorMessage string)         { l.onErr(errorMessage) }
+func (l *benchListener) OnReconnecting(attempt uint32)       {}
+func (l *benchListener) OnReconnectFailed(attempts uint32)   {}

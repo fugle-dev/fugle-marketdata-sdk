@@ -23,8 +23,14 @@ import java.util.concurrent.CompletableFuture;
  * public void OnConnected() {
  * Console.WriteLine("Connected!");
  * }
- * public void OnDisconnected() {
- * Console.WriteLine("Disconnected");
+ * public void OnAuthenticated(string? dataJson) {
+ * Console.WriteLine("Authenticated");
+ * }
+ * public void OnUnauthenticated(string? dataJson) {
+ * Console.WriteLine($"Rejected: {dataJson}");
+ * }
+ * public void OnDisconnected(bool willReconnect) {
+ * Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
  * }
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -131,7 +137,9 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
 
   
     /**
-     * Called when WebSocket connection is established
+     * Called when the transport is established, before the server has
+     * answered the auth frame. Fires again on every successful reconnect.
+     * Wait for `on_authenticated` before treating the connection as usable.
      */
     @Override
     public void onConnected()  {
@@ -163,10 +171,86 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
 
   
     /**
-     * Called when WebSocket connection is closed
+     * Called when the server accepts the credentials.
+     *
+     * `data_json` is the `data` member of the server's `authenticated`
+     * frame, still encoded as JSON, or `None` when the frame has none.
      */
     @Override
-    public void onDisconnected()  {
+    public void onAuthenticated(String dataJson)  {
+            try {
+                
+    callWithPointer(it -> {
+        try {
+    
+    UniffiHelpers.uniffiRustCall( _status -> {
+        UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(
+            it, FfiConverterOptionalString.INSTANCE.lower(dataJson), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    ;
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
+     * Called when the server rejects the credentials. `connect()` also
+     * fails with an auth error; no `on_error` is emitted for the rejection.
+     *
+     * `data_json` is the `data` member of the server's rejection frame
+     * (the server's message is under `message`), still encoded as JSON, or
+     * `None` when the frame has none.
+     */
+    @Override
+    public void onUnauthenticated(String dataJson)  {
+            try {
+                
+    callWithPointer(it -> {
+        try {
+    
+    UniffiHelpers.uniffiRustCall( _status -> {
+        UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(
+            it, FfiConverterOptionalString.INSTANCE.lower(dataJson), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    ;
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
+     * Called when the connection is closed, at most once per connection.
+     *
+     * `will_reconnect` is `true` when the client will try to reconnect
+     * (`on_reconnecting` follows unless `disconnect()` is called first) and
+     * `false` when this connection's lifecycle has ended.
+     */
+    @Override
+    public void onDisconnected(Boolean willReconnect)  {
             try {
                 
     callWithPointer(it -> {
@@ -174,7 +258,7 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
     
     UniffiHelpers.uniffiRustCall( _status -> {
         UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(
-            it, _status);
+            it, FfiConverterBoolean.INSTANCE.lower(willReconnect), _status);
     });
     
         } catch (Exception e) {
@@ -291,7 +375,8 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
 
   
     /**
-     * Called when all reconnection attempts are exhausted
+     * Called when all reconnection attempts are exhausted. Terminal: no
+     * further lifecycle callbacks follow for this connection.
      */
     @Override
     public void onReconnectFailed(Integer attempts)  {

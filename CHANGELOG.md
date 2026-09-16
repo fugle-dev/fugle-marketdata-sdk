@@ -103,6 +103,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   none — instead of `{"event": "authenticated"}` and the rejection message
   string (#56). See
   [MIGRATION-0.9.md](MIGRATION-0.9.md#9-python-connection-callbacks).
+- **C#, Go, C++, Java**: the WebSocket listener mirrors core's connection
+  events (#57). Listener implementations must add the new methods; see
+  [MIGRATION-0.9.md](MIGRATION-0.9.md#10-c-go-c-java-websocket-listener).
+  - New `on_authenticated(data_json)` and `on_unauthenticated(data_json)`,
+    where `data_json` is the server frame's `data` as a JSON string, or
+    null / `None` when the frame has none. A credential rejection no longer
+    reaches `on_error` as `"Unauthenticated: ..."`.
+  - `on_disconnected()` becomes `on_disconnected(will_reconnect)`.
+  - `on_connected` fires when the transport is up, before authentication,
+    and again after every successful reconnect. Previously it fired once,
+    after `connect()` had authenticated. Wait for `on_authenticated` before
+    treating the connection as usable.
 
 > **Release order:** the `futopt/historical` changes below follow
 > fugle-realtime #727. Publish this release only after #727 is live in
@@ -176,6 +188,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   futopt were both affected (#13).
 - **Python**: the synchronous `connect()` on stock and futopt panicked the same
   way before connecting. `connect_async()` was unaffected.
+- **C#, Go, C++, Java**: `on_disconnected` fired twice for one close — once
+  from the binding itself and once from core's event — both on `disconnect()`
+  and when the connection was lost. It now fires once per connection. A rejected `connect()` delivers its events: the binding only
+  started forwarding them after a successful connect (#57).
+- **Go**: `StreamingClient` closed `Messages()` / `Errors()` on the first
+  disconnect even when the client was about to reconnect, ending a
+  `range` loop mid-session. The channels now close on the final disconnect or
+  after reconnection gives up. Closing them while a callback was sending no
+  longer panics with `send on closed channel` (#57).
 - **Node**: a single `disconnect()` fired the `disconnect` event three times
   (`{"code":0,"reason":"Server initiated close"}`, `"disconnected"`,
   `{"code":1000,"reason":"Normal closure"}`). It now fires once, with the
