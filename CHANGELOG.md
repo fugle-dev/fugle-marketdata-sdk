@@ -85,7 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stopped only one of them. It now rejects with `[2011] Already connected`.
   Reconnecting after `disconnect()`, from a `disconnect` handler once no
   auto-reconnect follows, or after a failed auth still works, and `isClosed`
-  turns back to false on the new connection (#44).
+  turns back to false on the new connection. A `connect()` that is still
+  authenticating when `disconnect()` is called now rejects with
+  `[2010] Connection aborted` and fires no `connect` event, instead of
+  resolving and connecting anyway (#44).
 
 - Intraday `quote` / `ticker` / `candles` / `trades` / `volumes` sent
   `oddLot=true`, which the server ignores, so odd-lot requests silently

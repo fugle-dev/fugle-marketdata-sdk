@@ -278,6 +278,11 @@ enum WsCommand {
 /// established (#44). JS-binding-only code; core has no counterpart.
 const ALREADY_CONNECTED: &str = "[2011] Already connected; call disconnect() first";
 
+/// Rejection for a `connect()` whose connection was given up because
+/// `disconnect()` was called before authentication completed (#44).
+const CONNECT_ABORTED: &str =
+    "[2010] Connection aborted: disconnect() called before authentication completed";
+
 /// The worker thread that owns a client's connection (#44).
 struct Worker {
     tx: std::sync::mpsc::Sender<WsCommand>,
@@ -776,7 +781,10 @@ impl StockWebSocketClient {
 
                 let ending = ending_for_worker;
                 // A connection being reused: let the previous worker finish
-                // its teardown before this one touches the shared flags.
+                // its teardown before this one touches the shared flags. Only
+                // the worker is joined, not its event thread, so the old
+                // connection's `disconnect` callback may still arrive after
+                // this connection's `connect`.
                 if let Some(previous) = previous {
                     let _ = previous.join();
                 }
@@ -830,6 +838,18 @@ impl StockWebSocketClient {
                     ending.store(true, Ordering::SeqCst);
                     let _ = auth_tx.send(Err(msg.clone()));
                     fire_callback(&callbacks, &keep_alive, "error", msg);
+                    return;
+                }
+
+                // disconnect() arrived while authenticating, and connect() may
+                // already have started a newer worker that is joining this
+                // one: abandon the connection instead of reporting success
+                // (#44). A disconnect() landing after this check is handled
+                // by the main loop like any other.
+                if ending.load(Ordering::SeqCst) {
+                    let _ = rt.block_on(client.disconnect());
+                    closed.store(true, Ordering::SeqCst);
+                    let _ = auth_tx.send(Err(CONNECT_ABORTED.to_string()));
                     return;
                 }
 
@@ -1281,7 +1301,10 @@ impl FutOptWebSocketClient {
 
                 let ending = ending_for_worker;
                 // A connection being reused: let the previous worker finish
-                // its teardown before this one touches the shared flags.
+                // its teardown before this one touches the shared flags. Only
+                // the worker is joined, not its event thread, so the old
+                // connection's `disconnect` callback may still arrive after
+                // this connection's `connect`.
                 if let Some(previous) = previous {
                     let _ = previous.join();
                 }
@@ -1332,6 +1355,18 @@ impl FutOptWebSocketClient {
                     ending.store(true, Ordering::SeqCst);
                     let _ = auth_tx.send(Err(msg.clone()));
                     fire_callback(&callbacks, &keep_alive, "error", msg);
+                    return;
+                }
+
+                // disconnect() arrived while authenticating, and connect() may
+                // already have started a newer worker that is joining this
+                // one: abandon the connection instead of reporting success
+                // (#44). A disconnect() landing after this check is handled
+                // by the main loop like any other.
+                if ending.load(Ordering::SeqCst) {
+                    let _ = rt.block_on(client.disconnect());
+                    closed.store(true, Ordering::SeqCst);
+                    let _ = auth_tx.send(Err(CONNECT_ABORTED.to_string()));
                     return;
                 }
 

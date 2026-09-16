@@ -11,13 +11,15 @@ const { WebSocketClient } = require('../');
 
 /**
  * Loopback server that acks auth and answers `subscribe` with `subscribed`
- * plus one `data` frame. The first `failAuth` auth attempts are rejected.
+ * plus one `data` frame. The first `failAuth` auth attempts are rejected;
+ * the first `slowAuth` are answered only after `authDelayMs`.
  */
-function startServer({ failAuth = 0 } = {}) {
+function startServer({ failAuth = 0, slowAuth = 0, authDelayMs = 300 } = {}) {
   return new Promise((resolve) => {
     const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
     wss.accepted = 0;
     let authFailuresLeft = failAuth;
+    let slowAuthsLeft = slowAuth;
     wss.on('connection', (socket) => {
       wss.accepted += 1;
       socket.on('message', (raw) => {
@@ -29,7 +31,13 @@ function startServer({ failAuth = 0 } = {}) {
               socket.send(JSON.stringify({ event: 'error', data: { message: 'Invalid API key' } }));
               socket.close(4001, 'unauthorized');
             } else {
-              socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
+              const ack = () => socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
+              if (slowAuthsLeft > 0) {
+                slowAuthsLeft -= 1;
+                setTimeout(() => socket.readyState === socket.OPEN && ack(), authDelayMs);
+              } else {
+                ack();
+              }
             }
             break;
           case 'subscribe': {
@@ -160,6 +168,51 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     expect(ws.isConnected).toBe(true);
     expect(ws.isClosed).toBe(false);
     expect(wss.accepted).toBe(2);
+  });
+
+  test('disconnect() before connect() resolves aborts that connect()', async () => {
+    await setup({ slowAuth: 1 });
+    const connects = [];
+    ws.on('connect', () => connects.push(Date.now()));
+
+    const pending = ws.connect();
+    ws.disconnect();
+
+    await expect(pending).rejects.toThrow('[2010] Connection aborted');
+    await sleep(200);
+    expect(connects).toHaveLength(0);
+    expect(ws.isConnected).toBe(false);
+    expect(ws.isClosed).toBe(true);
+    await waitFor(() => openSockets(wss) === 0, 'aborted socket to close');
+  });
+
+  test('connect() after disconnect() while still authenticating: only the new connect() resolves', async () => {
+    await setup({ slowAuth: 1 });
+    const connects = [];
+    const data = [];
+    ws.on('connect', () => connects.push(Date.now()));
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw);
+      if (msg.event === 'data') data.push(msg);
+    });
+
+    const abandoned = ws.connect();
+    ws.disconnect();
+    const current = ws.connect();
+
+    await expect(abandoned).rejects.toThrow('[2010] Connection aborted');
+    await current;
+
+    expect(connects).toHaveLength(1);
+    expect(ws.isConnected).toBe(true);
+    expect(ws.isClosed).toBe(false);
+    expect(wss.accepted).toBe(2);
+    await waitFor(() => openSockets(wss) === 1, 'abandoned socket to close');
+
+    ws.subscribe(subscription);
+    await waitFor(() => data.length > 0, 'data frame');
+    await sleep(300);
+    expect(data).toHaveLength(1);
   });
 
   test('connect() retried after an auth failure is not rejected as already connected', async () => {
