@@ -1813,7 +1813,7 @@ export declare class FutOptHistoricalClient {
    * @param afterHours - Include after-hours data
    * @returns Promise resolving to historical candles data
    */
-  candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean): Promise<FutOptHistoricalCandlesResponse>
+  candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, afterHours?: boolean | undefined | null): Promise<FutOptHistoricalCandlesResponse>
   /**
    * Get daily historical data for a futures/options contract
    *
@@ -1823,7 +1823,7 @@ export declare class FutOptHistoricalClient {
    * @param afterHours - Include after-hours data
    * @returns Promise resolving to daily historical data
    */
-  daily(symbol: string | RestFutOptHistoricalDailyParams, from?: string, to?: string, afterHours?: boolean): Promise<FutOptDailyResponse>
+  daily(symbol: string | RestFutOptHistoricalDailyParams, from?: string | undefined | null, to?: string | undefined | null, afterHours?: boolean | undefined | null): Promise<FutOptDailyResponse>
 }
 
 /** FutOpt intraday data client */
@@ -1857,7 +1857,7 @@ export declare class FutOptIntradayClient {
    * @param timeframe - Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)
    * @returns Promise resolving to Candles response with OHLCV data
    */
-  candles(symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string): Promise<CandlesResponse>
+  candles(symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string | undefined | null): Promise<CandlesResponse>
   /**
    * Get intraday trades for a futures/options contract
    *
@@ -1881,7 +1881,7 @@ export declare class FutOptIntradayClient {
    * @param contractType - Optional contract type code: "I" / "R" / "B" / "C" / "S" / "E"
    * @returns Promise resolving to an array of FutOpt ticker info objects
    */
-  tickers(type: FutOptType | RestFutOptIntradayTickersParams, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean): Promise<FutOptTickersResponse>
+  tickers(type: FutOptType | RestFutOptIntradayTickersParams, exchange?: string | undefined | null, afterHours?: boolean | undefined | null, contractType?: ContractType | undefined | null, isSpread?: boolean | undefined | null): Promise<FutOptTickersResponse>
   /**
    * Get product list for futures/options
    *
@@ -1889,7 +1889,7 @@ export declare class FutOptIntradayClient {
    * @param contractType - Contract type filter (optional): "I" (index), "R" (rate), "B" (bond), "C" (currency), "S" (stock), "E" (ETF)
    * @returns Promise resolving to Products response with available contracts
    */
-  products(type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType): Promise<ProductsResponse>
+  products(type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType | undefined | null): Promise<ProductsResponse>
 }
 
 /**
@@ -2057,7 +2057,7 @@ export declare class StockCorporateActionsClient {
    * @param endDate - End date for range query (YYYY-MM-DD)
    * @returns Promise resolving to capital changes data
    */
-  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string): Promise<CapitalChangesResponse>
+  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null): Promise<CapitalChangesResponse>
   /**
    * Get dividend announcements
    *
@@ -2066,7 +2066,7 @@ export declare class StockCorporateActionsClient {
    * @param endDate - End date for range query (YYYY-MM-DD)
    * @returns Promise resolving to dividends data
    */
-  dividends(date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string): Promise<DividendsResponse>
+  dividends(date?: string | RestStockCorporateActionsDividendsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null): Promise<DividendsResponse>
   /**
    * Get IPO listing applicants
    *
@@ -2075,7 +2075,7 @@ export declare class StockCorporateActionsClient {
    * @param endDate - End date for range query (YYYY-MM-DD)
    * @returns Promise resolving to listing applicants data
    */
-  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string): Promise<ListingApplicantsResponse>
+  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null): Promise<ListingApplicantsResponse>
 }
 
 /** Stock historical data client */
@@ -2089,7 +2089,7 @@ export declare class StockHistoricalClient {
    * @param timeframe - Timeframe ("D", "W", "M", "1", "5", etc.)
    * @returns Promise resolving to historical candles data
    */
-  candles(symbol: string | RestStockHistoricalCandlesParams, from?: string, to?: string, timeframe?: string): Promise<HistoricalCandlesResponse>
+  candles(symbol: string | RestStockHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null): Promise<HistoricalCandlesResponse>
   /**
    * Get historical stats for a stock symbol
    *
@@ -2116,7 +2116,7 @@ export declare class StockIntradayClient {
    * await client.stock.intraday.quote('2330', true);
    * ```
    */
-  quote(symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean): Promise<QuoteResponse>
+  quote(symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean | undefined | null): Promise<QuoteResponse>
   /**
    * Get intraday ticker for a stock symbol
    *
@@ -2131,7 +2131,7 @@ export declare class StockIntradayClient {
    * @param timeframe - Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)
    * @returns Promise resolving to Candles response with OHLCV data
    */
-  candles(symbol: string | RestStockIntradayCandlesParams, timeframe?: string): Promise<CandlesResponse>
+  candles(symbol: string | RestStockIntradayCandlesParams, timeframe?: string | undefined | null): Promise<CandlesResponse>
   /**
    * Get intraday trades for a stock symbol
    *
@@ -2156,7 +2156,7 @@ export declare class StockIntradayClient {
    * @param isNormal - Filter to normal-status tickers only
    * @returns Promise resolving to an array of ticker info objects
    */
-  tickers(type: string | RestStockIntradayTickersParams, exchange?: string, market?: string, industry?: string, isNormal?: boolean): Promise<TickersResponse>
+  tickers(type: string | RestStockIntradayTickersParams, exchange?: string | undefined | null, market?: string | undefined | null, industry?: string | undefined | null, isNormal?: boolean | undefined | null): Promise<TickersResponse>
 }
 
 /** Stock ownership data client */
@@ -2216,7 +2216,7 @@ export declare class StockSnapshotClient {
    * @param typeFilter - Optional type filter (e.g., "ALL", "COMMONSTOCK")
    * @returns Promise resolving to snapshot quotes data
    */
-  quotes(market: string | RestStockSnapshotQuotesParams, typeFilter?: string): Promise<SnapshotQuotesResponse>
+  quotes(market: string | RestStockSnapshotQuotesParams, typeFilter?: string | undefined | null): Promise<SnapshotQuotesResponse>
   /**
    * Get movers (top gainers/losers) for a market
    *
@@ -2225,7 +2225,7 @@ export declare class StockSnapshotClient {
    * @param change - Change type ("percent" or "value")
    * @returns Promise resolving to movers data
    */
-  movers(market: string | RestStockSnapshotMoversParams, direction?: string, change?: string): Promise<MoversResponse>
+  movers(market: string | RestStockSnapshotMoversParams, direction?: string | undefined | null, change?: string | undefined | null): Promise<MoversResponse>
   /**
    * Get most actively traded stocks for a market
    *
@@ -2233,7 +2233,7 @@ export declare class StockSnapshotClient {
    * @param trade - Trade type filter ("volume" or "value")
    * @returns Promise resolving to actives data
    */
-  actives(market: string | RestStockSnapshotActivesParams, trade?: string): Promise<ActivesResponse>
+  actives(market: string | RestStockSnapshotActivesParams, trade?: string | undefined | null): Promise<ActivesResponse>
 }
 
 /** Stock technical indicators client */
@@ -2248,7 +2248,7 @@ export declare class StockTechnicalClient {
    * @param period - SMA period (e.g., 20)
    * @returns Promise resolving to SMA data
    */
-  sma(symbol: string | RestStockTechnicalSmaParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<SmaResponse>
+  sma(symbol: string | RestStockTechnicalSmaParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null): Promise<SmaResponse>
   /**
    * Get RSI (Relative Strength Index) for a stock
    *
@@ -2259,7 +2259,7 @@ export declare class StockTechnicalClient {
    * @param period - RSI period (e.g., 14)
    * @returns Promise resolving to RSI data
    */
-  rsi(symbol: string | RestStockTechnicalRsiParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<RsiResponse>
+  rsi(symbol: string | RestStockTechnicalRsiParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null): Promise<RsiResponse>
   /**
    * Get KDJ (Stochastic Oscillator) for a stock
    *
@@ -2272,7 +2272,7 @@ export declare class StockTechnicalClient {
    * @param dPeriod - D smoothing period (e.g., 3)
    * @returns Promise resolving to KDJ data
    */
-  kdj(symbol: string | RestStockTechnicalKdjParams, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number): Promise<KdjResponse>
+  kdj(symbol: string | RestStockTechnicalKdjParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, rPeriod?: number | undefined | null, kPeriod?: number | undefined | null, dPeriod?: number | undefined | null): Promise<KdjResponse>
   /**
    * Get MACD (Moving Average Convergence Divergence) for a stock
    *
@@ -2285,7 +2285,7 @@ export declare class StockTechnicalClient {
    * @param signal - Signal line period (default: 9)
    * @returns Promise resolving to MACD data
    */
-  macd(symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>
+  macd(symbol: string | RestStockTechnicalMacdParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, fast?: number | undefined | null, slow?: number | undefined | null, signal?: number | undefined | null): Promise<MacdResponse>
   /**
    * Get Bollinger Bands for a stock
    *
@@ -2297,7 +2297,7 @@ export declare class StockTechnicalClient {
    * @param stddev - Standard deviation multiplier (default: 2.0)
    * @returns Promise resolving to Bollinger Bands data
    */
-  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number): Promise<BbResponse>
+  bb(symbol: string | RestStockTechnicalBbParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null, stddev?: number | undefined | null): Promise<BbResponse>
 }
 
 /**

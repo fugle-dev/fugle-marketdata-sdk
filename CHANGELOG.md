@@ -17,8 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gt`/`lt`, …) are reachable. Previously only `quote` and `ownership.*`
   accepted an object; every other method threw `Failed to convert JavaScript
   value`. `Rest*Params` types are exported for each method.
-- **Rust**: `RestClient::get_json(path, query)` sends a GET with an arbitrary
-  query string and returns the body as-is.
 
 ### Changed
 

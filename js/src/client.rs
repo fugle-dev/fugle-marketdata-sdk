@@ -530,7 +530,7 @@ impl StockIntradayClient {
     /// ```
     #[napi(
         ts_return_type = "Promise<QuoteResponse>",
-        ts_args_type = "symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean"
+        ts_args_type = "symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean | undefined | null"
     )]
     pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Value> {
         let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
@@ -602,7 +602,7 @@ impl StockIntradayClient {
     /// @returns Promise resolving to Candles response with OHLCV data
     #[napi(
         ts_return_type = "Promise<CandlesResponse>",
-        ts_args_type = "symbol: string | RestStockIntradayCandlesParams, timeframe?: string"
+        ts_args_type = "symbol: string | RestStockIntradayCandlesParams, timeframe?: string | undefined | null"
     )]
     pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Value> {
         let symbol = match RestArg::required(symbol, "symbol")? {
@@ -687,7 +687,7 @@ impl StockIntradayClient {
     /// @returns Promise resolving to an array of ticker info objects
     #[napi(
         ts_return_type = "Promise<TickersResponse>",
-        ts_args_type = "type: string | RestStockIntradayTickersParams, exchange?: string, market?: string, industry?: string, isNormal?: boolean"
+        ts_args_type = "type: string | RestStockIntradayTickersParams, exchange?: string | undefined | null, market?: string | undefined | null, industry?: string | undefined | null, isNormal?: boolean | undefined | null"
     )]
     pub async fn tickers(
         &self,
@@ -746,7 +746,7 @@ impl StockHistoricalClient {
     /// @returns Promise resolving to historical candles data
     #[napi(
         ts_return_type = "Promise<HistoricalCandlesResponse>",
-        ts_args_type = "symbol: string | RestStockHistoricalCandlesParams, from?: string, to?: string, timeframe?: string"
+        ts_args_type = "symbol: string | RestStockHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null"
     )]
     pub async fn candles(
         &self,
@@ -824,7 +824,7 @@ impl StockSnapshotClient {
     /// @returns Promise resolving to snapshot quotes data
     #[napi(
         ts_return_type = "Promise<SnapshotQuotesResponse>",
-        ts_args_type = "market: string | RestStockSnapshotQuotesParams, typeFilter?: string"
+        ts_args_type = "market: string | RestStockSnapshotQuotesParams, typeFilter?: string | undefined | null"
     )]
     pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<String>) -> napi::Result<Value> {
         let market = match RestArg::required(market, "market")? {
@@ -857,7 +857,7 @@ impl StockSnapshotClient {
     /// @returns Promise resolving to movers data
     #[napi(
         ts_return_type = "Promise<MoversResponse>",
-        ts_args_type = "market: string | RestStockSnapshotMoversParams, direction?: string, change?: string"
+        ts_args_type = "market: string | RestStockSnapshotMoversParams, direction?: string | undefined | null, change?: string | undefined | null"
     )]
     pub async fn movers(
         &self,
@@ -897,7 +897,7 @@ impl StockSnapshotClient {
     /// @returns Promise resolving to actives data
     #[napi(
         ts_return_type = "Promise<ActivesResponse>",
-        ts_args_type = "market: string | RestStockSnapshotActivesParams, trade?: string"
+        ts_args_type = "market: string | RestStockSnapshotActivesParams, trade?: string | undefined | null"
     )]
     pub async fn actives(&self, market: Option<RestArg>, trade: Option<String>) -> napi::Result<Value> {
         let market = match RestArg::required(market, "market")? {
@@ -941,7 +941,7 @@ impl StockTechnicalClient {
     /// @returns Promise resolving to SMA data
     #[napi(
         ts_return_type = "Promise<SmaResponse>",
-        ts_args_type = "symbol: string | RestStockTechnicalSmaParams, from?: string, to?: string, timeframe?: string, period?: number"
+        ts_args_type = "symbol: string | RestStockTechnicalSmaParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null"
     )]
     pub async fn sma(
         &self,
@@ -992,7 +992,7 @@ impl StockTechnicalClient {
     /// @returns Promise resolving to RSI data
     #[napi(
         ts_return_type = "Promise<RsiResponse>",
-        ts_args_type = "symbol: string | RestStockTechnicalRsiParams, from?: string, to?: string, timeframe?: string, period?: number"
+        ts_args_type = "symbol: string | RestStockTechnicalRsiParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null"
     )]
     pub async fn rsi(
         &self,
@@ -1045,7 +1045,7 @@ impl StockTechnicalClient {
     /// @returns Promise resolving to KDJ data
     #[napi(
         ts_return_type = "Promise<KdjResponse>",
-        ts_args_type = "symbol: string | RestStockTechnicalKdjParams, from?: string, to?: string, timeframe?: string, rPeriod?: number, kPeriod?: number, dPeriod?: number"
+        ts_args_type = "symbol: string | RestStockTechnicalKdjParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, rPeriod?: number | undefined | null, kPeriod?: number | undefined | null, dPeriod?: number | undefined | null"
     )]
     pub async fn kdj(
         &self,
@@ -1106,7 +1106,7 @@ impl StockTechnicalClient {
     /// @returns Promise resolving to MACD data
     #[napi(
         ts_return_type = "Promise<MacdResponse>",
-        ts_args_type = "symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number"
+        ts_args_type = "symbol: string | RestStockTechnicalMacdParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, fast?: number | undefined | null, slow?: number | undefined | null, signal?: number | undefined | null"
     )]
     pub async fn macd(
         &self,
@@ -1166,7 +1166,7 @@ impl StockTechnicalClient {
     /// @returns Promise resolving to Bollinger Bands data
     #[napi(
         ts_return_type = "Promise<BbResponse>",
-        ts_args_type = "symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number"
+        ts_args_type = "symbol: string | RestStockTechnicalBbParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null, stddev?: number | undefined | null"
     )]
     pub async fn bb(
         &self,
@@ -1228,7 +1228,7 @@ impl StockCorporateActionsClient {
     /// @returns Promise resolving to capital changes data
     #[napi(
         ts_return_type = "Promise<CapitalChangesResponse>",
-        ts_args_type = "date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string"
+        ts_args_type = "date?: string | RestStockCorporateActionsCapitalChangesParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null"
     )]
     pub async fn capital_changes(
         &self,
@@ -1273,7 +1273,7 @@ impl StockCorporateActionsClient {
     /// @returns Promise resolving to dividends data
     #[napi(
         ts_return_type = "Promise<DividendsResponse>",
-        ts_args_type = "date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string"
+        ts_args_type = "date?: string | RestStockCorporateActionsDividendsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null"
     )]
     pub async fn dividends(
         &self,
@@ -1318,7 +1318,7 @@ impl StockCorporateActionsClient {
     /// @returns Promise resolving to listing applicants data
     #[napi(
         ts_return_type = "Promise<ListingApplicantsResponse>",
-        ts_args_type = "date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string"
+        ts_args_type = "date?: string | RestStockCorporateActionsListingApplicantsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null"
     )]
     pub async fn listing_applicants(
         &self,
@@ -1454,7 +1454,7 @@ impl FutOptIntradayClient {
     /// @returns Promise resolving to Candles response with OHLCV data
     #[napi(
         ts_return_type = "Promise<CandlesResponse>",
-        ts_args_type = "symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string"
+        ts_args_type = "symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string | undefined | null"
     )]
     pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Value> {
         let symbol = match RestArg::required(symbol, "symbol")? {
@@ -1538,7 +1538,7 @@ impl FutOptIntradayClient {
     /// @returns Promise resolving to an array of FutOpt ticker info objects
     #[napi(
         ts_return_type = "Promise<FutOptTickersResponse>",
-        ts_args_type = "type: FutOptType | RestFutOptIntradayTickersParams, exchange?: string, afterHours?: boolean, contractType?: ContractType, isSpread?: boolean"
+        ts_args_type = "type: FutOptType | RestFutOptIntradayTickersParams, exchange?: string | undefined | null, afterHours?: boolean | undefined | null, contractType?: ContractType | undefined | null, isSpread?: boolean | undefined | null"
     )]
     pub async fn tickers(
         &self,
@@ -1618,7 +1618,7 @@ impl FutOptIntradayClient {
     /// @returns Promise resolving to Products response with available contracts
     #[napi(
         ts_return_type = "Promise<ProductsResponse>",
-        ts_args_type = "type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType"
+        ts_args_type = "type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType | undefined | null"
     )]
     pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<String>) -> napi::Result<Value> {
         let typ = match RestArg::required(typ, "type")? {
@@ -1694,7 +1694,7 @@ impl FutOptHistoricalClient {
     /// @returns Promise resolving to historical candles data
     #[napi(
         ts_return_type = "Promise<FutOptHistoricalCandlesResponse>",
-        ts_args_type = "symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean"
+        ts_args_type = "symbol: string | RestFutOptHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, afterHours?: boolean | undefined | null"
     )]
     pub async fn candles(
         &self,
@@ -1744,7 +1744,7 @@ impl FutOptHistoricalClient {
     /// @returns Promise resolving to daily historical data
     #[napi(
         ts_return_type = "Promise<FutOptDailyResponse>",
-        ts_args_type = "symbol: string | RestFutOptHistoricalDailyParams, from?: string, to?: string, afterHours?: boolean"
+        ts_args_type = "symbol: string | RestFutOptHistoricalDailyParams, from?: string | undefined | null, to?: string | undefined | null, afterHours?: boolean | undefined | null"
     )]
     #[allow(
         deprecated,

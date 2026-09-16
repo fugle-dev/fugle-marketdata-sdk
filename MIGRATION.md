@@ -186,6 +186,14 @@ const candles = await rest.stock.intraday.candles('2330', '5');
 The positional form only covers the most common params (for example,
 `trades` has no positional `limit`); use the object form for the rest.
 
+Two small differences from the legacy object form, neither of which the API
+distinguishes in practice:
+
+- A key set to `null` is dropped, like `undefined`. The legacy SDK sent it as
+  a bare key with no value (`?offset`).
+- Query params keep the order they appear in the object. The legacy SDK sorted
+  them alphabetically.
+
 #### 5. Auto-reconnect is opt-in (matches the legacy SDKs)
 
 The legacy SDKs do not have any auto-reconnect — when the WebSocket drops you
