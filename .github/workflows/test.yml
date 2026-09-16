@@ -115,6 +115,7 @@ jobs:
           pytest tests/test_rest_async.py -v -k "not integration"
           pytest tests/test_websocket_async.py -v -k "not integration"
           pytest tests/test_websocket_sync_loopback.py -v
+          pytest tests/test_websocket_events_loopback.py -v
           pytest tests/test_gil_safety.py -v
           pytest tests/test_ffi_boundary.py -v
 
