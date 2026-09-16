@@ -593,10 +593,6 @@ namespace FugleMarketData
     /// <summary>
     /// Stock ownership endpoints. Every method takes the same range arguments:
     /// <c>from</c> / <c>to</c> in YYYY-MM-DD and <c>sort</c> of "asc" or "desc".
-    /// The native library exports <c>*Sync</c> variants for these endpoints,
-    /// but the blocking methods here still run the async call on the thread
-    /// pool (avoiding deadlocks for callers that have a synchronization
-    /// context); switching them to the native sync calls is tracked separately.
     /// </summary>
     public sealed class StockOwnershipClient
     {
@@ -660,28 +656,28 @@ namespace FugleMarketData
         /// </summary>
         public string GetEtfHoldings(
             string symbol, string? from = null, string? to = null, string? sort = null)
-            => Task.Run(() => GetEtfHoldingsAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+            => _inner.EtfHoldingsSync(symbol, from, to, sort);
 
         /// <summary>
         /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (blocking).
         /// </summary>
         public string GetInstitutionalTrades(
             string symbol, string? from = null, string? to = null, string? sort = null)
-            => Task.Run(() => GetInstitutionalTradesAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+            => _inner.InstitutionalTradesSync(symbol, from, to, sort);
 
         /// <summary>
         /// Get monthly holdings and pledges disclosed by directors and supervisors (blocking).
         /// </summary>
         public string GetDirectorHoldings(
             string symbol, string? from = null, string? to = null, string? sort = null)
-            => Task.Run(() => GetDirectorHoldingsAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+            => _inner.DirectorHoldingsSync(symbol, from, to, sort);
 
         /// <summary>
         /// Get the weekly TDCC shareholder distribution by holding-size bracket (blocking).
         /// </summary>
         public string GetTdccDistribution(
             string symbol, string? from = null, string? to = null, string? sort = null)
-            => Task.Run(() => GetTdccDistributionAsync(symbol, from, to, sort)).GetAwaiter().GetResult();
+            => _inner.TdccDistributionSync(symbol, from, to, sort);
     }
 
     /// <summary>
