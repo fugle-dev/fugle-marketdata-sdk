@@ -4,7 +4,7 @@ use crate::metrics_compat::DropCounter;
 use crate::models::{WebSocketMessage};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{WsSink, WsStream};
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::connection_event::{emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, AuthOutcome,
 };
@@ -88,6 +88,7 @@ pub(crate) async fn try_reconnect(
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     subscriptions: Arc<SubscriptionManager>,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
+    disconnect_latch: Arc<DisconnectLatch>,
 ) -> Option<WsStream> {
     // Check if we should attempt reconnection
     let should_reconnect = {
@@ -163,6 +164,9 @@ pub(crate) async fn try_reconnect(
                 .await
                 {
                     Ok((new_sink, ws_read)) => {
+                        // New connection: it may report its own close.
+                        disconnect_latch.reset();
+
                         // Store the new write half
                         {
                             let mut sink_guard = ws_sink.lock().await;

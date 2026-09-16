@@ -5,7 +5,7 @@ use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{WsSink, WsStream};
-use crate::websocket::connection_event::emit_event;
+use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
     frame_auth, frame_request, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
     frame_unsubscribe,
@@ -76,6 +76,9 @@ pub struct WebSocketClient {
     /// looping back into the reconnect path after the next dispatch
     /// return. Cleared on construction.
     shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
+    /// Ensures a single `Disconnected` per connection when the dispatch
+    /// task and a caller-initiated close observe the same close (#41).
+    disconnect_latch: Arc<DisconnectLatch>,
     // Internal handles
     dispatch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -173,6 +176,7 @@ impl WebSocketClient {
             messages_dropped,
             events_dropped,
             shutdown_requested: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            disconnect_latch: Arc::new(DisconnectLatch::default()),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
             pending_bridge: Arc::new(std::sync::Mutex::new(None)),
@@ -578,6 +582,7 @@ impl WebSocketClient {
                     let mut state = self.state.write().await;
                     *state = ConnectionState::Connected;
                 }
+                self.disconnect_latch.reset();
                 crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Authenticated {
                 });
@@ -640,9 +645,12 @@ impl WebSocketClient {
     /// timeout the dispatch and writer tasks are forcibly aborted and
     /// the connection is force-closed.
     ///
-    /// The emitted [`ConnectionEvent::Disconnected`] always carries
+    /// The emitted [`ConnectionEvent::Disconnected`] carries
     /// [`DisconnectIntent::Client`] regardless of whether the drain
-    /// completed in time.
+    /// completed in time. It is emitted at most once per connection: if the
+    /// connection was already reported lost (a server Close or transport
+    /// error, including one racing this call) or this client was already
+    /// disconnected, no further `Disconnected` is emitted.
     ///
     /// # Errors
     ///
@@ -734,12 +742,16 @@ impl WebSocketClient {
             };
         }
 
-        // 8. Emit the Client-intent Disconnected event.
-        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1000),
-            reason: "Normal closure".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        // 8. Emit the Client-intent Disconnected event, unless the dispatch
+        //    task already reported this connection's close (#41).
+        emit_disconnected(
+            &self.event_tx,
+            &self.events_dropped,
+            &self.disconnect_latch,
+            Some(1000),
+            "Normal closure".to_string(),
+            DisconnectIntent::Client,
+        );
 
         close_result
     }
@@ -807,6 +819,10 @@ impl WebSocketClient {
     ///
     /// Use when graceful close is not possible or times out.
     ///
+    /// Like [`disconnect`](Self::disconnect), emits
+    /// [`ConnectionEvent::Disconnected`] only if this connection has not
+    /// already reported one.
+    ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
     /// validation, or peer-initiated failures.
@@ -851,11 +867,14 @@ impl WebSocketClient {
             };
         }
 
-        emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Disconnected {
-            code: Some(1006),
-            reason: "Force closed".to_string(),
-            intent: DisconnectIntent::Client,
-        });
+        emit_disconnected(
+            &self.event_tx,
+            &self.events_dropped,
+            &self.disconnect_latch,
+            Some(1006),
+            "Force closed".to_string(),
+            DisconnectIntent::Client,
+        );
 
         Ok(())
     }
@@ -1117,6 +1136,7 @@ impl WebSocketClient {
         let messages_dropped = self.messages_dropped.clone();
         let events_dropped = self.events_dropped.clone();
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
+        let disconnect_latch = Arc::clone(&self.disconnect_latch);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -1131,6 +1151,7 @@ impl WebSocketClient {
                     Arc::clone(&subscriptions),
                     messages_dropped.clone(),
                     Arc::clone(&shutdown_requested),
+                    Arc::clone(&disconnect_latch),
                 )
                 .await;
 
@@ -1159,6 +1180,7 @@ impl WebSocketClient {
                     Arc::clone(&writer_handle),
                     Arc::clone(&subscriptions),
                     message_tx.clone(),
+                    Arc::clone(&disconnect_latch),
                 )
                 .await
                 {

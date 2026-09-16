@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context. It can be called from any thread, before or after `connect()`; the
   message bridge now runs on the runtime that ran `connect()` instead of
   panicking with `there is no reactor running` (#26).
+- **All languages**: a WebSocket connection emits `Disconnected` (the
+  `disconnect` callback in the bindings) at most once. A server Close or
+  transport error that raced `disconnect()` could emit it twice, once with
+  `Server` / `Network` intent and once with `Client`. As a consequence,
+  `disconnect()` / `force_close()` on a connection already reported lost, or
+  a second `disconnect()`, no longer emits another `Disconnected`; the state
+  still becomes `Closed`. A successful reconnect starts a new connection that
+  reports its own close (#41).
 
 ### Breaking
 
