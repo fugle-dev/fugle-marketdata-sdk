@@ -5,7 +5,7 @@ RFC 6455 for the SDK client: the opening handshake, unfragmented text frames
 from the client (masked) and to it (unmasked), ping/pong and close.
 
 The protocol mirrors ``js/tests/ws-worker.test.js``: ``auth`` is acked with
-``authenticated``; ``subscribe`` is answered with ``subscribed`` plus one
+``authenticated``, or answered with ``error`` for ``REJECTED_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
 ``data`` frame. With ``flood`` it keeps sending ``data`` frames until the peer
 closes.
 
@@ -25,6 +25,9 @@ import threading
 import time
 
 _GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+# ``auth`` with this API key is rejected the way the Fugle server does it.
+REJECTED_API_KEY = "rejected-key"
 
 OP_TEXT = 0x1
 OP_CLOSE = 0x8
@@ -168,6 +171,8 @@ class _Server:
     def _replies(frame):
         event = frame.get("event")
         if event == "auth":
+            if (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
+                return [{"event": "error", "data": {"message": "Invalid authentication credentials"}}]
             return [{"event": "authenticated", "data": {"message": "Authenticated successfully"}}]
         if event == "subscribe":
             data = frame.get("data") or {}
