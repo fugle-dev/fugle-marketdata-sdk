@@ -353,12 +353,14 @@ impl WebSocketClient {
     /// same cached `Arc<MessageReceiver>`.
     ///
     /// Does not require a tokio runtime context: it may be called from any
-    /// thread, before or after [`connect`]. The bridge runs on the runtime
-    /// that ran [`connect`]; if `connect` has not run yet, it runs on the
-    /// caller's ambient runtime when there is one, otherwise it starts when
-    /// `connect` is called. No messages arrive before `connect` either way.
-    /// If the bound runtime has since been dropped, the receiver reports a
-    /// closed channel.
+    /// thread, before or after [`connect`]. The bridge is spawned once, on
+    /// the first runtime available to it: the runtime of an earlier
+    /// [`connect`] if there was one, else the caller's ambient runtime, else
+    /// (called outside any runtime before `connect`) the runtime of the next
+    /// `connect`. It then stays on that runtime — a later `connect` on a
+    /// different runtime does not move it. No messages arrive before
+    /// `connect` either way. If that runtime has been dropped, the receiver
+    /// reports a closed channel.
     ///
     /// **Mutually exclusive with [`message_stream`]**: only one of the two
     /// methods may take ownership of the underlying tokio receiver. Calling
