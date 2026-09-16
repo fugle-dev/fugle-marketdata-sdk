@@ -198,6 +198,33 @@ jobs:
       - name: Check package metadata
         run: pipx run twine check --strict dist/*
 
+      # Runs in a rehearsal too. The publish action below mints its own token
+      # internally, so guarding it with dry_run would skip the OIDC exchange
+      # and leave a misconfigured trusted publisher undetected until the real
+      # release — which is exactly how a wrong repository owner slipped
+      # through on crates.io. Minting a token has no side effects; it is
+      # short-lived and discarded here.
+      - name: Verify trusted publisher (OIDC)
+        env:
+          EXPECTED: fugle-dev/fugle-marketdata-sdk
+        run: |
+          OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=pypi" | jq -r '.value')
+          [[ -n "$OIDC" && "$OIDC" != "null" ]] || {
+            echo "::error::Could not obtain a GitHub OIDC token"; exit 1; }
+
+          RESP=$(curl -sS -X POST https://pypi.org/_/oidc/mint-token \
+            -d "{\"token\": \"$OIDC\"}")
+          TOKEN=$(jq -r '.token // empty' <<<"$RESP")
+          if [[ -z "$TOKEN" ]]; then
+            echo "::error::PyPI rejected the OIDC token. Check the trusted publisher for \
+          $EXPECTED: workflow must be 'release.yml' and environment 'release'."
+            jq -r '.message // .' <<<"$RESP"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "Trusted publisher accepted for $EXPECTED." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish
         if: needs.resolve.outputs.dry_run != 'true'
         uses: pypa/gh-action-pypi-publish@v1.14.2
