@@ -13,17 +13,19 @@ import time
 import pytest
 
 from fugle_marketdata import WebSocketError
-from tests.test_websocket_events_loopback import (
-    PRODUCTS,
+from tests.ws_loopback import (
     TIMEOUT_S,
+    LoopbackServer,
     Recorder,
-    _disconnect_quietly,
-    _product_ws,
-    hard_timeout,
+    disconnect_quietly,
+    product_ws,
 )
-from tests.ws_loopback import LoopbackServer
+
+PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
 
 PANIC_ENV = "FUGLE_MARKETDATA_TEST_PANIC"
+
+hard_timeout = pytest.mark.timeout(20, method="thread")
 
 
 @pytest.fixture
@@ -46,7 +48,7 @@ def _assert_panic_error(recorder, thread):
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_event_thread_panic_fires_error(server, product, monkeypatch):
     monkeypatch.setenv(PANIC_ENV, "ws_events")
-    ws = _product_ws(server.url, product)
+    ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     try:
         ws.connect()
@@ -54,7 +56,7 @@ def test_event_thread_panic_fires_error(server, product, monkeypatch):
         _assert_panic_error(recorder, "event")
     finally:
         started = time.monotonic()
-        _disconnect_quietly(ws)
+        disconnect_quietly(ws)
         # The panicked event thread has already ended; joining it must not hang.
         assert time.monotonic() - started < TIMEOUT_S
 
@@ -63,7 +65,7 @@ def test_event_thread_panic_fires_error(server, product, monkeypatch):
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_message_thread_panic_fires_error(server, product, monkeypatch):
     monkeypatch.setenv(PANIC_ENV, "ws_messages")
-    ws = _product_ws(server.url, product)
+    ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     ws.on("message", lambda msg: None)
     try:
@@ -72,14 +74,14 @@ def test_message_thread_panic_fires_error(server, product, monkeypatch):
         _assert_panic_error(recorder, "message")
     finally:
         started = time.monotonic()
-        _disconnect_quietly(ws)
+        disconnect_quietly(ws)
         assert time.monotonic() - started < TIMEOUT_S
 
 
 @hard_timeout
 async def test_connect_async_message_thread_panic_fires_error(server, monkeypatch):
     monkeypatch.setenv(PANIC_ENV, "ws_messages")
-    ws = _product_ws(server.url, "stock")
+    ws = product_ws(server.url, "stock")
     recorder = Recorder(ws)
     ws.on("message", lambda msg: None)
     await ws.connect_async()
