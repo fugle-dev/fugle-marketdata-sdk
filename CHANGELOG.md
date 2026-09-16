@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `product` replaces `symbol`, `session` / `contractMonth` are added, candle
   prices are optional (the `fields` param selects them), and daily rows are
   per contract month with `openPrice` / `highPrice` / … / `volumeSpread`.
+  `FutOptDailyResponse::highest_high()` and `lowest_low()` are removed: with
+  one row per contract month they no longer describe a single series.
   The Node `.d.ts` types change the same way.
 - **All languages**: `stock.technical.kdj()` takes `rPeriod` / `kPeriod` /
   `dPeriod` (Python `r_period` / `k_period` / `d_period`) in place of
