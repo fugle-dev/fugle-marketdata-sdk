@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Node**: the WebSocket worker thread panicked right after `connect()`
+  resolved (`there is no reactor running`), so no `message` ever arrived and a
+  later `subscribe()` threw `Failed to send subscribe command`. Stock and
+  futopt were both affected (#13).
+- **Python**: the synchronous `connect()` on stock and futopt panicked the same
+  way before connecting. `connect_async()` was unaffected.
 - Long JSON decimals could decode to the neighbouring double, so a value
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its
