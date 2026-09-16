@@ -111,6 +111,44 @@ jobs:
           [[ "$FOUND" == "$EXPECTED" ]] || { echo "::error::Found $FOUND platform packages, package.json lists $EXPECTED"; exit 1; }
           ls ./*.node 2>/dev/null && { echo "::error::Stray .node files in js/"; exit 1; } || true
 
+      # Runs in a rehearsal too. `npm publish --dry-run` only packs — it never
+      # contacts the registry — so a rehearsal cannot tell whether trusted
+      # publishing is configured. Each of the six packages carries its own
+      # trusted-publisher config and any one of them being unset fails the
+      # real release halfway through, after some packages are already live.
+      # Exchanging an OIDC token per package proves all six up front; the
+      # tokens are short-lived and discarded here.
+      - name: Verify trusted publishers (OIDC)
+        working-directory: js
+        run: |
+          set -euo pipefail
+          OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" | jq -r '.value')
+          [[ -n "$OIDC" && "$OIDC" != "null" ]] || {
+            echo "::error::Could not obtain a GitHub OIDC token"; exit 1; }
+
+          FAILED=0
+          echo "| Package | Trusted publisher |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for dir in npm/*/ .; do
+            name=$(node -p "require('./$dir/package.json').name")
+            enc=${name//\//%2F}   # @fugle/marketdata -> @fugle%2Fmarketdata
+            RESP=$(curl -sS -X POST -H "Authorization: Bearer $OIDC" \
+              "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/$enc")
+            TOKEN=$(jq -r '.token // empty' <<<"$RESP" 2>/dev/null || true)
+            if [[ -n "$TOKEN" ]]; then
+              echo "::add-mask::$TOKEN"
+              echo "| \`$name\` | ok |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`$name\` | **not configured** |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::npm rejected the OIDC token for $name. Add a trusted \
+          publisher on npmjs.com (Settings -> Trusted publishing) for repository \
+          ${{ github.repository }}, workflow 'release.yml', environment blank."
+              FAILED=1
+            fi
+          done
+          [[ "$FAILED" == "0" ]]
+
       - name: Publish
         working-directory: js
         env:
