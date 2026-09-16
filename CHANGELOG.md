@@ -23,9 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`etf_holdings_sync`, `institutional_trades_sync`, `director_holdings_sync`,
   `tdcc_distribution_sync`) that only the C++ binding had, so ownership offers
   both async and sync like every other REST client (#32).
+- **Java**: `client.stock().ownership()` returns a wrapper with
+  `getEtfHoldings` / `getInstitutionalTrades` / `getDirectorHoldings` /
+  `getTdccDistribution` (blocking) and their `*Async` counterparts, throwing
+  `FugleException` like the other wrappers. Previously Java callers had to use
+  the generated `StockOwnershipClient` directly (#37).
 
 ### Changed
 
+- **C#**: the blocking `Stock.Ownership.Get*` methods call the native `*Sync`
+  exports directly instead of running the async call via `Task.Run` (#37).
 - **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
   require `timeframe`; the server defaults to `1`, as in 1.x.
 - **Core**: `aio::WebSocketClient::messages()` no longer needs a tokio runtime

@@ -168,10 +168,12 @@ public class FugleRestClient implements AutoCloseable {
     public static class StockClientWrapper {
         private final StockClient stockClient;
         private final StockIntradayClientWrapper intradayClient;
+        private final StockOwnershipClientWrapper ownershipClient;
 
         private StockClientWrapper(StockClient stockClient) {
             this.stockClient = stockClient;
             this.intradayClient = new StockIntradayClientWrapper(stockClient.intraday());
+            this.ownershipClient = new StockOwnershipClientWrapper(stockClient.ownership());
         }
 
         /**
@@ -207,6 +209,13 @@ public class FugleRestClient implements AutoCloseable {
          */
         public StockCorporateActionsClient corporateActions() {
             return stockClient.corporateActions();
+        }
+
+        /**
+         * Get the ownership (ETF holdings, institutional trades, director holdings, TDCC distribution) client.
+         */
+        public StockOwnershipClientWrapper ownership() {
+            return ownershipClient;
         }
     }
 
@@ -378,6 +387,149 @@ public class FugleRestClient implements AutoCloseable {
         public String getCandles(String symbol, String timeframe) {
             try {
                 return client.candlesSync(symbol, timeframe);
+            } catch (MarketDataException e) {
+                throw FugleException.from(e);
+            }
+        }
+    }
+
+    /**
+     * Wrapper for stock ownership client with dual sync/async methods.
+     */
+    public static class StockOwnershipClientWrapper {
+        private final StockOwnershipClient client;
+
+        private StockOwnershipClientWrapper(StockOwnershipClient client) {
+            this.client = client;
+        }
+
+        // Async methods
+
+        /**
+         * Get the constituents an ETF held over a date range (async).
+         *
+         * @param symbol ETF symbol (e.g., "0050")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return CompletableFuture containing the response body as JSON
+         */
+        public CompletableFuture<String> getEtfHoldingsAsync(String symbol, String from, String to, String sort) {
+            return client.getEtfHoldings(symbol, from, to, sort)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+        }
+
+        /**
+         * Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (async).
+         *
+         * @param symbol Stock symbol (e.g., "2330")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return CompletableFuture containing the response body as JSON
+         */
+        public CompletableFuture<String> getInstitutionalTradesAsync(String symbol, String from, String to, String sort) {
+            return client.getInstitutionalTrades(symbol, from, to, sort)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+        }
+
+        /**
+         * Get monthly holdings and pledges disclosed by directors and supervisors (async).
+         *
+         * @param symbol Stock symbol (e.g., "2330")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return CompletableFuture containing the response body as JSON
+         */
+        public CompletableFuture<String> getDirectorHoldingsAsync(String symbol, String from, String to, String sort) {
+            return client.getDirectorHoldings(symbol, from, to, sort)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+        }
+
+        /**
+         * Get the weekly TDCC shareholder distribution by holding-size bracket (async).
+         *
+         * @param symbol Stock symbol (e.g., "2330")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return CompletableFuture containing the response body as JSON
+         */
+        public CompletableFuture<String> getTdccDistributionAsync(String symbol, String from, String to, String sort) {
+            return client.getTdccDistribution(symbol, from, to, sort)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+        }
+
+        // Sync methods
+
+        /**
+         * Get the constituents an ETF held over a date range (sync/blocking).
+         *
+         * @param symbol ETF symbol (e.g., "0050")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return the response body as JSON
+         * @throws FugleException if the request fails
+         */
+        public String getEtfHoldings(String symbol, String from, String to, String sort) {
+            try {
+                return client.etfHoldingsSync(symbol, from, to, sort);
+            } catch (MarketDataException e) {
+                throw FugleException.from(e);
+            }
+        }
+
+        /**
+         * Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (sync/blocking).
+         *
+         * @param symbol Stock symbol (e.g., "2330")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return the response body as JSON
+         * @throws FugleException if the request fails
+         */
+        public String getInstitutionalTrades(String symbol, String from, String to, String sort) {
+            try {
+                return client.institutionalTradesSync(symbol, from, to, sort);
+            } catch (MarketDataException e) {
+                throw FugleException.from(e);
+            }
+        }
+
+        /**
+         * Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking).
+         *
+         * @param symbol Stock symbol (e.g., "2330")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return the response body as JSON
+         * @throws FugleException if the request fails
+         */
+        public String getDirectorHoldings(String symbol, String from, String to, String sort) {
+            try {
+                return client.directorHoldingsSync(symbol, from, to, sort);
+            } catch (MarketDataException e) {
+                throw FugleException.from(e);
+            }
+        }
+
+        /**
+         * Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking).
+         *
+         * @param symbol Stock symbol (e.g., "2330")
+         * @param from Range start date in YYYY-MM-DD, or null
+         * @param to Range end date in YYYY-MM-DD, or null
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @return the response body as JSON
+         * @throws FugleException if the request fails
+         */
+        public String getTdccDistribution(String symbol, String from, String to, String sort) {
+            try {
+                return client.tdccDistributionSync(symbol, from, to, sort);
             } catch (MarketDataException e) {
                 throw FugleException.from(e);
             }

@@ -174,6 +174,27 @@ public class RestClientTest {
         assertEquals(CompletableFuture.class, getProductsAsync.getReturnType());
     }
 
+    @Test
+    @DisplayName("FugleRestClient.StockClientWrapper exposes ownership()")
+    void stockHasOwnershipMethod() throws NoSuchMethodException {
+        Method method = FugleRestClient.StockClientWrapper.class.getMethod("ownership");
+        assertEquals(FugleRestClient.StockOwnershipClientWrapper.class, method.getReturnType());
+    }
+
+    @Test
+    @DisplayName("FugleRestClient.StockOwnershipClientWrapper has sync and async methods")
+    void ownershipHasSyncAndAsyncMethods() throws NoSuchMethodException {
+        Class<?> type = FugleRestClient.StockOwnershipClientWrapper.class;
+        for (String name : new String[] {
+                "getEtfHoldings", "getInstitutionalTrades", "getDirectorHoldings", "getTdccDistribution"}) {
+            Method sync = type.getMethod(name, String.class, String.class, String.class, String.class);
+            assertEquals(String.class, sync.getReturnType());
+
+            Method async = type.getMethod(name + "Async", String.class, String.class, String.class, String.class);
+            assertEquals(CompletableFuture.class, async.getReturnType());
+        }
+    }
+
     // ========== Constructor Tests (require native library) ==========
 
     @Test
@@ -244,6 +265,19 @@ public class RestClientTest {
                 .build()) {
             assertNotNull(client.stock().intraday());
             assertInstanceOf(FugleRestClient.StockIntradayClientWrapper.class, client.stock().intraday());
+        }
+    }
+
+    @Test
+    @DisplayName("StockClient ownership() returns FugleRestClient.StockOwnershipClientWrapper")
+    void ownershipReturnsWrapper() {
+        assumeNativeLibraryAvailable();
+
+        try (FugleRestClient client = FugleRestClient.builder()
+                .apiKey("test-api-key")
+                .build()) {
+            assertNotNull(client.stock().ownership());
+            assertInstanceOf(FugleRestClient.StockOwnershipClientWrapper.class, client.stock().ownership());
         }
     }
 

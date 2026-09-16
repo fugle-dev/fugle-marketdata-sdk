@@ -222,6 +222,34 @@ public class PassthroughTests
     }
 
     [TestMethod]
+    public void OwnershipSyncMethodsReturnTheServerBody()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        const string body = """{"symbol":"2330","data":[{"date":"2026-09-16","foreignNetBuySell":1234}]}""";
+
+        using var server = new LoopbackServer(body);
+        using var client = server.NewClient();
+        var ownership = client.Stock.Ownership;
+
+        // These used to wrap the async call in Task.Run; they now call the
+        // native *Sync exports directly.
+        var results = new[]
+        {
+            ownership.GetEtfHoldings("0050"),
+            ownership.GetInstitutionalTrades("2330", "2026-09-01", "2026-09-16", "desc"),
+            ownership.GetDirectorHoldings("2330"),
+            ownership.GetTdccDistribution("2330", sort: "asc"),
+        };
+
+        var want = Canonical(JsonDocument.Parse(body).RootElement);
+        foreach (var json in results)
+        {
+            Assert.AreEqual(want, Canonical(JsonDocument.Parse(json).RootElement));
+        }
+    }
+
+    [TestMethod]
     public void BaseUrlIsActuallyApplied()
     {
         SkipIfNativeLibraryUnavailable();
