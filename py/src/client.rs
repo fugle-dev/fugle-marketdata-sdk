@@ -1493,11 +1493,13 @@ impl StockTechnicalClient {
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-    ///     period: KDJ period
+    ///     r_period: RSV period (e.g., 9)
+    ///     k_period: K smoothing period (e.g., 3)
+    ///     d_period: D smoothing period (e.g., 3)
     ///
     /// Returns:
     ///     Awaitable[dict]: KDJ indicator data with K, D, J values
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, r_period=None, k_period=None, d_period=None, **_extra))]
     pub fn kdj_async<'py>(
         &self,
         py: Python<'py>,
@@ -1505,7 +1507,10 @@ impl StockTechnicalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        r_period: Option<u32>,
+        k_period: Option<u32>,
+        d_period: Option<u32>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.technical.kdj", &_extra);
         let client = self.inner.clone();
@@ -1523,8 +1528,14 @@ impl StockTechnicalClient {
                 if let Some(tf) = timeframe {
                     builder = builder.timeframe(&tf);
                 }
-                if let Some(p) = period {
-                    builder = builder.period(p);
+                if let Some(p) = r_period {
+                    builder = builder.r_period(p);
+                }
+                if let Some(p) = k_period {
+                    builder = builder.k_period(p);
+                }
+                if let Some(p) = d_period {
+                    builder = builder.d_period(p);
                 }
                 builder.send()
             })
@@ -1716,7 +1727,7 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `kdj()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, r_period=None, k_period=None, d_period=None, **_extra))]
     pub fn kdj(
         &self,
         py: Python<'_>,
@@ -1724,7 +1735,10 @@ impl StockTechnicalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        r_period: Option<u32>,
+        k_period: Option<u32>,
+        d_period: Option<u32>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.technical.kdj", &_extra);
         let inner = self.inner.clone();
@@ -1735,7 +1749,9 @@ impl StockTechnicalClient {
             if let Some(f) = from_date { builder = builder.from(&f); }
             if let Some(t) = to_date { builder = builder.to(&t); }
             if let Some(tf) = timeframe { builder = builder.timeframe(&tf); }
-            if let Some(p) = period { builder = builder.period(p); }
+            if let Some(p) = r_period { builder = builder.r_period(p); }
+            if let Some(p) = k_period { builder = builder.k_period(p); }
+            if let Some(p) = d_period { builder = builder.d_period(p); }
             builder.send()
         });
         match result {

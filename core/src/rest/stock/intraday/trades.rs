@@ -78,28 +78,35 @@ impl<'a> TradesRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let symbol = self.symbol.as_deref().ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
 
         // Build URL
-        let mut url = format!("{}/stock/intraday/trades/{}", self.client.get_base_url(), crate::rest::encode_symbol(&symbol));
+        let mut url = format!("{}/stock/intraday/trades/{}", self.client.get_base_url(), crate::rest::encode_symbol(symbol));
 
         // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(odd_lot) = self.odd_lot {
-            query_params.push(format!("oddLot={}", odd_lot));
+        if self.odd_lot == Some(true) {
+            query_params.push("type=oddlot".to_string());
         }
-        if let Some(offset) = self.offset {
+        if let Some(offset) = &self.offset {
             query_params.push(format!("offset={}", offset));
         }
-        if let Some(limit) = self.limit {
+        if let Some(limit) = &self.limit {
             query_params.push(format!("limit={}", limit));
         }
-        if let Some(sort) = self.sort {
+        if let Some(sort) = &self.sort {
             query_params.push(format!("sort={}", sort));
         }
-        if let Some(is_trial) = self.is_trial {
+        if let Some(is_trial) = &self.is_trial {
             query_params.push(format!("isTrial={}", is_trial));
         }
 
@@ -108,9 +115,7 @@ impl<'a> TradesRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
     }
 }
 
@@ -152,5 +157,17 @@ mod tests {
         assert_eq!(builder.limit, Some(100));
         assert_eq!(builder.sort, Some("desc"));
         assert_eq!(builder.is_trial, Some(true));
+    }
+
+    #[test]
+    fn test_trades_url_odd_lot_uses_type_param() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let base = client.get_base_url().to_string();
+
+        let url = TradesRequestBuilder::new(&client).symbol("2330").odd_lot(true).url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/trades/2330?type=oddlot", base));
+
+        let url = TradesRequestBuilder::new(&client).symbol("2330").odd_lot(false).url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/trades/2330", base));
     }
 }

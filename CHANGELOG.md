@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **All languages**: `stock.technical.kdj()` takes `rPeriod` / `kPeriod` /
+  `dPeriod` (Python `r_period` / `k_period` / `d_period`) in place of
+  `period`. The API rejects `period` with HTTP 400, so the method could not
+  succeed from any binding before.
+
 ### Fixed
 
+- Intraday `quote` / `ticker` / `candles` / `trades` / `volumes` sent
+  `oddLot=true`, which the server ignores, so odd-lot requests silently
+  returned board-lot data. They now send `type=oddlot`.
+- Corporate actions `dividends` / `capital-changes` / `listing-applicants`
+  sent `startDate` / `endDate` instead of `start_date` / `end_date`.
+  `dividends` silently ignored the range; the other two failed with HTTP 400.
 - **Node**: the WebSocket worker thread panicked right after `connect()`
   resolved (`there is no reactor running`), so no `message` ever arrived and a
   later `subscribe()` threw `Failed to send subscribe command`. Stock and

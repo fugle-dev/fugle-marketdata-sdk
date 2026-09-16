@@ -55,7 +55,11 @@ impl<'a> KdjRequestBuilder<'a> {
         self
     }
 
-    /// Set the indicator period (default per Fugle docs).
+    /// Set the `period` query param.
+    ///
+    /// Prod does not accept `period` for KDJ (HTTP 400); use
+    /// [`r_period`](Self::r_period), [`k_period`](Self::k_period) and
+    /// [`d_period`](Self::d_period) instead.
     pub fn period(mut self, period: u32) -> Self {
         self.period = Some(period);
         self
@@ -89,36 +93,43 @@ impl<'a> KdjRequestBuilder<'a> {
     /// status, and [`MarketDataError::DeserializationError`] or
     /// [`MarketDataError::Other`] if the body fails to decode.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let symbol = self.symbol.as_deref().ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
 
         let mut url = format!(
             "{}/stock/technical/kdj/{}",
             self.client.get_base_url(),
-            crate::rest::encode_symbol(&symbol)
+            crate::rest::encode_symbol(symbol)
         );
 
         let mut query_params = Vec::new();
-        if let Some(from) = self.from {
+        if let Some(from) = &self.from {
             query_params.push(format!("from={}", from));
         }
-        if let Some(to) = self.to {
+        if let Some(to) = &self.to {
             query_params.push(format!("to={}", to));
         }
-        if let Some(timeframe) = self.timeframe {
+        if let Some(timeframe) = &self.timeframe {
             query_params.push(format!("timeframe={}", timeframe));
         }
-        if let Some(period) = self.period {
+        if let Some(period) = &self.period {
             query_params.push(format!("period={}", period));
         }
-        if let Some(r_period) = self.r_period {
+        if let Some(r_period) = &self.r_period {
             query_params.push(format!("rPeriod={}", r_period));
         }
-        if let Some(k_period) = self.k_period {
+        if let Some(k_period) = &self.k_period {
             query_params.push(format!("kPeriod={}", k_period));
         }
-        if let Some(d_period) = self.d_period {
+        if let Some(d_period) = &self.d_period {
             query_params.push(format!("dPeriod={}", d_period));
         }
 
@@ -127,7 +138,34 @@ impl<'a> KdjRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rest::Auth;
+
+    #[test]
+    fn test_kdj_url_uses_r_k_d_periods() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = KdjRequestBuilder::new(&client)
+            .symbol("2330")
+            .from("2026-08-01")
+            .to("2026-09-10")
+            .timeframe("D")
+            .r_period(9)
+            .k_period(3)
+            .d_period(3)
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/technical/kdj/2330?from=2026-08-01&to=2026-09-10&timeframe=D&rPeriod=9&kPeriod=3&dPeriod=3",
+                client.get_base_url()
+            )
+        );
     }
 }

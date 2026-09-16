@@ -1032,7 +1032,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_kdj()
 		})
-		if checksum != 20134 {
+		if checksum != 42166 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_kdj: UniFFI API checksum mismatch")
 		}
@@ -1068,7 +1068,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync()
 		})
-		if checksum != 26276 {
+		if checksum != 57078 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync: UniFFI API checksum mismatch")
 		}
@@ -3910,7 +3910,7 @@ type StockTechnicalClientInterface interface {
 	// Get Bollinger Bands (async)
 	GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (string, error)
 	// Get KDJ (Stochastic Oscillator) (async)
-	GetKdj(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error)
+	GetKdj(symbol string, from *string, to *string, timeframe *string, rPeriod *uint32, kPeriod *uint32, dPeriod *uint32) (string, error)
 	// Get MACD indicator (async)
 	GetMacd(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (string, error)
 	// Get Relative Strength Index (async)
@@ -3918,7 +3918,7 @@ type StockTechnicalClientInterface interface {
 	// Get Simple Moving Average (async)
 	GetSma(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error)
 	// Get KDJ (sync/blocking)
-	KdjSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error)
+	KdjSync(symbol string, from *string, to *string, timeframe *string, rPeriod *uint32, kPeriod *uint32, dPeriod *uint32) (string, error)
 	// Get MACD (sync/blocking)
 	MacdSync(symbol string, from *string, to *string, timeframe *string, fast *uint32, slow *uint32, signal *uint32) (string, error)
 	// Get Relative Strength Index (sync/blocking)
@@ -3989,7 +3989,7 @@ func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string
 }
 
 // Get KDJ (Stochastic Oscillator) (async)
-func (_self *StockTechnicalClient) GetKdj(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error) {
+func (_self *StockTechnicalClient) GetKdj(symbol string, from *string, to *string, timeframe *string, rPeriod *uint32, kPeriod *uint32, dPeriod *uint32) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -4006,7 +4006,7 @@ func (_self *StockTechnicalClient) GetKdj(symbol string, from *string, to *strin
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_kdj(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(period)),
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(rPeriod), FfiConverterOptionalUint32INSTANCE.Lower(kPeriod), FfiConverterOptionalUint32INSTANCE.Lower(dPeriod)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -4133,13 +4133,13 @@ func (_self *StockTechnicalClient) GetSma(symbol string, from *string, to *strin
 }
 
 // Get KDJ (sync/blocking)
-func (_self *StockTechnicalClient) KdjSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error) {
+func (_self *StockTechnicalClient) KdjSync(symbol string, from *string, to *string, timeframe *string, rPeriod *uint32, kPeriod *uint32, dPeriod *uint32) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_kdj_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(period), _uniffiStatus),
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(rPeriod), FfiConverterOptionalUint32INSTANCE.Lower(kPeriod), FfiConverterOptionalUint32INSTANCE.Lower(dPeriod), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
