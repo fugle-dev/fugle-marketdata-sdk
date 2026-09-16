@@ -89,6 +89,7 @@ fn error_to_napi(
     Ok(error)
 }
 use napi_derive::napi;
+use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
@@ -872,6 +873,7 @@ impl StockWebSocketClient {
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
         let ending_for_worker = Arc::clone(&ending);
+        let test_panic = test_panic_site();
 
         // Spawn worker thread that owns WebSocketClient
         let handle = thread::Builder::new()
@@ -884,175 +886,192 @@ impl StockWebSocketClient {
                 use marketdata_core::websocket::channels::StockSubscription;
 
                 let ending = ending_for_worker;
-                // A connection being reused: let the previous worker finish
-                // its teardown before this one touches the shared flags. Only
-                // the worker is joined, not its event thread, so the old
-                // connection's `disconnect` callback may still arrive after
-                // this connection's `connect`.
-                if let Some(previous) = previous {
-                    let _ = previous.join();
-                }
-                closed.store(false, Ordering::SeqCst);
+                // Supervised: a panic anywhere in here is reported instead of
+                // leaving the connection silently dead (#25).
+                let run = || {
+                    // A connection being reused: let the previous worker finish
+                    // its teardown before this one touches the shared flags. Only
+                    // the worker is joined, not its event thread, so the old
+                    // connection's `disconnect` callback may still arrive after
+                    // this connection's `connect`.
+                    if let Some(previous) = previous {
+                        let _ = previous.join();
+                    }
+                    closed.store(false, Ordering::SeqCst);
 
-                // Create tokio runtime
-                // Multi-thread runtime so core's dispatch/writer/health-check
-                // tasks keep running while the worker loop blocks on std::mpsc
-                // receive_timeout. With a current_thread runtime those tasks
-                // starve the moment the worker stops driving the executor,
-                // causing incoming frames (subscribed, snapshot, heartbeat...)
-                // to stall in tokio-tungstenite's buffer.
-                let rt = match tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(2)
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        // No core client yet, so no event to forward: only
-                        // the Promise reports it.
+                    // Create tokio runtime
+                    // Multi-thread runtime so core's dispatch/writer/health-check
+                    // tasks keep running while the worker loop blocks on std::mpsc
+                    // receive_timeout. With a current_thread runtime those tasks
+                    // starve the moment the worker stops driving the executor,
+                    // causing incoming frames (subscribed, snapshot, heartbeat...)
+                    // to stall in tokio-tungstenite's buffer.
+                    let rt = match tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(2)
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt,
+                        Err(e) => {
+                            // No core client yet, so no event to forward: only
+                            // the Promise reports it.
+                            ending.store(true, Ordering::SeqCst);
+                            settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
+                            return;
+                        }
+                    };
+
+                    // `baseUrl` was validated in the constructor, so the only way
+                    // this can fail is a client built by other means — fall back to
+                    // production rather than kill the worker thread.
+                    let mut config = build_stream_config(
+                        &api_key,
+                        base_url.as_deref(),
+                        WsProduct::Stock,
+                        stock_version,
+                        futopt_version,
+                    )
+                    .unwrap_or_else(|_| {
+                        ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
+                    });
+                    config.tls = tls_config;
+                    let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+
+                    // Forward core events from before connect(): `Connected` is
+                    // emitted when the socket opens, ahead of authentication, and
+                    // the authentication outcome settles the Promise (#23).
+                    let dispatch_ended = Arc::new(AtomicBool::new(false));
+                    spawn_event_forwarder(
+                        Arc::clone(client.state_events()),
+                        Arc::clone(&callbacks),
+                        Arc::clone(&keep_alive),
+                        Arc::clone(&auth),
+                        Arc::clone(&connected),
+                        Arc::clone(&closed),
+                        Arc::clone(&ending),
+                        Arc::clone(&dispatch_ended),
+                        test_panic.clone(),
+                    );
+
+                    // Core's connect().await returns once authenticated. Its
+                    // failures were already emitted as `Unauthenticated` or
+                    // `Error`, which the forwarder turns into the rejection.
+                    if rt.block_on(client.connect()).is_err() {
                         ending.store(true, Ordering::SeqCst);
-                        settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
                         return;
                     }
-                };
 
-                // `baseUrl` was validated in the constructor, so the only way
-                // this can fail is a client built by other means — fall back to
-                // production rather than kill the worker thread.
-                let mut config = build_stream_config(
-                    &api_key,
-                    base_url.as_deref(),
-                    WsProduct::Stock,
-                    stock_version,
-                    futopt_version,
-                )
-                .unwrap_or_else(|_| {
-                    ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
-                });
-                config.tls = tls_config;
-                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
-
-                // Forward core events from before connect(): `Connected` is
-                // emitted when the socket opens, ahead of authentication, and
-                // the authentication outcome settles the Promise (#23).
-                let dispatch_ended = Arc::new(AtomicBool::new(false));
-                spawn_event_forwarder(
-                    Arc::clone(client.state_events()),
-                    Arc::clone(&callbacks),
-                    Arc::clone(&keep_alive),
-                    Arc::clone(&auth),
-                    Arc::clone(&connected),
-                    Arc::clone(&ending),
-                    Arc::clone(&dispatch_ended),
-                );
-
-                // Core's connect().await returns once authenticated. Its
-                // failures were already emitted as `Unauthenticated` or
-                // `Error`, which the forwarder turns into the rejection.
-                if rt.block_on(client.connect()).is_err() {
-                    ending.store(true, Ordering::SeqCst);
-                    return;
-                }
-
-                // disconnect() arrived while authenticating, and connect() may
-                // already have started a newer worker that is joining this
-                // one: abandon the connection instead of reporting success
-                // (#44). The forwarder skips `Authenticated` once `ending` is
-                // set; if it got there first, this is an ordinary disconnect.
-                if ending.load(Ordering::SeqCst) {
-                    let _ = rt.block_on(client.disconnect());
-                    connected.store(false, Ordering::SeqCst);
-                    closed.store(true, Ordering::SeqCst);
-                    settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
-                    return;
-                }
-
-                // Get message receiver. `messages()` spawns its bridge task
-                // with `tokio::spawn`, and this worker thread is only inside
-                // the runtime during `block_on` — enter it explicitly or the
-                // worker panics right after connect (#13).
-                let receiver = {
-                    let _guard = rt.enter();
-                    client.messages()
-                };
-
-                // Main event loop
-                loop {
-                    if dispatch_ended.load(Ordering::SeqCst) {
+                    // disconnect() arrived while authenticating, and connect() may
+                    // already have started a newer worker that is joining this
+                    // one: abandon the connection instead of reporting success
+                    // (#44). The forwarder skips `Authenticated` once `ending` is
+                    // set; if it got there first, this is an ordinary disconnect.
+                    if ending.load(Ordering::SeqCst) {
+                        let _ = rt.block_on(client.disconnect());
                         connected.store(false, Ordering::SeqCst);
                         closed.store(true, Ordering::SeqCst);
-                        break;
+                        settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                        return;
                     }
 
-                    // Check for commands (non-blocking)
-                    match cmd_rx.try_recv() {
-                        Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
-                            let channel_enum = match channel.to_lowercase().as_str() {
-                                "trades" => Channel::Trades,
-                                "candles" => Channel::Candles,
-                                "books" => Channel::Books,
-                                "aggregates" => Channel::Aggregates,
-                                "indices" => Channel::Indices,
-                                _ => continue,
-                            };
-                            let odd_lot = extra.unwrap_or(false);
-                            let sub = StockSubscription::new(channel_enum, symbols).with_odd_lot(odd_lot);
-                            let _ = rt.block_on(client.subscribe(sub));
-                        }
-                        Ok(WsCommand::Unsubscribe { ids }) => {
-                            let _ = rt.block_on(client.unsubscribe(ids));
-                        }
-                        Ok(WsCommand::Ping { data }) => {
-                            let request = marketdata_core::WebSocketRequest {
-                                event: "ping".to_string(),
-                                data,
-                            };
-                            let _ = rt.block_on(client.send(request));
-                        }
-                        Ok(WsCommand::QuerySubscriptions) => {
-                            let request = marketdata_core::WebSocketRequest::subscriptions();
-                            let _ = rt.block_on(client.send(request));
-                        }
-                        Ok(WsCommand::Disconnect) => {
-                            let _ = rt.block_on(client.disconnect());
-                            connected.store(false, Ordering::SeqCst);
-                            closed.store(true, Ordering::SeqCst);
-                            // Core's disconnect() emits `Disconnected` on the
-                            // event channel and the event thread forwards it;
-                            // firing here too duplicates the callback (#22).
-                            break;
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            // Command channel closed, cleanup
-                            let _ = rt.block_on(client.disconnect());
-                            connected.store(false, Ordering::SeqCst);
-                            closed.store(true, Ordering::SeqCst);
-                            break;
-                        }
-                    }
+                    // `messages()` needs no runtime context since #36.
+                    let receiver = client.messages();
 
-                    // Check for messages (with timeout)
-                    match receiver.receive_timeout(Duration::from_millis(50)) {
-                        Ok(Some(msg)) => {
-                            // The frame verbatim: re-serializing the routing
-                            // struct would drop unknown fields and emit nulls
-                            // for the ones the server omitted.
-                            fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
+                    // Main event loop
+                    loop {
+                        if connected.load(Ordering::SeqCst) {
+                            inject_test_panic(test_panic.as_deref(), "ws_worker");
                         }
-                        Ok(None) => {
-                            // Timeout, continue loop
-                        }
-                        Err(_) => {
-                            // Channel closed: the dispatch task has ended and
-                            // already reported why via the event channel.
+                        if dispatch_ended.load(Ordering::SeqCst) {
                             connected.store(false, Ordering::SeqCst);
                             closed.store(true, Ordering::SeqCst);
                             break;
                         }
+
+                        // Check for commands (non-blocking)
+                        match cmd_rx.try_recv() {
+                            Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
+                                let channel_enum = match channel.to_lowercase().as_str() {
+                                    "trades" => Channel::Trades,
+                                    "candles" => Channel::Candles,
+                                    "books" => Channel::Books,
+                                    "aggregates" => Channel::Aggregates,
+                                    "indices" => Channel::Indices,
+                                    _ => continue,
+                                };
+                                let odd_lot = extra.unwrap_or(false);
+                                let sub = StockSubscription::new(channel_enum, symbols).with_odd_lot(odd_lot);
+                                let _ = rt.block_on(client.subscribe(sub));
+                            }
+                            Ok(WsCommand::Unsubscribe { ids }) => {
+                                let _ = rt.block_on(client.unsubscribe(ids));
+                            }
+                            Ok(WsCommand::Ping { data }) => {
+                                let request = marketdata_core::WebSocketRequest {
+                                    event: "ping".to_string(),
+                                    data,
+                                };
+                                let _ = rt.block_on(client.send(request));
+                            }
+                            Ok(WsCommand::QuerySubscriptions) => {
+                                let request = marketdata_core::WebSocketRequest::subscriptions();
+                                let _ = rt.block_on(client.send(request));
+                            }
+                            Ok(WsCommand::Disconnect) => {
+                                let _ = rt.block_on(client.disconnect());
+                                connected.store(false, Ordering::SeqCst);
+                                closed.store(true, Ordering::SeqCst);
+                                // Core's disconnect() emits `Disconnected` on the
+                                // event channel and the event thread forwards it;
+                                // firing here too duplicates the callback (#22).
+                                break;
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                // Command channel closed, cleanup
+                                let _ = rt.block_on(client.disconnect());
+                                connected.store(false, Ordering::SeqCst);
+                                closed.store(true, Ordering::SeqCst);
+                                break;
+                            }
+                        }
+
+                        // Check for messages (with timeout)
+                        match receiver.receive_timeout(Duration::from_millis(50)) {
+                            Ok(Some(msg)) => {
+                                // The frame verbatim: re-serializing the routing
+                                // struct would drop unknown fields and emit nulls
+                                // for the ones the server omitted.
+                                fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
+                            }
+                            Ok(None) => {
+                                // Timeout, continue loop
+                            }
+                            Err(_) => {
+                                // Channel closed: the dispatch task has ended and
+                                // already reported why via the event channel.
+                                connected.store(false, Ordering::SeqCst);
+                                closed.store(true, Ordering::SeqCst);
+                                break;
+                            }
+                        }
                     }
+                    ending.store(true, Ordering::SeqCst);
+                };
+                if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
+                    report_panic(
+                        &PanicContext {
+                            callbacks: &callbacks,
+                            keep_alive: &keep_alive,
+                            auth: &auth,
+                            connected: &connected,
+                            closed: &closed,
+                            ending: &ending,
+                        },
+                        "worker",
+                        &*payload,
+                    );
                 }
-                ending.store(true, Ordering::SeqCst);
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
@@ -1341,6 +1360,7 @@ impl FutOptWebSocketClient {
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
         let ending_for_worker = Arc::clone(&ending);
+        let test_panic = test_panic_site();
 
         let handle = thread::Builder::new()
             .name("futopt_ws_worker".to_string())
@@ -1352,172 +1372,189 @@ impl FutOptWebSocketClient {
                 use marketdata_core::websocket::channels::FutOptSubscription;
 
                 let ending = ending_for_worker;
-                // A connection being reused: let the previous worker finish
-                // its teardown before this one touches the shared flags. Only
-                // the worker is joined, not its event thread, so the old
-                // connection's `disconnect` callback may still arrive after
-                // this connection's `connect`.
-                if let Some(previous) = previous {
-                    let _ = previous.join();
-                }
-                closed.store(false, Ordering::SeqCst);
+                // Supervised: a panic anywhere in here is reported instead of
+                // leaving the connection silently dead (#25).
+                let run = || {
+                    // A connection being reused: let the previous worker finish
+                    // its teardown before this one touches the shared flags. Only
+                    // the worker is joined, not its event thread, so the old
+                    // connection's `disconnect` callback may still arrive after
+                    // this connection's `connect`.
+                    if let Some(previous) = previous {
+                        let _ = previous.join();
+                    }
+                    closed.store(false, Ordering::SeqCst);
 
-                // Multi-thread runtime so core's dispatch/writer/health-check
-                // tasks keep running while the worker loop blocks on std::mpsc
-                // receive_timeout. With a current_thread runtime those tasks
-                // starve the moment the worker stops driving the executor,
-                // causing incoming frames (subscribed, snapshot, heartbeat...)
-                // to stall in tokio-tungstenite's buffer.
-                let rt = match tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(2)
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        // No core client yet, so no event to forward: only
-                        // the Promise reports it.
+                    // Multi-thread runtime so core's dispatch/writer/health-check
+                    // tasks keep running while the worker loop blocks on std::mpsc
+                    // receive_timeout. With a current_thread runtime those tasks
+                    // starve the moment the worker stops driving the executor,
+                    // causing incoming frames (subscribed, snapshot, heartbeat...)
+                    // to stall in tokio-tungstenite's buffer.
+                    let rt = match tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(2)
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt,
+                        Err(e) => {
+                            // No core client yet, so no event to forward: only
+                            // the Promise reports it.
+                            ending.store(true, Ordering::SeqCst);
+                            settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
+                            return;
+                        }
+                    };
+
+                    // See the stock sibling: `baseUrl` was validated in the
+                    // constructor, so this cannot fail for a normally-built client.
+                    let mut config = build_stream_config(
+                        &api_key,
+                        base_url.as_deref(),
+                        WsProduct::FutOpt,
+                        stock_version,
+                        futopt_version,
+                    )
+                    .unwrap_or_else(|_| {
+                        ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
+                    });
+                    config.tls = tls_config;
+                    let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+
+                    // Forward core events from before connect(): `Connected` is
+                    // emitted when the socket opens, ahead of authentication, and
+                    // the authentication outcome settles the Promise (#23).
+                    let dispatch_ended = Arc::new(AtomicBool::new(false));
+                    spawn_event_forwarder(
+                        Arc::clone(client.state_events()),
+                        Arc::clone(&callbacks),
+                        Arc::clone(&keep_alive),
+                        Arc::clone(&auth),
+                        Arc::clone(&connected),
+                        Arc::clone(&closed),
+                        Arc::clone(&ending),
+                        Arc::clone(&dispatch_ended),
+                        test_panic.clone(),
+                    );
+
+                    // Core's connect().await returns once authenticated. Its
+                    // failures were already emitted as `Unauthenticated` or
+                    // `Error`, which the forwarder turns into the rejection.
+                    if rt.block_on(client.connect()).is_err() {
                         ending.store(true, Ordering::SeqCst);
-                        settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
                         return;
                     }
-                };
 
-                // See the stock sibling: `baseUrl` was validated in the
-                // constructor, so this cannot fail for a normally-built client.
-                let mut config = build_stream_config(
-                    &api_key,
-                    base_url.as_deref(),
-                    WsProduct::FutOpt,
-                    stock_version,
-                    futopt_version,
-                )
-                .unwrap_or_else(|_| {
-                    ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
-                });
-                config.tls = tls_config;
-                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
-
-                // Forward core events from before connect(): `Connected` is
-                // emitted when the socket opens, ahead of authentication, and
-                // the authentication outcome settles the Promise (#23).
-                let dispatch_ended = Arc::new(AtomicBool::new(false));
-                spawn_event_forwarder(
-                    Arc::clone(client.state_events()),
-                    Arc::clone(&callbacks),
-                    Arc::clone(&keep_alive),
-                    Arc::clone(&auth),
-                    Arc::clone(&connected),
-                    Arc::clone(&ending),
-                    Arc::clone(&dispatch_ended),
-                );
-
-                // Core's connect().await returns once authenticated. Its
-                // failures were already emitted as `Unauthenticated` or
-                // `Error`, which the forwarder turns into the rejection.
-                if rt.block_on(client.connect()).is_err() {
-                    ending.store(true, Ordering::SeqCst);
-                    return;
-                }
-
-                // disconnect() arrived while authenticating, and connect() may
-                // already have started a newer worker that is joining this
-                // one: abandon the connection instead of reporting success
-                // (#44). The forwarder skips `Authenticated` once `ending` is
-                // set; if it got there first, this is an ordinary disconnect.
-                if ending.load(Ordering::SeqCst) {
-                    let _ = rt.block_on(client.disconnect());
-                    connected.store(false, Ordering::SeqCst);
-                    closed.store(true, Ordering::SeqCst);
-                    settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
-                    return;
-                }
-
-                // Get message receiver. `messages()` spawns its bridge task
-                // with `tokio::spawn`, and this worker thread is only inside
-                // the runtime during `block_on` — enter it explicitly or the
-                // worker panics right after connect (#13).
-                let receiver = {
-                    let _guard = rt.enter();
-                    client.messages()
-                };
-
-                // Main event loop
-                loop {
-                    if dispatch_ended.load(Ordering::SeqCst) {
+                    // disconnect() arrived while authenticating, and connect() may
+                    // already have started a newer worker that is joining this
+                    // one: abandon the connection instead of reporting success
+                    // (#44). The forwarder skips `Authenticated` once `ending` is
+                    // set; if it got there first, this is an ordinary disconnect.
+                    if ending.load(Ordering::SeqCst) {
+                        let _ = rt.block_on(client.disconnect());
                         connected.store(false, Ordering::SeqCst);
                         closed.store(true, Ordering::SeqCst);
-                        break;
+                        settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                        return;
                     }
 
-                    // Check for commands (non-blocking)
-                    match cmd_rx.try_recv() {
-                        Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
-                            let channel_enum = match channel.to_lowercase().as_str() {
-                                "trades" => FutOptChannel::Trades,
-                                "candles" => FutOptChannel::Candles,
-                                "books" => FutOptChannel::Books,
-                                "aggregates" => FutOptChannel::Aggregates,
-                                _ => continue,
-                            };
-                            let after_hours = extra.unwrap_or(false);
-                            let sub = FutOptSubscription::new(channel_enum, symbols).with_after_hours(after_hours);
-                            let _ = rt.block_on(client.subscribe_futopt(sub));
-                        }
-                        Ok(WsCommand::Unsubscribe { ids }) => {
-                            let _ = rt.block_on(client.unsubscribe(ids));
-                        }
-                        Ok(WsCommand::Ping { data }) => {
-                            let request = marketdata_core::WebSocketRequest {
-                                event: "ping".to_string(),
-                                data,
-                            };
-                            let _ = rt.block_on(client.send(request));
-                        }
-                        Ok(WsCommand::QuerySubscriptions) => {
-                            let request = marketdata_core::WebSocketRequest::subscriptions();
-                            let _ = rt.block_on(client.send(request));
-                        }
-                        Ok(WsCommand::Disconnect) => {
-                            let _ = rt.block_on(client.disconnect());
-                            connected.store(false, Ordering::SeqCst);
-                            closed.store(true, Ordering::SeqCst);
-                            // Core's disconnect() emits `Disconnected` on the
-                            // event channel and the event thread forwards it;
-                            // firing here too duplicates the callback (#22).
-                            break;
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            // Command channel closed, cleanup
-                            let _ = rt.block_on(client.disconnect());
-                            connected.store(false, Ordering::SeqCst);
-                            closed.store(true, Ordering::SeqCst);
-                            break;
-                        }
-                    }
+                    // `messages()` needs no runtime context since #36.
+                    let receiver = client.messages();
 
-                    // Check for messages (with timeout)
-                    match receiver.receive_timeout(Duration::from_millis(50)) {
-                        Ok(Some(msg)) => {
-                            // The frame verbatim: re-serializing the routing
-                            // struct would drop unknown fields and emit nulls
-                            // for the ones the server omitted.
-                            fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
+                    // Main event loop
+                    loop {
+                        if connected.load(Ordering::SeqCst) {
+                            inject_test_panic(test_panic.as_deref(), "ws_worker");
                         }
-                        Ok(None) => {
-                            // Timeout, continue loop
-                        }
-                        Err(_) => {
-                            // Channel closed: the dispatch task has ended and
-                            // already reported why via the event channel.
+                        if dispatch_ended.load(Ordering::SeqCst) {
                             connected.store(false, Ordering::SeqCst);
                             closed.store(true, Ordering::SeqCst);
                             break;
                         }
+
+                        // Check for commands (non-blocking)
+                        match cmd_rx.try_recv() {
+                            Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
+                                let channel_enum = match channel.to_lowercase().as_str() {
+                                    "trades" => FutOptChannel::Trades,
+                                    "candles" => FutOptChannel::Candles,
+                                    "books" => FutOptChannel::Books,
+                                    "aggregates" => FutOptChannel::Aggregates,
+                                    _ => continue,
+                                };
+                                let after_hours = extra.unwrap_or(false);
+                                let sub = FutOptSubscription::new(channel_enum, symbols).with_after_hours(after_hours);
+                                let _ = rt.block_on(client.subscribe_futopt(sub));
+                            }
+                            Ok(WsCommand::Unsubscribe { ids }) => {
+                                let _ = rt.block_on(client.unsubscribe(ids));
+                            }
+                            Ok(WsCommand::Ping { data }) => {
+                                let request = marketdata_core::WebSocketRequest {
+                                    event: "ping".to_string(),
+                                    data,
+                                };
+                                let _ = rt.block_on(client.send(request));
+                            }
+                            Ok(WsCommand::QuerySubscriptions) => {
+                                let request = marketdata_core::WebSocketRequest::subscriptions();
+                                let _ = rt.block_on(client.send(request));
+                            }
+                            Ok(WsCommand::Disconnect) => {
+                                let _ = rt.block_on(client.disconnect());
+                                connected.store(false, Ordering::SeqCst);
+                                closed.store(true, Ordering::SeqCst);
+                                // Core's disconnect() emits `Disconnected` on the
+                                // event channel and the event thread forwards it;
+                                // firing here too duplicates the callback (#22).
+                                break;
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                // Command channel closed, cleanup
+                                let _ = rt.block_on(client.disconnect());
+                                connected.store(false, Ordering::SeqCst);
+                                closed.store(true, Ordering::SeqCst);
+                                break;
+                            }
+                        }
+
+                        // Check for messages (with timeout)
+                        match receiver.receive_timeout(Duration::from_millis(50)) {
+                            Ok(Some(msg)) => {
+                                // The frame verbatim: re-serializing the routing
+                                // struct would drop unknown fields and emit nulls
+                                // for the ones the server omitted.
+                                fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
+                            }
+                            Ok(None) => {
+                                // Timeout, continue loop
+                            }
+                            Err(_) => {
+                                // Channel closed: the dispatch task has ended and
+                                // already reported why via the event channel.
+                                connected.store(false, Ordering::SeqCst);
+                                closed.store(true, Ordering::SeqCst);
+                                break;
+                            }
+                        }
                     }
+                    ending.store(true, Ordering::SeqCst);
+                };
+                if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
+                    report_panic(
+                        &PanicContext {
+                            callbacks: &callbacks,
+                            keep_alive: &keep_alive,
+                            auth: &auth,
+                            connected: &connected,
+                            closed: &closed,
+                            ending: &ending,
+                        },
+                        "worker",
+                        &*payload,
+                    );
                 }
-                ending.store(true, Ordering::SeqCst);
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
@@ -1680,100 +1717,199 @@ fn spawn_event_forwarder(
     keep_alive: KeepAlive,
     auth: AuthSlot,
     connected: Arc<AtomicBool>,
+    closed: Arc<AtomicBool>,
     ending: Arc<AtomicBool>,
     dispatch_ended: Arc<AtomicBool>,
+    test_panic: Option<String>,
 ) {
     use marketdata_core::websocket::ConnectionEvent;
 
-    std::thread::spawn(move || loop {
-        let event = {
-            let rx = events.blocking_lock();
-            rx.recv()
-        };
-        let Ok(event) = event else { break };
-        match event {
-            ConnectionEvent::Connected => {
-                fire_callback(&callbacks, &keep_alive, "connect", EventArgs::None);
-            }
-            ConnectionEvent::Authenticated { data } => {
-                // Given up by disconnect() while authenticating (#44).
-                if ending.load(Ordering::SeqCst) {
-                    continue;
+    std::thread::spawn(move || {
+        let run = || loop {
+            let event = {
+                let rx = events.blocking_lock();
+                rx.recv()
+            };
+            let Ok(event) = event else { break };
+            match event {
+                ConnectionEvent::Connected => {
+                    fire_callback(&callbacks, &keep_alive, "connect", EventArgs::None);
                 }
-                connected.store(true, Ordering::SeqCst);
-                fire_and_settle(
-                    &callbacks,
-                    &keep_alive,
-                    "authenticated",
-                    EventArgs::Json(data.clone()),
-                    &auth,
-                    AuthOutcome::Authenticated(data),
-                    None,
-                );
-            }
-            ConnectionEvent::Unauthenticated { data, .. } => {
-                fire_and_settle(
-                    &callbacks,
-                    &keep_alive,
-                    "unauthenticated",
-                    EventArgs::Json(data.clone()),
-                    &auth,
-                    AuthOutcome::Rejected(data),
-                    Some(&ending),
-                );
-            }
-            ConnectionEvent::Error { message, code } => {
-                let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
-                fire_and_settle(
-                    &callbacks,
-                    &keep_alive,
-                    "error",
-                    EventArgs::Error { message, code: Some(code) },
-                    &auth,
-                    rejection,
-                    Some(&ending),
-                );
-            }
-            ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
-                if !will_reconnect {
+                ConnectionEvent::Authenticated { data } => {
+                    inject_test_panic(test_panic.as_deref(), "ws_events");
+                    // Given up by disconnect() while authenticating (#44).
+                    if ending.load(Ordering::SeqCst) {
+                        continue;
+                    }
+                    connected.store(true, Ordering::SeqCst);
+                    fire_and_settle(
+                        &callbacks,
+                        &keep_alive,
+                        "authenticated",
+                        EventArgs::Json(data.clone()),
+                        &auth,
+                        AuthOutcome::Authenticated(data),
+                        None,
+                    );
+                }
+                ConnectionEvent::Unauthenticated { data, .. } => {
+                    fire_and_settle(
+                        &callbacks,
+                        &keep_alive,
+                        "unauthenticated",
+                        EventArgs::Json(data.clone()),
+                        &auth,
+                        AuthOutcome::Rejected(data),
+                        Some(&ending),
+                    );
+                }
+                ConnectionEvent::Error { message, code } => {
+                    let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
+                    fire_and_settle(
+                        &callbacks,
+                        &keep_alive,
+                        "error",
+                        EventArgs::Error { message, code: Some(code) },
+                        &auth,
+                        rejection,
+                        Some(&ending),
+                    );
+                }
+                ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+                    if !will_reconnect {
+                        ending.store(true, Ordering::SeqCst);
+                        // Core's dispatch task ends without reconnecting.
+                        dispatch_ended.store(true, Ordering::SeqCst);
+                    }
+                    fire_callback(
+                        &callbacks,
+                        &keep_alive,
+                        "disconnect",
+                        EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
+                    );
+                }
+                ConnectionEvent::Reconnecting { attempt } => {
+                    fire_callback(
+                        &callbacks,
+                        &keep_alive,
+                        "reconnect",
+                        EventArgs::Json(serde_json::json!({ "attempt": attempt })),
+                    );
+                }
+                ConnectionEvent::ReconnectFailed { attempts } => {
                     ending.store(true, Ordering::SeqCst);
-                    // Core's dispatch task ends without reconnecting.
+                    fire_callback(
+                        &callbacks,
+                        &keep_alive,
+                        "error",
+                        EventArgs::Error {
+                            message: format!("Reconnection failed after {} attempts", attempts),
+                            code: None,
+                        },
+                    );
+                    // Core's dispatch task has ended for good.
                     dispatch_ended.store(true, Ordering::SeqCst);
                 }
-                fire_callback(
-                    &callbacks,
-                    &keep_alive,
-                    "disconnect",
-                    EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
-                );
+                // `HeartbeatTimeout` is followed by `Disconnected`, which reports it.
+                _ => {}
             }
-            ConnectionEvent::Reconnecting { attempt } => {
-                fire_callback(
-                    &callbacks,
-                    &keep_alive,
-                    "reconnect",
-                    EventArgs::Json(serde_json::json!({ "attempt": attempt })),
-                );
-            }
-            ConnectionEvent::ReconnectFailed { attempts } => {
-                ending.store(true, Ordering::SeqCst);
-                fire_callback(
-                    &callbacks,
-                    &keep_alive,
-                    "error",
-                    EventArgs::Error {
-                        message: format!("Reconnection failed after {} attempts", attempts),
-                        code: None,
-                    },
-                );
-                // Core's dispatch task has ended for good.
-                dispatch_ended.store(true, Ordering::SeqCst);
-            }
-            // `HeartbeatTimeout` is followed by `Disconnected`, which reports it.
-            _ => {}
+        };
+        if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
+            report_panic(
+                &PanicContext {
+                    callbacks: &callbacks,
+                    keep_alive: &keep_alive,
+                    auth: &auth,
+                    connected: &connected,
+                    closed: &closed,
+                    ending: &ending,
+                },
+                "event",
+                &*payload,
+            );
+            // Nothing reports the connection's end any more, and the worker
+            // only exits once told core stopped: shut the connection down
+            // rather than leave it (and the process) running unobserved.
+            dispatch_ended.store(true, Ordering::SeqCst);
         }
     });
 }
+
+/// Error code reported for a panicked WebSocket thread (#25).
+const PANIC_CODE: i32 = -1;
+
+/// What a panicked worker or event thread needs to report it (#25).
+struct PanicContext<'a> {
+    callbacks: &'a Arc<Mutex<EventCallbacks>>,
+    keep_alive: &'a KeepAlive,
+    auth: &'a AuthSlot,
+    connected: &'a AtomicBool,
+    closed: &'a AtomicBool,
+    ending: &'a AtomicBool,
+}
+
+/// Report a panic on a connection's `thread` so the connection does not go
+/// silently dead (#25): mark it closed, fire `error` (code -1) — rejecting a
+/// still-pending `connect()` after it — and `disconnect` if it was connected.
+///
+/// Both events go through [`fire_callback`], so each carries a keep-alive
+/// clone and is delivered before the process may exit (#30). `ending` is set
+/// first, so connect() may be called again from either listener (#44).
+fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::Any + Send)) {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .map(|message| message.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string());
+    let reason = format!("WebSocket {} thread panicked: {}", thread, detail);
+
+    ctx.ending.store(true, Ordering::SeqCst);
+    let was_connected = ctx.connected.swap(false, Ordering::SeqCst);
+    ctx.closed.store(true, Ordering::SeqCst);
+
+    fire_and_settle(
+        ctx.callbacks,
+        ctx.keep_alive,
+        "error",
+        EventArgs::Error { message: reason.clone(), code: Some(PANIC_CODE) },
+        ctx.auth,
+        AuthOutcome::Failed(format!("[{}] {}", PANIC_CODE, reason)),
+        None,
+    );
+    if was_connected {
+        fire_callback(
+            ctx.callbacks,
+            ctx.keep_alive,
+            "disconnect",
+            EventArgs::Json(serde_json::json!({ "code": null, "reason": reason })),
+        );
+    }
+}
+
+/// `FUGLE_MARKETDATA_TEST_PANIC`, naming where a test wants a WebSocket
+/// thread to panic (#25). Read on the JS thread when connecting, so tests can
+/// set it through `process.env`. Debug builds only.
+#[cfg(debug_assertions)]
+fn test_panic_site() -> Option<String> {
+    std::env::var("FUGLE_MARKETDATA_TEST_PANIC").ok()
+}
+
+#[cfg(not(debug_assertions))]
+fn test_panic_site() -> Option<String> {
+    None
+}
+
+/// Panic if the test asked for one at `here` (`ws_worker`, `ws_events`).
+#[cfg(debug_assertions)]
+fn inject_test_panic(site: Option<&str>, here: &str) {
+    if site == Some(here) {
+        panic!("injected test panic at {}", here);
+    }
+}
+
+#[cfg(not(debug_assertions))]
+#[inline(always)]
+fn inject_test_panic(_site: Option<&str>, _here: &str) {}
 
 /// Queue `event` for the registered JS listener, if any.
 ///
@@ -1836,7 +1972,10 @@ fn fire_callback_then(
     }
 
     let then = Arc::new(Mutex::new(Some(then)));
-    if let Ok(cb) = callbacks.lock() {
+    // A panic while holding the lock must not also silence the events that
+    // report it (#25).
+    {
+        let cb = callbacks.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let callback = match event {
             "message" => cb.message.as_ref(),
             "connect" => cb.connect.as_ref(),

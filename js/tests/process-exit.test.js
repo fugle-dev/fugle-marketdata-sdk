@@ -271,4 +271,22 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       expect(result).toMatchObject({ exited: true, code: 0 });
     });
   });
+
+  test('a panicked worker thread lets the process exit after delivering error and disconnect (#25)', async () => {
+    const result = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+      ws.on('error', (err) => console.log('ERROR ' + err.code));
+      ws.on('disconnect', () => console.log('DISCONNECT'));
+      ws.connect().then(() => console.log('CONNECTED'));
+    `,
+      { env: { URL: url, FUGLE_MARKETDATA_TEST_PANIC: 'ws_worker' } },
+    );
+
+    expectChild(result, () => {
+      expect(result.lines).toEqual(['CONNECTED', 'ERROR -1', 'DISCONNECT']);
+      expect(result).toMatchObject({ exited: true, code: 0 });
+    });
+  });
 });
