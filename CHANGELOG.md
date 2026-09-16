@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   futopt were both affected (#13).
 - **Python**: the synchronous `connect()` on stock and futopt panicked the same
   way before connecting. `connect_async()` was unaffected.
+- Long JSON decimals could decode to the neighbouring double, so a value
+  such as `51.708947112827516` arrived as `51.70894711282752` — not the number
+  `JSON.parse` gives for the same body. serde_json now uses its
+  correctly-rounded float parser (`float_roundtrip`) in every binding.
 
 ## [Bindings 3.0.0-rc.2 / core 0.9.0-rc.1 / uniffi 0.2.0-rc.1] - 2026-09-16
 
