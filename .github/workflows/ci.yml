@@ -112,7 +112,7 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install maturin pytest pytest-asyncio pytest-timeout vcrpy pyyaml
+          pip install maturin pytest pytest-asyncio pytest-timeout
           maturin develop
           pytest -q -k "not integration" tests --ignore=tests/benchmarks --ignore=tests/test_performance.py
 
@@ -134,6 +134,12 @@ jobs:
           npm ci
           npm run build:debug
           npx jest --ci --forceExit --testPathIgnorePatterns=integration --testPathIgnorePatterns=performance --testPathIgnorePatterns=benchmarks
+      - name: Type declarations match the wire format
+        working-directory: js
+        run: npm run check:dts
+      - name: Type declarations parse
+        working-directory: js
+        run: npx tsc --noEmit --strict --skipLibCheck index.d.ts types.d.ts
       - name: Generated loader and types are committed
         run: git diff --exit-code -- js/index.js js/index.d.ts
 
