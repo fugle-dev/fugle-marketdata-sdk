@@ -98,16 +98,16 @@ impl<'a> TradesRequestBuilder<'a> {
             query_params.push("type=oddlot".to_string());
         }
         if let Some(offset) = &self.offset {
-            query_params.push(format!("offset={}", offset));
+            query_params.push(crate::rest::query_pair("offset", offset));
         }
         if let Some(limit) = &self.limit {
-            query_params.push(format!("limit={}", limit));
+            query_params.push(crate::rest::query_pair("limit", limit));
         }
         if let Some(sort) = &self.sort {
-            query_params.push(format!("sort={}", sort));
+            query_params.push(crate::rest::query_pair("sort", sort));
         }
         if let Some(is_trial) = &self.is_trial {
-            query_params.push(format!("isTrial={}", is_trial));
+            query_params.push(crate::rest::query_pair("isTrial", is_trial));
         }
 
         if !query_params.is_empty() {

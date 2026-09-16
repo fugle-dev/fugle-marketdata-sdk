@@ -92,22 +92,22 @@ impl<'a> MacdRequestBuilder<'a> {
 
         let mut query_params = Vec::new();
         if let Some(from) = self.from {
-            query_params.push(format!("from={}", from));
+            query_params.push(crate::rest::query_pair("from", from));
         }
         if let Some(to) = self.to {
-            query_params.push(format!("to={}", to));
+            query_params.push(crate::rest::query_pair("to", to));
         }
         if let Some(timeframe) = self.timeframe {
-            query_params.push(format!("timeframe={}", timeframe));
+            query_params.push(crate::rest::query_pair("timeframe", timeframe));
         }
         if let Some(fast) = self.fast {
-            query_params.push(format!("fast={}", fast));
+            query_params.push(crate::rest::query_pair("fast", fast));
         }
         if let Some(slow) = self.slow {
-            query_params.push(format!("slow={}", slow));
+            query_params.push(crate::rest::query_pair("slow", slow));
         }
         if let Some(signal) = self.signal {
-            query_params.push(format!("signal={}", signal));
+            query_params.push(crate::rest::query_pair("signal", signal));
         }
 
         if !query_params.is_empty() {

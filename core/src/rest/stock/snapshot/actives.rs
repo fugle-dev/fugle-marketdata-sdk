@@ -55,13 +55,13 @@ impl<'a> ActivesRequestBuilder<'a> {
         let mut url = format!(
             "{}/stock/snapshot/actives/{}",
             self.client.get_base_url(),
-            market
+            crate::rest::encode_symbol(&market)
         );
 
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(trade) = self.trade {
-            query_params.push(format!("trade={}", trade));
+            query_params.push(crate::rest::query_pair("trade", trade));
         }
 
         if !query_params.is_empty() {

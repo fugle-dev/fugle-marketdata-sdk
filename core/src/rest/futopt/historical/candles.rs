@@ -113,23 +113,22 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
 
         let mut query_params = Vec::new();
         if let Some(from) = &self.from {
-            query_params.push(format!("from={}", from));
+            query_params.push(crate::rest::query_pair("from", from));
         }
         if let Some(to) = &self.to {
-            query_params.push(format!("to={}", to));
+            query_params.push(crate::rest::query_pair("to", to));
         }
         if let Some(contract_month) = &self.contract_month {
-            // `1!` carries a `!`, which encodeURIComponent leaves alone.
-            query_params.push(format!("contractMonth={}", crate::rest::encode_symbol(contract_month)));
+            query_params.push(crate::rest::query_pair("contractMonth", contract_month));
         }
         if let Some(fields) = &self.fields {
-            query_params.push(format!("fields={}", fields));
+            query_params.push(crate::rest::query_pair("fields", fields));
         }
         if let Some(timeframe) = &self.timeframe {
-            query_params.push(format!("timeframe={}", timeframe));
+            query_params.push(crate::rest::query_pair("timeframe", timeframe));
         }
         if let Some(sort) = &self.sort {
-            query_params.push(format!("sort={}", sort));
+            query_params.push(crate::rest::query_pair("sort", sort));
         }
         if self.after_hours == Some(true) {
             query_params.push("session=afterhours".to_string());
@@ -190,7 +189,7 @@ mod tests {
             url,
             format!(
                 "{}/futopt/historical/candles/TXF?from=2026-09-01&to=2026-09-15&contractMonth=202609\
-                 &fields=open,close,volume&timeframe=5&sort=desc&session=afterhours",
+                 &fields=open%2Cclose%2Cvolume&timeframe=5&sort=desc&session=afterhours",
                 client.get_base_url()
             )
         );
@@ -207,7 +206,25 @@ mod tests {
             .unwrap();
         assert_eq!(
             url,
-            format!("{}/futopt/historical/candles/TXF?contractMonth=2!", client.get_base_url())
+            format!("{}/futopt/historical/candles/TXF?contractMonth=2%21", client.get_base_url())
+        );
+    }
+
+    #[test]
+    fn test_historical_candles_url_encodes_fields_value() {
+        // An `&` in a value must not split into an extra `session` param.
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = FutOptHistoricalCandlesRequestBuilder::new(&client)
+            .symbol("TXF")
+            .fields("open&session=afterhours")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/historical/candles/TXF?fields=open%26session%3Dafterhours",
+                client.get_base_url()
+            )
         );
     }
 }

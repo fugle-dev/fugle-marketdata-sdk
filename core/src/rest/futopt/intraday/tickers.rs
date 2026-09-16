@@ -80,19 +80,19 @@ impl<'a> TickersRequestBuilder<'a> {
 
         // Build URL with query parameters
         let mut query_params = Vec::new();
-        query_params.push(format!("type={}", typ.as_str()));
+        query_params.push(crate::rest::query_pair("type", typ.as_str()));
 
         if let Some(exchange) = &self.exchange {
-            query_params.push(format!("exchange={}", exchange));
+            query_params.push(crate::rest::query_pair("exchange", exchange));
         }
         if let Some(session) = &self.session {
-            query_params.push(format!("session={}", session));
+            query_params.push(crate::rest::query_pair("session", session));
         }
         if let Some(contract_type) = &self.contract_type {
-            query_params.push(format!("contractType={}", contract_type.as_code()));
+            query_params.push(crate::rest::query_pair("contractType", contract_type.as_code()));
         }
         if let Some(is_spread) = self.is_spread {
-            query_params.push(format!("isSpread={}", is_spread));
+            query_params.push(crate::rest::query_pair("isSpread", is_spread));
         }
 
         let url = format!(

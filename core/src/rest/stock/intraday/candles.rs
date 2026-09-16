@@ -65,7 +65,7 @@ impl<'a> CandlesRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(timeframe) = &self.timeframe {
-            query_params.push(format!("timeframe={}", timeframe));
+            query_params.push(crate::rest::query_pair("timeframe", timeframe));
         }
         if self.odd_lot == Some(true) {
             query_params.push("type=oddlot".to_string());

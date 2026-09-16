@@ -64,13 +64,13 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(date) = &self.date {
-            query_params.push(format!("date={}", date));
+            query_params.push(crate::rest::query_pair("date", date));
         }
         if let Some(start_date) = &self.start_date {
-            query_params.push(format!("start_date={}", start_date));
+            query_params.push(crate::rest::query_pair("start_date", start_date));
         }
         if let Some(end_date) = &self.end_date {
-            query_params.push(format!("end_date={}", end_date));
+            query_params.push(crate::rest::query_pair("end_date", end_date));
         }
 
         if !query_params.is_empty() {

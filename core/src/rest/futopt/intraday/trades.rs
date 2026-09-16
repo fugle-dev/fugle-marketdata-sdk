@@ -76,16 +76,16 @@ impl<'a> TradesRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(offset) = self.offset {
-            query_params.push(format!("offset={}", offset));
+            query_params.push(crate::rest::query_pair("offset", offset));
         }
         if let Some(limit) = self.limit {
-            query_params.push(format!("limit={}", limit));
+            query_params.push(crate::rest::query_pair("limit", limit));
         }
         if let Some(session) = &self.session {
-            query_params.push(format!("session={}", session));
+            query_params.push(crate::rest::query_pair("session", session));
         }
         if let Some(is_trial) = self.is_trial {
-            query_params.push(format!("isTrial={}", is_trial));
+            query_params.push(crate::rest::query_pair("isTrial", is_trial));
         }
 
         if !query_params.is_empty() {

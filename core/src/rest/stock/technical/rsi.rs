@@ -75,16 +75,16 @@ impl<'a> RsiRequestBuilder<'a> {
         // Add query parameters
         let mut query_params = Vec::new();
         if let Some(from) = self.from {
-            query_params.push(format!("from={}", from));
+            query_params.push(crate::rest::query_pair("from", from));
         }
         if let Some(to) = self.to {
-            query_params.push(format!("to={}", to));
+            query_params.push(crate::rest::query_pair("to", to));
         }
         if let Some(timeframe) = self.timeframe {
-            query_params.push(format!("timeframe={}", timeframe));
+            query_params.push(crate::rest::query_pair("timeframe", timeframe));
         }
         if let Some(period) = self.period {
-            query_params.push(format!("period={}", period));
+            query_params.push(crate::rest::query_pair("period", period));
         }
 
         if !query_params.is_empty() {
