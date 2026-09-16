@@ -292,6 +292,10 @@ impl RestClient {
     /// Same as the typed builders' `send()`: [`MarketDataError::ApiError`] on
     /// a non-2xx status, transport and timeout errors, and
     /// [`MarketDataError::Other`] if the body is not JSON.
+    ///
+    /// Hidden from the docs and the public-API baseline: it exists for the
+    /// bindings, not as a supported Rust API, and bypasses every typed check.
+    #[doc(hidden)]
     pub fn get_json<K, V>(
         &self,
         path: &[&str],

@@ -62,13 +62,11 @@ Both endpoints are keyed by product (`TXF`) and take `session` instead of
 
 ### Unreleased — raw GET for verbatim query params (#16)
 
-- `+` `RestClient::get_json(&self, &[&str], &[(K, V)])` — sends a GET to an
-  arbitrary path with an arbitrary query string and returns the body as-is.
-  The typed builders only emit the params they declare; the Node binding
-  uses this to forward the legacy `{ symbol, ...query }` object verbatim, as
-  the official 1.x SDK does, so every documented query param is reachable.
-  Path segments and query keys/values are percent-encoded; auth, retry and
-  status handling match the typed builders.
+- No surface change. `RestClient::get_json` is `pub` so the Node binding can
+  forward the legacy `{ symbol, ...query }` object verbatim, but it is
+  `#[doc(hidden)]`: it bypasses every typed check and is not a supported Rust
+  API, so it stays out of the docs and out of `PUBLIC-API.txt`. It may change
+  or disappear without a changelog entry.
 
 ### 0.9.0-rc.1 — REST responses pass through verbatim (#10)
 

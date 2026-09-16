@@ -738,8 +738,14 @@ impl StockWebSocketClient {
                     }
                 });
 
-                // Get message receiver
-                let receiver = client.messages();
+                // Get message receiver. `messages()` spawns its bridge task
+                // with `tokio::spawn`, and this worker thread is only inside
+                // the runtime during `block_on` — enter it explicitly or the
+                // worker panics right after connect (#13).
+                let receiver = {
+                    let _guard = rt.enter();
+                    client.messages()
+                };
 
                 // Main event loop
                 loop {
@@ -1239,8 +1245,14 @@ impl FutOptWebSocketClient {
                     }
                 });
 
-                // Get message receiver
-                let receiver = client.messages();
+                // Get message receiver. `messages()` spawns its bridge task
+                // with `tokio::spawn`, and this worker thread is only inside
+                // the runtime during `block_on` — enter it explicitly or the
+                // worker panics right after connect (#13).
+                let receiver = {
+                    let _guard = rt.enter();
+                    client.messages()
+                };
 
                 // Main event loop
                 loop {
