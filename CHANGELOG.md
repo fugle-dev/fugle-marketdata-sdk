@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Node**: the WebSocket worker thread panicked right after `connect()`
+  resolved (`there is no reactor running`), so no `message` ever arrived and a
+  later `subscribe()` threw `Failed to send subscribe command`. Stock and
+  futopt were both affected (#13).
+- **Python**: the synchronous `connect()` on stock and futopt panicked the same
+  way before connecting. `connect_async()` was unaffected.
+
 ## [Bindings 3.0.0-rc.2 / core 0.9.0-rc.1 / uniffi 0.2.0-rc.1] - 2026-09-16
 
 Responses are now handed to the caller exactly as the server sent them.
