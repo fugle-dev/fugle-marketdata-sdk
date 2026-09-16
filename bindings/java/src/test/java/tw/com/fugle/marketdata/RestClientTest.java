@@ -265,7 +265,7 @@ public class RestClientTest {
 
             var quote = client.stock().intraday().getQuoteAsync("2330").get();
             assertNotNull(quote);
-            assertEquals("2330", quote.symbol());
+            assertTrue(quote.matches("(?s).*\"symbol\"\\s*:\\s*\"2330\".*"), quote);
         }
     }
 
@@ -285,7 +285,7 @@ public class RestClientTest {
 
             var quote = client.stock().intraday().getQuote("2330");
             assertNotNull(quote);
-            assertEquals("2330", quote.symbol());
+            assertTrue(quote.matches("(?s).*\"symbol\"\\s*:\\s*\"2330\".*"), quote);
         }
     }
 
@@ -305,7 +305,7 @@ public class RestClientTest {
 
             var ticker = client.stock().intraday().getTickerAsync("2330").get();
             assertNotNull(ticker);
-            assertEquals("2330", ticker.symbol());
+            assertTrue(ticker.matches("(?s).*\"symbol\"\\s*:\\s*\"2330\".*"), ticker);
         }
     }
 }
