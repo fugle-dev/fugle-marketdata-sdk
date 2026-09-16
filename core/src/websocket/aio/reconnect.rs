@@ -3,7 +3,7 @@
 use crate::metrics_compat::DropCounter;
 use crate::models::{WebSocketMessage};
 use crate::websocket::aio::writer::run_writer_task;
-use crate::websocket::aio::{WsSink, WsStream};
+use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::{emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, AuthOutcome,
@@ -16,7 +16,7 @@ use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{mpsc, Arc};
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration};
 use tokio_tungstenite::{connect_async_tls_with_config, Connector};
@@ -80,7 +80,7 @@ pub(crate) async fn try_reconnect(
     close_code: Option<u16>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     config: ConnectionConfig,
-    state: Arc<RwLock<ConnectionState>>,
+    state: SharedState,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     events_dropped: DropCounter,
     ws_sink: Arc<Mutex<Option<WsSink>>>,
@@ -99,7 +99,7 @@ pub(crate) async fn try_reconnect(
     if !should_reconnect {
         // Not retriable - update state and send event
         {
-            let mut st = state.write().await;
+            let mut st = write_state(&state);
             *st = ConnectionState::Closed {
                 code: close_code,
                 reason: "Non-retriable error".to_string(),
@@ -137,7 +137,7 @@ pub(crate) async fn try_reconnect(
 
                 // Update state to Reconnecting
                 {
-                    let mut st = state.write().await;
+                    let mut st = write_state(&state);
                     *st = ConnectionState::Reconnecting { attempt };
                 }
                 crate::tracing_compat::warn!(
@@ -223,7 +223,7 @@ pub(crate) async fn try_reconnect(
             None => {
                 // Max attempts reached
                 {
-                    let mut st = state.write().await;
+                    let mut st = write_state(&state);
                     *st = ConnectionState::Closed {
                         code: close_code,
                         reason: "Max reconnection attempts reached".to_string(),
@@ -252,14 +252,14 @@ pub(crate) async fn try_reconnect(
 /// for storing the sink and setting up dispatch. Takes owned values for Send safety.
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
-    state: Arc<RwLock<ConnectionState>>,
+    state: SharedState,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     events_dropped: DropCounter,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
 ) -> Result<(WsSink, WsStream), MarketDataError> {
     // Update state to Connecting
     {
-        let mut st = state.write().await;
+        let mut st = write_state(&state);
         *st = ConnectionState::Connecting;
     }
     emit_event(&event_tx, &events_dropped, ConnectionEvent::Connecting {
@@ -278,14 +278,14 @@ pub(crate) async fn try_connect(
         Ok(Err(e)) => {
             let err: MarketDataError = e.into();
             {
-                let mut st = state.write().await;
+                let mut st = write_state(&state);
                 *st = ConnectionState::Disconnected;
             }
             return Err(err);
         }
         Err(_) => {
             {
-                let mut st = state.write().await;
+                let mut st = write_state(&state);
                 *st = ConnectionState::Disconnected;
             }
             return Err(MarketDataError::TimeoutError {
@@ -303,7 +303,7 @@ pub(crate) async fn try_connect(
 
     // Authenticate
     {
-        let mut st = state.write().await;
+        let mut st = write_state(&state);
         *st = ConnectionState::Authenticating;
     }
 
@@ -321,7 +321,7 @@ pub(crate) async fn try_connect(
     match auth_result {
         Ok(Ok(())) => {
             {
-                let mut st = state.write().await;
+                let mut st = write_state(&state);
                 *st = ConnectionState::Connected;
             }
             crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
@@ -331,7 +331,7 @@ pub(crate) async fn try_connect(
         }
         Ok(Err(e)) => {
             {
-                let mut st = state.write().await;
+                let mut st = write_state(&state);
                 *st = ConnectionState::Disconnected;
             }
             // Same auth-vs-other split as the primary connect() flow
@@ -344,7 +344,7 @@ pub(crate) async fn try_connect(
         }
         Err(_) => {
             {
-                let mut st = state.write().await;
+                let mut st = write_state(&state);
                 *st = ConnectionState::Disconnected;
             }
             Err(MarketDataError::TimeoutError {
