@@ -265,3 +265,84 @@ async fn repeated_disconnect_emits_single_disconnect() {
     let disconnects = disconnects(&events);
     assert_eq!(disconnects.len(), 1, "expected exactly one Disconnected, got {events:?}");
 }
+
+/// Collect events until a `Disconnected` with `code` arrives (or 5 s pass),
+/// then keep draining until the channel goes quiet.
+async fn events_through_disconnect_code(client: &WebSocketClient, code: u16) -> Vec<ConnectionEvent> {
+    let events = std::sync::Arc::clone(client.state_events());
+    tokio::task::spawn_blocking(move || {
+        let rx = events.blocking_lock();
+        let mut seen = Vec::new();
+        while let Ok(event) = rx.recv_timeout(Duration::from_secs(5)) {
+            let done = matches!(event, ConnectionEvent::Disconnected { code: Some(c), .. } if c == code);
+            seen.push(event);
+            if done {
+                break;
+            }
+        }
+        seen.extend(common::drain_until_quiet(|timeout| rx.recv_timeout(timeout).ok()));
+        seen
+    })
+    .await
+    .expect("drain")
+}
+
+/// #41 review: `reconnect()` on a live connection must retire the old
+/// dispatch task. Otherwise the old socket's later close claims the new
+/// connection's latch, and the new connection's real close goes unreported.
+#[tokio::test]
+async fn reconnect_old_connection_close_does_not_swallow_new_disconnect() {
+    let server = common::spawn_sequence(vec![
+        // Old connection: the server closes it shortly after `reconnect()`.
+        common::AfterAuth::ServerCloseAfter { delay_ms: 80, code: 4001, reason: "old".to_string() },
+        // New connection: its close is the one the caller must see.
+        common::AfterAuth::ServerCloseAfter { delay_ms: 300, code: 4000, reason: "new".to_string() },
+    ])
+    .await;
+    let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+    let client = WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
+    client.connect().await.expect("connect");
+    client.reconnect().await.expect("reconnect");
+
+    let events = events_through_disconnect_code(&client, 4000).await;
+
+    let disconnects = disconnects(&events);
+    assert_eq!(disconnects.len(), 1, "expected exactly one Disconnected, got {events:?}");
+    assert!(
+        matches!(disconnects[0], ConnectionEvent::Disconnected { code: Some(4000), .. }),
+        "expected the new connection's close, got {:?}",
+        disconnects[0]
+    );
+}
+
+/// `connect()` while connected is a no-op, as on the sync client: no second
+/// connection (the mock accepts only one) and no lifecycle events.
+#[tokio::test]
+async fn connect_while_connected_is_noop() {
+    let server = common::spawn(common::AfterAuth::Idle).await;
+    let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+    let client = WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
+    client.connect().await.expect("connect");
+    let events = std::sync::Arc::clone(client.state_events());
+    tokio::task::spawn_blocking(move || {
+        let rx = events.blocking_lock();
+        while rx.try_recv().is_ok() {}
+    })
+    .await
+    .expect("drain initial events");
+
+    tokio::time::timeout(Duration::from_secs(2), client.connect())
+        .await
+        .expect("second connect must not attempt a new handshake")
+        .expect("second connect");
+
+    assert!(client.is_connected().await);
+    let events = std::sync::Arc::clone(client.state_events());
+    let extra = tokio::task::spawn_blocking(move || {
+        let rx = events.blocking_lock();
+        rx.try_iter().collect::<Vec<_>>()
+    })
+    .await
+    .expect("drain");
+    assert!(extra.is_empty(), "second connect emitted {extra:?}");
+}
