@@ -6,8 +6,41 @@
  * from the callback or rejection that reports the end.
  */
 
+const { spawn } = require('child_process');
+const path = require('path');
 const { WebSocketServer } = require('ws');
 const { WebSocketClient } = require('../');
+
+const PKG = path.resolve(__dirname, '..');
+
+/**
+ * Run `script` in a child Node process with `env` added to the real process
+ * environment (Jest's `process.env` is a sandbox copy the native addon never
+ * sees) and resolve with the object printed on its `RESULT ` line.
+ */
+function runChild(script, env, timeoutMs = 10000) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['-e', script], {
+      cwd: PKG,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      const line = stdout.split('\n').find((l) => l.startsWith('RESULT '));
+      resolve({ code, result: line && JSON.parse(line.slice('RESULT '.length)), stdout, stderr });
+    });
+  });
+}
 
 /**
  * Loopback server that acks auth and answers `subscribe` with `subscribed`
@@ -225,5 +258,50 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
 
     expect(ws.isConnected).toBe(true);
     expect(wss.accepted).toBe(2);
+  });
+
+  test('disconnect() from the authenticated listener before the worker checks for an abort is an ordinary disconnect', async () => {
+    await setup();
+    // disconnect() from the authenticated listener, which then holds the JS
+    // thread: connect() cannot settle until it returns, and meanwhile the
+    // worker (held briefly after authenticating) reaches its abort check
+    // with `ending` set. authenticated has already fired, so the worker must
+    // not abort the connection it reported.
+    const run = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      (async () => {
+        const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+        const order = [];
+        ws.on('authenticated', () => {
+          order.push('authenticated');
+          ws.disconnect();
+          const until = Date.now() + 600;
+          while (Date.now() < until) {}
+        });
+        ws.on('disconnect', () => order.push('disconnect'));
+        const outcome = await ws.connect().then(
+          () => 'resolved',
+          (e) => 'rejected: ' + (e && e.message),
+        );
+        order.push(outcome);
+        const deadline = Date.now() + 3000;
+        while (!order.includes('disconnect') && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        console.log('RESULT ' + JSON.stringify({ order, isConnected: ws.isConnected }));
+      })();
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}`, FUGLE_MARKETDATA_TEST_DELAY_AFTER_CONNECT_MS: '100' },
+    );
+
+    expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
+    const { order, isConnected } = run.result;
+    // The listener's own disconnect() may be delivered before the awaiting
+    // code resumes; what matters is that the reported connection resolved.
+    expect(order[0]).toBe('authenticated');
+    expect(order.filter((e) => e.startsWith('re'))).toEqual(['resolved']);
+    expect(order.filter((e) => e === 'disconnect')).toHaveLength(1);
+    expect(isConnected).toBe(false);
   });
 });
