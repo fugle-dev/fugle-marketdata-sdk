@@ -172,15 +172,17 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
 
   test('disconnect() before connect() resolves aborts that connect()', async () => {
     await setup({ slowAuth: 1 });
-    const connects = [];
-    ws.on('connect', () => connects.push(Date.now()));
+    // `connect` fires when the socket opens, so the aborted connection's
+    // authentication is what must not be reported (#23).
+    const authenticated = [];
+    ws.on('authenticated', (data) => authenticated.push(data));
 
     const pending = ws.connect();
     ws.disconnect();
 
     await expect(pending).rejects.toThrow('[2010] Connection aborted');
     await sleep(200);
-    expect(connects).toHaveLength(0);
+    expect(authenticated).toHaveLength(0);
     expect(ws.isConnected).toBe(false);
     expect(ws.isClosed).toBe(true);
     await waitFor(() => openSockets(wss) === 0, 'aborted socket to close');
@@ -188,9 +190,9 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
 
   test('connect() after disconnect() while still authenticating: only the new connect() resolves', async () => {
     await setup({ slowAuth: 1 });
-    const connects = [];
+    const authenticated = [];
     const data = [];
-    ws.on('connect', () => connects.push(Date.now()));
+    ws.on('authenticated', (auth) => authenticated.push(auth));
     ws.on('message', (raw) => {
       const msg = JSON.parse(raw);
       if (msg.event === 'data') data.push(msg);
@@ -203,7 +205,7 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     await expect(abandoned).rejects.toThrow('[2010] Connection aborted');
     await current;
 
-    expect(connects).toHaveLength(1);
+    expect(authenticated).toHaveLength(1);
     expect(ws.isConnected).toBe(true);
     expect(ws.isClosed).toBe(false);
     expect(wss.accepted).toBe(2);
@@ -218,7 +220,7 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
   test('connect() retried after an auth failure is not rejected as already connected', async () => {
     await setup({ failAuth: 1 });
 
-    await expect(ws.connect()).rejects.toThrow('[2002]');
+    await expect(ws.connect()).rejects.toEqual({ message: 'Invalid API key' });
     await ws.connect();
 
     expect(ws.isConnected).toBe(true);

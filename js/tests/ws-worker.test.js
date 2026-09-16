@@ -158,7 +158,7 @@ describe.each(PRODUCTS)('%s disconnect events (#22)', (product) => {
     ws.disconnect();
     await waitForDisconnect(events);
 
-    expect(events.disconnect).toEqual(['{"code":1000,"reason":"Normal closure"}']);
+    expect(events.disconnect).toEqual([{ code: 1000, reason: 'Normal closure' }]);
     expect(events.error).toEqual([]);
     expect(ws.isConnected).toBe(false);
   });
@@ -170,6 +170,6 @@ describe.each(PRODUCTS)('%s disconnect events (#22)', (product) => {
     for (const socket of wss.clients) socket.close(1001, 'going away');
     await waitForDisconnect(events);
 
-    expect(events.disconnect).toEqual(['{"code":1001,"reason":"going away"}']);
+    expect(events.disconnect).toEqual([{ code: 1001, reason: 'going away' }]);
   });
 });

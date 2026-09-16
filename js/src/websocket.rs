@@ -6,27 +6,88 @@
 //! Architecture:
 //! - WebSocket connection runs in a dedicated background thread with its own tokio runtime
 //! - Commands (connect, subscribe, disconnect) are sent via crossbeam channel
-//! - Events (message, connect, disconnect, error) are delivered via ThreadsafeFunction callbacks
+//! - Core connection events are forwarded to listeners via ThreadsafeFunction callbacks,
+//!   with the argument shapes of `@fugle/marketdata` 1.x (#23)
 
-use napi::bindgen_prelude::{PromiseRaw, Unknown};
+use napi::bindgen_prelude::{JsValuesTupleIntoVec, PromiseRaw, ToNapiValue, Unknown};
+use napi::JsValue;
 use napi::Env;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
-use napi::Status;
+use napi::{sys, Status};
 
-/// Single-argument event callback.
+/// Event callback.
 ///
 /// Uses napi-rs ThreadsafeFunction with `CalleeHandled = false` so the JS
-/// callback signature is `(data) => void` instead of the default
-/// `(err, data) => void`. This matches the legacy fugle-marketdata-node
-/// SDK shape, e.g.:
+/// callback receives the event's own arguments instead of a leading `err`,
+/// matching the legacy `@fugle/marketdata` 1.x EventEmitter shape (#23):
 /// ```js
 /// stock.on('message', (data) => console.log(JSON.parse(data)));
+/// stock.on('authenticated', (data) => console.log(data.message));
 /// ```
 ///
 /// `Weak = true`: a registered listener does not keep the Node event loop
 /// alive, matching an EventEmitter listener. An open connection does, via
 /// the [`KeepAlive`] handle held for the connection's lifetime (#30).
-pub type EventTsfn = ThreadsafeFunction<String, Unknown<'static>, String, Status, false, true>;
+pub type EventTsfn = ThreadsafeFunction<EventArgs, Unknown<'static>, EventArgs, Status, false, true>;
+
+/// Arguments an event listener is called with, built on the JS thread.
+pub enum EventArgs {
+    /// No arguments at all (`connect`), not a single `undefined`.
+    None,
+    /// A string (`message`: the frame verbatim).
+    Text(String),
+    /// A plain object; JSON `null` becomes `undefined`, as destructuring the
+    /// frame's absent `data` did in 1.x.
+    Json(serde_json::Value),
+    /// An `Error` whose message is `message`, with a numeric `code` property
+    /// when one is given.
+    Error { message: String, code: Option<i32> },
+}
+
+impl JsValuesTupleIntoVec for EventArgs {
+    // `env` comes from napi on the JS thread, as in napi-rs's own impls.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    fn into_vec(self, env: sys::napi_env) -> napi::Result<Vec<sys::napi_value>> {
+        let value = match self {
+            EventArgs::None => return Ok(Vec::new()),
+            EventArgs::Text(text) => unsafe { String::to_napi_value(env, text)? },
+            EventArgs::Json(value) => json_to_napi(env, value)?,
+            EventArgs::Error { message, code } => error_to_napi(env, &message, code)?,
+        };
+        Ok(vec![value])
+    }
+}
+
+fn json_to_napi(env: sys::napi_env, value: serde_json::Value) -> napi::Result<sys::napi_value> {
+    unsafe {
+        match value {
+            serde_json::Value::Null => <()>::to_napi_value(env, ()),
+            value => serde_json::Value::to_napi_value(env, value),
+        }
+    }
+}
+
+/// A plain `new Error(message)` plus `code`. `Env::create_error` would set
+/// `code` to the napi status name instead.
+fn error_to_napi(
+    env: sys::napi_env,
+    message: &str,
+    code: Option<i32>,
+) -> napi::Result<sys::napi_value> {
+    let env_ref = Env::from_raw(env);
+    let message = env_ref.create_string(message)?;
+    let mut error = std::ptr::null_mut();
+    napi::check_status!(unsafe {
+        sys::napi_create_error(env, std::ptr::null_mut(), message.raw(), &mut error)
+    })?;
+    if let Some(code) = code {
+        let code = unsafe { i32::to_napi_value(env, code)? };
+        napi::check_status!(unsafe {
+            sys::napi_set_named_property(env, error, c"code".as_ptr(), code)
+        })?;
+    }
+    Ok(error)
+}
 use napi_derive::napi;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
@@ -49,25 +110,56 @@ pub type JsCallback = Arc<EventTsfn>;
 /// last and whether or not any listener is registered.
 type KeepAlive = Arc<ThreadsafeFunction<(), (), (), Status, false>>;
 
-/// Worker-thread signal that authentication finished (or why it failed).
-type AuthRx = tokio::sync::oneshot::Receiver<Result<(), String>>;
+/// How a `connect()` settles (#23).
+enum AuthOutcome {
+    /// Authenticated: resolve with the server's `data`.
+    Authenticated(serde_json::Value),
+    /// Credentials rejected: reject with the server's `data` object itself.
+    Rejected(serde_json::Value),
+    /// Any other failure: reject with `Error(message)`.
+    Failed(String),
+}
 
-/// Promise returned by `connect()`: resolves once the worker has
-/// authenticated. A failure to start the worker rejects it too, so
-/// `connect()` never throws synchronously.
+type AuthTx = tokio::sync::oneshot::Sender<AuthOutcome>;
+
+/// Signal that authentication finished (or why it failed).
+type AuthRx = tokio::sync::oneshot::Receiver<AuthOutcome>;
+
+/// The pending `connect()` settlement, shared by the worker and the event
+/// thread: whichever settles first takes it, so a Promise settles once.
+type AuthSlot = Arc<Mutex<Option<AuthTx>>>;
+
+/// Settle the pending `connect()`, if it has not been settled already.
+fn settle(slot: &AuthSlot, outcome: AuthOutcome) {
+    if let Some(tx) = slot.lock().ok().and_then(|mut guard| guard.take()) {
+        let _ = tx.send(outcome);
+    }
+}
+
+/// Promise returned by `connect()`, settled by [`AuthOutcome`]. A failure to
+/// start the worker rejects it too, so `connect()` never throws
+/// synchronously.
 fn auth_promise<'env>(
     env: &'env Env,
     started: napi::Result<AuthRx>,
-) -> napi::Result<PromiseRaw<'env, ()>> {
-    env.spawn_future(async move {
-        match started?.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(msg)) => Err(napi::Error::from_reason(msg)),
-            Err(_) => Err(napi::Error::from_reason(
-                "Worker thread terminated before authentication signal",
-            )),
-        }
-    })
+) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
+    env.spawn_future_with_callback(
+        async move {
+            Ok(started?.await.unwrap_or_else(|_| {
+                AuthOutcome::Failed("Worker thread terminated before authentication signal".to_string())
+            }))
+        },
+        |env, outcome| match outcome {
+            AuthOutcome::Authenticated(data) => {
+                Ok(unsafe { Unknown::from_raw_unchecked(env.raw(), json_to_napi(env.raw(), data)?) })
+            }
+            AuthOutcome::Rejected(data) => {
+                let data = unsafe { Unknown::from_raw_unchecked(env.raw(), json_to_napi(env.raw(), data)?) };
+                Err(napi::Error::from(data))
+            }
+            AuthOutcome::Failed(message) => Err(napi::Error::from_reason(message)),
+        },
+    )
 }
 
 fn loop_keep_alive(env: &Env) -> napi::Result<KeepAlive> {
@@ -267,11 +359,22 @@ pub(crate) fn build_stream_config(
 enum WsCommand {
     Subscribe { channel: String, symbols: Vec<String>, extra: Option<bool> },
     Unsubscribe { ids: Vec<String> },
-    /// Send a `ping` frame (mirrors old fugle-marketdata SDK's `ping()`)
-    Ping { state: Option<String> },
+    /// Send a `ping` frame carrying `data` (mirrors 1.x `ping(params)`)
+    Ping { data: Option<serde_json::Value> },
     /// Ask the server for its current subscription list (response arrives via `message`)
     QuerySubscriptions,
     Disconnect,
+}
+
+/// A `ping()` argument as the frame's `data` (#23): an object (or any other
+/// value) as-is, 1.x style; a string as `{ state }`, as rc.2 sent it; nothing
+/// (or `null`) omits `data`.
+fn ping_data(params: Option<serde_json::Value>) -> Option<serde_json::Value> {
+    match params? {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(state) => Some(serde_json::json!({ "state": state })),
+        value => Some(value),
+    }
 }
 
 /// Rejection for `connect()` while a connection is open or still being
@@ -668,16 +771,28 @@ impl StockWebSocketClient {
 
     /// Register an event handler
     ///
-    /// @param event - Event type: "message", "connect", "disconnect", "reconnect", "error"
-    /// @param callback - JavaScript callback function receiving string data
+    /// Arguments match `@fugle/marketdata` 1.x (#23): `message(data: string)`,
+    /// `connect()` when the socket opens, `authenticated(data)` /
+    /// `unauthenticated(data)` with the server's `data`,
+    /// `disconnect({ code, reason })`, `reconnect({ attempt })`, and
+    /// `error(Error)` with a numeric `code` when core supplied one. Without an
+    /// `error` listener errors are ignored rather than thrown.
+    ///
+    /// @param event - Event type: "message", "connect", "authenticated",
+    ///                "unauthenticated", "disconnect", "reconnect", "error"
+    /// @param callback - Listener for that event
     ///
     /// @example
     /// ```javascript
     /// ws.stock.on('message', (data) => console.log(data));
     /// ws.stock.on('connect', () => console.log('Connected'));
-    /// ws.stock.on('error', (err) => console.error(err));
+    /// ws.stock.on('disconnect', ({ code, reason }) => console.log(code, reason));
+    /// ws.stock.on('error', (err) => console.error(err.code, err.message));
     /// ```
-    #[napi(ts_args_type = "event: WebSocketEvent, callback: (data: string) => void")]
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]"
+    )]
     pub fn on(&self, event: String, callback: EventTsfn) -> napi::Result<()> {
         let mut callbacks = self
             .callbacks
@@ -707,25 +822,26 @@ impl StockWebSocketClient {
 
     /// Connect to the stock WebSocket server.
     ///
-    /// Returns a Promise that resolves when authentication completes, matching
-    /// the legacy fugle-marketdata Node SDK shape:
+    /// Returns a Promise that resolves with the server's `authenticated`
+    /// `data` once authentication completes, matching `@fugle/marketdata` 1.x
+    /// (#23):
     ///
     /// ```js
-    /// stock.connect().then(() => {
+    /// stock.connect().then((data) => {
     ///   stock.subscribe({ channel: 'trades', symbol: '2330' });
     /// });
     /// ```
     ///
-    /// On rejection, the Promise carries the underlying error message. The
-    /// `connect` event callback also fires after the Promise resolves, so
-    /// existing callback-style code keeps working.
+    /// If the server rejects the credentials, the Promise rejects with the
+    /// server's `data` object itself (after `unauthenticated` fires); any other
+    /// failure rejects with an `Error` whose message is `[code] message`.
     ///
     /// Rejects with `[2011] Already connected` while a connection is open or
     /// being established (#44). Call disconnect() first to reconnect; calling
     /// connect() right after disconnect(), or from a `disconnect` handler once
     /// no auto-reconnect will follow, is fine.
-    #[napi(ts_return_type = "Promise<void>")]
-    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
+    #[napi(ts_return_type = "Promise<WebSocketAuthData | undefined>")]
+    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
         auth_promise(env, self.start_worker(env))
     }
 
@@ -741,8 +857,8 @@ impl StockWebSocketClient {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
 
-        // Oneshot channel for auth completion signal back to the awaiting Promise.
-        let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
+        let auth: AuthSlot = Arc::new(Mutex::new(Some(auth_tx)));
 
         // Clone data for the worker thread
         let api_key = self.api_key.clone();
@@ -792,10 +908,10 @@ impl StockWebSocketClient {
                 {
                     Ok(rt) => rt,
                     Err(e) => {
-                        let msg = format!("Failed to create runtime: {}", e);
+                        // No core client yet, so no event to forward: only
+                        // the Promise reports it.
                         ending.store(true, Ordering::SeqCst);
-                        let _ = auth_tx.send(Err(msg.clone()));
-                        fire_callback(&callbacks, &keep_alive, "error", msg);
+                        settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
                         return;
                     }
                 };
@@ -816,94 +932,40 @@ impl StockWebSocketClient {
                 config.tls = tls_config;
                 let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
 
-                // Connect (core's connect().await returns once authenticated)
-                let connect_result = rt.block_on(async {
-                    client.connect().await
-                });
+                // Forward core events from before connect(): `Connected` is
+                // emitted when the socket opens, ahead of authentication, and
+                // the authentication outcome settles the Promise (#23).
+                let dispatch_ended = Arc::new(AtomicBool::new(false));
+                spawn_event_forwarder(
+                    Arc::clone(client.state_events()),
+                    Arc::clone(&callbacks),
+                    Arc::clone(&keep_alive),
+                    Arc::clone(&auth),
+                    Arc::clone(&connected),
+                    Arc::clone(&ending),
+                    Arc::clone(&dispatch_ended),
+                );
 
-                if let Err(e) = connect_result {
-                    let msg = format!("[{}] {}", e.to_error_code(), e);
+                // Core's connect().await returns once authenticated. Its
+                // failures were already emitted as `Unauthenticated` or
+                // `Error`, which the forwarder turns into the rejection.
+                if rt.block_on(client.connect()).is_err() {
                     ending.store(true, Ordering::SeqCst);
-                    let _ = auth_tx.send(Err(msg.clone()));
-                    fire_callback(&callbacks, &keep_alive, "error", msg);
                     return;
                 }
 
                 // disconnect() arrived while authenticating, and connect() may
                 // already have started a newer worker that is joining this
                 // one: abandon the connection instead of reporting success
-                // (#44). A disconnect() landing after this check is handled
-                // by the main loop like any other.
+                // (#44). The forwarder skips `Authenticated` once `ending` is
+                // set; if it got there first, this is an ordinary disconnect.
                 if ending.load(Ordering::SeqCst) {
                     let _ = rt.block_on(client.disconnect());
+                    connected.store(false, Ordering::SeqCst);
                     closed.store(true, Ordering::SeqCst);
-                    let _ = auth_tx.send(Err(CONNECT_ABORTED.to_string()));
+                    settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
                     return;
                 }
-
-                // Signal the awaiting Promise that authentication succeeded.
-                let _ = auth_tx.send(Ok(()));
-
-                // Mark as connected
-                connected.store(true, Ordering::SeqCst);
-                fire_callback(&callbacks, &keep_alive, "connect", "connected".to_string());
-
-                // Monitor state events for reconnect/error callbacks
-                let events = Arc::clone(client.state_events());
-                let callbacks_for_events = Arc::clone(&callbacks);
-                // Set once core stops for good (server close or network loss
-                // with no reconnect left). The message channel stays open
-                // while `client` lives, so the worker needs this to exit and
-                // let go of `keep_alive` (#30).
-                let dispatch_ended = Arc::new(AtomicBool::new(false));
-                let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
-                let keep_alive_for_events = Arc::clone(&keep_alive);
-                let ending_for_events = Arc::clone(&ending);
-                std::thread::spawn(move || {
-                    let keep_alive = keep_alive_for_events;
-                    let ending = ending_for_events;
-                    loop {
-                        let event = {
-                            let rx = events.blocking_lock();
-                            rx.recv()
-                        };
-                        match event {
-                            Ok(event) => {
-                                use marketdata_core::websocket::ConnectionEvent;
-                                match event {
-                                    ConnectionEvent::Reconnecting { attempt } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "reconnect", format!("{{\"attempt\":{}}}", attempt));
-                                    }
-                                    ConnectionEvent::Error { message, code } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
-                                    }
-                                    ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
-                                        if !will_reconnect {
-                                            ending.store(true, Ordering::SeqCst);
-                                            // Core's dispatch task ends without reconnecting.
-                                            dispatch_ended_for_events.store(true, Ordering::SeqCst);
-                                        }
-                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
-                                    }
-                                    ConnectionEvent::ReconnectFailed { attempts } => {
-                                        ending.store(true, Ordering::SeqCst);
-                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("Reconnection failed after {} attempts", attempts));
-                                        // Core's dispatch task has ended for good.
-                                        dispatch_ended_for_events.store(true, Ordering::SeqCst);
-                                    }
-                                    ConnectionEvent::Authenticated { .. } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "authenticated", "authenticated".to_string());
-                                    }
-                                    ConnectionEvent::Unauthenticated { message, .. } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                });
 
                 // Get message receiver. `messages()` spawns its bridge task
                 // with `tokio::spawn`, and this worker thread is only inside
@@ -940,8 +1002,11 @@ impl StockWebSocketClient {
                         Ok(WsCommand::Unsubscribe { ids }) => {
                             let _ = rt.block_on(client.unsubscribe(ids));
                         }
-                        Ok(WsCommand::Ping { state }) => {
-                            let request = marketdata_core::WebSocketRequest::ping(state);
+                        Ok(WsCommand::Ping { data }) => {
+                            let request = marketdata_core::WebSocketRequest {
+                                event: "ping".to_string(),
+                                data,
+                            };
                             let _ = rt.block_on(client.send(request));
                         }
                         Ok(WsCommand::QuerySubscriptions) => {
@@ -973,7 +1038,7 @@ impl StockWebSocketClient {
                             // The frame verbatim: re-serializing the routing
                             // struct would drop unknown fields and emit nulls
                             // for the ones the server omitted.
-                            fire_callback(&callbacks, &keep_alive, "message", msg.raw);
+                            fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
                         }
                         Ok(None) => {
                             // Timeout, continue loop
@@ -1098,10 +1163,12 @@ impl StockWebSocketClient {
     /// is delivered via the `message` callback (or processed internally by the
     /// health check, if enabled).
     ///
-    /// @param state - Optional state string echoed back in the server's pong reply
-    #[napi]
-    pub fn ping(&self, state: Option<String>) -> napi::Result<()> {
-        send_command(&self.worker, WsCommand::Ping { state }, "ping")
+    /// @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
+    ///                 `state` the server echoes back in its pong. A string is
+    ///                 accepted for compatibility and sent as `{ state }`.
+    #[napi(ts_args_type = "params?: string | WebSocketPingParams")]
+    pub fn ping(&self, params: Option<serde_json::Value>) -> napi::Result<()> {
+        send_command(&self.worker, WsCommand::Ping { data: ping_data(params) }, "ping")
     }
 
     /// Ask the server for its current subscription list.
@@ -1206,9 +1273,11 @@ impl FutOptWebSocketClient {
 
     /// Register an event handler
     ///
-    /// @param event - Event type: "message", "connect", "disconnect", "reconnect", "error"
-    /// @param callback - JavaScript callback function receiving string data
-    #[napi(ts_args_type = "event: WebSocketEvent, callback: (data: string) => void")]
+    /// Same events and arguments as `StockWebSocketClient::on` (#23).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]"
+    )]
     pub fn on(&self, event: String, callback: EventTsfn) -> napi::Result<()> {
         let mut callbacks = self
             .callbacks
@@ -1238,11 +1307,11 @@ impl FutOptWebSocketClient {
 
     /// Connect to the FutOpt WebSocket server.
     ///
-    /// Returns a Promise that resolves when authentication completes.
-    /// See `StockWebSocketClient::connect` for the rationale, example, and the
-    /// `[2011] Already connected` rejection (#44).
-    #[napi(ts_return_type = "Promise<void>")]
-    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, ()>> {
+    /// Returns a Promise that resolves with the server's `authenticated`
+    /// `data`. See `StockWebSocketClient::connect` for the rejections,
+    /// including `[2011] Already connected` (#44).
+    #[napi(ts_return_type = "Promise<WebSocketAuthData | undefined>")]
+    pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
         auth_promise(env, self.start_worker(env))
     }
 
@@ -1258,7 +1327,8 @@ impl FutOptWebSocketClient {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
 
-        let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
+        let auth: AuthSlot = Arc::new(Mutex::new(Some(auth_tx)));
 
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
@@ -1305,10 +1375,10 @@ impl FutOptWebSocketClient {
                 {
                     Ok(rt) => rt,
                     Err(e) => {
-                        let msg = format!("Failed to create runtime: {}", e);
+                        // No core client yet, so no event to forward: only
+                        // the Promise reports it.
                         ending.store(true, Ordering::SeqCst);
-                        let _ = auth_tx.send(Err(msg.clone()));
-                        fire_callback(&callbacks, &keep_alive, "error", msg);
+                        settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
                         return;
                     }
                 };
@@ -1328,91 +1398,40 @@ impl FutOptWebSocketClient {
                 config.tls = tls_config;
                 let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
 
-                let connect_result = rt.block_on(async {
-                    client.connect().await
-                });
+                // Forward core events from before connect(): `Connected` is
+                // emitted when the socket opens, ahead of authentication, and
+                // the authentication outcome settles the Promise (#23).
+                let dispatch_ended = Arc::new(AtomicBool::new(false));
+                spawn_event_forwarder(
+                    Arc::clone(client.state_events()),
+                    Arc::clone(&callbacks),
+                    Arc::clone(&keep_alive),
+                    Arc::clone(&auth),
+                    Arc::clone(&connected),
+                    Arc::clone(&ending),
+                    Arc::clone(&dispatch_ended),
+                );
 
-                if let Err(e) = connect_result {
-                    let msg = format!("[{}] {}", e.to_error_code(), e);
+                // Core's connect().await returns once authenticated. Its
+                // failures were already emitted as `Unauthenticated` or
+                // `Error`, which the forwarder turns into the rejection.
+                if rt.block_on(client.connect()).is_err() {
                     ending.store(true, Ordering::SeqCst);
-                    let _ = auth_tx.send(Err(msg.clone()));
-                    fire_callback(&callbacks, &keep_alive, "error", msg);
                     return;
                 }
 
                 // disconnect() arrived while authenticating, and connect() may
                 // already have started a newer worker that is joining this
                 // one: abandon the connection instead of reporting success
-                // (#44). A disconnect() landing after this check is handled
-                // by the main loop like any other.
+                // (#44). The forwarder skips `Authenticated` once `ending` is
+                // set; if it got there first, this is an ordinary disconnect.
                 if ending.load(Ordering::SeqCst) {
                     let _ = rt.block_on(client.disconnect());
+                    connected.store(false, Ordering::SeqCst);
                     closed.store(true, Ordering::SeqCst);
-                    let _ = auth_tx.send(Err(CONNECT_ABORTED.to_string()));
+                    settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
                     return;
                 }
-
-                let _ = auth_tx.send(Ok(()));
-
-                connected.store(true, Ordering::SeqCst);
-                fire_callback(&callbacks, &keep_alive, "connect", "connected".to_string());
-
-                // Monitor state events for reconnect/error callbacks
-                let events = Arc::clone(client.state_events());
-                let callbacks_for_events = Arc::clone(&callbacks);
-                // Set once core stops for good (server close or network loss
-                // with no reconnect left). The message channel stays open
-                // while `client` lives, so the worker needs this to exit and
-                // let go of `keep_alive` (#30).
-                let dispatch_ended = Arc::new(AtomicBool::new(false));
-                let dispatch_ended_for_events = Arc::clone(&dispatch_ended);
-                let keep_alive_for_events = Arc::clone(&keep_alive);
-                let ending_for_events = Arc::clone(&ending);
-                std::thread::spawn(move || {
-                    let keep_alive = keep_alive_for_events;
-                    let ending = ending_for_events;
-                    loop {
-                        let event = {
-                            let rx = events.blocking_lock();
-                            rx.recv()
-                        };
-                        match event {
-                            Ok(event) => {
-                                use marketdata_core::websocket::ConnectionEvent;
-                                match event {
-                                    ConnectionEvent::Reconnecting { attempt } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "reconnect", format!("{{\"attempt\":{}}}", attempt));
-                                    }
-                                    ConnectionEvent::Error { message, code } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
-                                    }
-                                    ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
-                                        if !will_reconnect {
-                                            ending.store(true, Ordering::SeqCst);
-                                            // Core's dispatch task ends without reconnecting.
-                                            dispatch_ended_for_events.store(true, Ordering::SeqCst);
-                                        }
-                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
-                                    }
-                                    ConnectionEvent::ReconnectFailed { attempts } => {
-                                        ending.store(true, Ordering::SeqCst);
-                                        fire_callback(&callbacks_for_events, &keep_alive, "error", format!("Reconnection failed after {} attempts", attempts));
-                                        // Core's dispatch task has ended for good.
-                                        dispatch_ended_for_events.store(true, Ordering::SeqCst);
-                                    }
-                                    ConnectionEvent::Authenticated { .. } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "authenticated", "authenticated".to_string());
-                                    }
-                                    ConnectionEvent::Unauthenticated { message, .. } => {
-                                        fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                });
 
                 // Get message receiver. `messages()` spawns its bridge task
                 // with `tokio::spawn`, and this worker thread is only inside
@@ -1448,8 +1467,11 @@ impl FutOptWebSocketClient {
                         Ok(WsCommand::Unsubscribe { ids }) => {
                             let _ = rt.block_on(client.unsubscribe(ids));
                         }
-                        Ok(WsCommand::Ping { state }) => {
-                            let request = marketdata_core::WebSocketRequest::ping(state);
+                        Ok(WsCommand::Ping { data }) => {
+                            let request = marketdata_core::WebSocketRequest {
+                                event: "ping".to_string(),
+                                data,
+                            };
                             let _ = rt.block_on(client.send(request));
                         }
                         Ok(WsCommand::QuerySubscriptions) => {
@@ -1481,7 +1503,7 @@ impl FutOptWebSocketClient {
                             // The frame verbatim: re-serializing the routing
                             // struct would drop unknown fields and emit nulls
                             // for the ones the server omitted.
-                            fire_callback(&callbacks, &keep_alive, "message", msg.raw);
+                            fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
                         }
                         Ok(None) => {
                             // Timeout, continue loop
@@ -1602,10 +1624,12 @@ impl FutOptWebSocketClient {
     /// is delivered via the `message` callback (or processed internally by the
     /// health check, if enabled).
     ///
-    /// @param state - Optional state string echoed back in the server's pong reply
-    #[napi]
-    pub fn ping(&self, state: Option<String>) -> napi::Result<()> {
-        send_command(&self.worker, WsCommand::Ping { state }, "ping")
+    /// @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
+    ///                 `state` the server echoes back in its pong. A string is
+    ///                 accepted for compatibility and sent as `{ state }`.
+    #[napi(ts_args_type = "params?: string | WebSocketPingParams")]
+    pub fn ping(&self, params: Option<serde_json::Value>) -> napi::Result<()> {
+        send_command(&self.worker, WsCommand::Ping { data: ping_data(params) }, "ping")
     }
 
     /// Ask the server for its current subscription list.
@@ -1642,6 +1666,115 @@ impl FutOptWebSocketClient {
     }
 }
 
+/// Forward a connection's core events to the JS listeners until core drops
+/// the event channel (#23). Only core events are forwarded; the worker
+/// emits none of its own.
+///
+/// The first authentication outcome settles `connect()`: `Authenticated`
+/// resolves with the server's `data`, `Unauthenticated` rejects with it, and
+/// an `Error` before either rejects with `Error("[code] message")` — each
+/// after its listener has run (see [`fire_and_settle`]).
+fn spawn_event_forwarder(
+    events: Arc<tokio::sync::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::ConnectionEvent>>>,
+    callbacks: Arc<Mutex<EventCallbacks>>,
+    keep_alive: KeepAlive,
+    auth: AuthSlot,
+    connected: Arc<AtomicBool>,
+    ending: Arc<AtomicBool>,
+    dispatch_ended: Arc<AtomicBool>,
+) {
+    use marketdata_core::websocket::ConnectionEvent;
+
+    std::thread::spawn(move || loop {
+        let event = {
+            let rx = events.blocking_lock();
+            rx.recv()
+        };
+        let Ok(event) = event else { break };
+        match event {
+            ConnectionEvent::Connected => {
+                fire_callback(&callbacks, &keep_alive, "connect", EventArgs::None);
+            }
+            ConnectionEvent::Authenticated { data } => {
+                // Given up by disconnect() while authenticating (#44).
+                if ending.load(Ordering::SeqCst) {
+                    continue;
+                }
+                connected.store(true, Ordering::SeqCst);
+                fire_and_settle(
+                    &callbacks,
+                    &keep_alive,
+                    "authenticated",
+                    EventArgs::Json(data.clone()),
+                    &auth,
+                    AuthOutcome::Authenticated(data),
+                    None,
+                );
+            }
+            ConnectionEvent::Unauthenticated { data, .. } => {
+                fire_and_settle(
+                    &callbacks,
+                    &keep_alive,
+                    "unauthenticated",
+                    EventArgs::Json(data.clone()),
+                    &auth,
+                    AuthOutcome::Rejected(data),
+                    Some(&ending),
+                );
+            }
+            ConnectionEvent::Error { message, code } => {
+                let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
+                fire_and_settle(
+                    &callbacks,
+                    &keep_alive,
+                    "error",
+                    EventArgs::Error { message, code: Some(code) },
+                    &auth,
+                    rejection,
+                    Some(&ending),
+                );
+            }
+            ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+                if !will_reconnect {
+                    ending.store(true, Ordering::SeqCst);
+                    // Core's dispatch task ends without reconnecting.
+                    dispatch_ended.store(true, Ordering::SeqCst);
+                }
+                fire_callback(
+                    &callbacks,
+                    &keep_alive,
+                    "disconnect",
+                    EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
+                );
+            }
+            ConnectionEvent::Reconnecting { attempt } => {
+                fire_callback(
+                    &callbacks,
+                    &keep_alive,
+                    "reconnect",
+                    EventArgs::Json(serde_json::json!({ "attempt": attempt })),
+                );
+            }
+            ConnectionEvent::ReconnectFailed { attempts } => {
+                ending.store(true, Ordering::SeqCst);
+                fire_callback(
+                    &callbacks,
+                    &keep_alive,
+                    "error",
+                    EventArgs::Error {
+                        message: format!("Reconnection failed after {} attempts", attempts),
+                        code: None,
+                    },
+                );
+                // Core's dispatch task has ended for good.
+                dispatch_ended.store(true, Ordering::SeqCst);
+            }
+            // `HeartbeatTimeout` is followed by `Disconnected`, which reports it.
+            _ => {}
+        }
+    });
+}
+
 /// Queue `event` for the registered JS listener, if any.
 ///
 /// Callable from any thread. The listener's threadsafe function is weak, so
@@ -1653,8 +1786,56 @@ fn fire_callback(
     callbacks: &Arc<Mutex<EventCallbacks>>,
     keep_alive: &KeepAlive,
     event: &str,
-    data: String,
+    data: EventArgs,
 ) {
+    fire_callback_then(callbacks, keep_alive, event, data, || {});
+}
+
+/// Fire `event`, then settle the pending `connect()` with `outcome` once the
+/// listener has returned, so it runs before the Promise settles as it did in
+/// 1.x, which emitted before settling (#23). Nothing is settled if
+/// `connect()` already was.
+///
+/// `ending`, when given and `connect()` is still pending, is set before the
+/// event fires, so calling connect() again from the listener or the
+/// rejection is not refused as already connected (#44).
+fn fire_and_settle(
+    callbacks: &Arc<Mutex<EventCallbacks>>,
+    keep_alive: &KeepAlive,
+    event: &str,
+    data: EventArgs,
+    auth: &AuthSlot,
+    outcome: AuthOutcome,
+    ending: Option<&AtomicBool>,
+) {
+    let pending = auth.lock().map(|guard| guard.is_some()).unwrap_or(false);
+    if !pending {
+        fire_callback(callbacks, keep_alive, event, data);
+        return;
+    }
+    if let Some(ending) = ending {
+        ending.store(true, Ordering::SeqCst);
+    }
+    let auth = Arc::clone(auth);
+    fire_callback_then(callbacks, keep_alive, event, data, move || settle(&auth, outcome));
+}
+
+/// [`fire_callback`], running `then` once the listener has returned — or
+/// right away when no listener is registered or the call cannot be queued.
+fn fire_callback_then(
+    callbacks: &Arc<Mutex<EventCallbacks>>,
+    keep_alive: &KeepAlive,
+    event: &str,
+    data: EventArgs,
+    then: impl FnOnce() + Send + 'static,
+) {
+    fn run_then<F: FnOnce()>(then: &Mutex<Option<F>>) {
+        if let Some(then) = then.lock().ok().and_then(|mut guard| guard.take()) {
+            then();
+        }
+    }
+
+    let then = Arc::new(Mutex::new(Some(then)));
     if let Ok(cb) = callbacks.lock() {
         let callback = match event {
             "message" => cb.message.as_ref(),
@@ -1669,12 +1850,23 @@ fn fire_callback(
 
         if let Some(callback) = callback {
             let keep_alive = Arc::clone(keep_alive);
-            callback.call_with_return_value(data, ThreadsafeFunctionCallMode::NonBlocking, move |result, _env| {
-                drop(keep_alive);
-                result.map(|_| ())
-            });
+            let then_after_call = Arc::clone(&then);
+            let status = callback.call_with_return_value(
+                data,
+                ThreadsafeFunctionCallMode::NonBlocking,
+                move |result, _env| {
+                    run_then(&then_after_call);
+                    drop(keep_alive);
+                    result.map(|_| ())
+                },
+            );
+            if status != Status::Ok {
+                run_then(&then);
+            }
+            return;
         }
     }
+    run_then(&then);
 }
 
 // Unit tests are disabled because ThreadsafeFunction requires Node.js runtime

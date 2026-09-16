@@ -733,19 +733,63 @@ export interface UnsubscribeOptions {
 }
 
 /**
- * Event map for typed WebSocket callbacks
+ * Parameters for `ping()`, sent as the ping frame's `data`. The server echoes
+ * `state` back in its pong.
+ */
+export interface WebSocketPingParams {
+  state?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * The server's `data` from an `authenticated` or authentication `error`
+ * frame, as delivered to `authenticated` / `unauthenticated` and to
+ * `connect()`'s resolution or rejection.
+ */
+export interface WebSocketAuthData {
+  message?: string;
+  [key: string]: unknown;
+}
+
+/** Argument of the `disconnect` event. */
+export interface WebSocketDisconnectEvent {
+  /** WebSocket close code, or `null` when the connection ended without one */
+  code: number | null;
+  /** Close reason */
+  reason: string;
+}
+
+/** Argument of the `reconnect` event. */
+export interface WebSocketReconnectEvent {
+  /** Reconnection attempt number, starting at 1 */
+  attempt: number;
+}
+
+/** Argument of the `error` event. */
+export interface WebSocketError extends Error {
+  /** Numeric error code, when one applies (see the error code table) */
+  code?: number;
+}
+
+/**
+ * Event map for typed WebSocket callbacks; argument shapes match
+ * `@fugle/marketdata` 1.x.
  */
 export interface WebSocketEventMap {
-  /** Market data message received */
+  /** Raw frame received from the server (JSON string) */
   message: (data: string) => void;
-  /** Connected to WebSocket server */
-  connect: (info: string) => void;
+  /** Socket opened, before authentication */
+  connect: () => void;
+  /** Authentication succeeded */
+  authenticated: (data?: WebSocketAuthData) => void;
+  /** Authentication was rejected by the server */
+  unauthenticated: (data?: WebSocketAuthData) => void;
   /** Disconnected from WebSocket server */
-  disconnect: (reason: string) => void;
+  disconnect: (event: WebSocketDisconnectEvent) => void;
   /** Reconnecting to WebSocket server */
-  reconnect: (info: string) => void;
-  /** Error occurred */
-  error: (error: string) => void;
+  reconnect: (event: WebSocketReconnectEvent) => void;
+  /** Error occurred; ignored when no listener is registered */
+  error: (error: WebSocketError) => void;
 }
 
 /** Event names for WebSocket */

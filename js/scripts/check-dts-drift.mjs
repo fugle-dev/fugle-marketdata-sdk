@@ -282,6 +282,11 @@ const INTENTIONALLY_UNMAPPED = {
   FutOptSubscribeOptions: 'WebSocket param type, not a core response struct',
   UnsubscribeOptions: 'WebSocket param type, not a core response struct',
   WebSocketEventMap: 'callback signature map, no data fields',
+  WebSocketPingParams: 'WebSocket param type, not a core response struct',
+  WebSocketAuthData: 'server auth frame data, passed through verbatim',
+  WebSocketDisconnectEvent: 'WebSocket event argument built by the binding',
+  WebSocketReconnectEvent: 'WebSocket event argument built by the binding',
+  WebSocketError: 'WebSocket event argument built by the binding',
 
   // JS-side request param / client-option types — inputs the caller
   // constructs, not server response shapes.

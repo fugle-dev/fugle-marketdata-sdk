@@ -733,19 +733,63 @@ export interface UnsubscribeOptions {
 }
 
 /**
- * Event map for typed WebSocket callbacks
+ * Parameters for `ping()`, sent as the ping frame's `data`. The server echoes
+ * `state` back in its pong.
+ */
+export interface WebSocketPingParams {
+  state?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * The server's `data` from an `authenticated` or authentication `error`
+ * frame, as delivered to `authenticated` / `unauthenticated` and to
+ * `connect()`'s resolution or rejection.
+ */
+export interface WebSocketAuthData {
+  message?: string;
+  [key: string]: unknown;
+}
+
+/** Argument of the `disconnect` event. */
+export interface WebSocketDisconnectEvent {
+  /** WebSocket close code, or `null` when the connection ended without one */
+  code: number | null;
+  /** Close reason */
+  reason: string;
+}
+
+/** Argument of the `reconnect` event. */
+export interface WebSocketReconnectEvent {
+  /** Reconnection attempt number, starting at 1 */
+  attempt: number;
+}
+
+/** Argument of the `error` event. */
+export interface WebSocketError extends Error {
+  /** Numeric error code, when one applies (see the error code table) */
+  code?: number;
+}
+
+/**
+ * Event map for typed WebSocket callbacks; argument shapes match
+ * `@fugle/marketdata` 1.x.
  */
 export interface WebSocketEventMap {
-  /** Market data message received */
+  /** Raw frame received from the server (JSON string) */
   message: (data: string) => void;
-  /** Connected to WebSocket server */
-  connect: (info: string) => void;
+  /** Socket opened, before authentication */
+  connect: () => void;
+  /** Authentication succeeded */
+  authenticated: (data?: WebSocketAuthData) => void;
+  /** Authentication was rejected by the server */
+  unauthenticated: (data?: WebSocketAuthData) => void;
   /** Disconnected from WebSocket server */
-  disconnect: (reason: string) => void;
+  disconnect: (event: WebSocketDisconnectEvent) => void;
   /** Reconnecting to WebSocket server */
-  reconnect: (info: string) => void;
-  /** Error occurred */
-  error: (error: string) => void;
+  reconnect: (event: WebSocketReconnectEvent) => void;
+  /** Error occurred; ignored when no listener is registered */
+  error: (error: WebSocketError) => void;
 }
 
 /** Event names for WebSocket */
@@ -1956,18 +2000,17 @@ export declare class FutOptWebSocketClient {
   /**
    * Register an event handler
    *
-   * @param event - Event type: "message", "connect", "disconnect", "reconnect", "error"
-   * @param callback - JavaScript callback function receiving string data
+   * Same events and arguments as `StockWebSocketClient::on` (#23).
    */
-  on(event: WebSocketEvent, callback: (data: string) => void): void
+  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void
   /**
    * Connect to the FutOpt WebSocket server.
    *
-   * Returns a Promise that resolves when authentication completes.
-   * See `StockWebSocketClient::connect` for the rationale, example, and the
-   * `[2011] Already connected` rejection (#44).
+   * Returns a Promise that resolves with the server's `authenticated`
+   * `data`. See `StockWebSocketClient::connect` for the rejections,
+   * including `[2011] Already connected` (#44).
    */
-  connect(): Promise<void>
+  connect(): Promise<WebSocketAuthData | undefined>
   /**
    * Subscribe to a channel
    *
@@ -1989,9 +2032,11 @@ export declare class FutOptWebSocketClient {
    * is delivered via the `message` callback (or processed internally by the
    * health check, if enabled).
    *
-   * @param state - Optional state string echoed back in the server's pong reply
+   * @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
+   *                 `state` the server echoes back in its pong. A string is
+   *                 accepted for compatibility and sent as `{ state }`.
    */
-  ping(state?: string | undefined | null): void
+  ping(params?: string | WebSocketPingParams): void
   /**
    * Ask the server for its current subscription list.
    *
@@ -2370,39 +2415,49 @@ export declare class StockWebSocketClient {
   /**
    * Register an event handler
    *
-   * @param event - Event type: "message", "connect", "disconnect", "reconnect", "error"
-   * @param callback - JavaScript callback function receiving string data
+   * Arguments match `@fugle/marketdata` 1.x (#23): `message(data: string)`,
+   * `connect()` when the socket opens, `authenticated(data)` /
+   * `unauthenticated(data)` with the server's `data`,
+   * `disconnect({ code, reason })`, `reconnect({ attempt })`, and
+   * `error(Error)` with a numeric `code` when core supplied one. Without an
+   * `error` listener errors are ignored rather than thrown.
+   *
+   * @param event - Event type: "message", "connect", "authenticated",
+   *                "unauthenticated", "disconnect", "reconnect", "error"
+   * @param callback - Listener for that event
    *
    * @example
    * ```javascript
    * ws.stock.on('message', (data) => console.log(data));
    * ws.stock.on('connect', () => console.log('Connected'));
-   * ws.stock.on('error', (err) => console.error(err));
+   * ws.stock.on('disconnect', ({ code, reason }) => console.log(code, reason));
+   * ws.stock.on('error', (err) => console.error(err.code, err.message));
    * ```
    */
-  on(event: WebSocketEvent, callback: (data: string) => void): void
+  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void
   /**
    * Connect to the stock WebSocket server.
    *
-   * Returns a Promise that resolves when authentication completes, matching
-   * the legacy fugle-marketdata Node SDK shape:
+   * Returns a Promise that resolves with the server's `authenticated`
+   * `data` once authentication completes, matching `@fugle/marketdata` 1.x
+   * (#23):
    *
    * ```js
-   * stock.connect().then(() => {
+   * stock.connect().then((data) => {
    *   stock.subscribe({ channel: 'trades', symbol: '2330' });
    * });
    * ```
    *
-   * On rejection, the Promise carries the underlying error message. The
-   * `connect` event callback also fires after the Promise resolves, so
-   * existing callback-style code keeps working.
+   * If the server rejects the credentials, the Promise rejects with the
+   * server's `data` object itself (after `unauthenticated` fires); any other
+   * failure rejects with an `Error` whose message is `[code] message`.
    *
    * Rejects with `[2011] Already connected` while a connection is open or
    * being established (#44). Call disconnect() first to reconnect; calling
    * connect() right after disconnect(), or from a `disconnect` handler once
    * no auto-reconnect will follow, is fine.
    */
-  connect(): Promise<void>
+  connect(): Promise<WebSocketAuthData | undefined>
   /**
    * Subscribe to a channel
    *
@@ -2426,9 +2481,11 @@ export declare class StockWebSocketClient {
    * is delivered via the `message` callback (or processed internally by the
    * health check, if enabled).
    *
-   * @param state - Optional state string echoed back in the server's pong reply
+   * @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
+   *                 `state` the server echoes back in its pong. A string is
+   *                 accepted for compatibility and sent as `{ state }`.
    */
-  ping(state?: string | undefined | null): void
+  ping(params?: string | WebSocketPingParams): void
   /**
    * Ask the server for its current subscription list.
    *
