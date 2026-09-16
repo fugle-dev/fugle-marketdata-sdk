@@ -27,6 +27,7 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::future_into_py;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -777,17 +778,27 @@ fn spawn_event_thread(
     name: &str,
     events: EventReceiver,
     callbacks: Arc<CallbackRegistry>,
+    test_panic: Option<String>,
 ) -> PyResult<std::thread::JoinHandle<()>> {
     std::thread::Builder::new()
         .name(name.to_string())
-        .spawn(move || loop {
-            let event = {
-                let rx = events.blocking_lock();
-                rx.recv()
+        .spawn(move || {
+            let run = || loop {
+                let event = {
+                    let rx = events.blocking_lock();
+                    rx.recv()
+                };
+                match event {
+                    Ok(event) => {
+                        inject_test_panic(test_panic.as_deref(), "ws_events");
+                        Python::attach(|py| forward_event(py, &callbacks, event))
+                    }
+                    Err(_) => break, // Channel closed
+                }
             };
-            match event {
-                Ok(event) => Python::attach(|py| forward_event(py, &callbacks, event)),
-                Err(_) => break, // Channel closed
+            // Later events are lost, but the panic is not silent (#25).
+            if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
+                report_thread_panic(&callbacks, "event", &*payload);
             }
         })
         .map_err(|e| {
@@ -796,6 +807,88 @@ fn spawn_event_thread(
             ))
         })
 }
+
+/// Start the thread that hands received messages to the `message`
+/// callbacks until `stop_flag` is set or the receiver closes.
+fn spawn_message_thread(
+    name: &str,
+    receiver: Arc<marketdata_core::MessageReceiver>,
+    callbacks: Arc<CallbackRegistry>,
+    stop_flag: Arc<AtomicBool>,
+    test_panic: Option<String>,
+) -> std::thread::JoinHandle<()> {
+    stop_flag.store(false, Ordering::SeqCst);
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            let run = || {
+                while !stop_flag.load(Ordering::SeqCst) {
+                    match receiver.receive_timeout(Duration::from_millis(100)) {
+                        Ok(Some(msg)) => {
+                            inject_test_panic(test_panic.as_deref(), "ws_messages");
+                            Python::attach(|py| {
+                                if let Ok(dict) = message_to_dict(py, &msg) {
+                                    let args = pyo3::types::PyTuple::new(py, [dict.into_any()])
+                                        .expect("Failed to create tuple");
+                                    callbacks.invoke(py, crate::callback::EventType::Message, &args);
+                                }
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(_) => break, // Channel closed
+                    }
+                }
+            };
+            // Later messages are lost, but the panic is not silent (#25).
+            if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
+                report_thread_panic(&callbacks, "message", &*payload);
+            }
+        })
+        .unwrap_or_else(|e| panic!("failed to spawn {name} thread: {e}"))
+}
+
+/// Error code reported for a panicked WebSocket thread (#25).
+const PANIC_CODE: i32 = -1;
+
+/// Report a panic on a WebSocket `thread` through the `error` callbacks, so
+/// it does not go unnoticed (#25).
+fn report_thread_panic(
+    callbacks: &CallbackRegistry,
+    thread: &str,
+    payload: &(dyn std::any::Any + Send),
+) {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .map(|message| message.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string());
+    let message = format!("WebSocket {thread} thread panicked: {detail}");
+    Python::attach(|py| callbacks.invoke_error(py, &message, PANIC_CODE));
+}
+
+/// `FUGLE_MARKETDATA_TEST_PANIC`, naming where a test wants a WebSocket
+/// thread to panic (#25). Read when connecting. Debug builds only.
+#[cfg(debug_assertions)]
+fn test_panic_site() -> Option<String> {
+    std::env::var("FUGLE_MARKETDATA_TEST_PANIC").ok()
+}
+
+#[cfg(not(debug_assertions))]
+fn test_panic_site() -> Option<String> {
+    None
+}
+
+/// Panic if the test asked for one at `here` (`ws_events`, `ws_messages`).
+#[cfg(debug_assertions)]
+fn inject_test_panic(site: Option<&str>, here: &str) {
+    if site == Some(here) {
+        panic!("injected test panic at {here}");
+    }
+}
+
+#[cfg(not(debug_assertions))]
+#[inline(always)]
+fn inject_test_panic(_site: Option<&str>, _here: &str) {}
 
 /// Map one core connection event onto the Python callback it stands for.
 fn forward_event(
@@ -958,41 +1051,18 @@ impl StockWebSocketClient {
     }
 
     /// Start background message dispatch thread
-    fn start_message_thread(&self, receiver: Arc<marketdata_core::MessageReceiver>) {
-        let callbacks = Arc::clone(&self.callbacks);
-        let stop_flag = Arc::clone(&self.message_thread_stop);
-
-        // Reset stop flag
-        stop_flag.store(false, Ordering::SeqCst);
-
-        let handle = std::thread::spawn(move || {
-            while !stop_flag.load(Ordering::SeqCst) {
-                match receiver.receive_timeout(Duration::from_millis(100)) {
-                    Ok(Some(msg)) => {
-                        // Acquire GIL and invoke callback
-                        Python::attach(|py| {
-                            if let Ok(dict) = message_to_dict(py, &msg) {
-                                let args = pyo3::types::PyTuple::new(py, [dict.into_any()]).expect("Failed to create tuple");
-                                callbacks.invoke(
-                                    py,
-                                    crate::callback::EventType::Message,
-                                    &args,
-                                );
-                            }
-                        });
-                    }
-                    Ok(None) => {
-                        // Timeout, continue loop
-                    }
-                    Err(_) => {
-                        // Channel closed, exit loop
-                        break;
-                    }
-                }
-            }
-        });
-
-        // Store thread handle
+    fn start_message_thread(
+        &self,
+        receiver: Arc<marketdata_core::MessageReceiver>,
+        test_panic: Option<String>,
+    ) {
+        let handle = spawn_message_thread(
+            "stock_ws_messages",
+            receiver,
+            Arc::clone(&self.callbacks),
+            Arc::clone(&self.message_thread_stop),
+            test_panic,
+        );
         if let Ok(mut guard) = self.message_thread_handle.lock() {
             *guard = Some(handle);
         }
@@ -1047,6 +1117,7 @@ impl StockWebSocketClient {
     /// Raises:
     ///     MarketDataError: If connection fails
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
+        let test_panic = test_panic_site();
         // Ensure runtime exists
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
@@ -1064,6 +1135,7 @@ impl StockWebSocketClient {
             "stock_ws_events",
             Arc::clone(ws_client.state_events()),
             Arc::clone(&self.callbacks),
+            test_panic.clone(),
         )?;
 
         let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
@@ -1073,13 +1145,8 @@ impl StockWebSocketClient {
         // Connect with the GIL released: the handshake and auth ack may come
         // from a server that needs this interpreter to run (#39).
         let (ws_client, receiver, result) = py.detach(move || {
-            // Get message receiver before connect. `messages()` spawns its bridge
-            // task with `tokio::spawn`, so it must run inside the runtime context —
-            // this is a plain Python thread, not a tokio one (#13).
-            let receiver = {
-                let _guard = runtime.enter();
-                ws_client.messages()
-            };
+            // `messages()` needs no runtime context since #36.
+            let receiver = ws_client.messages();
             let result = runtime.block_on(ws_client.connect());
             (ws_client, receiver, result)
         });
@@ -1105,7 +1172,7 @@ impl StockWebSocketClient {
         // and subscription events) never reach the `on("message", ...)`
         // callback — the receiver just sits full.
         if self.has_message_callbacks() {
-            self.start_message_thread(receiver_for_thread);
+            self.start_message_thread(receiver_for_thread, test_panic);
         }
         Ok(())
     }
@@ -1417,6 +1484,7 @@ impl StockWebSocketClient {
         let message_thread_stop = Arc::clone(&self.message_thread_stop);
         let message_thread_handle = Arc::clone(&self.message_thread_handle);
         let event_thread_handle = Arc::clone(&self.event_thread_handle);
+        let test_panic = test_panic_site();
 
         future_into_py(py, async move {
             // Create WebSocket client with full config
@@ -1438,6 +1506,7 @@ impl StockWebSocketClient {
                 "stock_ws_events",
                 Arc::clone(ws_client.state_events()),
                 Arc::clone(&callbacks),
+                test_panic.clone(),
             )?;
 
             // Get message receiver before connect
@@ -1471,28 +1540,13 @@ impl StockWebSocketClient {
 
             // Start background message thread if callbacks registered
             if has_message_callbacks {
-                message_thread_stop.store(false, Ordering::SeqCst);
-                let callbacks_clone = Arc::clone(&callbacks);
-                let stop_flag = Arc::clone(&message_thread_stop);
-
-                let handle = std::thread::spawn(move || {
-                    while !stop_flag.load(Ordering::SeqCst) {
-                        match receiver_for_thread.receive_timeout(Duration::from_millis(100)) {
-                            Ok(Some(msg)) => {
-                                Python::attach(|py| {
-                                    if let Ok(dict) = message_to_dict(py, &msg) {
-                                        let args = pyo3::types::PyTuple::new(py, [dict.into_any()])
-                                            .expect("Failed to create tuple");
-                                        callbacks_clone.invoke(py, crate::callback::EventType::Message, &args);
-                                    }
-                                });
-                            }
-                            Ok(None) => {}
-                            Err(_) => break,
-                        }
-                    }
-                });
-
+                let handle = spawn_message_thread(
+                    "stock_ws_messages",
+                    receiver_for_thread,
+                    Arc::clone(&callbacks),
+                    message_thread_stop,
+                    test_panic,
+                );
                 if let Ok(mut guard) = message_thread_handle.lock() {
                     *guard = Some(handle);
                 }
@@ -1697,36 +1751,18 @@ impl FutOptWebSocketClient {
         self.callbacks.count(crate::callback::EventType::Message) > 0
     }
 
-    fn start_message_thread(&self, receiver: Arc<marketdata_core::MessageReceiver>) {
-        let callbacks = Arc::clone(&self.callbacks);
-        let stop_flag = Arc::clone(&self.message_thread_stop);
-        stop_flag.store(false, Ordering::SeqCst);
-
-        let handle = std::thread::Builder::new()
-            .name("futopt_ws_messages".to_string())
-            .spawn(move || {
-                while !stop_flag.load(Ordering::SeqCst) {
-                    match receiver.receive_timeout(Duration::from_millis(100)) {
-                        Ok(Some(msg)) => {
-                            Python::attach(|py| {
-                                if let Ok(dict) = message_to_dict(py, &msg) {
-                                    let args = pyo3::types::PyTuple::new(py, [dict.into_any()])
-                                        .expect("Failed to create tuple");
-                                    callbacks.invoke(
-                                        py,
-                                        crate::callback::EventType::Message,
-                                        &args,
-                                    );
-                                }
-                            });
-                        }
-                        Ok(None) => {}
-                        Err(_) => break,
-                    }
-                }
-            })
-            .expect("failed to spawn futopt_ws_messages thread");
-
+    fn start_message_thread(
+        &self,
+        receiver: Arc<marketdata_core::MessageReceiver>,
+        test_panic: Option<String>,
+    ) {
+        let handle = spawn_message_thread(
+            "futopt_ws_messages",
+            receiver,
+            Arc::clone(&self.callbacks),
+            Arc::clone(&self.message_thread_stop),
+            test_panic,
+        );
         if let Ok(mut guard) = self.message_thread_handle.lock() {
             *guard = Some(handle);
         }
@@ -1801,6 +1837,7 @@ impl FutOptWebSocketClient {
     ///     MarketDataError: If connection fails
     #[pyo3(signature = ())]
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
+        let test_panic = test_panic_site();
         // Ensure runtime exists
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
@@ -1818,6 +1855,7 @@ impl FutOptWebSocketClient {
             "futopt_ws_events",
             Arc::clone(ws_client.state_events()),
             Arc::clone(&self.callbacks),
+            test_panic.clone(),
         )?;
 
         let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
@@ -1827,13 +1865,8 @@ impl FutOptWebSocketClient {
         // Connect with the GIL released: the handshake and auth ack may come
         // from a server that needs this interpreter to run (#39).
         let (ws_client, receiver, result) = py.detach(move || {
-            // Get message receiver before connect. `messages()` spawns its bridge
-            // task with `tokio::spawn`, so it must run inside the runtime context —
-            // this is a plain Python thread, not a tokio one (#13).
-            let receiver = {
-                let _guard = runtime.enter();
-                ws_client.messages()
-            };
+            // `messages()` needs no runtime context since #36.
+            let receiver = ws_client.messages();
             let result = runtime.block_on(ws_client.connect());
             (ws_client, receiver, result)
         });
@@ -1859,7 +1892,7 @@ impl FutOptWebSocketClient {
         // and subscription events) never reach the `on("message", ...)`
         // callback — the receiver just sits full.
         if self.has_message_callbacks() {
-            self.start_message_thread(receiver_for_thread);
+            self.start_message_thread(receiver_for_thread, test_panic);
         }
         Ok(())
     }

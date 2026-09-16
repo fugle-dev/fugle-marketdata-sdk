@@ -239,6 +239,63 @@ class InProcessLoopbackServer:
         self._server.stop()
 
 
+# --- Client-side helpers shared by the loopback tests. The SDK is imported
+# inside the functions, so running this file as the server needs only the
+# standard library.
+
+TIMEOUT_S = 5
+
+
+class Recorder:
+    """Records ``(event, args)`` for every connection callback."""
+
+    EVENTS = ("connect", "authenticated", "unauthenticated", "disconnect", "reconnect", "error")
+
+    def __init__(self, ws):
+        self.calls = []
+        self._cond = threading.Condition()
+        for event in self.EVENTS:
+            ws.on(event, self._handler(event))
+
+    def _handler(self, event):
+        def record(*args):
+            with self._cond:
+                self.calls.append((event, args))
+                self._cond.notify_all()
+
+        return record
+
+    def names(self):
+        with self._cond:
+            return [name for name, _ in self.calls]
+
+    def args_of(self, event):
+        with self._cond:
+            return [args for name, args in self.calls if name == event]
+
+    def wait_for(self, event, timeout):
+        with self._cond:
+            hit = self._cond.wait_for(lambda: event in [n for n, _ in self.calls], timeout=timeout)
+        assert hit, f'no "{event}" callback within {timeout}s; got {self.calls}'
+
+
+def product_ws(url, product, api_key="test-key", **kwargs):
+    """The ``product`` client of a WebSocketClient for ``url``, reconnect off."""
+    from fugle_marketdata import ReconnectConfig, WebSocketClient
+
+    client = WebSocketClient(
+        api_key=api_key, base_url=url, reconnect=ReconnectConfig.disabled(), **kwargs
+    )
+    return getattr(client, product)
+
+
+def disconnect_quietly(ws):
+    try:
+        ws.disconnect()
+    except Exception:
+        pass  # never connected, or already gone
+
+
 if __name__ == "__main__":
     server = _Server(flood="--flood" in sys.argv[1:])
     server.start()

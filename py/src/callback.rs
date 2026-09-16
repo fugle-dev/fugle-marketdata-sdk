@@ -14,7 +14,10 @@
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+/// Callbacks by event type.
+type CallbackMap = HashMap<EventType, Vec<Py<PyAny>>>;
 
 /// Event types supported by WebSocket client
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -57,7 +60,12 @@ impl EventType {
 /// Uses RwLock for concurrent read access during message dispatch.
 pub struct CallbackRegistry {
     /// Maps event type to list of callbacks
-    callbacks: RwLock<HashMap<EventType, Vec<Py<PyAny>>>>,
+    callbacks: RwLock<CallbackMap>,
+    /// Debug builds: panic once inside `unregister` while holding the write
+    /// lock, poisoning it, for `FUGLE_MARKETDATA_TEST_PANIC=ws_callback_poison`
+    /// (#25). Only a writer's panic poisons an `RwLock`.
+    #[cfg(debug_assertions)]
+    test_poison_lock: std::sync::atomic::AtomicBool,
 }
 
 impl CallbackRegistry {
@@ -65,7 +73,23 @@ impl CallbackRegistry {
     pub fn new() -> Self {
         Self {
             callbacks: RwLock::new(HashMap::new()),
+            #[cfg(debug_assertions)]
+            test_poison_lock: std::sync::atomic::AtomicBool::new(
+                std::env::var("FUGLE_MARKETDATA_TEST_PANIC").as_deref() == Ok("ws_callback_poison"),
+            ),
         }
+    }
+
+    // The map is left consistent by every writer, so a lock poisoned by a
+    // panic elsewhere (say, in a callback thread) is still safe to use — and
+    // must be, or reporting that panic through `error` would panic too (#25).
+
+    fn read(&self) -> RwLockReadGuard<'_, CallbackMap> {
+        self.callbacks.read().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn write(&self) -> RwLockWriteGuard<'_, CallbackMap> {
+        self.callbacks.write().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Register a callback for an event type
@@ -97,7 +121,7 @@ impl CallbackRegistry {
         // Store as Py<PyAny> for thread-safe access
         let py_callback: Py<PyAny> = callback.clone().unbind();
 
-        let mut callbacks = self.callbacks.write().unwrap();
+        let mut callbacks = self.write();
         callbacks
             .entry(event_type)
             .or_default()
@@ -112,7 +136,11 @@ impl CallbackRegistry {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid event type: '{}'", event))
         })?;
 
-        let mut callbacks = self.callbacks.write().unwrap();
+        let mut callbacks = self.write();
+        #[cfg(debug_assertions)]
+        if self.test_poison_lock.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            panic!("injected test panic at ws_callback_poison");
+        }
         callbacks.remove(&event_type);
 
         Ok(())
@@ -121,14 +149,14 @@ impl CallbackRegistry {
     /// Clear all registered callbacks
     #[allow(dead_code)]
     pub fn clear(&self) {
-        let mut callbacks = self.callbacks.write().unwrap();
+        let mut callbacks = self.write();
         callbacks.clear();
     }
 
     /// Get number of callbacks registered for an event type
     #[allow(dead_code)]
     pub fn count(&self, event_type: EventType) -> usize {
-        let callbacks = self.callbacks.read().unwrap();
+        let callbacks = self.read();
         callbacks.get(&event_type).map(|v| v.len()).unwrap_or(0)
     }
 
@@ -144,7 +172,7 @@ impl CallbackRegistry {
     ///
     /// Number of callbacks invoked successfully
     pub fn invoke(&self, py: Python<'_>, event_type: EventType, args: &Bound<'_, pyo3::types::PyTuple>) -> usize {
-        let callbacks = self.callbacks.read().unwrap();
+        let callbacks = self.read();
 
         let Some(handlers) = callbacks.get(&event_type) else {
             return 0;
