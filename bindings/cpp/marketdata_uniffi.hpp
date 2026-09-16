@@ -810,8 +810,14 @@ struct WebSocketClient
  * public void OnConnected() {
  * Console.WriteLine("Connected!");
  * }
- * public void OnDisconnected() {
- * Console.WriteLine("Disconnected");
+ * public void OnAuthenticated(string? dataJson) {
+ * Console.WriteLine("Authenticated");
+ * }
+ * public void OnUnauthenticated(string? dataJson) {
+ * Console.WriteLine($"Rejected: {dataJson}");
+ * }
+ * public void OnDisconnected(bool willReconnect) {
+ * Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
  * }
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -825,15 +831,39 @@ struct WebSocketClient
 struct WebSocketListener {
     virtual ~WebSocketListener() {}
     /**
-     * Called when WebSocket connection is established
+     * Called when the transport is established, before the server has
+     * answered the auth frame. Fires again on every successful reconnect.
+     * Wait for `on_authenticated` before treating the connection as usable.
      */
     virtual
     void on_connected() = 0;
     /**
-     * Called when WebSocket connection is closed
+     * Called when the server accepts the credentials.
+     *
+     * `data_json` is the `data` member of the server's `authenticated`
+     * frame, still encoded as JSON, or `None` when the frame has none.
      */
     virtual
-    void on_disconnected() = 0;
+    void on_authenticated(std::optional<std::string> data_json) = 0;
+    /**
+     * Called when the server rejects the credentials. `connect()` also
+     * fails with an auth error; no `on_error` is emitted for the rejection.
+     *
+     * `data_json` is the `data` member of the server's rejection frame
+     * (the server's message is under `message`), still encoded as JSON, or
+     * `None` when the frame has none.
+     */
+    virtual
+    void on_unauthenticated(std::optional<std::string> data_json) = 0;
+    /**
+     * Called when the connection is closed, at most once per connection.
+     *
+     * `will_reconnect` is `true` when the client will try to reconnect
+     * (`on_reconnecting` follows unless `disconnect()` is called first) and
+     * `false` when this connection's lifecycle has ended.
+     */
+    virtual
+    void on_disconnected(bool will_reconnect) = 0;
     /**
      * Called when a message is received
      */
@@ -850,7 +880,8 @@ struct WebSocketListener {
     virtual
     void on_reconnecting(uint32_t attempt) = 0;
     /**
-     * Called when all reconnection attempts are exhausted
+     * Called when all reconnection attempts are exhausted. Terminal: no
+     * further lifecycle callbacks follow for this connection.
      */
     virtual
     void on_reconnect_failed(uint32_t attempts) = 0;
@@ -859,7 +890,9 @@ struct WebSocketListener {
 namespace uniffi {
     struct UniffiCallbackInterfaceWebSocketListener {
         static void on_connected(uint64_t uniffi_handle,void * uniffi_out_return,RustCallStatus *out_status);
-        static void on_disconnected(uint64_t uniffi_handle,void * uniffi_out_return,RustCallStatus *out_status);
+        static void on_authenticated(uint64_t uniffi_handle,RustBuffer data_json,void * uniffi_out_return,RustCallStatus *out_status);
+        static void on_unauthenticated(uint64_t uniffi_handle,RustBuffer data_json,void * uniffi_out_return,RustCallStatus *out_status);
+        static void on_disconnected(uint64_t uniffi_handle,int8_t will_reconnect,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_message(uint64_t uniffi_handle,RustBuffer message,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_error(uint64_t uniffi_handle,RustBuffer error_message,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_reconnecting(uint64_t uniffi_handle,uint32_t attempt,void * uniffi_out_return,RustCallStatus *out_status);
@@ -870,6 +903,8 @@ namespace uniffi {
     private:
         static inline UniffiVTableCallbackInterfaceWebSocketListener vtable = UniffiVTableCallbackInterfaceWebSocketListener {
             .on_connected = reinterpret_cast<void *>(&on_connected),
+            .on_authenticated = reinterpret_cast<void *>(&on_authenticated),
+            .on_unauthenticated = reinterpret_cast<void *>(&on_unauthenticated),
             .on_disconnected = reinterpret_cast<void *>(&on_disconnected),
             .on_message = reinterpret_cast<void *>(&on_message),
             .on_error = reinterpret_cast<void *>(&on_error),
@@ -898,8 +933,14 @@ namespace uniffi {
  * public void OnConnected() {
  * Console.WriteLine("Connected!");
  * }
- * public void OnDisconnected() {
- * Console.WriteLine("Disconnected");
+ * public void OnAuthenticated(string? dataJson) {
+ * Console.WriteLine("Authenticated");
+ * }
+ * public void OnUnauthenticated(string? dataJson) {
+ * Console.WriteLine($"Rejected: {dataJson}");
+ * }
+ * public void OnDisconnected(bool willReconnect) {
+ * Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
  * }
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -926,13 +967,35 @@ struct WebSocketListenerImpl
 
     ~WebSocketListenerImpl();
     /**
-     * Called when WebSocket connection is established
+     * Called when the transport is established, before the server has
+     * answered the auth frame. Fires again on every successful reconnect.
+     * Wait for `on_authenticated` before treating the connection as usable.
      */
     void on_connected();
     /**
-     * Called when WebSocket connection is closed
+     * Called when the server accepts the credentials.
+     *
+     * `data_json` is the `data` member of the server's `authenticated`
+     * frame, still encoded as JSON, or `None` when the frame has none.
      */
-    void on_disconnected();
+    void on_authenticated(std::optional<std::string> data_json);
+    /**
+     * Called when the server rejects the credentials. `connect()` also
+     * fails with an auth error; no `on_error` is emitted for the rejection.
+     *
+     * `data_json` is the `data` member of the server's rejection frame
+     * (the server's message is under `message`), still encoded as JSON, or
+     * `None` when the frame has none.
+     */
+    void on_unauthenticated(std::optional<std::string> data_json);
+    /**
+     * Called when the connection is closed, at most once per connection.
+     *
+     * `will_reconnect` is `true` when the client will try to reconnect
+     * (`on_reconnecting` follows unless `disconnect()` is called first) and
+     * `false` when this connection's lifecycle has ended.
+     */
+    void on_disconnected(bool will_reconnect);
     /**
      * Called when a message is received
      */
@@ -946,7 +1009,8 @@ struct WebSocketListenerImpl
      */
     void on_reconnecting(uint32_t attempt);
     /**
-     * Called when all reconnection attempts are exhausted
+     * Called when all reconnection attempts are exhausted. Terminal: no
+     * further lifecycle callbacks follow for this connection.
      */
     void on_reconnect_failed(uint32_t attempts);
 

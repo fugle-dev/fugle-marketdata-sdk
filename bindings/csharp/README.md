@@ -108,9 +108,19 @@ class MyListener : IWebSocketListener
         Console.WriteLine("Connected!");
     }
 
-    public void OnDisconnected()
+    public void OnAuthenticated(string? dataJson)
     {
-        Console.WriteLine("Disconnected");
+        Console.WriteLine("Authenticated");
+    }
+
+    public void OnUnauthenticated(string? dataJson)
+    {
+        Console.WriteLine($"Rejected: {dataJson}");
+    }
+
+    public void OnDisconnected(bool willReconnect)
+    {
+        Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
     }
 
     public void OnMessage(StreamMessage message)
@@ -126,6 +136,10 @@ class MyListener : IWebSocketListener
     {
         Console.WriteLine($"Error: {errorMessage}");
     }
+
+    public void OnReconnecting(uint attempt) { }
+
+    public void OnReconnectFailed(uint attempts) { }
 }
 
 // Create WebSocket client
@@ -261,10 +275,14 @@ List<Subscription> GetSubscriptions()               // List active subscriptions
 ```csharp
 public interface IWebSocketListener
 {
-    void OnConnected();
-    void OnDisconnected();
+    void OnConnected();                           // transport up, before auth
+    void OnAuthenticated(string? dataJson);       // server accepted the credentials
+    void OnUnauthenticated(string? dataJson);     // server rejected the credentials
+    void OnDisconnected(bool willReconnect);      // at most once per connection
     void OnMessage(StreamMessage message);
     void OnError(string errorMessage);
+    void OnReconnecting(uint attempt);
+    void OnReconnectFailed(uint attempts);        // terminal
 }
 ```
 
@@ -389,9 +407,19 @@ class MyListener : IWebSocketListener
         Console.WriteLine("Connected!");
     }
 
-    public void OnDisconnected()
+    public void OnAuthenticated(string? dataJson)
     {
-        Console.WriteLine("Disconnected");
+        Console.WriteLine("Authenticated");
+    }
+
+    public void OnUnauthenticated(string? dataJson)
+    {
+        Console.WriteLine($"Rejected: {dataJson}");
+    }
+
+    public void OnDisconnected(bool willReconnect)
+    {
+        Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
     }
 
     public void OnMessage(StreamMessage message)
@@ -407,6 +435,10 @@ class MyListener : IWebSocketListener
     {
         Console.WriteLine($"Error: {errorMessage}");
     }
+
+    public void OnReconnecting(uint attempt) { }
+
+    public void OnReconnectFailed(uint attempts) { }
 }
 
 class Program

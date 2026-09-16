@@ -1212,16 +1212,34 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected()
 		})
-		if checksum != 56842 {
+		if checksum != 42437 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected: UniFFI API checksum mismatch")
 		}
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated()
+		})
+		if checksum != 51034 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated()
+		})
+		if checksum != 29216 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected()
 		})
-		if checksum != 54477 {
+		if checksum != 44379 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected: UniFFI API checksum mismatch")
 		}
@@ -1230,7 +1248,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message()
 		})
-		if checksum != 54327 {
+		if checksum != 4936 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message: UniFFI API checksum mismatch")
 		}
@@ -1239,7 +1257,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error()
 		})
-		if checksum != 64085 {
+		if checksum != 33187 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error: UniFFI API checksum mismatch")
 		}
@@ -1248,7 +1266,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting()
 		})
-		if checksum != 63646 {
+		if checksum != 12322 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting: UniFFI API checksum mismatch")
 		}
@@ -1257,7 +1275,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed()
 		})
-		if checksum != 36342 {
+		if checksum != 46093 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed: UniFFI API checksum mismatch")
 		}
@@ -4725,8 +4743,14 @@ func (_ FfiDestroyerWebSocketClient) Destroy(value *WebSocketClient) {
 // public void OnConnected() {
 // Console.WriteLine("Connected!");
 // }
-// public void OnDisconnected() {
-// Console.WriteLine("Disconnected");
+// public void OnAuthenticated(string? dataJson) {
+// Console.WriteLine("Authenticated");
+// }
+// public void OnUnauthenticated(string? dataJson) {
+// Console.WriteLine($"Rejected: {dataJson}");
+// }
+// public void OnDisconnected(bool willReconnect) {
+// Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
 // }
 // public void OnMessage(StreamMessage message) {
 // Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -4737,17 +4761,36 @@ func (_ FfiDestroyerWebSocketClient) Destroy(value *WebSocketClient) {
 // }
 // ```
 type WebSocketListener interface {
-	// Called when WebSocket connection is established
+	// Called when the transport is established, before the server has
+	// answered the auth frame. Fires again on every successful reconnect.
+	// Wait for `on_authenticated` before treating the connection as usable.
 	OnConnected()
-	// Called when WebSocket connection is closed
-	OnDisconnected()
+	// Called when the server accepts the credentials.
+	//
+	// `data_json` is the `data` member of the server's `authenticated`
+	// frame, still encoded as JSON, or `None` when the frame has none.
+	OnAuthenticated(dataJson *string)
+	// Called when the server rejects the credentials. `connect()` also
+	// fails with an auth error; no `on_error` is emitted for the rejection.
+	//
+	// `data_json` is the `data` member of the server's rejection frame
+	// (the server's message is under `message`), still encoded as JSON, or
+	// `None` when the frame has none.
+	OnUnauthenticated(dataJson *string)
+	// Called when the connection is closed, at most once per connection.
+	//
+	// `will_reconnect` is `true` when the client will try to reconnect
+	// (`on_reconnecting` follows unless `disconnect()` is called first) and
+	// `false` when this connection's lifecycle has ended.
+	OnDisconnected(willReconnect bool)
 	// Called when a message is received
 	OnMessage(message StreamMessage)
 	// Called when an error occurs
 	OnError(errorMessage string)
 	// Called when a reconnection attempt starts
 	OnReconnecting(attempt uint32)
-	// Called when all reconnection attempts are exhausted
+	// Called when all reconnection attempts are exhausted. Terminal: no
+	// further lifecycle callbacks follow for this connection.
 	OnReconnectFailed(attempts uint32)
 }
 
@@ -4764,8 +4807,14 @@ type WebSocketListener interface {
 // public void OnConnected() {
 // Console.WriteLine("Connected!");
 // }
-// public void OnDisconnected() {
-// Console.WriteLine("Disconnected");
+// public void OnAuthenticated(string? dataJson) {
+// Console.WriteLine("Authenticated");
+// }
+// public void OnUnauthenticated(string? dataJson) {
+// Console.WriteLine($"Rejected: {dataJson}");
+// }
+// public void OnDisconnected(bool willReconnect) {
+// Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
 // }
 // public void OnMessage(StreamMessage message) {
 // Console.WriteLine($"Got {message.Event} for {message.Symbol}");
@@ -4779,7 +4828,9 @@ type WebSocketListenerImpl struct {
 	ffiObject FfiObject
 }
 
-// Called when WebSocket connection is established
+// Called when the transport is established, before the server has
+// answered the auth frame. Fires again on every successful reconnect.
+// Wait for `on_authenticated` before treating the connection as usable.
 func (_self *WebSocketListenerImpl) OnConnected() {
 	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
 	defer _self.ffiObject.decrementPointer()
@@ -4790,13 +4841,47 @@ func (_self *WebSocketListenerImpl) OnConnected() {
 	})
 }
 
-// Called when WebSocket connection is closed
-func (_self *WebSocketListenerImpl) OnDisconnected() {
+// Called when the server accepts the credentials.
+//
+// `data_json` is the `data` member of the server's `authenticated`
+// frame, still encoded as JSON, or `None` when the frame has none.
+func (_self *WebSocketListenerImpl) OnAuthenticated(dataJson *string) {
+	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
+	defer _self.ffiObject.decrementPointer()
+	rustCall(func(_uniffiStatus *C.RustCallStatus) bool {
+		C.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(
+			_pointer, FfiConverterOptionalStringINSTANCE.Lower(dataJson), _uniffiStatus)
+		return false
+	})
+}
+
+// Called when the server rejects the credentials. `connect()` also
+// fails with an auth error; no `on_error` is emitted for the rejection.
+//
+// `data_json` is the `data` member of the server's rejection frame
+// (the server's message is under `message`), still encoded as JSON, or
+// `None` when the frame has none.
+func (_self *WebSocketListenerImpl) OnUnauthenticated(dataJson *string) {
+	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
+	defer _self.ffiObject.decrementPointer()
+	rustCall(func(_uniffiStatus *C.RustCallStatus) bool {
+		C.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(
+			_pointer, FfiConverterOptionalStringINSTANCE.Lower(dataJson), _uniffiStatus)
+		return false
+	})
+}
+
+// Called when the connection is closed, at most once per connection.
+//
+// `will_reconnect` is `true` when the client will try to reconnect
+// (`on_reconnecting` follows unless `disconnect()` is called first) and
+// `false` when this connection's lifecycle has ended.
+func (_self *WebSocketListenerImpl) OnDisconnected(willReconnect bool) {
 	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
 	defer _self.ffiObject.decrementPointer()
 	rustCall(func(_uniffiStatus *C.RustCallStatus) bool {
 		C.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(
-			_pointer, _uniffiStatus)
+			_pointer, FfiConverterBoolINSTANCE.Lower(willReconnect), _uniffiStatus)
 		return false
 	})
 }
@@ -4834,7 +4919,8 @@ func (_self *WebSocketListenerImpl) OnReconnecting(attempt uint32) {
 	})
 }
 
-// Called when all reconnection attempts are exhausted
+// Called when all reconnection attempts are exhausted. Terminal: no
+// further lifecycle callbacks follow for this connection.
 func (_self *WebSocketListenerImpl) OnReconnectFailed(attempts uint32) {
 	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
 	defer _self.ffiObject.decrementPointer()
@@ -4959,19 +5045,53 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod0(uni
 }
 
 //export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod1
-func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod1(uniffiHandle C.uint64_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod1(uniffiHandle C.uint64_t, dataJson C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
 	handle := uint64(uniffiHandle)
 	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
 	if !ok {
 		panic(fmt.Errorf("no callback in handle map: %d", handle))
 	}
 
-	uniffiObj.OnDisconnected()
+	uniffiObj.OnAuthenticated(
+		FfiConverterOptionalStringINSTANCE.Lift(GoRustBuffer{
+			inner: dataJson,
+		}),
+	)
 
 }
 
 //export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2
-func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2(uniffiHandle C.uint64_t, message C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2(uniffiHandle C.uint64_t, dataJson C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+	handle := uint64(uniffiHandle)
+	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
+	if !ok {
+		panic(fmt.Errorf("no callback in handle map: %d", handle))
+	}
+
+	uniffiObj.OnUnauthenticated(
+		FfiConverterOptionalStringINSTANCE.Lift(GoRustBuffer{
+			inner: dataJson,
+		}),
+	)
+
+}
+
+//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3(uniffiHandle C.uint64_t, willReconnect C.int8_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+	handle := uint64(uniffiHandle)
+	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
+	if !ok {
+		panic(fmt.Errorf("no callback in handle map: %d", handle))
+	}
+
+	uniffiObj.OnDisconnected(
+		FfiConverterBoolINSTANCE.Lift(willReconnect),
+	)
+
+}
+
+//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4(uniffiHandle C.uint64_t, message C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
 	handle := uint64(uniffiHandle)
 	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
 	if !ok {
@@ -4986,8 +5106,8 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2(uni
 
 }
 
-//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3
-func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3(uniffiHandle C.uint64_t, errorMessage C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uniffiHandle C.uint64_t, errorMessage C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
 	handle := uint64(uniffiHandle)
 	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
 	if !ok {
@@ -5002,8 +5122,8 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3(uni
 
 }
 
-//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4
-func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4(uniffiHandle C.uint64_t, attempt C.uint32_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod6
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod6(uniffiHandle C.uint64_t, attempt C.uint32_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
 	handle := uint64(uniffiHandle)
 	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
 	if !ok {
@@ -5016,8 +5136,8 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4(uni
 
 }
 
-//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5
-func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uniffiHandle C.uint64_t, attempts C.uint32_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7(uniffiHandle C.uint64_t, attempts C.uint32_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
 	handle := uint64(uniffiHandle)
 	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
 	if !ok {
@@ -5032,11 +5152,13 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uni
 
 var UniffiVTableCallbackInterfaceWebSocketListenerINSTANCE = C.UniffiVTableCallbackInterfaceWebSocketListener{
 	onConnected:       (C.UniffiCallbackInterfaceWebSocketListenerMethod0)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod0),
-	onDisconnected:    (C.UniffiCallbackInterfaceWebSocketListenerMethod1)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod1),
-	onMessage:         (C.UniffiCallbackInterfaceWebSocketListenerMethod2)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2),
-	onError:           (C.UniffiCallbackInterfaceWebSocketListenerMethod3)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3),
-	onReconnecting:    (C.UniffiCallbackInterfaceWebSocketListenerMethod4)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4),
-	onReconnectFailed: (C.UniffiCallbackInterfaceWebSocketListenerMethod5)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5),
+	onAuthenticated:   (C.UniffiCallbackInterfaceWebSocketListenerMethod1)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod1),
+	onUnauthenticated: (C.UniffiCallbackInterfaceWebSocketListenerMethod2)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2),
+	onDisconnected:    (C.UniffiCallbackInterfaceWebSocketListenerMethod3)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3),
+	onMessage:         (C.UniffiCallbackInterfaceWebSocketListenerMethod4)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4),
+	onError:           (C.UniffiCallbackInterfaceWebSocketListenerMethod5)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5),
+	onReconnecting:    (C.UniffiCallbackInterfaceWebSocketListenerMethod6)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod6),
+	onReconnectFailed: (C.UniffiCallbackInterfaceWebSocketListenerMethod7)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7),
 
 	uniffiFree: (C.UniffiCallbackInterfaceFree)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerFree),
 }

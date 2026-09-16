@@ -310,7 +310,9 @@ public class ConfigOptionsTests
     private class TestWebSocketListener : FugleMarketData.IWebSocketListener
     {
         public void OnConnected() { }
-        public void OnDisconnected() { }
+        public void OnAuthenticated(string? dataJson) { }
+        public void OnUnauthenticated(string? dataJson) { }
+        public void OnDisconnected(bool willReconnect) { }
         public void OnMessage(uniffi.marketdata_uniffi.StreamMessage message) { }
         public void OnError(string errorMessage) { }
         public void OnReconnecting(uint attempt) { }

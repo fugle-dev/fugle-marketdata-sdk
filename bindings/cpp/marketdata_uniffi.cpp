@@ -198,22 +198,28 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync() != 58011) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected() != 56842) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected() != 42437) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected() != 54477) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated() != 51034) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message() != 54327) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated() != 29216) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error() != 64085) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected() != 44379) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting() != 63646) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message() != 4936) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed() != 36342) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error() != 33187) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting() != 12322) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed() != 46093) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new() != 36225) {
@@ -1337,10 +1343,44 @@ namespace uniffi {
         rust_call_trait_interface(out_status, make_call, write_value);
     
 }
- void UniffiCallbackInterfaceWebSocketListener::on_disconnected(uint64_t uniffi_handle,void * uniffi_out_return,RustCallStatus *out_status) {
+ void UniffiCallbackInterfaceWebSocketListener::on_authenticated(uint64_t uniffi_handle,RustBuffer data_json,void * uniffi_out_return,RustCallStatus *out_status) {
     auto obj = FfiConverterWebSocketListener::handle_map.at(uniffi_handle);
 
-    auto make_call = [&]()  {obj->on_disconnected();
+    auto make_call = [&]()  {
+        auto arg0 =FfiConverterOptionalString::lift(data_json);obj->on_authenticated(
+        arg0);
+    };
+
+    
+    auto write_value = [](){};
+    
+
+    
+        rust_call_trait_interface(out_status, make_call, write_value);
+    
+}
+ void UniffiCallbackInterfaceWebSocketListener::on_unauthenticated(uint64_t uniffi_handle,RustBuffer data_json,void * uniffi_out_return,RustCallStatus *out_status) {
+    auto obj = FfiConverterWebSocketListener::handle_map.at(uniffi_handle);
+
+    auto make_call = [&]()  {
+        auto arg0 =FfiConverterOptionalString::lift(data_json);obj->on_unauthenticated(
+        arg0);
+    };
+
+    
+    auto write_value = [](){};
+    
+
+    
+        rust_call_trait_interface(out_status, make_call, write_value);
+    
+}
+ void UniffiCallbackInterfaceWebSocketListener::on_disconnected(uint64_t uniffi_handle,int8_t will_reconnect,void * uniffi_out_return,RustCallStatus *out_status) {
+    auto obj = FfiConverterWebSocketListener::handle_map.at(uniffi_handle);
+
+    auto make_call = [&]()  {
+        auto arg0 =FfiConverterBool::lift(will_reconnect);obj->on_disconnected(
+        arg0);
     };
 
     
@@ -1444,12 +1484,26 @@ void WebSocketListenerImpl::on_connected() {
         nullptr,
         ptr);
 }
-void WebSocketListenerImpl::on_disconnected() {
+void WebSocketListenerImpl::on_authenticated(std::optional<std::string> data_json) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated,
+        nullptr,
+        ptr, uniffi::FfiConverterOptionalString::lower(data_json));
+}
+void WebSocketListenerImpl::on_unauthenticated(std::optional<std::string> data_json) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated,
+        nullptr,
+        ptr, uniffi::FfiConverterOptionalString::lower(data_json));
+}
+void WebSocketListenerImpl::on_disconnected(bool will_reconnect) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected,
         nullptr,
-        ptr);
+        ptr, uniffi::FfiConverterBool::lower(will_reconnect));
 }
 void WebSocketListenerImpl::on_message(const StreamMessage &message) {
     auto ptr = this->_uniffi_internal_clone_pointer();

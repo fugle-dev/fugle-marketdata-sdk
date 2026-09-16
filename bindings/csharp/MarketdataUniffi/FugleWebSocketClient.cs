@@ -27,14 +27,31 @@ namespace FugleMarketData
     public interface IWebSocketListener
     {
         /// <summary>
-        /// Called when WebSocket connection is established.
+        /// Called when the transport is established, before the server has answered
+        /// the auth frame. Fires again on every successful reconnect; wait for
+        /// <see cref="OnAuthenticated"/> before treating the connection as usable.
         /// </summary>
         void OnConnected();
 
         /// <summary>
-        /// Called when WebSocket connection is closed.
+        /// Called when the server accepts the credentials.
         /// </summary>
-        void OnDisconnected();
+        /// <param name="dataJson">The <c>data</c> member of the server's frame as JSON, or null when absent</param>
+        void OnAuthenticated(string? dataJson);
+
+        /// <summary>
+        /// Called when the server rejects the credentials. <c>ConnectAsync</c> also fails;
+        /// no <see cref="OnError"/> is raised for the rejection.
+        /// </summary>
+        /// <param name="dataJson">The <c>data</c> member of the server's frame as JSON (message under <c>message</c>), or null when absent</param>
+        void OnUnauthenticated(string? dataJson);
+
+        /// <summary>
+        /// Called when the connection is closed, at most once per connection.
+        /// </summary>
+        /// <param name="willReconnect">True when the client will try to reconnect
+        /// (<see cref="OnReconnecting"/> follows); false when the connection's lifecycle has ended</param>
+        void OnDisconnected(bool willReconnect);
 
         /// <summary>
         /// Called when a market data message is received.
@@ -55,7 +72,7 @@ namespace FugleMarketData
         void OnReconnecting(uint attempt);
 
         /// <summary>
-        /// Called when all reconnection attempts are exhausted.
+        /// Called when all reconnection attempts are exhausted. No further lifecycle events follow.
         /// </summary>
         /// <param name="attempts">Total number of attempts made</param>
         void OnReconnectFailed(uint attempts);
@@ -74,7 +91,9 @@ namespace FugleMarketData
         }
 
         public void OnConnected() => _listener.OnConnected();
-        public void OnDisconnected() => _listener.OnDisconnected();
+        public void OnAuthenticated(string? dataJson) => _listener.OnAuthenticated(dataJson);
+        public void OnUnauthenticated(string? dataJson) => _listener.OnUnauthenticated(dataJson);
+        public void OnDisconnected(bool willReconnect) => _listener.OnDisconnected(willReconnect);
         public void OnMessage(uniffi.marketdata_uniffi.StreamMessage message) => _listener.OnMessage(message);
         public void OnError(string errorMessage) => _listener.OnError(errorMessage);
         public void OnReconnecting(uint attempt) => _listener.OnReconnecting(attempt);
@@ -90,7 +109,9 @@ namespace FugleMarketData
     /// class MyListener : IWebSocketListener
     /// {
     ///     public void OnConnected() => Console.WriteLine("Connected!");
-    ///     public void OnDisconnected() => Console.WriteLine("Disconnected");
+    ///     public void OnAuthenticated(string? dataJson) => Console.WriteLine("Authenticated");
+    ///     public void OnUnauthenticated(string? dataJson) => Console.WriteLine($"Rejected: {dataJson}");
+    ///     public void OnDisconnected(bool willReconnect) => Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
     ///     public void OnMessage(StreamMessage msg) => Console.WriteLine($"{msg.Channel}: {msg.Symbol}");
     ///     public void OnError(string error) => Console.WriteLine($"Error: {error}");
     /// }
