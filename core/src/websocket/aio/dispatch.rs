@@ -6,15 +6,17 @@ use crate::models::WebSocketMessage;
 use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::WsStream;
 use crate::websocket::connection_event::{
-    emit_disconnected, emit_event, peer_close_disconnect, DisconnectLatch,
+    emit_disconnected, emit_event, peer_close_disconnect, will_reconnect_after, DisconnectLatch,
 };
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
-use crate::websocket::{ConnectionEvent, DisconnectIntent, SubscriptionManager};
+use crate::websocket::{ConnectionEvent, DisconnectIntent, ReconnectionManager, SubscriptionManager};
 use futures_util::StreamExt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc as tokio_mpsc;
+use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
 /// Dispatch incoming WebSocket messages to appropriate channels
@@ -37,9 +39,12 @@ use tokio_tungstenite::tungstenite::Message;
 /// * `event_tx` - Channel to send connection events
 /// * `heartbeat_timeout` - If `Some(d)`, wrap each `ws_read.next()` in
 ///   `tokio::time::timeout(d, ...)` and emit
-///   [`ConnectionEvent::HeartbeatTimeout`] when the timer fires. If
+///   [`ConnectionEvent::HeartbeatTimeout`] followed by
+///   `Disconnected { intent: Network }` when the timer fires. If
 ///   `None`, liveness detection is disabled and reads block indefinitely.
 /// * `subscriptions` - Subscription manager for `subscribed` event handling
+/// * `reconnection` - Reconnect policy, consulted for each `Disconnected`'s
+///   `will_reconnect` so it matches the decision the caller makes next
 ///
 /// # Returns
 ///
@@ -56,9 +61,19 @@ pub(crate) async fn dispatch_messages(
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
     messages_dropped: DropCounter,
-    shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
+    shutdown_requested: Arc<AtomicBool>,
     disconnect_latch: Arc<DisconnectLatch>,
+    reconnection: Arc<Mutex<ReconnectionManager>>,
 ) -> Option<u16> {
+    let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
+        let reconnection = Arc::clone(&reconnection);
+        let shutdown_requested = shutdown_requested.load(Ordering::SeqCst);
+        async move {
+            let mgr = reconnection.lock().await;
+            will_reconnect_after(&mgr, intent, code, shutdown_requested)
+        }
+    };
+
     loop {
         // Read-site liveness: if `heartbeat_timeout` is set, the next
         // frame must arrive within that window or we declare the
@@ -68,14 +83,30 @@ pub(crate) async fn dispatch_messages(
             Some(timeout) => match tokio::time::timeout(timeout, ws_read.next()).await {
                 Ok(opt) => opt,
                 Err(_elapsed) => {
+                    // A caller-initiated shutdown reports the close itself.
+                    if shutdown_requested.load(Ordering::SeqCst) {
+                        return None;
+                    }
+                    let elapsed_ms = timeout.as_millis() as u64;
                     warn!(
                         target: "fugle_marketdata::ws",
-                        elapsed_ms = timeout.as_millis() as u64,
+                        elapsed_ms,
                         "heartbeat timeout: no inbound frame in window"
                     );
                     emit_event(&event_tx, &events_dropped, ConnectionEvent::HeartbeatTimeout {
                         elapsed: timeout,
                     });
+                    // Through the latch, so a racing `disconnect()` cannot
+                    // report this connection's close a second time (#47).
+                    emit_disconnected(
+                        &event_tx,
+                        &events_dropped,
+                        &disconnect_latch,
+                        None,
+                        format!("Heartbeat timeout after {elapsed_ms}ms"),
+                        DisconnectIntent::Network,
+                        will_reconnect(DisconnectIntent::Network, None).await,
+                    );
                     return None;
                 }
             },
@@ -92,7 +123,7 @@ pub(crate) async fn dispatch_messages(
                 // itself, and a duplicate `Disconnected { intent: Network }`
                 // here would race ahead of it (the client-initiated
                 // local socket close manifests as EOF on the read half).
-                if !shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                if !shutdown_requested.load(Ordering::SeqCst) {
                     emit_disconnected(
                         &event_tx,
                         &events_dropped,
@@ -100,6 +131,7 @@ pub(crate) async fn dispatch_messages(
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
+                        will_reconnect(DisconnectIntent::Network, None).await,
                     );
                 }
                 return None;
@@ -180,8 +212,9 @@ pub(crate) async fn dispatch_messages(
                 if let Some((code, reason, intent)) = peer_close_disconnect(
                     code,
                     close_frame.as_ref().map(|cf| cf.reason.to_string()),
-                    shutdown_requested.load(std::sync::atomic::Ordering::SeqCst),
+                    shutdown_requested.load(Ordering::SeqCst),
                 ) {
+                    let will_reconnect = will_reconnect(intent, code).await;
                     emit_disconnected(
                         &event_tx,
                         &events_dropped,
@@ -189,6 +222,7 @@ pub(crate) async fn dispatch_messages(
                         code,
                         reason,
                         intent,
+                        will_reconnect,
                     );
                 }
                 return code;
@@ -210,7 +244,7 @@ pub(crate) async fn dispatch_messages(
                 // error (or a peer that skips TLS close_notify, #22),
                 // and the shutdown path already emits the canonical
                 // `Disconnected { intent: Client }`.
-                if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                if shutdown_requested.load(Ordering::SeqCst) {
                     return None;
                 }
                 let err_msg = format!("WebSocket error: {}", e);
@@ -225,6 +259,7 @@ pub(crate) async fn dispatch_messages(
                     None,
                     err_msg,
                     DisconnectIntent::Network,
+                    will_reconnect(DisconnectIntent::Network, None).await,
                 );
                 return None;
             }

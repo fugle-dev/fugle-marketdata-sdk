@@ -6,7 +6,7 @@ use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::{emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_subscribe_raw, AuthOutcome,
+    classify_auth_response, frame_auth, frame_subscribe_raw, AuthHandshake, AuthOutcome,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
@@ -14,6 +14,7 @@ use crate::websocket::{
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
@@ -32,40 +33,66 @@ pub(crate) fn tls_connector_for(
     Ok(Connector::Rustls(client_config))
 }
 
+/// Send the auth frame, then read frames off `ws_read` until a terminal
+/// auth outcome arrives or `auth_timeout` elapses. Each text frame is
+/// forwarded to `message_tx` so subscribers see the auth payloads. Shared by
+/// `WebSocketClient::connect` and `try_connect` so the auth protocol cannot
+/// drift between fresh-connect and reconnect.
+pub(crate) async fn authenticate(
+    ws_sink: &mut WsSink,
+    ws_read: &mut WsStream,
+    config: &ConnectionConfig,
+    message_tx: &tokio_mpsc::Sender<WebSocketMessage>,
+    auth_timeout: Duration,
+) -> AuthHandshake {
+    let auth_json = match frame_auth(config.auth.clone()) {
+        Ok(json) => json,
+        Err(e) => return AuthHandshake::Failed(e),
+    };
+    if let Err(e) = ws_sink.send(Message::Text(auth_json.into())).await {
+        return AuthHandshake::Failed(e.into());
+    }
+    await_auth_response(ws_read, message_tx, auth_timeout).await
+}
+
 /// Read frames off `ws_read` until a terminal auth outcome arrives or
-/// `auth_timeout` elapses. Each text frame is forwarded to `message_tx`
-/// so subscribers see the auth payloads, matching the pre-extraction
-/// behaviour. Shared by `WebSocketClient::connect` and `try_connect` so
-/// the auth protocol cannot drift between fresh-connect and reconnect.
+/// `auth_timeout` elapses.
 pub(crate) async fn await_auth_response(
     ws_read: &mut WsStream,
     message_tx: &tokio_mpsc::Sender<WebSocketMessage>,
     auth_timeout: Duration,
-) -> Result<Result<(), MarketDataError>, tokio::time::error::Elapsed> {
-    timeout(auth_timeout, async {
+) -> AuthHandshake {
+    let result = timeout(auth_timeout, async {
         while let Some(msg_result) = ws_read.next().await {
             match msg_result {
                 Ok(Message::Text(text)) => {
                     if let Ok(ws_msg) = crate::websocket::protocol::parse_text_frame(&text) {
                         let _ = message_tx.send(ws_msg.clone()).await;
                         match classify_auth_response(&ws_msg) {
-                            AuthOutcome::Authenticated => return Ok(()),
-                            AuthOutcome::Failed(msg) => {
-                                return Err(MarketDataError::AuthError { msg })
+                            AuthOutcome::Authenticated(data) => {
+                                return AuthHandshake::Authenticated(data)
+                            }
+                            AuthOutcome::Failed { message, data } => {
+                                return AuthHandshake::Rejected { message, data }
                             }
                             AuthOutcome::Pending => {}
                         }
                     }
                 }
-                Err(e) => return Err(MarketDataError::from(e)),
+                Err(e) => return AuthHandshake::Failed(MarketDataError::from(e)),
                 _ => {}
             }
         }
-        Err(MarketDataError::ConnectionError {
+        AuthHandshake::Failed(MarketDataError::ConnectionError {
             msg: "Stream closed during authentication".to_string(),
         })
     })
-    .await
+    .await;
+    result.unwrap_or_else(|_| {
+        AuthHandshake::Failed(MarketDataError::TimeoutError {
+            operation: "WebSocket authentication".to_string(),
+        })
+    })
 }
 
 /// Attempt auto-reconnection after a disconnect.
@@ -74,7 +101,11 @@ pub(crate) async fn await_auth_response(
 /// (cloned from the spawned task) because `mpsc::Sender` is `!Sync` and
 /// holding `&mpsc::Sender` across await points would make the future `!Send`.
 /// Returns `Some(ws_read)` on successful reconnect, `None` if reconnect is not
-/// configured or all attempts are exhausted.
+/// configured, all attempts are exhausted, or `shutdown_requested` was set.
+///
+/// Once `disconnect()` sets `shutdown_requested` this emits nothing further:
+/// the flag is checked before each attempt, after its backoff sleep, and
+/// inside [`try_connect`] before each lifecycle event.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn try_reconnect(
     close_code: Option<u16>,
@@ -89,7 +120,10 @@ pub(crate) async fn try_reconnect(
     subscriptions: Arc<SubscriptionManager>,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
     disconnect_latch: Arc<DisconnectLatch>,
+    shutdown_requested: Arc<AtomicBool>,
 ) -> Option<WsStream> {
+    let stopping = || shutdown_requested.load(Ordering::SeqCst);
+
     // Check if we should attempt reconnection
     let should_reconnect = {
         let reconnection = reconnection.lock().await;
@@ -97,24 +131,15 @@ pub(crate) async fn try_reconnect(
     };
 
     if !should_reconnect {
-        // Not retriable - update state and send event
-        {
-            let mut st = write_state(&state);
-            *st = ConnectionState::Closed {
-                code: close_code,
-                reason: "Non-retriable error".to_string(),
-                intent: DisconnectIntent::Network,
-            };
-        }
-
-        let attempts = {
-            let reconnection = reconnection.lock().await;
-            reconnection.current_attempt()
+        // Not retriable. The close was already reported as
+        // `Disconnected { will_reconnect: false }`; no attempt was made, so
+        // there is no `ReconnectFailed` to report.
+        let mut st = write_state(&state);
+        *st = ConnectionState::Closed {
+            code: close_code,
+            reason: "Non-retriable error".to_string(),
+            intent: DisconnectIntent::Network,
         };
-
-        emit_event(&event_tx, &events_dropped, ConnectionEvent::ReconnectFailed {
-            attempts,
-        });
         return None;
     }
 
@@ -123,6 +148,9 @@ pub(crate) async fn try_reconnect(
     // a successful reconnect spawns a fresh dispatch task that picks up
     // a fresh timeout window. No separate pause/resume needed.
     loop {
+        if stopping() {
+            return None;
+        }
         let delay = {
             let mut reconnection = reconnection.lock().await;
             reconnection.next_delay()
@@ -152,6 +180,9 @@ pub(crate) async fn try_reconnect(
 
                 // Wait before reconnecting
                 sleep(d).await;
+                if stopping() {
+                    return None;
+                }
 
                 // Try to connect and authenticate
                 match try_connect(
@@ -160,6 +191,7 @@ pub(crate) async fn try_reconnect(
                     event_tx.clone(),
                     events_dropped.clone(),
                     message_tx.clone(),
+                    &shutdown_requested,
                 )
                 .await
                 {
@@ -250,13 +282,19 @@ pub(crate) async fn try_reconnect(
 ///
 /// On success, returns the write sink and read stream. The caller is responsible
 /// for storing the sink and setting up dispatch. Takes owned values for Send safety.
+///
+/// If `shutdown_requested` is set while connecting, the new connection is
+/// dropped without emitting further events and `ClientClosed` is returned.
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: SharedState,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     events_dropped: DropCounter,
     message_tx: tokio_mpsc::Sender<WebSocketMessage>,
+    shutdown_requested: &AtomicBool,
 ) -> Result<(WsSink, WsStream), MarketDataError> {
+    let stopping = || shutdown_requested.load(Ordering::SeqCst);
+
     // Update state to Connecting
     {
         let mut st = write_state(&state);
@@ -297,6 +335,9 @@ pub(crate) async fn try_connect(
     // Split the stream
     let (mut new_ws_sink, mut ws_read) = ws_stream.split();
 
+    if stopping() {
+        return Err(MarketDataError::ClientClosed);
+    }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
     emit_event(&event_tx, &events_dropped, ConnectionEvent::Connected {
     });
@@ -307,49 +348,46 @@ pub(crate) async fn try_connect(
         *st = ConnectionState::Authenticating;
     }
 
-    let auth_json = frame_auth(config.auth.clone())?;
+    // Shared with WebSocketClient::connect
+    let handshake = authenticate(
+        &mut new_ws_sink,
+        &mut ws_read,
+        &config,
+        &message_tx,
+        Duration::from_secs(10),
+    )
+    .await;
+    if stopping() {
+        return Err(MarketDataError::ClientClosed);
+    }
 
-    new_ws_sink
-        .send(Message::Text(auth_json.into()))
-        .await
-        .map_err(MarketDataError::from)?;
-
-    // Wait for auth response (shared with WebSocketClient::connect)
-    let auth_result =
-        await_auth_response(&mut ws_read, &message_tx, Duration::from_secs(10)).await;
-
-    match auth_result {
-        Ok(Ok(())) => {
+    match handshake {
+        AuthHandshake::Authenticated(data) => {
             {
                 let mut st = write_state(&state);
                 *st = ConnectionState::Connected;
             }
             crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
-            emit_event(&event_tx, &events_dropped, ConnectionEvent::Authenticated {
-            });
+            emit_event(&event_tx, &events_dropped, ConnectionEvent::Authenticated { data });
             Ok((new_ws_sink, ws_read))
         }
-        Ok(Err(e)) => {
+        AuthHandshake::Rejected { message, data } => {
             {
                 let mut st = write_state(&state);
                 *st = ConnectionState::Disconnected;
             }
-            // Same auth-vs-other split as the primary connect() flow
-            if let MarketDataError::AuthError { msg } = &e {
-                emit_event(&event_tx, &events_dropped, ConnectionEvent::Unauthenticated {
-                    message: msg.clone(),
-                });
+            emit_event(&event_tx, &events_dropped, ConnectionEvent::Unauthenticated {
+                message: message.clone(),
+                data,
+            });
+            Err(MarketDataError::AuthError { msg: message })
+        }
+        AuthHandshake::Failed(e) => {
+            {
+                let mut st = write_state(&state);
+                *st = ConnectionState::Disconnected;
             }
             Err(e)
-        }
-        Err(_) => {
-            {
-                let mut st = write_state(&state);
-                *st = ConnectionState::Disconnected;
-            }
-            Err(MarketDataError::TimeoutError {
-                operation: "WebSocket authentication".to_string(),
-            })
         }
     }
 }

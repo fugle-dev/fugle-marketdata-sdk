@@ -3390,6 +3390,7 @@ pub async fn marketdata_core::testing::MockWsServer::inject_frame(&self, marketd
 pub async fn marketdata_core::testing::MockWsServer::inject_frame_for(&self, usize, marketdata_core::models::streaming::StreamMessage)
 pub async fn marketdata_core::testing::MockWsServer::next_subscribe_id(&self, impl core::convert::Into<alloc::string::String>)
 pub async fn marketdata_core::testing::MockWsServer::next_subscribe_id_for(&self, usize, impl core::convert::Into<alloc::string::String>)
+pub fn marketdata_core::testing::MockWsServer::set_auth_response(&self, serde_json::value::Value)
 pub async fn marketdata_core::testing::MockWsServer::start() -> Self
 pub async fn marketdata_core::testing::MockWsServer::start_with_capacity(usize) -> Self
 pub fn marketdata_core::testing::MockWsServer::url(&self) -> alloc::string::String
@@ -3659,12 +3660,14 @@ pub const marketdata_core::websocket::config::DEFAULT_MESSAGE_BUFFER: usize
 pub mod marketdata_core::websocket::connection_event
 pub enum marketdata_core::websocket::connection_event::ConnectionEvent
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated
+pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated::data: serde_json::value::Value
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Connected
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Connecting
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::code: core::option::Option<u16>
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::intent: marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::reason: alloc::string::String
+pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::will_reconnect: bool
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Error
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Error::code: i32
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Error::message: alloc::string::String
@@ -3675,6 +3678,7 @@ pub marketdata_core::websocket::connection_event::ConnectionEvent::ReconnectFail
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Reconnecting
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Reconnecting::attempt: u32
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated
+pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated::data: serde_json::value::Value
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated::message: alloc::string::String
 impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionEvent
 pub fn marketdata_core::websocket::connection_event::ConnectionEvent::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionEvent
@@ -4032,12 +4036,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::ver
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::version::StockVersion
 pub enum marketdata_core::websocket::ConnectionEvent
 pub marketdata_core::websocket::ConnectionEvent::Authenticated
+pub marketdata_core::websocket::ConnectionEvent::Authenticated::data: serde_json::value::Value
 pub marketdata_core::websocket::ConnectionEvent::Connected
 pub marketdata_core::websocket::ConnectionEvent::Connecting
 pub marketdata_core::websocket::ConnectionEvent::Disconnected
 pub marketdata_core::websocket::ConnectionEvent::Disconnected::code: core::option::Option<u16>
 pub marketdata_core::websocket::ConnectionEvent::Disconnected::intent: marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::websocket::ConnectionEvent::Disconnected::reason: alloc::string::String
+pub marketdata_core::websocket::ConnectionEvent::Disconnected::will_reconnect: bool
 pub marketdata_core::websocket::ConnectionEvent::Error
 pub marketdata_core::websocket::ConnectionEvent::Error::code: i32
 pub marketdata_core::websocket::ConnectionEvent::Error::message: alloc::string::String
@@ -4048,6 +4054,7 @@ pub marketdata_core::websocket::ConnectionEvent::ReconnectFailed::attempts: u32
 pub marketdata_core::websocket::ConnectionEvent::Reconnecting
 pub marketdata_core::websocket::ConnectionEvent::Reconnecting::attempt: u32
 pub marketdata_core::websocket::ConnectionEvent::Unauthenticated
+pub marketdata_core::websocket::ConnectionEvent::Unauthenticated::data: serde_json::value::Value
 pub marketdata_core::websocket::ConnectionEvent::Unauthenticated::message: alloc::string::String
 impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionEvent
 pub fn marketdata_core::websocket::connection_event::ConnectionEvent::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionEvent
@@ -4443,12 +4450,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::ChannelData
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::ChannelData
 pub enum marketdata_core::ConnectionEvent
 pub marketdata_core::ConnectionEvent::Authenticated
+pub marketdata_core::ConnectionEvent::Authenticated::data: serde_json::value::Value
 pub marketdata_core::ConnectionEvent::Connected
 pub marketdata_core::ConnectionEvent::Connecting
 pub marketdata_core::ConnectionEvent::Disconnected
 pub marketdata_core::ConnectionEvent::Disconnected::code: core::option::Option<u16>
 pub marketdata_core::ConnectionEvent::Disconnected::intent: marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::ConnectionEvent::Disconnected::reason: alloc::string::String
+pub marketdata_core::ConnectionEvent::Disconnected::will_reconnect: bool
 pub marketdata_core::ConnectionEvent::Error
 pub marketdata_core::ConnectionEvent::Error::code: i32
 pub marketdata_core::ConnectionEvent::Error::message: alloc::string::String
@@ -4459,6 +4468,7 @@ pub marketdata_core::ConnectionEvent::ReconnectFailed::attempts: u32
 pub marketdata_core::ConnectionEvent::Reconnecting
 pub marketdata_core::ConnectionEvent::Reconnecting::attempt: u32
 pub marketdata_core::ConnectionEvent::Unauthenticated
+pub marketdata_core::ConnectionEvent::Unauthenticated::data: serde_json::value::Value
 pub marketdata_core::ConnectionEvent::Unauthenticated::message: alloc::string::String
 impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionEvent
 pub fn marketdata_core::websocket::connection_event::ConnectionEvent::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionEvent

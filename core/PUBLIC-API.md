@@ -35,6 +35,15 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — connection events carry data and reconnect intent (#55)
+
+- `~` `ConnectionEvent::Authenticated` — unit variant becomes
+  `Authenticated { data: serde_json::Value }`.
+- `~` `ConnectionEvent::Unauthenticated` — `+` `data: serde_json::Value`.
+- `~` `ConnectionEvent::Disconnected` — `+` `will_reconnect: bool`.
+- `+` `testing::MockWsServer::set_auth_response` — lets tests serve a custom
+  auth reply (with or without `data`, or a rejection).
+
 ### Unreleased — futopt historical follows fugle-realtime #727 (#21)
 
 Both endpoints are keyed by product (`TXF`) and take `session` instead of

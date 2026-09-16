@@ -173,6 +173,35 @@ rejected.
 If you were setting `BaseUrl` and relying on the requests going to production
 anyway, remove it.
 
+## 8. Rust: connection events
+
+`ConnectionEvent` variants carry more data, so exhaustive matches and
+constructions need updating:
+
+```rust,ignore
+// Before
+ConnectionEvent::Authenticated => {}
+ConnectionEvent::Unauthenticated { message } => {}
+ConnectionEvent::Disconnected { code, reason, intent } => {}
+
+// After
+ConnectionEvent::Authenticated { data } => {}          // server frame's `data`, or Null
+ConnectionEvent::Unauthenticated { message, data } => {}
+ConnectionEvent::Disconnected { code, reason, intent, will_reconnect } => {}
+```
+
+Patterns that already end in `..` keep compiling.
+
+Behaviour you may have worked around:
+
+- After `HeartbeatTimeout` a `Disconnected { intent: Network }` now follows.
+  If you treated `HeartbeatTimeout` as the disconnect, react to
+  `Disconnected` instead or you will handle the close twice.
+- `ReconnectFailed` no longer fires with `attempts: 0` when the reconnect
+  policy does not retry a close. Use `Disconnected { will_reconnect: false }`
+  to learn that the client has stopped, instead of re-running
+  `ReconnectionManager::should_reconnect` yourself.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

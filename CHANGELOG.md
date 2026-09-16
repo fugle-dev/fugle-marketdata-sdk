@@ -52,8 +52,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stops the running connection before opening a new one, as the sync client
   already did. Previously both left the old dispatch task running, whose
   later close was reported as the new connection's `Disconnected` (#41).
+- **Core**: a heartbeat timeout emits `HeartbeatTimeout` followed by exactly
+  one `Disconnected { intent: Network }` for the connection. Previously it
+  emitted no `Disconnected`, so the Node, Python and UniFFI bindings
+  synthesized a `disconnect` of their own, and a later `disconnect()`
+  reported the same connection closed a second time (#47).
+- **Core**: `ReconnectFailed` is emitted only after at least one reconnect
+  attempt. A close the reconnect policy does not retry (reconnect disabled,
+  code 1000 or 4xxx) is reported solely as
+  `Disconnected { will_reconnect: false }`; previously it also emitted
+  `ReconnectFailed { attempts: 0 }`, which Node and Python surfaced as an
+  `error` "Reconnection failed after 0 attempts" (#55).
+- **Core**: `aio::WebSocketClient::connect()` emits `Error` and returns the
+  client to `Disconnected` when sending the auth frame fails; previously it
+  returned the error silently and left the state at `Authenticating`. The sync
+  client emits `Disconnected { intent: Network }` after a failed write, as it
+  already did after a failed read (#55).
+- **Core**: `disconnect()` while the client is waiting to reconnect stops the
+  reconnect: no further `Connecting` / `Connected` / `Authenticated` is
+  emitted and the state stays `Closed { intent: Client }`. Previously the
+  async client finished the pending attempt (reconnecting and resubscribing)
+  until its drain timeout aborted it, and both clients could report an attempt
+  already in progress (#55).
 
 ### Breaking
+
+- **Rust**: `ConnectionEvent` carries what bindings previously had to
+  re-derive (#55). See [MIGRATION-0.9.md](MIGRATION-0.9.md#8-rust-connection-events).
+  - `Authenticated` becomes `Authenticated { data }`, the server frame's
+    `data` (`Value::Null` when absent).
+  - `Unauthenticated { message }` gains `data`.
+  - `Disconnected` gains `will_reconnect: bool`, `true` only when a
+    `Reconnecting` follows.
+
+  The event channel's delivery guarantees are documented on the
+  `websocket::connection_event` module.
 
 > **Release order:** the `futopt/historical` changes below follow
 > fugle-realtime #727. Publish this release only after #727 is live in

@@ -6,7 +6,7 @@
 use crate::models::{Channel, SubscribeRequest, WebSocketMessage, WebSocketRequest};
 use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
 use crate::websocket::protocol::{
-    frame_request, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
+    frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
 };
 use crate::websocket::sync::owner_thread::{
     do_auth_handshake, do_blocking_connect, run_supervisor, OwnerShared, WRITE_QUEUE_CAPACITY,
@@ -196,20 +196,27 @@ impl WebSocketClient {
         });
 
         self.set_state(ConnectionState::Authenticating);
-        if let Err(e) = do_auth_handshake(&mut ws, &self.shared.config, &self.shared.message_tx) {
-            self.set_state(ConnectionState::Disconnected);
-            if let MarketDataError::AuthError { msg } = &e {
+        let data = match do_auth_handshake(&mut ws, &self.shared.config, &self.shared.message_tx) {
+            AuthHandshake::Authenticated(data) => data,
+            AuthHandshake::Rejected { message, data } => {
+                self.set_state(ConnectionState::Disconnected);
+                // Server-rejected credentials are reported only as
+                // Unauthenticated, never as a generic Error.
                 emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Unauthenticated {
-                    message: msg.clone(),
+                    message: message.clone(),
+                    data,
                 });
-            } else {
+                return Err(MarketDataError::AuthError { msg: message });
+            }
+            AuthHandshake::Failed(e) => {
+                self.set_state(ConnectionState::Disconnected);
                 emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Error {
                     message: e.to_string(),
                     code: e.to_error_code(),
                 });
+                return Err(e);
             }
-            return Err(e);
-        }
+        };
 
         // Build the outbound queue + install sender into the shared slot
         let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY);
@@ -219,6 +226,7 @@ impl WebSocketClient {
         self.shared.disconnect_latch.reset();
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
         emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Authenticated {
+            data,
         });
 
         // Spawn supervisor thread + an exit-signal one-shot. The signal
@@ -349,6 +357,7 @@ impl WebSocketClient {
             Some(1000),
             "Normal closure".to_string(),
             DisconnectIntent::Client,
+            false,
         );
 
         Ok(())
@@ -386,6 +395,7 @@ impl WebSocketClient {
             Some(1006),
             "Force closed".to_string(),
             DisconnectIntent::Client,
+            false,
         );
 
         Ok(())

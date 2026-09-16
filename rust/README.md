@@ -161,6 +161,50 @@ client.disconnect().await?;
 # }
 ```
 
+### Connection events
+
+`events()` yields the connection lifecycle. The channel exists from
+construction, so events emitted during `connect()` are waiting when you start
+reading:
+
+```rust,no_run
+use fugle_marketdata::{
+    AuthRequest, WebSocketClient,
+    websocket::{ConnectionConfig, ConnectionEvent},
+};
+
+# fn run() -> Result<(), fugle_marketdata::MarketDataError> {
+let client = WebSocketClient::new(ConnectionConfig::fugle_stock(AuthRequest::with_api_key("...")));
+client.connect()?;
+
+let events = client.events().lock().expect("events lock");
+while let Ok(event) = events.recv() {
+    match event {
+        ConnectionEvent::Connected => println!("socket open, authenticating"),
+        ConnectionEvent::Authenticated { data } => println!("authenticated: {data}"),
+        ConnectionEvent::Unauthenticated { message, .. } => eprintln!("rejected: {message}"),
+        ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+            println!("closed {code:?}: {reason}");
+            if !will_reconnect {
+                break; // no reconnect follows; this client is done
+            }
+        }
+        ConnectionEvent::Reconnecting { attempt } => println!("reconnect attempt {attempt}"),
+        ConnectionEvent::ReconnectFailed { attempts } => {
+            eprintln!("gave up after {attempts} attempts");
+            break;
+        }
+        _ => {}
+    }
+}
+# Ok(())
+# }
+```
+
+`HeartbeatTimeout` and `Error` are diagnostic: a heartbeat timeout or
+transport error is always followed by `Disconnected`, which is the event to
+act on.
+
 The async client lives under `fugle_marketdata::aio::` and is only available
 when the `tokio-comp` feature is enabled. Upgrading from 0.2: see
 [MIGRATION-0.3.md](../MIGRATION-0.3.md).
@@ -218,8 +262,9 @@ let reconnect = ReconnectionConfig::disabled();
 The SDK uses passive activity detection at the WebSocket read site — no
 background task, no protocol-level pings. The dispatch loop wraps each
 `ws_read.next()` in `tokio::time::timeout(heartbeat_timeout, ...)` and emits
-`ConnectionEvent::HeartbeatTimeout` when the timer fires, which then triggers
-the auto-reconnect path.
+`ConnectionEvent::HeartbeatTimeout` followed by
+`Disconnected { intent: Network, .. }` when the timer fires, which then
+triggers the auto-reconnect path.
 
 ```rust,no_run
 use fugle_marketdata::websocket::HealthCheckConfig;

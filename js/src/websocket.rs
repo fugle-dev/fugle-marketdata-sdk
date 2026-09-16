@@ -348,18 +348,6 @@ fn request_disconnect(slot: &WorkerSlot) -> napi::Result<()> {
     Ok(())
 }
 
-/// Whether core will stop for good after this disconnect instead of
-/// reconnecting — mirrors the dispatch loop's own decision.
-fn is_final_disconnect(
-    reconnect_config: &marketdata_core::ReconnectionConfig,
-    code: Option<u16>,
-    intent: Option<&marketdata_core::DisconnectIntent>,
-) -> bool {
-    matches!(intent, Some(marketdata_core::DisconnectIntent::Client))
-        || !marketdata_core::websocket::ReconnectionManager::new(reconnect_config.clone())
-            .should_reconnect(code)
-}
-
 /// Callback storage for event handlers
 #[derive(Default)]
 struct EventCallbacks {
@@ -889,9 +877,11 @@ impl StockWebSocketClient {
                                     ConnectionEvent::Error { message, code } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
                                     }
-                                    ConnectionEvent::Disconnected { code, reason, intent } => {
-                                        if is_final_disconnect(&reconnect_config, code, Some(&intent)) {
+                                    ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+                                        if !will_reconnect {
                                             ending.store(true, Ordering::SeqCst);
+                                            // Core's dispatch task ends without reconnecting.
+                                            dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                         }
                                         fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
@@ -901,19 +891,11 @@ impl StockWebSocketClient {
                                         // Core's dispatch task has ended for good.
                                         dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                     }
-                                    ConnectionEvent::Authenticated => {
+                                    ConnectionEvent::Authenticated { .. } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "authenticated", "authenticated".to_string());
                                     }
-                                    ConnectionEvent::Unauthenticated { message } => {
+                                    ConnectionEvent::Unauthenticated { message, .. } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
-                                    }
-                                    ConnectionEvent::HeartbeatTimeout { elapsed } => {
-                                        if is_final_disconnect(&reconnect_config, None, None) {
-                                            ending.store(true, Ordering::SeqCst);
-                                        }
-                                        // Reuse "disconnect" callback with synthesized reason
-                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect",
-                                            format!("{{\"code\":null,\"reason\":\"Heartbeat timeout after {:?}\"}}", elapsed));
                                     }
                                     _ => {}
                                 }
@@ -1404,9 +1386,11 @@ impl FutOptWebSocketClient {
                                     ConnectionEvent::Error { message, code } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "error", format!("[{}] {}", code, message));
                                     }
-                                    ConnectionEvent::Disconnected { code, reason, intent } => {
-                                        if is_final_disconnect(&reconnect_config, code, Some(&intent)) {
+                                    ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+                                        if !will_reconnect {
                                             ending.store(true, Ordering::SeqCst);
+                                            // Core's dispatch task ends without reconnecting.
+                                            dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                         }
                                         fire_callback(&callbacks_for_events, &keep_alive, "disconnect", format!("{{\"code\":{},\"reason\":\"{}\"}}", code.unwrap_or(0), reason));
                                     }
@@ -1416,19 +1400,11 @@ impl FutOptWebSocketClient {
                                         // Core's dispatch task has ended for good.
                                         dispatch_ended_for_events.store(true, Ordering::SeqCst);
                                     }
-                                    ConnectionEvent::Authenticated => {
+                                    ConnectionEvent::Authenticated { .. } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "authenticated", "authenticated".to_string());
                                     }
-                                    ConnectionEvent::Unauthenticated { message } => {
+                                    ConnectionEvent::Unauthenticated { message, .. } => {
                                         fire_callback(&callbacks_for_events, &keep_alive, "unauthenticated", message);
-                                    }
-                                    ConnectionEvent::HeartbeatTimeout { elapsed } => {
-                                        if is_final_disconnect(&reconnect_config, None, None) {
-                                            ending.store(true, Ordering::SeqCst);
-                                        }
-                                        // Reuse "disconnect" callback with synthesized reason
-                                        fire_callback(&callbacks_for_events, &keep_alive, "disconnect",
-                                            format!("{{\"code\":null,\"reason\":\"Heartbeat timeout after {:?}\"}}", elapsed));
                                     }
                                     _ => {}
                                 }

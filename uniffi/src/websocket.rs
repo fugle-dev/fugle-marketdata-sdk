@@ -539,7 +539,7 @@ impl WebSocketClient {
                                     event_listener.on_disconnected();
                                     event_connected.store(false, Ordering::SeqCst);
                                 }
-                                ConnectionEvent::Authenticated => {
+                                ConnectionEvent::Authenticated { .. } => {
                                     event_connected.store(true, Ordering::SeqCst);
                                 }
                                 // Map Unauthenticated to on_error so existing UniFFI
@@ -552,13 +552,6 @@ impl WebSocketClient {
                                         "Unauthenticated: {}",
                                         message
                                     ));
-                                }
-                                // Heartbeat timeout: route to on_disconnected for now.
-                                // A dedicated on_heartbeat_timeout listener method can be
-                                // added in a follow-up if user code needs to discriminate.
-                                ConnectionEvent::HeartbeatTimeout { .. } => {
-                                    event_listener.on_disconnected();
-                                    event_connected.store(false, Ordering::SeqCst);
                                 }
                                 _ => {}
                             }
