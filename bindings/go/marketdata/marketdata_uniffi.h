@@ -507,22 +507,22 @@ void uniffi_marketdata_uniffi_fn_free_futopthistoricalclient(void* ptr, RustCall
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_CANDLES_SYNC
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_CANDLES_SYNC
-RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, int8_t after_hours, RustCallStatus *out_status
+RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, int8_t after_hours, RustBuffer contract_month, RustBuffer fields, RustBuffer sort, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_DAILY_SYNC
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_DAILY_SYNC
-RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, int8_t after_hours, RustCallStatus *out_status
+RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(void* ptr, RustBuffer symbol, RustBuffer date, int8_t after_hours, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_GET_CANDLES
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_GET_CANDLES
-uint64_t uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_candles(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, int8_t after_hours
+uint64_t uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_candles(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, int8_t after_hours, RustBuffer contract_month, RustBuffer fields, RustBuffer sort
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_GET_DAILY
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_FUTOPTHISTORICALCLIENT_GET_DAILY
-uint64_t uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, int8_t after_hours
+uint64_t uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(void* ptr, RustBuffer symbol, RustBuffer date, int8_t after_hours
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CLONE_FUTOPTINTRADAYCLIENT

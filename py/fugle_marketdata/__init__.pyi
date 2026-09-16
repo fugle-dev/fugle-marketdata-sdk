@@ -1271,8 +1271,8 @@ class FutOptIntradayClient:
 class FutOptHistoricalClient:
     """FutOpt historical data endpoints client.
 
-    Access via `client.futopt.historical`. All methods are async and
-    return coroutines that resolve to dict objects.
+    Access via `client.futopt.historical`. Both endpoints take a **product**
+    code (e.g. "TXF"); a contract code such as "TXFC4" returns 404.
     """
 
     async def candles_async(
@@ -1283,15 +1283,21 @@ class FutOptHistoricalClient:
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
         after_hours: bool = False,
+        contract_month: Optional[str] = None,
+        fields: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Get historical candles for a FutOpt contract.
+        """Get historical candles for a FutOpt product.
 
         Args:
-            symbol: Contract symbol (e.g., "TXFC4" for TAIEX futures)
+            symbol: Product code (e.g., "TXF")
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
-            after_hours: Whether to include after-hours session data (default: False)
+            after_hours: Query the after-hours session (default: False)
+            contract_month: "YYYYMM", or a continuous contract: "1!" (server default), "2!", "3!"
+            fields: Comma-separated fields, e.g. "open,high,low,close,volume"
+            sort: "asc" or "desc"
 
         Returns:
             Historical candles data
@@ -1301,10 +1307,11 @@ class FutOptHistoricalClient:
 
         Example:
             ```python
-            candles = await client.futopt.historical.candles(
-                "TXFC4",
-                from_date="2024-01-01",
-                to_date="2024-01-31",
+            candles = await client.futopt.historical.candles_async(
+                "TXF",
+                contract_month="202609",
+                from_date="2026-09-01",
+                to_date="2026-09-15",
                 timeframe="D"
             )
             ```
@@ -1315,31 +1322,26 @@ class FutOptHistoricalClient:
         self,
         symbol: str,
         *,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
+        date: Optional[str] = None,
         after_hours: bool = False,
     ) -> dict[str, Any]:
-        """Get daily historical data for a FutOpt contract.
+        """Get one trading day's daily quotes for every contract month of a FutOpt product.
 
         Args:
-            symbol: Contract symbol (e.g., "TXFC4" for TAIEX futures)
-            from_date: Start date (YYYY-MM-DD)
-            to_date: End date (YYYY-MM-DD)
-            after_hours: Whether to include after-hours session data (default: False)
+            symbol: Product code (e.g., "TXF")
+            date: Trading date (YYYY-MM-DD); the server defaults to today
+            after_hours: Query the after-hours session (default: False)
 
         Returns:
-            Daily historical data with settlement prices
+            Daily quotes, one row per contract month
 
         Raises:
+            TypeError: If `from_date` / `to_date` are passed
             MarketDataError: If the request fails
 
         Example:
             ```python
-            daily = await client.futopt.historical.daily(
-                "TXFC4",
-                from_date="2024-01-01",
-                to_date="2024-01-31"
-            )
+            daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
             ```
         """
         ...
@@ -1354,19 +1356,21 @@ class FutOptHistoricalClient:
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
         after_hours: bool = False,
+        contract_month: Optional[str] = None,
+        fields: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Blocking version of `candles()`."""
+        """Blocking version of `candles_async()`."""
         ...
 
     def daily(
         self,
         symbol: str,
         *,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
+        date: Optional[str] = None,
         after_hours: bool = False,
     ) -> dict[str, Any]:
-        """Blocking version of `daily()`."""
+        """Blocking version of `daily_async()`."""
         ...
 
 

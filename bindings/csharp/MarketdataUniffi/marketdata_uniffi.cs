@@ -952,6 +952,9 @@ static class _UniFFILib
         RustBuffer @to,
         RustBuffer @timeframe,
         sbyte @afterHours,
+        RustBuffer @contractMonth,
+        RustBuffer @fields,
+        RustBuffer @sort,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -959,8 +962,7 @@ static class _UniFFILib
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
         IntPtr @ptr,
         RustBuffer @symbol,
-        RustBuffer @from,
-        RustBuffer @to,
+        RustBuffer @date,
         sbyte @afterHours,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -972,15 +974,17 @@ static class _UniFFILib
         RustBuffer @from,
         RustBuffer @to,
         RustBuffer @timeframe,
-        sbyte @afterHours
+        sbyte @afterHours,
+        RustBuffer @contractMonth,
+        RustBuffer @fields,
+        RustBuffer @sort
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
         IntPtr @ptr,
         RustBuffer @symbol,
-        RustBuffer @from,
-        RustBuffer @to,
+        RustBuffer @date,
         sbyte @afterHours
     );
 
@@ -2545,40 +2549,40 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync();
-            if (checksum != 48618)
+            if (checksum != 48969)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync` checksum `48618`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync` checksum `48969`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync();
-            if (checksum != 46955)
+            if (checksum != 9970)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync` checksum `46955`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync` checksum `9970`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_candles();
-            if (checksum != 40036)
+            if (checksum != 29989)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_candles` checksum `40036`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_candles` checksum `29989`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily();
-            if (checksum != 24353)
+            if (checksum != 22534)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily` checksum `24353`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily` checksum `22534`, library returned `{checksum}`"
                 );
             }
         }
@@ -3869,7 +3873,7 @@ class FfiConverterTypeFutOptClient : FfiConverter<FutOptClient, IntPtr>
 public interface IFutOptHistoricalClient
 {
     /// <summary>
-    /// Get historical candles for a contract (sync/blocking)
+    /// Get historical candles for a product such as "TXF" (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     string CandlesSync(
@@ -3877,17 +3881,23 @@ public interface IFutOptHistoricalClient
         string? @from,
         string? @to,
         string? @timeframe,
-        bool @afterHours
+        bool @afterHours,
+        string? @contractMonth,
+        string? @fields,
+        string? @sort
     );
 
     /// <summary>
-    /// Get daily historical data for a contract (sync/blocking)
+    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string DailySync(string @symbol, string? @from, string? @to, bool @afterHours);
+    string DailySync(string @symbol, string? @date, bool @afterHours);
 
     /// <summary>
-    /// Get historical candles for a contract (async)
+    /// Get historical candles for a product such as "TXF" (async)
+    ///
+    /// `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
+    /// default, "2!", "3!").
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     Task<string> GetCandles(
@@ -3895,14 +3905,17 @@ public interface IFutOptHistoricalClient
         string? @from,
         string? @to,
         string? @timeframe,
-        bool @afterHours
+        bool @afterHours,
+        string? @contractMonth,
+        string? @fields,
+        string? @sort
     );
 
     /// <summary>
-    /// Get daily historical data for a contract (async)
+    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task<string> GetDaily(string @symbol, string? @from, string? @to, bool @afterHours);
+    Task<string> GetDaily(string @symbol, string? @date, bool @afterHours);
 }
 
 /// <summary>
@@ -4026,7 +4039,7 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
     }
 
     /// <summary>
-    /// Get historical candles for a contract (sync/blocking)
+    /// Get historical candles for a product such as "TXF" (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     public string CandlesSync(
@@ -4034,7 +4047,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        bool @afterHours
+        bool @afterHours,
+        string? @contractMonth,
+        string? @fields,
+        string? @sort
     )
     {
         return CallWithPointer(thisPtr =>
@@ -4049,6 +4065,9 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
                             FfiConverterOptionalString.INSTANCE.Lower(@to),
                             FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
                             FfiConverterBoolean.INSTANCE.Lower(@afterHours),
+                            FfiConverterOptionalString.INSTANCE.Lower(@contractMonth),
+                            FfiConverterOptionalString.INSTANCE.Lower(@fields),
+                            FfiConverterOptionalString.INSTANCE.Lower(@sort),
                             ref _status
                         )
                 )
@@ -4057,10 +4076,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
     }
 
     /// <summary>
-    /// Get daily historical data for a contract (sync/blocking)
+    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public string DailySync(string @symbol, string? @from, string? @to, bool @afterHours)
+    public string DailySync(string @symbol, string? @date, bool @afterHours)
     {
         return CallWithPointer(thisPtr =>
             FfiConverterString.INSTANCE.Lift(
@@ -4070,8 +4089,7 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
                             thisPtr,
                             FfiConverterString.INSTANCE.Lower(@symbol),
-                            FfiConverterOptionalString.INSTANCE.Lower(@from),
-                            FfiConverterOptionalString.INSTANCE.Lower(@to),
+                            FfiConverterOptionalString.INSTANCE.Lower(@date),
                             FfiConverterBoolean.INSTANCE.Lower(@afterHours),
                             ref _status
                         )
@@ -4081,7 +4099,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
     }
 
     /// <summary>
-    /// Get historical candles for a contract (async)
+    /// Get historical candles for a product such as "TXF" (async)
+    ///
+    /// `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
+    /// default, "2!", "3!").
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     public async Task<string> GetCandles(
@@ -4089,7 +4110,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        bool @afterHours
+        bool @afterHours,
+        string? @contractMonth,
+        string? @fields,
+        string? @sort
     )
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
@@ -4102,7 +4126,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
                     FfiConverterOptionalString.INSTANCE.Lower(@from),
                     FfiConverterOptionalString.INSTANCE.Lower(@to),
                     FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
-                    FfiConverterBoolean.INSTANCE.Lower(@afterHours)
+                    FfiConverterBoolean.INSTANCE.Lower(@afterHours),
+                    FfiConverterOptionalString.INSTANCE.Lower(@contractMonth),
+                    FfiConverterOptionalString.INSTANCE.Lower(@fields),
+                    FfiConverterOptionalString.INSTANCE.Lower(@sort)
                 );
             }),
             // Poll
@@ -4131,10 +4158,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
     }
 
     /// <summary>
-    /// Get daily historical data for a contract (async)
+    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task<string> GetDaily(string @symbol, string? @from, string? @to, bool @afterHours)
+    public async Task<string> GetDaily(string @symbol, string? @date, bool @afterHours)
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -4143,8 +4170,7 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
                     thisPtr,
                     FfiConverterString.INSTANCE.Lower(@symbol),
-                    FfiConverterOptionalString.INSTANCE.Lower(@from),
-                    FfiConverterOptionalString.INSTANCE.Lower(@to),
+                    FfiConverterOptionalString.INSTANCE.Lower(@date),
                     FfiConverterBoolean.INSTANCE.Lower(@afterHours)
                 );
             }),

@@ -14,8 +14,8 @@
 //! - `/futopt/intraday/products` - Available products
 //!
 //! ## Historical
-//! - `/futopt/historical/candles/{symbol}` - Historical OHLC candles
-//! - `/futopt/historical/daily/{symbol}` - Daily historical data
+//! - `/futopt/historical/candles/{product}` - Historical OHLC candles
+//! - `/futopt/historical/daily/{product}` - Daily historical data
 //!
 //! # Example
 //!
@@ -35,7 +35,8 @@
 //!
 //! // Get historical candles
 //! let candles = client.futopt().historical().candles()
-//!     .symbol("TXFC4")
+//!     .symbol("TXF")
+//!     .contract_month("1!")
 //!     .from("2024-01-01")
 //!     .to("2024-01-31")
 //!     .timeframe("D")

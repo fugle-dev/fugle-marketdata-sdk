@@ -13,7 +13,10 @@ pub use daily::FutOptDailyRequestBuilder;
 use super::FutOptHistoricalClient;
 
 impl<'a> FutOptHistoricalClient<'a> {
-    /// Get historical candles for a FutOpt contract
+    /// Get historical candles for a FutOpt product.
+    ///
+    /// The path takes a **product** code (`TXF`); the contract is chosen with
+    /// `contract_month`, which the server defaults to the front month (`1!`).
     ///
     /// # Example
     /// ```no_run
@@ -21,9 +24,10 @@ impl<'a> FutOptHistoricalClient<'a> {
     ///
     /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
     /// let candles = client.futopt().historical().candles()
-    ///     .symbol("TXFC4")
-    ///     .from("2024-01-01")
-    ///     .to("2024-01-31")
+    ///     .symbol("TXF")
+    ///     .contract_month("202609")
+    ///     .from("2026-09-01")
+    ///     .to("2026-09-15")
     ///     .timeframe("D")
     ///     .send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
@@ -32,12 +36,11 @@ impl<'a> FutOptHistoricalClient<'a> {
         FutOptHistoricalCandlesRequestBuilder::new(self.client)
     }
 
-    /// Get daily historical data for a FutOpt contract.
+    /// Get one trading day's daily quotes for every contract month of a
+    /// FutOpt product.
     ///
-    /// **Unsupported by the live Fugle API.** Verified 2026-05-16:
-    /// `futopt/historical/daily/{symbol}` returns HTTP 404 for every symbol
-    /// (continuous code, month contract, with/without date range). Use
-    /// [`candles`](Self::candles) with `timeframe("D")` instead.
+    /// The path takes a **product** code (`TXF`); a contract code such as
+    /// `TXFC4` returns HTTP 404.
     ///
     /// # Example
     /// ```no_run
@@ -45,17 +48,12 @@ impl<'a> FutOptHistoricalClient<'a> {
     ///
     /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
     /// let daily = client.futopt().historical().daily()
-    ///     .symbol("TXFC4")
-    ///     .from("2024-01-01")
-    ///     .to("2024-01-31")
+    ///     .symbol("TXF")
+    ///     .date("2026-09-15")
+    ///     .after_hours(true)
     ///     .send()?;
     /// # Ok::<(), marketdata_core::MarketDataError>(())
     /// ```
-    #[deprecated(
-        since = "0.7.3",
-        note = "futopt/historical/daily is not provided by the Fugle API (always HTTP 404); \
-                use historical().candles().timeframe(\"D\") instead"
-    )]
     pub fn daily(&self) -> FutOptDailyRequestBuilder<'a> {
         FutOptDailyRequestBuilder::new(self.client)
     }

@@ -294,6 +294,36 @@ except AuthError as e:
 ws.stock.subscribe(channel="trades", symbol="2330")
 ```
 
+#### 10. FutOpt historical: `session` replaces `afterhours`, and the path is a product
+
+`futopt/historical/daily` and `futopt/historical/candles` changed on the
+server side (fugle-realtime #727), and this SDK follows the new contract:
+
+- The path takes a **product** code (`TXF`), not a contract (`TXFC4` is a
+  404). For `candles`, pick the contract with `contractMonth`: `YYYYMM`, or
+  `1!` / `2!` / `3!` for the front / next / third month (the server defaults
+  to `1!`).
+- The after-hours session is `session: 'afterhours'`. The legacy
+  `afterhours: true` is no longer honoured by the server.
+- `daily` returns one trading day (`date`, default today) with a row per
+  contract month.
+
+```javascript
+// Legacy
+await rest.futopt.historical.daily({ symbol: 'TXF', date: '2026-09-15', afterhours: true });
+
+// This SDK — object form (`product` or `symbol`)
+await rest.futopt.historical.daily({ product: 'TXF', date: '2026-09-15', session: 'afterhours' });
+// Positional
+await rest.futopt.historical.daily('TXF', '2026-09-15', true);
+await rest.futopt.historical.candles('TXF', '2026-09-01', '2026-09-15', 'D', false, '202609');
+```
+
+```python
+client.futopt.historical.daily("TXF", date="2026-09-15", after_hours=True)
+client.futopt.historical.candles("TXF", contract_month="1!", timeframe="D")
+```
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you

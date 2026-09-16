@@ -1682,20 +1682,33 @@ pub struct FutOptHistoricalClient {
     inner: marketdata_core::RestClient,
 }
 
+/// FutOpt historical paths take a product code. Accept the API's own name for
+/// it, `product`, as well as the legacy SDK's `symbol`; either way it becomes
+/// the path segment rather than a query param.
+fn product_as_symbol(params: &mut Map<String, Value>) {
+    if let Some(product) = params.remove("product") {
+        params.entry("symbol").or_insert(product);
+    }
+}
+
 #[napi]
 impl FutOptHistoricalClient {
-    /// Get historical candles for a futures/options contract
+    /// Get historical candles for a futures/options product
     ///
-    /// @param symbol - Contract symbol (e.g., "TXFC4")
+    /// @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
     /// @param from - Start date (YYYY-MM-DD)
     /// @param to - End date (YYYY-MM-DD)
-    /// @param timeframe - Timeframe ("D", "W", "M", "1", "5", etc.)
-    /// @param afterHours - Include after-hours data
+    /// @param timeframe - Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
+    /// @param afterHours - Query the after-hours session
+    /// @param contractMonth - "YYYYMM", or a continuous contract: "1!" (default), "2!", "3!"
+    /// @param fields - Comma-separated fields, e.g. "open,high,low,close,volume"
+    /// @param sort - "asc" or "desc"
     /// @returns Promise resolving to historical candles data
     #[napi(
         ts_return_type = "Promise<FutOptHistoricalCandlesResponse>",
-        ts_args_type = "symbol: string | RestFutOptHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, afterHours?: boolean | undefined | null"
+        ts_args_type = "symbol: string | RestFutOptHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, afterHours?: boolean | undefined | null, contractMonth?: string | undefined | null, fields?: string | undefined | null, sort?: 'asc' | 'desc' | undefined | null"
     )]
+    #[allow(clippy::too_many_arguments, reason = "positional JS signature; the object form covers the same params")]
     pub async fn candles(
         &self,
         symbol: Option<RestArg>,
@@ -1703,10 +1716,16 @@ impl FutOptHistoricalClient {
         to: Option<String>,
         timeframe: Option<String>,
         after_hours: Option<bool>,
+        contract_month: Option<String>,
+        fields: Option<String>,
+        sort: Option<String>,
     ) -> napi::Result<Value> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "historical", "candles"], Some("symbol"), params).await,
+            RestArg::Params(mut params) => {
+                product_as_symbol(&mut params);
+                return get_with_params(&self.inner, &["futopt", "historical", "candles"], Some("symbol"), params).await;
+            }
         };
 
         let inner = self.inner.clone();
@@ -1727,6 +1746,15 @@ impl FutOptHistoricalClient {
             if let Some(ah) = after_hours {
                 builder = builder.after_hours(ah);
             }
+            if let Some(cm) = contract_month {
+                builder = builder.contract_month(&cm);
+            }
+            if let Some(f) = fields {
+                builder = builder.fields(&f);
+            }
+            if let Some(s) = sort {
+                builder = builder.sort(&s);
+            }
             builder.send()
         })
         .await
@@ -1735,34 +1763,28 @@ impl FutOptHistoricalClient {
         result.map_err(to_napi_error)
     }
 
-    /// Get daily historical data for a futures/options contract
+    /// Get one trading day's daily quotes for every contract month of a futures/options product
     ///
-    /// @param symbol - Contract symbol (e.g., "TXFC4")
-    /// @param from - Start date (YYYY-MM-DD)
-    /// @param to - End date (YYYY-MM-DD)
-    /// @param afterHours - Include after-hours data
+    /// @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+    /// @param date - Trading date (YYYY-MM-DD); the server defaults to today
+    /// @param afterHours - Query the after-hours session
     /// @returns Promise resolving to daily historical data
     #[napi(
         ts_return_type = "Promise<FutOptDailyResponse>",
-        ts_args_type = "symbol: string | RestFutOptHistoricalDailyParams, from?: string | undefined | null, to?: string | undefined | null, afterHours?: boolean | undefined | null"
-    )]
-    #[allow(
-        deprecated,
-        reason = "core deprecated this endpoint (the API always 404s), but the \
-                  binding keeps exposing it for parity with the official SDK — \
-                  removing it would be a breaking change to the JS surface, \
-                  decided separately from core's deprecation"
+        ts_args_type = "symbol: string | RestFutOptHistoricalDailyParams, date?: string | undefined | null, afterHours?: boolean | undefined | null"
     )]
     pub async fn daily(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
+        date: Option<String>,
         after_hours: Option<bool>,
     ) -> napi::Result<Value> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "historical", "daily"], Some("symbol"), params).await,
+            RestArg::Params(mut params) => {
+                product_as_symbol(&mut params);
+                return get_with_params(&self.inner, &["futopt", "historical", "daily"], Some("symbol"), params).await;
+            }
         };
 
         let inner = self.inner.clone();
@@ -1771,11 +1793,8 @@ impl FutOptHistoricalClient {
             let futopt = inner.futopt();
             let hist = futopt.historical();
             let mut builder = hist.daily().symbol(&symbol);
-            if let Some(f) = from {
-                builder = builder.from(&f);
-            }
-            if let Some(t) = to {
-                builder = builder.to(&t);
+            if let Some(d) = date {
+                builder = builder.date(&d);
             }
             if let Some(ah) = after_hours {
                 builder = builder.after_hours(ah);

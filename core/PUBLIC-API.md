@@ -35,6 +35,31 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — futopt historical follows fugle-realtime #727 (#21)
+
+Both endpoints are keyed by product (`TXF`) and take `session` instead of
+`afterHours`; see `CHANGELOG.md` for the release-order constraint.
+
+- `+` `FutOptHistoricalCandlesRequestBuilder::{contract_month, fields, sort}`
+  — query params the endpoint documents; `contractMonth` selects the contract.
+- `+` `FutOptDailyRequestBuilder::date` / `-` `from`, `to` — the endpoint
+  returns a single trading day; a range never reached the server.
+- `~` `FutOptHistoricalCandlesResponse` — `-` `symbol`, `data_type`;
+  `+` `product`, `contract_month`, `session`, `sort`.
+- `~` `FutOptHistoricalCandle` — `open` / `high` / `low` / `close` become
+  `Option<f64>` (the `fields` param selects them); `+` `contract_month`,
+  `average`, `transaction`; `-` `open_interest`, `change_percent`. `body()` /
+  `range()` return `Option<f64>`.
+- `~` `FutOptDailyResponse` — `-` `symbol`, `data_type`, `highest_high()`,
+  `lowest_low()`; `+` `date`, `product`, `session`.
+- `~` `FutOptDailyData` — one row per contract month: `-` `date`, `open`,
+  `high`, `low`, `close`; `+` `contract_month`, `open_price`, `high_price`,
+  `low_price`, `close_price`, `change`, `change_percent`, `volume_spread`,
+  `call_put`, `strike_price`, `exchange`; `volume` becomes `Option<u64>`.
+  `range()` returns `Option<f64>`. Checked against the #727 gateway on
+  api-dev (futures, spread and options rows).
+- `FutOptHistoricalClient::daily` is no longer `#[deprecated]`.
+
 ### Unreleased — raw GET for verbatim query params (#16)
 
 - No surface change. `RestClient::get_json` is `pub` so the Node binding can

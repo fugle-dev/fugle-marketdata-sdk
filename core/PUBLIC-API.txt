@@ -371,18 +371,24 @@ impl core::marker::UnsafeUnpin for marketdata_core::OptionRight
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::OptionRight
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::OptionRight
 pub struct marketdata_core::models::futopt::FutOptDailyData
-pub marketdata_core::models::futopt::FutOptDailyData::close: f64
-pub marketdata_core::models::futopt::FutOptDailyData::date: alloc::string::String
-pub marketdata_core::models::futopt::FutOptDailyData::high: f64
-pub marketdata_core::models::futopt::FutOptDailyData::low: f64
-pub marketdata_core::models::futopt::FutOptDailyData::open: f64
+pub marketdata_core::models::futopt::FutOptDailyData::call_put: core::option::Option<alloc::string::String>
+pub marketdata_core::models::futopt::FutOptDailyData::change: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptDailyData::change_percent: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptDailyData::close_price: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptDailyData::contract_month: alloc::string::String
+pub marketdata_core::models::futopt::FutOptDailyData::exchange: core::option::Option<alloc::string::String>
+pub marketdata_core::models::futopt::FutOptDailyData::high_price: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptDailyData::low_price: core::option::Option<f64>
 pub marketdata_core::models::futopt::FutOptDailyData::open_interest: core::option::Option<u64>
+pub marketdata_core::models::futopt::FutOptDailyData::open_price: core::option::Option<f64>
 pub marketdata_core::models::futopt::FutOptDailyData::settlement_price: core::option::Option<f64>
-pub marketdata_core::models::futopt::FutOptDailyData::volume: u64
+pub marketdata_core::models::futopt::FutOptDailyData::strike_price: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptDailyData::volume: core::option::Option<u64>
+pub marketdata_core::models::futopt::FutOptDailyData::volume_spread: core::option::Option<u64>
 impl marketdata_core::models::futopt::FutOptDailyData
 pub fn marketdata_core::models::futopt::FutOptDailyData::is_bearish(&self) -> bool
 pub fn marketdata_core::models::futopt::FutOptDailyData::is_bullish(&self) -> bool
-pub fn marketdata_core::models::futopt::FutOptDailyData::range(&self) -> f64
+pub fn marketdata_core::models::futopt::FutOptDailyData::range(&self) -> core::option::Option<f64>
 impl core::clone::Clone for marketdata_core::models::futopt::FutOptDailyData
 pub fn marketdata_core::models::futopt::FutOptDailyData::clone(&self) -> marketdata_core::models::futopt::FutOptDailyData
 impl core::cmp::PartialEq for marketdata_core::models::futopt::FutOptDailyData
@@ -405,12 +411,11 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::futopt
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::futopt::FutOptDailyData
 pub struct marketdata_core::models::futopt::FutOptDailyResponse
 pub marketdata_core::models::futopt::FutOptDailyResponse::data: alloc::vec::Vec<marketdata_core::models::futopt::FutOptDailyData>
-pub marketdata_core::models::futopt::FutOptDailyResponse::data_type: core::option::Option<alloc::string::String>
+pub marketdata_core::models::futopt::FutOptDailyResponse::date: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptDailyResponse::exchange: core::option::Option<alloc::string::String>
-pub marketdata_core::models::futopt::FutOptDailyResponse::symbol: alloc::string::String
+pub marketdata_core::models::futopt::FutOptDailyResponse::product: alloc::string::String
+pub marketdata_core::models::futopt::FutOptDailyResponse::session: core::option::Option<alloc::string::String>
 impl marketdata_core::models::futopt::FutOptDailyResponse
-pub fn marketdata_core::models::futopt::FutOptDailyResponse::highest_high(&self) -> core::option::Option<f64>
-pub fn marketdata_core::models::futopt::FutOptDailyResponse::lowest_low(&self) -> core::option::Option<f64>
 pub fn marketdata_core::models::futopt::FutOptDailyResponse::total_volume(&self) -> u64
 impl core::clone::Clone for marketdata_core::models::futopt::FutOptDailyResponse
 pub fn marketdata_core::models::futopt::FutOptDailyResponse::clone(&self) -> marketdata_core::models::futopt::FutOptDailyResponse
@@ -433,20 +438,21 @@ impl core::marker::UnsafeUnpin for marketdata_core::models::futopt::FutOptDailyR
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::futopt::FutOptDailyResponse
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::futopt::FutOptDailyResponse
 pub struct marketdata_core::models::futopt::FutOptHistoricalCandle
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::average: core::option::Option<f64>
 pub marketdata_core::models::futopt::FutOptHistoricalCandle::change: core::option::Option<f64>
-pub marketdata_core::models::futopt::FutOptHistoricalCandle::change_percent: core::option::Option<f64>
-pub marketdata_core::models::futopt::FutOptHistoricalCandle::close: f64
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::close: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::contract_month: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandle::date: alloc::string::String
-pub marketdata_core::models::futopt::FutOptHistoricalCandle::high: f64
-pub marketdata_core::models::futopt::FutOptHistoricalCandle::low: f64
-pub marketdata_core::models::futopt::FutOptHistoricalCandle::open: f64
-pub marketdata_core::models::futopt::FutOptHistoricalCandle::open_interest: core::option::Option<u64>
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::high: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::low: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::open: core::option::Option<f64>
+pub marketdata_core::models::futopt::FutOptHistoricalCandle::transaction: core::option::Option<u64>
 pub marketdata_core::models::futopt::FutOptHistoricalCandle::volume: core::option::Option<u64>
 impl marketdata_core::models::futopt::FutOptHistoricalCandle
-pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::body(&self) -> f64
+pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::body(&self) -> core::option::Option<f64>
 pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::is_bearish(&self) -> bool
 pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::is_bullish(&self) -> bool
-pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::range(&self) -> f64
+pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::range(&self) -> core::option::Option<f64>
 impl core::clone::Clone for marketdata_core::models::futopt::FutOptHistoricalCandle
 pub fn marketdata_core::models::futopt::FutOptHistoricalCandle::clone(&self) -> marketdata_core::models::futopt::FutOptHistoricalCandle
 impl core::cmp::PartialEq for marketdata_core::models::futopt::FutOptHistoricalCandle
@@ -469,9 +475,11 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::futopt
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::futopt::FutOptHistoricalCandle
 pub struct marketdata_core::models::futopt::FutOptHistoricalCandlesResponse
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::candles: alloc::vec::Vec<marketdata_core::models::futopt::FutOptHistoricalCandle>
-pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::data_type: core::option::Option<alloc::string::String>
+pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::contract_month: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::exchange: core::option::Option<alloc::string::String>
-pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::symbol: alloc::string::String
+pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::product: alloc::string::String
+pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::session: core::option::Option<alloc::string::String>
+pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::sort: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::timeframe: core::option::Option<alloc::string::String>
 impl marketdata_core::models::futopt::FutOptHistoricalCandlesResponse
 pub fn marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::highest_high(&self) -> core::option::Option<f64>
@@ -2708,10 +2716,9 @@ pub mod marketdata_core::rest::futopt::historical
 pub struct marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
 impl<'a> marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::after_hours(self, bool) -> Self
-pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::from(self, &str) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::symbol(self, &str) -> Self
-pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::to(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
 impl<'a> core::marker::Sync for marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
@@ -2722,8 +2729,11 @@ impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::futopt
 pub struct marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>
 impl<'a> marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::after_hours(self, bool) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::contract_month(self, &str) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::fields(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::timeframe(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::to(self, &str) -> Self

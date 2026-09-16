@@ -1054,7 +1054,11 @@ impl FutOptHistoricalClient {
 impl FutOptHistoricalClient {
     // ========== Async Methods (Primary) ==========
 
-    /// Get historical candles for a contract (async)
+    /// Get historical candles for a product such as "TXF" (async)
+    ///
+    /// `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
+    /// default, "2!", "3!").
+    #[allow(clippy::too_many_arguments, reason = "UniFFI exports positional parameters")]
     pub async fn get_candles(
         &self,
         symbol: String,
@@ -1062,27 +1066,30 @@ impl FutOptHistoricalClient {
         to: Option<String>,
         timeframe: Option<String>,
         after_hours: bool,
+        contract_month: Option<String>,
+        fields: Option<String>,
+        sort: Option<String>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_futopt_historical_candles_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), after_hours)
+            let query = FutOptCandlesQuery { from, to, timeframe, after_hours, contract_month, fields, sort };
+            build_futopt_historical_candles_request(&inner, &symbol, &query)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         to_json(&result)
     }
 
-    /// Get daily historical data for a contract (async)
+    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
     pub async fn get_daily(
         &self,
         symbol: String,
-        from: Option<String>,
-        to: Option<String>,
+        date: Option<String>,
         after_hours: bool,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_futopt_daily_request(&inner, &symbol, from.as_deref(), to.as_deref(), after_hours)
+            build_futopt_daily_request(&inner, &symbol, date.as_deref(), after_hours)
         })
         .await
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
@@ -1091,7 +1098,8 @@ impl FutOptHistoricalClient {
 
     // ========== Sync Methods (Blocking) ==========
 
-    /// Get historical candles for a contract (sync/blocking)
+    /// Get historical candles for a product such as "TXF" (sync/blocking)
+    #[allow(clippy::too_many_arguments, reason = "UniFFI exports positional parameters")]
     pub fn candles_sync(
         &self,
         symbol: String,
@@ -1099,20 +1107,23 @@ impl FutOptHistoricalClient {
         to: Option<String>,
         timeframe: Option<String>,
         after_hours: bool,
+        contract_month: Option<String>,
+        fields: Option<String>,
+        sort: Option<String>,
     ) -> Result<String, MarketDataError> {
-        let result = build_futopt_historical_candles_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), after_hours)?;
+        let query = FutOptCandlesQuery { from, to, timeframe, after_hours, contract_month, fields, sort };
+        let result = build_futopt_historical_candles_request(&self.inner, &symbol, &query)?;
         to_json(&result)
     }
 
-    /// Get daily historical data for a contract (sync/blocking)
+    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
     pub fn daily_sync(
         &self,
         symbol: String,
-        from: Option<String>,
-        to: Option<String>,
+        date: Option<String>,
         after_hours: bool,
     ) -> Result<String, MarketDataError> {
-        let result = build_futopt_daily_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), after_hours)?;
+        let result = build_futopt_daily_request(&self.inner, &symbol, date.as_deref(), after_hours)?;
         to_json(&result)
     }
 }
@@ -1334,43 +1345,45 @@ fn build_listing_applicants_request(
     builder.send()
 }
 
+/// Optional query params for FutOpt historical candles
+struct FutOptCandlesQuery {
+    from: Option<String>,
+    to: Option<String>,
+    timeframe: Option<String>,
+    after_hours: bool,
+    contract_month: Option<String>,
+    fields: Option<String>,
+    sort: Option<String>,
+}
+
 /// Build FutOpt historical candles request
 fn build_futopt_historical_candles_request(
     client: &CoreRestClient,
     symbol: &str,
-    from: Option<&str>,
-    to: Option<&str>,
-    timeframe: Option<&str>,
-    after_hours: bool,
+    query: &FutOptCandlesQuery,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let historical = client.futopt().historical();
     let mut builder = historical.candles().symbol(symbol);
-    if let Some(f) = from { builder = builder.from(f); }
-    if let Some(t) = to { builder = builder.to(t); }
-    if let Some(tf) = timeframe { builder = builder.timeframe(tf); }
-    if after_hours { builder = builder.after_hours(true); }
+    if let Some(f) = &query.from { builder = builder.from(f); }
+    if let Some(t) = &query.to { builder = builder.to(t); }
+    if let Some(tf) = &query.timeframe { builder = builder.timeframe(tf); }
+    if query.after_hours { builder = builder.after_hours(true); }
+    if let Some(cm) = &query.contract_month { builder = builder.contract_month(cm); }
+    if let Some(f) = &query.fields { builder = builder.fields(f); }
+    if let Some(s) = &query.sort { builder = builder.sort(s); }
     builder.send()
 }
 
 /// Build FutOpt daily request
-#[allow(
-    deprecated,
-    reason = "core deprecated this endpoint (the API always 404s), but the \
-              binding keeps exposing it for parity with the official SDK — \
-              removing it would be a breaking change to the C#/Go/Java/C++ \
-              surface, decided separately from core's deprecation"
-)]
 fn build_futopt_daily_request(
     client: &CoreRestClient,
     symbol: &str,
-    from: Option<&str>,
-    to: Option<&str>,
+    date: Option<&str>,
     after_hours: bool,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let historical = client.futopt().historical();
     let mut builder = historical.daily().symbol(symbol);
-    if let Some(f) = from { builder = builder.from(f); }
-    if let Some(t) = to { builder = builder.to(t); }
+    if let Some(d) = date { builder = builder.date(d); }
     if after_hours { builder = builder.after_hours(true); }
     builder.send()
 }

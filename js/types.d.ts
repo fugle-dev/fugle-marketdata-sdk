@@ -1420,62 +1420,84 @@ export interface ListingApplicantsResponse {
 // REST Response Types - FutOpt Historical
 // ============================================================================
 
-/** A single FutOpt historical candlestick bar */
+/**
+ * A single FutOpt historical candlestick bar.
+ *
+ * Price fields are optional: the request's `fields` param chooses which ones
+ * the server returns.
+ */
 export interface FutOptHistoricalCandle {
-  /** Date (YYYY-MM-DD) */
+  /** Date (YYYY-MM-DD), or a timestamp for intraday timeframes */
   date: string;
-  /** Open price */
-  open: number;
-  /** High price */
-  high: number;
-  /** Low price */
-  low: number;
-  /** Close price */
-  close: number;
   /**
-   * Volume (number of contracts). Absent — the prod
-   * `futopt/historical/candles` series returns OHLC only
-   * (`{date,open,high,low,close}`), no volume.
+   * Contract month this bar belongs to — differs bar to bar when a continuous
+   * `contractMonth` (`1!`) rolls over
    */
+  contractMonth?: string;
+  /** Open price */
+  open?: number;
+  /** High price */
+  high?: number;
+  /** Low price */
+  low?: number;
+  /** Close price */
+  close?: number;
+  /** Volume (number of contracts) */
   volume?: number;
-  /** Open interest (total outstanding contracts) */
-  openInterest?: number;
+  /** Average price (intraday timeframes only) */
+  average?: number;
+  /** Number of transactions (intraday timeframes only) */
+  transaction?: number;
   /** Price change from previous close */
   change?: number;
-  /** Percentage change from previous close */
-  changePercent?: number;
 }
 
 /**
- * FutOpt historical candles response from futopt/historical/candles/{symbol}
+ * FutOpt historical candles response from futopt/historical/candles/{product}
  */
 export interface FutOptHistoricalCandlesResponse {
-  /** Contract symbol */
-  symbol: string;
-  /** Contract type (e.g., "FUTURE", "OPTION") */
-  type?: string;
+  /** Product code, echoed from the request (e.g., "TXF") */
+  product: string;
+  /** Contract month queried: "YYYYMM", or the continuous alias ("1!") as requested */
+  contractMonth?: string;
   /** Exchange code (e.g., "TAIFEX") */
   exchange?: string;
-  /** Timeframe (e.g., "D", "W", "M") */
+  /** Trading session ("REGULAR" or "AFTERHOURS") */
+  session?: string;
+  /** Timeframe (e.g., "D", "W", "M", "5") */
   timeframe?: string;
+  /** Sort order ("asc" or "desc") */
+  sort?: string;
   /** Candle data */
   data: FutOptHistoricalCandle[];
 }
 
-/** A single FutOpt daily data point */
+/** One contract month's daily quote for FutOpt */
 export interface FutOptDailyData {
-  /** Date (YYYY-MM-DD) */
-  date: string;
+  /** Contract month (e.g., "202609", or "202609/202610" for a spread) */
+  contractMonth: string;
+  /** Option right ("CALL" / "PUT"); null for futures */
+  callPut?: string | null;
+  /** Option strike price; null for futures */
+  strikePrice?: number | null;
+  /** Exchange code (e.g., "TAIFEX") */
+  exchange?: string;
   /** Open price */
-  open: number;
+  openPrice?: number;
   /** High price */
-  high: number;
+  highPrice?: number;
   /** Low price */
-  low: number;
+  lowPrice?: number;
   /** Close price */
-  close: number;
+  closePrice?: number;
+  /** Price change from previous close */
+  change?: number;
+  /** Percentage change from previous close */
+  changePercent?: number;
   /** Volume (number of contracts) */
-  volume: number;
+  volume?: number;
+  /** Spread-order volume */
+  volumeSpread?: number;
   /** Open interest (total outstanding contracts) */
   openInterest?: number;
   /** Settlement price (official closing price for margin calculation) */
@@ -1483,16 +1505,19 @@ export interface FutOptDailyData {
 }
 
 /**
- * FutOpt daily response from futopt/historical/daily/{symbol}
+ * FutOpt daily response from futopt/historical/daily/{product}:
+ * one trading day, one row per contract month.
  */
 export interface FutOptDailyResponse {
-  /** Contract symbol */
-  symbol: string;
-  /** Contract type (e.g., "FUTURE", "OPTION") */
-  type?: string;
+  /** Trading date (YYYY-MM-DD) */
+  date?: string;
+  /** Product code, echoed from the request (e.g., "TXF") */
+  product: string;
   /** Exchange code (e.g., "TAIFEX") */
   exchange?: string;
-  /** Daily data */
+  /** Trading session ("REGULAR" or "AFTERHOURS") */
+  session?: string;
+  /** One row per contract month */
   data: FutOptDailyData[];
 }
 
@@ -1714,26 +1739,38 @@ export interface RestFutOptIntradayTradesParams extends RestFutOptIntradaySymbol
   isTrial?: boolean;
 }
 
+/** FutOpt trading session; the server is case-insensitive. */
+type FutOptHistoricalSession = 'REGULAR' | 'AFTERHOURS' | 'regular' | 'afterhours';
+
+/**
+ * The product code for `futopt.historical.*` (e.g. `TXF`, not a contract such
+ * as `TXFC4`), under the API's own name `product` or the legacy `symbol`.
+ */
+type FutOptHistoricalProduct =
+  | { product: string; symbol?: never }
+  | { symbol: string; product?: never };
+
 /** Params for `futopt.historical.candles` */
-export interface RestFutOptHistoricalCandlesParams {
-  symbol: string;
+export type RestFutOptHistoricalCandlesParams = FutOptHistoricalProduct & {
+  /** "YYYYMM", or a continuous contract: "1!" (default), "2!", "3!" */
   contractMonth?: string;
   from?: string;
   to?: string;
-  timeframe?: Timeframe;
+  timeframe?: '1' | '5' | '10' | '15' | '30' | '60' | 'D' | 'W' | 'M';
+  /** Comma-separated, from `open,high,low,close,volume,average,transaction,change` */
   fields?: string;
-  session?: 'afterhours';
+  sort?: 'asc' | 'desc';
+  session?: FutOptHistoricalSession;
   [key: string]: unknown;
-}
+};
 
 /** Params for `futopt.historical.daily` */
-export interface RestFutOptHistoricalDailyParams {
-  symbol: string;
-  from?: string;
-  to?: string;
-  session?: 'afterhours';
+export type RestFutOptHistoricalDailyParams = FutOptHistoricalProduct & {
+  /** Trading date (YYYY-MM-DD); the server defaults to today */
+  date?: string;
+  session?: FutOptHistoricalSession;
   [key: string]: unknown;
-}
+};
 
 // ============================================================================
 // Client Interfaces
@@ -1783,8 +1820,8 @@ export interface StockCorporateActionsClient {
 
 /** FutOpt historical client interface */
 export interface FutOptHistoricalClient {
-  /** Get historical candles for a FutOpt contract */
-  candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean): Promise<FutOptHistoricalCandlesResponse>;
-  /** Get daily historical data for a FutOpt contract */
-  daily(symbol: string | RestFutOptHistoricalDailyParams, from?: string, to?: string, afterHours?: boolean): Promise<FutOptDailyResponse>;
+  /** Get historical candles for a FutOpt product */
+  candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean, contractMonth?: string, fields?: string, sort?: 'asc' | 'desc'): Promise<FutOptHistoricalCandlesResponse>;
+  /** Get one trading day's daily quotes for every contract month of a FutOpt product */
+  daily(symbol: string | RestFutOptHistoricalDailyParams, date?: string, afterHours?: boolean): Promise<FutOptDailyResponse>;
 }

@@ -1,4 +1,4 @@
-//! Daily historical endpoint - GET /futopt/historical/daily/{symbol}
+//! Daily historical endpoint - GET /futopt/historical/daily/{product}
 
 use crate::{errors::MarketDataError, rest::client::RestClient};
 
@@ -6,8 +6,7 @@ use crate::{errors::MarketDataError, rest::client::RestClient};
 pub struct FutOptDailyRequestBuilder<'a> {
     client: &'a RestClient,
     symbol: Option<String>,
-    from: Option<String>,
-    to: Option<String>,
+    date: Option<String>,
     after_hours: Option<bool>,
 }
 
@@ -17,31 +16,29 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
         Self {
             client,
             symbol: None,
-            from: None,
-            to: None,
+            date: None,
             after_hours: None,
         }
     }
 
-    /// Set the contract symbol (required, e.g., "TXFC4")
+    /// Set the product code (required, e.g. `"TXF"`).
+    ///
+    /// This is the **product**, not a contract: a contract code such as
+    /// `"TXFC4"` returns HTTP 404. The response lists every contract month of
+    /// the product.
     pub fn symbol(mut self, symbol: &str) -> Self {
         self.symbol = Some(symbol.to_string());
         self
     }
 
-    /// Set the start date (format: YYYY-MM-DD)
-    pub fn from(mut self, from: &str) -> Self {
-        self.from = Some(from.to_string());
+    /// Set the trading date (`YYYY-MM-DD`). The server defaults to today.
+    pub fn date(mut self, date: &str) -> Self {
+        self.date = Some(date.to_string());
         self
     }
 
-    /// Set the end date (format: YYYY-MM-DD)
-    pub fn to(mut self, to: &str) -> Self {
-        self.to = Some(to.to_string());
-        self
-    }
-
-    /// Query after-hours session data
+    /// Query the after-hours session (`session=afterhours`) instead of the
+    /// regular session.
     pub fn after_hours(mut self, after_hours: bool) -> Self {
         self.after_hours = Some(after_hours);
         self
@@ -53,27 +50,29 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let symbol = self.symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let symbol = self.symbol.as_deref().ok_or_else(|| MarketDataError::InvalidSymbol {
             symbol: "(not provided)".to_string(),
         })?;
 
-        // Build URL
         let mut url = format!(
             "{}/futopt/historical/daily/{}",
             self.client.get_base_url(),
-            crate::rest::encode_symbol(&symbol)
+            crate::rest::encode_symbol(symbol)
         );
 
-        // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(from) = &self.from {
-            query_params.push(format!("from={}", from));
+        if let Some(date) = &self.date {
+            query_params.push(format!("date={}", date));
         }
-        if let Some(to) = &self.to {
-            query_params.push(format!("to={}", to));
-        }
-        if let Some(after_hours) = self.after_hours {
-            query_params.push(format!("afterHours={}", after_hours));
+        if self.after_hours == Some(true) {
+            query_params.push("session=afterhours".to_string());
         }
 
         if !query_params.is_empty() {
@@ -81,9 +80,7 @@ impl<'a> FutOptDailyRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
     }
 }
 
@@ -106,31 +103,38 @@ mod tests {
     }
 
     #[test]
-    fn test_daily_builder_with_params() {
+    fn test_daily_url_without_query() {
         let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = FutOptDailyRequestBuilder::new(&client)
-            .symbol("TXFC4")
-            .from("2024-01-01")
-            .to("2024-01-31")
-            .after_hours(true);
-
-        assert_eq!(builder.symbol, Some("TXFC4".to_string()));
-        assert_eq!(builder.from, Some("2024-01-01".to_string()));
-        assert_eq!(builder.to, Some("2024-01-31".to_string()));
-        assert_eq!(builder.after_hours, Some(true));
+        let url = FutOptDailyRequestBuilder::new(&client).symbol("TXF").url().unwrap();
+        assert_eq!(url, format!("{}/futopt/historical/daily/TXF", client.get_base_url()));
     }
 
     #[test]
-    fn test_daily_builder_chaining() {
+    fn test_daily_url_uses_date_and_session() {
         let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = FutOptDailyRequestBuilder::new(&client)
-            .symbol("TXFC4")
-            .from("2024-01-01")
-            .to("2024-01-31");
+        let url = FutOptDailyRequestBuilder::new(&client)
+            .symbol("TXF")
+            .date("2026-09-15")
+            .after_hours(true)
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/historical/daily/TXF?date=2026-09-15&session=afterhours",
+                client.get_base_url()
+            )
+        );
+    }
 
-        // Verify all fields are set
-        assert!(builder.symbol.is_some());
-        assert!(builder.from.is_some());
-        assert!(builder.to.is_some());
+    #[test]
+    fn test_daily_url_regular_session_sends_no_session_param() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = FutOptDailyRequestBuilder::new(&client)
+            .symbol("TXF")
+            .after_hours(false)
+            .url()
+            .unwrap();
+        assert_eq!(url, format!("{}/futopt/historical/daily/TXF", client.get_base_url()));
     }
 }
