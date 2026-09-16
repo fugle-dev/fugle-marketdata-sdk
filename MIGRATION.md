@@ -324,6 +324,21 @@ client.futopt.historical.daily("TXF", date="2026-09-15", after_hours=True)
 client.futopt.historical.candles("TXF", contract_month="1!", timeframe="D")
 ```
 
+#### 11. Node WebSocket `connect()` rejects while already connected
+
+The legacy Node SDK let you call `connect()` on a connected client: it opened
+another socket, left the old one open, and registered its listeners again.
+This SDK rejects that call with `[2011] Already connected` and keeps the
+existing connection. To reconnect, `disconnect()` first — calling `connect()`
+straight after `disconnect()`, or from a `disconnect` handler when
+auto-reconnect is off, is fine.
+
+```javascript
+ws.stock.on('disconnect', () => {
+  ws.stock.connect().catch(console.error);
+});
+```
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you
