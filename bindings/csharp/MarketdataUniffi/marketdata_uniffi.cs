@@ -1395,6 +1395,26 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockownershipclient_director_holdings_sync(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockownershipclient_etf_holdings_sync(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_director_holdings(
         IntPtr @ptr,
         RustBuffer @symbol,
@@ -1428,6 +1448,26 @@ static class _UniFFILib
         RustBuffer @from,
         RustBuffer @to,
         RustBuffer @sort
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockownershipclient_institutional_trades_sync(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribution_sync(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @from,
+        RustBuffer @to,
+        RustBuffer @sort,
+        ref UniffiRustCallStatus _uniffi_out_err
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2304,6 +2344,12 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_volumes_sync();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2314,6 +2360,12 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync();
@@ -3046,6 +3098,26 @@ static class _UniFFILib
         }
         {
             var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync();
+            if (checksum != 53633)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync` checksum `53633`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync();
+            if (checksum != 61307)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync` checksum `61307`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings();
             if (checksum != 46160)
             {
@@ -3081,6 +3153,26 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution` checksum `14404`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync();
+            if (checksum != 11313)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync` checksum `11313`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync();
+            if (checksum != 57031)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync` checksum `57031`, library returned `{checksum}`"
                 );
             }
         }
@@ -6843,6 +6935,18 @@ class FfiConverterTypeStockIntradayClient : FfiConverter<StockIntradayClient, In
 public interface IStockOwnershipClient
 {
     /// <summary>
+    /// Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string DirectorHoldingsSync(string @symbol, string? @from, string? @to, string? @sort);
+
+    /// <summary>
+    /// Get the constituents an ETF held over a date range (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string EtfHoldingsSync(string @symbol, string? @from, string? @to, string? @sort);
+
+    /// <summary>
     /// Get monthly holdings and pledges disclosed by directors and supervisors (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
@@ -6865,6 +6969,18 @@ public interface IStockOwnershipClient
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     Task<string> GetTdccDistribution(string @symbol, string? @from, string? @to, string? @sort);
+
+    /// <summary>
+    /// Get daily trading by the three major institutional investors (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string InstitutionalTradesSync(string @symbol, string? @from, string? @to, string? @sort);
+
+    /// <summary>
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string TdccDistributionSync(string @symbol, string? @from, string? @to, string? @sort);
 }
 
 /// <summary>
@@ -6983,6 +7099,54 @@ public class StockOwnershipClient : IStockOwnershipClient, IDisposable
         {
             DecrementCallCounter();
         }
+    }
+
+    /// <summary>
+    /// Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string DirectorHoldingsSync(string @symbol, string? @from, string? @to, string? @sort)
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_director_holdings_sync(
+                            thisPtr,
+                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterOptionalString.INSTANCE.Lower(@from),
+                            FfiConverterOptionalString.INSTANCE.Lower(@to),
+                            FfiConverterOptionalString.INSTANCE.Lower(@sort),
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Get the constituents an ETF held over a date range (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string EtfHoldingsSync(string @symbol, string? @from, string? @to, string? @sort)
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_etf_holdings_sync(
+                            thisPtr,
+                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterOptionalString.INSTANCE.Lower(@from),
+                            FfiConverterOptionalString.INSTANCE.Lower(@to),
+                            FfiConverterOptionalString.INSTANCE.Lower(@sort),
+                            ref _status
+                        )
+                )
+            )
+        );
     }
 
     /// <summary>
@@ -7174,6 +7338,54 @@ public class StockOwnershipClient : IStockOwnershipClient, IDisposable
             (result) => FfiConverterString.INSTANCE.Lift(result),
             // Error
             FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Get daily trading by the three major institutional investors (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string InstitutionalTradesSync(string @symbol, string? @from, string? @to, string? @sort)
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_institutional_trades_sync(
+                            thisPtr,
+                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterOptionalString.INSTANCE.Lower(@from),
+                            FfiConverterOptionalString.INSTANCE.Lower(@to),
+                            FfiConverterOptionalString.INSTANCE.Lower(@sort),
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string TdccDistributionSync(string @symbol, string? @from, string? @to, string? @sort)
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribution_sync(
+                            thisPtr,
+                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterOptionalString.INSTANCE.Lower(@from),
+                            FfiConverterOptionalString.INSTANCE.Lower(@to),
+                            FfiConverterOptionalString.INSTANCE.Lower(@sort),
+                            ref _status
+                        )
+                )
+            )
         );
     }
 }

@@ -252,9 +252,10 @@ impl StockIntradayClient {
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl StockIntradayClient {
     /// Get quote for a symbol (sync/blocking)
     pub fn quote_sync(&self, symbol: String) -> Result<String, MarketDataError> {
         let result = self.inner.stock().intraday().quote().symbol(&symbol).send()?;
@@ -361,9 +362,10 @@ impl StockHistoricalClient {
 
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl StockHistoricalClient {
     /// Get historical candles for a symbol (sync/blocking)
     pub fn candles_sync(
         &self,
@@ -468,9 +470,10 @@ impl StockSnapshotClient {
 
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl StockSnapshotClient {
     /// Get market-wide snapshot quotes (sync/blocking)
     pub fn quotes_sync(
         &self,
@@ -620,9 +623,10 @@ impl StockTechnicalClient {
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl StockTechnicalClient {
     /// Get Simple Moving Average (sync/blocking)
     pub fn sma_sync(
         &self,
@@ -764,9 +768,10 @@ impl StockCorporateActionsClient {
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl StockCorporateActionsClient {
     /// Get capital structure changes (sync/blocking)
     pub fn capital_changes_sync(
         &self,
@@ -958,9 +963,10 @@ impl FutOptIntradayClient {
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl FutOptIntradayClient {
     /// Get quote for a futures/options contract (sync/blocking)
     pub fn quote_sync(&self, symbol: String, after_hours: bool) -> Result<String, MarketDataError> {
         let mut builder = self.inner.futopt().intraday().quote().symbol(&symbol);
@@ -1095,9 +1101,10 @@ impl FutOptHistoricalClient {
         .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
         to_json(&result)
     }
+}
 
-    // ========== Sync Methods (Blocking) ==========
-
+#[uniffi::export]
+impl FutOptHistoricalClient {
     /// Get historical candles for a product such as "TXF" (sync/blocking)
     #[allow(clippy::too_many_arguments, reason = "UniFFI exports positional parameters")]
     pub fn candles_sync(
@@ -1591,7 +1598,6 @@ impl StockOwnershipClient {
     }
 }
 
-#[cfg(feature = "cpp")]
 #[uniffi::export]
 impl StockOwnershipClient {
     /// Get the constituents an ETF held over a date range (sync/blocking)

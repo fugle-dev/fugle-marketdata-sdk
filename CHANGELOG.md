@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value`. `Rest*Params` types are exported for each method.
 - **Node**: `futopt.historical.*` object params accept the product code as
   `product` (the API's own name) as well as `symbol`.
+- **C#, Go, Java**: `stock.ownership.*` gain the blocking `*_sync` variants
+  (`etf_holdings_sync`, `institutional_trades_sync`, `director_holdings_sync`,
+  `tdcc_distribution_sync`) that only the C++ binding had, so ownership offers
+  both async and sync like every other REST client (#32).
 
 ### Changed
 
@@ -56,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dPeriod` (Python `r_period` / `k_period` / `d_period`) in place of
   `period`. The API rejects `period` with HTTP 400, so the method could not
   succeed from any binding before.
+- **Node**: the unused `SymbolParams` interface is no longer exported. No
+  method took it; each method has its own `Rest*Params` type (#32).
 
 ### Fixed
 
@@ -86,6 +92,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its
   correctly-rounded float parser (`float_roundtrip`) in every binding.
+- **C++**: every REST client except `stock.ownership` had no methods — the
+  `cpp` feature stripped the async methods together with the sync ones sharing
+  their `impl` block, so `stock.intraday`, `historical`, `snapshot`,
+  `technical`, `corporateActions` and `futopt.intraday` / `historical` were
+  unreachable. Their `*_sync` methods are now exported (#32).
 
 ## [Bindings 3.0.0-rc.2 / core 0.9.0-rc.1 / uniffi 0.2.0-rc.1] - 2026-09-16
 

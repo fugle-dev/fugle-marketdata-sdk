@@ -211,6 +211,12 @@ final class NamespaceLibrary {
     if (lib.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_volumes_sync() != ((short) 33858)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (lib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync() != ((short) 53633)) {
+        throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (lib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync() != ((short) 61307)) {
+        throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (lib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings() != ((short) 46160)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -221,6 +227,12 @@ final class NamespaceLibrary {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (lib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution() != ((short) 14404)) {
+        throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (lib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync() != ((short) 11313)) {
+        throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (lib.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync() != ((short) 57031)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (lib.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync() != ((short) 40591)) {

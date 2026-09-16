@@ -2622,11 +2622,6 @@ export interface StreamingVersionOptions {
   futopt?: string
 }
 
-/** Plain `{ symbol }` params reused by methods that take only a symbol. */
-export interface SymbolParams {
-  symbol: string
-}
-
 /** `stock.ownership.tdccDistribution` params (object form, matching the official SDK) */
 export interface TdccDistributionParams {
   symbol: string

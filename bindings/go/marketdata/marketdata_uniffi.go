@@ -922,6 +922,24 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync()
+		})
+		if checksum != 53633 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync()
+		})
+		if checksum != 61307 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_director_holdings()
 		})
 		if checksum != 46160 {
@@ -954,6 +972,24 @@ func uniffiCheckChecksums() {
 		if checksum != 14404 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_get_tdcc_distribution: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync()
+		})
+		if checksum != 11313 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync()
+		})
+		if checksum != 57031 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync: UniFFI API checksum mismatch")
 		}
 	}
 	{
@@ -3437,6 +3473,10 @@ func (_ FfiDestroyerStockIntradayClient) Destroy(value *StockIntradayClient) {
 
 // Stock ownership endpoints client
 type StockOwnershipClientInterface interface {
+	// Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
+	DirectorHoldingsSync(symbol string, from *string, to *string, sort *string) (string, error)
+	// Get the constituents an ETF held over a date range (sync/blocking)
+	EtfHoldingsSync(symbol string, from *string, to *string, sort *string) (string, error)
 	// Get monthly holdings and pledges disclosed by directors and supervisors (async)
 	GetDirectorHoldings(symbol string, from *string, to *string, sort *string) (string, error)
 	// Get the constituents an ETF held over a date range (async)
@@ -3445,11 +3485,51 @@ type StockOwnershipClientInterface interface {
 	GetInstitutionalTrades(symbol string, from *string, to *string, sort *string) (string, error)
 	// Get the weekly TDCC shareholder distribution by holding-size bracket (async)
 	GetTdccDistribution(symbol string, from *string, to *string, sort *string) (string, error)
+	// Get daily trading by the three major institutional investors (sync/blocking)
+	InstitutionalTradesSync(symbol string, from *string, to *string, sort *string) (string, error)
+	// Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
+	TdccDistributionSync(symbol string, from *string, to *string, sort *string) (string, error)
 }
 
 // Stock ownership endpoints client
 type StockOwnershipClient struct {
 	ffiObject FfiObject
+}
+
+// Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
+func (_self *StockOwnershipClient) DirectorHoldingsSync(symbol string, from *string, to *string, sort *string) (string, error) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_director_holdings_sync(
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort), _uniffiStatus),
+		}
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue string
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
+	}
+}
+
+// Get the constituents an ETF held over a date range (sync/blocking)
+func (_self *StockOwnershipClient) EtfHoldingsSync(symbol string, from *string, to *string, sort *string) (string, error) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_etf_holdings_sync(
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort), _uniffiStatus),
+		}
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue string
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
+	}
 }
 
 // Get monthly holdings and pledges disclosed by directors and supervisors (async)
@@ -3594,6 +3674,42 @@ func (_self *StockOwnershipClient) GetTdccDistribution(symbol string, from *stri
 	}
 
 	return res, err
+}
+
+// Get daily trading by the three major institutional investors (sync/blocking)
+func (_self *StockOwnershipClient) InstitutionalTradesSync(symbol string, from *string, to *string, sort *string) (string, error) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_institutional_trades_sync(
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort), _uniffiStatus),
+		}
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue string
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
+	}
+}
+
+// Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
+func (_self *StockOwnershipClient) TdccDistributionSync(symbol string, from *string, to *string, sort *string) (string, error) {
+	_pointer := _self.ffiObject.incrementPointer("*StockOwnershipClient")
+	defer _self.ffiObject.decrementPointer()
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribution_sync(
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(sort), _uniffiStatus),
+		}
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue string
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
+	}
 }
 func (object *StockOwnershipClient) Destroy() {
 	runtime.SetFinalizer(object, nil)
