@@ -74,6 +74,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   async client finished the pending attempt (reconnecting and resubscribing)
   until its drain timeout aborted it, and both clients could report an attempt
   already in progress (#55).
+- **Python**: WebSocket `connect` fires from core's `Connected` event, once
+  the transport is open and before authentication, so it also fires when the
+  server then rejects the credentials. Previously the binding called it itself
+  after `connect()` had authenticated (#56).
+- **Python**: `disconnect()` / `disconnect_async()` return only after the
+  connection-event callbacks for that connection (`disconnect`, a final
+  `error`, …) have run, and a failed `connect()` / `connect_async()` raises
+  only after `unauthenticated` / `error` have run. Previously they could fire
+  after the call returned. `disconnect()` therefore also waits for calls still
+  in flight on the same client from other threads (`subscribe()`, `ping()`, …)
+  to return (#54).
 
 ### Breaking
 
@@ -107,6 +118,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     attempts"). Without an `error` listener errors are ignored.
   - `ping()` accepts an object sent verbatim as the frame's `data`, e.g.
     `ping({ state: 'x' })`; a string is still sent as `{ state }`.
+- **Python**: WebSocket `authenticated` and `unauthenticated` callbacks
+  receive the server frame's `data` — a `dict`, or `None` when the frame has
+  none — instead of `{"event": "authenticated"}` and the rejection message
+  string (#56). See
+  [MIGRATION-0.9.md](MIGRATION-0.9.md#9-python-connection-callbacks).
 
 > **Release order:** the `futopt/historical` changes below follow
 > fugle-realtime #727. Publish this release only after #727 is live in
@@ -203,6 +219,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a Python thread of the same process could never answer `connect()`. These
   methods are no longer serialized by the GIL, so calls on one client from
   several threads can now interleave (#39).
+- **Python**: after `stock.connect_async()` no connection-event callback
+  except `connect` ever fired — `authenticated`, `disconnect`, `reconnect`
+  and `error` were silently dropped. A rejected API key never fired
+  `unauthenticated` on either `connect()` or `connect_async()` (#56).
 - Long JSON decimals could decode to the neighbouring double, so a value
   such as `51.708947112827516` arrived as `51.70894711282752` — not the number
   `JSON.parse` gives for the same body. serde_json now uses its

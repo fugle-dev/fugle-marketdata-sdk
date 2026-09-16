@@ -1778,12 +1778,12 @@ class StockWebSocketClient:
 
         Supported events:
           - "message" / "data": Called with message dict when data received
-          - "connect" / "connected": Called when TCP/WebSocket connection established
-          - "authenticated": Called (no args) when server accepts credentials
-          - "unauthenticated": Called with rejection message when server refuses credentials
-          - "disconnect" / "disconnected" / "close": Called when connection closed
-          - "reconnect" / "reconnecting": Called when reconnecting
-          - "error": Called with (message, code) when error occurs
+          - "connect" / "connected": Called (no args) when the WebSocket opens, before authentication
+          - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
+          - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
+          - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection closed
+          - "reconnect" / "reconnecting": Called with the attempt number when reconnecting
+          - "error": Called with a WebSocketError instance when an error occurs
 
         Args:
             event: Event type string

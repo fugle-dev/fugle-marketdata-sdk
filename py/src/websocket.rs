@@ -762,6 +762,110 @@ fn stop_message_thread(
     }
 }
 
+/// Connection events as core hands them out.
+type EventReceiver = Arc<
+    tokio::sync::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::ConnectionEvent>>,
+>;
+
+/// Start the thread that forwards core's connection events to the callbacks.
+///
+/// Started before `connect()`: core queues `Connected` and the
+/// `Authenticated` / `Unauthenticated` outcome while `connect()` runs, and a
+/// rejected connect still has to reach `unauthenticated`. The thread exits
+/// once the core client is dropped and the channel closes.
+fn spawn_event_thread(
+    name: &str,
+    events: EventReceiver,
+    callbacks: Arc<CallbackRegistry>,
+) -> PyResult<std::thread::JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || loop {
+            let event = {
+                let rx = events.blocking_lock();
+                rx.recv()
+            };
+            match event {
+                Ok(event) => Python::attach(|py| forward_event(py, &callbacks, event)),
+                Err(_) => break, // Channel closed
+            }
+        })
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to spawn WebSocket event thread: {e}"
+            ))
+        })
+}
+
+/// Map one core connection event onto the Python callback it stands for.
+fn forward_event(
+    py: Python<'_>,
+    callbacks: &CallbackRegistry,
+    event: marketdata_core::websocket::ConnectionEvent,
+) {
+    use marketdata_core::websocket::ConnectionEvent;
+    match event {
+        ConnectionEvent::Connected => callbacks.invoke_connect(py),
+        ConnectionEvent::Authenticated { data } => callbacks.invoke_authenticated(py, &data),
+        ConnectionEvent::Unauthenticated { data, .. } => {
+            callbacks.invoke_unauthenticated(py, &data)
+        }
+        ConnectionEvent::Disconnected { code, reason, .. } => {
+            callbacks.invoke_disconnect(py, code, &reason)
+        }
+        ConnectionEvent::Reconnecting { attempt } => callbacks.invoke_reconnect(py, attempt),
+        ConnectionEvent::ReconnectFailed { attempts } => callbacks.invoke_error(
+            py,
+            &format!("Reconnection failed after {} attempts", attempts),
+            -1,
+        ),
+        ConnectionEvent::Error { message, code } => callbacks.invoke_error(py, &message, code),
+        _ => {}
+    }
+}
+
+/// Wait for the event thread with the GIL released, so every event core
+/// queued before the channel closed has reached its callback (#54).
+///
+/// Call only after the core client is dropped, or the thread never ends. The
+/// channel closes once the last `Arc` of the client goes, so this also waits
+/// for calls still in flight on the same client from other threads.
+fn join_event_thread(py: Python<'_>, handle: std::thread::JoinHandle<()>) {
+    py.detach(move || {
+        let _ = handle.join();
+    });
+}
+
+/// [`join_event_thread`] on the thread stored by `connect()`.
+///
+/// A callback that disconnects runs on the event thread and cannot wait for
+/// itself, so it puts the handle back: the `disconnect()` whose close fired
+/// that callback still finds it and waits for the remaining callbacks.
+fn join_stored_event_thread(py: Python<'_>, slot: &Mutex<Option<std::thread::JoinHandle<()>>>) {
+    let Some(handle) = take_thread(slot) else { return };
+    if handle.thread().id() == std::thread::current().id() {
+        if let Ok(mut guard) = slot.lock() {
+            *guard = Some(handle);
+        }
+        return;
+    }
+    join_event_thread(py, handle);
+}
+
+/// Async counterpart of [`join_event_thread`]: joins on the blocking pool so
+/// the awaiting task does not stall a runtime worker. The awaiting task never
+/// runs on the event thread, so no self-join check is needed.
+async fn join_event_thread_async(handle: Option<std::thread::JoinHandle<()>>) {
+    let Some(handle) = handle else { return };
+    let _ = tokio::task::spawn_blocking(move || handle.join()).await;
+}
+
+fn take_thread(
+    slot: &Mutex<Option<std::thread::JoinHandle<()>>>,
+) -> Option<std::thread::JoinHandle<()>> {
+    slot.lock().ok().and_then(|mut guard| guard.take())
+}
+
 /// Stock market WebSocket client
 ///
 /// Access via `ws.stock`
@@ -785,6 +889,7 @@ pub struct StockWebSocketClient {
     // Background thread control
     message_thread_stop: Arc<AtomicBool>,
     message_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    event_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl StockWebSocketClient {
@@ -810,6 +915,7 @@ impl StockWebSocketClient {
             runtime: Arc::new(Mutex::new(None)),
             message_thread_stop: Arc::new(AtomicBool::new(false)),
             message_thread_handle: Arc::new(Mutex::new(None)),
+            event_thread_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -904,7 +1010,9 @@ impl StockWebSocketClient {
     ///
     /// Supported events:
     ///   - "message" / "data": Called with message dict when data received
-    ///   - "connect" / "connected": Called when connection established
+    ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
+    ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
+    ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
     ///   - "disconnect" / "disconnected" / "close": Called when connection closed
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
@@ -952,11 +1060,11 @@ impl StockWebSocketClient {
             self.health_check_config.to_core(),
         );
 
-        // Get event channel reference before ws_client is moved into Arc
-        let events = Arc::clone(ws_client.state_events());
-
-        // Clone callbacks for event dispatch
-        let callbacks = Arc::clone(&self.callbacks);
+        let event_thread = spawn_event_thread(
+            "stock_ws_events",
+            Arc::clone(ws_client.state_events()),
+            Arc::clone(&self.callbacks),
+        )?;
 
         let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
@@ -976,77 +1084,30 @@ impl StockWebSocketClient {
             (ws_client, receiver, result)
         });
 
-        match result {
-            Ok(()) => {
-                // Clone receiver for potential background thread
-                let receiver_for_thread = Arc::clone(&receiver);
-
-                // Store state
-                let state = WebSocketState {
-                    inner: Arc::new(ws_client),
-                    receiver,
-                };
-
-                *self.state.lock().map_err(lock_err)? = Some(state);
-
-                // Start background message thread if message callbacks are registered
-                if self.has_message_callbacks() {
-                    self.start_message_thread(receiver_for_thread);
-                }
-
-                // Spawn event listener thread for connection events
-                let callbacks_for_events = Arc::clone(&self.callbacks);
-                std::thread::Builder::new()
-                    .name("stock_ws_events".to_string())
-                    .spawn(move || {
-                        loop {
-                            let event = {
-                                let rx = events.blocking_lock();
-                                rx.recv()
-                            };
-                            match event {
-                                Ok(event) => {
-                                    Python::attach(|py| {
-                                        use marketdata_core::websocket::ConnectionEvent;
-                                        match event {
-                                            ConnectionEvent::Reconnecting { attempt } => {
-                                                callbacks_for_events.invoke_reconnect(py, attempt);
-                                            }
-                                            ConnectionEvent::Error { message, code } => {
-                                                callbacks_for_events.invoke_error(py, &message, code);
-                                            }
-                                            ConnectionEvent::Disconnected { code, reason, .. } => {
-                                                callbacks_for_events.invoke_disconnect(py, code, &reason);
-                                            }
-                                            ConnectionEvent::ReconnectFailed { attempts } => {
-                                                callbacks_for_events.invoke_error(
-                                                    py,
-                                                    &format!("Reconnection failed after {} attempts", attempts),
-                                                    -1,
-                                                );
-                                            }
-                                            ConnectionEvent::Authenticated { .. } => {
-                                                callbacks_for_events.invoke_authenticated(py);
-                                            }
-                                            ConnectionEvent::Unauthenticated { message, .. } => {
-                                                callbacks_for_events.invoke_unauthenticated(py, &message);
-                                            }
-                                            _ => {} // Connecting, Connected handled elsewhere
-                                        }
-                                    });
-                                }
-                                Err(_) => break, // Channel closed
-                            }
-                        }
-                    })
-                    .ok();
-
-                // Invoke connect callbacks
-                callbacks.invoke_connect(py);
-                Ok(())
-            }
-            Err(e) => Err(errors::to_py_err(e)),
+        if let Err(e) = result {
+            // Dropping the client closes the event channel; the thread first
+            // delivers `unauthenticated` / `error`, so they fire before we raise.
+            drop(receiver);
+            drop(ws_client);
+            join_event_thread(py, event_thread);
+            return Err(errors::to_py_err(e));
         }
+
+        let receiver_for_thread = Arc::clone(&receiver);
+        *self.state.lock().map_err(lock_err)? = Some(WebSocketState {
+            inner: Arc::new(ws_client),
+            receiver,
+        });
+        *self.event_thread_handle.lock().map_err(lock_err)? = Some(event_thread);
+
+        // Start background message dispatch thread if callbacks registered.
+        // Without this, raw server messages (including authenticated acks
+        // and subscription events) never reach the `on("message", ...)`
+        // callback — the receiver just sits full.
+        if self.has_message_callbacks() {
+            self.start_message_thread(receiver_for_thread);
+        }
+        Ok(())
     }
 
     /// Disconnect from WebSocket server
@@ -1087,6 +1148,10 @@ impl StockWebSocketClient {
             // to the user callback. Calling it explicitly fires the
             // callback twice.
         }
+
+        // The client is gone, so the event thread drains and exits: the
+        // `disconnect` callback has fired by the time this returns (#54).
+        join_stored_event_thread(py, &self.event_thread_handle);
 
         Ok(())
     }
@@ -1351,6 +1416,7 @@ impl StockWebSocketClient {
         let has_message_callbacks = self.has_message_callbacks();
         let message_thread_stop = Arc::clone(&self.message_thread_stop);
         let message_thread_handle = Arc::clone(&self.message_thread_handle);
+        let event_thread_handle = Arc::clone(&self.event_thread_handle);
 
         future_into_py(py, async move {
             // Create WebSocket client with full config
@@ -1368,12 +1434,23 @@ impl StockWebSocketClient {
                 health_check_config,
             );
 
+            let event_thread = spawn_event_thread(
+                "stock_ws_events",
+                Arc::clone(ws_client.state_events()),
+                Arc::clone(&callbacks),
+            )?;
+
             // Get message receiver before connect
             let receiver = ws_client.messages();
 
             // Connect without holding GIL
-            ws_client.connect().await
-                .map_err(crate::errors::to_py_err)?;
+            if let Err(e) = ws_client.connect().await {
+                // See `connect`: callbacks for the failure fire before we raise.
+                drop(receiver);
+                drop(ws_client);
+                join_event_thread_async(Some(event_thread)).await;
+                return Err(crate::errors::to_py_err(e));
+            }
 
             // Clone receiver for potential background thread
             let receiver_for_thread = Arc::clone(&receiver);
@@ -1387,6 +1464,10 @@ impl StockWebSocketClient {
             let mut state_guard = state_arc.lock()
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e)))?;
             *state_guard = Some(state);
+            drop(state_guard);
+            if let Ok(mut guard) = event_thread_handle.lock() {
+                *guard = Some(event_thread);
+            }
 
             // Start background message thread if callbacks registered
             if has_message_callbacks {
@@ -1417,11 +1498,6 @@ impl StockWebSocketClient {
                 }
             }
 
-            // Invoke connect callbacks with GIL
-            Python::attach(|py| {
-                callbacks.invoke_connect(py);
-            });
-
             Ok(())
         })
     }
@@ -1438,6 +1514,7 @@ impl StockWebSocketClient {
         self.stop_message_thread(py);
 
         let state_arc = Arc::clone(&self.state);
+        let event_thread_handle = Arc::clone(&self.event_thread_handle);
 
         future_into_py(py, async move {
             let state_opt = {
@@ -1451,7 +1528,16 @@ impl StockWebSocketClient {
                 // Note: do NOT manually invoke_disconnect — core's disconnect()
                 // emits ConnectionEvent::Disconnected on the event channel and
                 // the event listener thread fires the user callback.
+                //
+                // Nothing else to release: this path runs on
+                // pyo3-async-runtimes' runtime, not `self.runtime`, and
+                // core's disconnect() has already stopped the dispatch and
+                // writer tasks, so dropping the client closes the event
+                // channel (#54).
+                drop(state);
             }
+
+            join_event_thread_async(take_thread(&event_thread_handle)).await;
 
             Ok(())
         })
@@ -1577,6 +1663,7 @@ pub struct FutOptWebSocketClient {
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
     message_thread_stop: Arc<AtomicBool>,
     message_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    event_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl FutOptWebSocketClient {
@@ -1602,6 +1689,7 @@ impl FutOptWebSocketClient {
             runtime: Arc::new(Mutex::new(None)),
             message_thread_stop: Arc::new(AtomicBool::new(false)),
             message_thread_handle: Arc::new(Mutex::new(None)),
+            event_thread_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1686,7 +1774,9 @@ impl FutOptWebSocketClient {
     ///
     /// Supported events:
     ///   - "message" / "data": Called with message dict when data received
-    ///   - "connect" / "connected": Called when connection established
+    ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
+    ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
+    ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
     ///   - "disconnect" / "disconnected" / "close": Called when connection closed
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
@@ -1724,17 +1814,18 @@ impl FutOptWebSocketClient {
             self.health_check_config.to_core(),
         );
 
-        // Get event channel reference before ws_client is moved into Arc
-        let events = Arc::clone(ws_client.state_events());
-
-        // Clone callbacks for event dispatch
-        let callbacks = Arc::clone(&self.callbacks);
+        let event_thread = spawn_event_thread(
+            "futopt_ws_events",
+            Arc::clone(ws_client.state_events()),
+            Arc::clone(&self.callbacks),
+        )?;
 
         let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
             pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
         })?;
 
-        // Connect with the GIL released — see StockWebSocketClient::connect (#39).
+        // Connect with the GIL released: the handshake and auth ack may come
+        // from a server that needs this interpreter to run (#39).
         let (ws_client, receiver, result) = py.detach(move || {
             // Get message receiver before connect. `messages()` spawns its bridge
             // task with `tokio::spawn`, so it must run inside the runtime context —
@@ -1747,79 +1838,30 @@ impl FutOptWebSocketClient {
             (ws_client, receiver, result)
         });
 
-        match result {
-            Ok(()) => {
-                let receiver_for_thread = Arc::clone(&receiver);
-
-                // Store state
-                let state = WebSocketState {
-                    inner: Arc::new(ws_client),
-                    receiver,
-                };
-
-                *self.state.lock().map_err(lock_err)? = Some(state);
-
-                // Start background message dispatch thread if callbacks registered.
-                // Without this, raw server messages (including authenticated acks
-                // and subscription events) never reach the `on("message", ...)`
-                // callback — the receiver just sits full.
-                if self.has_message_callbacks() {
-                    self.start_message_thread(receiver_for_thread);
-                }
-
-                // Spawn event listener thread for connection events
-                let callbacks_for_events = Arc::clone(&self.callbacks);
-                std::thread::Builder::new()
-                    .name("futopt_ws_events".to_string())
-                    .spawn(move || {
-                        loop {
-                            let event = {
-                                let rx = events.blocking_lock();
-                                rx.recv()
-                            };
-                            match event {
-                                Ok(event) => {
-                                    Python::attach(|py| {
-                                        use marketdata_core::websocket::ConnectionEvent;
-                                        match event {
-                                            ConnectionEvent::Reconnecting { attempt } => {
-                                                callbacks_for_events.invoke_reconnect(py, attempt);
-                                            }
-                                            ConnectionEvent::Error { message, code } => {
-                                                callbacks_for_events.invoke_error(py, &message, code);
-                                            }
-                                            ConnectionEvent::Disconnected { code, reason, .. } => {
-                                                callbacks_for_events.invoke_disconnect(py, code, &reason);
-                                            }
-                                            ConnectionEvent::ReconnectFailed { attempts } => {
-                                                callbacks_for_events.invoke_error(
-                                                    py,
-                                                    &format!("Reconnection failed after {} attempts", attempts),
-                                                    -1,
-                                                );
-                                            }
-                                            ConnectionEvent::Authenticated { .. } => {
-                                                callbacks_for_events.invoke_authenticated(py);
-                                            }
-                                            ConnectionEvent::Unauthenticated { message, .. } => {
-                                                callbacks_for_events.invoke_unauthenticated(py, &message);
-                                            }
-                                            _ => {} // Connecting, Connected handled elsewhere
-                                        }
-                                    });
-                                }
-                                Err(_) => break, // Channel closed
-                            }
-                        }
-                    })
-                    .ok();
-
-                // Invoke connect callbacks
-                callbacks.invoke_connect(py);
-                Ok(())
-            }
-            Err(e) => Err(errors::to_py_err(e)),
+        if let Err(e) = result {
+            // Dropping the client closes the event channel; the thread first
+            // delivers `unauthenticated` / `error`, so they fire before we raise.
+            drop(receiver);
+            drop(ws_client);
+            join_event_thread(py, event_thread);
+            return Err(errors::to_py_err(e));
         }
+
+        let receiver_for_thread = Arc::clone(&receiver);
+        *self.state.lock().map_err(lock_err)? = Some(WebSocketState {
+            inner: Arc::new(ws_client),
+            receiver,
+        });
+        *self.event_thread_handle.lock().map_err(lock_err)? = Some(event_thread);
+
+        // Start background message dispatch thread if callbacks registered.
+        // Without this, raw server messages (including authenticated acks
+        // and subscription events) never reach the `on("message", ...)`
+        // callback — the receiver just sits full.
+        if self.has_message_callbacks() {
+            self.start_message_thread(receiver_for_thread);
+        }
+        Ok(())
     }
 
     /// Disconnect from WebSocket server
@@ -1851,6 +1893,9 @@ impl FutOptWebSocketClient {
             // listener thread fires the callback. Manual invocation would
             // double-fire.
         }
+
+        // See StockWebSocketClient::disconnect (#54).
+        join_stored_event_thread(py, &self.event_thread_handle);
 
         Ok(())
     }
