@@ -593,9 +593,10 @@ namespace FugleMarketData
     /// <summary>
     /// Stock ownership endpoints. Every method takes the same range arguments:
     /// <c>from</c> / <c>to</c> in YYYY-MM-DD and <c>sort</c> of "asc" or "desc".
-    /// The native library only exports async variants for these endpoints, so
-    /// the blocking methods run the async call on the thread pool to avoid
-    /// deadlocking callers that have a synchronization context.
+    /// The native library exports <c>*Sync</c> variants for these endpoints,
+    /// but the blocking methods here still run the async call on the thread
+    /// pool (avoiding deadlocks for callers that have a synchronization
+    /// context); switching them to the native sync calls is tracked separately.
     /// </summary>
     public sealed class StockOwnershipClient
     {
