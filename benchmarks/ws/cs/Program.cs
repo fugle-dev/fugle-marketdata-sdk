@@ -185,7 +185,9 @@ class BenchListener : IWebSocketListener
     }
 
     public void OnConnected() { }
-    public void OnDisconnected() { }
+    public void OnAuthenticated(string? dataJson) { }
+    public void OnUnauthenticated(string? dataJson) { }
+    public void OnDisconnected(bool willReconnect) { }
     public void OnMessage(StreamMessage message) => _onMsg(message);
     public void OnError(string errorMessage) => _onErr(errorMessage);
     public void OnReconnecting(uint attempt) { }

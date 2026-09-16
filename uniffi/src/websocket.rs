@@ -523,7 +523,10 @@ impl WebSocketClient {
             *guard = Some(core_ws);
         }
 
-        // Update connected state
+        // Overlaps with the forwarder's `Authenticated` arm on purpose: that
+        // event is handled on another thread and may not have been processed
+        // yet, and `is_connected()` must already be true when `connect()`
+        // returns. The forwarder's arm is what restores it after a reconnect.
         self.connected.store(true, Ordering::SeqCst);
 
         // Reset shutdown flag for this connection
