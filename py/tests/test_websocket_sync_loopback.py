@@ -12,7 +12,7 @@ import time
 import pytest
 
 from fugle_marketdata import WebSocketClient
-from tests.ws_loopback import LoopbackServer
+from tests.ws_loopback import InProcessLoopbackServer, LoopbackServer
 
 PRODUCTS = [
     pytest.param(("stock", {"channel": "trades", "symbol": "2330"}), id="stock"),
@@ -21,10 +21,9 @@ PRODUCTS = [
 
 TIMEOUT_S = 5
 
-# ``disconnect()`` joins the message thread with the GIL held; if that thread is
-# waiting for the GIL to deliver a frame the two deadlock inside native code,
-# where the default signal-based timeout never fires. The thread method still
-# kills the run (#39).
+# A hang inside native code never lets the default signal-based timeout fire;
+# the thread method catches it as long as the GIL is free. A hang that keeps the
+# GIL (#39) stalls the run until the CI job times out.
 hard_timeout = pytest.mark.timeout(20, method="thread")
 
 
@@ -56,16 +55,28 @@ def server():
         yield srv
 
 
-@pytest.fixture(params=PRODUCTS)
-def product_ws(request, server):
-    product, subscription = request.param
-    client = WebSocketClient(api_key="test-key", base_url=server.url)
-    ws = getattr(client, product)
-    yield ws, subscription
+def _product_ws(url, product):
+    return getattr(WebSocketClient(api_key="test-key", base_url=url), product)
+
+
+def _disconnect_quietly(ws):
     try:
         ws.disconnect()
     except Exception:
         pass  # never connected, or already gone
+
+
+@pytest.fixture(params=PRODUCTS)
+def product_case(request):
+    return request.param
+
+
+@pytest.fixture
+def product_ws(product_case, server):
+    product, subscription = product_case
+    ws = _product_ws(server.url, product)
+    yield ws, subscription
+    _disconnect_quietly(ws)
 
 
 @hard_timeout
@@ -118,6 +129,50 @@ def test_still_accepts_commands_well_after_connect(product_ws):
 
     ws.subscribe(subscription)
     collector.wait_for("subscribed")
-    # Drain the last frame so teardown's disconnect() cannot race its delivery (#39).
-    collector.wait_for("data")
     assert ws.is_connected()
+
+
+@hard_timeout
+def test_disconnect_returns_while_messages_flow(product_case):
+    product, subscription = product_case
+    # The message thread is delivering frames non-stop, so disconnect() must
+    # join it without holding the GIL that thread needs (#39).
+    with LoopbackServer(flood=True) as srv:
+        ws = _product_ws(srv.url, product)
+        delivered = threading.Semaphore(0)
+        ws.on("message", lambda msg: delivered.release())
+        try:
+            ws.connect()
+            ws.subscribe(subscription)
+            for _ in range(50):
+                assert delivered.acquire(timeout=TIMEOUT_S), "data frames stopped flowing"
+
+            started = time.monotonic()
+            ws.disconnect()
+            assert time.monotonic() - started < TIMEOUT_S
+            assert not ws.is_connected()
+        finally:
+            _disconnect_quietly(ws)
+
+
+@hard_timeout
+def test_blocking_calls_work_with_server_in_same_process(product_case):
+    product, subscription = product_case
+    # The server answers from a Python thread of this process, so every
+    # blocking call has to release the GIL while it waits on the network (#39).
+    with InProcessLoopbackServer() as srv:
+        ws = _product_ws(srv.url, product)
+        collector = Collector()
+        ws.on("message", collector)
+        try:
+            ws.connect()
+            ws.subscribe(subscription)
+            collector.wait_for("data")
+            assert ws.is_connected()
+
+            started = time.monotonic()
+            ws.disconnect()
+            # Waiting out the close-ack timeout also means the server never got the GIL.
+            assert time.monotonic() - started < 2
+        finally:
+            _disconnect_quietly(ws)
