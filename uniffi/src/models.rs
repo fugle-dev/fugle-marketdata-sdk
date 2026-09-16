@@ -16,9 +16,16 @@ use marketdata_core::models as core;
 // WebSocket Message Model
 // ============================================================================
 
-/// Streaming message (simplified for FFI)
+/// An inbound streaming frame.
+///
+/// `raw` is the frame exactly as the server sent it — decode that when you
+/// want the payload. The other fields are the routing subset this SDK parses
+/// out so callbacks can dispatch without decoding the whole frame first; they
+/// are a convenience, not the source of truth.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct StreamMessage {
+    /// The frame verbatim, as received on the wire.
+    pub raw: String,
     pub event: String,
     pub channel: Option<String>,
     pub symbol: Option<String>,
@@ -50,6 +57,7 @@ impl From<core::WebSocketMessage> for StreamMessage {
         };
 
         Self {
+            raw: msg.raw,
             event: msg.event,
             channel: msg.channel,
             symbol: msg.symbol,

@@ -935,6 +935,7 @@ mod tests {
 
         // Simulate calling on_message
         let test_msg = StreamMessage {
+            raw: r#"{"event":"data","channel":"trades","symbol":"2330"}"#.to_string(),
             event: "data".to_string(),
             channel: Some("trades".to_string()),
             symbol: Some("2330".to_string()),
