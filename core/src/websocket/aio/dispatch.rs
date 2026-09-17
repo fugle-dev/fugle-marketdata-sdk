@@ -2,7 +2,7 @@
 //! messages onto the client's stream. Also implements optional outbound ping.
 
 use crate::tracing_compat::{debug, warn};
-use crate::websocket::aio::WsStream;
+use crate::websocket::aio::{SharedState, WsStream};
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
@@ -39,6 +39,8 @@ use tokio_tungstenite::tungstenite::Message;
 /// * `subscriptions` - Subscription manager for `subscribed` event handling
 /// * `reconnection` - Reconnect policy, consulted for each `Disconnected`'s
 ///   `will_reconnect` so it matches the decision the caller makes next
+/// * `state` - The client's connection state, updated to match each
+///   `Disconnected` before it is queued (#86)
 ///
 /// # Returns
 ///
@@ -54,6 +56,7 @@ pub(crate) async fn dispatch_messages(
     subscriptions: Arc<SubscriptionManager>,
     shutdown_requested: Arc<AtomicBool>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
+    state: SharedState,
 ) -> Option<u16> {
     let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
         let reconnection = Arc::clone(&reconnection);
@@ -95,7 +98,8 @@ pub(crate) async fn dispatch_messages(
                     });
                     // Through the latch, so a racing `disconnect()` cannot
                     // report this connection's close a second time (#47).
-                    stream.emit_disconnected(
+                    stream.connection_lost(
+                        &state,
                         None,
                         format!("Heartbeat timeout after {elapsed_ms}ms"),
                         DisconnectIntent::Network,
@@ -118,7 +122,8 @@ pub(crate) async fn dispatch_messages(
                 // here would race ahead of it (the client-initiated
                 // local socket close manifests as EOF on the read half).
                 if !shutdown_requested.load(Ordering::SeqCst) {
-                    stream.emit_disconnected(
+                    stream.connection_lost(
+                        &state,
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
@@ -188,7 +193,8 @@ pub(crate) async fn dispatch_messages(
                     shutdown_requested.load(Ordering::SeqCst),
                 ) {
                     let will_reconnect = will_reconnect(intent, code).await;
-                    stream.emit_disconnected(
+                    stream.connection_lost(
+                        &state,
                         code,
                         reason,
                         intent,
@@ -222,7 +228,8 @@ pub(crate) async fn dispatch_messages(
                     &crate::MarketDataError::from(e),
                     err_msg.clone(),
                 ));
-                stream.emit_disconnected(
+                stream.connection_lost(
+                    &state,
                     None,
                     err_msg,
                     DisconnectIntent::Network,

@@ -47,6 +47,10 @@
 //!    [`ReconnectFailed { attempts >= 1 }`](ConnectionEvent::ReconnectFailed).
 //!    If `disconnect()` is called in the meantime no further events are
 //!    emitted and the state becomes `Closed { intent: Client, .. }`.
+//!    By the time a consumer receives a lost connection's `Disconnected`,
+//!    the state already reflects it (#86): `Closed` with the event's `code`,
+//!    `reason` and `intent` when `will_reconnect == false`, otherwise
+//!    [`ConnectionState::Disconnected`] until the reconnect loop moves on.
 //! 4. Every message of an authenticated connection, including the server's
 //!    `authenticated` frame, comes after that connection's `Authenticated`
 //!    and before its `Disconnected`. Frames a connection receives after it

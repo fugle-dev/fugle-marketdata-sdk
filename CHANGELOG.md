@@ -81,6 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Rust**: when a connection is lost and no reconnect follows,
+  `ConnectionState::Closed` carries the `code`, `reason` and `intent` of the
+  `Disconnected` it came with, e.g. `Closed { code: Some(4001), reason: "bye",
+  intent: Server }` for a server close. It used to be `reason: "Non-retriable
+  error"` with `intent: Network` whatever the cause. While a reconnect is
+  about to start, the state is `Disconnected` until `Reconnecting` (#86).
+
 - **C#**: the blocking `Stock.Ownership.Get*` methods call the native `*Sync`
   exports directly instead of running the async call via `Task.Run` (#37).
 - **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
@@ -304,6 +311,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   method took it; each method has its own `Rest*Params` type (#32).
 
 ### Fixed
+
+- **All languages**: a `disconnect` listener or callback that reads the
+  connection state already sees the close it reports: not connected, and
+  closed when no reconnect follows (Node `isConnected` / `isClosed`, Python
+  `is_connected()` / `is_closed()`, UniFFI `is_connected()`, Rust `state()`).
+  Core queued `Disconnected` before recording the new state, so a listener
+  could still read "connected". Both the async and the sync client now record
+  the state first (#86).
 
 - **Rust**: the blocking `WebSocketClient::force_close()` aborts the
   connection like the async one: it sends no Close frame and discards queued

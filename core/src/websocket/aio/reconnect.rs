@@ -131,14 +131,9 @@ pub(crate) async fn try_reconnect(
 
     if !should_reconnect {
         // Not retriable. The close was already reported as
-        // `Disconnected { will_reconnect: false }`; no attempt was made, so
-        // there is no `ReconnectFailed` to report.
-        let mut st = write_state(&state);
-        *st = ConnectionState::Closed {
-            code: close_code,
-            reason: "Non-retriable error".to_string(),
-            intent: DisconnectIntent::Network,
-        };
+        // `Disconnected { will_reconnect: false }`, which recorded the
+        // matching `Closed` state (#86); no attempt was made, so there is no
+        // `ReconnectFailed` to report.
         return None;
     }
 

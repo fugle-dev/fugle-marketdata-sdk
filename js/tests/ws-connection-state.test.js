@@ -83,17 +83,25 @@ describe.each(['stock', 'futopt'])('%s isConnected / isClosed follow core connec
     expect(ws.isClosed).toBe(false);
   });
 
-  test('a server close with no reconnect left marks the client closed', async () => {
+  test('a server close with no reconnect left marks the client closed by its disconnect listener (#86)', async () => {
     await setup();
-    let disconnects = 0;
-    ws.on('disconnect', () => {
-      disconnects += 1;
-    });
+    const inListener = [];
+    ws.on('disconnect', () => inListener.push({ isConnected: ws.isConnected, isClosed: ws.isClosed }));
     await ws.connect();
 
     for (const socket of wss.clients) socket.close(1001, 'going away');
-    await waitFor(() => disconnects > 0, 'disconnect event');
-    await waitFor(() => ws.isClosed, 'isClosed');
-    expect(ws.isConnected).toBe(false);
+    await waitFor(() => inListener.length > 0, 'disconnect event');
+    expect(inListener).toEqual([{ isConnected: false, isClosed: true }]);
+  });
+
+  test('a drop followed by a reconnect reads not connected in the disconnect listener (#86)', async () => {
+    await setup({ reconnect: { enabled: true, maxAttempts: 3, initialDelayMs: 300, maxDelayMs: 300 } });
+    const inListener = [];
+    ws.on('disconnect', () => inListener.push({ isConnected: ws.isConnected, isClosed: ws.isClosed }));
+    await ws.connect();
+
+    for (const socket of wss.clients) socket.terminate();
+    await waitFor(() => inListener.length > 0, 'disconnect event');
+    expect(inListener[0]).toEqual({ isConnected: false, isClosed: false });
   });
 });
