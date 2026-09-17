@@ -476,15 +476,6 @@ public class FugleWebSocketClient implements AutoCloseable {
          *     count as not provided)
          */
         public FugleWebSocketClient build() {
-            // Core requires exactly one non-blank credential (ConfigError,
-            // code 1004) and reports which one to use.
-            CredentialKind kind;
-            try {
-                kind = MarketdataUniffi.validateCredentials(apiKey, bearerToken, sdkToken);
-            } catch (MarketDataException e) {
-                throw FugleException.from(e);
-            }
-
             WebSocketListener effectiveListener;
             BlockingQueue<StreamMessage> messageQueue;
             BlockingQueue<String> errorQueue;
@@ -505,54 +496,53 @@ public class FugleWebSocketClient implements AutoCloseable {
                 effectiveListener = pullListener;
             }
 
-            // TODO: Current UniFFI WebSocketClient constructors only accept api_key
-            // For bearerToken/sdkToken support, store values for future use
-            // (same pattern as Python/Node.js phases 12-02, 13-02)
-            if (kind == CredentialKind.API_KEY) {
-                // Convert config options to UniFFI record types
-                ReconnectConfigRecord reconnectRecord = null;
-                if (reconnectOptions != null) {
-                    reconnectRecord = new ReconnectConfigRecord(
-                        reconnectOptions.getMaxAttempts() != null ? reconnectOptions.getMaxAttempts() : 0,
-                        reconnectOptions.getInitialDelayMs() != null ? reconnectOptions.getInitialDelayMs() : 0L,
-                        reconnectOptions.getMaxDelayMs() != null ? reconnectOptions.getMaxDelayMs() : 0L
-                    );
-                }
-
-                HealthCheckConfigRecord healthCheckRecord = null;
-                if (healthCheckOptions != null) {
-                    // Unset values map to the core defaults: enabled, and a
-                    // heartbeat timeout of 0 meaning "use 35000 ms".
-                    healthCheckRecord = new HealthCheckConfigRecord(
-                        healthCheckOptions.getEnabled() != null ? healthCheckOptions.getEnabled() : true,
-                        healthCheckOptions.getHeartbeatTimeoutMs() != null ? healthCheckOptions.getHeartbeatTimeoutMs() : 0L
-                    );
-                }
-
-                // Unset overflow/buffer both mean "use the core defaults"
-                // (DropNewest, 4096), so leave the whole record null then.
-                MessageQueueConfigRecord messageQueueRecord = null;
-                if (messageOverflow != null || messageBuffer != null) {
-                    MessageOverflowRecord overflowRecord = messageOverflow != null
-                        ? MessageOverflowRecord.valueOf(messageOverflow.name())
-                        : MessageOverflowRecord.DROP_NEWEST;
-                    messageQueueRecord = new MessageQueueConfigRecord(
-                        overflowRecord,
-                        messageBuffer != null ? messageBuffer : 0
-                    );
-                }
-
-                WebSocketClient client = WebSocketClient.newWithOptions(
-                    apiKey, effectiveListener, endpoint, baseUrl, reconnectRecord, healthCheckRecord,
-                    null, null, messageQueueRecord
+            // Convert config options to UniFFI record types
+            ReconnectConfigRecord reconnectRecord = null;
+            if (reconnectOptions != null) {
+                reconnectRecord = new ReconnectConfigRecord(
+                    reconnectOptions.getMaxAttempts() != null ? reconnectOptions.getMaxAttempts() : 0,
+                    reconnectOptions.getInitialDelayMs() != null ? reconnectOptions.getInitialDelayMs() : 0L,
+                    reconnectOptions.getMaxDelayMs() != null ? reconnectOptions.getMaxDelayMs() : 0L
                 );
-
-                return new FugleWebSocketClient(client, messageQueue, errorQueue, pullListener);
-            } else {
-                // bearerToken or sdkToken provided but not yet supported by UniFFI WebSocketClient
-                throw new FugleException("WebSocket currently only supports apiKey authentication. " +
-                                       "bearerToken and sdkToken support coming in future release.");
             }
+
+            HealthCheckConfigRecord healthCheckRecord = null;
+            if (healthCheckOptions != null) {
+                // Unset values map to the core defaults: enabled, and a
+                // heartbeat timeout of 0 meaning "use 35000 ms".
+                healthCheckRecord = new HealthCheckConfigRecord(
+                    healthCheckOptions.getEnabled() != null ? healthCheckOptions.getEnabled() : true,
+                    healthCheckOptions.getHeartbeatTimeoutMs() != null ? healthCheckOptions.getHeartbeatTimeoutMs() : 0L
+                );
+            }
+
+            // Unset overflow/buffer both mean "use the core defaults"
+            // (DropNewest, 4096), so leave the whole record null then.
+            MessageQueueConfigRecord messageQueueRecord = null;
+            if (messageOverflow != null || messageBuffer != null) {
+                MessageOverflowRecord overflowRecord = messageOverflow != null
+                    ? MessageOverflowRecord.valueOf(messageOverflow.name())
+                    : MessageOverflowRecord.DROP_NEWEST;
+                messageQueueRecord = new MessageQueueConfigRecord(
+                    overflowRecord,
+                    messageBuffer != null ? messageBuffer : 0
+                );
+            }
+
+            // Core requires exactly one non-blank credential (ConfigError,
+            // code 1004) and sends it in the auth frame as apikey, token or
+            // sdkToken to match its kind.
+            WebSocketClient client;
+            try {
+                client = WebSocketClient.newWithCredentials(
+                    new CredentialsRecord(apiKey, bearerToken, sdkToken), effectiveListener, endpoint, baseUrl,
+                    reconnectRecord, healthCheckRecord, null, null, messageQueueRecord
+                );
+            } catch (MarketDataException e) {
+                throw FugleException.from(e);
+            }
+
+            return new FugleWebSocketClient(client, messageQueue, errorQueue, pullListener);
         }
     }
 

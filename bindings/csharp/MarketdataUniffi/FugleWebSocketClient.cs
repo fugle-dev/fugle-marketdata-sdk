@@ -279,11 +279,6 @@ namespace FugleMarketData
             if (listener == null)
                 throw new ArgumentNullException(nameof(listener));
 
-            // Core requires exactly one non-blank credential (ConfigError,
-            // code 1004) and reports which one to use.
-            var kind = uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(
-                options.ApiKey, options.BearerToken, options.SdkToken);
-
             if (options.MessageBuffer.HasValue && options.MessageBuffer.Value <= 0)
                 throw new ArgumentOutOfRangeException(nameof(options.MessageBuffer), options.MessageBuffer, "MessageBuffer must be greater than 0 when set");
 
@@ -298,77 +293,63 @@ namespace FugleMarketData
                 _ => throw new ArgumentOutOfRangeException(nameof(options.Endpoint))
             };
 
-            // TODO: Current UniFFI WebSocketClient constructors only support API key authentication
-            // BearerToken and SdkToken support will be added when UniFFI layer is updated
-            try
+            // Convert config options to UniFFI record types
+            uniffi.marketdata_uniffi.ReconnectConfigRecord? reconnectRecord = null;
+            if (options.Reconnect != null)
             {
-                if (kind == uniffi.marketdata_uniffi.CredentialKind.ApiKey)
-                {
-                    // Convert config options to UniFFI record types
-                    uniffi.marketdata_uniffi.ReconnectConfigRecord? reconnectRecord = null;
-                    if (options.Reconnect != null)
-                    {
-                        reconnectRecord = new uniffi.marketdata_uniffi.ReconnectConfigRecord(
-                            maxAttempts: options.Reconnect.MaxAttempts ?? 0,
-                            initialDelayMs: options.Reconnect.InitialDelayMs ?? 0,
-                            maxDelayMs: options.Reconnect.MaxDelayMs ?? 0
-                        );
-                    }
-
-                    uniffi.marketdata_uniffi.HealthCheckConfigRecord? healthCheckRecord = null;
-                    if (options.HealthCheck != null)
-                    {
-                        healthCheckRecord = new uniffi.marketdata_uniffi.HealthCheckConfigRecord(
-                            enabled: options.HealthCheck.Enabled ?? true,
-                            heartbeatTimeoutMs: options.HealthCheck.HeartbeatTimeoutMs ?? 0
-                        );
-                    }
-
-                    uniffi.marketdata_uniffi.MessageQueueConfigRecord? messageQueueRecord = null;
-                    if (options.MessageOverflow != null || options.MessageBuffer != null)
-                    {
-                        var overflowRecord = options.MessageOverflow switch
-                        {
-                            MessageOverflow.DropNewest or null => uniffi.marketdata_uniffi.MessageOverflowRecord.DropNewest,
-                            MessageOverflow.Unbounded => uniffi.marketdata_uniffi.MessageOverflowRecord.Unbounded,
-                            _ => throw new ArgumentOutOfRangeException(nameof(options.MessageOverflow))
-                        };
-
-                        messageQueueRecord = new uniffi.marketdata_uniffi.MessageQueueConfigRecord(
-                            overflow: overflowRecord,
-                            buffer: (uint)(options.MessageBuffer ?? 0)
-                        );
-                    }
-
-                    _inner = uniffi.marketdata_uniffi.WebSocketClient.NewWithOptions(
-                        options.ApiKey!,
-                        adapter,
-                        uniffiEndpoint,
-                        options.BaseUrl,
-                        reconnectRecord,
-                        healthCheckRecord,
-                        tls: null,
-                        version: null,
-                        messageQueue: messageQueueRecord
-                    );
-                }
-                else
-                {
-                    // For now, only ApiKey is supported in UniFFI WebSocketClient constructors
-                    // BearerToken and SdkToken will require UniFFI layer updates
-                    throw new NotSupportedException(
-                        "WebSocketClient currently only supports ApiKey authentication. " +
-                        "BearerToken and SdkToken support will be added in a future update."
-                    );
-                }
-
-                _reconnectOptions = options.Reconnect;
-                _healthCheckOptions = options.HealthCheck;
+                reconnectRecord = new uniffi.marketdata_uniffi.ReconnectConfigRecord(
+                    maxAttempts: options.Reconnect.MaxAttempts ?? 0,
+                    initialDelayMs: options.Reconnect.InitialDelayMs ?? 0,
+                    maxDelayMs: options.Reconnect.MaxDelayMs ?? 0
+                );
             }
-            catch (uniffi.marketdata_uniffi.MarketDataException ex)
+
+            uniffi.marketdata_uniffi.HealthCheckConfigRecord? healthCheckRecord = null;
+            if (options.HealthCheck != null)
             {
-                throw new InvalidOperationException($"Failed to create WebSocket client: {ex.Message}", ex);
+                healthCheckRecord = new uniffi.marketdata_uniffi.HealthCheckConfigRecord(
+                    enabled: options.HealthCheck.Enabled ?? true,
+                    heartbeatTimeoutMs: options.HealthCheck.HeartbeatTimeoutMs ?? 0
+                );
             }
+
+            uniffi.marketdata_uniffi.MessageQueueConfigRecord? messageQueueRecord = null;
+            if (options.MessageOverflow != null || options.MessageBuffer != null)
+            {
+                var overflowRecord = options.MessageOverflow switch
+                {
+                    MessageOverflow.DropNewest or null => uniffi.marketdata_uniffi.MessageOverflowRecord.DropNewest,
+                    MessageOverflow.Unbounded => uniffi.marketdata_uniffi.MessageOverflowRecord.Unbounded,
+                    _ => throw new ArgumentOutOfRangeException(nameof(options.MessageOverflow))
+                };
+
+                messageQueueRecord = new uniffi.marketdata_uniffi.MessageQueueConfigRecord(
+                    overflow: overflowRecord,
+                    buffer: (uint)(options.MessageBuffer ?? 0)
+                );
+            }
+
+            // Core requires exactly one non-blank credential and throws its
+            // ConfigError (code 1004) unwrapped; the auth frame carries the
+            // credential as apikey, token or sdkToken to match its kind.
+            _inner = uniffi.marketdata_uniffi.WebSocketClient.NewWithCredentials(
+                new uniffi.marketdata_uniffi.CredentialsRecord(
+                    apiKey: options.ApiKey,
+                    bearerToken: options.BearerToken,
+                    sdkToken: options.SdkToken
+                ),
+                adapter,
+                uniffiEndpoint,
+                options.BaseUrl,
+                reconnectRecord,
+                healthCheckRecord,
+                tls: null,
+                version: null,
+                messageQueue: messageQueueRecord
+            );
+
+            _reconnectOptions = options.Reconnect;
+            _healthCheckOptions = options.HealthCheck;
         }
 
         /// <summary>

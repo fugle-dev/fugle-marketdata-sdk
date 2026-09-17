@@ -107,6 +107,7 @@ void * uniffi_marketdata_uniffi_fn_clone_websocketclient(void * ptr, RustCallSta
 void uniffi_marketdata_uniffi_fn_free_websocketclient(void * ptr, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new(RustBuffer api_key, void * listener, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_config(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer reconnect_config, RustBuffer health_check_config, RustCallStatus *out_status);
+void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(RustBuffer credentials, void * listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint(RustBuffer api_key, void * listener, RustBuffer endpoint, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustCallStatus *out_status);
@@ -220,6 +221,7 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config();
+uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();
