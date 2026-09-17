@@ -95,7 +95,7 @@ var listener = new BenchListener(
             }
         }
     },
-    onErr: (string err) => Console.Error.WriteLine($"error: {err}")
+    onErr: (ErrorInfo err) => Console.Error.WriteLine($"error: {err.message}")
 );
 
 // ---------------------------------------------------------------------------
@@ -107,6 +107,9 @@ using var client = new FugleMarketData.WebSocketClient(
         ApiKey = "bench-key",
         BaseUrl = baseUrl,
         Endpoint = FugleMarketData.WebSocketEndpoint.Stock,
+        // The default drops messages (and possibly bench_done) while OnMessage
+        // lags a burst; the benchmark measures full delivery.
+        MessageOverflow = MessageOverflow.Unbounded,
     },
     listener
 );
@@ -121,6 +124,9 @@ if (!done.Wait(timeout))
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
+// Nothing should be dropped with an unbounded queue; the drop callback batches
+// its counts until OnDisconnected, so read the total.
+var dropped = client.MessagesDroppedTotal;
 var elapsed = t0Set ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - t0 : 0L;
 proc.Refresh();
 var endCpu = proc.UserProcessorTime;
@@ -152,6 +158,7 @@ var result = new Dictionary<string, object?>
     ["count"] = received,
     ["expected"] = ssCount,
     ["lost"] = ssCount.HasValue ? ssCount.Value - received : null,
+    ["dropped"] = dropped,
     ["elapsed_ms"] = elapsed,
     ["msgs_per_sec"] = elapsed > 0 ? (int)(received / (double)elapsed * 1000) : 0,
     ["latency_p50_ms"] = Percentile(lats, 50),
@@ -176,9 +183,9 @@ Environment.Exit(0);
 class BenchListener : IWebSocketListener
 {
     private readonly Action<StreamMessage> _onMsg;
-    private readonly Action<string> _onErr;
+    private readonly Action<ErrorInfo> _onErr;
 
-    public BenchListener(Action<StreamMessage> onMsg, Action<string> onErr)
+    public BenchListener(Action<StreamMessage> onMsg, Action<ErrorInfo> onErr)
     {
         _onMsg = onMsg;
         _onErr = onErr;
@@ -189,7 +196,8 @@ class BenchListener : IWebSocketListener
     public void OnUnauthenticated(string? dataJson) { }
     public void OnDisconnected(bool willReconnect) { }
     public void OnMessage(StreamMessage message) => _onMsg(message);
-    public void OnError(string errorMessage) => _onErr(errorMessage);
+    public void OnError(ErrorInfo error) => _onErr(error);
     public void OnReconnecting(uint attempt) { }
     public void OnReconnectFailed(uint attempts) { }
+    public void OnMessagesDropped(ulong count) { } // reported from MessagesDroppedTotal
 }

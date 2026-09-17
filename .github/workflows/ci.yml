@@ -248,6 +248,15 @@ jobs:
             -L"$RUNNER_TEMP/cpp" -lmarketdata_uniffi \
             -o "$RUNNER_TEMP/cpp/ws-bench-cpp"
 
+      # Same for the Go and C# benchmarks: they implement the listener
+      # interfaces directly. Built only; they need a mock server to run.
+      - name: Go and C# benchmarks compile
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          (cd benchmarks/ws/go && go build -o "$RUNNER_TEMP/ws-bench-go" .)
+          dotnet build benchmarks/ws/cs -c Release
+
       # Without the native library on the loader path every test that builds
       # a client hits Assert.Inconclusive and silently skips — 36 of 55 used
       # to do exactly that, so most of this suite never ran in CI.
@@ -294,6 +303,15 @@ jobs:
       - name: Compile sources, examples and tests
         working-directory: bindings/java
         run: ./gradlew compileJava compileTestJava --no-daemon
+      # The benchmark implements WebSocketListener directly, so an interface
+      # change breaks it; nothing else compiles it. It needs the compiled SDK
+      # classes and JNA, which compileJava has just resolved into ~/.gradle.
+      - name: Java benchmark compiles
+        run: |
+          JNA_JAR=$(find ~/.gradle -name 'jna-5*.jar' | head -1)
+          [ -n "$JNA_JAR" ] || { echo "::error::JNA jar not found under ~/.gradle"; exit 1; }
+          javac -cp bindings/java/build/classes/java/main:"$JNA_JAR" \
+            -d "$RUNNER_TEMP/java-bench" benchmarks/ws/java/WebSocketBenchmark.java
       - name: Structural tests (no native library)
         working-directory: bindings/java
         run: ./gradlew test -PexcludeTags=integration --no-daemon

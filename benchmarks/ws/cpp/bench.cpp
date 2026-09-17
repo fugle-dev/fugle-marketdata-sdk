@@ -67,7 +67,6 @@ static std::atomic<bool> g_t0_set{false};
 static std::vector<double> g_latencies;
 static std::mutex g_lat_mutex;
 static std::atomic<bool> g_done{false};
-static std::atomic<uint64_t> g_dropped{0};
 static long g_ss_count = -1;
 static double g_ss_mps = 0;
 
@@ -82,7 +81,7 @@ public:
     }
     void on_reconnecting(uint32_t) override {}
     void on_reconnect_failed(uint32_t) override {}
-    void on_messages_dropped(uint64_t count) override { g_dropped.fetch_add(count); }
+    void on_messages_dropped(uint64_t) override {} // reported from messages_dropped_total()
 
     void on_message(const StreamMessage &msg) override {
         if (msg.event == "warmup") return;
@@ -138,7 +137,9 @@ int main(int argc, char **argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    // Report
+    // Report. The drop callback batches its counts until on_disconnected, so
+    // read the running total instead.
+    uint64_t dropped = client->messages_dropped_total();
     long elapsed = g_t0_set.load() ? now_ms() - g_t0.load() : 0;
     int count = g_received.load();
     double cpu_ms = static_cast<double>(now_ms() - start_time);
@@ -160,7 +161,7 @@ int main(int argc, char **argv) {
         << ",\"count\":" << count
         << ",\"expected\":" << (g_ss_count >= 0 ? std::to_string(g_ss_count) : "null")
         << ",\"lost\":" << (g_ss_count >= 0 ? std::to_string(g_ss_count - count) : "null")
-        << ",\"dropped\":" << g_dropped.load()
+        << ",\"dropped\":" << dropped
         << ",\"elapsed_ms\":" << elapsed
         << ",\"msgs_per_sec\":" << mps
         << ",\"latency_p50_ms\":" << percentile(50)
