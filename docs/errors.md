@@ -108,7 +108,7 @@ Rust constants live in `marketdata_core::error_code`.
 | 2002 | `AUTH` | `AuthError` | `auth` | HTTP 401 / 403, or WebSocket authentication failed. |
 | 2003 | `API` | `ApiError` | by status: 429 `rate_limit`, 5xx `network`, else `client` | The API answered with any other error status. |
 | 2010 | `CLIENT_CLOSED` | `ClientClosed` | `client` | The client was already closed; Node: `connect()` aborted by `disconnect()`. |
-| 2011 | `ALREADY_CONNECTED` | `AlreadyConnected` | `client` | WebSocket `connect()` called while connected, connecting or auto-reconnecting (not yet Python). |
+| 2011 | `ALREADY_CONNECTED` | `AlreadyConnected` | `client` | WebSocket `connect()` called while connected, connecting or auto-reconnecting. |
 | 3001 | `TIMEOUT` | `TimeoutError` | `network` | A request or the WebSocket connect timed out. |
 | 3002 | `WEBSOCKET` | `WebSocketError` | by kind: I/O `network`, TLS `auth`, upgrade HTTP status as for 2003 (401/403 `auth`), else `protocol` | A WebSocket connect, read or write fails. |
 | 3003 | `HEARTBEAT_TIMEOUT` | `HeartbeatTimeout` | `network` | No inbound WebSocket frame within the heartbeat window. |

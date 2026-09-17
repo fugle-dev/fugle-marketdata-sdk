@@ -1682,6 +1682,7 @@ class StockWebSocketClient:
 
         Raises:
             MarketDataError: If connection fails
+            WebSocketError: Code 2011 if already connected, connecting or reconnecting
         """
         ...
 
@@ -1693,6 +1694,7 @@ class StockWebSocketClient:
 
         Raises:
             MarketDataError: If connection fails
+            WebSocketError: Code 2011 if already connected, connecting or reconnecting
         """
         ...
 
@@ -1898,6 +1900,7 @@ class FutOptWebSocketClient:
 
         Raises:
             MarketDataError: If connection fails
+            WebSocketError: Code 2011 if already connected, connecting or reconnecting
         """
         ...
 
