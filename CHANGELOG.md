@@ -252,7 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handled the connection's remaining events, including the last
   `on_messages_dropped` and `on_disconnected`, as in Python. Before, these
   could arrive after it returned (#126). A slow listener now also slows
-  `disconnect()` down. Called from a listener method, `disconnect()` returns
+  `disconnect()` down, with no timeout on that wait. Called from a listener method, `disconnect()` returns
   without waiting, since those events come on that same thread once the method
   returns. This holds for the Java wrapper's `FugleWebSocketClient`. Calling the
   generated Java `WebSocketClient.disconnect()` from a listener method and

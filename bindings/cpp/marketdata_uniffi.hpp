@@ -1128,8 +1128,9 @@ struct WebSocketClient
     /**
      * Disconnect from the WebSocket server (blocking), returning once the
      * listener has handled the connection's remaining events,
-     * `on_disconnected` included. Called from a listener method, it returns
-     * without that wait.
+     * `on_disconnected` included. There is no timeout on that wait: a
+     * listener method that blocks keeps it waiting for as long as it does.
+     * Called from a listener method, it returns without that wait.
      */
     void disconnect_sync();
     /**
