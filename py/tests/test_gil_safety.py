@@ -8,6 +8,8 @@ import pytest
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from tests.ws_loopback import LoopbackServer, disconnect_quietly, product_ws
+
 
 class TestGilSafety:
     """Tests to verify GIL is released during async operations."""
@@ -86,35 +88,24 @@ class TestGilSafety:
         This tests that the async iterator's __anext__ releases GIL properly.
         If GIL is held during recv(), other async tasks would be blocked.
         """
-        from fugle_marketdata import WebSocketClient
+        # A local server in a child process, so the test needs no network and
+        # the server does not compete for this process's GIL (#66).
+        with LoopbackServer() as srv:
+            ws = product_ws(srv.url, "stock", api_key=mock_api_key)
 
-        ws = WebSocketClient(api_key=mock_api_key)
+            async def other_work():
+                """Other async work that should run concurrently."""
+                for _ in range(5):
+                    await asyncio.sleep(0.1)
+                return "other_done"
 
-        # This tests that the iterator's __anext__ releases GIL
-        # If GIL is held during recv(), other tasks would be blocked
-
-        async def other_work():
-            """Other async work that should run concurrently."""
-            for _ in range(5):
-                await asyncio.sleep(0.1)
-            return "other_done"
-
-        async def ws_connect_attempt():
             try:
-                # This will likely fail with mock key, but we're testing concurrency
-                await ws.stock.connect_async()
-            except Exception:
-                pass  # Expected to fail with mock key
+                # Both tasks should run concurrently without GIL deadlock
+                results = await asyncio.gather(ws.connect_async(), other_work())
+            finally:
+                disconnect_quietly(ws)
 
-        # Both tasks should run concurrently without GIL deadlock
-        results = await asyncio.gather(
-            ws_connect_attempt(),
-            other_work(),
-            return_exceptions=True
-        )
-
-        # other_work should complete even if ws fails
-        assert any(r == "other_done" for r in results if not isinstance(r, Exception))
+        assert results[1] == "other_done"
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(15)
@@ -124,10 +115,6 @@ class TestGilSafety:
         This is a more direct test of the async iterator pattern.
         Creates a mock scenario where we test concurrent execution.
         """
-        from fugle_marketdata import WebSocketClient
-
-        ws = WebSocketClient(api_key=mock_api_key)
-
         completed_tasks = []
 
         async def monitor_task(task_id):
@@ -136,21 +123,18 @@ class TestGilSafety:
                 await asyncio.sleep(0.05)
                 completed_tasks.append(task_id)
 
-        async def websocket_task():
-            """Task that attempts WebSocket operations."""
+        # Local server as above (#66).
+        with LoopbackServer() as srv:
+            ws = product_ws(srv.url, "stock", api_key=mock_api_key)
             try:
-                await ws.stock.connect_async()
-                # Even if this fails, monitor tasks should complete
-            except Exception:
-                pass
-
-        # Run WebSocket task alongside monitor tasks
-        await asyncio.gather(
-            websocket_task(),
-            monitor_task("monitor_1"),
-            monitor_task("monitor_2"),
-            return_exceptions=True
-        )
+                # Run WebSocket task alongside monitor tasks
+                await asyncio.gather(
+                    ws.connect_async(),
+                    monitor_task("monitor_1"),
+                    monitor_task("monitor_2"),
+                )
+            finally:
+                disconnect_quietly(ws)
 
         # Monitor tasks should complete (at least some iterations)
         # If GIL was held, monitors would be blocked
