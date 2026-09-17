@@ -25,6 +25,7 @@ public class UniffiCallbackInterfaceWebSocketListener {
             onError.INSTANCE,
             onReconnecting.INSTANCE,
             onReconnectFailed.INSTANCE,
+            onMessagesDropped.INSTANCE,
             UniffiFree.INSTANCE
         );
     }
@@ -170,6 +171,24 @@ public class UniffiCallbackInterfaceWebSocketListener {
             Supplier<Void> makeCall = () -> {
                 uniffiObj.onReconnectFailed(
                     FfiConverterInteger.INSTANCE.lift(attempts)
+                );
+                return null;
+            };
+            Consumer<Void> writeReturn = (nothing) -> {};
+            UniffiHelpers.uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn);
+        }
+    }
+    
+    public static class onMessagesDropped implements UniffiCallbackInterfaceWebSocketListenerMethod8 {
+        public static final onMessagesDropped INSTANCE = new onMessagesDropped();
+        private onMessagesDropped() {}
+
+        @Override
+        public void callback(long uniffiHandle,long count,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
+            var uniffiObj = FfiConverterTypeWebSocketListener.INSTANCE.handleMap.get(uniffiHandle);
+            Supplier<Void> makeCall = () -> {
+                uniffiObj.onMessagesDropped(
+                    FfiConverterLong.INSTANCE.lift(count)
                 );
                 return null;
             };

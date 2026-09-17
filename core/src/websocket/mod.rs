@@ -34,7 +34,7 @@ pub use config::{
 pub use factory::WebSocketFactory;
 pub use connection_event::{ConnectionEvent, ConnectionState, DisconnectIntent};
 pub use health_check::HealthCheckConfig;
-pub use stream::{ConnectionStream, StreamItem, StreamReceiver};
+pub use stream::{ConnectionStream, MessagesDroppedHandle, StreamItem, StreamReceiver};
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};
 pub use subscription::SubscriptionManager;
 pub use sync::WebSocketClient;

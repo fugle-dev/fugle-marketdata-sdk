@@ -6,10 +6,10 @@ Unit tests run without API key, integration tests require FUGLE_API_KEY.
 import asyncio
 import pytest
 from fugle_marketdata import (
+    AuthError,
     WebSocketClient,
-    MarketDataError,
-    ConnectionError,
 )
+from tests.ws_loopback import REJECTED_API_KEY, LoopbackServer
 
 
 class TestWebSocketClientCreation:
@@ -36,13 +36,14 @@ class TestAsyncConnect:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)
-    async def test_connect_async_returns_awaitable(self, mock_api_key):
-        """connect_async() should return an awaitable."""
-        client = WebSocketClient(api_key=mock_api_key)
-        # Should fail with auth error but be awaitable
-        # The connection will fail because of invalid API key
-        with pytest.raises((MarketDataError, ConnectionError, Exception)):
-            await client.stock.connect_async()
+    async def test_connect_async_returns_awaitable(self):
+        """connect_async() should return an awaitable that raises on rejection."""
+        # A loopback server rejects the key: against production the outcome
+        # and its timing depend on the network (like #71).
+        with LoopbackServer() as srv:
+            client = WebSocketClient(api_key=REJECTED_API_KEY, base_url=srv.url)
+            with pytest.raises(AuthError):
+                await client.stock.connect_async()
 
 
 class TestCallbackPattern:

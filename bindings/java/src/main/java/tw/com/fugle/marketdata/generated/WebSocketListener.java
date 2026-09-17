@@ -95,5 +95,17 @@ public interface WebSocketListener {
      */
     public void onReconnectFailed(Integer attempts);
     
+    /**
+     * Called when messages were dropped because `on_message` fell behind
+     * while the client's message queue held `buffer` unread messages
+     * (`MessageOverflowRecord::DropNewest`).
+     *
+     * `count` is the number dropped since the previous call. The first drop
+     * on a connection is reported at once, later ones at most once per
+     * second, and the rest before `on_disconnected`. The connection's total
+     * is `WebSocketClient::messages_dropped_total()`.
+     */
+    public void onMessagesDropped(Long count);
+    
 }
 

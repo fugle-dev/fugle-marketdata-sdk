@@ -135,11 +135,79 @@ struct EventSink {
     dispatch: Arc<DispatchTsfn>,
     listeners: Arc<Listeners>,
     keep_alive: KeepAlive,
+    in_flight: Arc<InFlight>,
+}
+
+/// `message` frames queued for the JS thread whose listener has not run yet
+/// (#46). The stream reader waits while `limit` of them are, so a slow
+/// listener leaves the backlog in core's queue, where `messageOverflow`
+/// applies, instead of growing without bound in the dispatch queue.
+///
+/// Events wait behind a held-up reader too. Core keeps up to `event_buffer`
+/// (1024) of them apart from messages and drops the rest, so a listener that
+/// blocks for long enough loses events as well as messages.
+struct InFlight {
+    count: Mutex<usize>,
+    room: std::sync::Condvar,
+    /// `None`: no limit (`messageOverflow: 'unbounded'`).
+    limit: Option<usize>,
+}
+
+impl InFlight {
+    fn new(limit: Option<usize>) -> Self {
+        Self {
+            count: Mutex::new(0),
+            room: std::sync::Condvar::new(),
+            limit,
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, usize> {
+        self.count.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Count a message as in flight until the returned permit is dropped.
+    fn acquire(self: &Arc<Self>) -> InFlightPermit {
+        *self.lock() += 1;
+        InFlightPermit(Arc::clone(self))
+    }
+
+    fn release(&self) {
+        let mut count = self.lock();
+        *count = count.saturating_sub(1);
+        drop(count);
+        self.room.notify_all();
+    }
+
+    /// Wait until fewer than `limit` messages are in flight. Re-checks every
+    /// 50 ms, so a missed wake-up only delays it.
+    fn wait_for_room(&self) {
+        let Some(limit) = self.limit else { return };
+        let mut count = self.lock();
+        while *count >= limit {
+            count = self
+                .room
+                .wait_timeout(count, Duration::from_millis(50))
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// One in-flight message. Dropping it releases the slot, so a call napi
+/// discards without running (its closure is dropped with the permit) cannot
+/// leave the reader waiting for room forever.
+struct InFlightPermit(Arc<InFlight>);
+
+impl Drop for InFlightPermit {
+    fn drop(&mut self) {
+        self.0.release();
+    }
 }
 
 impl EventSink {
     /// Create a connection's sink. Must run on the JS thread.
-    fn new(env: &Env, listeners: Arc<Listeners>) -> napi::Result<Self> {
+    fn new(env: &Env, listeners: Arc<Listeners>, in_flight_limit: Option<usize>) -> napi::Result<Self> {
         let dispatch = env
             .create_function_from_closure::<(), (), _>("fugleWsDispatch", |_| Ok(()))?
             .build_threadsafe_function::<()>()
@@ -150,6 +218,7 @@ impl EventSink {
             dispatch: Arc::new(dispatch),
             listeners,
             keep_alive: loop_keep_alive(env)?,
+            in_flight: Arc::new(InFlight::new(in_flight_limit)),
         })
     }
 
@@ -163,10 +232,19 @@ impl EventSink {
     /// JS-thread call each (#62). A frame skipped this way is not replayed to a
     /// listener registered later, as an EventEmitter drops what it emits with
     /// no listener. Frames already queued still go to the current listener.
+    ///
+    /// A queued frame counts as in flight until its listener has run (see
+    /// [`InFlight`]).
     fn emit_message(&self, frame: String) {
         if self.listeners.has_message.load(Ordering::SeqCst) {
-            self.emit("message", EventArgs::Text(frame));
+            let permit = self.in_flight.acquire();
+            self.emit_then("message", EventArgs::Text(frame), move || drop(permit));
         }
+    }
+
+    /// Wait until another `message` frame may be queued (see [`InFlight`]).
+    fn wait_for_room(&self) {
+        self.in_flight.wait_for_room();
     }
 
     /// [`Self::emit`], running `then` on the JS thread once the listener has
@@ -410,7 +488,66 @@ pub struct WebSocketClientOptions {
     /// Disable ALL TLS verification (chain + hostname + expiry).
     /// Dev/testing only — exposes MITM risk. Defaults to false.
     pub tls_accept_invalid_certs: Option<bool>,
+    /// What happens while `messageBuffer` messages are unread: `'dropNewest'`
+    /// (default) drops new ones and reports them with `messagesDropped`;
+    /// `'unbounded'` never drops, and memory grows while listeners lag.
+    #[napi(ts_type = "'dropNewest' | 'unbounded'")]
+    pub message_overflow: Option<String>,
+    /// Unread messages held before `messageOverflow` applies (default 4096).
+    /// Up to this many wait in the SDK, and up to this many more may be
+    /// queued for `message` listeners that have not run yet. While those
+    /// listeners hold up delivery, events wait as well; beyond 1024 unread
+    /// events the SDK drops them too.
+    pub message_buffer: Option<u32>,
 }
+
+/// `messageOverflow` / `messageBuffer` of a `WebSocketClient` (#46).
+#[derive(Clone, Copy)]
+struct MessageQueueSettings {
+    overflow: marketdata_core::MessageOverflow,
+    buffer: usize,
+}
+
+impl MessageQueueSettings {
+    fn parse(overflow: Option<&str>, buffer: Option<u32>) -> napi::Result<Self> {
+        let overflow = match overflow {
+            None | Some("dropNewest") => marketdata_core::MessageOverflow::DropNewest,
+            Some("unbounded") => marketdata_core::MessageOverflow::Unbounded,
+            Some(other) => {
+                return Err(napi::Error::from_reason(format!(
+                    "messageOverflow must be 'dropNewest' or 'unbounded', got {other:?}"
+                )))
+            }
+        };
+        let buffer = match buffer {
+            None => marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER,
+            Some(0) => {
+                return Err(napi::Error::from_reason(
+                    "messageBuffer must be a positive integer",
+                ))
+            }
+            Some(n) => n as usize,
+        };
+        Ok(Self { overflow, buffer })
+    }
+
+    fn apply(self, config: &mut marketdata_core::ConnectionConfig) {
+        config.message_overflow = self.overflow;
+        config.message_buffer = self.buffer;
+    }
+
+    /// Frames that may be in flight to `message` listeners at once.
+    fn in_flight_limit(self) -> Option<usize> {
+        match self.overflow {
+            marketdata_core::MessageOverflow::Unbounded => None,
+            _ => Some(self.buffer),
+        }
+    }
+}
+
+/// Dropped-message count of a client's current or last connection; outlives
+/// the core client, which the worker drops when the connection ends.
+type DroppedSlot = Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>;
 
 /// Per-product streaming version selection.
 ///
@@ -611,6 +748,7 @@ struct EventCallbacks {
     error: Option<Arc<Listener>>,
     authenticated: Option<Arc<Listener>>,
     unauthenticated: Option<Arc<Listener>>,
+    messages_dropped: Option<Arc<Listener>>,
 }
 
 impl EventCallbacks {
@@ -623,6 +761,7 @@ impl EventCallbacks {
             "error" => Some(&mut self.error),
             "authenticated" => Some(&mut self.authenticated),
             "unauthenticated" => Some(&mut self.unauthenticated),
+            "messagesDropped" => Some(&mut self.messages_dropped),
             _ => None,
         }
     }
@@ -654,7 +793,7 @@ fn register_listener(
         .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
     let slot = callbacks.slot(event).ok_or_else(|| {
         napi::Error::from_reason(format!(
-            "Unknown event type: {}. Valid events: message, connect, disconnect, reconnect, error, authenticated, unauthenticated",
+            "Unknown event type: {}. Valid events: message, connect, disconnect, reconnect, error, authenticated, unauthenticated, messagesDropped",
             event
         ))
     })?;
@@ -693,16 +832,19 @@ pub struct WebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
+    message_queue: MessageQueueSettings,
     // Shared state for child clients — created once in constructor so that
     // every `ws.stock` / `ws.futopt` getter access shares the same Arcs.
     stock_callbacks: Arc<Listeners>,
     stock_connected: Arc<AtomicBool>,
     stock_closed: Arc<AtomicBool>,
     stock_worker: WorkerSlot,
+    stock_messages_dropped: DroppedSlot,
     futopt_callbacks: Arc<Listeners>,
     futopt_connected: Arc<AtomicBool>,
     futopt_closed: Arc<AtomicBool>,
     futopt_worker: WorkerSlot,
+    futopt_messages_dropped: DroppedSlot,
 }
 
 #[napi]
@@ -762,6 +904,10 @@ impl WebSocketClient {
         }
 
         let (stock_version, futopt_version) = parse_ws_versions(&options.version)?;
+        let message_queue = MessageQueueSettings::parse(
+            options.message_overflow.as_deref(),
+            options.message_buffer,
+        )?;
 
         // Resolve both endpoints now so a bad `baseUrl` throws from the
         // constructor rather than from `.stock.connect()` much later. Matches
@@ -846,14 +992,17 @@ impl WebSocketClient {
             reconnect_config: reconnect_cfg,
             health_check_config: health_check_cfg,
             tls_config,
+            message_queue,
             stock_callbacks: Arc::new(Listeners::default()),
             stock_connected: Arc::new(AtomicBool::new(false)),
             stock_closed: Arc::new(AtomicBool::new(false)),
             stock_worker: Arc::new(Mutex::new(None)),
+            stock_messages_dropped: Arc::new(Mutex::new(None)),
             futopt_callbacks: Arc::new(Listeners::default()),
             futopt_connected: Arc::new(AtomicBool::new(false)),
             futopt_closed: Arc::new(AtomicBool::new(false)),
             futopt_worker: Arc::new(Mutex::new(None)),
+            futopt_messages_dropped: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -872,10 +1021,12 @@ impl WebSocketClient {
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls_config.clone(),
+            self.message_queue,
             Arc::clone(&self.stock_callbacks),
             Arc::clone(&self.stock_connected),
             Arc::clone(&self.stock_closed),
             Arc::clone(&self.stock_worker),
+            Arc::clone(&self.stock_messages_dropped),
         )
     }
 
@@ -892,10 +1043,12 @@ impl WebSocketClient {
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls_config.clone(),
+            self.message_queue,
             Arc::clone(&self.futopt_callbacks),
             Arc::clone(&self.futopt_connected),
             Arc::clone(&self.futopt_closed),
             Arc::clone(&self.futopt_worker),
+            Arc::clone(&self.futopt_messages_dropped),
         )
     }
 }
@@ -931,10 +1084,12 @@ pub struct StockWebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
+    message_queue: MessageQueueSettings,
     callbacks: Arc<Listeners>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     worker: WorkerSlot,
+    messages_dropped: DroppedSlot,
 }
 
 #[napi]
@@ -951,10 +1106,12 @@ impl StockWebSocketClient {
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
+        message_queue: MessageQueueSettings,
         callbacks: Arc<Listeners>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
         worker: WorkerSlot,
+        messages_dropped: DroppedSlot,
     ) -> Self {
         Self {
             api_key,
@@ -964,10 +1121,12 @@ impl StockWebSocketClient {
             reconnect_config,
             health_check_config,
             tls_config,
+            message_queue,
             callbacks,
             connected,
             closed,
             worker,
+            messages_dropped,
         }
     }
 
@@ -1039,7 +1198,11 @@ impl StockWebSocketClient {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
         let previous = claim_worker_slot(&mut slot)?;
-        let sink = EventSink::new(env, Arc::clone(&self.callbacks))?;
+        let sink = EventSink::new(
+            env,
+            Arc::clone(&self.callbacks),
+            self.message_queue.in_flight_limit(),
+        )?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
         let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
@@ -1057,6 +1220,8 @@ impl StockWebSocketClient {
         let reconnect_config = self.reconnect_config.clone();
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
+        let message_queue = self.message_queue;
+        let messages_dropped = Arc::clone(&self.messages_dropped);
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
         let ending_for_worker = Arc::clone(&ending);
@@ -1122,7 +1287,11 @@ impl StockWebSocketClient {
                         ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
                     });
                     config.tls = tls_config;
+                    message_queue.apply(&mut config);
                     let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+                    if let Ok(mut slot) = messages_dropped.lock() {
+                        *slot = Some(client.messages_dropped_handle());
+                    }
 
                     // Forward core's stream from before connect(): `Connected` is
                     // emitted when the socket opens, ahead of authentication, and
@@ -1377,6 +1546,21 @@ impl StockWebSocketClient {
         request_disconnect(&self.worker)
     }
 
+    /// Messages dropped because they arrived while `messageBuffer` were
+    /// unread (`messageOverflow: 'dropNewest'`).
+    ///
+    /// Counted from the start of the current connection (every `connect()` or
+    /// reconnect restarts it); after `disconnect()` it still reads the last
+    /// connection's count. 0 before the first `connect()`.
+    #[napi(getter)]
+    pub fn messages_dropped_total(&self) -> f64 {
+        self.messages_dropped
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|handle| handle.total() as f64))
+            .unwrap_or(0.0)
+    }
+
     /// Check if connected
     #[napi(getter)]
     pub fn is_connected(&self) -> bool {
@@ -1423,10 +1607,12 @@ pub struct FutOptWebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
+    message_queue: MessageQueueSettings,
     callbacks: Arc<Listeners>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     worker: WorkerSlot,
+    messages_dropped: DroppedSlot,
 }
 
 #[napi]
@@ -1441,10 +1627,12 @@ impl FutOptWebSocketClient {
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
+        message_queue: MessageQueueSettings,
         callbacks: Arc<Listeners>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
         worker: WorkerSlot,
+        messages_dropped: DroppedSlot,
     ) -> Self {
         Self {
             api_key,
@@ -1454,10 +1642,12 @@ impl FutOptWebSocketClient {
             reconnect_config,
             health_check_config,
             tls_config,
+            message_queue,
             callbacks,
             connected,
             closed,
             worker,
+            messages_dropped,
         }
     }
 
@@ -1494,7 +1684,11 @@ impl FutOptWebSocketClient {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
         let previous = claim_worker_slot(&mut slot)?;
-        let sink = EventSink::new(env, Arc::clone(&self.callbacks))?;
+        let sink = EventSink::new(
+            env,
+            Arc::clone(&self.callbacks),
+            self.message_queue.in_flight_limit(),
+        )?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
         let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
@@ -1511,6 +1705,8 @@ impl FutOptWebSocketClient {
         let reconnect_config = self.reconnect_config.clone();
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
+        let message_queue = self.message_queue;
+        let messages_dropped = Arc::clone(&self.messages_dropped);
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
         let ending_for_worker = Arc::clone(&ending);
@@ -1573,7 +1769,11 @@ impl FutOptWebSocketClient {
                         ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
                     });
                     config.tls = tls_config;
+                    message_queue.apply(&mut config);
                     let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+                    if let Ok(mut slot) = messages_dropped.lock() {
+                        *slot = Some(client.messages_dropped_handle());
+                    }
 
                     // Forward core's stream from before connect(): `Connected` is
                     // emitted when the socket opens, ahead of authentication, and
@@ -1823,6 +2023,21 @@ impl FutOptWebSocketClient {
         request_disconnect(&self.worker)
     }
 
+    /// Messages dropped because they arrived while `messageBuffer` were
+    /// unread (`messageOverflow: 'dropNewest'`).
+    ///
+    /// Counted from the start of the current connection (every `connect()` or
+    /// reconnect restarts it); after `disconnect()` it still reads the last
+    /// connection's count. 0 before the first `connect()`.
+    #[napi(getter)]
+    pub fn messages_dropped_total(&self) -> f64 {
+        self.messages_dropped
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|handle| handle.total() as f64))
+            .unwrap_or(0.0)
+    }
+
     /// Check if connected
     #[napi(getter)]
     pub fn is_connected(&self) -> bool {
@@ -1872,7 +2087,11 @@ fn spawn_stream_reader(
     std::thread::spawn(move || {
         let run = || {
             let mut reported = false;
-            while let Ok(item) = stream.receive() {
+            loop {
+                // A slow `message` listener holds the reader here, leaving the
+                // backlog to core's queue (#46).
+                sink.wait_for_room();
+                let Ok(item) = stream.receive() else { break };
                 let event = match item {
                     StreamItem::Event(event) => event,
                     StreamItem::Message(message) => {
@@ -1952,6 +2171,12 @@ fn spawn_stream_reader(
                         sink.emit(
                             "disconnect",
                             EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
+                        );
+                    }
+                    ConnectionEvent::MessagesDropped { dropped, total } => {
+                        sink.emit(
+                            "messagesDropped",
+                            EventArgs::Json(serde_json::json!({ "dropped": dropped, "total": total })),
                         );
                     }
                     ConnectionEvent::Reconnecting { attempt } => {
@@ -2119,3 +2344,44 @@ fn fire_and_settle(
 
 // Unit tests are disabled because ThreadsafeFunction requires Node.js runtime
 // Integration tests are done via JavaScript (test_websocket.js)
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    /// Whether `wait_for_room()` returns within `timeout`.
+    fn room_within(in_flight: &Arc<InFlight>, timeout: Duration) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel();
+        let waiter = Arc::clone(in_flight);
+        std::thread::spawn(move || {
+            waiter.wait_for_room();
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(timeout).is_err(),
+            "room while the only slot was taken"
+        );
+        rx
+    }
+
+    #[test]
+    fn a_call_discarded_without_running_gives_back_its_in_flight_slot() {
+        // napi drops a queued call's closure without running it when the
+        // threadsafe function is torn down with the environment.
+        let in_flight = Arc::new(InFlight::new(Some(1)));
+        let permit = in_flight.acquire();
+        let call = move || drop(permit);
+        let room = room_within(&in_flight, Duration::from_millis(200));
+        drop(call);
+        room.recv_timeout(Duration::from_secs(5))
+            .expect("a discarded call kept its slot, so the reader would wait forever");
+    }
+
+    #[test]
+    fn unbounded_never_waits() {
+        let in_flight = Arc::new(InFlight::new(None));
+        let _permits: Vec<_> = (0..8).map(|_| in_flight.acquire()).collect();
+        in_flight.wait_for_room();
+    }
+}

@@ -248,9 +248,23 @@ FugleWebSocketClient.builder()
     .sdkToken(String token)          // Alternative auth
     .stock()                         // Use stock market
     .futopt()                        // Use futures/options market
-    .queueCapacity(int capacity)     // Message queue size (default: 100)
+    .queueCapacity(int capacity)     // Pull-mode BlockingQueue size (default: 10000)
+    .messageOverflow(MessageOverflow overflow)  // DROP_NEWEST (default) or UNBOUNDED
+    .messageBuffer(int buffer)       // Unread messages before overflow applies (default: 4096)
     .build()
 ```
+
+`messageOverflow`/`messageBuffer` configure the client's internal message
+queue (shared by both callback and pull mode): with the default
+`DROP_NEWEST`, new messages are dropped once `messageBuffer` messages are
+unread, and `WebSocketListener.onMessagesDropped(count)` reports how many.
+`UNBOUNDED` never drops, at the cost of unbounded memory growth if the
+listener falls behind.
+
+In pull mode a full `queueCapacity` queue makes the client wait for `poll()`
+rather than discard messages, so what you do not keep up with is dropped
+there instead: counted in `messagesDroppedTotal()` and reported through
+`pollError()` as `Dropped <count> message(s): listener fell behind`.
 
 #### Methods
 
@@ -260,6 +274,7 @@ CompletableFuture<Void> connect()             // Connect to server
 CompletableFuture<Void> disconnect()          // Disconnect from server
 boolean isConnected()                         // Check connection status
 boolean isClosed()                            // Check if client is closed
+long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
 
 // Subscription management
 CompletableFuture<Void> subscribe(String channel, String symbol)  // Subscribe

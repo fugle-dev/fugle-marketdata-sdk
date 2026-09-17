@@ -3,6 +3,7 @@ package marketdata_uniffi
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func isClosed(ch *MessageChannel) bool {
@@ -52,6 +53,54 @@ func TestChannelListener_ReconnectFailedReportsAndCloses(t *testing.T) {
 	}
 	if _, ok := <-ch.Errors(); ok {
 		t.Fatal("Errors() not closed")
+	}
+}
+
+func TestChannelListener_MessagesDroppedReportsErrorWithoutClosing(t *testing.T) {
+	ch := NewMessageChannel(4)
+	l := &channelListener{ch: ch}
+
+	l.OnMessagesDropped(3)
+
+	err := <-ch.Errors()
+	if err == nil {
+		t.Fatal("dropped messages not reported on Errors()")
+	}
+	if isClosed(ch) {
+		t.Fatal("channels closed after a non-terminal messages-dropped report")
+	}
+
+	// The connection stays usable: further messages still flow.
+	l.OnMessage(StreamMessage{Event: "data"})
+	if msg := <-ch.Messages(); msg.Event != "data" {
+		t.Fatalf("got %q, want data", msg.Event)
+	}
+}
+
+func TestChannelListener_MessagesDroppedNeverHoldsUpMessages(t *testing.T) {
+	// A caller that reads only Messages(): drop reports pile up on Errors()
+	// but must not stop delivery.
+	const n = 100
+	ch := NewMessageChannel(4)
+	l := &channelListener{ch: ch}
+
+	go func() {
+		for i := 0; i < n; i++ {
+			l.OnMessagesDropped(1)
+			l.OnMessage(StreamMessage{Event: "data"})
+		}
+	}()
+
+	timeout := time.After(5 * time.Second)
+	for i := 0; i < n; i++ {
+		select {
+		case <-ch.Messages():
+		case <-timeout:
+			t.Fatalf("Messages() stalled after %d of %d while Errors() went unread", i, n)
+		}
+	}
+	if got := len(ch.Errors()); got != cap(ch.Errors()) {
+		t.Fatalf("Errors() holds %d reports, want it filled to %d", got, cap(ch.Errors()))
 	}
 }
 

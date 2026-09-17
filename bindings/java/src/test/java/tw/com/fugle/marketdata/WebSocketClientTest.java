@@ -175,6 +175,30 @@ public class WebSocketClientTest {
     }
 
     @Test
+    @DisplayName("Builder has messageOverflow() method")
+    void builderHasMessageOverflowMethod() throws NoSuchMethodException {
+        Method method = FugleWebSocketClient.Builder.class.getMethod("messageOverflow", MessageOverflow.class);
+        assertNotNull(method);
+        assertEquals(FugleWebSocketClient.Builder.class, method.getReturnType());
+    }
+
+    @Test
+    @DisplayName("Builder has messageBuffer() method")
+    void builderHasMessageBufferMethod() throws NoSuchMethodException {
+        Method method = FugleWebSocketClient.Builder.class.getMethod("messageBuffer", int.class);
+        assertNotNull(method);
+        assertEquals(FugleWebSocketClient.Builder.class, method.getReturnType());
+    }
+
+    @Test
+    @DisplayName("FugleWebSocketClient has messagesDroppedTotal() method")
+    void hasMessagesDroppedTotalMethod() throws NoSuchMethodException {
+        Method method = FugleWebSocketClient.class.getMethod("messagesDroppedTotal");
+        assertNotNull(method);
+        assertEquals(long.class, method.getReturnType());
+    }
+
+    @Test
     @DisplayName("WebSocketListener has required callback methods")
     void webSocketListenerHasMethods() throws NoSuchMethodException {
         assertNotNull(WebSocketListener.class.getMethod("onConnected"));
@@ -183,6 +207,7 @@ public class WebSocketClientTest {
         assertNotNull(WebSocketListener.class.getMethod("onDisconnected", Boolean.class));
         assertNotNull(WebSocketListener.class.getMethod("onMessage", StreamMessage.class));
         assertNotNull(WebSocketListener.class.getMethod("onError", String.class));
+        assertNotNull(WebSocketListener.class.getMethod("onMessagesDropped", Long.class));
     }
 
     // ========== Constructor Tests (require native library) ==========
@@ -229,6 +254,9 @@ public class WebSocketClientTest {
 
             @Override
             public void onReconnectFailed(Integer attempts) {}
+
+            @Override
+            public void onMessagesDropped(Long count) {}
         };
 
         try (FugleWebSocketClient client = FugleWebSocketClient.builder()
@@ -293,6 +321,9 @@ public class WebSocketClientTest {
 
             @Override
             public void onReconnectFailed(Integer attempts) {}
+
+            @Override
+            public void onMessagesDropped(Long count) {}
         };
 
         try (FugleWebSocketClient client = FugleWebSocketClient.builder()
@@ -330,6 +361,32 @@ public class WebSocketClientTest {
                 .build()) {
             assertNotNull(client);
             assertEquals(0, client.queueSize());
+        }
+    }
+
+    @Test
+    @DisplayName("messagesDroppedTotal() is 0 before connect")
+    void messagesDroppedTotalStartsAtZero() {
+        NativeLibrary.assumeAvailable();
+
+        try (FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .build()) {
+            assertEquals(0L, client.messagesDroppedTotal());
+        }
+    }
+
+    @Test
+    @DisplayName("Builder accepts messageOverflow and messageBuffer")
+    void builderAcceptsMessageQueueOptions() {
+        NativeLibrary.assumeAvailable();
+
+        try (FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .messageOverflow(MessageOverflow.UNBOUNDED)
+                .messageBuffer(256)
+                .build()) {
+            assertNotNull(client);
         }
     }
 
@@ -437,6 +494,9 @@ public class WebSocketClientTest {
 
             @Override
             public void onReconnectFailed(Integer attempts) {}
+
+            @Override
+            public void onMessagesDropped(Long count) {}
         };
 
         try (FugleWebSocketClient client = FugleWebSocketClient.builder()

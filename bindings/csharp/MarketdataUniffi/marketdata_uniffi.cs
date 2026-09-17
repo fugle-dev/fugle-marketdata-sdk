@@ -905,6 +905,14 @@ static class _UniFFILib
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void UniffiCallbackInterfaceWebSocketListenerMethod8(
+        ulong @uniffiHandle,
+        ulong @count,
+        IntPtr @uniffiOutReturn,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
     [StructLayout(LayoutKind.Sequential)]
     public struct UniffiVTableCallbackInterfaceWebSocketListener
     {
@@ -916,6 +924,7 @@ static class _UniFFILib
         public IntPtr @onError;
         public IntPtr @onReconnecting;
         public IntPtr @onReconnectFailed;
+        public IntPtr @onMessagesDropped;
         public IntPtr @uniffiFree;
     }
 
@@ -1726,6 +1735,20 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(
+        RustBuffer @apiKey,
+        IntPtr @listener,
+        RustBuffer @endpoint,
+        RustBuffer @baseUrl,
+        RustBuffer @reconnectConfig,
+        RustBuffer @healthCheckConfig,
+        RustBuffer @tls,
+        RustBuffer @version,
+        RustBuffer @messageQueue,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_url(
         RustBuffer @apiKey,
         IntPtr @listener,
@@ -1754,6 +1777,12 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern sbyte uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ulong uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -1852,6 +1881,13 @@ static class _UniFFILib
     public static extern void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(
         IntPtr @ptr,
         uint @attempts,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(
+        IntPtr @ptr,
+        ulong @count,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -2462,6 +2498,9 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_ping();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2498,6 +2537,9 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2508,6 +2550,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url();
@@ -3418,6 +3463,16 @@ static class _UniFFILib
         }
         {
             var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
+            if (checksum != 28793)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total` checksum `28793`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_ping();
             if (checksum != 51664)
             {
@@ -3538,6 +3593,16 @@ static class _UniFFILib
         }
         {
             var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped();
+            if (checksum != 34523)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped` checksum `34523`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new();
             if (checksum != 36225)
             {
@@ -3573,6 +3638,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config` checksum `32798`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();
+            if (checksum != 1033)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options` checksum `1033`, library returned `{checksum}`"
                 );
             }
         }
@@ -8624,6 +8699,16 @@ public interface IWebSocketClient
     /// </summary>
     bool IsConnected();
 
+    /// <summary>
+    /// Messages dropped because they arrived while the message queue held
+    /// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+    ///
+    /// Counted from the start of the current connection (every `connect()` or
+    /// reconnect restarts it); after `disconnect()` it still reads the last
+    /// connection's count. 0 before the first `connect()`.
+    /// </summary>
+    ulong MessagesDroppedTotal();
+
     /// <exception cref="MarketDataException"></exception>
     Task Ping(string? @state);
 
@@ -8867,6 +8952,29 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         );
     }
 
+    /// <summary>
+    /// Messages dropped because they arrived while the message queue held
+    /// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+    ///
+    /// Counted from the start of the current connection (every `connect()` or
+    /// reconnect restarts it); after `disconnect()` it still reads the last
+    /// connection's count. 0 before the first `connect()`.
+    /// </summary>
+    public ulong MessagesDroppedTotal()
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterUInt64.INSTANCE.Lift(
+                _UniffiHelpers.RustCall(
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(
+                            thisPtr,
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
     /// <exception cref="MarketDataException"></exception>
     public async Task Ping(string? @state)
     {
@@ -9090,6 +9198,62 @@ public class WebSocketClient : IWebSocketClient, IDisposable
     }
 
     /// <summary>
+    /// Create a new WebSocket client with full configuration plus the
+    /// message queue settings.
+    ///
+    /// Same as `new_with_full_config`, with `message_queue` choosing what
+    /// happens while `on_message` falls behind (None for the defaults:
+    /// `DropNewest`, 4096 messages).
+    ///
+    /// # Arguments
+    /// * `api_key` - Fugle API key for authentication
+    /// * `listener` - Callback interface for receiving WebSocket events
+    /// * `endpoint` - The market data endpoint (Stock or FutOpt)
+    /// * `base_url` - Optional base URL override
+    /// * `reconnect_config` - Optional reconnection configuration
+    /// * `health_check_config` - Optional health check configuration
+    /// * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
+    /// * `version` - Optional per-product streaming version
+    /// * `message_queue` - Optional message queue configuration
+    /// </summary>
+    public static WebSocketClient NewWithOptions(
+        string @apiKey,
+        WebSocketListener @listener,
+        WebSocketEndpoint @endpoint,
+        string? @baseUrl,
+        ReconnectConfigRecord? @reconnectConfig,
+        HealthCheckConfigRecord? @healthCheckConfig,
+        TlsConfigRecord? @tls,
+        StreamingVersionRecord? @version,
+        MessageQueueConfigRecord? @messageQueue
+    )
+    {
+        return new WebSocketClient(
+            _UniffiHelpers.RustCall(
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(
+                        FfiConverterString.INSTANCE.Lower(@apiKey),
+                        FfiConverterTypeWebSocketListener.INSTANCE.Lower(@listener),
+                        FfiConverterTypeWebSocketEndpoint.INSTANCE.Lower(@endpoint),
+                        FfiConverterOptionalString.INSTANCE.Lower(@baseUrl),
+                        FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.Lower(
+                            @reconnectConfig
+                        ),
+                        FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.Lower(
+                            @healthCheckConfig
+                        ),
+                        FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.Lower(@tls),
+                        FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.Lower(@version),
+                        FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.Lower(
+                            @messageQueue
+                        ),
+                        ref _status
+                    )
+            )
+        );
+    }
+
+    /// <summary>
     /// Create a new WebSocket client with full configuration including custom base URL
     /// </summary>
     public static WebSocketClient NewWithUrl(
@@ -9240,6 +9404,18 @@ public interface WebSocketListener
     /// further lifecycle callbacks follow for this connection.
     /// </summary>
     void OnReconnectFailed(uint @attempts);
+
+    /// <summary>
+    /// Called when messages were dropped because `on_message` fell behind
+    /// while the client's message queue held `buffer` unread messages
+    /// (`MessageOverflowRecord::DropNewest`).
+    ///
+    /// `count` is the number dropped since the previous call. The first drop
+    /// on a connection is reported at once, later ones at most once per
+    /// second, and the rest before `on_disconnected`. The connection's total
+    /// is `WebSocketClient::messages_dropped_total()`.
+    /// </summary>
+    void OnMessagesDropped(ulong @count);
 }
 
 /// <summary>
@@ -9538,6 +9714,30 @@ public class WebSocketListenerImpl : WebSocketListener, IDisposable
             )
         );
     }
+
+    /// <summary>
+    /// Called when messages were dropped because `on_message` fell behind
+    /// while the client's message queue held `buffer` unread messages
+    /// (`MessageOverflowRecord::DropNewest`).
+    ///
+    /// `count` is the number dropped since the previous call. The first drop
+    /// on a connection is reported at once, later ones at most once per
+    /// second, and the rest before `on_disconnected`. The connection's total
+    /// is `WebSocketClient::messages_dropped_total()`.
+    /// </summary>
+    public void OnMessagesDropped(ulong @count)
+    {
+        CallWithPointer(thisPtr =>
+            _UniffiHelpers.RustCall(
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(
+                        thisPtr,
+                        FfiConverterUInt64.INSTANCE.Lower(@count),
+                        ref _status
+                    )
+            )
+        );
+    }
 }
 
 class UniffiCallbackInterfaceWebSocketListener
@@ -9725,6 +9925,29 @@ class UniffiCallbackInterfaceWebSocketListener
         }
     }
 
+    static void OnMessagesDropped(
+        ulong @uniffiHandle,
+        ulong @count,
+        IntPtr @uniffiOutReturn,
+        ref UniffiRustCallStatus _uniffi_out_err
+    )
+    {
+        var handle = @uniffiHandle;
+        if (
+            FfiConverterTypeWebSocketListener.INSTANCE.handleMap.TryGet(
+                handle,
+                out var uniffiObject
+            )
+        )
+        {
+            uniffiObject.OnMessagesDropped(FfiConverterUInt64.INSTANCE.Lift(@count));
+        }
+        else
+        {
+            throw new InternalException($"No callback in handlemap '{handle}'");
+        }
+    }
+
     static void UniffiFree(ulong @handle)
     {
         FfiConverterTypeWebSocketListener.INSTANCE.handleMap.Remove(@handle);
@@ -9746,6 +9969,8 @@ class UniffiCallbackInterfaceWebSocketListener
         new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod6(OnReconnecting);
     static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod7 _m7 =
         new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod7(OnReconnectFailed);
+    static _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod8 _m8 =
+        new _UniFFILib.UniffiCallbackInterfaceWebSocketListenerMethod8(OnMessagesDropped);
     static _UniFFILib.UniffiCallbackInterfaceFree _callback_interface_free =
         new _UniFFILib.UniffiCallbackInterfaceFree(UniffiFree);
 
@@ -9760,6 +9985,7 @@ class UniffiCallbackInterfaceWebSocketListener
             @onError = Marshal.GetFunctionPointerForDelegate(_m5),
             @onReconnecting = Marshal.GetFunctionPointerForDelegate(_m6),
             @onReconnectFailed = Marshal.GetFunctionPointerForDelegate(_m7),
+            @onMessagesDropped = Marshal.GetFunctionPointerForDelegate(_m8),
             @uniffiFree = Marshal.GetFunctionPointerForDelegate(_callback_interface_free),
         };
 
@@ -9927,6 +10153,55 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     {
         FfiConverterBoolean.INSTANCE.Write(value.@enabled, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@heartbeatTimeoutMs, stream);
+    }
+}
+
+/// <summary>
+/// Message queue configuration record for FFI
+///
+/// `buffer` is 0 for the default (4096).
+/// </summary>
+/// <param name="overflow">
+/// What happens to new messages while `buffer` are unread
+/// </param>
+/// <param name="buffer">
+/// Unread messages held (default 4096; 0 means default)
+/// </param>
+public record MessageQueueConfigRecord(
+    /// <summary>
+    /// What happens to new messages while `buffer` are unread
+    /// </summary>
+    MessageOverflowRecord @overflow,
+    /// <summary>
+    /// Unread messages held (default 4096; 0 means default)
+    /// </summary>
+    uint @buffer
+) { }
+
+class FfiConverterTypeMessageQueueConfigRecord : FfiConverterRustBuffer<MessageQueueConfigRecord>
+{
+    public static FfiConverterTypeMessageQueueConfigRecord INSTANCE =
+        new FfiConverterTypeMessageQueueConfigRecord();
+
+    public override MessageQueueConfigRecord Read(BigEndianStream stream)
+    {
+        return new MessageQueueConfigRecord(
+            @overflow: FfiConverterTypeMessageOverflowRecord.INSTANCE.Read(stream),
+            @buffer: FfiConverterUInt32.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(MessageQueueConfigRecord value)
+    {
+        return 0
+            + FfiConverterTypeMessageOverflowRecord.INSTANCE.AllocationSize(value.@overflow)
+            + FfiConverterUInt32.INSTANCE.AllocationSize(value.@buffer);
+    }
+
+    public override void Write(MessageQueueConfigRecord value, BigEndianStream stream)
+    {
+        FfiConverterTypeMessageOverflowRecord.INSTANCE.Write(value.@overflow, stream);
+        FfiConverterUInt32.INSTANCE.Write(value.@buffer, stream);
     }
 }
 
@@ -10537,6 +10812,57 @@ class FfiConverterTypeMarketDataError
 }
 
 /// <summary>
+/// What the client does with an inbound message while its queue already
+/// holds `buffer` unread messages.
+/// </summary>
+public enum MessageOverflowRecord : int
+{
+    /// <summary>
+    /// Drop new messages and report them through `on_messages_dropped`.
+    /// </summary>
+    DropNewest,
+
+    /// <summary>
+    /// Never drop: the queue grows while `on_message` lags.
+    /// </summary>
+    Unbounded,
+}
+
+class FfiConverterTypeMessageOverflowRecord : FfiConverterRustBuffer<MessageOverflowRecord>
+{
+    public static FfiConverterTypeMessageOverflowRecord INSTANCE =
+        new FfiConverterTypeMessageOverflowRecord();
+
+    public override MessageOverflowRecord Read(BigEndianStream stream)
+    {
+        var value = stream.ReadInt() - 1;
+        if (Enum.IsDefined(typeof(MessageOverflowRecord), value))
+        {
+            return (MessageOverflowRecord)value;
+        }
+        else
+        {
+            throw new InternalException(
+                String.Format(
+                    "invalid enum value '{0}' in FfiConverterTypeMessageOverflowRecord.Read()",
+                    value
+                )
+            );
+        }
+    }
+
+    public override int AllocationSize(MessageOverflowRecord value)
+    {
+        return 4;
+    }
+
+    public override void Write(MessageOverflowRecord value, BigEndianStream stream)
+    {
+        stream.WriteInt((int)value + 1);
+    }
+}
+
+/// <summary>
 /// Endpoint type for WebSocket connection
 /// </summary>
 public enum WebSocketEndpoint : int
@@ -10861,6 +11187,53 @@ class FfiConverterOptionalTypeHealthCheckConfigRecord
             stream.WriteByte(1);
             FfiConverterTypeHealthCheckConfigRecord.INSTANCE.Write(
                 (HealthCheckConfigRecord)value,
+                stream
+            );
+        }
+    }
+}
+
+class FfiConverterOptionalTypeMessageQueueConfigRecord
+    : FfiConverterRustBuffer<MessageQueueConfigRecord?>
+{
+    public static FfiConverterOptionalTypeMessageQueueConfigRecord INSTANCE =
+        new FfiConverterOptionalTypeMessageQueueConfigRecord();
+
+    public override MessageQueueConfigRecord? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterTypeMessageQueueConfigRecord.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(MessageQueueConfigRecord? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1
+                + FfiConverterTypeMessageQueueConfigRecord.INSTANCE.AllocationSize(
+                    (MessageQueueConfigRecord)value
+                );
+        }
+    }
+
+    public override void Write(MessageQueueConfigRecord? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterTypeMessageQueueConfigRecord.INSTANCE.Write(
+                (MessageQueueConfigRecord)value,
                 stream
             );
         }

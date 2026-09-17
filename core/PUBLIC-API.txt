@@ -11,6 +11,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -82,6 +83,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3438,6 +3440,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3509,6 +3512,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3922,6 +3926,20 @@ impl core::marker::Unpin for marketdata_core::websocket::stream::ConnectionStrea
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::ConnectionStream
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::ConnectionStream
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+pub struct marketdata_core::websocket::stream::MessagesDroppedHandle
+impl marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::total(&self) -> u64
+impl core::clone::Clone for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::clone(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::fmt::Debug for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Send for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Sync for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Unpin for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl !core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
 pub struct marketdata_core::websocket::stream::StreamReceiver
 impl marketdata_core::websocket::stream::StreamReceiver
 pub fn marketdata_core::websocket::stream::StreamReceiver::receive(&self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, marketdata_core::errors::MarketDataError>
@@ -3969,6 +3987,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -4004,6 +4023,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -4319,6 +4339,20 @@ impl core::marker::Unpin for marketdata_core::websocket::health_check::HealthChe
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::health_check::HealthCheckConfig
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::health_check::HealthCheckConfig
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::health_check::HealthCheckConfig
+pub struct marketdata_core::websocket::MessagesDroppedHandle
+impl marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::total(&self) -> u64
+impl core::clone::Clone for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::clone(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::fmt::Debug for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Send for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Sync for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Unpin for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl !core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
 pub struct marketdata_core::websocket::ReconnectionConfig
 pub marketdata_core::websocket::ReconnectionConfig::enabled: bool
 pub marketdata_core::websocket::ReconnectionConfig::initial_delay: core::time::Duration
@@ -4422,6 +4456,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -5608,6 +5643,20 @@ impl core::marker::Unpin for marketdata_core::IntradayCandlesResponse
 impl core::marker::UnsafeUnpin for marketdata_core::IntradayCandlesResponse
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::IntradayCandlesResponse
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::IntradayCandlesResponse
+pub struct marketdata_core::MessagesDroppedHandle
+impl marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::total(&self) -> u64
+impl core::clone::Clone for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::clone(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::fmt::Debug for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub fn marketdata_core::websocket::stream::MessagesDroppedHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Send for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Sync for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::Unpin for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
+impl !core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
 pub struct marketdata_core::PriceLevel
 pub marketdata_core::PriceLevel::price: f64
 pub marketdata_core::PriceLevel::size: i64
@@ -6297,6 +6346,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>

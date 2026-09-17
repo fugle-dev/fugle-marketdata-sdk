@@ -31,6 +31,16 @@ public interface WebSocketClientInterface {
      */
     public Boolean isConnected();
     
+    /**
+     * Messages dropped because they arrived while the message queue held
+     * `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+     *
+     * Counted from the start of the current connection (every `connect()` or
+     * reconnect restarts it); after `disconnect()` it still reads the last
+     * connection's count. 0 before the first `connect()`.
+     */
+    public Long messagesDroppedTotal();
+    
     public CompletableFuture<Void> ping(String state) ;
     
     public CompletableFuture<Void> querySubscriptions() ;

@@ -9,14 +9,29 @@ type Option func(*clientConfig) error
 
 // clientConfig holds configuration for both REST and WebSocket clients
 type clientConfig struct {
-	apiKey      string
-	bearerToken string
-	sdkToken    string
-	baseUrl     string
-	endpoint    WebSocketEndpoint
-	reconnect   *ReconnectConfig
-	healthCheck *HealthCheckConfig
+	apiKey          string
+	bearerToken     string
+	sdkToken        string
+	baseUrl         string
+	endpoint        WebSocketEndpoint
+	reconnect       *ReconnectConfig
+	healthCheck     *HealthCheckConfig
+	messageOverflow *MessageOverflow
+	messageBuffer   *uint32
 }
+
+// MessageOverflow controls what happens to new WebSocket messages once the
+// client's message queue holds MessageBuffer unread messages.
+type MessageOverflow int
+
+const (
+	// MessageOverflowDropNewest discards new messages while the queue is
+	// full, keeping earlier unread messages (default).
+	MessageOverflowDropNewest MessageOverflow = iota
+	// MessageOverflowUnbounded lets the queue grow without bound instead of
+	// dropping messages.
+	MessageOverflowUnbounded
+)
 
 // WithApiKey sets API key authentication
 func WithApiKey(key string) Option {
@@ -79,6 +94,33 @@ func WithReconnect(reconnect ReconnectConfig) Option {
 func WithHealthCheck(healthCheck HealthCheckConfig) Option {
 	return func(cfg *clientConfig) error {
 		cfg.healthCheck = &healthCheck
+		return nil
+	}
+}
+
+// WithMessageOverflow sets what happens to new WebSocket messages once the
+// message queue is full (default: MessageOverflowDropNewest).
+func WithMessageOverflow(overflow MessageOverflow) Option {
+	return func(cfg *clientConfig) error {
+		switch overflow {
+		case MessageOverflowDropNewest, MessageOverflowUnbounded:
+		default:
+			return errors.New("invalid message overflow policy")
+		}
+		cfg.messageOverflow = &overflow
+		return nil
+	}
+}
+
+// WithMessageBuffer sets how many unread WebSocket messages the client's
+// message queue holds before the overflow policy kicks in (default: 4096).
+func WithMessageBuffer(n int) Option {
+	return func(cfg *clientConfig) error {
+		if n <= 0 {
+			return errors.New("message buffer must be greater than zero")
+		}
+		buffer := uint32(n)
+		cfg.messageBuffer = &buffer
 		return nil
 	}
 }

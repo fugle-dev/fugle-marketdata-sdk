@@ -29,6 +29,34 @@ function startServer() {
   });
 }
 
+/**
+ * Loopback server that acks auth and, once subscribed, sends `data` frames
+ * without pause until the connection closes.
+ */
+function startFloodServer() {
+  return new Promise((resolve) => {
+    const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    wss.on('connection', (socket) => {
+      let timer = null;
+      socket.on('message', (raw) => {
+        const frame = JSON.parse(raw.toString());
+        if (frame.event === 'auth') {
+          socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
+        } else if (frame.event === 'subscribe' && timer === null) {
+          let i = 0;
+          timer = setInterval(() => {
+            for (let n = 0; n < 50 && socket.readyState === socket.OPEN; n += 1) {
+              socket.send(JSON.stringify({ event: 'data', data: { i: i++ }, channel: 'trades' }));
+            }
+          }, 1);
+        }
+      });
+      socket.on('close', () => clearInterval(timer));
+    });
+    wss.on('listening', () => resolve(wss));
+  });
+}
+
 function closeServer(wss) {
   for (const socket of wss.clients) socket.terminate();
   return new Promise((resolve) => wss.close(resolve));
@@ -321,4 +349,68 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       expect(result).toMatchObject({ exited: true, code: 0 });
     });
   });
+});
+
+// A slow `message` listener with a small `messageBuffer` fills the in-flight
+// allowance, so the stream reader waits for room (#46). Ending the connection
+// from there must still let the process exit: a lost in-flight slot would keep
+// the reader, and the keep-alive it holds, waiting forever.
+describe.each(PRODUCTS)('%s process lifetime under message backpressure (#46)', (product) => {
+  let wss;
+  let url;
+
+  beforeEach(async () => {
+    wss = await startFloodServer();
+    url = `ws://127.0.0.1:${wss.address().port}`;
+  });
+
+  afterEach(async () => {
+    await closeServer(wss);
+  });
+
+  /** Child-side client: prints FULL once the listener has fallen behind. */
+  const slowClient = `
+    const { WebSocketClient } = require('./');
+    const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, messageBuffer: 4 })[${JSON.stringify(product)}];
+    let seen = 0;
+    ws.on('message', () => {
+      const until = Date.now() + 20;
+      while (Date.now() < until);
+      seen += 1;
+      if (seen === 20) {
+        console.log('FULL');
+        if (typeof onFull === 'function') onFull();
+      }
+    });
+    ws.on('disconnect', () => console.log('DISCONNECT dropped=' + (ws.messagesDroppedTotal > 0)));
+    ws.connect().then(() => ws.subscribe({ channel: 'trades', symbol: '2330' }));
+  `;
+
+  test('disconnect() while the in-flight allowance is full lets the process exit', async () => {
+    const result = await runChild(`let onFull = () => ws.disconnect();\n${slowClient}`, {
+      env: { URL: url },
+      timeoutMs: 20000,
+    });
+
+    expectChild(result, () => {
+      expect(result).toMatchObject({ exited: true, code: 0 });
+      // Dropped messages show the reader really was held back.
+      expect(result.lines).toEqual(['FULL', 'DISCONNECT dropped=true']);
+    });
+  }, 30000);
+
+  test('a server close while the in-flight allowance is full lets the process exit', async () => {
+    const result = await runChild(`let onFull;\n${slowClient}`, {
+      env: { URL: url },
+      timeoutMs: 20000,
+      onLine: (line) => {
+        if (line === 'FULL') for (const socket of wss.clients) socket.close(1001, 'going away');
+      },
+    });
+
+    expectChild(result, () => {
+      expect(result).toMatchObject({ exited: true, code: 0 });
+      expect(result.lines).toEqual(['FULL', 'DISCONNECT dropped=true']);
+    });
+  }, 30000);
 });

@@ -156,6 +156,35 @@ const ws = new WebSocketClient({
 - `pingInterval` (number): Ping interval in milliseconds (default: 30000, min: 5000)
 - `maxMissedPongs` (number): Maximum missed pongs before considering connection stale (default: 2, min: 1)
 
+### Message Queue
+
+```javascript
+const ws = new WebSocketClient({
+  apiKey: 'your-key',
+  messageOverflow: 'dropNewest', // default; or 'unbounded'
+  messageBuffer: 4096,           // unread messages held (default 4096)
+});
+
+ws.stock.on('messagesDropped', ({ dropped, total }) => {
+  console.warn(`dropped ${dropped} (${total} on this connection)`);
+});
+ws.stock.messagesDroppedTotal; // this connection's drops; still readable after disconnect()
+```
+
+A `message` listener that falls behind holds up delivery: once
+`messageBuffer` frames are waiting for it, the SDK stops handing over more and
+lets them queue, up to another `messageBuffer`. With `'dropNewest'`, frames
+beyond that are dropped, counted and reported through `messagesDropped` (at
+most once per second, and before `disconnect`). Events queued behind those
+frames wait too, since the SDK keeps messages and events in order.
+`'unbounded'` never drops; memory grows for as long as listeners lag.
+
+While a listener keeps delivery held up, events can be lost too: the SDK holds
+up to 1024 unread events (connection events, errors and `messagesDropped`
+reports) separately from messages, and drops any beyond that. This takes a
+listener that stays blocked for a long time, since `messagesDropped` is
+reported at most once per second.
+
 ### Combined Configuration
 
 ```javascript
@@ -250,6 +279,8 @@ interface WebSocketClientOptions {
   baseUrl?: string;                    // Override base URL (optional)
   reconnect?: ReconnectOptions;        // Reconnection configuration (optional)
   healthCheck?: HealthCheckOptions;    // Health check configuration (optional)
+  messageOverflow?: 'dropNewest' | 'unbounded'; // While messageBuffer are unread (default 'dropNewest')
+  messageBuffer?: number;              // Unread messages held (default 4096)
 }
 ```
 

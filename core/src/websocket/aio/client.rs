@@ -12,7 +12,8 @@ use crate::websocket::protocol::{
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
-    ConnectionStream, ReconnectionConfig, ReconnectionManager, StreamReceiver, SubscriptionManager,
+    ConnectionStream, MessagesDroppedHandle, ReconnectionConfig, ReconnectionManager, StreamReceiver,
+    SubscriptionManager,
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
@@ -173,6 +174,12 @@ impl WebSocketClient {
     /// is not reset and keeps counting across connections.
     pub fn messages_dropped_total(&self) -> u64 {
         self.messages_dropped.load()
+    }
+
+    /// A handle reading [`messages_dropped_total`](Self::messages_dropped_total)
+    /// that stays readable after this client is dropped.
+    pub fn messages_dropped_handle(&self) -> MessagesDroppedHandle {
+        MessagesDroppedHandle::new(self.messages_dropped.clone())
     }
 
     /// Total number of lifecycle [`ConnectionEvent`]s dropped because the

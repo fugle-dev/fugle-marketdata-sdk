@@ -254,4 +254,97 @@ public class ConfigOptionsTest {
                 "Should not reject HealthCheckOptions");
         }
     }
+
+    // ========== WebSocketClient Message Queue Options Tests ==========
+
+    @Test
+    @DisplayName("WebSocketClient builder accepts messageOverflow(DROP_NEWEST) without error")
+    void testWebSocketWithMessageOverflowDropNewest() {
+        NativeLibrary.assumeAvailable();
+
+        try {
+            FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .stock()
+                .messageOverflow(MessageOverflow.DROP_NEWEST)
+                .build();
+
+            client.close();
+        } catch (FugleException e) {
+            assertFalse(e.getMessage().contains("message"),
+                "Should not reject messageOverflow(DROP_NEWEST)");
+        }
+    }
+
+    @Test
+    @DisplayName("WebSocketClient builder accepts messageOverflow(UNBOUNDED) without error")
+    void testWebSocketWithMessageOverflowUnbounded() {
+        NativeLibrary.assumeAvailable();
+
+        try {
+            FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .stock()
+                .messageOverflow(MessageOverflow.UNBOUNDED)
+                .build();
+
+            client.close();
+        } catch (FugleException e) {
+            assertFalse(e.getMessage().contains("message"),
+                "Should not reject messageOverflow(UNBOUNDED)");
+        }
+    }
+
+    @Test
+    @DisplayName("WebSocketClient builder accepts messageBuffer without error")
+    void testWebSocketWithMessageBuffer() {
+        NativeLibrary.assumeAvailable();
+
+        try {
+            FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .stock()
+                .messageBuffer(256)
+                .build();
+
+            client.close();
+        } catch (FugleException e) {
+            assertFalse(e.getMessage().contains("message"),
+                "Should not reject messageBuffer");
+        }
+    }
+
+    @Test
+    @DisplayName("WebSocketClient builder leaves messageOverflow/messageBuffer unset by default")
+    void testWebSocketMessageQueueDefaults() {
+        NativeLibrary.assumeAvailable();
+
+        // No messageOverflow()/messageBuffer() call: the builder must pass
+        // null through to newWithOptions so the core defaults (DropNewest,
+        // 4096) apply. This just verifies building succeeds without them.
+        try (FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .stock()
+                .build()) {
+            assertNotNull(client);
+        }
+    }
+
+    @Test
+    @DisplayName("WebSocketClient builder rejects messageBuffer(0)")
+    void testWebSocketMessageBufferRejectsZero() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            FugleWebSocketClient.builder().messageBuffer(0)
+        );
+        assertTrue(exception.getMessage().contains("messageBuffer"));
+    }
+
+    @Test
+    @DisplayName("WebSocketClient builder rejects negative messageBuffer")
+    void testWebSocketMessageBufferRejectsNegative() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            FugleWebSocketClient.builder().messageBuffer(-1)
+        );
+        assertTrue(exception.getMessage().contains("messageBuffer"));
+    }
 }

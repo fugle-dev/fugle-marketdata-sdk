@@ -325,6 +325,45 @@ Behaviour you may notice:
 - Frames that arrive after a connection's `Disconnected` (only possible after
   `force_close()` or a `disconnect()` that timed out) are discarded.
 
+## 12. C#, Go, C++, Java: dropped messages
+
+`WebSocketListener` gains `on_messages_dropped(count)`, called when messages
+were dropped because they were not consumed fast enough (#46). `count` is the
+number dropped since the previous call; the client's
+`messages_dropped_total()` has the running total for the current connection.
+Every listener implementation has to add it to compile. C#'s
+`IWebSocketListener` declares it without a default implementation, so this
+applies there too.
+
+| C# | Go | Java | C++ |
+|---|---|---|---|
+| `OnMessagesDropped(ulong count)` | `OnMessagesDropped(count uint64)` | `onMessagesDropped(Long count)` | `on_messages_dropped(uint64_t)` |
+
+```csharp
+public void OnMessagesDropped(ulong count)
+{
+    Console.WriteLine($"dropped {count} message(s)");
+}
+```
+
+Up to 4096 unread messages are kept; after that new ones are dropped. To
+change the limit or never drop, pass `MessageOverflow` / `MessageBuffer`
+(C# `WebSocketClientOptions`, Go `WithMessageOverflow` / `WithMessageBuffer`,
+Java builder `messageOverflow` / `messageBuffer`, C++
+`new_with_options(..., MessageQueueConfigRecord)`).
+
+Behaviour you may notice:
+
+- Go `StreamingClient` and Java pull mode have no listener of their own:
+  drops arrive on `Errors()` as `messages dropped: <count>`, and on Java's
+  error queue as `Dropped <count> message(s): listener fell behind`. Go
+  skips a drop report when `Errors()` is full, so read `Errors()` alongside
+  `Messages()`; other errors still wait for room there.
+- Java pull mode used to discard messages silently once its `queueCapacity`
+  queue was full. It now waits for `poll()` to make room, so the drop happens
+  in the SDK's queue instead, where it is counted and reported. A client that
+  never polls holds up delivery until `disconnect()` or `close()`.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

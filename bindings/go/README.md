@@ -402,7 +402,36 @@ GetSubscriptions() []Subscription                    // List active subscription
 // Message channels (Go idiom)
 Messages() <-chan StreamMessage    // Receive messages
 Errors() <-chan error              // Receive errors
+
+// Message queue
+MessagesDroppedTotal() uint64      // Messages dropped this connection (see below)
 ```
+
+#### Message Queue Options
+
+`NewFugleWebSocketClient` accepts options to tune the inbound message queue:
+
+```go
+client, err := mkt.NewFugleWebSocketClient(listener,
+    mkt.WithApiKey("your-api-key"),
+    mkt.WithMessageOverflow(mkt.MessageOverflowUnbounded), // default: MessageOverflowDropNewest
+    mkt.WithMessageBuffer(8192),                           // unread messages held; default 4096
+)
+```
+
+With `MessageOverflowDropNewest` (the default), while `WithMessageBuffer`
+messages are unread (`Messages()` is behind), new messages are dropped
+instead of blocking the connection. Drops are reported on `Errors()`, at
+most once per second, and `MessagesDroppedTotal()` returns this
+connection's total (reset on each `Connect()`/reconnect, still readable
+after `Close()`). `MessageOverflowUnbounded` never drops; memory grows for
+as long as the caller lags.
+
+With `StreamingClient`, read `Errors()` alongside `Messages()` (as in the
+`select` loop above). Other errors wait for room on `Errors()`, so leaving
+it unread holds up message delivery once it is full. A drop report is the
+exception: when `Errors()` is full it is skipped instead, so messages keep
+flowing; `MessagesDroppedTotal()` still counts those drops.
 
 #### StreamMessage Type
 

@@ -8,6 +8,7 @@
 //! Runtime-free: shared by the sync `WebSocketClient` and the async
 //! `aio::WebSocketClient`.
 
+use crate::metrics_compat::DropCounter;
 use crate::models::WebSocketMessage;
 use crate::websocket::stream_queue::QueueReceiver;
 use crate::websocket::ConnectionEvent;
@@ -24,6 +25,39 @@ pub enum StreamItem {
     Message(WebSocketMessage),
     /// A change in the connection's lifecycle, or a diagnostic about it.
     Event(ConnectionEvent),
+}
+
+/// Read-only view of a client's dropped-message count, from
+/// `messages_dropped_handle()` (#46).
+///
+/// Reads the same count as `messages_dropped_total()`: messages dropped on
+/// the current connection, restarting from zero when `connect()` or a
+/// reconnect attempt opens a new one. Unlike the client method it keeps
+/// working after the client is dropped, so bindings that drop their client
+/// on `disconnect()` can still report the last connection's count. Cheap to
+/// clone; every clone reads the same count.
+#[derive(Clone)]
+pub struct MessagesDroppedHandle {
+    counter: DropCounter,
+}
+
+impl MessagesDroppedHandle {
+    pub(crate) fn new(counter: DropCounter) -> Self {
+        Self { counter }
+    }
+
+    /// Messages dropped on the current (or last) connection.
+    pub fn total(&self) -> u64 {
+        self.counter.load()
+    }
+}
+
+impl std::fmt::Debug for MessagesDroppedHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessagesDroppedHandle")
+            .field("total", &self.total())
+            .finish()
+    }
 }
 
 /// Error for a receiver whose client is gone and whose stream is drained.

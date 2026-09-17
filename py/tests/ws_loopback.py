@@ -24,7 +24,6 @@ import struct
 import subprocess
 import sys
 import threading
-import time
 
 _GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -168,8 +167,6 @@ class _Server:
         try:
             while not closed.is_set() and not self._stopped.is_set():
                 send(OP_TEXT, payload)
-                # Paced until the bindings expose the message queue settings (#46).
-                time.sleep(0.001)
         except OSError:
             return
 

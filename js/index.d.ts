@@ -765,6 +765,17 @@ export interface WebSocketReconnectEvent {
   attempt: number;
 }
 
+/**
+ * Argument of the `messagesDropped` event: messages dropped because
+ * `messageBuffer` were unread (`messageOverflow: 'dropNewest'`).
+ */
+export interface WebSocketMessagesDroppedEvent {
+  /** Messages dropped since the previous `messagesDropped` */
+  dropped: number;
+  /** Messages dropped on this connection so far (see `messagesDroppedTotal`) */
+  total: number;
+}
+
 /** Argument of the `error` event. */
 export interface WebSocketError extends Error {
   /** Numeric error code, when one applies (see the error code table) */
@@ -790,6 +801,12 @@ export interface WebSocketEventMap {
   reconnect: (event: WebSocketReconnectEvent) => void;
   /** Error occurred; ignored when no listener is registered */
   error: (error: WebSocketError) => void;
+  /**
+   * Messages were dropped because listeners fell behind. The first drop on a
+   * connection is reported at once, later ones at most once per second, and
+   * the rest before `disconnect`.
+   */
+  messagesDropped: (event: WebSocketMessagesDroppedEvent) => void;
 }
 
 /** Event names for WebSocket */
@@ -2047,6 +2064,15 @@ export declare class FutOptWebSocketClient {
   subscriptions(): void
   /** Disconnect from the WebSocket server */
   disconnect(): void
+  /**
+   * Messages dropped because they arrived while `messageBuffer` were
+   * unread (`messageOverflow: 'dropNewest'`).
+   *
+   * Counted from the start of the current connection (every `connect()` or
+   * reconnect restarts it); after `disconnect()` it still reads the last
+   * connection's count. 0 before the first `connect()`.
+   */
+  get messagesDroppedTotal(): number
   /** Check if connected */
   get isConnected(): boolean
   /**
@@ -2499,6 +2525,15 @@ export declare class StockWebSocketClient {
   subscriptions(): void
   /** Disconnect from the WebSocket server */
   disconnect(): void
+  /**
+   * Messages dropped because they arrived while `messageBuffer` were
+   * unread (`messageOverflow: 'dropNewest'`).
+   *
+   * Counted from the start of the current connection (every `connect()` or
+   * reconnect restarts it); after `disconnect()` it still reads the last
+   * connection's count. 0 before the first `connect()`.
+   */
+  get messagesDroppedTotal(): number
   /** Check if connected */
   get isConnected(): boolean
   /**
@@ -2734,4 +2769,18 @@ export interface WebSocketClientOptions {
    * Dev/testing only — exposes MITM risk. Defaults to false.
    */
   tlsAcceptInvalidCerts?: boolean
+  /**
+   * What happens while `messageBuffer` messages are unread: `'dropNewest'`
+   * (default) drops new ones and reports them with `messagesDropped`;
+   * `'unbounded'` never drops, and memory grows while listeners lag.
+   */
+  messageOverflow?: 'dropNewest' | 'unbounded'
+  /**
+   * Unread messages held before `messageOverflow` applies (default 4096).
+   * Up to this many wait in the SDK, and up to this many more may be
+   * queued for `message` listeners that have not run yet. While those
+   * listeners hold up delivery, events wait as well; beyond 1024 unread
+   * events the SDK drops them too.
+   */
+  messageBuffer?: number
 }

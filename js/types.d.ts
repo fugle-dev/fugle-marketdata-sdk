@@ -765,6 +765,17 @@ export interface WebSocketReconnectEvent {
   attempt: number;
 }
 
+/**
+ * Argument of the `messagesDropped` event: messages dropped because
+ * `messageBuffer` were unread (`messageOverflow: 'dropNewest'`).
+ */
+export interface WebSocketMessagesDroppedEvent {
+  /** Messages dropped since the previous `messagesDropped` */
+  dropped: number;
+  /** Messages dropped on this connection so far (see `messagesDroppedTotal`) */
+  total: number;
+}
+
 /** Argument of the `error` event. */
 export interface WebSocketError extends Error {
   /** Numeric error code, when one applies (see the error code table) */
@@ -790,6 +801,12 @@ export interface WebSocketEventMap {
   reconnect: (event: WebSocketReconnectEvent) => void;
   /** Error occurred; ignored when no listener is registered */
   error: (error: WebSocketError) => void;
+  /**
+   * Messages were dropped because listeners fell behind. The first drop on a
+   * connection is reported at once, later ones at most once per second, and
+   * the rest before `disconnect`.
+   */
+  messagesDropped: (event: WebSocketMessagesDroppedEvent) => void;
 }
 
 /** Event names for WebSocket */

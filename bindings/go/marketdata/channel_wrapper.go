@@ -19,9 +19,21 @@
 //	    log.Fatal(err)
 //	}
 //
-//	for msg := range client.Messages() {
-//	    fmt.Printf("Got: %s %s\n", msg.Event, *msg.Symbol)
+//	for {
+//	    select {
+//	    case msg, ok := <-client.Messages():
+//	        if !ok {
+//	            return
+//	        }
+//	        fmt.Printf("Got: %s %s\n", msg.Event, *msg.Symbol)
+//	    case err := <-client.Errors():
+//	        log.Println(err)
+//	    }
 //	}
+//
+// Read Errors() alongside Messages(): an unread error holds up delivery of
+// the messages behind it once Errors() is full. Only messages-dropped
+// reports are skipped instead of waiting (see OnMessagesDropped).
 package marketdata_uniffi
 
 import (
@@ -88,6 +100,22 @@ func (mc *MessageChannel) sendMessage(message StreamMessage) {
 	case mc.messages <- message:
 	case <-mc.done:
 		// Channel closed, drop message
+	}
+}
+
+// trySendError delivers err if Errors() has room, and otherwise skips it.
+func (mc *MessageChannel) trySendError(err error) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	select {
+	case <-mc.done:
+		return
+	default:
+	}
+	select {
+	case mc.errors <- err:
+	default:
+		// Errors() is full: skip rather than hold up Messages()
 	}
 }
 
@@ -165,6 +193,21 @@ func (l *channelListener) OnReconnecting(attempt uint32) {
 func (l *channelListener) OnReconnectFailed(attempts uint32) {
 	l.ch.sendError(fmt.Errorf("all %d reconnection attempts exhausted", attempts))
 	l.ch.Close()
+}
+
+// OnMessagesDropped implements WebSocketListener
+//
+// Reported when messages were dropped because Messages() fell behind while
+// the queue held its configured buffer of unread messages
+// (MessageOverflowDropNewest). Not terminal, so like OnError and
+// OnUnauthenticated it is forwarded on Errors() without closing the
+// channels; count is the number dropped since the previous report.
+//
+// Unlike other errors it never waits for room on Errors(): a caller that
+// reads only Messages() keeps receiving, and the report is skipped.
+// MessagesDroppedTotal() still counts every drop.
+func (l *channelListener) OnMessagesDropped(count uint64) {
+	l.ch.trySendError(fmt.Errorf("messages dropped: %d", count))
 }
 
 // StreamingClient wraps WebSocketClient with channel-based API
@@ -263,6 +306,17 @@ func (sc *StreamingClient) IsConnected() bool {
 // IsClosed returns true if the WebSocket client has been shut down
 func (sc *StreamingClient) IsClosed() bool {
 	return sc.client.IsClosed()
+}
+
+// MessagesDroppedTotal returns the number of messages dropped because
+// Messages() fell behind while the queue held its configured buffer of
+// unread messages (MessageOverflowDropNewest).
+//
+// Counted from the start of the current connection (every Connect() or
+// reconnect restarts it); after disconnecting it still reads the last
+// connection's count. 0 before the first Connect().
+func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
+	return sc.client.MessagesDroppedTotal()
 }
 
 // Ping sends a ping message to the server.

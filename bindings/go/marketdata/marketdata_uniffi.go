@@ -1174,6 +1174,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total()
+		})
+		if checksum != 28793 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_ping()
 		})
 		if checksum != 51664 {
@@ -1282,6 +1291,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped()
+		})
+		if checksum != 34523 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new()
 		})
 		if checksum != 36225 {
@@ -1314,6 +1332,15 @@ func uniffiCheckChecksums() {
 		if checksum != 32798 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options()
+		})
+		if checksum != 1033 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options: UniFFI API checksum mismatch")
 		}
 	}
 	{
@@ -4406,6 +4433,13 @@ type WebSocketClientInterface interface {
 	// Reads core's connection state, so it is false while reconnecting and
 	// right after the connection drops, without waiting for the event thread.
 	IsConnected() bool
+	// Messages dropped because they arrived while the message queue held
+	// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+	//
+	// Counted from the start of the current connection (every `connect()` or
+	// reconnect restarts it); after `disconnect()` it still reads the last
+	// connection's count. 0 before the first `connect()`.
+	MessagesDroppedTotal() uint64
 	Ping(state *string) error
 	QuerySubscriptions() error
 	Subscribe(channel string, symbol string) error
@@ -4474,6 +4508,29 @@ func WebSocketClientNewWithEndpoint(apiKey string, listener WebSocketListener, e
 func WebSocketClientNewWithFullConfig(apiKey string, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord) *WebSocketClient {
 	return FfiConverterWebSocketClientINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(FfiConverterStringINSTANCE.Lower(apiKey), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), _uniffiStatus)
+	}))
+}
+
+// Create a new WebSocket client with full configuration plus the
+// message queue settings.
+//
+// Same as `new_with_full_config`, with `message_queue` choosing what
+// happens while `on_message` falls behind (None for the defaults:
+// `DropNewest`, 4096 messages).
+//
+// # Arguments
+// * `api_key` - Fugle API key for authentication
+// * `listener` - Callback interface for receiving WebSocket events
+// * `endpoint` - The market data endpoint (Stock or FutOpt)
+// * `base_url` - Optional base URL override
+// * `reconnect_config` - Optional reconnection configuration
+// * `health_check_config` - Optional health check configuration
+// * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
+// * `version` - Optional per-product streaming version
+// * `message_queue` - Optional message queue configuration
+func WebSocketClientNewWithOptions(apiKey string, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord, messageQueue *MessageQueueConfigRecord) *WebSocketClient {
+	return FfiConverterWebSocketClientINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
+		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(FfiConverterStringINSTANCE.Lower(apiKey), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), FfiConverterOptionalMessageQueueConfigRecordINSTANCE.Lower(messageQueue), _uniffiStatus)
 	}))
 }
 
@@ -4560,6 +4617,21 @@ func (_self *WebSocketClient) IsConnected() bool {
 	defer _self.ffiObject.decrementPointer()
 	return FfiConverterBoolINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) C.int8_t {
 		return C.uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(
+			_pointer, _uniffiStatus)
+	}))
+}
+
+// Messages dropped because they arrived while the message queue held
+// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+//
+// Counted from the start of the current connection (every `connect()` or
+// reconnect restarts it); after `disconnect()` it still reads the last
+// connection's count. 0 before the first `connect()`.
+func (_self *WebSocketClient) MessagesDroppedTotal() uint64 {
+	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
+	defer _self.ffiObject.decrementPointer()
+	return FfiConverterUint64INSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint64_t {
+		return C.uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(
 			_pointer, _uniffiStatus)
 	}))
 }
@@ -4798,6 +4870,15 @@ type WebSocketListener interface {
 	// Called when all reconnection attempts are exhausted. Terminal: no
 	// further lifecycle callbacks follow for this connection.
 	OnReconnectFailed(attempts uint32)
+	// Called when messages were dropped because `on_message` fell behind
+	// while the client's message queue held `buffer` unread messages
+	// (`MessageOverflowRecord::DropNewest`).
+	//
+	// `count` is the number dropped since the previous call. The first drop
+	// on a connection is reported at once, later ones at most once per
+	// second, and the rest before `on_disconnected`. The connection's total
+	// is `WebSocketClient::messages_dropped_total()`.
+	OnMessagesDropped(count uint64)
 }
 
 // Callback interface for WebSocket events
@@ -4933,6 +5014,24 @@ func (_self *WebSocketListenerImpl) OnReconnectFailed(attempts uint32) {
 	rustCall(func(_uniffiStatus *C.RustCallStatus) bool {
 		C.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(
 			_pointer, FfiConverterUint32INSTANCE.Lower(attempts), _uniffiStatus)
+		return false
+	})
+}
+
+// Called when messages were dropped because `on_message` fell behind
+// while the client's message queue held `buffer` unread messages
+// (`MessageOverflowRecord::DropNewest`).
+//
+// `count` is the number dropped since the previous call. The first drop
+// on a connection is reported at once, later ones at most once per
+// second, and the rest before `on_disconnected`. The connection's total
+// is `WebSocketClient::messages_dropped_total()`.
+func (_self *WebSocketListenerImpl) OnMessagesDropped(count uint64) {
+	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
+	defer _self.ffiObject.decrementPointer()
+	rustCall(func(_uniffiStatus *C.RustCallStatus) bool {
+		C.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(
+			_pointer, FfiConverterUint64INSTANCE.Lower(count), _uniffiStatus)
 		return false
 	})
 }
@@ -5156,6 +5255,20 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7(uni
 
 }
 
+//export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod8
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod8(uniffiHandle C.uint64_t, count C.uint64_t, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+	handle := uint64(uniffiHandle)
+	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
+	if !ok {
+		panic(fmt.Errorf("no callback in handle map: %d", handle))
+	}
+
+	uniffiObj.OnMessagesDropped(
+		FfiConverterUint64INSTANCE.Lift(count),
+	)
+
+}
+
 var UniffiVTableCallbackInterfaceWebSocketListenerINSTANCE = C.UniffiVTableCallbackInterfaceWebSocketListener{
 	onConnected:       (C.UniffiCallbackInterfaceWebSocketListenerMethod0)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod0),
 	onAuthenticated:   (C.UniffiCallbackInterfaceWebSocketListenerMethod1)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod1),
@@ -5165,6 +5278,7 @@ var UniffiVTableCallbackInterfaceWebSocketListenerINSTANCE = C.UniffiVTableCallb
 	onError:           (C.UniffiCallbackInterfaceWebSocketListenerMethod5)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5),
 	onReconnecting:    (C.UniffiCallbackInterfaceWebSocketListenerMethod6)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod6),
 	onReconnectFailed: (C.UniffiCallbackInterfaceWebSocketListenerMethod7)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7),
+	onMessagesDropped: (C.UniffiCallbackInterfaceWebSocketListenerMethod8)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod8),
 
 	uniffiFree: (C.UniffiCallbackInterfaceFree)(C.marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerFree),
 }
@@ -5226,6 +5340,55 @@ func (c FfiConverterHealthCheckConfigRecord) Write(writer io.Writer, value Healt
 type FfiDestroyerHealthCheckConfigRecord struct{}
 
 func (_ FfiDestroyerHealthCheckConfigRecord) Destroy(value HealthCheckConfigRecord) {
+	value.Destroy()
+}
+
+// Message queue configuration record for FFI
+//
+// `buffer` is 0 for the default (4096).
+type MessageQueueConfigRecord struct {
+	// What happens to new messages while `buffer` are unread
+	Overflow MessageOverflowRecord
+	// Unread messages held (default 4096; 0 means default)
+	Buffer uint32
+}
+
+func (r *MessageQueueConfigRecord) Destroy() {
+	FfiDestroyerMessageOverflowRecord{}.Destroy(r.Overflow)
+	FfiDestroyerUint32{}.Destroy(r.Buffer)
+}
+
+type FfiConverterMessageQueueConfigRecord struct{}
+
+var FfiConverterMessageQueueConfigRecordINSTANCE = FfiConverterMessageQueueConfigRecord{}
+
+func (c FfiConverterMessageQueueConfigRecord) Lift(rb RustBufferI) MessageQueueConfigRecord {
+	return LiftFromRustBuffer[MessageQueueConfigRecord](c, rb)
+}
+
+func (c FfiConverterMessageQueueConfigRecord) Read(reader io.Reader) MessageQueueConfigRecord {
+	return MessageQueueConfigRecord{
+		FfiConverterMessageOverflowRecordINSTANCE.Read(reader),
+		FfiConverterUint32INSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterMessageQueueConfigRecord) Lower(value MessageQueueConfigRecord) C.RustBuffer {
+	return LowerIntoRustBuffer[MessageQueueConfigRecord](c, value)
+}
+
+func (c FfiConverterMessageQueueConfigRecord) LowerExternal(value MessageQueueConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[MessageQueueConfigRecord](c, value))
+}
+
+func (c FfiConverterMessageQueueConfigRecord) Write(writer io.Writer, value MessageQueueConfigRecord) {
+	FfiConverterMessageOverflowRecordINSTANCE.Write(writer, value.Overflow)
+	FfiConverterUint32INSTANCE.Write(writer, value.Buffer)
+}
+
+type FfiDestroyerMessageQueueConfigRecord struct{}
+
+func (_ FfiDestroyerMessageQueueConfigRecord) Destroy(value MessageQueueConfigRecord) {
 	value.Destroy()
 }
 
@@ -5954,6 +6117,46 @@ func (_ FfiDestroyerMarketDataError) Destroy(value *MarketDataError) {
 	}
 }
 
+// What the client does with an inbound message while its queue already
+// holds `buffer` unread messages.
+type MessageOverflowRecord uint
+
+const (
+	// Drop new messages and report them through `on_messages_dropped`.
+	MessageOverflowRecordDropNewest MessageOverflowRecord = 1
+	// Never drop: the queue grows while `on_message` lags.
+	MessageOverflowRecordUnbounded MessageOverflowRecord = 2
+)
+
+type FfiConverterMessageOverflowRecord struct{}
+
+var FfiConverterMessageOverflowRecordINSTANCE = FfiConverterMessageOverflowRecord{}
+
+func (c FfiConverterMessageOverflowRecord) Lift(rb RustBufferI) MessageOverflowRecord {
+	return LiftFromRustBuffer[MessageOverflowRecord](c, rb)
+}
+
+func (c FfiConverterMessageOverflowRecord) Lower(value MessageOverflowRecord) C.RustBuffer {
+	return LowerIntoRustBuffer[MessageOverflowRecord](c, value)
+}
+
+func (c FfiConverterMessageOverflowRecord) LowerExternal(value MessageOverflowRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[MessageOverflowRecord](c, value))
+}
+func (FfiConverterMessageOverflowRecord) Read(reader io.Reader) MessageOverflowRecord {
+	id := readInt32(reader)
+	return MessageOverflowRecord(id)
+}
+
+func (FfiConverterMessageOverflowRecord) Write(writer io.Writer, value MessageOverflowRecord) {
+	writeInt32(writer, int32(value))
+}
+
+type FfiDestroyerMessageOverflowRecord struct{}
+
+func (_ FfiDestroyerMessageOverflowRecord) Destroy(value MessageOverflowRecord) {
+}
+
 // Endpoint type for WebSocket connection
 type WebSocketEndpoint uint
 
@@ -6277,6 +6480,47 @@ type FfiDestroyerOptionalHealthCheckConfigRecord struct{}
 func (_ FfiDestroyerOptionalHealthCheckConfigRecord) Destroy(value *HealthCheckConfigRecord) {
 	if value != nil {
 		FfiDestroyerHealthCheckConfigRecord{}.Destroy(*value)
+	}
+}
+
+type FfiConverterOptionalMessageQueueConfigRecord struct{}
+
+var FfiConverterOptionalMessageQueueConfigRecordINSTANCE = FfiConverterOptionalMessageQueueConfigRecord{}
+
+func (c FfiConverterOptionalMessageQueueConfigRecord) Lift(rb RustBufferI) *MessageQueueConfigRecord {
+	return LiftFromRustBuffer[*MessageQueueConfigRecord](c, rb)
+}
+
+func (_ FfiConverterOptionalMessageQueueConfigRecord) Read(reader io.Reader) *MessageQueueConfigRecord {
+	if readInt8(reader) == 0 {
+		return nil
+	}
+	temp := FfiConverterMessageQueueConfigRecordINSTANCE.Read(reader)
+	return &temp
+}
+
+func (c FfiConverterOptionalMessageQueueConfigRecord) Lower(value *MessageQueueConfigRecord) C.RustBuffer {
+	return LowerIntoRustBuffer[*MessageQueueConfigRecord](c, value)
+}
+
+func (c FfiConverterOptionalMessageQueueConfigRecord) LowerExternal(value *MessageQueueConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*MessageQueueConfigRecord](c, value))
+}
+
+func (_ FfiConverterOptionalMessageQueueConfigRecord) Write(writer io.Writer, value *MessageQueueConfigRecord) {
+	if value == nil {
+		writeInt8(writer, 0)
+	} else {
+		writeInt8(writer, 1)
+		FfiConverterMessageQueueConfigRecordINSTANCE.Write(writer, *value)
+	}
+}
+
+type FfiDestroyerOptionalMessageQueueConfigRecord struct{}
+
+func (_ FfiDestroyerOptionalMessageQueueConfigRecord) Destroy(value *MessageQueueConfigRecord) {
+	if value != nil {
+		FfiDestroyerMessageQueueConfigRecord{}.Destroy(*value)
 	}
 }
 
