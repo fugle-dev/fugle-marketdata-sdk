@@ -128,10 +128,8 @@ type DispatchTsfn = ThreadsafeFunction<(), (), (), Status, false, true>;
 /// `message` is the exception: a frame is only queued if a `message` listener
 /// is registered when it arrives (see [`Self::emit_message`]).
 ///
-/// Independent of where events come from: today the worker (`message`) and
-/// the event thread (everything else) each emit in their own order; once core
-/// provides one ordered stream of both (#68), a single reader emits here
-/// instead.
+/// Independent of where events come from: one reader per connection emits
+/// core's ordered stream of messages and events here (#68).
 #[derive(Clone)]
 struct EventSink {
     dispatch: Arc<DispatchTsfn>,
@@ -1080,7 +1078,7 @@ impl StockWebSocketClient {
                 let run = || {
                     // A connection being reused: let the previous worker finish
                     // its teardown before this one touches the shared flags. Only
-                    // the worker is joined, not its event thread, so the old
+                    // the worker is joined, not its stream reader, so the old
                     // connection's `disconnect` callback may still arrive after
                     // this connection's `connect`.
                     if let Some(previous) = previous {
@@ -1126,12 +1124,13 @@ impl StockWebSocketClient {
                     config.tls = tls_config;
                     let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
 
-                    // Forward core events from before connect(): `Connected` is
+                    // Forward core's stream from before connect(): `Connected` is
                     // emitted when the socket opens, ahead of authentication, and
                     // the authentication outcome settles the Promise (#23).
+                    // Messages come through the same reader, in order (#68).
                     let dispatch_ended = Arc::new(AtomicBool::new(false));
-                    spawn_event_forwarder(
-                        Arc::clone(client.state_events()),
+                    spawn_stream_reader(
+                        client.stream_receiver(),
                         sink.clone(),
                         Arc::clone(&auth),
                         Arc::clone(&connected),
@@ -1168,9 +1167,6 @@ impl StockWebSocketClient {
                         return;
                     }
 
-                    // `messages()` needs no runtime context since #36.
-                    let receiver = client.messages();
-
                     // Main event loop
                     loop {
                         if connected.load(Ordering::SeqCst) {
@@ -1182,8 +1178,8 @@ impl StockWebSocketClient {
                             break;
                         }
 
-                        // Check for commands (non-blocking)
-                        match cmd_rx.try_recv() {
+                        // Wait briefly for a command, then re-check the flags.
+                        match cmd_rx.recv_timeout(Duration::from_millis(50)) {
                             Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
                                 let channel_enum = match channel.to_lowercase().as_str() {
                                     "trades" => Channel::Trades,
@@ -1215,35 +1211,15 @@ impl StockWebSocketClient {
                                 let _ = rt.block_on(client.disconnect());
                                 connected.store(false, Ordering::SeqCst);
                                 closed.store(true, Ordering::SeqCst);
-                                // Core's disconnect() emits `Disconnected` on the
-                                // event channel and the event thread forwards it;
+                                // Core's disconnect() emits `Disconnected` on its
+                                // stream and the stream reader forwards it;
                                 // firing here too duplicates the callback (#22).
                                 break;
                             }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                                 // Command channel closed, cleanup
                                 let _ = rt.block_on(client.disconnect());
-                                connected.store(false, Ordering::SeqCst);
-                                closed.store(true, Ordering::SeqCst);
-                                break;
-                            }
-                        }
-
-                        // Check for messages (with timeout)
-                        match receiver.receive_timeout(Duration::from_millis(50)) {
-                            Ok(Some(msg)) => {
-                                // The frame verbatim: re-serializing the routing
-                                // struct would drop unknown fields and emit nulls
-                                // for the ones the server omitted.
-                                sink.emit_message(msg.raw);
-                            }
-                            Ok(None) => {
-                                // Timeout, continue loop
-                            }
-                            Err(_) => {
-                                // Channel closed: the dispatch task has ended and
-                                // already reported why via the event channel.
                                 connected.store(false, Ordering::SeqCst);
                                 closed.store(true, Ordering::SeqCst);
                                 break;
@@ -1555,7 +1531,7 @@ impl FutOptWebSocketClient {
                 let run = || {
                     // A connection being reused: let the previous worker finish
                     // its teardown before this one touches the shared flags. Only
-                    // the worker is joined, not its event thread, so the old
+                    // the worker is joined, not its stream reader, so the old
                     // connection's `disconnect` callback may still arrive after
                     // this connection's `connect`.
                     if let Some(previous) = previous {
@@ -1599,12 +1575,13 @@ impl FutOptWebSocketClient {
                     config.tls = tls_config;
                     let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
 
-                    // Forward core events from before connect(): `Connected` is
+                    // Forward core's stream from before connect(): `Connected` is
                     // emitted when the socket opens, ahead of authentication, and
                     // the authentication outcome settles the Promise (#23).
+                    // Messages come through the same reader, in order (#68).
                     let dispatch_ended = Arc::new(AtomicBool::new(false));
-                    spawn_event_forwarder(
-                        Arc::clone(client.state_events()),
+                    spawn_stream_reader(
+                        client.stream_receiver(),
                         sink.clone(),
                         Arc::clone(&auth),
                         Arc::clone(&connected),
@@ -1641,9 +1618,6 @@ impl FutOptWebSocketClient {
                         return;
                     }
 
-                    // `messages()` needs no runtime context since #36.
-                    let receiver = client.messages();
-
                     // Main event loop
                     loop {
                         if connected.load(Ordering::SeqCst) {
@@ -1655,8 +1629,8 @@ impl FutOptWebSocketClient {
                             break;
                         }
 
-                        // Check for commands (non-blocking)
-                        match cmd_rx.try_recv() {
+                        // Wait briefly for a command, then re-check the flags.
+                        match cmd_rx.recv_timeout(Duration::from_millis(50)) {
                             Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
                                 let channel_enum = match channel.to_lowercase().as_str() {
                                     "trades" => FutOptChannel::Trades,
@@ -1687,35 +1661,15 @@ impl FutOptWebSocketClient {
                                 let _ = rt.block_on(client.disconnect());
                                 connected.store(false, Ordering::SeqCst);
                                 closed.store(true, Ordering::SeqCst);
-                                // Core's disconnect() emits `Disconnected` on the
-                                // event channel and the event thread forwards it;
+                                // Core's disconnect() emits `Disconnected` on its
+                                // stream and the stream reader forwards it;
                                 // firing here too duplicates the callback (#22).
                                 break;
                             }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                                 // Command channel closed, cleanup
                                 let _ = rt.block_on(client.disconnect());
-                                connected.store(false, Ordering::SeqCst);
-                                closed.store(true, Ordering::SeqCst);
-                                break;
-                            }
-                        }
-
-                        // Check for messages (with timeout)
-                        match receiver.receive_timeout(Duration::from_millis(50)) {
-                            Ok(Some(msg)) => {
-                                // The frame verbatim: re-serializing the routing
-                                // struct would drop unknown fields and emit nulls
-                                // for the ones the server omitted.
-                                sink.emit_message(msg.raw);
-                            }
-                            Ok(None) => {
-                                // Timeout, continue loop
-                            }
-                            Err(_) => {
-                                // Channel closed: the dispatch task has ended and
-                                // already reported why via the event channel.
                                 connected.store(false, Ordering::SeqCst);
                                 closed.store(true, Ordering::SeqCst);
                                 break;
@@ -1887,16 +1841,22 @@ impl FutOptWebSocketClient {
     }
 }
 
-/// Forward a connection's core events to the JS listeners until core drops
-/// the event channel (#23). Only core events are forwarded; the worker
-/// emits none of its own.
+/// Forward a connection's core stream — its events and messages, in the
+/// order core produced them (#68) — to the JS listeners until core closes the
+/// stream (#23). Only core events are forwarded; the worker emits none of its
+/// own.
 ///
 /// The first authentication outcome settles `connect()`: `Authenticated`
 /// resolves with the server's `data`, `Unauthenticated` rejects with it, and
 /// an `Error` before either rejects with `Error("[code] message")` — each
 /// after its listener has run (see [`fire_and_settle`]).
-fn spawn_event_forwarder(
-    events: Arc<tokio::sync::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::ConnectionEvent>>>,
+///
+/// A message is forwarded only between an `Authenticated` this reader
+/// reported and the next `Disconnected`: frames of a rejected or abandoned
+/// connection never reach `message`, and frames still arriving while
+/// `disconnect()` closes the connection do, before its `disconnect`.
+fn spawn_stream_reader(
+    stream: Arc<marketdata_core::StreamReceiver>,
     sink: EventSink,
     auth: AuthSlot,
     connected: Arc<AtomicBool>,
@@ -1907,100 +1867,114 @@ fn spawn_event_forwarder(
     decision: AuthDecision,
     panic_reported: Arc<AtomicBool>,
 ) {
-    use marketdata_core::websocket::ConnectionEvent;
+    use marketdata_core::websocket::{ConnectionEvent, StreamItem};
 
     std::thread::spawn(move || {
-        let run = || loop {
-            let event = {
-                let rx = events.blocking_lock();
-                rx.recv()
-            };
-            let Ok(event) = event else { break };
-            match event {
-                ConnectionEvent::Connected => {
-                    sink.emit("connect", EventArgs::None);
-                }
-                ConnectionEvent::Authenticated { data } => {
-                    inject_test_panic(test_panic.as_deref(), "ws_events");
-                    // The initial authentication: decide, atomically with the
-                    // worker's abort, whether it is reported (#44).
-                    if decision.load(Ordering::SeqCst) == AUTH_PENDING {
-                        if ending.load(Ordering::SeqCst) {
-                            // disconnect() came first. The queued Disconnect
-                            // closes the connection; nothing else settles.
-                            if decide(&decision, AUTH_ABORTED) {
-                                settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
-                            }
-                            continue;
+        let run = || {
+            let mut reported = false;
+            while let Ok(item) = stream.receive() {
+                let event = match item {
+                    StreamItem::Event(event) => event,
+                    StreamItem::Message(message) => {
+                        if reported {
+                            // The frame verbatim: re-serializing the routing
+                            // struct would drop unknown fields and emit nulls
+                            // for the ones the server omitted.
+                            sink.emit_message(message.raw);
                         }
-                        if !decide(&decision, AUTH_REPORTED) {
-                            continue; // the worker aborted first
-                        }
-                    } else if decision.load(Ordering::SeqCst) == AUTH_ABORTED || ending.load(Ordering::SeqCst) {
-                        continue; // a re-authentication after the connection was given up
+                        continue;
                     }
-                    connected.store(true, Ordering::SeqCst);
-                    fire_and_settle(
-                        &sink,
-                        "authenticated",
-                        EventArgs::Json(data.clone()),
-                        &auth,
-                        AuthOutcome::Authenticated(data),
-                        None,
-                    );
-                }
-                ConnectionEvent::Unauthenticated { data, .. } => {
-                    fire_and_settle(
-                        &sink,
-                        "unauthenticated",
-                        EventArgs::Json(data.clone()),
-                        &auth,
-                        AuthOutcome::Rejected(data),
-                        Some(&ending),
-                    );
-                }
-                ConnectionEvent::Error { message, code } => {
-                    let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
-                    fire_and_settle(
-                        &sink,
-                        "error",
-                        EventArgs::Error { message, code: Some(code) },
-                        &auth,
-                        rejection,
-                        Some(&ending),
-                    );
-                }
-                ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
-                    if !will_reconnect {
+                    _ => continue,
+                };
+                match event {
+                    ConnectionEvent::Connected => {
+                        sink.emit("connect", EventArgs::None);
+                    }
+                    ConnectionEvent::Authenticated { data } => {
+                        inject_test_panic(test_panic.as_deref(), "ws_events");
+                        // The initial authentication: decide, atomically with the
+                        // worker's abort, whether it is reported (#44).
+                        if decision.load(Ordering::SeqCst) == AUTH_PENDING {
+                            if ending.load(Ordering::SeqCst) {
+                                // disconnect() came first. The queued Disconnect
+                                // closes the connection; nothing else settles.
+                                if decide(&decision, AUTH_ABORTED) {
+                                    settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                                }
+                                continue;
+                            }
+                            if !decide(&decision, AUTH_REPORTED) {
+                                continue; // the worker aborted first
+                            }
+                        } else if decision.load(Ordering::SeqCst) == AUTH_ABORTED || ending.load(Ordering::SeqCst) {
+                            continue; // a re-authentication after the connection was given up
+                        }
+                        connected.store(true, Ordering::SeqCst);
+                        reported = true;
+                        fire_and_settle(
+                            &sink,
+                            "authenticated",
+                            EventArgs::Json(data.clone()),
+                            &auth,
+                            AuthOutcome::Authenticated(data),
+                            None,
+                        );
+                    }
+                    ConnectionEvent::Unauthenticated { data, .. } => {
+                        reported = false;
+                        fire_and_settle(
+                            &sink,
+                            "unauthenticated",
+                            EventArgs::Json(data.clone()),
+                            &auth,
+                            AuthOutcome::Rejected(data),
+                            Some(&ending),
+                        );
+                    }
+                    ConnectionEvent::Error { message, code } => {
+                        let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
+                        fire_and_settle(
+                            &sink,
+                            "error",
+                            EventArgs::Error { message, code: Some(code) },
+                            &auth,
+                            rejection,
+                            Some(&ending),
+                        );
+                    }
+                    ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+                        reported = false;
+                        if !will_reconnect {
+                            ending.store(true, Ordering::SeqCst);
+                            // Core's dispatch task ends without reconnecting.
+                            dispatch_ended.store(true, Ordering::SeqCst);
+                        }
+                        sink.emit(
+                            "disconnect",
+                            EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
+                        );
+                    }
+                    ConnectionEvent::Reconnecting { attempt } => {
+                        sink.emit(
+                            "reconnect",
+                            EventArgs::Json(serde_json::json!({ "attempt": attempt })),
+                        );
+                    }
+                    ConnectionEvent::ReconnectFailed { attempts } => {
                         ending.store(true, Ordering::SeqCst);
-                        // Core's dispatch task ends without reconnecting.
+                        sink.emit(
+                            "error",
+                            EventArgs::Error {
+                                message: format!("Reconnection failed after {} attempts", attempts),
+                                code: None,
+                            },
+                        );
+                        // Core's dispatch task has ended for good.
                         dispatch_ended.store(true, Ordering::SeqCst);
                     }
-                    sink.emit(
-                        "disconnect",
-                        EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
-                    );
+                    // `HeartbeatTimeout` is followed by `Disconnected`, which reports it.
+                    _ => {}
                 }
-                ConnectionEvent::Reconnecting { attempt } => {
-                    sink.emit(
-                        "reconnect",
-                        EventArgs::Json(serde_json::json!({ "attempt": attempt })),
-                    );
-                }
-                ConnectionEvent::ReconnectFailed { attempts } => {
-                    ending.store(true, Ordering::SeqCst);
-                    sink.emit(
-                        "error",
-                        EventArgs::Error {
-                            message: format!("Reconnection failed after {} attempts", attempts),
-                            code: None,
-                        },
-                    );
-                    // Core's dispatch task has ended for good.
-                    dispatch_ended.store(true, Ordering::SeqCst);
-                }
-                // `HeartbeatTimeout` is followed by `Disconnected`, which reports it.
-                _ => {}
             }
         };
         if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {

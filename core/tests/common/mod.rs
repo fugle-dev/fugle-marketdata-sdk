@@ -32,6 +32,9 @@ pub enum AfterAuth {
     /// Send `count` `data` frames as fast as possible, then drop the TCP
     /// socket without a Close handshake.
     FloodDataThenDrop { count: usize },
+    /// Send `count` `data` frames as fast as possible, then a Close frame
+    /// with `code`.
+    FloodDataThenClose { count: usize, code: u16 },
     /// After a brief delay, send a Close frame with the given code.
     ServerCloseAfter {
         delay_ms: u64,
@@ -216,6 +219,19 @@ async fn serve(
                 }
             }
         }
+        AfterAuth::FloodDataThenClose { count, code } => {
+            send_data_frames(&mut sink, count).await;
+            let frame = CloseFrame {
+                code: CloseCode::from(code),
+                reason: "flood done".into(),
+            };
+            let _ = sink.send(Message::Close(Some(frame))).await;
+            while let Some(msg) = stream.next().await {
+                if let Ok(Message::Close(_)) = msg {
+                    break;
+                }
+            }
+        }
         AfterAuth::FloodDataThenDrop { count } => {
             send_data_frames(&mut sink, count).await;
             if let Ok(mut ws) = sink.reunite(stream) {
@@ -245,4 +261,118 @@ async fn serve(
     }
 
     let _ = done_tx.send(());
+}
+
+/// Every item of a client's stream, as a compact label: `m<id>` for a
+/// message with an id, `m:<event>` for one without, and the event's `Debug`
+/// otherwise. Makes order assertions readable.
+pub fn label(item: &marketdata_core::StreamItem) -> String {
+    match item {
+        marketdata_core::StreamItem::Message(m) => match &m.id {
+            Some(id) => format!("m{id}"),
+            None => format!("m:{}", m.event),
+        },
+        marketdata_core::StreamItem::Event(e) => format!("{e:?}"),
+        _ => "unknown".to_string(),
+    }
+}
+
+/// The events of a client's stream, skipping its messages: the shape tests
+/// used before `events()` was folded into the stream (#68).
+///
+/// It reads the client's one `stream_receiver()` and discards every message
+/// it passes. Do not use it together with [`MessageReceiver`] (or another
+/// reader of the same stream) on one client: each would silently swallow the
+/// items the other is waiting for. Read the stream directly instead.
+pub struct EventReceiver(pub std::sync::Arc<marketdata_core::StreamReceiver>);
+
+impl EventReceiver {
+    pub fn of_async(client: &marketdata_core::aio::WebSocketClient) -> Self {
+        Self(client.stream_receiver())
+    }
+
+    pub fn of_sync(client: &marketdata_core::WebSocketClient) -> Self {
+        Self(client.stream_receiver())
+    }
+
+    /// Next event within `timeout`.
+    pub fn recv_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<marketdata_core::ConnectionEvent, std::sync::mpsc::RecvTimeoutError> {
+        use std::sync::mpsc::RecvTimeoutError;
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match self.0.receive_timeout(left) {
+                Ok(Some(marketdata_core::StreamItem::Event(event))) => return Ok(event),
+                Ok(Some(_)) => continue,
+                Ok(None) => return Err(RecvTimeoutError::Timeout),
+                Err(_) => return Err(RecvTimeoutError::Disconnected),
+            }
+        }
+    }
+
+    /// Next event, waiting for one; `Err` once the stream is closed.
+    pub fn recv(&self) -> Result<marketdata_core::ConnectionEvent, marketdata_core::MarketDataError> {
+        loop {
+            if let marketdata_core::StreamItem::Event(event) = self.0.receive()? {
+                return Ok(event);
+            }
+        }
+    }
+
+    /// Next queued event, without waiting.
+    pub fn try_recv(&self) -> Option<marketdata_core::ConnectionEvent> {
+        while let Some(item) = self.0.try_receive() {
+            if let marketdata_core::StreamItem::Event(event) = item {
+                return Some(event);
+            }
+        }
+        None
+    }
+
+    /// Every queued event, without waiting.
+    pub fn try_iter(&self) -> impl Iterator<Item = marketdata_core::ConnectionEvent> + '_ {
+        std::iter::from_fn(|| self.try_recv())
+    }
+}
+
+/// The messages of a client's stream, skipping its events.
+///
+/// Like [`EventReceiver`], it discards what it passes over: never combine the
+/// two on one client.
+pub struct MessageReceiver(pub std::sync::Arc<marketdata_core::StreamReceiver>);
+
+impl MessageReceiver {
+    pub fn of_async(client: &marketdata_core::aio::WebSocketClient) -> Self {
+        Self(client.stream_receiver())
+    }
+
+    /// Next message within `timeout`: `Ok(None)` on timeout, `Err` once the
+    /// stream is closed.
+    pub fn receive_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<Option<marketdata_core::WebSocketMessage>, marketdata_core::MarketDataError> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match self.0.receive_timeout(left)? {
+                Some(marketdata_core::StreamItem::Message(message)) => return Ok(Some(message)),
+                Some(_) => continue,
+                None => return Ok(None),
+            }
+        }
+    }
+
+    /// Next queued message, without waiting.
+    pub fn try_receive(&self) -> Option<marketdata_core::WebSocketMessage> {
+        while let Some(item) = self.0.try_receive() {
+            if let marketdata_core::StreamItem::Message(message) = item {
+                return Some(message);
+            }
+        }
+        None
+    }
 }

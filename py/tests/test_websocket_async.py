@@ -158,13 +158,12 @@ class TestIntegrationWebSocket:
 
         messages = []
         try:
-            # Use timeout to avoid hanging indefinitely
-            async for msg in ws_client.stock.messages(timeout_ms=5000):
-                messages.append(msg)
-                if len(messages) >= 1:
-                    break
+            # Iteration waits for data; bound it, since outside market hours
+            # none may arrive.
+            iterator = ws_client.stock.messages()
+            messages.append(await asyncio.wait_for(iterator.__anext__(), 5))
         except Exception:
-            pass  # May timeout if no market activity
+            pass  # May time out if no market activity
 
         await ws_client.stock.disconnect_async()
         # Just verify no crash - may or may not receive messages depending on market hours

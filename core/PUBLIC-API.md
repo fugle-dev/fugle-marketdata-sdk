@@ -35,6 +35,17 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — one ordered stream of messages and events (#68)
+
+- `-` `aio::WebSocketClient::{messages, message_stream, events, state_events}`
+  and `WebSocketClient::{messages, events, state_events}`.
+- `+` `aio::WebSocketClient::{stream, stream_receiver}`,
+  `WebSocketClient::stream_receiver`.
+- `-` `websocket::message` (`MessageReceiver`, `MessageStream`).
+- `+` `websocket::stream`: `StreamItem` (`#[non_exhaustive]`),
+  `StreamReceiver`, `ConnectionStream` (`futures::Stream`); re-exported at the
+  crate root and from `websocket`.
+
 ### Unreleased — inbound message queue and `MessagesDropped` (#46)
 
 - `~` `aio::WebSocketClient::message_stream` — returns `MessageStream`

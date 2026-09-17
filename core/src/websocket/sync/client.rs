@@ -1,11 +1,10 @@
 //! Sync WebSocket client public surface.
 //!
 //! Mirrors the async `aio::WebSocketClient` API minus `.await` and
-//! `message_stream()` (which returns a tokio receiver).
+//! `stream()` (the async stream).
 
-use crate::models::{Channel, SubscribeRequest, WebSocketMessage, WebSocketRequest};
-use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
-use crate::websocket::message_queue::QueueReceiver;
+use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
+use crate::websocket::stream_queue::QueueReceiver;
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
 };
@@ -14,7 +13,7 @@ use crate::websocket::sync::owner_thread::{
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
-    MessageReceiver, ReconnectionConfig, ReconnectionManager, SubscriptionManager,
+    ReconnectionConfig, ReconnectionManager, StreamReceiver, SubscriptionManager,
 };
 use crate::MarketDataError;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,12 +27,10 @@ use std::time::Duration;
 /// owns one OS thread per active connection (the supervisor/owner thread).
 pub struct WebSocketClient {
     shared: Arc<OwnerShared>,
-    /// Event receiver wrapped for shared access (mirrors async client API).
-    event_rx: Arc<Mutex<mpsc::Receiver<ConnectionEvent>>>,
-    /// Holds the inbound-message receiver until `messages()` consumes it.
-    message_rx_slot: Mutex<Option<QueueReceiver<WebSocketMessage>>>,
-    /// Cached `MessageReceiver` returned by `messages()`.
-    message_receiver: Mutex<Option<Arc<MessageReceiver>>>,
+    /// Holds the stream's receiver until `stream_receiver()` takes it.
+    stream_rx_slot: Mutex<Option<QueueReceiver>>,
+    /// Cached `StreamReceiver` returned by `stream_receiver()`.
+    stream_receiver: Mutex<Option<Arc<StreamReceiver>>>,
     /// Supervisor thread JoinHandle (Some once connected, None after disconnect).
     supervisor_handle: Mutex<Option<thread::JoinHandle<()>>>,
     /// Receiver woken when the supervisor thread exits. Lets
@@ -74,8 +71,6 @@ impl WebSocketClient {
         reconnection_config: ReconnectionConfig,
         health_check_config: HealthCheckConfig,
     ) -> Self {
-        let (event_tx, event_rx) = mpsc::sync_channel::<ConnectionEvent>(config.event_buffer);
-
         // Eagerly build the rustls config so connect() reuses an Arc-shared instance
         // and reconnects don't pay the native-certs load cost (~10-50ms).
         let tls_config = crate::tls::build_rustls_config(&config.tls)
@@ -83,8 +78,11 @@ impl WebSocketClient {
 
         let (messages_dropped, events_dropped) =
             crate::metrics_compat::build_drop_counters(&config);
-        let (message_tx, message_rx) =
-            crate::websocket::message_queue::queue(config.message_capacity(), messages_dropped.clone());
+        let (stream, stream_rx) = crate::websocket::stream_queue::stream(
+            &config,
+            messages_dropped.clone(),
+            events_dropped.clone(),
+        );
 
         let shared = Arc::new(OwnerShared {
             config,
@@ -93,20 +91,17 @@ impl WebSocketClient {
             reconnection: Mutex::new(ReconnectionManager::new(reconnection_config)),
             state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
             subscriptions: Arc::new(SubscriptionManager::new()),
-            event_tx,
-            message_tx,
+            stream,
             write_tx_slot: Mutex::new(None),
             should_stop: Arc::new(AtomicBool::new(false)),
-            disconnect_latch: DisconnectLatch::default(),
             messages_dropped,
             events_dropped,
         });
 
         Self {
             shared,
-            event_rx: Arc::new(Mutex::new(event_rx)),
-            message_rx_slot: Mutex::new(Some(message_rx)),
-            message_receiver: Mutex::new(None),
+            stream_rx_slot: Mutex::new(Some(stream_rx)),
+            stream_receiver: Mutex::new(None),
             supervisor_handle: Mutex::new(None),
             supervisor_exit_rx: Mutex::new(None),
         }
@@ -127,31 +122,25 @@ impl WebSocketClient {
         matches!(*self.shared.state.read().expect("state lock poisoned"), ConnectionState::Connected)
     }
 
-    /// Reference to the event receiver. Lifecycle events arrive here (bounded
-    /// channel, drop-newest on saturation).
-    pub fn events(&self) -> &Arc<Mutex<mpsc::Receiver<ConnectionEvent>>> {
-        &self.event_rx
-    }
-
-    /// Semantic alias for [`events`](Self::events).
-    pub fn state_events(&self) -> &Arc<Mutex<mpsc::Receiver<ConnectionEvent>>> {
-        &self.event_rx
-    }
-
-    /// Get the blocking inbound-message receiver. Idempotent; subsequent calls
-    /// return the same `Arc<MessageReceiver>`.
-    pub fn messages(&self) -> Arc<MessageReceiver> {
-        let mut slot = self.message_receiver.lock().expect("message_receiver lock poisoned");
+    /// Receiver of this client's ordered stream of messages and events.
+    /// Idempotent; subsequent calls return the same `Arc<StreamReceiver>`.
+    ///
+    /// The stream exists from construction, so items queued before this
+    /// call are not lost. See
+    /// [`connection_event`](crate::websocket::connection_event) for the
+    /// ordering guarantees and the per-kind allowances.
+    pub fn stream_receiver(&self) -> Arc<StreamReceiver> {
+        let mut slot = self.stream_receiver.lock().expect("stream_receiver lock poisoned");
         if let Some(rx) = slot.as_ref() {
             return Arc::clone(rx);
         }
         let rx = self
-            .message_rx_slot
+            .stream_rx_slot
             .lock()
-            .expect("message_rx_slot lock poisoned")
+            .expect("stream_rx_slot lock poisoned")
             .take()
-            .expect("message receiver already taken");
-        let receiver = Arc::new(MessageReceiver::new(rx));
+            .expect("stream receiver already taken");
+        let receiver = Arc::new(StreamReceiver::new(rx));
         *slot = Some(Arc::clone(&receiver));
         receiver
     }
@@ -176,7 +165,7 @@ impl WebSocketClient {
         }
 
         self.set_state(ConnectionState::Connecting);
-        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Connecting {
+        self.shared.stream.emit(ConnectionEvent::Connecting {
         });
 
         let mut ws = match do_blocking_connect(
@@ -186,7 +175,7 @@ impl WebSocketClient {
             Ok(ws) => ws,
             Err(e) => {
                 self.set_state(ConnectionState::Disconnected);
-                emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Error {
+                self.shared.stream.emit(ConnectionEvent::Error {
                     message: e.to_string(),
                     code: e.to_error_code(),
                 });
@@ -194,25 +183,22 @@ impl WebSocketClient {
             }
         };
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
-        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Connected {
+        self.shared.stream.emit(ConnectionEvent::Connected {
         });
 
         self.set_state(ConnectionState::Authenticating);
-        let data = match do_auth_handshake(&mut ws, &self.shared.config, &self.shared.message_tx) {
-            AuthHandshake::Authenticated(data) => data,
-            AuthHandshake::Rejected { message, data } => {
+        let (data, frames) = match do_auth_handshake(&mut ws, &self.shared.config, &self.shared.stream) {
+            AuthHandshake::Authenticated { data, frames } => (data, frames),
+            AuthHandshake::Rejected { message, data, frames } => {
                 self.set_state(ConnectionState::Disconnected);
                 // Server-rejected credentials are reported only as
                 // Unauthenticated, never as a generic Error.
-                emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Unauthenticated {
-                    message: message.clone(),
-                    data,
-                });
+                self.shared.stream.unauthenticated(message.clone(), data, frames);
                 return Err(MarketDataError::AuthError { msg: message });
             }
             AuthHandshake::Failed(e) => {
                 self.set_state(ConnectionState::Disconnected);
-                emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Error {
+                self.shared.stream.emit(ConnectionEvent::Error {
                     message: e.to_string(),
                     code: e.to_error_code(),
                 });
@@ -225,11 +211,10 @@ impl WebSocketClient {
         *self.shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = Some(write_tx);
 
         self.set_state(ConnectionState::Connected);
-        self.shared.disconnect_latch.reset();
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
-        emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Authenticated {
-            data,
-        });
+        // Before the supervisor reads anything; a new connection may report
+        // its own close.
+        self.shared.stream.authenticated(data, frames);
 
         // Spawn supervisor thread + an exit-signal one-shot. The signal
         // lets `shutdown_with_timeout` bound its wait without using
@@ -352,11 +337,7 @@ impl WebSocketClient {
             reason: "Normal closure".to_string(),
             intent: DisconnectIntent::Client,
         });
-        emit_disconnected(
-            &self.shared.event_tx,
-            &self.shared.events_dropped,
-            &self.shared.disconnect_latch,
-            &self.shared.message_tx,
+        self.shared.stream.emit_disconnected(
             Some(1000),
             "Normal closure".to_string(),
             DisconnectIntent::Client,
@@ -391,11 +372,7 @@ impl WebSocketClient {
             reason: "Force closed".to_string(),
             intent: DisconnectIntent::Client,
         });
-        emit_disconnected(
-            &self.shared.event_tx,
-            &self.shared.events_dropped,
-            &self.shared.disconnect_latch,
-            &self.shared.message_tx,
+        self.shared.stream.emit_disconnected(
             Some(1006),
             "Force closed".to_string(),
             DisconnectIntent::Client,
@@ -518,7 +495,7 @@ impl WebSocketClient {
     ///
     /// Drop-newest backpressure: when the message buffer is full, new
     /// arrivals are discarded rather than blocking the read thread. A
-    /// non-zero value usually indicates the consumer (`messages()`
+    /// non-zero value usually indicates the consumer (`stream_receiver()`
     /// reader) is too slow or stalled.
     ///
     /// Restarts from zero when `connect()` or a reconnect attempt opens a
@@ -529,12 +506,13 @@ impl WebSocketClient {
         self.shared.messages_dropped.load()
     }
 
-    /// Total number of lifecycle [`ConnectionEvent`]s dropped due to event-
-    /// channel saturation since this client was constructed.
+    /// Total number of lifecycle [`ConnectionEvent`]s dropped because the
+    /// stream already held `event_buffer` unread events, since this client
+    /// was constructed.
     ///
-    /// Mirrors [`Self::messages_dropped_total`] for the lifecycle event
-    /// channel. Drop-newest backpressure: when the event channel is full,
-    /// new events are discarded rather than blocking the supervisor.
+    /// Mirrors [`Self::messages_dropped_total`] for events. Drop-newest
+    /// backpressure: while the event allowance is full, new events are
+    /// discarded rather than blocking the supervisor.
     ///
     /// Counter is monotonic and thread-safe (`AtomicU64`).
     #[must_use]
@@ -651,42 +629,18 @@ mod tests {
 
     #[test]
     fn events_dropped_increments_on_saturation() {
-        use crate::websocket::connection_event::emit_event;
         let config = ConnectionConfig::builder("wss://example.com", AuthRequest::with_api_key("k"))
             .event_buffer(1) // saturate after a single unread event
             .build();
         let client = WebSocketClient::new(config);
 
-        // Fill the channel and trigger drops without going through connect/
-        // disconnect (cheap, deterministic). The shared event_tx + counter
-        // are reachable directly.
-        emit_event(
-            &client.shared.event_tx,
-            &client.shared.events_dropped,
-            ConnectionEvent::Connecting {},
-        );
-        // Second emit fills (or saturates) the bounded channel of 1.
-        emit_event(
-            &client.shared.event_tx,
-            &client.shared.events_dropped,
-            ConnectionEvent::Connecting {},
-        );
-        emit_event(
-            &client.shared.event_tx,
-            &client.shared.events_dropped,
-            ConnectionEvent::Connecting {},
-        );
-
-        // At least one drop must have been recorded; counter is monotonic.
-        let dropped = client.events_dropped_total();
-        assert!(
-            dropped >= 1,
-            "expected events_dropped_total >= 1 after saturation, got {dropped}"
-        );
-
-        // Monotonic: a subsequent observation must not decrease.
-        let observed_again = client.events_dropped_total();
-        assert!(observed_again >= dropped);
+        // Cheap and deterministic: report straight through the shared stream
+        // without connecting.
+        for _ in 0..3 {
+            client.shared.stream.emit(ConnectionEvent::Connecting);
+        }
+        assert_eq!(client.events_dropped_total(), 2);
+        assert_eq!(client.messages_dropped_total(), 0);
     }
 
     #[test]

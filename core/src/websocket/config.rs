@@ -31,8 +31,8 @@ pub struct ConnectionConfig {
     /// behaviour.
     pub tls: TlsConfig,
 
-    /// Capacity of the inbound message queue that backs `messages()` and
-    /// `message_stream()`. Defaults to [`DEFAULT_MESSAGE_BUFFER`]. Use
+    /// How many unread messages the client's stream (`stream()` /
+    /// `stream_receiver()`) holds. Defaults to [`DEFAULT_MESSAGE_BUFFER`]. Use
     /// [`ConnectionConfigBuilder::message_buffer`] to override. Ignored
     /// when `message_overflow` is [`MessageOverflow::Unbounded`].
     pub message_buffer: usize,
@@ -43,9 +43,10 @@ pub struct ConnectionConfig {
     /// [`ConnectionConfigBuilder::message_overflow`] to override.
     pub message_overflow: MessageOverflow,
 
-    /// Capacity of the lifecycle event channel that backs `events()` and
-    /// `state_events()`. Defaults to [`DEFAULT_EVENT_BUFFER`]. Use
-    /// [`ConnectionConfigBuilder::event_buffer`] to override.
+    /// How many unread lifecycle events the client's stream (`stream()` /
+    /// `stream_receiver()`) holds, separately from messages. Defaults to
+    /// [`DEFAULT_EVENT_BUFFER`]. Use [`ConnectionConfigBuilder::event_buffer`]
+    /// to override.
     pub event_buffer: usize,
 
     /// Optional caller-supplied identifier used as a metric label on the

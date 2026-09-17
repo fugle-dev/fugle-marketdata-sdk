@@ -1,15 +1,10 @@
 //! Async dispatch loop: reads frames from the WS stream, parses, and pushes
-//! messages onto the inbound channel. Also implements optional outbound ping.
+//! messages onto the client's stream. Also implements optional outbound ping.
 
-use crate::metrics_compat::DropCounter;
-use crate::models::WebSocketMessage;
 use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::WsStream;
-use crate::websocket::connection_event::{
-    emit_disconnected, emit_drop_report, emit_event, peer_close_disconnect, will_reconnect_after,
-    DisconnectLatch,
-};
-use crate::websocket::message_queue::QueueSender;
+use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
+use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, ReconnectionManager, SubscriptionManager};
 use futures_util::StreamExt;
@@ -35,8 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// # Arguments
 ///
 /// * `ws_read` - The read half of the WebSocket stream
-/// * `message_tx` - Inbound message queue parsed messages are pushed to
-/// * `event_tx` - Channel to send connection events
+/// * `stream` - The client's stream: parsed messages and connection events
 /// * `heartbeat_timeout` - If `Some(d)`, wrap each `ws_read.next()` in
 ///   `tokio::time::timeout(d, ...)` and emit
 ///   [`ConnectionEvent::HeartbeatTimeout`] followed by
@@ -55,13 +49,10 @@ use tokio_tungstenite::tungstenite::Message;
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_messages(
     mut ws_read: WsStream,
-    message_tx: QueueSender<WebSocketMessage>,
-    event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: DropCounter,
+    stream: StreamSender,
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
     shutdown_requested: Arc<AtomicBool>,
-    disconnect_latch: Arc<DisconnectLatch>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
 ) -> Option<u16> {
     let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
@@ -77,8 +68,8 @@ pub(crate) async fn dispatch_messages(
         // A socket that always has data never returns `Pending`, and frames
         // decoded from tungstenite's buffer spend no coop budget, so without
         // this the loop would keep its worker until the socket drains. Tasks
-        // it wakes — a `message_stream()` consumer on the same runtime —
-        // would starve meanwhile while the queue fills and drops (#46).
+        // it wakes — a `stream()` consumer on the same runtime — would
+        // starve meanwhile while the queue fills and drops (#46).
         tokio::task::coop::consume_budget().await;
 
         // Read-site liveness: if `heartbeat_timeout` is set, the next
@@ -99,16 +90,12 @@ pub(crate) async fn dispatch_messages(
                         elapsed_ms,
                         "heartbeat timeout: no inbound frame in window"
                     );
-                    emit_event(&event_tx, &events_dropped, ConnectionEvent::HeartbeatTimeout {
+                    stream.emit(ConnectionEvent::HeartbeatTimeout {
                         elapsed: timeout,
                     });
                     // Through the latch, so a racing `disconnect()` cannot
                     // report this connection's close a second time (#47).
-                    emit_disconnected(
-                        &event_tx,
-                        &events_dropped,
-                        &disconnect_latch,
-                        &message_tx,
+                    stream.emit_disconnected(
                         None,
                         format!("Heartbeat timeout after {elapsed_ms}ms"),
                         DisconnectIntent::Network,
@@ -131,11 +118,7 @@ pub(crate) async fn dispatch_messages(
                 // here would race ahead of it (the client-initiated
                 // local socket close manifests as EOF on the read half).
                 if !shutdown_requested.load(Ordering::SeqCst) {
-                    emit_disconnected(
-                        &event_tx,
-                        &events_dropped,
-                        &disconnect_latch,
-                        &message_tx,
+                    stream.emit_disconnected(
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
@@ -159,11 +142,10 @@ pub(crate) async fn dispatch_messages(
                         // Mutex is only taken when event == "subscribed" (cheap
                         // string compare for every other message).
                         handle_subscribed_event(&subscriptions, &ws_msg);
-                        let (_, report) = message_tx.push_and_report(ws_msg);
-                        emit_drop_report(&event_tx, &events_dropped, report);
+                        stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
+                        stream.emit(ConnectionEvent::Error {
                             message: format!("Failed to deserialize message: {}", e),
                             code: 2003,
                         });
@@ -180,11 +162,10 @@ pub(crate) async fn dispatch_messages(
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) => {
                         handle_subscribed_event(&subscriptions, &ws_msg);
-                        let (_, report) = message_tx.push_and_report(ws_msg);
-                        emit_drop_report(&event_tx, &events_dropped, report);
+                        stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
+                        stream.emit(ConnectionEvent::Error {
                             message: format!("Failed to deserialize binary message: {}", e),
                             code: 2003,
                         });
@@ -207,11 +188,7 @@ pub(crate) async fn dispatch_messages(
                     shutdown_requested.load(Ordering::SeqCst),
                 ) {
                     let will_reconnect = will_reconnect(intent, code).await;
-                    emit_disconnected(
-                        &event_tx,
-                        &events_dropped,
-                        &disconnect_latch,
-                        &message_tx,
+                    stream.emit_disconnected(
                         code,
                         reason,
                         intent,
@@ -241,15 +218,11 @@ pub(crate) async fn dispatch_messages(
                     return None;
                 }
                 let err_msg = format!("WebSocket error: {}", e);
-                emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
+                stream.emit(ConnectionEvent::Error {
                     message: err_msg.clone(),
                     code: 2001,
                 });
-                emit_disconnected(
-                    &event_tx,
-                    &events_dropped,
-                    &disconnect_latch,
-                    &message_tx,
+                stream.emit_disconnected(
                     None,
                     err_msg,
                     DisconnectIntent::Network,

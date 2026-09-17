@@ -5,15 +5,12 @@ pub struct marketdata_core::aio::client::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -21,7 +18,8 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_count(&self) -> usize
@@ -78,15 +76,12 @@ pub struct marketdata_core::aio::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -94,7 +89,8 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_count(&self) -> usize
@@ -3436,15 +3432,12 @@ pub struct marketdata_core::websocket::aio::client::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3452,7 +3445,8 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_count(&self) -> usize
@@ -3509,15 +3503,12 @@ pub struct marketdata_core::websocket::aio::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3525,7 +3516,8 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<tokio::sync::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_count(&self) -> usize
@@ -3839,34 +3831,6 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::health
 pub const marketdata_core::websocket::health_check::DEFAULT_HEALTH_CHECK_ENABLED: bool
 pub const marketdata_core::websocket::health_check::DEFAULT_HEARTBEAT_TIMEOUT_MS: u64
 pub const marketdata_core::websocket::health_check::MIN_HEARTBEAT_TIMEOUT_MS: u64
-pub mod marketdata_core::websocket::message
-pub struct marketdata_core::websocket::message::MessageReceiver
-impl marketdata_core::websocket::message::MessageReceiver
-pub fn marketdata_core::websocket::message::MessageReceiver::receive(&self) -> core::result::Result<marketdata_core::WebSocketMessage, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::message::MessageReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::WebSocketMessage>, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::message::MessageReceiver::try_receive(&self) -> core::option::Option<marketdata_core::WebSocketMessage>
-impl core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Send for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Sync for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Unpin for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageReceiver
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageReceiver
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageReceiver
-pub struct marketdata_core::websocket::message::MessageStream
-impl marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::message::MessageStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::WebSocketMessage>>
-pub async fn marketdata_core::websocket::message::MessageStream::recv(&mut self) -> core::option::Option<marketdata_core::WebSocketMessage>
-pub fn marketdata_core::websocket::message::MessageStream::try_recv(&mut self) -> core::result::Result<marketdata_core::WebSocketMessage, std::sync::mpsc::TryRecvError>
-impl futures_core::stream::Stream for marketdata_core::websocket::message::MessageStream
-pub type marketdata_core::websocket::message::MessageStream::Item = marketdata_core::WebSocketMessage
-pub fn marketdata_core::websocket::message::MessageStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
-impl core::marker::Freeze for marketdata_core::websocket::message::MessageStream
-impl core::marker::Send for marketdata_core::websocket::message::MessageStream
-impl core::marker::Sync for marketdata_core::websocket::message::MessageStream
-impl core::marker::Unpin for marketdata_core::websocket::message::MessageStream
-impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageStream
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageStream
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageStream
 pub mod marketdata_core::websocket::reconnection
 pub struct marketdata_core::websocket::reconnection::ReconnectionConfig
 pub marketdata_core::websocket::reconnection::ReconnectionConfig::enabled: bool
@@ -3928,6 +3892,48 @@ pub const marketdata_core::websocket::reconnection::DEFAULT_INITIAL_DELAY_MS: u6
 pub const marketdata_core::websocket::reconnection::DEFAULT_MAX_ATTEMPTS: u32
 pub const marketdata_core::websocket::reconnection::DEFAULT_MAX_DELAY_MS: u64
 pub const marketdata_core::websocket::reconnection::MIN_INITIAL_DELAY_MS: u64
+pub mod marketdata_core::websocket::stream
+#[non_exhaustive] pub enum marketdata_core::websocket::stream::StreamItem
+pub marketdata_core::websocket::stream::StreamItem::Event(marketdata_core::websocket::connection_event::ConnectionEvent)
+pub marketdata_core::websocket::stream::StreamItem::Message(marketdata_core::WebSocketMessage)
+impl core::clone::Clone for marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::StreamItem::clone(&self) -> marketdata_core::websocket::stream::StreamItem
+impl core::fmt::Debug for marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::StreamItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Send for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Sync for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamItem
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamItem
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamItem
+pub struct marketdata_core::websocket::stream::ConnectionStream
+impl marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::stream::ConnectionStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::websocket::stream::StreamItem>>
+pub async fn marketdata_core::websocket::stream::ConnectionStream::recv(&mut self) -> core::option::Option<marketdata_core::websocket::stream::StreamItem>
+pub fn marketdata_core::websocket::stream::ConnectionStream::try_recv(&mut self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, std::sync::mpsc::TryRecvError>
+impl futures_core::stream::Stream for marketdata_core::websocket::stream::ConnectionStream
+pub type marketdata_core::websocket::stream::ConnectionStream::Item = marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::ConnectionStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
+impl core::marker::Freeze for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Send for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Sync for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Unpin for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::ConnectionStream
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+pub struct marketdata_core::websocket::stream::StreamReceiver
+impl marketdata_core::websocket::stream::StreamReceiver
+pub fn marketdata_core::websocket::stream::StreamReceiver::receive(&self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream::StreamReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::websocket::stream::StreamItem>, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream::StreamReceiver::try_receive(&self) -> core::option::Option<marketdata_core::websocket::stream::StreamItem>
+impl core::marker::Freeze for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Send for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Sync for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Unpin for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamReceiver
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamReceiver
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamReceiver
 pub mod marketdata_core::websocket::subscription
 pub struct marketdata_core::websocket::subscription::SubscriptionManager
 impl marketdata_core::websocket::subscription::SubscriptionManager
@@ -3958,20 +3964,18 @@ pub struct marketdata_core::websocket::sync::client::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_count(&self) -> usize
@@ -3995,20 +3999,18 @@ pub struct marketdata_core::websocket::sync::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_count(&self) -> usize
@@ -4224,6 +4226,20 @@ impl core::marker::Unpin for marketdata_core::websocket::version::StockVersion
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::version::StockVersion
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::version::StockVersion
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::version::StockVersion
+#[non_exhaustive] pub enum marketdata_core::websocket::StreamItem
+pub marketdata_core::websocket::StreamItem::Event(marketdata_core::websocket::connection_event::ConnectionEvent)
+pub marketdata_core::websocket::StreamItem::Message(marketdata_core::WebSocketMessage)
+impl core::clone::Clone for marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::StreamItem::clone(&self) -> marketdata_core::websocket::stream::StreamItem
+impl core::fmt::Debug for marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::StreamItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Send for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Sync for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamItem
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamItem
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamItem
 pub struct marketdata_core::websocket::ConnectionConfig
 pub marketdata_core::websocket::ConnectionConfig::auth: marketdata_core::AuthRequest
 pub marketdata_core::websocket::ConnectionConfig::client_id: core::option::Option<alloc::string::String>
@@ -4269,6 +4285,21 @@ impl core::marker::Unpin for marketdata_core::websocket::config::ConnectionConfi
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::ConnectionConfigBuilder
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::ConnectionConfigBuilder
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfigBuilder
+pub struct marketdata_core::websocket::ConnectionStream
+impl marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::stream::ConnectionStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::websocket::stream::StreamItem>>
+pub async fn marketdata_core::websocket::stream::ConnectionStream::recv(&mut self) -> core::option::Option<marketdata_core::websocket::stream::StreamItem>
+pub fn marketdata_core::websocket::stream::ConnectionStream::try_recv(&mut self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, std::sync::mpsc::TryRecvError>
+impl futures_core::stream::Stream for marketdata_core::websocket::stream::ConnectionStream
+pub type marketdata_core::websocket::stream::ConnectionStream::Item = marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::ConnectionStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
+impl core::marker::Freeze for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Send for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Sync for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Unpin for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::ConnectionStream
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::ConnectionStream
 pub struct marketdata_core::websocket::HealthCheckConfig
 pub marketdata_core::websocket::HealthCheckConfig::enabled: bool
 pub marketdata_core::websocket::HealthCheckConfig::heartbeat_timeout: core::time::Duration
@@ -4288,33 +4319,6 @@ impl core::marker::Unpin for marketdata_core::websocket::health_check::HealthChe
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::health_check::HealthCheckConfig
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::health_check::HealthCheckConfig
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::health_check::HealthCheckConfig
-pub struct marketdata_core::websocket::MessageReceiver
-impl marketdata_core::websocket::message::MessageReceiver
-pub fn marketdata_core::websocket::message::MessageReceiver::receive(&self) -> core::result::Result<marketdata_core::WebSocketMessage, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::message::MessageReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::WebSocketMessage>, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::message::MessageReceiver::try_receive(&self) -> core::option::Option<marketdata_core::WebSocketMessage>
-impl core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Send for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Sync for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Unpin for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageReceiver
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageReceiver
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageReceiver
-pub struct marketdata_core::websocket::MessageStream
-impl marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::message::MessageStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::WebSocketMessage>>
-pub async fn marketdata_core::websocket::message::MessageStream::recv(&mut self) -> core::option::Option<marketdata_core::WebSocketMessage>
-pub fn marketdata_core::websocket::message::MessageStream::try_recv(&mut self) -> core::result::Result<marketdata_core::WebSocketMessage, std::sync::mpsc::TryRecvError>
-impl futures_core::stream::Stream for marketdata_core::websocket::message::MessageStream
-pub type marketdata_core::websocket::message::MessageStream::Item = marketdata_core::WebSocketMessage
-pub fn marketdata_core::websocket::message::MessageStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
-impl core::marker::Freeze for marketdata_core::websocket::message::MessageStream
-impl core::marker::Send for marketdata_core::websocket::message::MessageStream
-impl core::marker::Sync for marketdata_core::websocket::message::MessageStream
-impl core::marker::Unpin for marketdata_core::websocket::message::MessageStream
-impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageStream
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageStream
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageStream
 pub struct marketdata_core::websocket::ReconnectionConfig
 pub marketdata_core::websocket::ReconnectionConfig::enabled: bool
 pub marketdata_core::websocket::ReconnectionConfig::initial_delay: core::time::Duration
@@ -4374,6 +4378,18 @@ impl core::marker::Unpin for marketdata_core::StockSubscription
 impl core::marker::UnsafeUnpin for marketdata_core::StockSubscription
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::StockSubscription
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::StockSubscription
+pub struct marketdata_core::websocket::StreamReceiver
+impl marketdata_core::websocket::stream::StreamReceiver
+pub fn marketdata_core::websocket::stream::StreamReceiver::receive(&self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream::StreamReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::websocket::stream::StreamItem>, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream::StreamReceiver::try_receive(&self) -> core::option::Option<marketdata_core::websocket::stream::StreamItem>
+impl core::marker::Freeze for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Send for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Sync for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Unpin for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamReceiver
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamReceiver
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamReceiver
 pub struct marketdata_core::websocket::SubscriptionManager
 impl marketdata_core::websocket::subscription::SubscriptionManager
 pub fn marketdata_core::websocket::subscription::SubscriptionManager::clear(&self)
@@ -4401,20 +4417,18 @@ pub struct marketdata_core::websocket::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_count(&self) -> usize
@@ -4862,6 +4876,20 @@ impl core::marker::Unpin for marketdata_core::OptionRight
 impl core::marker::UnsafeUnpin for marketdata_core::OptionRight
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::OptionRight
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::OptionRight
+#[non_exhaustive] pub enum marketdata_core::StreamItem
+pub marketdata_core::StreamItem::Event(marketdata_core::websocket::connection_event::ConnectionEvent)
+pub marketdata_core::StreamItem::Message(marketdata_core::WebSocketMessage)
+impl core::clone::Clone for marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::StreamItem::clone(&self) -> marketdata_core::websocket::stream::StreamItem
+impl core::fmt::Debug for marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::StreamItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Send for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Sync for marketdata_core::websocket::stream::StreamItem
+impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamItem
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamItem
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamItem
 pub enum marketdata_core::StreamMessage
 pub marketdata_core::StreamMessage::Authenticated
 pub marketdata_core::StreamMessage::Data
@@ -5158,6 +5186,21 @@ impl core::marker::Unpin for marketdata_core::websocket::config::ConnectionConfi
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::ConnectionConfig
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::ConnectionConfig
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfig
+pub struct marketdata_core::ConnectionStream
+impl marketdata_core::websocket::stream::ConnectionStream
+pub fn marketdata_core::websocket::stream::ConnectionStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::websocket::stream::StreamItem>>
+pub async fn marketdata_core::websocket::stream::ConnectionStream::recv(&mut self) -> core::option::Option<marketdata_core::websocket::stream::StreamItem>
+pub fn marketdata_core::websocket::stream::ConnectionStream::try_recv(&mut self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, std::sync::mpsc::TryRecvError>
+impl futures_core::stream::Stream for marketdata_core::websocket::stream::ConnectionStream
+pub type marketdata_core::websocket::stream::ConnectionStream::Item = marketdata_core::websocket::stream::StreamItem
+pub fn marketdata_core::websocket::stream::ConnectionStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
+impl core::marker::Freeze for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Send for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Sync for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::Unpin for marketdata_core::websocket::stream::ConnectionStream
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::ConnectionStream
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::ConnectionStream
 pub struct marketdata_core::DataPayload
 pub marketdata_core::DataPayload::data: serde_json::value::Value
 impl core::clone::Clone for marketdata_core::models::streaming::DataPayload
@@ -5565,33 +5608,6 @@ impl core::marker::Unpin for marketdata_core::IntradayCandlesResponse
 impl core::marker::UnsafeUnpin for marketdata_core::IntradayCandlesResponse
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::IntradayCandlesResponse
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::IntradayCandlesResponse
-pub struct marketdata_core::MessageReceiver
-impl marketdata_core::websocket::message::MessageReceiver
-pub fn marketdata_core::websocket::message::MessageReceiver::receive(&self) -> core::result::Result<marketdata_core::WebSocketMessage, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::message::MessageReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::WebSocketMessage>, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::message::MessageReceiver::try_receive(&self) -> core::option::Option<marketdata_core::WebSocketMessage>
-impl core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Send for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Sync for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::Unpin for marketdata_core::websocket::message::MessageReceiver
-impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageReceiver
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageReceiver
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageReceiver
-pub struct marketdata_core::MessageStream
-impl marketdata_core::websocket::message::MessageStream
-pub fn marketdata_core::websocket::message::MessageStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::WebSocketMessage>>
-pub async fn marketdata_core::websocket::message::MessageStream::recv(&mut self) -> core::option::Option<marketdata_core::WebSocketMessage>
-pub fn marketdata_core::websocket::message::MessageStream::try_recv(&mut self) -> core::result::Result<marketdata_core::WebSocketMessage, std::sync::mpsc::TryRecvError>
-impl futures_core::stream::Stream for marketdata_core::websocket::message::MessageStream
-pub type marketdata_core::websocket::message::MessageStream::Item = marketdata_core::WebSocketMessage
-pub fn marketdata_core::websocket::message::MessageStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
-impl core::marker::Freeze for marketdata_core::websocket::message::MessageStream
-impl core::marker::Send for marketdata_core::websocket::message::MessageStream
-impl core::marker::Sync for marketdata_core::websocket::message::MessageStream
-impl core::marker::Unpin for marketdata_core::websocket::message::MessageStream
-impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageStream
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageStream
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageStream
 pub struct marketdata_core::PriceLevel
 pub marketdata_core::PriceLevel::price: f64
 pub marketdata_core::PriceLevel::size: i64
@@ -5890,6 +5906,18 @@ impl core::marker::Unpin for marketdata_core::StockSubscription
 impl core::marker::UnsafeUnpin for marketdata_core::StockSubscription
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::StockSubscription
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::StockSubscription
+pub struct marketdata_core::StreamReceiver
+impl marketdata_core::websocket::stream::StreamReceiver
+pub fn marketdata_core::websocket::stream::StreamReceiver::receive(&self) -> core::result::Result<marketdata_core::websocket::stream::StreamItem, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream::StreamReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::websocket::stream::StreamItem>, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream::StreamReceiver::try_receive(&self) -> core::option::Option<marketdata_core::websocket::stream::StreamItem>
+impl core::marker::Freeze for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Send for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Sync for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::Unpin for marketdata_core::websocket::stream::StreamReceiver
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamReceiver
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamReceiver
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamReceiver
 pub struct marketdata_core::StreamTrade
 pub marketdata_core::StreamTrade::ask: core::option::Option<f64>
 pub marketdata_core::StreamTrade::bid: core::option::Option<f64>
@@ -6264,20 +6292,18 @@ pub struct marketdata_core::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
-pub fn marketdata_core::websocket::sync::client::WebSocketClient::state_events(&self) -> &alloc::sync::Arc<std::sync::poison::mutex::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::connection_event::ConnectionEvent>>>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscribe_futopt(&self, marketdata_core::FutOptSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_count(&self) -> usize

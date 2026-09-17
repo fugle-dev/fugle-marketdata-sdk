@@ -16,11 +16,9 @@
 //! ```
 
 use marketdata_core::{
-    websocket::{ConnectionConfig, ConnectionEvent, StockSubscription},
+    websocket::{ConnectionConfig, ConnectionEvent, StockSubscription, StreamItem},
     AuthRequest, Channel, WebSocketClient,
 };
-use std::sync::Arc;
-use std::thread;
 use std::time::{Duration, Instant};
 
 fn main() -> Result<(), marketdata_core::MarketDataError> {
@@ -48,32 +46,21 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
 
     println!("\nListening for messages (10 seconds)...\n");
 
-    let messages = client.messages();
-    let events = Arc::clone(client.state_events());
-
-    // Spawn an event-monitoring thread.
-    let event_handle = thread::spawn(move || {
-        loop {
-            let rx = events.lock().expect("event lock poisoned");
-            match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(ConnectionEvent::Disconnected { code, reason, .. }) => {
-                    println!("Event: Disconnected (code: {:?}, reason: {})", code, reason);
-                    break;
-                }
-                Ok(event) => println!("Event: {:?}", event),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-    });
+    // Messages and connection events arrive on one stream, in order.
+    let stream = client.stream_receiver();
 
     let start = Instant::now();
     let duration = Duration::from_secs(10);
     let mut message_count = 0;
 
     while start.elapsed() < duration {
-        match messages.receive_timeout(Duration::from_secs(1)) {
-            Ok(Some(msg)) => {
+        match stream.receive_timeout(Duration::from_secs(1)) {
+            Ok(Some(StreamItem::Event(ConnectionEvent::Disconnected { code, reason, .. }))) => {
+                println!("Event: Disconnected (code: {:?}, reason: {})", code, reason);
+                break;
+            }
+            Ok(Some(StreamItem::Event(event))) => println!("Event: {:?}", event),
+            Ok(Some(StreamItem::Message(msg))) => {
                 message_count += 1;
                 if msg.is_data() {
                     println!(
@@ -112,6 +99,7 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
                     println!("[{}] Event: {}", message_count, msg.event);
                 }
             }
+            Ok(Some(_)) => {}
             Ok(None) => {
                 if !client.is_connected() {
                     println!("Connection lost");
@@ -132,8 +120,6 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
     println!("\nDisconnecting...");
     client.disconnect()?;
     println!("Disconnected gracefully");
-
-    let _ = event_handle.join();
 
     if client.is_closed() {
         println!("Client is now closed (cannot be reused)");

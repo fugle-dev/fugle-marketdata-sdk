@@ -12,10 +12,10 @@
 //! │   implements        │──callback────│   spawns message    │
 //! │   IWebSocketListener│              │   forwarding task   │
 //! │                     │              │                     │
-//! │ OnMessage(msg) ◄────│──────────────│ run_message_loop()  │
+//! │ OnMessage(msg) ◄────│──────────────│ stream reader       │
 //! │ OnConnected()  ◄────│              │                     │
 //! │ OnDisconnected()◄───│              │ CoreWebSocketClient │
-//! │ OnError(err)   ◄────│              │   .messages()       │
+//! │ OnError(err)   ◄────│              │  .stream_receiver() │
 //! └─────────────────────┘              └─────────────────────┘
 //! ```
 //!
@@ -33,11 +33,10 @@
 use crate::errors::MarketDataError;
 use crate::models::StreamMessage;
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
-use marketdata_core::websocket::{ConnectionEvent, ConnectionState, MessageReceiver};
+use marketdata_core::websocket::{ConnectionEvent, ConnectionState, StreamItem, StreamReceiver};
 use marketdata_core::AuthRequest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Callback interface for WebSocket events
 ///
@@ -253,6 +252,10 @@ pub struct WebSocketClient {
     version: StreamingVersionRecord,
     endpoint: WebSocketEndpoint,
     shutdown: Arc<AtomicBool>,
+    /// Tells the current connection's stream reader that `disconnect()` was
+    /// called. One per `connect()`, so a reader still draining a previous
+    /// connection never sees a later connection's flag.
+    stopping: std::sync::Mutex<Arc<AtomicBool>>,
     reconnect_config: Option<marketdata_core::ReconnectionConfig>,
     health_check_config: Option<marketdata_core::HealthCheckConfig>,
     tls_config: Option<marketdata_core::TlsConfig>,
@@ -281,6 +284,7 @@ impl WebSocketClient {
             version,
             endpoint,
             shutdown: Arc::new(AtomicBool::new(false)),
+            stopping: std::sync::Mutex::new(Arc::new(AtomicBool::new(false))),
             reconnect_config,
             health_check_config,
             tls_config,
@@ -503,39 +507,26 @@ impl WebSocketClient {
             )
         };
 
-        // Forward core's lifecycle events. The thread starts before
-        // `connect()` so events of a failed attempt (`Unauthenticated`,
-        // `Error`) are still delivered.
-        spawn_event_forwarder(
-            Arc::clone(core_ws.state_events()),
+        // Forward core's stream: messages and lifecycle events in the order
+        // core produced them (#68). The thread starts before `connect()` so
+        // events of a failed attempt (`Unauthenticated`, `Error`) are still
+        // delivered.
+        let stopping = Arc::new(AtomicBool::new(false));
+        *lock_stopping(&self.stopping) = Arc::clone(&stopping);
+        spawn_stream_reader(
+            core_ws.stream_receiver(),
             Arc::clone(&self.listener),
+            stopping,
         );
 
         // Connect to server
         core_ws.connect().await?;
-
-        // CRITICAL: Obtain message receiver from core WebSocket API
-        // The core WebSocket client exposes messages via client.messages() method
-        // which returns Arc<MessageReceiver>
-        let receiver: Arc<MessageReceiver> = core_ws.messages();
 
         // Store client in inner
         *lock_inner(&self.inner) = Some(Arc::new(core_ws));
 
         // Reset shutdown flag for this connection
         self.shutdown.store(false, Ordering::SeqCst);
-
-        // Spawn dedicated thread for message forwarding (not tokio spawn_blocking)
-        // Using a dedicated thread avoids per-message spawn_blocking overhead and
-        // eliminates the 100ms polling timeout, delivering messages immediately.
-        let listener = Arc::clone(&self.listener);
-        let shutdown = Arc::clone(&self.shutdown);
-        std::thread::Builder::new()
-            .name("ws_message_loop".to_string())
-            .spawn(move || {
-                run_message_loop_blocking(receiver, listener, shutdown);
-            })
-            .ok();
 
         Ok(())
     }
@@ -627,8 +618,10 @@ impl WebSocketClient {
     }
 
     async fn disconnect_impl(&self) {
-        // Signal shutdown to message loop
+        // No messages are delivered once `disconnect()` has been called; the
+        // connection's remaining events still are.
         self.shutdown.store(true, Ordering::SeqCst);
+        lock_stopping(&self.stopping).store(true, Ordering::SeqCst);
 
         // Take and disconnect the client. `on_disconnected` comes from
         // core's `Disconnected` event, which `ws.disconnect()` emits.
@@ -715,62 +708,46 @@ impl WebSocketClient {
     }
 }
 
-/// Dedicated thread that forwards messages from core MessageReceiver to listener.
+/// Spawn the thread that forwards core's stream to the listener.
 ///
-/// Uses a short `receive_timeout` to allow periodic shutdown checks, but runs on
-/// a dedicated thread (not tokio spawn_blocking) to avoid per-message task overhead.
-/// The timeout is kept short (5ms) so messages are delivered with minimal latency.
-fn run_message_loop_blocking(
-    receiver: Arc<MessageReceiver>,
-    listener: Arc<dyn WebSocketListener>,
-    shutdown: Arc<AtomicBool>,
-) {
-    use std::time::Duration;
-
-    loop {
-        if shutdown.load(Ordering::SeqCst) {
-            break;
-        }
-
-        match receiver.receive_timeout(Duration::from_millis(5)) {
-            Ok(Some(ws_msg)) => {
-                let stream_msg = StreamMessage::from(ws_msg);
-                listener.on_message(stream_msg);
-            }
-            Ok(None) => {
-                // Timeout — loop back to check shutdown
-                continue;
-            }
-            Err(_) => {
-                // Channel closed
-                break;
-            }
-        }
-    }
-}
-
-/// Spawn the thread that forwards core `ConnectionEvent`s to the listener.
+/// Messages are forwarded only while the connection that produced them is
+/// authenticated as far as this reader has reported, so frames of a rejected
+/// attempt never reach `on_message`, and none are forwarded once `stopping`
+/// is set by `disconnect()`.
 ///
 /// Exits after a terminal event (`Disconnected { will_reconnect: false }` or
-/// `ReconnectFailed`) — core emits nothing after those — or once the event
-/// channel closes, which covers a failed `connect()` and a `disconnect()`
-/// issued mid-reconnect (both drop every sender without a terminal event).
-fn spawn_event_forwarder(
-    events: Arc<Mutex<std::sync::mpsc::Receiver<ConnectionEvent>>>,
+/// `ReconnectFailed`) — core emits nothing after those — or once the stream
+/// closes, which covers a failed `connect()` and a `disconnect()` issued
+/// mid-reconnect (both drop every sender without a terminal event).
+fn spawn_stream_reader(
+    stream: Arc<StreamReceiver>,
     listener: Arc<dyn WebSocketListener>,
+    stopping: Arc<AtomicBool>,
 ) {
     std::thread::Builder::new()
-        .name("ws_event_monitor".to_string())
-        .spawn(move || loop {
-            let event = {
-                let rx = events.blocking_lock();
-                rx.recv()
-            };
-            let Ok(event) = event else {
-                break; // Channel closed
-            };
-            if !forward_event(event, listener.as_ref()) {
-                break;
+        .name("ws_stream_reader".to_string())
+        .spawn(move || {
+            let mut authenticated = false;
+            while let Ok(item) = stream.receive() {
+                match item {
+                    StreamItem::Message(message)
+                        if authenticated && !stopping.load(Ordering::SeqCst) =>
+                    {
+                        listener.on_message(StreamMessage::from(message));
+                    }
+                    StreamItem::Event(event) => {
+                        match event {
+                            ConnectionEvent::Authenticated { .. } => authenticated = true,
+                            ConnectionEvent::Unauthenticated { .. }
+                            | ConnectionEvent::Disconnected { .. } => authenticated = false,
+                            _ => {}
+                        }
+                        if !forward_event(event, listener.as_ref()) {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
             }
         })
         .ok();
@@ -799,6 +776,11 @@ fn forward_event(event: ConnectionEvent, listener: &dyn WebSocketListener) -> bo
         _ => {}
     }
     true
+}
+
+/// Lock `stopping`, recovering from poison: it only holds an `Arc`.
+fn lock_stopping(stopping: &std::sync::Mutex<Arc<AtomicBool>>) -> std::sync::MutexGuard<'_, Arc<AtomicBool>> {
+    stopping.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Lock `inner`, recovering from poison: the slot holds no invariant a
@@ -887,6 +869,8 @@ mod tests {
         last_error: Mutex<Option<String>>,
         /// Lifecycle callbacks in delivery order.
         events: Mutex<Vec<String>>,
+        /// Also record `on_message` in `events`, as `message(<event>)`.
+        record_messages: std::sync::atomic::AtomicBool,
     }
 
     impl TestListener {
@@ -900,7 +884,14 @@ mod tests {
                 reconnect_failed_count: AtomicUsize::new(0),
                 last_error: Mutex::new(None),
                 events: Mutex::new(Vec::new()),
+                record_messages: std::sync::atomic::AtomicBool::new(false),
             }
+        }
+
+        fn recording_messages() -> Self {
+            let listener = Self::new();
+            listener.record_messages.store(true, Ordering::SeqCst);
+            listener
         }
 
         fn record(&self, event: String) {
@@ -946,8 +937,11 @@ mod tests {
             self.record(format!("disconnected({will_reconnect})"));
         }
 
-        fn on_message(&self, _message: StreamMessage) {
+        fn on_message(&self, message: StreamMessage) {
             self.message_count.fetch_add(1, Ordering::SeqCst);
+            if self.record_messages.load(Ordering::SeqCst) {
+                self.record(format!("message({})", message.event));
+            }
         }
 
         fn on_error(&self, error_message: String) {
@@ -1090,6 +1084,53 @@ mod tests {
                 "disconnected(false)".to_string(),
             ]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn messages_arrive_between_authenticated_and_disconnected() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::recording_messages());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_impl().await.expect("connect");
+        for _ in 0..3 {
+            server
+                .inject_frame(marketdata_core::models::streaming::StreamMessage::Pong { state: None })
+                .await;
+        }
+        server.close(1000, "bye").await;
+        listener.wait_for("disconnected(false)").await;
+        client.disconnect_impl().await;
+
+        assert_eq!(
+            listener.events(),
+            vec![
+                "connected".to_string(),
+                "authenticated(None)".to_string(),
+                "message(authenticated)".to_string(),
+                "message(pong)".to_string(),
+                "message(pong)".to_string(),
+                "message(pong)".to_string(),
+                "disconnected(false)".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn rejected_credentials_never_reach_on_message() {
+        let server = MockWsServer::start().await;
+        server.set_auth_response(serde_json::json!({
+            "event": "error",
+            "data": {"message": "Invalid token"}
+        }));
+        let listener = Arc::new(TestListener::recording_messages());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        assert!(client.connect_impl().await.is_err());
+        listener
+            .wait_for(r#"unauthenticated(Some("{\"message\":\"Invalid token\"}"))"#)
+            .await;
+        assert_eq!(listener.message_count.load(Ordering::SeqCst), 0, "{:?}", listener.events());
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1262,8 +1303,8 @@ mod tests {
         assert_eq!(listener.events(), before, "events after disconnect()");
         assert_eq!(before.last().map(String::as_str), Some("reconnecting(1)"));
 
-        // The forwarder and message threads each hold a listener clone; once
-        // both exit only this test and `client` remain.
+        // The stream reader holds a listener clone; once it exits only this
+        // test and `client` remain.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while Arc::strong_count(&listener) > 2 {
             assert!(

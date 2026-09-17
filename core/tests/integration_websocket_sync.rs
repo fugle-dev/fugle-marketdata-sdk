@@ -61,10 +61,17 @@ fn test_subscribe_then_receive_sync() {
     let sub = StockSubscription::new(Channel::Trades, "2330");
     client.subscribe(sub).expect("subscribe failed");
 
-    let rx = client.messages();
+    let rx = client.stream_receiver();
     // Wait up to 30s for at least one inbound frame. Outside market hours
     // this may legitimately timeout — caller should re-run during market hours.
-    let _ = rx.receive_timeout(Duration::from_secs(30));
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while let Ok(Some(item)) =
+        rx.receive_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        if matches!(item, marketdata_core::StreamItem::Message(_)) {
+            break;
+        }
+    }
 
     client.disconnect().expect("disconnect failed");
 }

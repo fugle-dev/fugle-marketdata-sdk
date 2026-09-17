@@ -1,11 +1,8 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
-use crate::metrics_compat::DropCounter;
-use crate::models::{WebSocketMessage};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
-use crate::websocket::connection_event::{emit_event, DisconnectLatch};
-use crate::websocket::message_queue::QueueSender;
+use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, AuthHandshake, AuthOutcome,
 };
@@ -16,7 +13,7 @@ use crate::websocket::{
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -35,20 +32,20 @@ pub(crate) fn tls_connector_for(
 }
 
 /// Send the auth frame, then read frames off `ws_read` until a terminal
-/// auth outcome arrives or `auth_timeout` elapses. Each text frame is
-/// pushed to `message_tx` so subscribers see the auth payloads; a full
-/// queue drops them rather than stalling the handshake. Shared by
+/// auth outcome arrives or `auth_timeout` elapses. The text frames read are
+/// returned with the outcome, to be queued after the matching event (#68).
+/// Shared by
 /// `WebSocketClient::connect` and `try_connect` so the auth protocol cannot
 /// drift between fresh-connect and reconnect.
 pub(crate) async fn authenticate(
     ws_sink: &mut WsSink,
     ws_read: &mut WsStream,
     config: &ConnectionConfig,
-    message_tx: &QueueSender<WebSocketMessage>,
+    stream: &StreamSender,
     auth_timeout: Duration,
 ) -> AuthHandshake {
-    // The drop count restarts with each connection, before its auth frames.
-    message_tx.start_connection();
+    // The drop count restarts with each connection attempt.
+    stream.start_connection();
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
         Err(e) => return AuthHandshake::Failed(e),
@@ -56,30 +53,29 @@ pub(crate) async fn authenticate(
     if let Err(e) = ws_sink.send(Message::Text(auth_json.into())).await {
         return AuthHandshake::Failed(e.into());
     }
-    await_auth_response(ws_read, message_tx, auth_timeout).await
+    await_auth_response(ws_read, auth_timeout).await
 }
 
 /// Read frames off `ws_read` until a terminal auth outcome arrives or
 /// `auth_timeout` elapses.
 pub(crate) async fn await_auth_response(
     ws_read: &mut WsStream,
-    message_tx: &QueueSender<WebSocketMessage>,
     auth_timeout: Duration,
 ) -> AuthHandshake {
     let result = timeout(auth_timeout, async {
+        let mut frames = Vec::new();
         while let Some(msg_result) = ws_read.next().await {
             match msg_result {
                 Ok(Message::Text(text)) => {
                     if let Ok(ws_msg) = crate::websocket::protocol::parse_text_frame(&text) {
-                        // No drop report yet: `Authenticated` has not been
-                        // emitted. The dispatch loop reports these drops.
-                        message_tx.push(ws_msg.clone());
-                        match classify_auth_response(&ws_msg) {
+                        let outcome = classify_auth_response(&ws_msg);
+                        frames.push(ws_msg);
+                        match outcome {
                             AuthOutcome::Authenticated(data) => {
-                                return AuthHandshake::Authenticated(data)
+                                return AuthHandshake::Authenticated { data, frames }
                             }
                             AuthOutcome::Failed { message, data } => {
-                                return AuthHandshake::Rejected { message, data }
+                                return AuthHandshake::Rejected { message, data, frames }
                             }
                             AuthOutcome::Pending => {}
                         }
@@ -118,14 +114,11 @@ pub(crate) async fn try_reconnect(
     reconnection: Arc<Mutex<ReconnectionManager>>,
     config: ConnectionConfig,
     state: SharedState,
-    event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: DropCounter,
+    stream: StreamSender,
     ws_sink: Arc<Mutex<Option<WsSink>>>,
     write_tx_slot: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     subscriptions: Arc<SubscriptionManager>,
-    message_tx: QueueSender<WebSocketMessage>,
-    disconnect_latch: Arc<DisconnectLatch>,
     shutdown_requested: Arc<AtomicBool>,
 ) -> Option<WsStream> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
@@ -180,7 +173,7 @@ pub(crate) async fn try_reconnect(
                     delay_ms = d.as_millis() as u64,
                     "ws reconnect attempt"
                 );
-                emit_event(&event_tx, &events_dropped, ConnectionEvent::Reconnecting {
+                stream.emit(ConnectionEvent::Reconnecting {
                     attempt,
                 });
 
@@ -194,17 +187,12 @@ pub(crate) async fn try_reconnect(
                 match try_connect(
                     config.clone(),
                     Arc::clone(&state),
-                    event_tx.clone(),
-                    events_dropped.clone(),
-                    message_tx.clone(),
+                    stream.clone(),
                     &shutdown_requested,
                 )
                 .await
                 {
                     Ok((new_sink, ws_read)) => {
-                        // New connection: it may report its own close.
-                        disconnect_latch.reset();
-
                         // Store the new write half
                         {
                             let mut sink_guard = ws_sink.lock().await;
@@ -229,8 +217,7 @@ pub(crate) async fn try_reconnect(
                         let writer_task_handle = tokio::spawn(run_writer_task(
                             new_write_rx,
                             Arc::clone(&ws_sink),
-                            event_tx.clone(),
-                            events_dropped.clone(),
+                            stream.clone(),
                         ));
                         {
                             let mut guard = writer_handle.lock().await;
@@ -274,7 +261,7 @@ pub(crate) async fn try_reconnect(
                     reconnection.current_attempt()
                 };
 
-                emit_event(&event_tx, &events_dropped, ConnectionEvent::ReconnectFailed {
+                stream.emit(ConnectionEvent::ReconnectFailed {
                     attempts,
                 });
 
@@ -294,9 +281,7 @@ pub(crate) async fn try_reconnect(
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: SharedState,
-    event_tx: mpsc::SyncSender<ConnectionEvent>,
-    events_dropped: DropCounter,
-    message_tx: QueueSender<WebSocketMessage>,
+    stream: StreamSender,
     shutdown_requested: &AtomicBool,
 ) -> Result<(WsSink, WsStream), MarketDataError> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
@@ -306,7 +291,7 @@ pub(crate) async fn try_connect(
         let mut st = write_state(&state);
         *st = ConnectionState::Connecting;
     }
-    emit_event(&event_tx, &events_dropped, ConnectionEvent::Connecting {
+    stream.emit(ConnectionEvent::Connecting {
     });
 
     // Connect to WebSocket
@@ -318,7 +303,7 @@ pub(crate) async fn try_connect(
     .await;
 
     let (ws_stream, _response) = match connect_result {
-        Ok(Ok((stream, response))) => (stream, response),
+        Ok(Ok(connected)) => connected,
         Ok(Err(e)) => {
             let err: MarketDataError = e.into();
             {
@@ -345,7 +330,7 @@ pub(crate) async fn try_connect(
         return Err(MarketDataError::ClientClosed);
     }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
-    emit_event(&event_tx, &events_dropped, ConnectionEvent::Connected {
+    stream.emit(ConnectionEvent::Connected {
     });
 
     // Authenticate
@@ -359,7 +344,7 @@ pub(crate) async fn try_connect(
         &mut new_ws_sink,
         &mut ws_read,
         &config,
-        &message_tx,
+        &stream,
         Duration::from_secs(10),
     )
     .await;
@@ -368,24 +353,24 @@ pub(crate) async fn try_connect(
     }
 
     match handshake {
-        AuthHandshake::Authenticated(data) => {
+        AuthHandshake::Authenticated { data, frames } => {
             {
                 let mut st = write_state(&state);
                 *st = ConnectionState::Connected;
             }
             crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
-            emit_event(&event_tx, &events_dropped, ConnectionEvent::Authenticated { data });
+            // Queued before this function returns, so ahead of anything the
+            // dispatch loop reads next. A new connection: it may report its
+            // own close.
+            stream.authenticated(data, frames);
             Ok((new_ws_sink, ws_read))
         }
-        AuthHandshake::Rejected { message, data } => {
+        AuthHandshake::Rejected { message, data, frames } => {
             {
                 let mut st = write_state(&state);
                 *st = ConnectionState::Disconnected;
             }
-            emit_event(&event_tx, &events_dropped, ConnectionEvent::Unauthenticated {
-                message: message.clone(),
-                data,
-            });
+            stream.unauthenticated(message.clone(), data, frames);
             Err(MarketDataError::AuthError { msg: message })
         }
         AuthHandshake::Failed(e) => {

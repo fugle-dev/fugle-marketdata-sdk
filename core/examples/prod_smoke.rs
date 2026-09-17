@@ -531,7 +531,7 @@ async fn smoke_ws_stock(cfg: ConnectionConfig, equity: &str, index: &str) -> Vec
         (Channel::Indices, index, "ws stock indices"),
     ];
     let client = AsyncWs::new(cfg);
-    let mut rx = client.message_stream();
+    let mut rx = client.stream();
 
     if let Err(e) = client.connect().await {
         return vec![Row { name: "ws stock connect".into(), outcome: classify(&e) }];
@@ -560,7 +560,7 @@ async fn smoke_ws_futopt(cfg: ConnectionConfig, symbols: &[String]) -> Vec<Row> 
         (FutOptChannel::Aggregates, "ws futopt aggregates"),
     ];
     let client = AsyncWs::new(cfg);
-    let mut rx = client.message_stream();
+    let mut rx = client.stream();
 
     if let Err(e) = client.connect().await {
         return vec![Row { name: "ws futopt connect".into(), outcome: classify(&e) }];
@@ -601,7 +601,7 @@ async fn smoke_ws_futopt(cfg: ConnectionConfig, symbols: &[String]) -> Vec<Row> 
 /// is generous (10 s) because snapshots normally arrive <200 ms after the
 /// subscribe ACK; the budget only matters for genuinely quiet channels.
 async fn drain_snapshots(
-    rx: &mut marketdata_core::MessageStream,
+    rx: &mut marketdata_core::ConnectionStream,
     labels: &BTreeMap<&str, &str>,
 ) -> Vec<Row> {
     let mut seen: BTreeMap<&str, Outcome> = BTreeMap::new();
@@ -613,7 +613,8 @@ async fn drain_snapshots(
             break;
         }
         let msg = match tokio::time::timeout(remaining, rx.recv()).await {
-            Ok(Some(m)) => m,
+            Ok(Some(marketdata_core::StreamItem::Message(m))) => m,
+            Ok(Some(_)) => continue, // connection events
             Ok(None) | Err(_) => break, // stream closed or global deadline
         };
 

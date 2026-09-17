@@ -4,8 +4,8 @@
  * goes through one threadsafe function per connection; with one per listener
  * Node-API did not guarantee their relative order.
  *
- * The order of `message` relative to the other events is not covered here:
- * core delivers them on separate channels (#68).
+ * `message` keeps its place among the other events: core delivers messages
+ * and events on one ordered stream, read by one reader (#68).
  */
 
 const { spawn } = require('child_process');
@@ -43,11 +43,25 @@ function runChild(script, env, timeoutMs = 10000) {
 /**
  * Loopback server. Auth is acked, or rejected while `rejectAuth` is set.
  * With `dropAfterAuth`, the socket is terminated right after the ack. Each
- * `subscribe` is answered with one `data` frame carrying its symbol.
+ * `subscribe` is answered with one `data` frame carrying its symbol, or with
+ * `floodThenClose` frames numbered from 0 followed by a Close.
+ *
+ * `wss.burst(n)` sends `n` `data` frames to every client right away;
+ * `wss.sent` counts those written.
  */
-function startServer({ rejectAuth = false, dropAfterAuth = false } = {}) {
+function startServer({ rejectAuth = false, dropAfterAuth = false, floodThenClose = 0 } = {}) {
   return new Promise((resolve) => {
     const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    wss.sent = 0;
+    wss.burst = (n) => {
+      for (const socket of wss.clients) {
+        for (let i = 0; i < n; i += 1) {
+          socket.send(JSON.stringify({ event: 'data', data: { i }, channel: 'trades' }), (err) => {
+            if (!err) wss.sent += 1;
+          });
+        }
+      }
+    };
     wss.on('connection', (socket) => {
       socket.on('message', (raw) => {
         if (JSON.parse(raw.toString()).event !== 'auth') return;
@@ -63,6 +77,13 @@ function startServer({ rejectAuth = false, dropAfterAuth = false } = {}) {
         const frame = JSON.parse(raw.toString());
         if (frame.event !== 'subscribe') return;
         const { channel, symbol } = frame.data;
+        if (floodThenClose > 0) {
+          for (let i = 0; i < floodThenClose; i += 1) {
+            socket.send(JSON.stringify({ event: 'data', data: { symbol, i }, channel }));
+          }
+          socket.close(1000, 'done');
+          return;
+        }
         socket.send(JSON.stringify({ event: 'data', data: { symbol }, id: `${channel}-${symbol}`, channel }));
       });
     });
@@ -90,6 +111,12 @@ function record(ws, events) {
   for (const name of ['connect', 'authenticated', 'unauthenticated', 'disconnect', 'reconnect', 'error']) {
     ws.on(name, () => events.push(name));
   }
+}
+
+/** Record every event, `message` included, as `message:<event>`. */
+function recordAll(ws, events) {
+  record(ws, events);
+  ws.on('message', (raw) => events.push(`message:${JSON.parse(raw).event}`));
 }
 
 const CYCLES = 50;
@@ -243,6 +270,70 @@ describe.each(['stock', 'futopt'])('%s event order (#62)', (product) => {
     );
     expect({ code, stderr, result }).toEqual({ code: 0, stderr: '', result: ['LATE'] });
   });
+
+  test('every message arrives between authenticated and disconnect (#68)', async () => {
+    const FRAMES = 2000;
+    await setup({ floodThenClose: FRAMES });
+    const events = [];
+    recordAll(ws, events);
+
+    await ws.connect();
+    ws.subscribe({ channel: 'trades', symbol: '2330' });
+    await waitFor(() => events.includes('disconnect'), 'disconnect');
+    await sleep(100);
+
+    const data = Array(FRAMES).fill('message:data');
+    expect(events).toEqual(['connect', 'authenticated', 'message:authenticated', ...data, 'disconnect']);
+  });
+
+  test('frames still arriving while disconnect() closes the connection reach message first (#68)', async () => {
+    await setup();
+    const events = [];
+    recordAll(ws, events);
+
+    await ws.connect();
+    ws.disconnect();
+    // Same tick: written after disconnect() was called, and before the
+    // server can have read the client's Close, so they precede its reply.
+    wss.burst(100);
+    await waitFor(() => events.includes('disconnect'), 'disconnect');
+    await sleep(200);
+
+    // Every one of them reaches the listener, before `disconnect`, which
+    // comes once and last.
+    expect(wss.sent).toBe(100);
+    expect(events.filter((e) => e === 'message:data').length).toBe(wss.sent);
+    expect(events.filter((e) => e === 'disconnect')).toEqual(['disconnect']);
+    expect(events[events.length - 1]).toBe('disconnect');
+  });
+
+  test('frames of a rejected authentication never reach message (#68)', async () => {
+    await setup({ rejectAuth: true });
+    const events = [];
+    recordAll(ws, events);
+
+    await ws.connect().catch(() => events.push('rejected'));
+    await sleep(200);
+    expect(events.filter((e) => e.startsWith('message'))).toEqual([]);
+    expect(events.slice(0, 3)).toEqual(['connect', 'unauthenticated', 'rejected']);
+  });
+
+  test("each reconnect's frames arrive after its authenticated (#68)", async () => {
+    const DROPS = 5;
+    await setup({ dropAfterAuth: true }, { reconnect: { maxAttempts: 3, initialDelayMs: 100, maxDelayMs: 100 } });
+    const events = [];
+    recordAll(ws, events);
+
+    await ws.connect();
+    await waitFor(() => events.filter((e) => e === 'authenticated').length > DROPS, `${DROPS} reconnects`, 30000);
+    ws.disconnect();
+
+    const lifecycle = events.filter((e) => e !== 'error');
+    const cycle = ['authenticated', 'message:authenticated', 'disconnect', 'reconnect', 'connect'];
+    const expected = ['connect'];
+    for (let i = 0; i < DROPS; i += 1) expected.push(...cycle);
+    expect(lifecycle.slice(0, expected.length)).toEqual(expected);
+  }, 60000);
 
   test('a listener may register listeners, which receive later events', async () => {
     await setup();

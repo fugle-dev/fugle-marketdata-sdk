@@ -31,6 +31,9 @@
 //! `integration_websocket_sync.rs` for the sync mirror.
 #![cfg(feature = "tokio-comp")]
 
+#[path = "common/mod.rs"]
+mod common;
+
 use marketdata_core::aio::WebSocketClient;
 use marketdata_core::{
     AuthRequest, Channel, ConnectionConfig, ConnectionEvent, ConnectionState,
@@ -236,7 +239,7 @@ fn test_receive_stock_messages() {
         println!("Waiting for messages (10 seconds)...");
         println!("Note: No messages expected outside market hours (9:00-13:30 Taiwan time)");
 
-        let receiver = client.messages();
+        let receiver = common::MessageReceiver::of_async(&client);
         let start = std::time::Instant::now();
         let timeout_duration = Duration::from_secs(10);
         let mut message_count = 0;
@@ -272,7 +275,7 @@ fn test_message_latency() {
         let sub = StockSubscription::new(Channel::Aggregates, "2330");
         client.subscribe(sub).await.expect("Failed to subscribe");
 
-        let receiver = client.messages();
+        let receiver = common::MessageReceiver::of_async(&client);
         let start = std::time::Instant::now();
         let timeout_duration = Duration::from_secs(30);
         let mut latencies = Vec::new();
@@ -530,7 +533,7 @@ fn test_heartbeat_timeout_triggers_reconnect_in_real_env() {
 
         // Drain events for up to 30s; expect HeartbeatTimeout, then
         // Reconnecting.
-        let events = client.events();
+        let events = std::sync::Arc::new(common::EventReceiver::of_async(&client));
         let mut saw_heartbeat_timeout = false;
         let mut event_after_timeout = None;
         let mut saw_reconnecting = false;
@@ -544,7 +547,7 @@ fn test_heartbeat_timeout_triggers_reconnect_in_real_env() {
             let event = tokio::task::spawn_blocking({
                 let events = events.clone();
                 move || {
-                    let rx = events.blocking_lock();
+                    let rx = &events;
                     rx.recv_timeout(Duration::from_secs(1))
                 }
             })

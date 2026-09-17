@@ -7,6 +7,9 @@
 
 #![cfg(all(feature = "test-utils", feature = "tokio-comp"))]
 
+#[path = "common/mod.rs"]
+mod common;
+
 use marketdata_core::models::streaming::StreamMessage;
 use marketdata_core::testing::{aio_pair, aio_pair_n, MockWsServer};
 use marketdata_core::models::Channel;
@@ -75,7 +78,7 @@ async fn inject_frame_delivers_to_client() {
         .inject_frame(StreamMessage::Pong { state: Some("alive".into()) })
         .await;
 
-    let messages = client.messages();
+    let messages = common::MessageReceiver::of_async(&client);
     let recv = tokio::task::spawn_blocking(move || {
         let mut got = Vec::new();
         for _ in 0..4 {
@@ -98,28 +101,23 @@ async fn inject_frame_delivers_to_client() {
         .await;
 }
 
-/// Helper: drain `events()` looking for the first `Disconnected` event,
+/// Helper: drain the client's events looking for the first `Disconnected`,
 /// polling for up to ~2s. Returns `None` if no Disconnected arrives.
 ///
-/// `events()` returns an async Mutex over a `std::mpsc::Receiver`; lock
-/// once on the async side then poll via `try_recv` with sleeps —
-/// `recv_timeout` would block the tokio runtime.
+/// Polls via `try_recv` with sleeps — a blocking `recv_timeout` would block
+/// the tokio runtime.
 async fn await_disconnected(
     client: &marketdata_core::aio::WebSocketClient,
 ) -> Option<ConnectionEvent> {
-    let events_rx_arc = client.events().clone();
-    let guard = events_rx_arc.lock().await;
+    let events = common::EventReceiver::of_async(client);
     for _ in 0..20 {
-        match guard.try_recv() {
-            Ok(ev) => {
+        match events.try_recv() {
+            Some(ev) => {
                 if matches!(ev, ConnectionEvent::Disconnected { .. }) {
                     return Some(ev);
                 }
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+            None => tokio::time::sleep(Duration::from_millis(100)).await,
         }
     }
     None
@@ -169,8 +167,8 @@ async fn inject_frame_for_targets_one_client() {
     // Each client receives its own auth-ack frame during the handshake.
     // Drain both queues so the per-client targeted inject is the only
     // frame in flight when we check.
-    let recv0 = clients[0].messages();
-    let recv1 = clients[1].messages();
+    let recv0 = std::sync::Arc::new(common::MessageReceiver::of_async(&clients[0]));
+    let recv1 = std::sync::Arc::new(common::MessageReceiver::of_async(&clients[1]));
     let _ = tokio::task::spawn_blocking({
         let recv0 = recv0.clone();
         let recv1 = recv1.clone();

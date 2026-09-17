@@ -70,10 +70,10 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
 
 ```rust,ignore
 use marketdata_core::{
-    AuthRequest, Channel, WebSocketClient,
-    websocket::{ConnectionConfig, ConnectionEvent},
+    aio::WebSocketClient,
+    AuthRequest, Channel, StreamItem,
+    websocket::ConnectionConfig,
 };
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), marketdata_core::MarketDataError> {
@@ -101,24 +101,22 @@ async fn main() -> Result<(), marketdata_core::MarketDataError> {
     )).await?;
     println!("Subscribed to 2330 trades + books and 3-symbol aggregates batch");
 
-    // Get message receiver
-    let messages = client.messages();
+    // Messages and connection events, in order
+    let mut stream = client.stream();
 
     // Process messages in a separate task
     let msg_handle = tokio::spawn(async move {
-        for _ in 0..10 {
-            // receive_timeout returns Result<Option<msg>, _>:
-            //   Ok(Some(msg)) — message received
-            //   Ok(None)      — timeout elapsed
-            //   Err(_)        — channel closed
-            match messages.receive_timeout(std::time::Duration::from_secs(5)) {
-                Ok(Some(msg)) => {
-                    if msg.is_data() {
-                        println!("Data: {:?} - {:?}", msg.channel, msg.symbol);
+        let mut data = 0;
+        // recv() returns None once the client is gone and the stream drained.
+        while let Some(item) = stream.recv().await {
+            if let StreamItem::Message(msg) = item {
+                if msg.is_data() {
+                    println!("Data: {:?} - {:?}", msg.channel, msg.symbol);
+                    data += 1;
+                    if data == 10 {
+                        break;
                     }
                 }
-                Ok(None) => continue,
-                Err(_) => break,
             }
         }
     });

@@ -5,12 +5,8 @@
 //! On disconnect, optionally runs the reconnect loop and rebuilds the
 //! WebSocket+queue+state in place.
 
-use crate::models::WebSocketMessage;
-use crate::websocket::connection_event::{
-    emit_disconnected, emit_drop_report, emit_event, peer_close_disconnect, will_reconnect_after,
-    DisconnectLatch,
-};
-use crate::websocket::message_queue::QueueSender;
+use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
+use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, parse_binary_frame, parse_text_frame,
     AuthHandshake, AuthOutcome,
@@ -96,21 +92,18 @@ pub(crate) struct OwnerShared {
     pub reconnection: Mutex<ReconnectionManager>,
     pub state: Arc<RwLock<ConnectionState>>,
     pub subscriptions: Arc<SubscriptionManager>,
-    pub event_tx: mpsc::SyncSender<ConnectionEvent>,
-    pub message_tx: QueueSender<WebSocketMessage>,
+    /// The client's ordered stream of messages and events.
+    pub stream: StreamSender,
     /// Current outbound sender. Replaced on every reconnect so live `subscribe`
     /// callers pick up the new channel via `.lock().clone()`.
     pub write_tx_slot: Mutex<Option<mpsc::SyncSender<String>>>,
     pub should_stop: Arc<AtomicBool>,
-    /// Ensures a single `Disconnected` per connection when this thread and
-    /// a caller-initiated close observe the same close (#41).
-    pub disconnect_latch: DisconnectLatch,
     /// Drop counter for the inbound message queue (drop-newest backpressure).
     /// Exposed via `WebSocketClient::messages_dropped_total`. Mirrors to
     /// `metrics_compat::COUNTER_MESSAGES_DROPPED` when the `metrics` feature
     /// is enabled.
     pub messages_dropped: crate::metrics_compat::DropCounter,
-    /// Drop counter for the lifecycle event channel (drop-newest backpressure).
+    /// Drop counter for the stream's event allowance (drop-newest backpressure).
     /// Exposed via `WebSocketClient::events_dropped_total`. Mirrors to
     /// `metrics_compat::COUNTER_EVENTS_DROPPED` when the `metrics` feature
     /// is enabled.
@@ -190,14 +183,17 @@ pub(crate) fn set_read_timeout(ws: &mut SyncWs, t: Option<Duration>) {
     }
 }
 
-/// Run the full auth handshake on a freshly-connected WebSocket.
+/// Run the full auth handshake on a freshly-connected WebSocket. The text
+/// frames read are returned with the outcome, to be queued after the
+/// matching event (#68).
 pub(crate) fn do_auth_handshake(
     ws: &mut SyncWs,
     config: &ConnectionConfig,
-    message_tx: &QueueSender<WebSocketMessage>,
+    stream: &StreamSender,
 ) -> AuthHandshake {
-    // The drop count restarts with each connection, before its auth frames.
-    message_tx.start_connection();
+    // The drop count restarts with each connection attempt.
+    stream.start_connection();
+    let mut frames = Vec::new();
     // Send auth frame
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
@@ -223,15 +219,14 @@ pub(crate) fn do_auth_handshake(
             Ok(Message::Text(text)) => {
                 let parsed = parse_text_frame(&text);
                 if let Ok(ws_msg) = parsed {
-                    // No drop report yet: `Authenticated` has not been
-                    // emitted. The owner loop reports these drops.
-                    message_tx.push(ws_msg.clone());
-                    match classify_auth_response(&ws_msg) {
+                    let outcome = classify_auth_response(&ws_msg);
+                    frames.push(ws_msg);
+                    match outcome {
                         AuthOutcome::Authenticated(data) => {
-                            return AuthHandshake::Authenticated(data);
+                            return AuthHandshake::Authenticated { data, frames };
                         }
                         AuthOutcome::Failed { message, data } => {
-                            return AuthHandshake::Rejected { message, data };
+                            return AuthHandshake::Rejected { message, data, frames };
                         }
                         AuthOutcome::Pending => continue,
                     }
@@ -313,11 +308,10 @@ fn owner_loop(
                             &shared.subscriptions,
                             &ws_msg,
                         );
-                        let (_, report) = shared.message_tx.push_and_report(ws_msg);
-                        emit_drop_report(&shared.event_tx, &shared.events_dropped, report);
+                        shared.stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
+                        shared.stream.emit(ConnectionEvent::Error {
                             message: format!("Failed to deserialize message: {e}"),
                             code: 2003,
                         });
@@ -338,11 +332,10 @@ fn owner_loop(
                             &shared.subscriptions,
                             &ws_msg,
                         );
-                        let (_, report) = shared.message_tx.push_and_report(ws_msg);
-                        emit_drop_report(&shared.event_tx, &shared.events_dropped, report);
+                        shared.stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
+                        shared.stream.emit(ConnectionEvent::Error {
                             message: format!("Failed to deserialize binary message: {e}"),
                             code: 2003,
                         });
@@ -369,11 +362,7 @@ fn owner_loop(
                     frame.as_ref().map(|cf| cf.reason.to_string()),
                     shared.should_stop.load(Ordering::SeqCst),
                 ) {
-                    emit_disconnected(
-                        &shared.event_tx,
-                        &shared.events_dropped,
-                        &shared.disconnect_latch,
-                        &shared.message_tx,
+                    shared.stream.emit_disconnected(
                         code,
                         reason,
                         intent,
@@ -403,11 +392,7 @@ fn owner_loop(
                 // `Disconnected { intent: Client }` itself, mirroring
                 // the async `dispatch.rs` short-circuit.
                 if !shared.should_stop.load(Ordering::SeqCst) {
-                    emit_disconnected(
-                        &shared.event_tx,
-                        &shared.events_dropped,
-                        &shared.disconnect_latch,
-                        &shared.message_tx,
+                    shared.stream.emit_disconnected(
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
@@ -428,15 +413,11 @@ fn owner_loop(
                     return None;
                 }
                 let err_msg = format!("WebSocket read error: {e}");
-                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
+                shared.stream.emit(ConnectionEvent::Error {
                     message: err_msg.clone(),
                     code: 2001,
                 });
-                emit_disconnected(
-                    &shared.event_tx,
-                    &shared.events_dropped,
-                    &shared.disconnect_latch,
-                    &shared.message_tx,
+                shared.stream.emit_disconnected(
                     None,
                     err_msg,
                     DisconnectIntent::Network,
@@ -458,16 +439,12 @@ fn owner_loop(
                     elapsed_ms = window.as_millis() as u64,
                     "heartbeat timeout: no inbound frame in window"
                 );
-                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::HeartbeatTimeout {
+                shared.stream.emit(ConnectionEvent::HeartbeatTimeout {
                     elapsed: window,
                 });
                 // Through the latch, so a racing `disconnect()` cannot
                 // report this connection's close a second time (#47).
-                emit_disconnected(
-                    &shared.event_tx,
-                    &shared.events_dropped,
-                    &shared.disconnect_latch,
-                    &shared.message_tx,
+                shared.stream.emit_disconnected(
                     None,
                     format!("Heartbeat timeout after {}ms", window.as_millis()),
                     DisconnectIntent::Network,
@@ -488,15 +465,11 @@ fn owner_loop(
                             return None;
                         }
                         let err_msg = format!("WebSocket write error: {e}");
-                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
+                        shared.stream.emit(ConnectionEvent::Error {
                             message: err_msg.clone(),
                             code: 2002,
                         });
-                        emit_disconnected(
-                            &shared.event_tx,
-                            &shared.events_dropped,
-                            &shared.disconnect_latch,
-                            &shared.message_tx,
+                        shared.stream.emit_disconnected(
                             None,
                             err_msg,
                             DisconnectIntent::Network,
@@ -527,7 +500,7 @@ fn reconnect_and_authenticate(
     let stopping = || shared.should_stop.load(Ordering::SeqCst);
 
     set_state(shared, ConnectionState::Connecting);
-    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Connecting {
+    shared.stream.emit(ConnectionEvent::Connecting {
     });
 
     let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config))?;
@@ -535,21 +508,18 @@ fn reconnect_and_authenticate(
         return Err(MarketDataError::ClientClosed);
     }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws reconnected");
-    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Connected {
+    shared.stream.emit(ConnectionEvent::Connected {
     });
 
     set_state(shared, ConnectionState::Authenticating);
-    let handshake = do_auth_handshake(&mut ws, &shared.config, &shared.message_tx);
+    let handshake = do_auth_handshake(&mut ws, &shared.config, &shared.stream);
     if stopping() {
         return Err(MarketDataError::ClientClosed);
     }
-    let data = match handshake {
-        AuthHandshake::Authenticated(data) => data,
-        AuthHandshake::Rejected { message, data } => {
-            emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Unauthenticated {
-                message: message.clone(),
-                data,
-            });
+    let (data, frames) = match handshake {
+        AuthHandshake::Authenticated { data, frames } => (data, frames),
+        AuthHandshake::Rejected { message, data, frames } => {
+            shared.stream.unauthenticated(message.clone(), data, frames);
             return Err(MarketDataError::AuthError { msg: message });
         }
         AuthHandshake::Failed(e) => return Err(e),
@@ -574,11 +544,9 @@ fn reconnect_and_authenticate(
     }
 
     set_state(shared, ConnectionState::Connected);
-    shared.disconnect_latch.reset();
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
-    emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Authenticated {
-        data,
-    });
+    // Before this thread reads the new connection; it may report its own close.
+    shared.stream.authenticated(data, frames);
     Ok((ws, write_rx))
 }
 
@@ -645,7 +613,7 @@ pub(crate) fn run_supervisor(
                     reason: "Max reconnection attempts reached".to_string(),
                     intent: DisconnectIntent::Network,
                 });
-                emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::ReconnectFailed {
+                shared.stream.emit(ConnectionEvent::ReconnectFailed {
                     attempts,
                 });
                 return;
@@ -662,7 +630,7 @@ pub(crate) fn run_supervisor(
                 delay_ms = d.as_millis() as u64,
                 "ws reconnect attempt"
             );
-            emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Reconnecting {
+            shared.stream.emit(ConnectionEvent::Reconnecting {
                 attempt,
             });
 
@@ -679,7 +647,7 @@ pub(crate) fn run_supervisor(
                 Err(e) => {
                     // A rejection was already reported as `Unauthenticated`.
                     if !matches!(e, MarketDataError::AuthError { .. }) {
-                        emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
+                        shared.stream.emit(ConnectionEvent::Error {
                             message: e.to_string(),
                             code: e.to_error_code(),
                         });

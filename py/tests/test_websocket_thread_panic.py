@@ -2,10 +2,11 @@
 
 Debug builds (``maturin develop``) panic on demand where
 ``FUGLE_MARKETDATA_TEST_PANIC`` says, read when ``connect()`` starts the
-threads: ``ws_events`` on the event thread's first event, ``ws_messages`` on
-the message thread's first frame (the ``authenticated`` ack). The ``error``
-callbacks receive a ``WebSocketError`` with code -1, and ``disconnect()``
-still returns.
+stream reader: ``ws_events`` on its first event, ``ws_messages`` on its first
+message (the ``authenticated`` ack), reported as the event and the message
+thread. The ``error`` callbacks receive a ``WebSocketError`` with code -1, and
+``disconnect()`` still returns. Both kinds share one reader since #68, so a
+panic stops the delivery of events and messages alike.
 """
 import asyncio
 import time
@@ -57,7 +58,7 @@ def test_event_thread_panic_fires_error(server, product, monkeypatch):
     finally:
         started = time.monotonic()
         disconnect_quietly(ws)
-        # The panicked event thread has already ended; joining it must not hang.
+        # The panicked stream reader has already ended; joining it must not hang.
         assert time.monotonic() - started < TIMEOUT_S
 
 

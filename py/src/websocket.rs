@@ -34,6 +34,7 @@ use std::time::Duration;
 
 use crate::callback::CallbackRegistry;
 use crate::errors;
+use crate::handoff::Handoff;
 
 // ---------------------------------------------------------------------------
 // Subscribe / unsubscribe parameter helpers
@@ -704,7 +705,11 @@ enum WsProduct {
 /// the Mutex before async operations (avoiding holding MutexGuard across await).
 struct WebSocketState {
     inner: Arc<marketdata_core::aio::WebSocketClient>,
-    receiver: Arc<marketdata_core::MessageReceiver>,
+    /// Messages no `message` callback took, for `messages()` iterators.
+    handoff: Arc<Handoff>,
+    /// Set by `disconnect()`: the stream reader stops waiting on a full
+    /// `handoff`.
+    stop: Arc<AtomicBool>,
 }
 
 /// Shared so blocking calls can clone it out of its lock before they block.
@@ -747,85 +752,79 @@ where
     py.detach(move || runtime.block_on(fut))
 }
 
-/// Stop the message dispatch thread and wait for it with the GIL released:
-/// the thread may be waiting for the GIL to hand a frame to Python (#39).
-fn stop_message_thread(
-    py: Python<'_>,
-    stop_flag: &AtomicBool,
-    handle: &Mutex<Option<std::thread::JoinHandle<()>>>,
-) {
-    stop_flag.store(true, Ordering::SeqCst);
-    let handle = handle.lock().ok().and_then(|mut guard| guard.take());
-    if let Some(handle) = handle {
-        py.detach(move || {
-            let _ = handle.join();
-        });
+/// `messages(timeout_ms=...)` no longer changes iteration (#68): warn when it
+/// is passed.
+fn warn_timeout_ms_deprecated(py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<()> {
+    if timeout_ms.is_none() {
+        return Ok(());
+    }
+    PyErr::warn(
+        py,
+        &py.get_type::<pyo3::exceptions::PyDeprecationWarning>(),
+        c"messages(timeout_ms=...) is deprecated and ignored: iteration yields messages only and stops once the connection is gone",
+        1,
+    )
+}
+
+/// `messages()` iterators hold as many unread messages as core's queue.
+fn handoff_capacity(config: &marketdata_core::ConnectionConfig) -> Option<usize> {
+    match config.message_overflow {
+        marketdata_core::MessageOverflow::Unbounded => None,
+        _ => Some(config.message_buffer),
     }
 }
 
-/// Connection events as core hands them out.
-type EventReceiver = Arc<
-    tokio::sync::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::ConnectionEvent>>,
->;
-
-/// Start the thread that forwards core's connection events to the callbacks.
+/// Start the thread that forwards a connection's core stream — its events
+/// and messages, in the order core produced them (#68) — to the callbacks.
 ///
 /// Started before `connect()`: core queues `Connected` and the
 /// `Authenticated` / `Unauthenticated` outcome while `connect()` runs, and a
 /// rejected connect still has to reach `unauthenticated`. The thread exits
-/// once the core client is dropped and the channel closes.
-fn spawn_event_thread(
+/// once the core client is dropped and the stream closes.
+///
+/// A message is delivered only between an `Authenticated` this thread
+/// forwarded and the next `Disconnected`, so frames of a rejected
+/// authentication never reach `message`. Whether a `message` callback is
+/// registered is checked for each message: if one is, it gets the message;
+/// otherwise the message waits in `handoff` for a `messages()` iterator.
+fn spawn_stream_reader(
     name: &str,
-    events: EventReceiver,
+    stream: Arc<marketdata_core::StreamReceiver>,
     callbacks: Arc<CallbackRegistry>,
+    handoff: Arc<Handoff>,
+    stop: Arc<AtomicBool>,
     test_panic: Option<String>,
 ) -> PyResult<std::thread::JoinHandle<()>> {
-    std::thread::Builder::new()
-        .name(name.to_string())
-        .spawn(move || {
-            let run = || loop {
-                let event = {
-                    let rx = events.blocking_lock();
-                    rx.recv()
-                };
-                match event {
-                    Ok(event) => {
-                        inject_test_panic(test_panic.as_deref(), "ws_events");
-                        Python::attach(|py| forward_event(py, &callbacks, event))
-                    }
-                    Err(_) => break, // Channel closed
-                }
-            };
-            // Later events are lost, but the panic is not silent (#25).
-            if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
-                report_thread_panic(&callbacks, "event", &*payload);
-            }
-        })
-        .map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "Failed to spawn WebSocket event thread: {e}"
-            ))
-        })
-}
+    use marketdata_core::websocket::{ConnectionEvent, StreamItem};
 
-/// Start the thread that hands received messages to the `message`
-/// callbacks until `stop_flag` is set or the receiver closes.
-fn spawn_message_thread(
-    name: &str,
-    receiver: Arc<marketdata_core::MessageReceiver>,
-    callbacks: Arc<CallbackRegistry>,
-    stop_flag: Arc<AtomicBool>,
-    test_panic: Option<String>,
-) -> std::thread::JoinHandle<()> {
-    stop_flag.store(false, Ordering::SeqCst);
     std::thread::Builder::new()
         .name(name.to_string())
         .spawn(move || {
+            // The kind of item being handled, to name the thread in a panic
+            // report (#25).
+            let handling = std::cell::Cell::new("event");
             let run = || {
-                while !stop_flag.load(Ordering::SeqCst) {
-                    match receiver.receive_timeout(Duration::from_millis(100)) {
-                        Ok(Some(msg)) => {
+                let mut authenticated = false;
+                while let Ok(item) = stream.receive() {
+                    match item {
+                        StreamItem::Event(event) => {
+                            handling.set("event");
+                            inject_test_panic(test_panic.as_deref(), "ws_events");
+                            match event {
+                                ConnectionEvent::Authenticated { .. } => authenticated = true,
+                                ConnectionEvent::Unauthenticated { .. }
+                                | ConnectionEvent::Disconnected { .. } => authenticated = false,
+                                _ => {}
+                            }
+                            Python::attach(|py| forward_event(py, &callbacks, event));
+                        }
+                        StreamItem::Message(msg) if authenticated => {
+                            handling.set("message");
                             inject_test_panic(test_panic.as_deref(), "ws_messages");
+                            if callbacks.count(crate::callback::EventType::Message) == 0 {
+                                handoff.push(msg, &stop);
+                                continue;
+                            }
                             Python::attach(|py| {
                                 if let Ok(dict) = message_to_dict(py, &msg) {
                                     let args = pyo3::types::PyTuple::new(py, [dict.into_any()])
@@ -834,17 +833,23 @@ fn spawn_message_thread(
                                 }
                             });
                         }
-                        Ok(None) => {}
-                        Err(_) => break, // Channel closed
+                        _ => {}
                     }
                 }
             };
-            // Later messages are lost, but the panic is not silent (#25).
-            if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
-                report_thread_panic(&callbacks, "message", &*payload);
+            // Later items are lost, but the panic is not silent (#25).
+            let result = std::panic::catch_unwind(AssertUnwindSafe(run));
+            // Iterators end once they have read what is queued.
+            handoff.close();
+            if let Err(payload) = result {
+                report_thread_panic(&callbacks, handling.get(), &*payload);
             }
         })
-        .unwrap_or_else(|e| panic!("failed to spawn {name} thread: {e}"))
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to spawn WebSocket stream reader thread: {e}"
+            ))
+        })
 }
 
 /// Error code reported for a panicked WebSocket thread (#25).
@@ -917,24 +922,24 @@ fn forward_event(
     }
 }
 
-/// Wait for the event thread with the GIL released, so every event core
-/// queued before the channel closed has reached its callback (#54).
+/// Wait for the stream reader with the GIL released, so every event core
+/// queued before the stream closed has reached its callback (#54).
 ///
 /// Call only after the core client is dropped, or the thread never ends. The
-/// channel closes once the last `Arc` of the client goes, so this also waits
+/// stream closes once the last `Arc` of the client goes, so this also waits
 /// for calls still in flight on the same client from other threads.
-fn join_event_thread(py: Python<'_>, handle: std::thread::JoinHandle<()>) {
+fn join_reader_thread(py: Python<'_>, handle: std::thread::JoinHandle<()>) {
     py.detach(move || {
         let _ = handle.join();
     });
 }
 
-/// [`join_event_thread`] on the thread stored by `connect()`.
+/// [`join_reader_thread`] on the thread stored by `connect()`.
 ///
-/// A callback that disconnects runs on the event thread and cannot wait for
+/// A callback that disconnects runs on the stream reader and cannot wait for
 /// itself, so it puts the handle back: the `disconnect()` whose close fired
 /// that callback still finds it and waits for the remaining callbacks.
-fn join_stored_event_thread(py: Python<'_>, slot: &Mutex<Option<std::thread::JoinHandle<()>>>) {
+fn join_stored_reader_thread(py: Python<'_>, slot: &Mutex<Option<std::thread::JoinHandle<()>>>) {
     let Some(handle) = take_thread(slot) else { return };
     if handle.thread().id() == std::thread::current().id() {
         if let Ok(mut guard) = slot.lock() {
@@ -942,13 +947,13 @@ fn join_stored_event_thread(py: Python<'_>, slot: &Mutex<Option<std::thread::Joi
         }
         return;
     }
-    join_event_thread(py, handle);
+    join_reader_thread(py, handle);
 }
 
-/// Async counterpart of [`join_event_thread`]: joins on the blocking pool so
+/// Async counterpart of [`join_reader_thread`]: joins on the blocking pool so
 /// the awaiting task does not stall a runtime worker. The awaiting task never
-/// runs on the event thread, so no self-join check is needed.
-async fn join_event_thread_async(handle: Option<std::thread::JoinHandle<()>>) {
+/// runs on the stream reader, so no self-join check is needed.
+async fn join_reader_thread_async(handle: Option<std::thread::JoinHandle<()>>) {
     let Some(handle) = handle else { return };
     let _ = tokio::task::spawn_blocking(move || handle.join()).await;
 }
@@ -964,8 +969,9 @@ fn take_thread(
 /// Access via `ws.stock`
 ///
 /// Supports both iterator-based and callback-based message consumption.
-/// When message callbacks are registered before connect(), a background
-/// thread automatically dispatches messages to the callbacks.
+/// A background thread delivers the connection's events and messages in
+/// order: each message goes to the `message` callbacks if any are registered
+/// when it arrives, otherwise to `messages()` iterators.
 #[pyclass]
 pub struct StockWebSocketClient {
     api_key: String,
@@ -980,9 +986,7 @@ pub struct StockWebSocketClient {
     state: Arc<Mutex<Option<WebSocketState>>>,
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
     // Background thread control
-    message_thread_stop: Arc<AtomicBool>,
-    message_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
-    event_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl StockWebSocketClient {
@@ -1006,9 +1010,7 @@ impl StockWebSocketClient {
             callbacks: Arc::new(CallbackRegistry::new()),
             state: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(None)),
-            message_thread_stop: Arc::new(AtomicBool::new(false)),
-            message_thread_handle: Arc::new(Mutex::new(None)),
-            event_thread_handle: Arc::new(Mutex::new(None)),
+            reader_thread_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1045,33 +1047,6 @@ impl StockWebSocketClient {
         Ok(())
     }
 
-    /// Check if message callbacks are registered
-    fn has_message_callbacks(&self) -> bool {
-        self.callbacks.count(crate::callback::EventType::Message) > 0
-    }
-
-    /// Start background message dispatch thread
-    fn start_message_thread(
-        &self,
-        receiver: Arc<marketdata_core::MessageReceiver>,
-        test_panic: Option<String>,
-    ) {
-        let handle = spawn_message_thread(
-            "stock_ws_messages",
-            receiver,
-            Arc::clone(&self.callbacks),
-            Arc::clone(&self.message_thread_stop),
-            test_panic,
-        );
-        if let Ok(mut guard) = self.message_thread_handle.lock() {
-            *guard = Some(handle);
-        }
-    }
-
-    /// Stop background message dispatch thread
-    fn stop_message_thread(&self, py: Python<'_>) {
-        stop_message_thread(py, &self.message_thread_stop, &self.message_thread_handle);
-    }
 }
 
 #[pymethods]
@@ -1111,8 +1086,9 @@ impl StockWebSocketClient {
 
     /// Connect to WebSocket server
     ///
-    /// If message callbacks are registered before connect(), a background
-    /// thread will automatically dispatch incoming messages to the callbacks.
+    /// A background thread delivers the connection's events and messages in
+    /// order: each message goes to the `message` callbacks if any are
+    /// registered when it arrives, otherwise to `messages()` iterators.
     ///
     /// Raises:
     ///     MarketDataError: If connection fails
@@ -1125,17 +1101,22 @@ impl StockWebSocketClient {
 
         // Create WebSocket client with full config
         let config = self.build_config();
+        let capacity = handoff_capacity(&config);
         let ws_client = marketdata_core::aio::WebSocketClient::with_full_config(
             config,
             self.reconnect_config.to_core(),
             self.health_check_config.to_core(),
         );
 
-        let event_thread = spawn_event_thread(
-            "stock_ws_events",
-            Arc::clone(ws_client.state_events()),
+        let handoff = Arc::new(Handoff::new(capacity));
+        let stop = Arc::new(AtomicBool::new(false));
+        let reader_thread = spawn_stream_reader(
+            "stock_ws_stream",
+            ws_client.stream_receiver(),
             Arc::clone(&self.callbacks),
-            test_panic.clone(),
+            Arc::clone(&handoff),
+            Arc::clone(&stop),
+            test_panic,
         )?;
 
         let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
@@ -1144,53 +1125,42 @@ impl StockWebSocketClient {
 
         // Connect with the GIL released: the handshake and auth ack may come
         // from a server that needs this interpreter to run (#39).
-        let (ws_client, receiver, result) = py.detach(move || {
-            // `messages()` needs no runtime context since #36.
-            let receiver = ws_client.messages();
+        let (ws_client, result) = py.detach(move || {
             let result = runtime.block_on(ws_client.connect());
-            (ws_client, receiver, result)
+            (ws_client, result)
         });
 
         if let Err(e) = result {
-            // Dropping the client closes the event channel; the thread first
-            // delivers `unauthenticated` / `error`, so they fire before we raise.
-            drop(receiver);
+            // Dropping the client closes the stream; the reader first delivers
+            // `unauthenticated` / `error`, so they fire before we raise.
             drop(ws_client);
-            join_event_thread(py, event_thread);
+            join_reader_thread(py, reader_thread);
             return Err(errors::to_py_err(e));
         }
 
-        let receiver_for_thread = Arc::clone(&receiver);
         *self.state.lock().map_err(lock_err)? = Some(WebSocketState {
             inner: Arc::new(ws_client),
-            receiver,
+            handoff,
+            stop,
         });
-        *self.event_thread_handle.lock().map_err(lock_err)? = Some(event_thread);
-
-        // Start background message dispatch thread if callbacks registered.
-        // Without this, raw server messages (including authenticated acks
-        // and subscription events) never reach the `on("message", ...)`
-        // callback — the receiver just sits full.
-        if self.has_message_callbacks() {
-            self.start_message_thread(receiver_for_thread, test_panic);
-        }
+        *self.reader_thread_handle.lock().map_err(lock_err)? = Some(reader_thread);
         Ok(())
     }
 
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
-        // Stop background message dispatch thread first.
-        self.stop_message_thread(py);
-
         let state = self.state.lock().map_err(lock_err)?.take();
 
         if let Some(state) = state {
+            // Messages before `Disconnected` still reach the callbacks, but
+            // the reader no longer waits for an iterator to make room.
+            state.stop.store(true, Ordering::SeqCst);
             // Take ownership of the runtime so dropping it aborts every
             // spawned task (dispatch, writer, health check). Without this,
             // those tasks keep their Arc<WebSocketClient> clones alive, the
-            // event channel never closes, and the event listener thread
-            // blocks forever on recv() — preventing Python from shutting down.
+            // stream never closes, and the stream reader blocks forever on
+            // receive() — preventing Python from shutting down.
             let runtime = self.runtime.lock().map_err(lock_err)?.take();
 
             if let Some(rt) = runtime {
@@ -1202,23 +1172,23 @@ impl StockWebSocketClient {
                     // `rt` drops first → all spawned tasks aborted and futures
                     // dropped, releasing every Arc<WebSocketClient> clone they
                     // held. `state` drops next → core's WebSocketClient drops →
-                    // event_tx drops → the event listener thread sees Err on
-                    // recv() and exits cleanly.
+                    // its stream closes → the stream reader drains it and
+                    // exits cleanly.
                     drop(rt);
                     drop(state);
                 });
             }
 
             // Note: do NOT manually invoke_disconnect here. Core's
-            // disconnect() emits a ConnectionEvent::Disconnected on the
-            // event channel, and the event listener thread dispatches it
-            // to the user callback. Calling it explicitly fires the
+            // disconnect() emits a ConnectionEvent::Disconnected on its
+            // stream, and the stream reader dispatches it to the user
+            // callback. Calling it explicitly fires the
             // callback twice.
         }
 
-        // The client is gone, so the event thread drains and exits: the
+        // The client is gone, so the stream reader drains and exits: the
         // `disconnect` callback has fired by the time this returns (#54).
-        join_stored_event_thread(py, &self.event_thread_handle);
+        join_stored_reader_thread(py, &self.reader_thread_handle);
 
         Ok(())
     }
@@ -1384,10 +1354,15 @@ impl StockWebSocketClient {
     ///         print(msg)
     ///     ```
     ///
-    /// Note: The iterator blocks waiting for messages. Use timeout parameter
-    /// to control blocking behavior.
+    /// Iteration yields messages only: it waits while none arrive and stops
+    /// once the connection is gone. `timeout_ms` is deprecated and ignored.
     #[pyo3(signature = (timeout_ms=None))]
-    pub fn messages(&self, timeout_ms: Option<u64>) -> PyResult<crate::iterator::MessageIterator> {
+    pub fn messages(
+        &self,
+        py: Python<'_>,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<crate::iterator::MessageIterator> {
+        warn_timeout_ms_deprecated(py, timeout_ms)?;
         let state_guard = self.state.lock().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
         })?;
@@ -1396,10 +1371,7 @@ impl StockWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
         })?;
 
-        let receiver = Arc::clone(&state.receiver);
-        let timeout = timeout_ms.map(Duration::from_millis);
-
-        Ok(crate::iterator::MessageIterator::new(receiver, timeout))
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff)))
     }
 
     /// Get the locally cached list of active subscription keys.
@@ -1480,10 +1452,7 @@ impl StockWebSocketClient {
         let health_check_config = self.health_check_config.to_core();
         let callbacks = Arc::clone(&self.callbacks);
         let state_arc = Arc::clone(&self.state);
-        let has_message_callbacks = self.has_message_callbacks();
-        let message_thread_stop = Arc::clone(&self.message_thread_stop);
-        let message_thread_handle = Arc::clone(&self.message_thread_handle);
-        let event_thread_handle = Arc::clone(&self.event_thread_handle);
+        let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
         let test_panic = test_panic_site();
 
         future_into_py(py, async move {
@@ -1496,60 +1465,45 @@ impl StockWebSocketClient {
                 futopt_version,
             )
             .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
+            let capacity = handoff_capacity(&config);
             let ws_client = marketdata_core::aio::WebSocketClient::with_full_config(
                 config,
                 reconnect_config,
                 health_check_config,
             );
 
-            let event_thread = spawn_event_thread(
-                "stock_ws_events",
-                Arc::clone(ws_client.state_events()),
+            let handoff = Arc::new(Handoff::new(capacity));
+            let stop = Arc::new(AtomicBool::new(false));
+            let reader_thread = spawn_stream_reader(
+                "stock_ws_stream",
+                ws_client.stream_receiver(),
                 Arc::clone(&callbacks),
-                test_panic.clone(),
+                Arc::clone(&handoff),
+                Arc::clone(&stop),
+                test_panic,
             )?;
-
-            // Get message receiver before connect
-            let receiver = ws_client.messages();
 
             // Connect without holding GIL
             if let Err(e) = ws_client.connect().await {
                 // See `connect`: callbacks for the failure fire before we raise.
-                drop(receiver);
                 drop(ws_client);
-                join_event_thread_async(Some(event_thread)).await;
+                join_reader_thread_async(Some(reader_thread)).await;
                 return Err(crate::errors::to_py_err(e));
             }
-
-            // Clone receiver for potential background thread
-            let receiver_for_thread = Arc::clone(&receiver);
 
             // Store state
             let state = WebSocketState {
                 inner: Arc::new(ws_client),
-                receiver,
+                handoff,
+                stop,
             };
 
             let mut state_guard = state_arc.lock()
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e)))?;
             *state_guard = Some(state);
             drop(state_guard);
-            if let Ok(mut guard) = event_thread_handle.lock() {
-                *guard = Some(event_thread);
-            }
-
-            // Start background message thread if callbacks registered
-            if has_message_callbacks {
-                let handle = spawn_message_thread(
-                    "stock_ws_messages",
-                    receiver_for_thread,
-                    Arc::clone(&callbacks),
-                    message_thread_stop,
-                    test_panic,
-                );
-                if let Ok(mut guard) = message_thread_handle.lock() {
-                    *guard = Some(handle);
-                }
+            if let Ok(mut guard) = reader_thread_handle.lock() {
+                *guard = Some(reader_thread);
             }
 
             Ok(())
@@ -1565,10 +1519,8 @@ impl StockWebSocketClient {
     ///     await ws.stock.disconnect_async()
     ///     ```
     pub fn disconnect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.stop_message_thread(py);
-
         let state_arc = Arc::clone(&self.state);
-        let event_thread_handle = Arc::clone(&self.event_thread_handle);
+        let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
 
         future_into_py(py, async move {
             let state_opt = {
@@ -1578,20 +1530,22 @@ impl StockWebSocketClient {
             };
 
             if let Some(state) = state_opt {
+                // See `disconnect`.
+                state.stop.store(true, Ordering::SeqCst);
                 let _ = state.inner.disconnect().await;
                 // Note: do NOT manually invoke_disconnect — core's disconnect()
-                // emits ConnectionEvent::Disconnected on the event channel and
-                // the event listener thread fires the user callback.
+                // emits ConnectionEvent::Disconnected on its stream and the
+                // stream reader fires the user callback.
                 //
                 // Nothing else to release: this path runs on
                 // pyo3-async-runtimes' runtime, not `self.runtime`, and
                 // core's disconnect() has already stopped the dispatch and
-                // writer tasks, so dropping the client closes the event
-                // channel (#54).
+                // writer tasks, so dropping the client closes its stream
+                // (#54).
                 drop(state);
             }
 
-            join_event_thread_async(take_thread(&event_thread_handle)).await;
+            join_reader_thread_async(take_thread(&reader_thread_handle)).await;
 
             Ok(())
         })
@@ -1715,9 +1669,7 @@ pub struct FutOptWebSocketClient {
     callbacks: Arc<CallbackRegistry>,
     state: Arc<Mutex<Option<WebSocketState>>>,
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
-    message_thread_stop: Arc<AtomicBool>,
-    message_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
-    event_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl FutOptWebSocketClient {
@@ -1741,35 +1693,8 @@ impl FutOptWebSocketClient {
             callbacks: Arc::new(CallbackRegistry::new()),
             state: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(None)),
-            message_thread_stop: Arc::new(AtomicBool::new(false)),
-            message_thread_handle: Arc::new(Mutex::new(None)),
-            event_thread_handle: Arc::new(Mutex::new(None)),
+            reader_thread_handle: Arc::new(Mutex::new(None)),
         }
-    }
-
-    fn has_message_callbacks(&self) -> bool {
-        self.callbacks.count(crate::callback::EventType::Message) > 0
-    }
-
-    fn start_message_thread(
-        &self,
-        receiver: Arc<marketdata_core::MessageReceiver>,
-        test_panic: Option<String>,
-    ) {
-        let handle = spawn_message_thread(
-            "futopt_ws_messages",
-            receiver,
-            Arc::clone(&self.callbacks),
-            Arc::clone(&self.message_thread_stop),
-            test_panic,
-        );
-        if let Ok(mut guard) = self.message_thread_handle.lock() {
-            *guard = Some(handle);
-        }
-    }
-
-    fn stop_message_thread(&self, py: Python<'_>) {
-        stop_message_thread(py, &self.message_thread_stop, &self.message_thread_handle);
     }
 
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
@@ -1845,17 +1770,22 @@ impl FutOptWebSocketClient {
 
         // Create WebSocket client for FutOpt endpoint with full config
         let config = self.build_config();
+        let capacity = handoff_capacity(&config);
         let ws_client = marketdata_core::aio::WebSocketClient::with_full_config(
             config,
             self.reconnect_config.to_core(),
             self.health_check_config.to_core(),
         );
 
-        let event_thread = spawn_event_thread(
-            "futopt_ws_events",
-            Arc::clone(ws_client.state_events()),
+        let handoff = Arc::new(Handoff::new(capacity));
+        let stop = Arc::new(AtomicBool::new(false));
+        let reader_thread = spawn_stream_reader(
+            "futopt_ws_stream",
+            ws_client.stream_receiver(),
             Arc::clone(&self.callbacks),
-            test_panic.clone(),
+            Arc::clone(&handoff),
+            Arc::clone(&stop),
+            test_panic,
         )?;
 
         let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
@@ -1864,51 +1794,40 @@ impl FutOptWebSocketClient {
 
         // Connect with the GIL released: the handshake and auth ack may come
         // from a server that needs this interpreter to run (#39).
-        let (ws_client, receiver, result) = py.detach(move || {
-            // `messages()` needs no runtime context since #36.
-            let receiver = ws_client.messages();
+        let (ws_client, result) = py.detach(move || {
             let result = runtime.block_on(ws_client.connect());
-            (ws_client, receiver, result)
+            (ws_client, result)
         });
 
         if let Err(e) = result {
-            // Dropping the client closes the event channel; the thread first
-            // delivers `unauthenticated` / `error`, so they fire before we raise.
-            drop(receiver);
+            // Dropping the client closes the stream; the reader first delivers
+            // `unauthenticated` / `error`, so they fire before we raise.
             drop(ws_client);
-            join_event_thread(py, event_thread);
+            join_reader_thread(py, reader_thread);
             return Err(errors::to_py_err(e));
         }
 
-        let receiver_for_thread = Arc::clone(&receiver);
         *self.state.lock().map_err(lock_err)? = Some(WebSocketState {
             inner: Arc::new(ws_client),
-            receiver,
+            handoff,
+            stop,
         });
-        *self.event_thread_handle.lock().map_err(lock_err)? = Some(event_thread);
-
-        // Start background message dispatch thread if callbacks registered.
-        // Without this, raw server messages (including authenticated acks
-        // and subscription events) never reach the `on("message", ...)`
-        // callback — the receiver just sits full.
-        if self.has_message_callbacks() {
-            self.start_message_thread(receiver_for_thread, test_panic);
-        }
+        *self.reader_thread_handle.lock().map_err(lock_err)? = Some(reader_thread);
         Ok(())
     }
 
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
-        // Stop background message dispatch thread first.
-        self.stop_message_thread(py);
-
         let state = self.state.lock().map_err(lock_err)?.take();
 
         if let Some(state) = state {
+            // Messages before `Disconnected` still reach the callbacks, but
+            // the reader no longer waits for an iterator to make room.
+            state.stop.store(true, Ordering::SeqCst);
             // Take ownership of the runtime — see StockWebSocketClient::disconnect
             // for the rationale (forces all spawned tasks to drop their
-            // Arc<WebSocketClient> clones so the event channel can close).
+            // Arc<WebSocketClient> clones so the stream can close).
             let runtime = self.runtime.lock().map_err(lock_err)?.take();
 
             if let Some(rt) = runtime {
@@ -1922,13 +1841,13 @@ impl FutOptWebSocketClient {
             }
 
             // Note: do NOT manually invoke_disconnect here. Core's
-            // disconnect() emits ConnectionEvent::Disconnected and the event
-            // listener thread fires the callback. Manual invocation would
+            // disconnect() emits ConnectionEvent::Disconnected and the stream
+            // reader fires the callback. Manual invocation would
             // double-fire.
         }
 
         // See StockWebSocketClient::disconnect (#54).
-        join_stored_event_thread(py, &self.event_thread_handle);
+        join_stored_reader_thread(py, &self.reader_thread_handle);
 
         Ok(())
     }
@@ -2076,8 +1995,16 @@ impl FutOptWebSocketClient {
     ///     for msg in ws.futopt.messages():
     ///         print(msg)
     ///     ```
+    ///
+    /// Iteration yields messages only: it waits while none arrive and stops
+    /// once the connection is gone. `timeout_ms` is deprecated and ignored.
     #[pyo3(signature = (timeout_ms=None))]
-    pub fn messages(&self, timeout_ms: Option<u64>) -> PyResult<crate::iterator::MessageIterator> {
+    pub fn messages(
+        &self,
+        py: Python<'_>,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<crate::iterator::MessageIterator> {
+        warn_timeout_ms_deprecated(py, timeout_ms)?;
         let state_guard = self.state.lock().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
         })?;
@@ -2086,10 +2013,7 @@ impl FutOptWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
         })?;
 
-        let receiver = Arc::clone(&state.receiver);
-        let timeout = timeout_ms.map(Duration::from_millis);
-
-        Ok(crate::iterator::MessageIterator::new(receiver, timeout))
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff)))
     }
 
     /// Get the locally cached list of active subscription keys.
