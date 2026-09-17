@@ -391,7 +391,7 @@ catch (MarketDataException ex)
 | 1002 | DeserializationError | JSON parsing failed |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Configuration error |
-| 1005 | InvalidParameter | Invalid or missing parameter |
+| 1005 | InvalidParameter | Invalid or missing parameter (including an unknown WebSocket channel) |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
