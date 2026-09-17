@@ -3,7 +3,7 @@
 use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
 use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{replay_subscriptions, tls_connector_for, try_reconnect};
-use crate::websocket::aio::writer::run_writer_task;
+use crate::websocket::aio::writer::{spawn_writer, WriteFailure};
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
 use crate::websocket::protocol::{
@@ -19,7 +19,7 @@ use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 use tokio_tungstenite::connect_async_tls_with_config;
@@ -477,7 +477,7 @@ impl WebSocketClient {
 
                 // Spawn the writer task and install its sender. All
                 // subsequent outbound messages flow through this channel.
-                self.start_writer_task().await;
+                let write_failed = self.start_writer_task().await;
 
                 {
                     let mut state = write_state(&self.state);
@@ -491,7 +491,7 @@ impl WebSocketClient {
                 // Spawn dispatch task to handle incoming messages (uses read half).
                 // Liveness detection is wrapped inside dispatch_messages itself
                 // (read-site `tokio::time::timeout`); no separate task needed.
-                self.spawn_dispatch_task(ws_read).await;
+                self.spawn_dispatch_task(ws_read, write_failed).await;
 
                 Ok(())
             }
@@ -997,7 +997,11 @@ impl WebSocketClient {
     /// Takes ownership of the read half of the WebSocket stream for message dispatch.
     /// When the connection drops, triggers auto-reconnect if configured. Uses a loop
     /// (not recursion) to handle repeated reconnections within a single spawned task.
-    async fn spawn_dispatch_task(&self, ws_read: WsStream) {
+    async fn spawn_dispatch_task(
+        &self,
+        ws_read: WsStream,
+        write_failed: oneshot::Receiver<WriteFailure>,
+    ) {
         let stream = self.stream.clone();
 
         // Resolve heartbeat_timeout once: None means liveness disabled.
@@ -1020,6 +1024,7 @@ impl WebSocketClient {
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
             let mut current_ws_read = ws_read;
+            let mut current_write_failed = write_failed;
             loop {
                 let close_code = dispatch_messages(
                     current_ws_read,
@@ -1029,6 +1034,7 @@ impl WebSocketClient {
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&reconnection),
                     Arc::clone(&state),
+                    current_write_failed,
                 )
                 .await;
 
@@ -1059,8 +1065,9 @@ impl WebSocketClient {
                 )
                 .await
                 {
-                    Some(ws_read) => {
+                    Some((ws_read, write_failed)) => {
                         current_ws_read = ws_read;
+                        current_write_failed = write_failed;
                         // Loop back to dispatch with the new connection
                     }
                     None => {
@@ -1077,26 +1084,24 @@ impl WebSocketClient {
 
     /// Internal: Spawn the writer task that drains the outbound channel into
     /// the WebSocket sink. Also installs the new `write_tx` sender into the
-    /// shared slot. Call after `ws_sink` has been populated.
-    async fn start_writer_task(&self) {
-        // Aborts any previous writer task. Channel buffer 64 is generous for a
-        // ping-every-30s + occasional sub/unsub workload while staying small
-        // enough to surface backpressure if the sink stalls.
+    /// shared slot. Call after `ws_sink` has been populated. Returns the
+    /// receiver of the writer's failed write, for the dispatch loop.
+    async fn start_writer_task(&self) -> oneshot::Receiver<WriteFailure> {
+        // Aborts any previous writer task.
         if let Some(prev) = self.writer_handle.lock().await.take() {
             prev.abort();
         }
 
-        let (tx, rx) = tokio_mpsc::channel::<String>(64);
+        let (tx, handle, write_failed) =
+            spawn_writer(Arc::clone(&self.ws_sink), self.stream.clone());
         {
             let mut guard = self.write_tx.lock().await;
             *guard = Some(tx);
         }
 
-        let ws_sink = Arc::clone(&self.ws_sink);
-        let handle = tokio::spawn(run_writer_task(rx, ws_sink, self.stream.clone()));
-
         let mut guard = self.writer_handle.lock().await;
         *guard = Some(handle);
+        write_failed
     }
 
     /// Internal: Push a JSON string onto the outbound write channel. Returns
@@ -2055,5 +2060,285 @@ mod disconnect_tests {
         } else {
             panic!("Expected Closed state");
         }
+    }
+}
+
+/// A failed write ends the connection like a failed read (#97).
+#[cfg(test)]
+mod write_failure_tests {
+    use super::*;
+    use crate::websocket::channels::StockSubscription;
+    use crate::websocket::{DisconnectIntent, StreamItem};
+    use crate::AuthRequest;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::tungstenite::Message;
+
+    const WAIT: Duration = Duration::from_secs(5);
+
+    /// Server that authenticates one client, then neither reads nor closes:
+    /// the client's read half keeps waiting whatever happens to its writes.
+    async fn silent_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+            ws.next().await; // auth
+            ws.send(Message::Text(r#"{"event":"authenticated"}"#.into()))
+                .await
+                .expect("authenticated");
+            let _held_open = ws;
+            std::future::pending::<()>().await;
+        });
+        url
+    }
+
+    async fn connected_client(reconnection: ReconnectionConfig) -> WebSocketClient {
+        let url = silent_server().await;
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::with_reconnection_config(config, reconnection);
+        client.connect().await.expect("connect");
+        client
+    }
+
+    /// Reconnects, but not before the test has finished.
+    fn slow_reconnect() -> ReconnectionConfig {
+        ReconnectionConfig::new(5, Duration::from_secs(30), Duration::from_secs(30)).expect("valid")
+    }
+
+    /// Close the write half locally, so the next write fails while the read
+    /// half has not noticed anything.
+    async fn break_writes(client: &WebSocketClient) {
+        let mut sink = client.ws_sink.lock().await;
+        sink.as_mut().expect("sink").close().await.expect("close sink");
+    }
+
+    async fn write(client: &WebSocketClient) {
+        client
+            .subscribe(StockSubscription::new(Channel::Trades, "2330"))
+            .await
+            .expect("queued");
+    }
+
+    /// Next event, with the state read the moment it arrives.
+    fn next_event(client: &WebSocketClient) -> Option<(ConnectionEvent, ConnectionState)> {
+        let rx = client.stream_receiver();
+        loop {
+            match rx.receive_timeout(WAIT).expect("receive") {
+                Some(StreamItem::Event(event)) => return Some((event, client.state())),
+                Some(StreamItem::Message(_)) => continue,
+                None => return None,
+            }
+        }
+    }
+
+    /// Nothing but messages is queued.
+    fn assert_no_event(client: &WebSocketClient) {
+        while let Some(item) = client.stream_receiver().try_receive() {
+            assert!(matches!(item, StreamItem::Message(_)), "{item:?}");
+        }
+    }
+
+    fn skip_handshake(client: &WebSocketClient) {
+        for _ in 0..3 {
+            let (event, _) = next_event(client).expect("handshake event");
+            assert!(
+                matches!(
+                    event,
+                    ConnectionEvent::Connecting
+                        | ConnectionEvent::Connected
+                        | ConnectionEvent::Authenticated { .. }
+                ),
+                "{event:?}"
+            );
+        }
+    }
+
+    fn expect_write_error(client: &WebSocketClient) {
+        match next_event(client) {
+            Some((ConnectionEvent::Error(info), _)) => {
+                assert!(info.message.starts_with("WebSocket write error: "), "{info:?}");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn failed_write_without_reconnect_closes_the_connection() {
+        let client = connected_client(ReconnectionConfig::disabled()).await;
+        skip_handshake(&client);
+
+        break_writes(&client).await;
+        write(&client).await;
+
+        expect_write_error(&client);
+        let (event, state) = next_event(&client).expect("Disconnected");
+        let ConnectionEvent::Disconnected { code, reason, intent, will_reconnect } = event else {
+            panic!("expected Disconnected, got {event:?}");
+        };
+        assert_eq!((code, intent, will_reconnect), (None, DisconnectIntent::Network, false));
+        assert!(reason.starts_with("WebSocket write error: "), "{reason}");
+        let closed = ConnectionState::Closed { code, reason, intent };
+        assert_eq!(state, closed, "state matches the report when it arrives");
+
+        // A later close keeps the reported state and reports nothing (#93).
+        client.disconnect().await.expect("disconnect");
+        client.force_close().await.expect("force_close");
+        assert_eq!(client.state(), closed);
+        assert_no_event(&client);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn failed_write_with_reconnect_leaves_connected_and_reconnects() {
+        let client = connected_client(slow_reconnect()).await;
+        skip_handshake(&client);
+
+        break_writes(&client).await;
+        write(&client).await;
+
+        expect_write_error(&client);
+        let (event, state) = next_event(&client).expect("Disconnected");
+        assert!(
+            matches!(
+                event,
+                ConnectionEvent::Disconnected {
+                    code: None,
+                    intent: DisconnectIntent::Network,
+                    will_reconnect: true,
+                    ..
+                }
+            ),
+            "{event:?}"
+        );
+        assert_ne!(state, ConnectionState::Connected);
+        let (event, _) = next_event(&client).expect("Reconnecting");
+        assert!(matches!(event, ConnectionEvent::Reconnecting { attempt: 1 }), "{event:?}");
+
+        client.force_close().await.expect("force_close");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn failed_write_during_shutdown_is_reported_as_the_client_close() {
+        let client = connected_client(ReconnectionConfig::disabled()).await;
+        skip_handshake(&client);
+
+        client.shutdown_requested.store(true, std::sync::atomic::Ordering::SeqCst);
+        break_writes(&client).await;
+        write(&client).await;
+        // The dispatch task takes the failure and exits without a report.
+        tokio::time::timeout(WAIT, async {
+            while client.dispatch_task_running().await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("dispatch task exits");
+        assert_no_event(&client);
+
+        client.disconnect().await.expect("disconnect");
+        let (event, _) = next_event(&client).expect("Disconnected");
+        assert!(
+            matches!(
+                event,
+                ConnectionEvent::Disconnected { intent: DisconnectIntent::Client, .. }
+            ),
+            "{event:?}"
+        );
+        assert_no_event(&client);
+    }
+
+    /// Server that authenticates one client, then sends `Close(4001, "bye")`
+    /// when `close` fires. A plain thread, so it runs while the test's
+    /// runtime thread is blocked.
+    fn closing_server() -> (String, std::sync::mpsc::Sender<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (close, close_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().expect("accept");
+            let mut ws = tungstenite::accept(tcp).expect("handshake");
+            ws.read().expect("auth");
+            ws.send(tungstenite::Message::Text(r#"{"event":"authenticated"}"#.into()))
+                .expect("authenticated");
+            let _ = close_rx.recv();
+            let frame = tungstenite::protocol::CloseFrame {
+                code: 4001.into(),
+                reason: "bye".into(),
+            };
+            let _ = ws.close(Some(frame));
+            let _ = ws.flush();
+            // Hold the socket open until the test ends.
+            let _ = close_rx.recv();
+        });
+        (url, close)
+    }
+
+    /// The server's Close already sits in the socket when the write fails:
+    /// the close is reported with its code and reason, and the reconnect
+    /// decision follows that code, not the write failure's.
+    #[tokio::test(flavor = "current_thread")]
+    async fn failed_write_does_not_hide_a_close_already_received() {
+        let (url, close) = closing_server();
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::with_reconnection_config(config, slow_reconnect());
+        client.connect().await.expect("connect");
+        skip_handshake(&client);
+
+        break_writes(&client).await;
+        close.send(()).expect("server closes");
+        // Block the only runtime thread until the Close has arrived, so the
+        // dispatch task has not seen it when the writer fails.
+        std::thread::sleep(Duration::from_millis(200));
+        write(&client).await;
+
+        let rx = client.stream_receiver();
+        let deadline = tokio::time::Instant::now() + WAIT;
+        let (event, state) = loop {
+            match rx.try_receive() {
+                Some(StreamItem::Event(event @ ConnectionEvent::Disconnected { .. })) => {
+                    break (event, client.state());
+                }
+                Some(_) => continue,
+                None => {
+                    assert!(tokio::time::Instant::now() < deadline, "no Disconnected");
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        };
+        assert_eq!(
+            event,
+            ConnectionEvent::Disconnected {
+                code: Some(4001),
+                reason: "bye".to_string(),
+                intent: DisconnectIntent::Server,
+                will_reconnect: false,
+            }
+        );
+        let closed = ConnectionState::Closed {
+            code: Some(4001),
+            reason: "bye".to_string(),
+            intent: DisconnectIntent::Server,
+        };
+        assert_eq!(state, closed);
+
+        // No reconnect follows.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_no_event(&client);
+        assert_eq!(client.state(), closed);
+        drop(close);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn failed_write_after_dispatch_stopped_is_still_reported_as_error() {
+        let client = connected_client(ReconnectionConfig::disabled()).await;
+        skip_handshake(&client);
+
+        client.stop_dispatch_task().await;
+        break_writes(&client).await;
+        write(&client).await;
+
+        expect_write_error(&client);
+        assert_eq!(client.state(), ConnectionState::Connected, "nothing to report the close");
     }
 }
