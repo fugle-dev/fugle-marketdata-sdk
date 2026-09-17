@@ -264,5 +264,35 @@ public class MarketdataUniffi {
     }
     
 
+  
+    /**
+     * Check a set of credentials the way every client constructor does.
+     *
+     * A value that is empty or only whitespace counts as not provided; exactly
+     * one of the three must remain. Wrappers that accept all three options call
+     * this and pass the value of the returned kind to the matching constructor,
+     * so the rule and the error (a `ConfigError`, code 1004) come from the core.
+     */public static CredentialKind validateCredentials(String apiKey, String bearerToken, String sdkToken) throws MarketDataException {
+            try {
+                return FfiConverterTypeCredentialKind.INSTANCE.lift(
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_func_validate_credentials(
+            FfiConverterOptionalString.INSTANCE.lower(apiKey), FfiConverterOptionalString.INSTANCE.lower(bearerToken), FfiConverterOptionalString.INSTANCE.lower(sdkToken), _status);
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
 }
 

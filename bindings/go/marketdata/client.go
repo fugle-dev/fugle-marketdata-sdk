@@ -7,7 +7,9 @@ import (
 
 // NewFugleRestClient creates a REST client with functional options.
 //
-// Requires exactly one authentication option: WithApiKey, WithBearerToken, or WithSdkToken.
+// Requires exactly one non-empty authentication option: WithApiKey,
+// WithBearerToken, or WithSdkToken. Otherwise it returns a ConfigError
+// (code 1004, see ErrorInfoOf).
 //
 // Example:
 //
@@ -24,23 +26,11 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 		}
 	}
 
-	// Validate exactly one auth method
-	authCount := 0
-	if cfg.apiKey != "" {
-		authCount++
-	}
-	if cfg.bearerToken != "" {
-		authCount++
-	}
-	if cfg.sdkToken != "" {
-		authCount++
-	}
-
-	if authCount == 0 {
-		return nil, errors.New("provide exactly one of: WithApiKey, WithBearerToken, or WithSdkToken")
-	}
-	if authCount > 1 {
-		return nil, errors.New("provide exactly one of: WithApiKey, WithBearerToken, or WithSdkToken")
+	// Core requires exactly one non-blank credential (ConfigError, code 1004)
+	// and reports which one to use.
+	kind, err := ValidateCredentials(&cfg.apiKey, &cfg.bearerToken, &cfg.sdkToken)
+	if err != nil {
+		return nil, err
 	}
 
 	// Call appropriate UniFFI constructor based on auth method.
@@ -59,10 +49,10 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 	var client *RestClient
 	var uerr error
 
-	switch {
-	case cfg.apiKey != "":
+	switch kind {
+	case CredentialKindApiKey:
 		client, uerr = NewRestClientWithApiKeyAndTls(cfg.apiKey, baseUrl, tls)
-	case cfg.bearerToken != "":
+	case CredentialKindBearerToken:
 		client, uerr = NewRestClientWithBearerTokenAndTls(cfg.bearerToken, baseUrl, tls)
 	default:
 		client, uerr = NewRestClientWithSdkTokenAndTls(cfg.sdkToken, baseUrl, tls)
@@ -77,7 +67,9 @@ func NewFugleRestClient(opts ...Option) (*RestClient, error) {
 
 // NewFugleWebSocketClient creates a WebSocket client with functional options.
 //
-// Requires exactly one authentication option: WithApiKey, WithBearerToken, or WithSdkToken.
+// Requires exactly one non-empty authentication option: WithApiKey,
+// WithBearerToken, or WithSdkToken. Otherwise it returns a ConfigError
+// (code 1004, see ErrorInfoOf).
 //
 // The listener parameter receives WebSocket events (OnConnected, OnAuthenticated, OnUnauthenticated,
 // OnMessage, OnError, OnDisconnected, OnReconnecting, OnReconnectFailed).
@@ -101,23 +93,11 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		}
 	}
 
-	// Validate exactly one auth method
-	authCount := 0
-	if cfg.apiKey != "" {
-		authCount++
-	}
-	if cfg.bearerToken != "" {
-		authCount++
-	}
-	if cfg.sdkToken != "" {
-		authCount++
-	}
-
-	if authCount == 0 {
-		return nil, errors.New("provide exactly one of: WithApiKey, WithBearerToken, or WithSdkToken")
-	}
-	if authCount > 1 {
-		return nil, errors.New("provide exactly one of: WithApiKey, WithBearerToken, or WithSdkToken")
+	// Core requires exactly one non-blank credential (ConfigError, code 1004)
+	// and reports which one to use.
+	kind, err := ValidateCredentials(&cfg.apiKey, &cfg.bearerToken, &cfg.sdkToken)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create channel-based wrapper
@@ -129,7 +109,7 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 	// For bearerToken/sdkToken support, this would need additional UniFFI constructors.
 	var client *WebSocketClient
 
-	if cfg.apiKey != "" {
+	if kind == CredentialKindApiKey {
 		var reconnectRecord *ReconnectConfigRecord
 		if cfg.reconnect != nil {
 			reconnectRecord = &ReconnectConfigRecord{

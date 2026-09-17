@@ -33,34 +33,34 @@ const (
 	MessageOverflowUnbounded
 )
 
-// WithApiKey sets API key authentication
+// WithApiKey sets API key authentication.
+//
+// An empty or whitespace-only value counts as not provided; the client
+// constructor rejects it unless another credential is given.
 func WithApiKey(key string) Option {
 	return func(cfg *clientConfig) error {
-		if key == "" {
-			return errors.New("api key cannot be empty")
-		}
 		cfg.apiKey = key
 		return nil
 	}
 }
 
-// WithBearerToken sets bearer token authentication
+// WithBearerToken sets bearer token authentication.
+//
+// An empty or whitespace-only value counts as not provided; the client
+// constructor rejects it unless another credential is given.
 func WithBearerToken(token string) Option {
 	return func(cfg *clientConfig) error {
-		if token == "" {
-			return errors.New("bearer token cannot be empty")
-		}
 		cfg.bearerToken = token
 		return nil
 	}
 }
 
-// WithSdkToken sets SDK token authentication
+// WithSdkToken sets SDK token authentication.
+//
+// An empty or whitespace-only value counts as not provided; the client
+// constructor rejects it unless another credential is given.
 func WithSdkToken(token string) Option {
 	return func(cfg *clientConfig) error {
-		if token == "" {
-			return errors.New("sdk token cannot be empty")
-		}
 		cfg.sdkToken = token
 		return nil
 	}

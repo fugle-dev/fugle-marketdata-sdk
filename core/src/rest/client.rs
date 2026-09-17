@@ -36,8 +36,9 @@ pub(crate) type HttpResponse = ureq::http::Response<ureq::Body>;
 pub struct RestClient {
     agent: ureq::Agent,
     /// Credential header, validated once at construction. `Err` holds the
-    /// message for a credential that is not a valid header value; it is
-    /// reported from the first request so construction stays infallible.
+    /// message for a blank credential or one that is not a valid header
+    /// value; it is reported from the first request so construction stays
+    /// infallible.
     auth_header: Result<(&'static str, ureq::http::HeaderValue), String>,
     base_url: String,
     /// Optional retry policy. `None` (default) means each request is
@@ -106,12 +107,18 @@ impl RestClient {
             .build();
 
         let (name, value) = auth.header();
-        let auth_header = ureq::http::HeaderValue::from_str(&value)
-            .map(|mut v| {
-                v.set_sensitive(true);
-                (name, v)
-            })
-            .map_err(|_| format!("{name} credential contains characters not allowed in an HTTP header"));
+        let auth_header = match auth.validate() {
+            Err(MarketDataError::ConfigError(message)) => Err(message),
+            Err(err) => Err(err.to_string()),
+            Ok(()) => ureq::http::HeaderValue::from_str(&value)
+                .map(|mut v| {
+                    v.set_sensitive(true);
+                    (name, v)
+                })
+                .map_err(|_| {
+                    format!("{name} credential contains characters not allowed in an HTTP header")
+                }),
+        };
 
         Ok(Self {
             agent: config.into(),

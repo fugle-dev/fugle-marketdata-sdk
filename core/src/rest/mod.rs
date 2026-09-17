@@ -7,7 +7,7 @@
 //! - Stock endpoints (intraday, historical)
 //! - FutOpt endpoints (futures and options)
 
-mod auth;
+pub(crate) mod auth;
 mod client;
 mod error;
 mod retry;

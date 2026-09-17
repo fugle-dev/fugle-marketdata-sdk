@@ -35,6 +35,15 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — credentials checked in core (#69)
+
+- `+` `Auth::from_credentials` — the one-credential, non-blank rule every
+  binding applies; the variant keeps which kind was given.
+- `+` `Auth::validate` and `AuthRequest::validate` — the same rule for a
+  credential built directly; used by `RestClient` and `connect()`.
+- `+` `From<Auth> for AuthRequest` — sends the credential in the field of its
+  kind, for the WebSocket bindings (#91).
+
 ### Unreleased — unified error spec (#81)
 
 - `+` `errors::ErrorInfo` (`#[non_exhaustive]`; `code`, `source_kind`,

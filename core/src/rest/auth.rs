@@ -29,7 +29,88 @@ impl fmt::Debug for Auth {
     }
 }
 
+/// Message for a missing, blank or ambiguous credential set.
+const CREDENTIALS_MESSAGE: &str =
+    "Provide exactly one non-empty credential: API key, bearer token, or SDK token";
+
+/// A credential that is empty or only whitespace counts as not provided.
+fn is_provided(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+/// Require exactly one provided credential among the three kinds.
+///
+/// Shared by [`Auth`] and [`AuthRequest`](crate::AuthRequest) so REST and
+/// WebSocket clients reject the same inputs with the same error.
+pub(crate) fn check_credentials(
+    api_key: Option<&str>,
+    bearer_token: Option<&str>,
+    sdk_token: Option<&str>,
+) -> Result<(), MarketDataError> {
+    let provided = [api_key, bearer_token, sdk_token]
+        .into_iter()
+        .flatten()
+        .filter(|value| is_provided(value))
+        .count();
+    if provided == 1 {
+        Ok(())
+    } else {
+        Err(MarketDataError::ConfigError(CREDENTIALS_MESSAGE.to_string()))
+    }
+}
+
 impl Auth {
+    /// Build the credential from the three optional inputs a binding exposes.
+    ///
+    /// A value that is empty or only whitespace counts as not provided;
+    /// exactly one of the three must remain. The returned variant records
+    /// which kind was given.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] when none or more than one
+    /// credential is provided.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use marketdata_core::Auth;
+    ///
+    /// let auth = Auth::from_credentials(None, Some("token".into()), Some("".into())).unwrap();
+    /// assert!(matches!(auth, Auth::BearerToken(_)));
+    /// assert!(Auth::from_credentials(Some("  ".into()), None, None).is_err());
+    /// ```
+    pub fn from_credentials(
+        api_key: Option<String>,
+        bearer_token: Option<String>,
+        sdk_token: Option<String>,
+    ) -> Result<Self, MarketDataError> {
+        check_credentials(api_key.as_deref(), bearer_token.as_deref(), sdk_token.as_deref())?;
+        let provided = |value: &Option<String>| value.as_deref().is_some_and(is_provided);
+        Ok(if provided(&api_key) {
+            Auth::ApiKey(api_key.unwrap_or_default())
+        } else if provided(&bearer_token) {
+            Auth::BearerToken(bearer_token.unwrap_or_default())
+        } else {
+            Auth::SdkToken(sdk_token.unwrap_or_default())
+        })
+    }
+
+    /// Check that the credential is not empty or only whitespace.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] for a blank credential.
+    pub fn validate(&self) -> Result<(), MarketDataError> {
+        check_credentials(Some(self.secret()), None, None)
+    }
+
+    fn secret(&self) -> &str {
+        match self {
+            Auth::ApiKey(value) | Auth::BearerToken(value) | Auth::SdkToken(value) => value,
+        }
+    }
+
     /// The HTTP header carrying this credential.
     pub(crate) fn header(&self) -> (&'static str, String) {
         match self {
@@ -43,8 +124,8 @@ impl Auth {
     ///
     /// Probes the variables `FUGLE_API_KEY`, `FUGLE_BEARER_TOKEN`, and
     /// `FUGLE_SDK_TOKEN` in that order and returns the first non-empty
-    /// match wrapped in the corresponding `Auth` variant. Empty strings are
-    /// treated as unset.
+    /// match wrapped in the corresponding `Auth` variant. Empty or
+    /// whitespace-only values are treated as unset.
     ///
     /// # Errors
     ///
@@ -69,7 +150,7 @@ impl Auth {
 
         for (name, ctor) in VARS {
             if let Ok(value) = std::env::var(name) {
-                if !value.is_empty() {
+                if is_provided(&value) {
                     return Ok(ctor(value));
                 }
             }
@@ -77,7 +158,7 @@ impl Auth {
 
         Err(MarketDataError::ConfigError(format!(
             "No authentication credentials found in environment. \
-             Set one of: {}, {}, or {}.",
+             Set one of: {}, {}, or {} to a non-empty value.",
             VARS[0].0, VARS[1].0, VARS[2].0
         )))
     }
@@ -101,6 +182,57 @@ mod tests {
             Auth::SdkToken("test_sdk_token".into()).header(),
             ("X-SDK-TOKEN", "test_sdk_token".to_string())
         );
+    }
+
+    #[test]
+    fn test_from_credentials_keeps_kind() {
+        let key = Auth::from_credentials(Some("k".into()), None, None).unwrap();
+        assert!(matches!(key, Auth::ApiKey(ref v) if v == "k"));
+        let bearer = Auth::from_credentials(None, Some("t".into()), None).unwrap();
+        assert!(matches!(bearer, Auth::BearerToken(ref v) if v == "t"));
+        let sdk = Auth::from_credentials(None, None, Some("s".into())).unwrap();
+        assert!(matches!(sdk, Auth::SdkToken(ref v) if v == "s"));
+    }
+
+    #[test]
+    fn test_from_credentials_ignores_blank_values() {
+        let auth = Auth::from_credentials(Some("".into()), Some(" \t".into()), Some("s".into()))
+            .unwrap();
+        assert!(matches!(auth, Auth::SdkToken(ref v) if v == "s"));
+    }
+
+    #[test]
+    fn test_from_credentials_rejects_none_blank_or_multiple() {
+        for (api_key, bearer_token, sdk_token) in [
+            (None, None, None),
+            (Some(""), None, None),
+            (Some("   "), None, None),
+            (None, Some("\n"), Some("")),
+            (Some("k"), Some("t"), None),
+            (Some("k"), None, Some("s")),
+        ] {
+            let err = Auth::from_credentials(
+                api_key.map(String::from),
+                bearer_token.map(String::from),
+                sdk_token.map(String::from),
+            )
+            .expect_err("credentials should be rejected");
+            assert!(matches!(err, MarketDataError::ConfigError(_)), "{err:?}");
+            assert_eq!(err.info().code, crate::error_code::CONFIG);
+            assert!(err.to_string().contains("exactly one non-empty credential"));
+        }
+    }
+
+    #[test]
+    fn test_validate_rejects_blank_credential() {
+        assert!(Auth::ApiKey("k".into()).validate().is_ok());
+        for auth in [
+            Auth::ApiKey(String::new()),
+            Auth::BearerToken("  ".into()),
+            Auth::SdkToken("\t".into()),
+        ] {
+            assert!(matches!(auth.validate(), Err(MarketDataError::ConfigError(_))));
+        }
     }
 
     #[test]
@@ -193,12 +325,13 @@ mod tests {
         let _guard = env_lock();
         clear_auth_env();
         std::env::set_var("FUGLE_API_KEY", "");
-        std::env::set_var("FUGLE_BEARER_TOKEN", "t1");
+        std::env::set_var("FUGLE_BEARER_TOKEN", "  ");
+        std::env::set_var("FUGLE_SDK_TOKEN", "s1");
 
-        let auth = Auth::from_env().expect("bearer fallback when api key empty");
+        let auth = Auth::from_env().expect("sdk fallback when others are blank");
         match auth {
-            Auth::BearerToken(v) => assert_eq!(v, "t1"),
-            other => panic!("expected BearerToken, got {:?}", other),
+            Auth::SdkToken(v) => assert_eq!(v, "s1"),
+            other => panic!("expected SdkToken, got {:?}", other),
         }
 
         clear_auth_env();

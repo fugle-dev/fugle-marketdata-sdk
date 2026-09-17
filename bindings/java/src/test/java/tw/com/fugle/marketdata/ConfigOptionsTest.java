@@ -1,5 +1,6 @@
 package tw.com.fugle.marketdata;
 
+import tw.com.fugle.marketdata.generated.ErrorSourceKind;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -82,8 +83,7 @@ public class ConfigOptionsTest {
             client.close();
         } catch (FugleException e) {
             // Verify this is NOT from auth validation
-            assertFalse(e.getMessage().contains("Provide exactly one of"),
-                "Should not be an auth validation error");
+            assertFalse(Integer.valueOf(1004).equals(e.getCode()), "Should not be an auth validation error");
         }
     }
 
@@ -99,8 +99,7 @@ public class ConfigOptionsTest {
 
             client.close();
         } catch (FugleException e) {
-            assertFalse(e.getMessage().contains("Provide exactly one of"),
-                "Should not be an auth validation error");
+            assertFalse(Integer.valueOf(1004).equals(e.getCode()), "Should not be an auth validation error");
         }
     }
 
@@ -116,40 +115,50 @@ public class ConfigOptionsTest {
 
             client.close();
         } catch (FugleException e) {
-            assertFalse(e.getMessage().contains("Provide exactly one of"),
-                "Should not be an auth validation error");
+            assertFalse(Integer.valueOf(1004).equals(e.getCode()), "Should not be an auth validation error");
         }
     }
 
     @Test
-    @DisplayName("RestClient with no auth throws FugleException with correct message")
+    @DisplayName("RestClient with no auth throws FugleException with code 1004")
     void testRestClientNoAuth() {
-        FugleException exception = assertThrows(FugleException.class, () -> {
-            FugleRestClient.builder().build();
-        });
+        NativeLibrary.assumeAvailable();
 
-        assertTrue(exception.getMessage().contains("Provide exactly one of"),
-            "Error message should indicate exactly-one-auth requirement");
-        assertTrue(exception.getMessage().contains("apiKey"),
-            "Error message should list apiKey");
-        assertTrue(exception.getMessage().contains("bearerToken"),
-            "Error message should list bearerToken");
-        assertTrue(exception.getMessage().contains("sdkToken"),
-            "Error message should list sdkToken");
+        assertCredentialsRejected(() -> FugleRestClient.builder().build());
     }
 
     @Test
-    @DisplayName("RestClient with multiple auth methods throws FugleException")
-    void testRestClientMultipleAuth() {
-        FugleException exception = assertThrows(FugleException.class, () -> {
-            FugleRestClient.builder()
-                .apiKey("test-api-key")
-                .bearerToken("test-bearer-token")
-                .build();
-        });
+    @DisplayName("RestClient with only empty or whitespace auth throws FugleException with code 1004")
+    void testRestClientBlankAuth() {
+        NativeLibrary.assumeAvailable();
 
-        assertTrue(exception.getMessage().contains("Provide exactly one of"),
-            "Error message should indicate exactly-one-auth requirement");
+        assertCredentialsRejected(() -> FugleRestClient.builder().apiKey("").build());
+        assertCredentialsRejected(() -> FugleRestClient.builder().bearerToken("   ").build());
+        assertCredentialsRejected(() -> FugleRestClient.builder().apiKey(" ").sdkToken("").build());
+    }
+
+    @Test
+    @DisplayName("RestClient ignores a blank auth next to a real one")
+    void testRestClientBlankAuthNextToRealOne() {
+        NativeLibrary.assumeAvailable();
+
+        try (FugleRestClient client = FugleRestClient.builder()
+                .apiKey("  ")
+                .sdkToken("test-sdk-token")
+                .build()) {
+            assertNotNull(client);
+        }
+    }
+
+    @Test
+    @DisplayName("RestClient with multiple auth methods throws FugleException with code 1004")
+    void testRestClientMultipleAuth() {
+        NativeLibrary.assumeAvailable();
+
+        assertCredentialsRejected(() -> FugleRestClient.builder()
+            .apiKey("test-api-key")
+            .bearerToken("test-bearer-token")
+            .build());
     }
 
     // ========== WebSocketClient Exactly-One-Auth Tests ==========
@@ -168,37 +177,29 @@ public class ConfigOptionsTest {
             // Auth validation passed, actual connection will fail (expected)
             client.close();
         } catch (FugleException e) {
-            assertFalse(e.getMessage().contains("Provide exactly one of"),
-                "Should not be an auth validation error");
+            assertFalse(Integer.valueOf(1004).equals(e.getCode()), "Should not be an auth validation error");
         }
     }
 
     @Test
-    @DisplayName("WebSocketClient with no auth throws FugleException with correct message")
+    @DisplayName("WebSocketClient with no or blank auth throws FugleException with code 1004")
     void testWebSocketNoAuth() {
-        FugleException exception = assertThrows(FugleException.class, () -> {
-            FugleWebSocketClient.builder()
-                .stock()
-                .build();
-        });
+        NativeLibrary.assumeAvailable();
 
-        assertTrue(exception.getMessage().contains("Provide exactly one of"),
-            "Error message should indicate exactly-one-auth requirement");
+        assertCredentialsRejected(() -> FugleWebSocketClient.builder().stock().build());
+        assertCredentialsRejected(() -> FugleWebSocketClient.builder().apiKey("  ").stock().build());
     }
 
     @Test
-    @DisplayName("WebSocketClient with multiple auth methods throws FugleException")
+    @DisplayName("WebSocketClient with multiple auth methods throws FugleException with code 1004")
     void testWebSocketMultipleAuth() {
-        FugleException exception = assertThrows(FugleException.class, () -> {
-            FugleWebSocketClient.builder()
-                .apiKey("test-api-key")
-                .bearerToken("test-bearer-token")
-                .stock()
-                .build();
-        });
+        NativeLibrary.assumeAvailable();
 
-        assertTrue(exception.getMessage().contains("Provide exactly one of"),
-            "Error message should indicate exactly-one-auth requirement");
+        assertCredentialsRejected(() -> FugleWebSocketClient.builder()
+            .apiKey("test-api-key")
+            .bearerToken("test-bearer-token")
+            .stock()
+            .build());
     }
 
     // ========== WebSocketClient Config Options Tests ==========
@@ -346,5 +347,14 @@ public class ConfigOptionsTest {
             FugleWebSocketClient.builder().messageBuffer(-1)
         );
         assertTrue(exception.getMessage().contains("messageBuffer"));
+    }
+
+    /** Credential errors come from core as a ConfigError (code 1004). */
+    private static void assertCredentialsRejected(org.junit.jupiter.api.function.Executable build) {
+        FugleException exception = assertThrows(FugleException.class, build);
+        assertEquals(Integer.valueOf(1004), exception.getCode());
+        assertEquals(ErrorSourceKind.CLIENT, exception.getSourceKind());
+        assertTrue(exception.getMessage().contains("exactly one non-empty credential"),
+            "Error message should indicate exactly-one-auth requirement: " + exception.getMessage());
     }
 }

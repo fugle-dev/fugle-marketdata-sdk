@@ -168,38 +168,12 @@ pub struct RestClient {
 impl RestClient {
     /// Build the client; [`RestClient::new`] turns the error into a JS one.
     fn from_options(options: RestClientOptions) -> Result<Self, BuildError> {
-        // Validate exactly one auth method (fail fast per CONTEXT.md)
-        let auth_count = [
-            options.api_key.is_some(),
-            options.bearer_token.is_some(),
-            options.sdk_token.is_some(),
-        ]
-        .iter()
-        .filter(|&&x| x)
-        .count();
-
-        if auth_count == 0 {
-            return Err(napi::Error::from_reason(
-                "Provide exactly one of: apiKey, bearerToken, sdkToken"
-            )
-            .into());
-        }
-
-        if auth_count > 1 {
-            return Err(napi::Error::from_reason(
-                "Provide exactly one of: apiKey, bearerToken, sdkToken"
-            )
-            .into());
-        }
-
-        // Build auth (safe to unwrap after validation)
-        let auth = if let Some(key) = options.api_key {
-            marketdata_core::rest::Auth::ApiKey(key)
-        } else if let Some(token) = options.bearer_token {
-            marketdata_core::rest::Auth::BearerToken(token)
-        } else {
-            marketdata_core::rest::Auth::SdkToken(options.sdk_token.unwrap())
-        };
+        // Core requires exactly one non-blank credential (ConfigError, 1004).
+        let auth = marketdata_core::Auth::from_credentials(
+            options.api_key,
+            options.bearer_token,
+            options.sdk_token,
+        )?;
 
         // Build TLS config from optional kwargs. When both are default we
         // use `with_tls(TlsConfig::default())` — same path `new(auth)` takes
@@ -1874,10 +1848,12 @@ mod tests {
         };
         let result = RestClient::from_options(options);
         assert!(result.is_err());
-        if let Err(BuildError::Napi(err)) = result {
-            assert!(err.reason.contains("exactly one"));
-        } else {
-            panic!("expected a validation error");
+        match result {
+            Err(BuildError::Core(err)) => {
+                assert_eq!(err.info().code, marketdata_core::error_code::CONFIG);
+                assert!(err.to_string().contains("exactly one non-empty credential"));
+            }
+            _ => panic!("expected a core ConfigError"),
         }
     }
 
@@ -1893,10 +1869,32 @@ mod tests {
         };
         let result = RestClient::from_options(options);
         assert!(result.is_err());
-        if let Err(BuildError::Napi(err)) = result {
-            assert!(err.reason.contains("exactly one"));
-        } else {
-            panic!("expected a validation error");
+        match result {
+            Err(BuildError::Core(err)) => {
+                assert_eq!(err.info().code, marketdata_core::error_code::CONFIG);
+                assert!(err.to_string().contains("exactly one non-empty credential"));
+            }
+            _ => panic!("expected a core ConfigError"),
+        }
+    }
+
+    #[test]
+    fn test_rest_client_blank_auth_fails() {
+        for (api_key, bearer_token) in [(Some(""), None), (None, Some("   ")), (Some(""), Some(""))] {
+            let options = RestClientOptions {
+                api_key: api_key.map(String::from),
+                bearer_token: bearer_token.map(String::from),
+                sdk_token: None,
+                base_url: None,
+                tls_root_cert_pem: None,
+                tls_accept_invalid_certs: None,
+            };
+            match RestClient::from_options(options) {
+                Err(BuildError::Core(err)) => {
+                    assert_eq!(err.info().code, marketdata_core::error_code::CONFIG)
+                }
+                _ => panic!("expected a core ConfigError"),
+            }
         }
     }
 

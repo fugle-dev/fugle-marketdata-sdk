@@ -5,7 +5,7 @@ namespace MarketdataUniffi.Tests;
 
 /// <summary>
 /// Tests for RestClientOptions and WebSocketClientOptions configuration classes.
-/// Verifies exactly-one-auth validation, options construction, and error handling.
+/// Verifies exactly-one-auth validation (from core, code 1004), options construction, and error handling.
 /// </summary>
 [TestClass]
 public class ConfigOptionsTests
@@ -44,6 +44,14 @@ public class ConfigOptionsTests
         }
     }
 
+    private static void AssertCredentialsRejected(Action create)
+    {
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException.ConfigException>(create);
+        var info = FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex);
+        Assert.AreEqual(1004, info.code); // marketdata_core::error_code::CONFIG
+        StringAssert.Contains(info.message, "exactly one non-empty credential");
+    }
+
     // ========== RestClientOptions Tests ==========
 
     [TestMethod]
@@ -59,9 +67,9 @@ public class ConfigOptionsTests
             Assert.IsNotNull(client);
             // If we get here, auth validation passed (UniFFI may still fail, but that's OK)
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for single auth method");
+            Assert.Fail("Should not reject a single auth method");
         }
         catch
         {
@@ -81,9 +89,9 @@ public class ConfigOptionsTests
             using var client = new FugleMarketData.RestClient(options);
             Assert.IsNotNull(client);
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for single auth method");
+            Assert.Fail("Should not reject a single auth method");
         }
         catch
         {
@@ -103,9 +111,9 @@ public class ConfigOptionsTests
             using var client = new FugleMarketData.RestClient(options);
             Assert.IsNotNull(client);
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for single auth method");
+            Assert.Fail("Should not reject a single auth method");
         }
         catch
         {
@@ -114,34 +122,45 @@ public class ConfigOptionsTests
     }
 
     [TestMethod]
-    public void RestClientOptions_NoAuth_ThrowsArgumentException()
+    public void RestClientOptions_NoAuth_ThrowsConfigError()
     {
-        var options = new FugleMarketData.RestClientOptions();
+        SkipIfNativeLibraryUnavailable();
 
-        var ex = Assert.ThrowsException<ArgumentException>(() =>
-            new FugleMarketData.RestClient(options)
-        );
-
-        Assert.IsTrue(ex.Message.Contains("Provide exactly one of"));
-        Assert.IsTrue(ex.Message.Contains("ApiKey"));
-        Assert.IsTrue(ex.Message.Contains("BearerToken"));
-        Assert.IsTrue(ex.Message.Contains("SdkToken"));
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient(new FugleMarketData.RestClientOptions()));
     }
 
     [TestMethod]
-    public void RestClientOptions_MultipleAuth_ThrowsArgumentException()
+    public void RestClientOptions_MultipleAuth_ThrowsConfigError()
     {
+        SkipIfNativeLibraryUnavailable();
+
         var options = new FugleMarketData.RestClientOptions
         {
             ApiKey = "test-api-key",
             BearerToken = "test-bearer-token"
         };
 
-        var ex = Assert.ThrowsException<ArgumentException>(() =>
-            new FugleMarketData.RestClient(options)
-        );
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient(options));
+    }
 
-        Assert.IsTrue(ex.Message.Contains("Provide exactly one of"));
+    [TestMethod]
+    public void RestClientOptions_BlankAuth_ThrowsConfigError()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient(new FugleMarketData.RestClientOptions { ApiKey = "" }));
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient(new FugleMarketData.RestClientOptions { BearerToken = "   " }));
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient(new FugleMarketData.RestClientOptions { ApiKey = " ", SdkToken = "" }));
+    }
+
+    [TestMethod]
+    public void RestClientOptions_BlankAuthNextToRealOne_IsIgnored()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        using var client = new FugleMarketData.RestClient(
+            new FugleMarketData.RestClientOptions { ApiKey = "  ", SdkToken = "test-sdk-token" });
+        Assert.IsNotNull(client);
     }
 
     [TestMethod]
@@ -155,24 +174,22 @@ public class ConfigOptionsTests
     // ========== WebSocketClientOptions Tests ==========
 
     [TestMethod]
-    public void WebSocketClientOptions_NoAuth_ThrowsArgumentException()
+    public void WebSocketClientOptions_NoAuth_ThrowsConfigError()
     {
-        var options = new FugleMarketData.WebSocketClientOptions();
+        SkipIfNativeLibraryUnavailable();
+
         var listener = new TestWebSocketListener();
-
-        var ex = Assert.ThrowsException<ArgumentException>(() =>
-            new FugleMarketData.WebSocketClient(options, listener)
-        );
-
-        Assert.IsTrue(ex.Message.Contains("Provide exactly one of"));
-        Assert.IsTrue(ex.Message.Contains("ApiKey"));
-        Assert.IsTrue(ex.Message.Contains("BearerToken"));
-        Assert.IsTrue(ex.Message.Contains("SdkToken"));
+        AssertCredentialsRejected(() =>
+            new FugleMarketData.WebSocketClient(new FugleMarketData.WebSocketClientOptions(), listener));
+        AssertCredentialsRejected(() =>
+            new FugleMarketData.WebSocketClient(new FugleMarketData.WebSocketClientOptions { ApiKey = "  " }, listener));
     }
 
     [TestMethod]
-    public void WebSocketClientOptions_MultipleAuth_ThrowsArgumentException()
+    public void WebSocketClientOptions_MultipleAuth_ThrowsConfigError()
     {
+        SkipIfNativeLibraryUnavailable();
+
         var options = new FugleMarketData.WebSocketClientOptions
         {
             ApiKey = "test-api-key",
@@ -180,11 +197,7 @@ public class ConfigOptionsTests
         };
         var listener = new TestWebSocketListener();
 
-        var ex = Assert.ThrowsException<ArgumentException>(() =>
-            new FugleMarketData.WebSocketClient(options, listener)
-        );
-
-        Assert.IsTrue(ex.Message.Contains("Provide exactly one of"));
+        AssertCredentialsRejected(() => new FugleMarketData.WebSocketClient(options, listener));
     }
 
     // ========== ReconnectOptions Tests ==========
@@ -263,9 +276,9 @@ public class ConfigOptionsTests
             Assert.IsNotNull(client);
             // Reconnect options stored for future use
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for valid auth and reconnect config");
+            Assert.Fail("Should not reject valid auth and reconnect config");
         }
         catch
         {
@@ -295,9 +308,9 @@ public class ConfigOptionsTests
             Assert.IsNotNull(client);
             // Health check options stored for future use
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for valid auth and health check config");
+            Assert.Fail("Should not reject valid auth and health check config");
         }
         catch
         {
@@ -373,9 +386,9 @@ public class ConfigOptionsTests
             Assert.IsNotNull(client);
             Assert.AreEqual(0ul, client.MessagesDroppedTotal);
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for valid auth and message queue config");
+            Assert.Fail("Should not reject valid auth and message queue config");
         }
         catch
         {
@@ -401,9 +414,9 @@ public class ConfigOptionsTests
             Assert.IsNotNull(client);
             Assert.AreEqual(0ul, client.MessagesDroppedTotal);
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
         {
-            Assert.Fail("Should not throw ArgumentException for valid auth and message queue config");
+            Assert.Fail("Should not reject valid auth and message queue config");
         }
         catch
         {

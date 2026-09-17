@@ -115,18 +115,13 @@ class TestPanicRecovery:
     """Test that Rust panics are caught and don't abort process."""
 
     def test_empty_api_key_doesnt_panic(self):
-        """Empty API key should not cause panic (may succeed or fail gracefully)."""
-        from fugle_marketdata import RestClient
+        """Empty API key is rejected with a readable error, not a panic."""
+        from fugle_marketdata import RestClient, MarketDataError
 
-        # Empty API key should not panic - may accept empty string
-        try:
-            client = RestClient(api_key="")
-            # If it succeeds, verify client is created
-            assert client is not None
-        except Exception as e:
-            # If it raises, should be a readable exception
-            assert isinstance(str(e), str)
-            assert len(str(e)) > 0
+        with pytest.raises(MarketDataError) as exc_info:
+            RestClient(api_key="")
+        assert exc_info.value.code == 1004
+        assert len(str(exc_info.value)) > 0
 
     @pytest.mark.asyncio
     async def test_long_input_doesnt_overflow(self, rest_server):

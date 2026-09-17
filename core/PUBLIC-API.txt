@@ -1371,11 +1371,14 @@ pub marketdata_core::models::AuthRequest::heartbeat_interval_ms: core::option::O
 pub marketdata_core::models::AuthRequest::sdk_token: core::option::Option<alloc::string::String>
 pub marketdata_core::models::AuthRequest::token: core::option::Option<alloc::string::String>
 impl marketdata_core::AuthRequest
+pub fn marketdata_core::AuthRequest::validate(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::AuthRequest::with_api_key(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn marketdata_core::AuthRequest::with_sdk_token(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn marketdata_core::AuthRequest::with_token(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for marketdata_core::AuthRequest
 pub fn marketdata_core::AuthRequest::clone(&self) -> marketdata_core::AuthRequest
+impl core::convert::From<marketdata_core::Auth> for marketdata_core::AuthRequest
+pub fn marketdata_core::AuthRequest::from(marketdata_core::Auth) -> Self
 impl core::fmt::Debug for marketdata_core::AuthRequest
 pub fn marketdata_core::AuthRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for marketdata_core::AuthRequest
@@ -3342,9 +3345,13 @@ pub marketdata_core::rest::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::rest::Auth::BearerToken(alloc::string::String)
 pub marketdata_core::rest::Auth::SdkToken(alloc::string::String)
 impl marketdata_core::Auth
+pub fn marketdata_core::Auth::from_credentials(core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::Auth::from_env() -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::Auth::validate(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::Auth
 pub fn marketdata_core::Auth::clone(&self) -> marketdata_core::Auth
+impl core::convert::From<marketdata_core::Auth> for marketdata_core::AuthRequest
+pub fn marketdata_core::AuthRequest::from(marketdata_core::Auth) -> Self
 impl core::fmt::Debug for marketdata_core::Auth
 pub fn marketdata_core::Auth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for marketdata_core::Auth
@@ -4632,9 +4639,13 @@ pub marketdata_core::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::Auth::BearerToken(alloc::string::String)
 pub marketdata_core::Auth::SdkToken(alloc::string::String)
 impl marketdata_core::Auth
+pub fn marketdata_core::Auth::from_credentials(core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::Auth::from_env() -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::Auth::validate(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::Auth
 pub fn marketdata_core::Auth::clone(&self) -> marketdata_core::Auth
+impl core::convert::From<marketdata_core::Auth> for marketdata_core::AuthRequest
+pub fn marketdata_core::AuthRequest::from(marketdata_core::Auth) -> Self
 impl core::fmt::Debug for marketdata_core::Auth
 pub fn marketdata_core::Auth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for marketdata_core::Auth
@@ -5207,11 +5218,14 @@ pub marketdata_core::AuthRequest::heartbeat_interval_ms: core::option::Option<u6
 pub marketdata_core::AuthRequest::sdk_token: core::option::Option<alloc::string::String>
 pub marketdata_core::AuthRequest::token: core::option::Option<alloc::string::String>
 impl marketdata_core::AuthRequest
+pub fn marketdata_core::AuthRequest::validate(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::AuthRequest::with_api_key(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn marketdata_core::AuthRequest::with_sdk_token(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn marketdata_core::AuthRequest::with_token(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for marketdata_core::AuthRequest
 pub fn marketdata_core::AuthRequest::clone(&self) -> marketdata_core::AuthRequest
+impl core::convert::From<marketdata_core::Auth> for marketdata_core::AuthRequest
+pub fn marketdata_core::AuthRequest::from(marketdata_core::Auth) -> Self
 impl core::fmt::Debug for marketdata_core::AuthRequest
 pub fn marketdata_core::AuthRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for marketdata_core::AuthRequest

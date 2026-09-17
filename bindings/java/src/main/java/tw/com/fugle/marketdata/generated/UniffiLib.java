@@ -149,6 +149,7 @@ interface UniffiLib extends Library {
     Pointer uniffi_marketdata_uniffi_fn_func_new_websocket_client(RustBuffer.ByValue apiKey, Pointer listener, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_config(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_endpoint(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, UniffiRustCallStatus uniffi_out_errmk);
+    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_func_validate_credentials(RustBuffer.ByValue apiKey, RustBuffer.ByValue bearerToken, RustBuffer.ByValue sdkToken, UniffiRustCallStatus uniffi_out_errmk);
     RustBuffer.ByValue ffi_marketdata_uniffi_rustbuffer_alloc(Long size, UniffiRustCallStatus uniffi_out_errmk);
     RustBuffer.ByValue ffi_marketdata_uniffi_rustbuffer_from_bytes(ForeignBytes.ByValue bytes, UniffiRustCallStatus uniffi_out_errmk);
     void ffi_marketdata_uniffi_rustbuffer_free(RustBuffer.ByValue buf, UniffiRustCallStatus uniffi_out_errmk);
@@ -214,6 +215,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_func_new_websocket_client();
     Short uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_config();
     Short uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_endpoint();
+    Short uniffi_marketdata_uniffi_checksum_func_validate_credentials();
     Short uniffi_marketdata_uniffi_checksum_method_futoptclient_historical();
     Short uniffi_marketdata_uniffi_checksum_method_futoptclient_intraday();
     Short uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync();

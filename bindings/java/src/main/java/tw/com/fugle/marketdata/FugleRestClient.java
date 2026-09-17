@@ -120,31 +120,28 @@ public class FugleRestClient implements AutoCloseable {
         /**
          * Build the FugleRestClient.
          *
-         * @throws FugleException if exactly one authentication method is not provided or if client creation fails
+         * @throws FugleException with code 1004 if not exactly one non-empty
+         *     authentication method is provided (empty or whitespace-only values
+         *     count as not provided), or if client creation fails
          */
         public FugleRestClient build() {
             try {
-                // Exactly-one-auth validation
-                int authCount = 0;
-                if (apiKey != null) authCount++;
-                if (bearerToken != null) authCount++;
-                if (sdkToken != null) authCount++;
-
-                if (authCount == 0) {
-                    throw new FugleException("Provide exactly one of: apiKey, bearerToken, sdkToken");
-                }
-                if (authCount > 1) {
-                    throw new FugleException("Provide exactly one of: apiKey, bearerToken, sdkToken");
-                }
+                // Core requires exactly one non-blank credential (ConfigError,
+                // code 1004) and reports which one to use.
+                CredentialKind kind = MarketdataUniffi.validateCredentials(apiKey, bearerToken, sdkToken);
 
                 // Create client with appropriate auth method
                 RestClient restClient;
-                if (apiKey != null) {
-                    restClient = MarketdataUniffi.newRestClientWithApiKey(apiKey);
-                } else if (bearerToken != null) {
-                    restClient = MarketdataUniffi.newRestClientWithBearerToken(bearerToken);
-                } else {
-                    restClient = MarketdataUniffi.newRestClientWithSdkToken(sdkToken);
+                switch (kind) {
+                    case API_KEY:
+                        restClient = MarketdataUniffi.newRestClientWithApiKey(apiKey);
+                        break;
+                    case BEARER_TOKEN:
+                        restClient = MarketdataUniffi.newRestClientWithBearerToken(bearerToken);
+                        break;
+                    default:
+                        restClient = MarketdataUniffi.newRestClientWithSdkToken(sdkToken);
+                        break;
                 }
 
                 // TODO: baseUrl cannot be set post-construction via UniFFI

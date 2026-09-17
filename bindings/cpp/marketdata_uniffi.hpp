@@ -96,6 +96,7 @@ struct ReconnectConfigRecord;
 struct StreamMessage;
 struct StreamingVersionRecord;
 struct TlsConfigRecord;
+enum class CredentialKind;
 enum class ErrorSourceKind;
 struct MarketDataError;
 enum class MessageOverflowRecord;
@@ -157,6 +158,23 @@ enum class MessageOverflowRecord: int32_t {
 
 
 /**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
+};
+
+
+/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -191,23 +209,6 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1548,6 +1549,25 @@ struct TlsConfigRecord {
 
 
 /**
+ * Which credential [`validate_credentials`] accepted.
+ */
+enum class CredentialKind: int32_t {
+    /**
+     * `api_key` was the credential provided.
+     */
+    kApiKey = 1,
+    /**
+     * `bearer_token` was the credential provided.
+     */
+    kBearerToken = 2,
+    /**
+     * `sdk_token` was the credential provided.
+     */
+    kSdkToken = 3
+};
+
+
+/**
  * Endpoint type for WebSocket connection
  */
 enum class WebSocketEndpoint: int32_t {
@@ -1856,6 +1876,13 @@ struct FfiConverterTypeTlsConfigRecord {
     static void write(RustStream &, const TlsConfigRecord &);
     static uint64_t allocation_size(const TlsConfigRecord &);
 };
+struct FfiConverterCredentialKind {
+    static CredentialKind lift(RustBuffer);
+    static RustBuffer lower(const CredentialKind &);
+    static CredentialKind read(RustStream &);
+    static void write(RustStream &, const CredentialKind &);
+    static uint64_t allocation_size(const CredentialKind &);
+};
 struct FfiConverterErrorSourceKind {
     static ErrorSourceKind lift(RustBuffer);
     static RustBuffer lower(const ErrorSourceKind &);
@@ -2058,4 +2085,13 @@ std::shared_ptr<WebSocketClient> new_websocket_client_with_config(const std::str
  * A WebSocketClient instance wrapped in Arc for thread-safe access
  */
 std::shared_ptr<WebSocketClient> new_websocket_client_with_endpoint(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint);
+/**
+ * Check a set of credentials the way every client constructor does.
+ *
+ * A value that is empty or only whitespace counts as not provided; exactly
+ * one of the three must remain. Wrappers that accept all three options call
+ * this and pass the value of the returned kind to the matching constructor,
+ * so the rule and the error (a `ConfigError`, code 1004) come from the core.
+ */
+CredentialKind validate_credentials(std::optional<std::string> api_key, std::optional<std::string> bearer_token, std::optional<std::string> sdk_token);
 } // namespace marketdata_uniffi

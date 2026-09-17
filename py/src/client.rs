@@ -35,7 +35,8 @@ pub struct RestClient {
 impl RestClient {
     /// Create a new REST client with authentication
     ///
-    /// Provide exactly one authentication method:
+    /// Provide exactly one authentication method (empty or whitespace-only
+    /// values count as not provided):
     ///   - api_key: Your Fugle API key
     ///   - bearer_token: Bearer token for authentication
     ///   - sdk_token: SDK token for authentication
@@ -47,7 +48,7 @@ impl RestClient {
     ///     A new RestClient instance
     ///
     /// Raises:
-    ///     ValueError: If zero or multiple auth methods provided
+    ///     MarketDataError: code 1004 if zero or multiple auth methods provided
     ///
     /// Example:
     ///     ```python
@@ -72,26 +73,9 @@ impl RestClient {
         tls_root_cert_pem: Option<Vec<u8>>,
         tls_accept_invalid_certs: bool,
     ) -> PyResult<Self> {
-        // Validate exactly one auth method (fail fast)
-        let auth_count = [&api_key, &bearer_token, &sdk_token]
-            .iter()
-            .filter(|opt| opt.is_some())
-            .count();
-
-        if auth_count != 1 {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Provide exactly one of: api_key, bearer_token, sdk_token"
-            ));
-        }
-
-        // Build Auth enum after validation
-        let auth = if let Some(key) = api_key {
-            marketdata_core::Auth::ApiKey(key)
-        } else if let Some(token) = bearer_token {
-            marketdata_core::Auth::BearerToken(token)
-        } else {
-            marketdata_core::Auth::SdkToken(sdk_token.unwrap())
-        };
+        // Core requires exactly one non-blank credential (ConfigError, 1004).
+        let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
+            .map_err(errors::to_py_err)?;
 
         // Parse TLS kwargs; emits UserWarning if verification is disabled.
         let tls = crate::tls_kwargs::parse_tls_kwargs(
@@ -135,10 +119,14 @@ impl RestClient {
     ///
     /// Returns:
     ///     A new RestClient instance
+    ///
+    /// Raises:
+    ///     MarketDataError: code 1004 if the credential is empty or whitespace
     #[staticmethod]
-    pub fn with_bearer_token(token: String) -> Self {
-        let inner = marketdata_core::RestClient::new(marketdata_core::Auth::BearerToken(token));
-        Self { inner }
+    pub fn with_bearer_token(token: String) -> PyResult<Self> {
+        let auth = marketdata_core::Auth::BearerToken(token);
+        auth.validate().map_err(errors::to_py_err)?;
+        Ok(Self { inner: marketdata_core::RestClient::new(auth) })
     }
 
     /// Create a REST client with SDK token authentication
@@ -148,10 +136,14 @@ impl RestClient {
     ///
     /// Returns:
     ///     A new RestClient instance
+    ///
+    /// Raises:
+    ///     MarketDataError: code 1004 if the credential is empty or whitespace
     #[staticmethod]
-    pub fn with_sdk_token(sdk_token: String) -> Self {
-        let inner = marketdata_core::RestClient::new(marketdata_core::Auth::SdkToken(sdk_token));
-        Self { inner }
+    pub fn with_sdk_token(sdk_token: String) -> PyResult<Self> {
+        let auth = marketdata_core::Auth::SdkToken(sdk_token);
+        auth.validate().map_err(errors::to_py_err)?;
+        Ok(Self { inner: marketdata_core::RestClient::new(auth) })
     }
 
     /// Access stock market data endpoints

@@ -275,7 +275,7 @@ var client = new RestClient(new RestClientOptions {
 
 ## Authentication Options
 
-All clients require exactly one authentication method. Providing zero or multiple authentication methods will result in a validation error at construction time.
+All clients require exactly one authentication method. An empty or whitespace-only value counts as not provided. Providing zero or multiple authentication methods results in a configuration error (code 1004, see [errors.md](errors.md)) at construction time.
 
 ### Options Reference
 
@@ -286,7 +286,7 @@ All clients require exactly one authentication method. Providing zero or multipl
 | `sdk_token` / `sdkToken` / `SdkToken` | string | SDK token for partner integrations |
 | `base_url` / `baseUrl` / `BaseUrl` | string (optional) | Custom API base URL (for testing or private deployments) |
 
-**Constraint:** Exactly one of `api_key`, `bearer_token`, or `sdk_token` must be provided.
+**Constraint:** Exactly one non-empty `api_key`, `bearer_token`, or `sdk_token` must be provided.
 
 ### Language-Specific Examples
 
@@ -400,21 +400,26 @@ When configuration validation fails, you'll see one of these error messages:
 
 ### Authentication Errors
 
-**"Provide exactly one of: apiKey, bearerToken, sdkToken"**
+**"Configuration error: Provide exactly one non-empty credential: API key, bearer token, or SDK token"**
 
-- **Cause:** Zero or multiple authentication methods provided
-- **Solution:** Pass exactly one auth method
+- **Cause:** Zero or multiple authentication methods provided, or the only one is empty or whitespace
+- **Error:** code 1004 (`client`) — Python `MarketDataError`, Node.js `Error`, C# `MarketDataException`, Go `*MarketDataError`, Java `FugleException`
+- **Solution:** Pass exactly one non-empty auth method
 
 **Example (Python):**
 
 ```python
 # ✗ Wrong - no auth
 client = RestClient()
-# ValueError: Provide exactly one of: apiKey, bearerToken, sdkToken
+# MarketDataError: Configuration error: Provide exactly one non-empty credential: ...
 
 # ✗ Wrong - multiple auth
 client = RestClient(api_key="key", bearer_token="token")
-# ValueError: Provide exactly one of: apiKey, bearerToken, sdkToken
+# MarketDataError: Configuration error: Provide exactly one non-empty credential: ...
+
+# ✗ Wrong - empty key
+client = RestClient(api_key="")
+# MarketDataError: Configuration error: Provide exactly one non-empty credential: ...
 
 # ✓ Correct - exactly one auth
 client = RestClient(api_key="key")

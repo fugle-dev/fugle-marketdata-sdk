@@ -127,9 +127,7 @@ func TestRestClientNoAuth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("expected 'provide exactly one of' error, got: %v", err)
-	}
+	assertCredentialsRejected(t, err)
 }
 
 // Test 9: RestClient with multiple auth methods (should fail validation)
@@ -142,20 +140,41 @@ func TestRestClientMultipleAuth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("expected 'provide exactly one of' error, got: %v", err)
+	assertCredentialsRejected(t, err)
+}
+
+// Test 10: empty or whitespace-only credentials count as not provided
+func TestBlankCredentials(t *testing.T) {
+	cases := map[string][]Option{
+		"empty api key":      {WithApiKey("")},
+		"blank bearer token": {WithBearerToken("   ")},
+		"blank sdk token":    {WithSdkToken("\t")},
+		"two blanks":         {WithApiKey(""), WithSdkToken(" ")},
+	}
+	for name, opts := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewFugleRestClient(opts...)
+			assertCredentialsRejected(t, err)
+		})
 	}
 }
 
-// Test 10: WithApiKey with empty string (should fail)
-func TestWithApiKeyEmpty(t *testing.T) {
-	_, err := NewFugleRestClient(WithApiKey(""))
-
+// assertCredentialsRejected checks the core's credential error: a
+// ConfigError with code 1004.
+func assertCredentialsRejected(t *testing.T, err error) {
+	t.Helper()
 	if err == nil {
-		t.Fatal("expected error for empty API key, got nil")
+		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "cannot be empty") {
-		t.Errorf("expected 'cannot be empty' error, got: %v", err)
+	info, ok := ErrorInfoOf(err)
+	if !ok {
+		t.Fatalf("expected an SDK error, got: %v", err)
+	}
+	if info.Code != 1004 || info.SourceKind != ErrorSourceKindClient {
+		t.Errorf("expected code 1004 / client, got %d / %v", info.Code, info.SourceKind)
+	}
+	if !strings.Contains(info.Message, "exactly one non-empty credential") {
+		t.Errorf("unexpected message: %s", info.Message)
 	}
 }
 
@@ -167,9 +186,7 @@ func TestWebSocketNoAuth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("expected 'provide exactly one of' error, got: %v", err)
-	}
+	assertCredentialsRejected(t, err)
 }
 
 // Test 12: WebSocket with multiple auth methods (should fail validation)
@@ -184,9 +201,7 @@ func TestWebSocketMultipleAuth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "provide exactly one of") {
-		t.Errorf("expected 'provide exactly one of' error, got: %v", err)
-	}
+	assertCredentialsRejected(t, err)
 }
 
 // Test 13: Option functions return non-nil
