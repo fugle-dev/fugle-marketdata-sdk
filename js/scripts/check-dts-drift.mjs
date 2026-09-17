@@ -287,6 +287,7 @@ const INTENTIONALLY_UNMAPPED = {
   WebSocketDisconnectEvent: 'WebSocket event argument built by the binding',
   WebSocketReconnectEvent: 'WebSocket event argument built by the binding',
   WebSocketError: 'WebSocket event argument built by the binding',
+  WebSocketMessagesDroppedEvent: 'WebSocket event argument built from core\'s MessagesDropped event',
 
   // JS-side request param / client-option types — inputs the caller
   // constructs, not server response shapes.
