@@ -162,7 +162,7 @@ class _Server:
         try:
             while not closed.is_set() and not self._stopped.is_set():
                 send(OP_TEXT, payload)
-                # Unpaced, the client stops delivering after ~900 frames (#46).
+                # Paced until the bindings expose the message queue settings (#46).
                 time.sleep(0.001)
         except OSError:
             return

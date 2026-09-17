@@ -601,7 +601,7 @@ async fn smoke_ws_futopt(cfg: ConnectionConfig, symbols: &[String]) -> Vec<Row> 
 /// is generous (10 s) because snapshots normally arrive <200 ms after the
 /// subscribe ACK; the budget only matters for genuinely quiet channels.
 async fn drain_snapshots(
-    rx: &mut tokio::sync::mpsc::Receiver<marketdata_core::WebSocketMessage>,
+    rx: &mut marketdata_core::MessageStream,
     labels: &BTreeMap<&str, &str>,
 ) -> Vec<Row> {
     let mut seen: BTreeMap<&str, Outcome> = BTreeMap::new();

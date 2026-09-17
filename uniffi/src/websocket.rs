@@ -818,7 +818,8 @@ fn forward_event(
             return false;
         }
         ConnectionEvent::Error { message, .. } => listener.on_error(message),
-        ConnectionEvent::Connecting | ConnectionEvent::HeartbeatTimeout { .. } => {}
+        // `MessagesDropped` gets a listener callback with #46's bindings PR.
+        _ => {}
     }
     true
 }

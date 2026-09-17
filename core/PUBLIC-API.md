@@ -35,6 +35,19 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — inbound message queue and `MessagesDropped` (#46)
+
+- `~` `aio::WebSocketClient::message_stream` — returns `MessageStream`
+  instead of `tokio::sync::mpsc::Receiver<WebSocketMessage>`.
+- `+` `MessageStream` (`recv`, `try_recv`, `poll_recv`, `futures::Stream`),
+  re-exported at the crate root and from `websocket`.
+- `-` `MessageReceiver::new` — receivers are only created by the clients.
+  `+` `Freeze` for `MessageReceiver`.
+- `+` `MessageOverflow { DropNewest, Unbounded }` (`#[non_exhaustive]`),
+  `ConnectionConfig::message_overflow`,
+  `ConnectionConfigBuilder::message_overflow`.
+- `~` `ConnectionEvent` — `#[non_exhaustive]`; `+` `MessagesDropped { dropped, total }`.
+
 ### Unreleased — connection events carry data and reconnect intent (#55)
 
 - `~` `ConnectionEvent::Authenticated` — unit variant becomes

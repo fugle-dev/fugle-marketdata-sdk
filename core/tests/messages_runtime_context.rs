@@ -1,9 +1,9 @@
 //! `WebSocketClient::messages()` must not require an ambient tokio runtime.
 //!
 //! FFI bindings call `messages()` from plain threads (py: before
-//! `connect()`, js / uniffi: after). The bridge task is bound to the
-//! runtime that ran `connect()` instead of `tokio::spawn`'s ambient
-//! context (#26).
+//! `connect()`, js / uniffi: after). The receiver reads the client's
+//! message queue directly, so no task has to run on any runtime to
+//! deliver messages (#26, #46).
 
 #![cfg(feature = "tokio-comp")]
 
@@ -63,20 +63,24 @@ fn messages_after_connect_outside_runtime() {
 }
 
 #[test]
-fn bridge_on_dropped_runtime_does_not_panic() {
+fn receiver_outlives_the_connect_runtime_and_closes_with_the_client() {
     let rt = Runtime::new().expect("runtime");
-    // Nothing listens on port 1: connect() binds the runtime, then fails.
+    // Nothing listens on port 1: connect() fails on this runtime.
     let client = client_for("ws://127.0.0.1:1/".to_string());
     assert!(rt.block_on(client.connect()).is_err());
     drop(rt);
 
     let rx = client.messages();
 
-    // The task spawned onto the shut-down runtime is dropped immediately,
-    // which drops the std sender: the receiver reports a closed channel
-    // instead of hanging.
+    // The queue belongs to the client, not to a runtime: it stays open...
+    assert!(matches!(
+        rx.receive_timeout(Duration::from_millis(50)),
+        Ok(None)
+    ));
+    // ...until the client is dropped, and the receiver does not hang then.
+    drop(client);
     assert!(
         rx.receive_timeout(Duration::from_millis(500)).is_err(),
-        "receiver must observe the closed bridge channel"
+        "receiver must observe the closed queue"
     );
 }

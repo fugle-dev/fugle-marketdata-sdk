@@ -1,29 +1,36 @@
-//! FFI-safe message receiver for WebSocket messages.
+//! Consumer handles for inbound WebSocket messages.
 //!
-//! Provides blocking and timeout-based message reception suitable for FFI bindings.
-//! Uses `std::sync::mpsc` (not tokio channels) for compatibility with non-async FFI consumers.
+//! [`MessageReceiver`] has a blocking API for FFI bindings; [`MessageStream`]
+//! is the async one. Both read the client's inbound message queue directly.
 //! Runtime-free: shared by the sync `WebSocketClient` and the async
 //! `aio::WebSocketClient`.
 
 use crate::models::WebSocketMessage;
+use crate::websocket::message_queue::QueueReceiver;
 use crate::MarketDataError;
-use std::sync::mpsc;
-use std::sync::Mutex;
+use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+use std::task::{Context, Poll};
 use std::time::Duration;
+
+/// Error for a receiver whose client is gone and whose queue is drained.
+fn closed() -> MarketDataError {
+    MarketDataError::ConnectionError {
+        msg: "Message channel closed".to_string(),
+    }
+}
 
 /// FFI-safe message receiver with blocking API.
 ///
-/// Thread-safe: uses a `Mutex` internally so callers can share it across
-/// threads. Background threads can receive messages while the main thread
-/// handles other operations.
+/// Thread-safe: callers can share it across threads, and each message goes
+/// to exactly one of them. The queue closes once the client has been
+/// dropped and every queued message has been read.
 pub struct MessageReceiver {
-    rx: Mutex<mpsc::Receiver<WebSocketMessage>>,
+    rx: QueueReceiver<WebSocketMessage>,
 }
 
 impl MessageReceiver {
-    /// Create a new message receiver
-    pub fn new(rx: mpsc::Receiver<WebSocketMessage>) -> Self {
-        Self { rx: Mutex::new(rx) }
+    pub(crate) fn new(rx: QueueReceiver<WebSocketMessage>) -> Self {
+        Self { rx }
     }
 
     /// Receive a message (blocking)
@@ -34,12 +41,7 @@ impl MessageReceiver {
     ///
     /// Returns `ConnectionError` if channel is closed
     pub fn receive(&self) -> Result<WebSocketMessage, MarketDataError> {
-        let rx = self.rx.lock().map_err(|_| MarketDataError::ConnectionError {
-            msg: "Message receiver lock poisoned".to_string(),
-        })?;
-        rx.recv().map_err(|_| MarketDataError::ConnectionError {
-            msg: "Message channel closed".to_string(),
-        })
+        self.rx.recv().ok_or_else(closed)
     }
 
     /// Receive a message with timeout
@@ -56,17 +58,10 @@ impl MessageReceiver {
         &self,
         timeout: Duration,
     ) -> Result<Option<WebSocketMessage>, MarketDataError> {
-        let rx = self.rx.lock().map_err(|_| MarketDataError::ConnectionError {
-            msg: "Message receiver lock poisoned".to_string(),
-        })?;
-        match rx.recv_timeout(timeout) {
+        match self.rx.recv_timeout(timeout) {
             Ok(msg) => Ok(Some(msg)),
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(MarketDataError::ConnectionError {
-                    msg: "Message channel closed".to_string(),
-                })
-            }
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(closed()),
         }
     }
 
@@ -76,17 +71,72 @@ impl MessageReceiver {
     /// - `Some(msg)` if message available
     /// - `None` if no message available or channel closed
     pub fn try_receive(&self) -> Option<WebSocketMessage> {
-        self.rx.lock().ok()?.try_recv().ok()
+        self.rx.try_recv().ok()
+    }
+}
+
+/// Async stream of inbound messages, returned by
+/// [`aio::WebSocketClient::message_stream`](crate::aio::WebSocketClient::message_stream).
+///
+/// Mirrors the parts of `tokio::sync::mpsc::Receiver` a consumer uses:
+/// [`recv`](Self::recv), [`try_recv`](Self::try_recv) and
+/// [`poll_recv`](Self::poll_recv). With the `tokio-comp` feature it is also
+/// a `futures::Stream`. The stream ends once the client has been dropped
+/// and every queued message has been read.
+pub struct MessageStream {
+    rx: QueueReceiver<WebSocketMessage>,
+}
+
+impl MessageStream {
+    #[cfg_attr(not(feature = "tokio-comp"), allow(dead_code))]
+    pub(crate) fn new(rx: QueueReceiver<WebSocketMessage>) -> Self {
+        Self { rx }
+    }
+
+    /// Wait for the next message; `None` once the stream has ended.
+    ///
+    /// Cancel safe: a message is only taken from the queue when this
+    /// returns it.
+    pub async fn recv(&mut self) -> Option<WebSocketMessage> {
+        std::future::poll_fn(|cx| self.rx.poll_recv(cx)).await
+    }
+
+    /// Take the next message without waiting.
+    ///
+    /// # Errors
+    /// [`TryRecvError::Empty`] when no message is queued,
+    /// [`TryRecvError::Disconnected`] once the stream has ended.
+    pub fn try_recv(&mut self) -> Result<WebSocketMessage, TryRecvError> {
+        self.rx.try_recv()
+    }
+
+    /// Poll for the next message; `Ready(None)` once the stream has ended.
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<WebSocketMessage>> {
+        self.rx.poll_recv(cx)
+    }
+}
+
+#[cfg(feature = "tokio-comp")]
+impl futures_util::Stream for MessageStream {
+    type Item = WebSocketMessage;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        self.poll_recv(cx)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metrics_compat::DropCounter;
+    use crate::websocket::message_queue::queue;
 
     #[test]
     fn test_receive_blocking() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // Spawn thread to send message
@@ -100,7 +150,7 @@ mod tests {
                 id: None,
                 raw: String::new(),
             };
-            tx.send(msg).unwrap();
+            tx.push(msg);
         });
 
         // Should block and receive
@@ -113,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_receive_timeout_returns_none() {
-        let (_tx, rx) = mpsc::channel();
+        let (_tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // No message sent, should timeout
@@ -124,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_receive_timeout_returns_message() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // Send message immediately
@@ -136,7 +186,7 @@ mod tests {
             id: None,
             raw: String::new(),
         };
-        tx.send(msg).unwrap();
+        tx.push(msg);
 
         // Should receive before timeout
         let result = receiver.receive_timeout(Duration::from_secs(1));
@@ -148,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_try_receive_non_blocking() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // No message, should return None immediately
@@ -163,7 +213,7 @@ mod tests {
             id: None,
             raw: String::new(),
         };
-        tx.send(msg).unwrap();
+        tx.push(msg);
 
         // Should receive immediately
         let received = receiver.try_receive();
@@ -173,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_channel_closed_returns_error() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // Close channel by dropping sender
@@ -192,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_channel_closed_timeout_returns_error() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // Close channel
@@ -205,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_try_receive_after_close() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = queue(None, DropCounter::new("test_messages_dropped", "localhost", "test"));
         let receiver = MessageReceiver::new(rx);
 
         // Send message then close
@@ -217,7 +267,7 @@ mod tests {
             id: None,
             raw: String::new(),
         };
-        tx.send(msg).unwrap();
+        tx.push(msg);
         drop(tx);
 
         // Should still receive buffered message

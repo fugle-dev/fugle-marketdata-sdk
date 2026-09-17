@@ -6,8 +6,10 @@ use crate::models::WebSocketMessage;
 use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::WsStream;
 use crate::websocket::connection_event::{
-    emit_disconnected, emit_event, peer_close_disconnect, will_reconnect_after, DisconnectLatch,
+    emit_disconnected, emit_drop_report, emit_event, peer_close_disconnect, will_reconnect_after,
+    DisconnectLatch,
 };
+use crate::websocket::message_queue::QueueSender;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, ReconnectionManager, SubscriptionManager};
 use futures_util::StreamExt;
@@ -15,7 +17,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -26,8 +27,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// 1. WebSocket connection closes (returns close code)
 /// 2. Server sends Close frame (returns close code from frame)
 /// 3. WebSocket error occurs (returns None)
-/// 4. Message channel closes (returns None)
-/// 5. Task is aborted by disconnect() (task cancelled at .await point)
+/// 4. Task is aborted by disconnect() (task cancelled at .await point)
 ///
 /// The function is cancellation-safe: aborting at any `.await` point
 /// will not leave resources in an inconsistent state.
@@ -35,7 +35,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// # Arguments
 ///
 /// * `ws_read` - The read half of the WebSocket stream
-/// * `message_tx` - Channel to send parsed messages to consumers
+/// * `message_tx` - Inbound message queue parsed messages are pushed to
 /// * `event_tx` - Channel to send connection events
 /// * `heartbeat_timeout` - If `Some(d)`, wrap each `ws_read.next()` in
 ///   `tokio::time::timeout(d, ...)` and emit
@@ -55,12 +55,11 @@ use tokio_tungstenite::tungstenite::Message;
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_messages(
     mut ws_read: WsStream,
-    message_tx: tokio_mpsc::Sender<WebSocketMessage>,
+    message_tx: QueueSender<WebSocketMessage>,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     events_dropped: DropCounter,
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
-    messages_dropped: DropCounter,
     shutdown_requested: Arc<AtomicBool>,
     disconnect_latch: Arc<DisconnectLatch>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
@@ -75,6 +74,13 @@ pub(crate) async fn dispatch_messages(
     };
 
     loop {
+        // A socket that always has data never returns `Pending`, and frames
+        // decoded from tungstenite's buffer spend no coop budget, so without
+        // this the loop would keep its worker until the socket drains. Tasks
+        // it wakes — a `message_stream()` consumer on the same runtime —
+        // would starve meanwhile while the queue fills and drops (#46).
+        tokio::task::coop::consume_budget().await;
+
         // Read-site liveness: if `heartbeat_timeout` is set, the next
         // frame must arrive within that window or we declare the
         // connection dead. When None, fall back to a plain blocking
@@ -102,6 +108,7 @@ pub(crate) async fn dispatch_messages(
                         &event_tx,
                         &events_dropped,
                         &disconnect_latch,
+                        &message_tx,
                         None,
                         format!("Heartbeat timeout after {elapsed_ms}ms"),
                         DisconnectIntent::Network,
@@ -128,6 +135,7 @@ pub(crate) async fn dispatch_messages(
                         &event_tx,
                         &events_dropped,
                         &disconnect_latch,
+                        &message_tx,
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
@@ -151,16 +159,8 @@ pub(crate) async fn dispatch_messages(
                         // Mutex is only taken when event == "subscribed" (cheap
                         // string compare for every other message).
                         handle_subscribed_event(&subscriptions, &ws_msg);
-                        if let Err(tokio_mpsc::error::TrySendError::Full(_)) =
-                            message_tx.try_send(ws_msg)
-                        {
-                            messages_dropped.bump();
-                            warn!(
-                                target: "fugle_marketdata::ws",
-                                dropped_total = messages_dropped.load(),
-                                "message channel saturated; dropping frame (drop-newest)"
-                            );
-                        }
+                        let (_, report) = message_tx.push_and_report(ws_msg);
+                        emit_drop_report(&event_tx, &events_dropped, report);
                     }
                     Err(e) => {
                         emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
@@ -180,16 +180,8 @@ pub(crate) async fn dispatch_messages(
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) => {
                         handle_subscribed_event(&subscriptions, &ws_msg);
-                        if let Err(tokio_mpsc::error::TrySendError::Full(_)) =
-                            message_tx.try_send(ws_msg)
-                        {
-                            messages_dropped.bump();
-                            warn!(
-                                target: "fugle_marketdata::ws",
-                                dropped_total = messages_dropped.load(),
-                                "message channel saturated; dropping frame (drop-newest)"
-                            );
-                        }
+                        let (_, report) = message_tx.push_and_report(ws_msg);
+                        emit_drop_report(&event_tx, &events_dropped, report);
                     }
                     Err(e) => {
                         emit_event(&event_tx, &events_dropped, ConnectionEvent::Error {
@@ -219,6 +211,7 @@ pub(crate) async fn dispatch_messages(
                         &event_tx,
                         &events_dropped,
                         &disconnect_latch,
+                        &message_tx,
                         code,
                         reason,
                         intent,
@@ -256,6 +249,7 @@ pub(crate) async fn dispatch_messages(
                     &event_tx,
                     &events_dropped,
                     &disconnect_latch,
+                    &message_tx,
                     None,
                     err_msg,
                     DisconnectIntent::Network,

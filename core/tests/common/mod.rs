@@ -29,6 +29,9 @@ pub enum AfterAuth {
     Idle,
     /// Send `count` `data` frames as fast as possible, then idle.
     FloodData { count: usize },
+    /// Send `count` `data` frames as fast as possible, then drop the TCP
+    /// socket without a Close handshake.
+    FloodDataThenDrop { count: usize },
     /// After a brief delay, send a Close frame with the given code.
     ServerCloseAfter {
         delay_ms: u64,
@@ -109,6 +112,22 @@ pub async fn spawn_sequence(behaviours: Vec<AfterAuth>) -> MockServerHandle {
     }
 }
 
+/// Send `count` `data` frames, numbered from 0, as fast as the sink takes them.
+async fn send_data_frames<S>(sink: &mut S, count: usize)
+where
+    S: SinkExt<Message> + Unpin,
+{
+    for i in 0..count {
+        let payload = format!(
+            r#"{{"event":"data","channel":"trades","symbol":"X","id":"{}","data":{{"i":{}}}}}"#,
+            i, i
+        );
+        if sink.send(Message::Text(payload.into())).await.is_err() {
+            break;
+        }
+    }
+}
+
 async fn serve(
     stream: tokio::net::TcpStream,
     behaviour: Arc<AfterAuth>,
@@ -148,15 +167,7 @@ async fn serve(
             }
         },
         AfterAuth::FloodData { count } => {
-            for i in 0..count {
-                let payload = format!(
-                    r#"{{"event":"data","channel":"trades","symbol":"X","id":"{}","data":{{"i":{}}}}}"#,
-                    i, i
-                );
-                if sink.send(Message::Text(payload.into())).await.is_err() {
-                    break;
-                }
-            }
+            send_data_frames(&mut sink, count).await;
             // After the burst, idle until the client closes.
             while let Some(msg) = stream.next().await {
                 if let Ok(Message::Close(_)) = msg {
@@ -203,6 +214,13 @@ async fn serve(
                     }
                     break;
                 }
+            }
+        }
+        AfterAuth::FloodDataThenDrop { count } => {
+            send_data_frames(&mut sink, count).await;
+            if let Ok(mut ws) = sink.reunite(stream) {
+                use tokio::io::AsyncWriteExt;
+                let _ = ws.get_mut().shutdown().await;
             }
         }
         AfterAuth::ServerDropAfter { delay_ms } => {

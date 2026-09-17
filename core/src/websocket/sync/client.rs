@@ -5,6 +5,7 @@
 
 use crate::models::{Channel, SubscribeRequest, WebSocketMessage, WebSocketRequest};
 use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
+use crate::websocket::message_queue::QueueReceiver;
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
 };
@@ -30,7 +31,7 @@ pub struct WebSocketClient {
     /// Event receiver wrapped for shared access (mirrors async client API).
     event_rx: Arc<Mutex<mpsc::Receiver<ConnectionEvent>>>,
     /// Holds the inbound-message receiver until `messages()` consumes it.
-    message_rx_slot: Mutex<Option<mpsc::Receiver<WebSocketMessage>>>,
+    message_rx_slot: Mutex<Option<QueueReceiver<WebSocketMessage>>>,
     /// Cached `MessageReceiver` returned by `messages()`.
     message_receiver: Mutex<Option<Arc<MessageReceiver>>>,
     /// Supervisor thread JoinHandle (Some once connected, None after disconnect).
@@ -74,7 +75,6 @@ impl WebSocketClient {
         health_check_config: HealthCheckConfig,
     ) -> Self {
         let (event_tx, event_rx) = mpsc::sync_channel::<ConnectionEvent>(config.event_buffer);
-        let (message_tx, message_rx) = mpsc::sync_channel::<WebSocketMessage>(config.message_buffer);
 
         // Eagerly build the rustls config so connect() reuses an Arc-shared instance
         // and reconnects don't pay the native-certs load cost (~10-50ms).
@@ -83,6 +83,8 @@ impl WebSocketClient {
 
         let (messages_dropped, events_dropped) =
             crate::metrics_compat::build_drop_counters(&config);
+        let (message_tx, message_rx) =
+            crate::websocket::message_queue::queue(config.message_capacity(), messages_dropped.clone());
 
         let shared = Arc::new(OwnerShared {
             config,
@@ -143,13 +145,13 @@ impl WebSocketClient {
         if let Some(rx) = slot.as_ref() {
             return Arc::clone(rx);
         }
-        let std_rx = self
+        let rx = self
             .message_rx_slot
             .lock()
             .expect("message_rx_slot lock poisoned")
             .take()
             .expect("message receiver already taken");
-        let receiver = Arc::new(MessageReceiver::new(std_rx));
+        let receiver = Arc::new(MessageReceiver::new(rx));
         *slot = Some(Arc::clone(&receiver));
         receiver
     }
@@ -224,6 +226,7 @@ impl WebSocketClient {
 
         self.set_state(ConnectionState::Connected);
         self.shared.disconnect_latch.reset();
+        self.shared.message_tx.start_connection();
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
         emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Authenticated {
             data,
@@ -354,6 +357,7 @@ impl WebSocketClient {
             &self.shared.event_tx,
             &self.shared.events_dropped,
             &self.shared.disconnect_latch,
+            &self.shared.message_tx,
             Some(1000),
             "Normal closure".to_string(),
             DisconnectIntent::Client,
@@ -392,6 +396,7 @@ impl WebSocketClient {
             &self.shared.event_tx,
             &self.shared.events_dropped,
             &self.shared.disconnect_latch,
+            &self.shared.message_tx,
             Some(1006),
             "Force closed".to_string(),
             DisconnectIntent::Client,

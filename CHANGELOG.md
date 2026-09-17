@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `getTdccDistribution` (blocking) and their `*Async` counterparts, throwing
   `FugleException` like the other wrappers. Previously Java callers had to use
   the generated `StockOwnershipClient` directly (#37).
+- **Core**: `ConnectionConfigBuilder::message_overflow(MessageOverflow)`
+  chooses what happens while the inbound message queue is full:
+  `DropNewest` (default) keeps at most `message_buffer` messages and drops
+  new ones; `Unbounded` never drops and lets the queue grow. Both the sync
+  and async clients honour it (#46).
+- **Core**: `ConnectionEvent::MessagesDropped { dropped, total }` reports
+  dropped messages: the first drop on a connection at once, then at most once
+  per second, and any remainder right before that connection's
+  `Disconnected`. Previously drops were only counted (#46).
 
 ### Changed
 
@@ -36,9 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
   require `timeframe`; the server defaults to `1`, as in 1.x.
 - **Core**: `aio::WebSocketClient::messages()` no longer needs a tokio runtime
-  context. It can be called from any thread, before or after `connect()`; the
-  message bridge now runs on the runtime that ran `connect()` instead of
-  panicking with `there is no reactor running` (#26).
+  context. It can be called from any thread, before or after `connect()`,
+  instead of panicking with `there is no reactor running` (#26). The receiver
+  reads the client's message queue directly; no bridge task runs (#46).
+- **Core**: messages read through `aio::WebSocketClient::messages()` are
+  capped at `message_buffer` (default 4096) like every other consumer. The
+  bridge behind it used to queue without limit, so a slow consumer (a Node,
+  Python or UniFFI callback) grew memory without bound instead of dropping.
+  Use `MessageOverflow::Unbounded` to keep the old behaviour (#46).
+- **Core**: while the message queue is full, the auth handshake of a
+  reconnect drops the server's `authenticated` frame from the message stream
+  instead of waiting for room, which could stall the reconnect until its 10 s
+  auth timeout (#46).
 - **All languages**: a WebSocket connection emits `Disconnected` (the
   `disconnect` callback in the bindings) at most once. A server Close or
   transport error that raced `disconnect()` could emit it twice, once with
@@ -88,6 +106,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Rust**: inbound message queue (#46). See
+  [MIGRATION-0.9.md](MIGRATION-0.9.md#11-rust-inbound-message-queue).
+  - `aio::WebSocketClient::message_stream()` returns `MessageStream` instead
+    of `tokio::sync::mpsc::Receiver`. It has `recv()`, `try_recv()` and
+    `poll_recv()`, and implements `futures::Stream`.
+  - `MessageReceiver::new` is no longer public.
+  - `ConnectionConfig` gains the public field `message_overflow`.
+  - `ConnectionEvent` is `#[non_exhaustive]` and gains `MessagesDropped`;
+    matches need a `_` arm.
 - **Rust**: `ConnectionEvent` carries what bindings previously had to
   re-derive (#55). See [MIGRATION-0.9.md](MIGRATION-0.9.md#8-rust-connection-events).
   - `Authenticated` becomes `Authenticated { data }`, the server frame's
@@ -170,6 +197,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **All languages**: under a fast, continuous stream the async client no
+  longer stalls message delivery. The network loop never yielded while the
+  socket had data, so a consumer on the same tokio runtime (every binding's
+  message bridge, or a `message_stream()` reader) got to run only every
+  ~4096 messages, and most messages in between were silently dropped. Against
+  a loopback server sending about 200,000 messages per second, Rust and Node
+  received about 4,500 of them per second and Python about 8,700 (#46).
 - **Node, Python**: a panic on a WebSocket background thread no longer leaves
   the connection silently dead (#25). Node's worker and event threads report
   it as an `error` (`Error` with `code` -1, "WebSocket <thread> thread
