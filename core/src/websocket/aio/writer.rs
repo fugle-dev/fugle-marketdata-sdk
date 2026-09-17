@@ -5,7 +5,7 @@ use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::ConnectionEvent;
 use crate::MarketDataError;
 use futures_util::SinkExt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::oneshot;
@@ -43,6 +43,12 @@ pub(crate) fn retire_writer(generation: &WriterGeneration) {
 /// sender goes into `write_tx`, the task into `writer_handle`. Returns the
 /// new sender, and the receiver of the new writer's failed write for its
 /// dispatch loop.
+///
+/// With `shutdown_requested` given, nothing is installed and `sink` is
+/// dropped once shutdown has been requested, and `None` is returned (#110).
+/// The flag is read while `write_tx` is held: shutdown sets it before
+/// clearing `write_tx`, so a writer installed here is always the one it
+/// clears and closes.
 pub(crate) async fn start_writer(
     sink: WsSink,
     ws_sink: &Arc<Mutex<Option<WsSink>>>,
@@ -50,10 +56,14 @@ pub(crate) async fn start_writer(
     writer_handle: &Mutex<Option<JoinHandle<()>>>,
     generation: &WriterGeneration,
     stream: StreamSender,
-) -> (tokio_mpsc::Sender<String>, oneshot::Receiver<WriteFailure>) {
+    shutdown_requested: Option<&AtomicBool>,
+) -> Option<(tokio_mpsc::Sender<String>, oneshot::Receiver<WriteFailure>)> {
     // Both slots are held from here on, so nothing awaits once the writer is
     // spawned: a caller aborted inside this call cannot lose its handle.
     let mut write_tx = write_tx.lock().await;
+    if shutdown_requested.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+        return None;
+    }
     let mut writer_handle = writer_handle.lock().await;
     if let Some(previous) = writer_handle.take() {
         previous.abort();
@@ -73,7 +83,7 @@ pub(crate) async fn start_writer(
         current,
     )));
     *write_tx = Some(tx.clone());
-    (tx, write_failed_rx)
+    Some((tx, write_failed_rx))
 }
 
 /// Single-writer task body. Drains pre-serialized JSON strings from `rx`

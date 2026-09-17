@@ -19,7 +19,7 @@ use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 use tokio_tungstenite::connect_async_tls_with_config;
@@ -71,6 +71,9 @@ pub struct WebSocketClient {
     /// looping back into the reconnect path after the next dispatch
     /// return. Cleared on construction.
     shutdown_requested: Arc<std::sync::atomic::AtomicBool>,
+    /// Notified right after `shutdown_requested` is set, to wake an
+    /// auto-reconnect waiting on its backoff or handshake (#110).
+    shutdown_notify: Arc<Notify>,
     // Internal handles
     dispatch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -156,6 +159,7 @@ impl WebSocketClient {
             messages_dropped,
             events_dropped,
             shutdown_requested: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            shutdown_notify: Arc::new(Notify::new()),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
             writer_generation: Arc::default(),
@@ -570,9 +574,11 @@ impl WebSocketClient {
         timeout_dur: Duration,
     ) -> Result<(), MarketDataError> {
         // 1. Signal the dispatch loop to exit instead of reconnecting
-        //    after the next dispatch return.
+        //    after the next dispatch return, and stop a reconnect in
+        //    progress (#110).
         self.shutdown_requested
             .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
 
         // 2. Drop the writer-task sender so the writer drains its queue
         //    and exits naturally on the next `rx.recv()` returning `None`.
@@ -1026,6 +1032,7 @@ impl WebSocketClient {
         let writer_generation = Arc::clone(&self.writer_generation);
         let subscriptions = Arc::clone(&self.subscriptions);
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
+        let shutdown_notify = Arc::clone(&self.shutdown_notify);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -1073,6 +1080,7 @@ impl WebSocketClient {
                     Arc::clone(&writer_generation),
                     Arc::clone(&subscriptions),
                     Arc::clone(&shutdown_requested),
+                    Arc::clone(&shutdown_notify),
                 )
                 .await
                 {
@@ -1105,8 +1113,10 @@ impl WebSocketClient {
             &self.writer_handle,
             &self.writer_generation,
             self.stream.clone(),
+            None,
         )
-        .await;
+        .await
+        .expect("installed unconditionally");
         write_failed
     }
 
@@ -2494,5 +2504,181 @@ mod write_failure_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn failed_write_after_the_connection_closed_is_not_reported() {
         assert_lost_connection_write_is_silent(ReconnectionConfig::disabled()).await;
+    }
+}
+
+/// `disconnect()` during an auto-reconnect stops it promptly (#110).
+#[cfg(test)]
+mod disconnect_during_reconnect_tests {
+    use super::*;
+    use crate::websocket::StreamItem;
+    use crate::AuthRequest;
+    use futures_util::{SinkExt, StreamExt};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::net::TcpListener;
+    use tokio::time::Instant;
+    use tokio_tungstenite::tungstenite::Message;
+
+    const WAIT: Duration = Duration::from_secs(5);
+    /// Well under the drain budget `disconnect()` would otherwise wait out.
+    const PROMPT: Duration = Duration::from_secs(1);
+
+    /// What the server does with connections after the first.
+    #[derive(Clone, Copy)]
+    enum Later {
+        /// Accept, never answer the auth frame.
+        NeverAuthenticate,
+        /// Authenticate, then keep reading, so a Close is answered.
+        AuthenticateAndServe,
+    }
+
+    /// Server that authenticates the first connection and drops it when
+    /// `drop_it` fires; later connections are handled as `later` says.
+    /// Returns the URL and the number of connections accepted.
+    async fn server(later: Later) -> (String, Arc<AtomicUsize>, oneshot::Sender<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&accepted);
+        let (drop_it, dropped) = oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let mut dropped = Some(dropped);
+            loop {
+                let Ok((tcp, _)) = listener.accept().await else { return };
+                let first = count.fetch_add(1, Ordering::SeqCst) == 0;
+                let dropped = dropped.take();
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await else { return };
+                    ws.next().await; // auth
+                    if !first && matches!(later, Later::NeverAuthenticate) {
+                        std::future::pending::<()>().await;
+                    }
+                    let authenticated = r#"{"event":"authenticated"}"#;
+                    if ws.send(Message::Text(authenticated.into())).await.is_err() {
+                        return;
+                    }
+                    match dropped {
+                        Some(dropped) => {
+                            let _ = dropped.await;
+                        }
+                        None => while let Some(Ok(_)) = ws.next().await {},
+                    }
+                });
+            }
+        });
+        (url, accepted, drop_it)
+    }
+
+    async fn client(url: String, delay: Duration) -> WebSocketClient {
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let reconnection = ReconnectionConfig::new(u32::MAX, delay, delay).expect("valid");
+        let client = WebSocketClient::with_reconnection_config(config, reconnection);
+        client.connect().await.expect("connect");
+        client
+    }
+
+    /// Wait for an event matching `wanted`, skipping everything else.
+    fn wait_for(client: &WebSocketClient, wanted: impl Fn(&ConnectionEvent) -> bool) {
+        let rx = client.stream_receiver();
+        let deadline = std::time::Instant::now() + WAIT;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match rx.receive_timeout(left).expect("receive") {
+                Some(StreamItem::Event(event)) if wanted(&event) => return,
+                Some(_) => continue,
+                None => panic!("event not received"),
+            }
+        }
+    }
+
+    /// `disconnect()` returns promptly, the client is closed with no writer
+    /// left, and no connection is opened afterwards.
+    async fn assert_disconnect_stops_reconnecting(client: &WebSocketClient, accepted: &AtomicUsize) {
+        let started = Instant::now();
+        client.disconnect().await.expect("disconnect");
+        let elapsed = started.elapsed();
+        assert!(elapsed < PROMPT, "disconnect took {elapsed:?}");
+
+        assert!(client.is_closed().await);
+        assert!(client.write_tx.lock().await.is_none(), "writer sender left");
+        assert!(client.writer_handle.lock().await.is_none(), "writer task left");
+        let connections = accepted.load(Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(accepted.load(Ordering::SeqCst), connections, "connected after disconnect");
+        assert!(client.is_closed().await, "state rewritten after disconnect");
+    }
+
+    /// A reconnect that authenticates once shutdown was requested leaves the
+    /// current writer in place.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn writer_is_not_installed_once_shutdown_was_requested() {
+        let (url, _accepted, _drop_it) = server(Later::NeverAuthenticate).await;
+        let client = client(url.clone(), Duration::from_secs(30)).await;
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.expect("connect");
+        let (sink, _read) = ws.split();
+        let current = client.write_tx.lock().await.clone().expect("writer");
+        let generation = client.writer_generation.load(Ordering::SeqCst);
+
+        client.shutdown_requested.store(true, Ordering::SeqCst);
+        let started = start_writer(
+            sink,
+            &client.ws_sink,
+            &client.write_tx,
+            &client.writer_handle,
+            &client.writer_generation,
+            client.stream.clone(),
+            Some(&client.shutdown_requested),
+        )
+        .await;
+
+        assert!(started.is_none());
+        let slot = client.write_tx.lock().await.clone().expect("writer kept");
+        assert!(slot.same_channel(&current), "writer replaced");
+        assert_eq!(client.writer_generation.load(Ordering::SeqCst), generation);
+        assert!(!current.is_closed(), "current writer stopped");
+        client.force_close().await.expect("force_close");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_during_reconnect_backoff_returns_promptly() {
+        let (url, accepted, drop_it) = server(Later::NeverAuthenticate).await;
+        let client = client(url, Duration::from_secs(30)).await;
+
+        drop_it.send(()).expect("server drops the connection");
+        wait_for(&client, |e| matches!(e, ConnectionEvent::Reconnecting { .. }));
+
+        assert_disconnect_stops_reconnecting(&client, &accepted).await;
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_while_reconnect_authenticates_returns_promptly() {
+        let (url, accepted, drop_it) = server(Later::NeverAuthenticate).await;
+        let client = client(url, Duration::from_millis(100)).await;
+        // The first connection's `Connected`.
+        wait_for(&client, |e| matches!(e, ConnectionEvent::Connected));
+
+        drop_it.send(()).expect("server drops the connection");
+        wait_for(&client, |e| matches!(e, ConnectionEvent::Connected));
+
+        assert_disconnect_stops_reconnecting(&client, &accepted).await;
+        assert_eq!(accepted.load(Ordering::SeqCst), 2);
+    }
+
+    /// `disconnect()` spread over a reconnect that succeeds: during the
+    /// backoff, while connecting, or right after it has authenticated.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn disconnect_racing_reconnects_returns_promptly() {
+        const ROUNDS: u64 = 10;
+        for round in 0..ROUNDS {
+            let (url, accepted, drop_it) = server(Later::AuthenticateAndServe).await;
+            let client = client(url, Duration::from_millis(100)).await;
+            drop_it.send(()).expect("server drops the connection");
+            wait_for(&client, |e| matches!(e, ConnectionEvent::Reconnecting { .. }));
+            // Spread the call over a reconnect cycle (~100ms backoff).
+            tokio::time::sleep(Duration::from_millis(80 + round * 6)).await;
+
+            assert_disconnect_stops_reconnecting(&client, &accepted).await;
+        }
     }
 }
