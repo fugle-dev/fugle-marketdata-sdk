@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rust**: `Auth::from_credentials(api_key, bearer_token, sdk_token)`,
+  `Auth::validate()`, `AuthRequest::validate()` and `From<Auth> for
+  AuthRequest`; **UniFFI**: `validate_credentials()` returning a
+  `CredentialKind` (#69).
 - **All languages**: one set of error fields everywhere, defined in core
   (#81): `code`, `source_kind`, `message`, `status`, `body`, `request_id`,
   `headers`. REST errors now keep the HTTP status, the raw response body and
@@ -184,6 +188,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **All languages**: credentials are checked in core (#69). Exactly one of
+  API key, bearer token and SDK token must be given, and an empty or
+  whitespace-only value counts as not given; otherwise constructors throw a
+  configuration error, code `1004`. Python, Node and Java used to accept an
+  empty credential. The error type changes: Python `TypeError` →
+  `MarketDataError`, C# `ArgumentException` / `ArgumentNullException` →
+  `MarketDataException`, Go `errors.New` → `*MarketDataError`, Java and Node
+  errors gain the unified fields. Rust `RestClient` reports a blank
+  credential from the first request and WebSocket `connect()` before
+  connecting. See [MIGRATION-0.9.md](MIGRATION-0.9.md#14-credentials-checked-once-in-core).
 - **Node**: error messages no longer start with `[code]` (REST rejections,
   constructor errors, `connect()` rejections), matching the WebSocket `error`
   event; `err.code` is a number on every SDK error (REST errors used to carry
@@ -312,6 +326,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rust**: `Debug` for `AuthRequest` no longer prints the API key, bearer
+  token or SDK token; a set credential shows as `Some(***)`, matching `Auth`
+  (#69).
 - **All languages**: a `disconnect` listener or callback that reads the
   connection state already sees the close it reports: not connected, and
   closed when no reconnect follows (Node `isConnected` / `isClosed`, Python

@@ -42,6 +42,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_endpoint() != 15148) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_func_validate_credentials() != 23718) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_futoptclient_historical() != 18194) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -1642,6 +1645,7 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
 
 
 
+
 namespace uniffi {
 
 
@@ -2284,6 +2288,69 @@ uint64_t FfiConverterTypeTlsConfigRecord::allocation_size(const TlsConfigRecord 
         FfiConverterOptionalBytes::allocation_size(val.root_cert_pem) +
         FfiConverterBool::allocation_size(val.accept_invalid_certs);
     
+}
+
+
+CredentialKind FfiConverterCredentialKind::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterCredentialKind::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterCredentialKind::lower(const CredentialKind &val) {
+    auto buf = rustbuffer_alloc(FfiConverterCredentialKind::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterCredentialKind::write(stream, val);
+
+    return std::move(buf);
+}
+
+CredentialKind FfiConverterCredentialKind::read(RustStream &stream) {
+    int32_t variant;
+    stream >> variant;
+
+    switch (variant) {
+        
+    case 1:
+        return CredentialKind::kApiKey;
+        
+    case 2:
+        return CredentialKind::kBearerToken;
+        
+    case 3:
+        return CredentialKind::kSdkToken;
+        
+    default:
+        throw std::runtime_error("No matching CredentialKind variant");
+    }
+}
+
+void FfiConverterCredentialKind::write(RustStream &stream, const CredentialKind &val) {
+    switch (val) {
+        
+    case CredentialKind::kApiKey:
+        stream << static_cast<int32_t>(1);
+        break;
+        
+    case CredentialKind::kBearerToken:
+        stream << static_cast<int32_t>(2);
+        break;
+        
+    case CredentialKind::kSdkToken:
+        stream << static_cast<int32_t>(3);
+        break;
+        
+    default:
+        throw std::runtime_error("No matching CredentialKind variant");
+    }
+}
+
+uint64_t FfiConverterCredentialKind::allocation_size(const CredentialKind &) {
+    return static_cast<uint64_t>(sizeof(int32_t));
 }
 
 
@@ -3442,5 +3509,14 @@ std::shared_ptr<WebSocketClient> new_websocket_client_with_endpoint(const std::s
         nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint));
 
     return uniffi::FfiConverterWebSocketClient::lift(ret);
+}
+
+
+CredentialKind validate_credentials(std::optional<std::string> api_key, std::optional<std::string> bearer_token, std::optional<std::string> sdk_token) {
+    auto ret = uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_func_validate_credentials,
+        uniffi::FfiConverterMarketDataError::lift, uniffi::FfiConverterOptionalString::lower(api_key), uniffi::FfiConverterOptionalString::lower(bearer_token), uniffi::FfiConverterOptionalString::lower(sdk_token));
+
+    return uniffi::FfiConverterCredentialKind::lift(ret);
 }
 } // namespace marketdata_uniffi

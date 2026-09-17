@@ -13,7 +13,15 @@ from fugle_marketdata import (
     WebSocketClient,
     ReconnectConfig,
     HealthCheckConfig,
+    MarketDataError,
 )
+
+
+def assert_credentials_rejected(exc_info):
+    """Credential errors come from core as ConfigError (code 1004)."""
+    assert exc_info.value.code == 1004
+    assert exc_info.value.source_kind == "client"
+    assert "exactly one non-empty credential" in str(exc_info.value)
 
 
 class TestHealthCheckConfig:
@@ -160,21 +168,49 @@ class TestRestClientKwargsConstructor:
 
     def test_no_auth_raises_error(self):
         """Must provide at least one auth method."""
-        with pytest.raises(TypeError) as exc_info:
+        with pytest.raises(MarketDataError) as exc_info:
             RestClient()
-        assert "exactly one" in str(exc_info.value).lower()
+        assert_credentials_rejected(exc_info)
 
     def test_multiple_auth_raises_error(self):
         """Cannot provide multiple auth methods."""
-        with pytest.raises(TypeError) as exc_info:
+        with pytest.raises(MarketDataError) as exc_info:
             RestClient(api_key="key", bearer_token="token")
-        assert "exactly one" in str(exc_info.value).lower()
+        assert_credentials_rejected(exc_info)
 
     def test_all_three_auth_raises_error(self):
         """Cannot provide all three auth methods."""
-        with pytest.raises(TypeError) as exc_info:
+        with pytest.raises(MarketDataError) as exc_info:
             RestClient(api_key="k", bearer_token="t", sdk_token="s")
-        assert "exactly one" in str(exc_info.value).lower()
+        assert_credentials_rejected(exc_info)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"api_key": ""},
+            {"bearer_token": "   "},
+            {"sdk_token": "\t\n"},
+            {"api_key": "", "bearer_token": ""},
+        ],
+    )
+    def test_blank_auth_raises_error(self, kwargs):
+        """Empty or whitespace-only credentials count as not provided."""
+        with pytest.raises(MarketDataError) as exc_info:
+            RestClient(**kwargs)
+        assert_credentials_rejected(exc_info)
+
+    def test_blank_auth_is_skipped_when_another_is_given(self):
+        """A blank credential next to a real one is ignored."""
+        assert RestClient(api_key="", bearer_token="token") is not None
+
+    def test_static_methods_reject_blank_token(self):
+        """with_bearer_token / with_sdk_token apply the same rule."""
+        with pytest.raises(MarketDataError) as exc_info:
+            RestClient.with_bearer_token("")
+        assert_credentials_rejected(exc_info)
+        with pytest.raises(MarketDataError) as exc_info:
+            RestClient.with_sdk_token("  ")
+        assert_credentials_rejected(exc_info)
 
     def test_static_methods_still_work(self):
         """Static methods remain for backwards compatibility."""
@@ -228,15 +264,25 @@ class TestWebSocketClientKwargsConstructor:
 
     def test_no_auth_raises_error(self):
         """Must provide at least one auth method."""
-        with pytest.raises(TypeError) as exc_info:
+        with pytest.raises(MarketDataError) as exc_info:
             WebSocketClient()
-        assert "exactly one" in str(exc_info.value).lower()
+        assert_credentials_rejected(exc_info)
 
     def test_multiple_auth_raises_error(self):
         """Cannot provide multiple auth methods."""
-        with pytest.raises(TypeError) as exc_info:
+        with pytest.raises(MarketDataError) as exc_info:
             WebSocketClient(api_key="key", bearer_token="token")
-        assert "exactly one" in str(exc_info.value).lower()
+        assert_credentials_rejected(exc_info)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"api_key": ""}, {"bearer_token": "  "}, {"sdk_token": ""}],
+    )
+    def test_blank_auth_raises_error(self, kwargs):
+        """Empty or whitespace-only credentials count as not provided."""
+        with pytest.raises(MarketDataError) as exc_info:
+            WebSocketClient(**kwargs)
+        assert_credentials_rejected(exc_info)
 
     def test_has_stock_property(self):
         """ws.stock property still works."""

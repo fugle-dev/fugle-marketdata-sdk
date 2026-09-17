@@ -1200,6 +1200,11 @@ void* uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_config(RustBuff
 void* uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_endpoint(RustBuffer api_key, void* listener, RustBuffer endpoint, RustCallStatus *out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_FUNC_VALIDATE_CREDENTIALS
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_FUNC_VALIDATE_CREDENTIALS
+RustBuffer uniffi_marketdata_uniffi_fn_func_validate_credentials(RustBuffer api_key, RustBuffer bearer_token, RustBuffer sdk_token, RustCallStatus *out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_MARKETDATA_UNIFFI_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_MARKETDATA_UNIFFI_RUSTBUFFER_ALLOC
 RustBuffer ffi_marketdata_uniffi_rustbuffer_alloc(uint64_t size, RustCallStatus *out_status
@@ -1531,6 +1536,12 @@ uint16_t uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_config
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_FUNC_NEW_WEBSOCKET_CLIENT_WITH_ENDPOINT
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_FUNC_NEW_WEBSOCKET_CLIENT_WITH_ENDPOINT
 uint16_t uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_endpoint(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_FUNC_VALIDATE_CREDENTIALS
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_FUNC_VALIDATE_CREDENTIALS
+uint16_t uniffi_marketdata_uniffi_checksum_func_validate_credentials(void
     
 );
 #endif

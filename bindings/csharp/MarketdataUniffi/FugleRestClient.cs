@@ -26,38 +26,31 @@ namespace FugleMarketData
         /// Create a new REST client with API key authentication.
         /// </summary>
         /// <param name="apiKey">Fugle API key</param>
-        /// <exception cref="ArgumentNullException">If apiKey is null or empty</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if apiKey is null, empty or whitespace</exception>
         public RestClient(string apiKey)
         {
-            if (string.IsNullOrEmpty(apiKey))
-                throw new ArgumentNullException(nameof(apiKey));
+            uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(apiKey, null, null);
 
             _inner = uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithApiKey(apiKey);
         }
 
         /// <summary>
         /// Create a new REST client with configuration options.
-        /// Exactly one authentication method must be provided in the options.
+        /// Exactly one non-empty authentication method must be provided in the
+        /// options; an empty or whitespace-only value counts as not provided.
         /// </summary>
         /// <param name="options">Configuration options including authentication</param>
         /// <exception cref="ArgumentNullException">If options is null</exception>
-        /// <exception cref="ArgumentException">If zero or multiple authentication methods are provided</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if zero or multiple non-empty authentication methods are provided</exception>
         public RestClient(RestClientOptions options)
         {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
 
-            // Count non-null/non-empty auth properties
-            int authCount = 0;
-            if (!string.IsNullOrEmpty(options.ApiKey)) authCount++;
-            if (!string.IsNullOrEmpty(options.BearerToken)) authCount++;
-            if (!string.IsNullOrEmpty(options.SdkToken)) authCount++;
-
-            // Validate exactly-one-auth
-            if (authCount == 0)
-                throw new ArgumentException("Provide exactly one of: ApiKey, BearerToken, SdkToken", nameof(options));
-            if (authCount > 1)
-                throw new ArgumentException("Provide exactly one of: ApiKey, BearerToken, SdkToken", nameof(options));
+            // Core requires exactly one non-blank credential (ConfigError,
+            // code 1004) and reports which one to use.
+            var kind = uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(
+                options.ApiKey, options.BearerToken, options.SdkToken);
 
             // Dispatch to correct UniFFI constructor based on which auth is set.
             //
@@ -69,17 +62,17 @@ namespace FugleMarketData
 
             try
             {
-                if (!string.IsNullOrEmpty(options.ApiKey))
+                if (kind == uniffi.marketdata_uniffi.CredentialKind.ApiKey)
                 {
                     _inner = baseUrl is null
-                        ? uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithApiKey(options.ApiKey)
-                        : uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithApiKeyAndTls(options.ApiKey, baseUrl, tls);
+                        ? uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithApiKey(options.ApiKey!)
+                        : uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithApiKeyAndTls(options.ApiKey!, baseUrl, tls);
                 }
-                else if (!string.IsNullOrEmpty(options.BearerToken))
+                else if (kind == uniffi.marketdata_uniffi.CredentialKind.BearerToken)
                 {
                     _inner = baseUrl is null
-                        ? uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithBearerToken(options.BearerToken)
-                        : uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithBearerTokenAndTls(options.BearerToken, baseUrl, tls);
+                        ? uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithBearerToken(options.BearerToken!)
+                        : uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithBearerTokenAndTls(options.BearerToken!, baseUrl, tls);
                 }
                 else // SdkToken
                 {
@@ -113,11 +106,10 @@ namespace FugleMarketData
         /// </summary>
         /// <param name="sdkToken">Fugle SDK token</param>
         /// <returns>A new RestClient instance</returns>
-        /// <exception cref="ArgumentNullException">If sdkToken is null or empty</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if sdkToken is null, empty or whitespace</exception>
         public static RestClient WithSdkToken(string sdkToken)
         {
-            if (string.IsNullOrEmpty(sdkToken))
-                throw new ArgumentNullException(nameof(sdkToken));
+            uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(null, null, sdkToken);
 
             var inner = uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithSdkToken(sdkToken);
             return new RestClient(inner);
@@ -128,11 +120,10 @@ namespace FugleMarketData
         /// </summary>
         /// <param name="bearerToken">OAuth bearer token</param>
         /// <returns>A new RestClient instance</returns>
-        /// <exception cref="ArgumentNullException">If bearerToken is null or empty</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if bearerToken is null, empty or whitespace</exception>
         public static RestClient WithBearerToken(string bearerToken)
         {
-            if (string.IsNullOrEmpty(bearerToken))
-                throw new ArgumentNullException(nameof(bearerToken));
+            uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(null, bearerToken, null);
 
             var inner = uniffi.marketdata_uniffi.MarketdataUniffiMethods.NewRestClientWithBearerToken(bearerToken);
             return new RestClient(inner);

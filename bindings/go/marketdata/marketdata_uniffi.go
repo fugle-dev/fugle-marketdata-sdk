@@ -454,6 +454,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_func_validate_credentials()
+		})
+		if checksum != 23718 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_func_validate_credentials: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futoptclient_historical()
 		})
 		if checksum != 18194 {
@@ -5737,6 +5746,47 @@ func (_ FfiDestroyerTlsConfigRecord) Destroy(value TlsConfigRecord) {
 	value.Destroy()
 }
 
+// Which credential [`validate_credentials`] accepted.
+type CredentialKind uint
+
+const (
+	// `api_key` was the credential provided.
+	CredentialKindApiKey CredentialKind = 1
+	// `bearer_token` was the credential provided.
+	CredentialKindBearerToken CredentialKind = 2
+	// `sdk_token` was the credential provided.
+	CredentialKindSdkToken CredentialKind = 3
+)
+
+type FfiConverterCredentialKind struct{}
+
+var FfiConverterCredentialKindINSTANCE = FfiConverterCredentialKind{}
+
+func (c FfiConverterCredentialKind) Lift(rb RustBufferI) CredentialKind {
+	return LiftFromRustBuffer[CredentialKind](c, rb)
+}
+
+func (c FfiConverterCredentialKind) Lower(value CredentialKind) C.RustBuffer {
+	return LowerIntoRustBuffer[CredentialKind](c, value)
+}
+
+func (c FfiConverterCredentialKind) LowerExternal(value CredentialKind) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[CredentialKind](c, value))
+}
+func (FfiConverterCredentialKind) Read(reader io.Reader) CredentialKind {
+	id := readInt32(reader)
+	return CredentialKind(id)
+}
+
+func (FfiConverterCredentialKind) Write(writer io.Writer, value CredentialKind) {
+	writeInt32(writer, int32(value))
+}
+
+type FfiDestroyerCredentialKind struct{}
+
+func (_ FfiDestroyerCredentialKind) Destroy(value CredentialKind) {
+}
+
 // Coarse-grained classification of the source of a [`MarketDataError`].
 //
 // Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -7198,4 +7248,24 @@ func NewWebsocketClientWithEndpoint(apiKey string, listener WebSocketListener, e
 	return FfiConverterWebSocketClientINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
 		return C.uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_endpoint(FfiConverterStringINSTANCE.Lower(apiKey), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), _uniffiStatus)
 	}))
+}
+
+// Check a set of credentials the way every client constructor does.
+//
+// A value that is empty or only whitespace counts as not provided; exactly
+// one of the three must remain. Wrappers that accept all three options call
+// this and pass the value of the returned kind to the matching constructor,
+// so the rule and the error (a `ConfigError`, code 1004) come from the core.
+func ValidateCredentials(apiKey *string, bearerToken *string, sdkToken *string) (CredentialKind, error) {
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_func_validate_credentials(FfiConverterOptionalStringINSTANCE.Lower(apiKey), FfiConverterOptionalStringINSTANCE.Lower(bearerToken), FfiConverterOptionalStringINSTANCE.Lower(sdkToken), _uniffiStatus),
+		}
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue CredentialKind
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterCredentialKindINSTANCE.Lift(_uniffiRV), nil
+	}
 }

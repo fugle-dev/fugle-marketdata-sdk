@@ -459,7 +459,8 @@ pub struct WebSocketClient {
 impl WebSocketClient {
     /// Create a new WebSocket client with authentication
     ///
-    /// Provide exactly one authentication method:
+    /// Provide exactly one authentication method (empty or whitespace-only
+    /// values count as not provided):
     ///   - api_key: Your Fugle API key
     ///   - bearer_token: Bearer token for authentication
     ///   - sdk_token: SDK token for authentication
@@ -478,7 +479,7 @@ impl WebSocketClient {
     ///     A new WebSocketClient instance
     ///
     /// Raises:
-    ///     ValueError: If zero or multiple auth methods provided
+    ///     MarketDataError: code 1004 if zero or multiple auth methods provided
     ///
     /// Example:
     ///     ```python
@@ -510,20 +511,15 @@ impl WebSocketClient {
         message_overflow: Option<String>,
         message_buffer: Option<i64>,
     ) -> PyResult<Self> {
-        // Validate exactly one auth method (fail fast)
-        let auth_count = [&api_key, &bearer_token, &sdk_token]
-            .iter()
-            .filter(|opt| opt.is_some())
-            .count();
-
-        if auth_count != 1 {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Provide exactly one of: api_key, bearer_token, sdk_token"
-            ));
-        }
-
-        // Extract the auth key (for now, WebSocket uses string key internally)
-        let auth_key = api_key.or(bearer_token).or(sdk_token).unwrap();
+        // Core requires exactly one non-blank credential (ConfigError, 1004).
+        // Every kind is still sent as the API key here (#91).
+        let auth_key = match marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
+            .map_err(crate::errors::to_py_err)?
+        {
+            marketdata_core::Auth::ApiKey(key)
+            | marketdata_core::Auth::BearerToken(key)
+            | marketdata_core::Auth::SdkToken(key) => key,
+        };
 
         // Extract configs with defaults (clone from Bound to avoid lifetime issues)
         let reconnect_config = if let Some(cfg) = reconnect {

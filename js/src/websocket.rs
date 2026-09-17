@@ -442,7 +442,8 @@ pub struct HealthCheckOptions {
 
 /// REST client options
 ///
-/// Exactly ONE of apiKey, bearerToken, or sdkToken must be provided.
+/// Exactly ONE non-empty apiKey, bearerToken, or sdkToken must be provided;
+/// an empty or whitespace-only value counts as not provided.
 /// baseUrl is optional for custom endpoint override.
 #[napi(object)]
 #[derive(Default)]
@@ -465,7 +466,8 @@ pub struct RestClientOptions {
 
 /// WebSocket client options
 ///
-/// Exactly ONE of apiKey, bearerToken, or sdkToken must be provided.
+/// Exactly ONE non-empty apiKey, bearerToken, or sdkToken must be provided;
+/// an empty or whitespace-only value counts as not provided.
 /// reconnect and healthCheck are optional configuration objects.
 #[napi(object)]
 #[derive(Default)]
@@ -910,27 +912,19 @@ impl WebSocketClient {
         };
         use std::time::Duration;
 
-        // Validate exactly one auth method (fail fast per CONTEXT.md)
-        let auth_count = [
-            options.api_key.is_some(),
-            options.bearer_token.is_some(),
-            options.sdk_token.is_some(),
-        ]
-        .iter()
-        .filter(|&&x| x)
-        .count();
-
-        if auth_count == 0 {
-            return Err(napi::Error::from_reason(
-                "Provide exactly one of: apiKey, bearerToken, sdkToken"
-            ));
-        }
-
-        if auth_count > 1 {
-            return Err(napi::Error::from_reason(
-                "Provide exactly one of: apiKey, bearerToken, sdkToken"
-            ));
-        }
+        // Core requires exactly one non-blank credential (ConfigError, 1004).
+        // Every kind is still sent as the API key here (#91).
+        let api_key = match marketdata_core::Auth::from_credentials(
+            options.api_key,
+            options.bearer_token,
+            options.sdk_token,
+        )
+        .map_err(|e| crate::errors::to_napi_error(&env, e))?
+        {
+            marketdata_core::Auth::ApiKey(key)
+            | marketdata_core::Auth::BearerToken(key)
+            | marketdata_core::Auth::SdkToken(key) => key,
+        };
 
         let (stock_version, futopt_version) = parse_ws_versions(&options.version)?;
         let message_queue = MessageQueueSettings::parse(
@@ -943,12 +937,7 @@ impl WebSocketClient {
         // the official SDK, which rejects a versioned baseUrl up front.
         for product in [WsProduct::Stock, WsProduct::FutOpt] {
             build_stream_config(
-                options
-                    .api_key
-                    .as_deref()
-                    .or(options.bearer_token.as_deref())
-                    .or(options.sdk_token.as_deref())
-                    .unwrap_or_default(),
+                &api_key,
                 options.base_url.as_deref(),
                 product,
                 stock_version,
@@ -956,12 +945,6 @@ impl WebSocketClient {
             )
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
         }
-
-        // Extract the one provided auth method
-        let api_key = options.api_key
-            .or(options.bearer_token)
-            .or(options.sdk_token)
-            .unwrap();
 
         // Build reconnection config with validation via core.
         //
