@@ -20,31 +20,6 @@ import java.util.concurrent.TimeUnit;
  */
 public class WebSocketClientTest {
 
-    private static boolean nativeLibraryAvailable = false;
-
-    @BeforeAll
-    static void checkNativeLibrary() {
-        try {
-            // Attempt to create a client to check if native library is available
-            try (FugleWebSocketClient client = FugleWebSocketClient.builder()
-                    .apiKey("test-api-key")
-                    .build()) {
-                nativeLibraryAvailable = true;
-            }
-        } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
-            // Native library not available
-            nativeLibraryAvailable = false;
-        } catch (Exception e) {
-            // Other exceptions mean library loaded but failed validation
-            nativeLibraryAvailable = true;
-        }
-    }
-
-    private void assumeNativeLibraryAvailable() {
-        Assumptions.assumeTrue(nativeLibraryAvailable,
-                "Native library not available. Build with: cargo build -p marketdata-uniffi --release");
-    }
-
     // ========== Structural Tests (Type Existence) ==========
 
     @Test
@@ -215,7 +190,7 @@ public class WebSocketClientTest {
     @Test
     @DisplayName("Builder with apiKey in pull mode succeeds")
     void builderPullModeSucceeds() {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         try (FugleWebSocketClient client = FugleWebSocketClient.builder()
                 .apiKey("test-api-key")
@@ -228,7 +203,7 @@ public class WebSocketClientTest {
     @Test
     @DisplayName("Builder with apiKey in callback mode succeeds")
     void builderCallbackModeSucceeds() {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         WebSocketListener listener = new WebSocketListener() {
             @Override
@@ -266,29 +241,33 @@ public class WebSocketClientTest {
     }
 
     @Test
-    @DisplayName("Builder without apiKey throws exception")
-    void builderWithoutApiKeyThrows() {
-        assumeNativeLibraryAvailable();
+    @DisplayName("Builder without credentials throws exception")
+    void builderWithoutCredentialsThrows() {
+        NativeLibrary.assumeAvailable();
 
-        assertThrows(IllegalStateException.class, () ->
+        FugleException e = assertThrows(FugleException.class, () ->
                 FugleWebSocketClient.builder().build()
         );
+        assertTrue(e.getMessage().contains("Provide exactly one of"));
     }
 
     @Test
-    @DisplayName("Builder with empty apiKey throws exception")
-    void builderWithEmptyApiKeyThrows() {
-        assumeNativeLibraryAvailable();
+    @DisplayName("Builder counts an empty apiKey as a provided credential")
+    void builderWithEmptyApiKeyIsNotRejected() {
+        NativeLibrary.assumeAvailable();
 
-        assertThrows(IllegalStateException.class, () ->
-                FugleWebSocketClient.builder().apiKey("").build()
-        );
+        // The builder only checks how many credentials are set, like the
+        // Python and Node.js bindings. Rejecting empty values is tracked in
+        // #69 and belongs in core.
+        try (FugleWebSocketClient client = FugleWebSocketClient.builder().apiKey("").build()) {
+            assertNotNull(client);
+        }
     }
 
     @Test
     @DisplayName("Pull mode methods throw exception in callback mode")
     void pullMethodsThrowInCallbackMode() {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         WebSocketListener listener = new WebSocketListener() {
             @Override
@@ -331,7 +310,7 @@ public class WebSocketClientTest {
     @Test
     @DisplayName("Client starts in disconnected state")
     void startsDisconnected() {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         try (FugleWebSocketClient client = FugleWebSocketClient.builder()
                 .apiKey("test-api-key")
@@ -343,7 +322,7 @@ public class WebSocketClientTest {
     @Test
     @DisplayName("Custom queue capacity is respected")
     void customQueueCapacity() {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         try (FugleWebSocketClient client = FugleWebSocketClient.builder()
                 .apiKey("test-api-key")
@@ -360,7 +339,7 @@ public class WebSocketClientTest {
     @Tag("integration")
     @DisplayName("Connect with valid API key succeeds")
     void connectWithValidKey() throws Exception {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         String apiKey = System.getenv("FUGLE_API_KEY");
         Assumptions.assumeTrue(apiKey != null && !apiKey.isEmpty(),
@@ -383,7 +362,7 @@ public class WebSocketClientTest {
     @Tag("integration")
     @DisplayName("Subscribe and receive messages in pull mode")
     void subscribeAndReceiveMessages() throws Exception {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         String apiKey = System.getenv("FUGLE_API_KEY");
         Assumptions.assumeTrue(apiKey != null && !apiKey.isEmpty(),
@@ -413,7 +392,7 @@ public class WebSocketClientTest {
     @Tag("integration")
     @DisplayName("Subscribe and receive messages in callback mode")
     void subscribeAndReceiveMessagesCallback() throws Exception {
-        assumeNativeLibraryAvailable();
+        NativeLibrary.assumeAvailable();
 
         String apiKey = System.getenv("FUGLE_API_KEY");
         Assumptions.assumeTrue(apiKey != null && !apiKey.isEmpty(),
