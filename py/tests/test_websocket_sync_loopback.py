@@ -7,8 +7,11 @@ bridge task, for one — panics there. The core crate's tests all run inside
 (#13, #24).
 """
 import asyncio
+import os
+import signal
 import threading
 import time
+import warnings
 
 import pytest
 
@@ -104,13 +107,9 @@ def test_iterator_receives_messages_after_connect(product_ws):
     ws.subscribe(subscription)
 
     seen = []
-    deadline = time.monotonic() + TIMEOUT_S
-    for msg in ws.messages(timeout_ms=100):
-        if msg is not None:
-            seen.append(msg)
-            if msg.get("event") == "data":
-                break
-        if time.monotonic() > deadline:
+    for msg in ws.messages():
+        seen.append(msg)
+        if msg.get("event") == "data":
             break
 
     events = [m.get("event") for m in seen]
@@ -235,15 +234,104 @@ async def test_async_for_over_messages_ends_after_disconnect(server):
 
 
 @hard_timeout
-def test_iterator_timeout_yields_none_and_keeps_iterating(server):
+@pytest.mark.parametrize("timeout_ms", [None, 50], ids=["default", "deprecated-timeout_ms"])
+def test_iteration_waits_through_quiet_periods_and_yields_only_messages(server, timeout_ms):
+    # Nothing arrives for a while: iteration neither yields None nor ends, and
+    # the next message still comes through (#68). `timeout_ms` changes nothing.
     ws = _product_ws(server.url, "stock")
     try:
         ws.connect()
-        messages = ws.messages(timeout_ms=50)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            messages = ws.messages() if timeout_ms is None else ws.messages(timeout_ms=timeout_ms)
         assert next(messages)["event"] == "authenticated"
-        # Nothing more arrives: each timeout yields None, not StopIteration.
-        assert [next(messages) for _ in range(3)] == [None, None, None]
-        ws.subscribe({"channel": "trades", "symbol": "2330"})
-        assert next(msg for msg in messages if msg is not None)["event"] == "subscribed"
+        threading.Timer(0.5, ws.subscribe, args=({"channel": "trades", "symbol": "2330"},)).start()
+        started = time.monotonic()
+        msg = next(messages)
+        assert msg is not None
+        assert msg["event"] == "subscribed"
+        assert time.monotonic() - started >= 0.4
     finally:
+        _disconnect_quietly(ws)
+
+
+@hard_timeout
+async def test_async_iteration_waits_through_quiet_periods_and_yields_only_messages(server):
+    ws = _product_ws(server.url, "stock")
+    await ws.connect_async()
+    seen = []
+
+    async def subscribe_later():
+        await asyncio.sleep(0.5)
+        await ws.subscribe_async("trades", "2330")
+
+    subscriber = asyncio.create_task(subscribe_later())
+    try:
+        async def consume():
+            async for msg in ws.messages():
+                seen.append(msg)
+                if len(seen) == 2:
+                    return
+
+        await asyncio.wait_for(consume(), TIMEOUT_S)
+    finally:
+        await subscriber
+        await ws.disconnect_async()
+    assert [m["event"] for m in seen] == ["authenticated", "subscribed"], seen
+
+
+@pytest.mark.parametrize("product_case", PRODUCTS)
+def test_messages_timeout_ms_is_deprecated(server, product_case):
+    product, _ = product_case
+    ws = _product_ws(server.url, product)
+    try:
+        ws.connect()
+        with pytest.warns(DeprecationWarning, match="timeout_ms"):
+            ws.messages(timeout_ms=100)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            ws.messages()
+    finally:
+        _disconnect_quietly(ws)
+
+
+class _Interrupted(Exception):
+    pass
+
+
+@hard_timeout
+@pytest.mark.skipif(not hasattr(signal, "SIGUSR1"), reason="needs SIGUSR1")
+def test_sync_iteration_wait_lets_signal_handlers_interrupt_it(server):
+    # Like Ctrl+C: a signal handler that raises must interrupt a wait with no
+    # data, rather than run only once a message arrives (#68). The subscribe
+    # after 3 s bounds the wait if the handler never gets to run.
+    ws = _product_ws(server.url, "stock")
+
+    def interrupt(signum, frame):
+        raise _Interrupted()
+
+    previous = signal.signal(signal.SIGUSR1, interrupt)
+    kill = threading.Timer(0.3, os.kill, args=(os.getpid(), signal.SIGUSR1))
+    bound = threading.Timer(3, ws.subscribe, args=({"channel": "trades", "symbol": "2330"},))
+    try:
+        ws.connect()
+        messages = ws.messages()
+        assert next(messages)["event"] == "authenticated"
+        kill.start()
+        bound.start()
+        started = time.monotonic()
+        with pytest.raises(_Interrupted):
+            next(messages)
+        assert time.monotonic() - started < 2, "the signal was only handled once data arrived"
+    finally:
+        # Never restore the default handler while our signal may still come:
+        # SIGUSR1's default action ends the process.
+        kill.cancel()
+        bound.cancel()
+        kill.join()
+        try:
+            time.sleep(0.1)  # a signal sent just before cancel() runs its handler now
+        except _Interrupted:
+            pass
+        signal.signal(signal.SIGUSR1, previous)
         _disconnect_quietly(ws)

@@ -287,15 +287,25 @@ client.messages()                          # Get message iterator
 # Get iterator from connected client
 messages = stock.messages()
 
-# Iterate (blocking)
+# Iterate (blocking): yields messages only, stops once the connection is gone
 for msg in messages:
     print(msg)
 
+# Async iteration
+async for msg in stock.messages():
+    print(msg)
+
 # Manual iteration
-msg = next(messages)          # Blocking
+msg = next(messages)          # Blocking until a message arrives
 msg = messages.try_recv()     # Non-blocking, returns None if no message
 msg = messages.recv_timeout(5.0)  # Timeout in seconds
 ```
+
+Iteration never yields `None` and does not end while no data arrives; it
+raises `StopIteration` / `StopAsyncIteration` once the connection is gone. A
+blocked `for` loop still reacts to Ctrl+C. `messages(timeout_ms=...)` is
+deprecated and ignored. For periodic work while no data arrives, use
+`message` callbacks or `async for` alongside other tasks.
 
 Messages go to `message` callbacks when any are registered as they arrive,
 otherwise to the iterator. The iterator holds at most 4096 unread messages;

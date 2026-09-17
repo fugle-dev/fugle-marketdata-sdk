@@ -752,6 +752,20 @@ where
     py.detach(move || runtime.block_on(fut))
 }
 
+/// `messages(timeout_ms=...)` no longer changes iteration (#68): warn when it
+/// is passed.
+fn warn_timeout_ms_deprecated(py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<()> {
+    if timeout_ms.is_none() {
+        return Ok(());
+    }
+    PyErr::warn(
+        py,
+        &py.get_type::<pyo3::exceptions::PyDeprecationWarning>(),
+        c"messages(timeout_ms=...) is deprecated and ignored: iteration yields messages only and stops once the connection is gone",
+        1,
+    )
+}
+
 /// `messages()` iterators hold as many unread messages as core's queue.
 fn handoff_capacity(config: &marketdata_core::ConnectionConfig) -> Option<usize> {
     match config.message_overflow {
@@ -1340,10 +1354,15 @@ impl StockWebSocketClient {
     ///         print(msg)
     ///     ```
     ///
-    /// Note: The iterator blocks waiting for messages. Use timeout parameter
-    /// to control blocking behavior.
+    /// Iteration yields messages only: it waits while none arrive and stops
+    /// once the connection is gone. `timeout_ms` is deprecated and ignored.
     #[pyo3(signature = (timeout_ms=None))]
-    pub fn messages(&self, timeout_ms: Option<u64>) -> PyResult<crate::iterator::MessageIterator> {
+    pub fn messages(
+        &self,
+        py: Python<'_>,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<crate::iterator::MessageIterator> {
+        warn_timeout_ms_deprecated(py, timeout_ms)?;
         let state_guard = self.state.lock().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
         })?;
@@ -1352,10 +1371,7 @@ impl StockWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
         })?;
 
-        let handoff = Arc::clone(&state.handoff);
-        let timeout = timeout_ms.map(Duration::from_millis);
-
-        Ok(crate::iterator::MessageIterator::new(handoff, timeout))
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff)))
     }
 
     /// Get the locally cached list of active subscription keys.
@@ -1979,8 +1995,16 @@ impl FutOptWebSocketClient {
     ///     for msg in ws.futopt.messages():
     ///         print(msg)
     ///     ```
+    ///
+    /// Iteration yields messages only: it waits while none arrive and stops
+    /// once the connection is gone. `timeout_ms` is deprecated and ignored.
     #[pyo3(signature = (timeout_ms=None))]
-    pub fn messages(&self, timeout_ms: Option<u64>) -> PyResult<crate::iterator::MessageIterator> {
+    pub fn messages(
+        &self,
+        py: Python<'_>,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<crate::iterator::MessageIterator> {
+        warn_timeout_ms_deprecated(py, timeout_ms)?;
         let state_guard = self.state.lock().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
         })?;
@@ -1989,10 +2013,7 @@ impl FutOptWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
         })?;
 
-        let handoff = Arc::clone(&state.handoff);
-        let timeout = timeout_ms.map(Duration::from_millis);
-
-        Ok(crate::iterator::MessageIterator::new(handoff, timeout))
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff)))
     }
 
     /// Get the locally cached list of active subscription keys.

@@ -137,6 +137,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Python**: `messages()` iteration (`for` and `async for`) yields messages
+  only and stops only once the connection is gone, raising `StopIteration` /
+  `StopAsyncIteration` (#68). It no longer yields `None`, and no longer ends
+  when no message arrives in time: with `timeout_ms`, the sync iterator used
+  to end the loop at the first timeout and the async one yielded `None`.
+  `messages(timeout_ms=...)` is deprecated and ignored, with a
+  `DeprecationWarning`. A waiting sync iterator wakes every 100 ms to let
+  Python handle signals, so Ctrl+C interrupts it. For periodic work while no
+  data arrives, use `message` callbacks or `async for` alongside other tasks.
 - **Rust**: one ordered stream of messages and connection events (#46, #68).
   See [MIGRATION-0.9.md](MIGRATION-0.9.md#11-rust-one-stream-for-messages-and-events).
   - `messages()`, `message_stream()`, `events()` and `state_events()` are
@@ -234,9 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Python**: `async for msg in ws.stock.messages()` ends once the connection
   is gone. `__anext__` returned `None` for a closed channel instead of raising
   `StopAsyncIteration`, so the loop spun on `None` forever after
-  `disconnect()`. With `messages(timeout_ms=...)`, a timeout now yields `None`
-  and iteration continues, as documented; the sync iterator used to end the
-  `for` loop at the first timeout (#68).
+  `disconnect()` (#68).
 - **All languages**: under a fast, continuous stream the async client no
   longer stalls message delivery. The network loop never yielded while the
   socket had data, so a consumer on the same tokio runtime (every binding's

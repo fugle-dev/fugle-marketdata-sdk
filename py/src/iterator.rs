@@ -1,15 +1,20 @@
 //! Python iterator for WebSocket messages
 //!
 //! Provides both sync (__iter__/__next__) and async (__aiter__/__anext__) iterator protocols.
-//! Sync iteration blocks with optional timeout. Async iteration releases GIL during receive.
+//! Both yield messages only and stop only once the connection is gone (#68).
 
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::handoff::Handoff;
 use crate::websocket::message_to_dict;
+
+/// How often a waiting iterator wakes up: to notice the connection closing
+/// and, when iterating synchronously, to let Python handle signals (Ctrl+C).
+const WAKE_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Python iterator for WebSocket messages
 ///
@@ -27,14 +32,12 @@ use crate::websocket::message_to_dict;
 /// # Async iteration (releases GIL, modern Python)
 /// async for msg in ws.stock.messages():
 ///     print(msg)
-///
-/// # With timeout (returns None on timeout instead of blocking forever)
-/// for msg in ws.stock.messages(timeout_ms=1000):
-///     if msg is None:
-///         print("Timeout, no message received")
-///         continue
-///     print(msg)
 /// ```
+///
+/// Iteration yields messages only: it waits while none arrive, never yields
+/// `None`, and stops only once the connection is gone. For periodic work
+/// while no data arrives, use `message` callbacks or `async for` with your
+/// own tasks.
 ///
 /// # GIL Safety
 ///
@@ -50,13 +53,23 @@ use crate::websocket::message_to_dict;
 #[pyclass]
 pub struct MessageIterator {
     handoff: Arc<Handoff>,
-    timeout: Option<Duration>,
 }
 
 impl MessageIterator {
     /// Create a new message iterator
-    pub(crate) fn new(handoff: Arc<Handoff>, timeout: Option<Duration>) -> Self {
-        Self { handoff, timeout }
+    pub(crate) fn new(handoff: Arc<Handoff>) -> Self {
+        Self { handoff }
+    }
+}
+
+/// Sets its flag when dropped: an `__anext__` awaitable that was cancelled
+/// or dropped stops its blocking wait at the next wake-up, before it takes a
+/// message nobody will receive.
+struct AbandonOnDrop(Arc<AtomicBool>);
+
+impl Drop for AbandonOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
@@ -71,31 +84,25 @@ impl MessageIterator {
     ///
     /// Returns:
     ///     dict: Message data containing event, channel, symbol, data fields
-    ///     None: If timeout specified and no message received within timeout
     ///
     /// Raises:
-    ///     StopIteration: When channel is closed (connection disconnected)
+    ///     StopIteration: When the connection is gone and every message was read
     ///
-    /// Note: This method blocks the current thread while waiting for
-    /// messages, with the GIL released.
+    /// Note: This method blocks the current thread until a message arrives,
+    /// with the GIL released. It wakes every 100 ms to let Python handle
+    /// signals, so Ctrl+C interrupts it.
     fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let handoff = Arc::clone(&self.handoff);
-        let timeout = self.timeout;
-        let result = py.detach(move || handoff.receive(timeout));
-
-        match result {
-            Ok(Some(msg)) => Ok(message_to_dict(py, &msg)?.into_any()),
-            Ok(None) => {
-                // Timeout: yield None and keep iterating. Returning a Rust
-                // `None` here would end the iteration, as pyo3 maps an empty
-                // `Option` from `__next__` to StopIteration.
-                Ok(py.None())
-            }
-            Err(_) => {
-                // Channel closed, stop iteration
-                Err(pyo3::exceptions::PyStopIteration::new_err(
-                    "Message channel closed",
-                ))
+        loop {
+            let handoff = Arc::clone(&self.handoff);
+            match py.detach(move || handoff.receive(Some(WAKE_INTERVAL))) {
+                Ok(Some(msg)) => return Ok(message_to_dict(py, &msg)?.into_any()),
+                // Nothing yet: run pending signal handlers, then wait again.
+                Ok(None) => py.check_signals()?,
+                Err(()) => {
+                    return Err(pyo3::exceptions::PyStopIteration::new_err(
+                        "Message channel closed",
+                    ))
+                }
             }
         }
     }
@@ -152,42 +159,43 @@ impl MessageIterator {
     ///
     /// Returns:
     ///     dict: Message data containing event, channel, symbol, data fields
-    ///     None: If timeout specified and no message received within timeout
     ///
     /// Raises:
-    ///     StopAsyncIteration: When channel is closed (connection disconnected)
+    ///     StopAsyncIteration: When the connection is gone and every message was read
     ///
     /// Note: This method releases the GIL while waiting for messages.
     /// The wait runs on tokio's blocking pool, enabling true async concurrency.
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let handoff = Arc::clone(&self.handoff);
-        let timeout = self.timeout;
 
         future_into_py(py, async move {
-            let result = tokio::task::spawn_blocking(move || handoff.receive(timeout))
+            let abandoned = Arc::new(AtomicBool::new(false));
+            let _abandon = AbandonOnDrop(Arc::clone(&abandoned));
+            let result = tokio::task::spawn_blocking(move || loop {
+                if abandoned.load(Ordering::SeqCst) {
+                    return Ok(None);
+                }
+                match handoff.receive(Some(WAKE_INTERVAL)) {
+                    Ok(Some(msg)) => return Ok(Some(msg)),
+                    Ok(None) => continue,
+                    Err(()) => return Err(()),
+                }
+            })
             .await
             .map_err(|e| {
                 pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e))
             })?;
 
             match result {
-                Ok(Some(msg)) => {
-                    // Convert to Python dict with GIL
-                    Python::attach(|py| {
-                        let dict = message_to_dict(py, &msg)?;
-                        Ok(Some(dict.into_any()))
-                    })
-                }
-                Ok(None) => {
-                    // Timeout - return None without stopping iteration
-                    Ok(None)
-                }
-                Err(_) => {
-                    // Channel closed: end `async for`.
-                    Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
-                        "Message channel closed",
-                    ))
-                }
+                Ok(Some(msg)) => Python::attach(|py| Ok(message_to_dict(py, &msg)?.into_any())),
+                // Only when abandoned, and then nobody awaits this result.
+                Ok(None) => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
+                    "Iteration abandoned",
+                )),
+                // Channel closed: end `async for`.
+                Err(()) => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
+                    "Message channel closed",
+                )),
             }
         })
     }

@@ -268,7 +268,7 @@ def test_iterator_waits_without_holding_the_gil():
         ws = product_ws(srv.url, "stock")
         try:
             ws.connect()
-            messages = ws.messages(timeout_ms=TIMEOUT_S * 1000)
+            messages = ws.messages()
             assert next(messages)["event"] == "authenticated"
             threading.Timer(0.2, ws.subscribe, args=(SUBSCRIPTION,)).start()
             assert next(messages)["event"] == "subscribed"

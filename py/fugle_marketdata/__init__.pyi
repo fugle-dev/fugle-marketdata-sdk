@@ -2,7 +2,10 @@
 
 Fugle Market Data SDK - Python bindings with full type annotations.
 """
-from typing import Any, Callable, Literal, Mapping, Optional, List
+from typing import Any, AsyncIterator, Callable, Iterator, Literal, Mapping, Optional, List
+
+# A message frame, as the server sent it.
+Message = dict[str, Any]
 
 __version__: str
 
@@ -1803,14 +1806,12 @@ class StockWebSocketClient:
         """Get message iterator for consuming streaming data.
 
         Args:
-            timeout_ms: Optional timeout in milliseconds for blocking receive
+            timeout_ms: Deprecated and ignored; passing it emits a
+                DeprecationWarning.
 
         Returns:
-            MessageIterator for iterating over messages
-
-        Note:
-            The iterator blocks waiting for messages. Use timeout parameter
-            to control blocking behavior.
+            MessageIterator for iterating over messages. Iteration yields
+            messages only and stops once the connection is gone.
         """
         ...
 
@@ -1954,10 +1955,12 @@ class FutOptWebSocketClient:
         """Get message iterator for consuming streaming data.
 
         Args:
-            timeout_ms: Optional timeout in milliseconds for blocking receive
+            timeout_ms: Deprecated and ignored; passing it emits a
+                DeprecationWarning.
 
         Returns:
-            MessageIterator for iterating over messages
+            MessageIterator for iterating over messages. Iteration yields
+            messages only and stops once the connection is gone.
         """
         ...
 
@@ -1979,35 +1982,43 @@ class MessageIterator:
         async for msg in ws.stock.messages():
             print(msg)
         ```
+
+    Iteration yields messages only: it waits while none arrive and stops once
+    the connection is gone.
     """
 
-    def __iter__(self) -> "MessageIterator":
+    def __iter__(self) -> Iterator[Message]:
         """Return self for iteration."""
         ...
 
-    def __next__(self) -> Optional[dict[str, Any]]:
-        """Get next message (blocking).
+    def __next__(self) -> Message:
+        """Get next message, waiting until one arrives (blocking).
+
+        Never returns None. Wakes every 100 ms to let Python handle signals,
+        so Ctrl+C interrupts the wait.
 
         Returns:
-            Message dict or None on timeout
+            Message dict
 
         Raises:
-            StopIteration: When the channel is closed
+            StopIteration: When the connection is gone and every message was read
         """
         ...
 
-    def __aiter__(self) -> "MessageIterator":
+    def __aiter__(self) -> AsyncIterator[Message]:
         """Return self for async iteration."""
         ...
 
-    async def __anext__(self) -> Optional[dict[str, Any]]:
-        """Get next message (async).
+    async def __anext__(self) -> Message:
+        """Get next message, waiting until one arrives (async).
+
+        Never returns None.
 
         Returns:
-            Message dict, or None on timeout
+            Message dict
 
         Raises:
-            StopAsyncIteration: When the channel is closed
+            StopAsyncIteration: When the connection is gone and every message was read
         """
         ...
 
