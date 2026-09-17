@@ -140,6 +140,8 @@ class MyListener : IWebSocketListener
     public void OnReconnecting(uint attempt) { }
 
     public void OnReconnectFailed(uint attempts) { }
+
+    public void OnMessagesDropped(ulong count) { }
 }
 
 // Create WebSocket client
@@ -264,6 +266,7 @@ Task ConnectAsync()                           // Connect to server
 Task DisconnectAsync()                        // Disconnect from server
 bool IsConnected                              // Check connection status
 bool IsClosed                                 // Check if client is closed
+ulong MessagesDroppedTotal                    // Messages dropped this connection (see below)
 
 Task SubscribeAsync(string channel, string symbol)  // Subscribe to channel
 Task UnsubscribeAsync(string subscriptionId)        // Unsubscribe by ID
@@ -283,8 +286,32 @@ public interface IWebSocketListener
     void OnError(string errorMessage);
     void OnReconnecting(uint attempt);
     void OnReconnectFailed(uint attempts);        // terminal
+    void OnMessagesDropped(ulong count);          // messages dropped since the last call (DropNewest overflow)
 }
 ```
+
+#### Message queue overflow
+
+By default the client buffers up to 4096 unread messages and drops the
+newest ones once `OnMessage` falls behind, reporting the drop count via
+`OnMessagesDropped`. Configure this through `WebSocketClientOptions`:
+
+```csharp
+var options = new WebSocketClientOptions
+{
+    ApiKey = "your-api-key",
+    MessageOverflow = MessageOverflow.DropNewest,  // or MessageOverflow.Unbounded
+    MessageBuffer = 8192,                          // null = default (4096); must be > 0
+};
+using var ws = new WebSocketClient(options, listener);
+
+// Running total of dropped messages for the current connection
+Console.WriteLine(ws.MessagesDroppedTotal);
+```
+
+`MessageOverflow.Unbounded` never drops messages; the queue keeps growing
+while `OnMessage` lags, so only use it when the listener is guaranteed to
+keep up.
 
 #### StreamMessage Properties
 
@@ -439,6 +466,8 @@ class MyListener : IWebSocketListener
     public void OnReconnecting(uint attempt) { }
 
     public void OnReconnectFailed(uint attempts) { }
+
+    public void OnMessagesDropped(ulong count) { }
 }
 
 class Program

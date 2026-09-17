@@ -76,6 +76,22 @@ namespace FugleMarketData
         /// </summary>
         /// <param name="attempts">Total number of attempts made</param>
         void OnReconnectFailed(uint attempts);
+
+        /// <summary>
+        /// Called when messages were dropped because <see cref="OnMessage"/> fell
+        /// behind while the client's message queue was full
+        /// (<see cref="MessageOverflow.DropNewest"/>).
+        ///
+        /// Note: this library multi-targets netstandard2.0, which does not
+        /// support default interface implementations, so this method has no
+        /// default body. Existing <see cref="IWebSocketListener"/> implementations
+        /// must add it when upgrading.
+        /// </summary>
+        /// <param name="count">Number of messages dropped since the previous call.
+        /// The first drop on a connection is reported at once, later ones at most
+        /// once per second, and any remainder before <see cref="OnDisconnected"/>.
+        /// The connection's running total is available via <see cref="WebSocketClient.MessagesDroppedTotal"/>.</param>
+        void OnMessagesDropped(ulong count);
     }
 
     /// <summary>
@@ -98,6 +114,7 @@ namespace FugleMarketData
         public void OnError(string errorMessage) => _listener.OnError(errorMessage);
         public void OnReconnecting(uint attempt) => _listener.OnReconnecting(attempt);
         public void OnReconnectFailed(uint attempts) => _listener.OnReconnectFailed(attempts);
+        public void OnMessagesDropped(ulong count) => _listener.OnMessagesDropped(count);
     }
 
     /// <summary>
@@ -180,10 +197,12 @@ namespace FugleMarketData
         /// Create a WebSocket client with configuration options.
         /// Exactly one authentication method must be provided in the options.
         /// </summary>
-        /// <param name="options">Configuration options including authentication and connection settings</param>
+        /// <param name="options">Configuration options including authentication, connection, and
+        /// message queue (<see cref="WebSocketClientOptions.MessageOverflow"/>, <see cref="WebSocketClientOptions.MessageBuffer"/>) settings</param>
         /// <param name="listener">Listener to receive WebSocket events</param>
         /// <exception cref="ArgumentNullException">If options or listener is null</exception>
         /// <exception cref="ArgumentException">If zero or multiple authentication methods are provided</exception>
+        /// <exception cref="ArgumentOutOfRangeException">If <see cref="WebSocketClientOptions.MessageBuffer"/> is set to a value that is not greater than 0</exception>
         public WebSocketClient(WebSocketClientOptions options, IWebSocketListener listener)
         {
             if (options == null)
@@ -202,6 +221,9 @@ namespace FugleMarketData
                 throw new ArgumentException("Provide exactly one of: ApiKey, BearerToken, SdkToken", nameof(options));
             if (authCount > 1)
                 throw new ArgumentException("Provide exactly one of: ApiKey, BearerToken, SdkToken", nameof(options));
+
+            if (options.MessageBuffer.HasValue && options.MessageBuffer.Value <= 0)
+                throw new ArgumentOutOfRangeException(nameof(options.MessageBuffer), options.MessageBuffer, "MessageBuffer must be greater than 0 when set");
 
             // Create adapter
             var adapter = new WebSocketListenerAdapter(listener);
@@ -240,27 +262,33 @@ namespace FugleMarketData
                         );
                     }
 
-                    if (!string.IsNullOrEmpty(options.BaseUrl))
+                    uniffi.marketdata_uniffi.MessageQueueConfigRecord? messageQueueRecord = null;
+                    if (options.MessageOverflow != null || options.MessageBuffer != null)
                     {
-                        _inner = uniffi.marketdata_uniffi.WebSocketClient.NewWithUrl(
-                            options.ApiKey,
-                            adapter,
-                            uniffiEndpoint,
-                            options.BaseUrl,
-                            reconnectRecord,
-                            healthCheckRecord
+                        var overflowRecord = options.MessageOverflow switch
+                        {
+                            MessageOverflow.DropNewest or null => uniffi.marketdata_uniffi.MessageOverflowRecord.DropNewest,
+                            MessageOverflow.Unbounded => uniffi.marketdata_uniffi.MessageOverflowRecord.Unbounded,
+                            _ => throw new ArgumentOutOfRangeException(nameof(options.MessageOverflow))
+                        };
+
+                        messageQueueRecord = new uniffi.marketdata_uniffi.MessageQueueConfigRecord(
+                            overflow: overflowRecord,
+                            buffer: (uint)(options.MessageBuffer ?? 0)
                         );
                     }
-                    else
-                    {
-                        _inner = uniffi.marketdata_uniffi.WebSocketClient.NewWithConfig(
-                            options.ApiKey,
-                            adapter,
-                            uniffiEndpoint,
-                            reconnectRecord,
-                            healthCheckRecord
-                        );
-                    }
+
+                    _inner = uniffi.marketdata_uniffi.WebSocketClient.NewWithOptions(
+                        options.ApiKey,
+                        adapter,
+                        uniffiEndpoint,
+                        options.BaseUrl,
+                        reconnectRecord,
+                        healthCheckRecord,
+                        tls: null,
+                        version: null,
+                        messageQueue: messageQueueRecord
+                    );
                 }
                 else
                 {
@@ -318,6 +346,15 @@ namespace FugleMarketData
         /// Whether the client has been shut down.
         /// </summary>
         public bool IsClosed => _inner.IsClosed();
+
+        /// <summary>
+        /// Messages dropped because they arrived while the message queue was
+        /// full (<see cref="MessageOverflow.DropNewest"/>).
+        /// Counted from the start of the current connection (every connect or
+        /// reconnect restarts it); after <see cref="DisconnectAsync"/> it still
+        /// reads the last connection's count. 0 before the first connect.
+        /// </summary>
+        public ulong MessagesDroppedTotal => _inner.MessagesDroppedTotal();
 
         /// <summary>
         /// Send a ping message to the server.

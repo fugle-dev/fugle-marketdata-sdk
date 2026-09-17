@@ -202,6 +202,8 @@ func TestOptionFunctions(t *testing.T) {
 		{"WithEndpoint", WithEndpoint(WebSocketEndpointStock)},
 		{"WithReconnect", WithReconnect(ReconnectConfig{MaxAttempts: 3})},
 		{"WithHealthCheck", WithHealthCheck(HealthCheckConfig{Enabled: true})},
+		{"WithMessageOverflow", WithMessageOverflow(MessageOverflowUnbounded)},
+		{"WithMessageBuffer", WithMessageBuffer(8192)},
 	}
 
 	for _, tt := range tests {
@@ -210,6 +212,69 @@ func TestOptionFunctions(t *testing.T) {
 				t.Errorf("%s returned nil Option", tt.name)
 			}
 		})
+	}
+}
+
+// Test 14: WithMessageBuffer rejects zero and negative values
+func TestWithMessageBufferInvalid(t *testing.T) {
+	for _, n := range []int{0, -1, -100} {
+		cfg := &clientConfig{}
+		err := WithMessageBuffer(n)(cfg)
+		if err == nil {
+			t.Fatalf("expected error for buffer %d, got nil", n)
+		}
+		if cfg.messageBuffer != nil {
+			t.Fatalf("expected messageBuffer to stay unset for buffer %d", n)
+		}
+	}
+}
+
+// Test 15: WithMessageBuffer accepts positive values
+func TestWithMessageBufferValid(t *testing.T) {
+	cfg := &clientConfig{}
+	if err := WithMessageBuffer(8192)(cfg); err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if cfg.messageBuffer == nil || *cfg.messageBuffer != 8192 {
+		t.Fatalf("expected messageBuffer 8192, got %v", cfg.messageBuffer)
+	}
+}
+
+// Test 16: clientConfig defaults to no explicit overflow/buffer (core default applies)
+func TestMessageQueueDefaults(t *testing.T) {
+	cfg := &clientConfig{}
+	if cfg.messageOverflow != nil {
+		t.Errorf("expected messageOverflow default nil (use core default), got %v", cfg.messageOverflow)
+	}
+	if cfg.messageBuffer != nil {
+		t.Errorf("expected messageBuffer default nil (use core default), got %v", cfg.messageBuffer)
+	}
+}
+
+// Test 17: WithMessageOverflow accepts both DropNewest and Unbounded
+func TestWithMessageOverflowValues(t *testing.T) {
+	tests := []MessageOverflow{MessageOverflowDropNewest, MessageOverflowUnbounded}
+
+	for _, overflow := range tests {
+		cfg := &clientConfig{}
+		if err := WithMessageOverflow(overflow)(cfg); err != nil {
+			t.Fatalf("expected success for %v, got error: %v", overflow, err)
+		}
+		if cfg.messageOverflow == nil || *cfg.messageOverflow != overflow {
+			t.Fatalf("expected messageOverflow %v, got %v", overflow, cfg.messageOverflow)
+		}
+	}
+}
+
+// Test 18: WithMessageOverflow rejects unknown values
+func TestWithMessageOverflowInvalid(t *testing.T) {
+	cfg := &clientConfig{}
+	err := WithMessageOverflow(MessageOverflow(99))(cfg)
+	if err == nil {
+		t.Fatal("expected error for invalid overflow policy, got nil")
+	}
+	if cfg.messageOverflow != nil {
+		t.Fatal("expected messageOverflow to stay unset for an invalid policy")
 	}
 }
 
@@ -224,3 +289,4 @@ func (m *mockListener) OnMessage(message StreamMessage)    {}
 func (m *mockListener) OnError(errorMessage string)        {}
 func (m *mockListener) OnReconnecting(attempt uint32)      {}
 func (m *mockListener) OnReconnectFailed(attempts uint32)  {}
+func (m *mockListener) OnMessagesDropped(count uint64)     {}

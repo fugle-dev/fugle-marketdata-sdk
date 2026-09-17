@@ -90,12 +90,47 @@ struct StockTechnicalClient;
 struct WebSocketClient;
 struct WebSocketListener;
 struct HealthCheckConfigRecord;
+struct MessageQueueConfigRecord;
 struct ReconnectConfigRecord;
 struct StreamMessage;
 struct StreamingVersionRecord;
 struct TlsConfigRecord;
 struct MarketDataError;
+enum class MessageOverflowRecord;
 enum class WebSocketEndpoint;
+
+
+/**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
+};
 
 
 namespace uniffi {
@@ -747,6 +782,26 @@ struct WebSocketClient
      */
     static std::shared_ptr<WebSocketClient> new_with_full_config(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version);
     /**
+     * Create a new WebSocket client with full configuration plus the
+     * message queue settings.
+     *
+     * Same as `new_with_full_config`, with `message_queue` choosing what
+     * happens while `on_message` falls behind (None for the defaults:
+     * `DropNewest`, 4096 messages).
+     *
+     * # Arguments
+     * * `api_key` - Fugle API key for authentication
+     * * `listener` - Callback interface for receiving WebSocket events
+     * * `endpoint` - The market data endpoint (Stock or FutOpt)
+     * * `base_url` - Optional base URL override
+     * * `reconnect_config` - Optional reconnection configuration
+     * * `health_check_config` - Optional health check configuration
+     * * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
+     * * `version` - Optional per-product streaming version
+     * * `message_queue` - Optional message queue configuration
+     */
+    static std::shared_ptr<WebSocketClient> new_with_options(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue);
+    /**
      * Create a new WebSocket client with full configuration including custom base URL
      */
     static std::shared_ptr<WebSocketClient> new_with_url(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, const std::string &base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config);
@@ -769,6 +824,15 @@ struct WebSocketClient
      * right after the connection drops, without waiting for the event thread.
      */
     bool is_connected();
+    /**
+     * Messages dropped because they arrived while the message queue held
+     * `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+     *
+     * Counted from the start of the current connection (every `connect()` or
+     * reconnect restarts it); after `disconnect()` it still reads the last
+     * connection's count. 0 before the first `connect()`.
+     */
+    uint64_t messages_dropped_total();
     /**
      * Send a ping message (blocking).
      */
@@ -888,6 +952,18 @@ struct WebSocketListener {
      */
     virtual
     void on_reconnect_failed(uint32_t attempts) = 0;
+    /**
+     * Called when messages were dropped because `on_message` fell behind
+     * while the client's message queue held `buffer` unread messages
+     * (`MessageOverflowRecord::DropNewest`).
+     *
+     * `count` is the number dropped since the previous call. The first drop
+     * on a connection is reported at once, later ones at most once per
+     * second, and the rest before `on_disconnected`. The connection's total
+     * is `WebSocketClient::messages_dropped_total()`.
+     */
+    virtual
+    void on_messages_dropped(uint64_t count) = 0;
 };
 
 namespace uniffi {
@@ -900,6 +976,7 @@ namespace uniffi {
         static void on_error(uint64_t uniffi_handle,RustBuffer error_message,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_reconnecting(uint64_t uniffi_handle,uint32_t attempt,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_reconnect_failed(uint64_t uniffi_handle,uint32_t attempts,void * uniffi_out_return,RustCallStatus *out_status);
+        static void on_messages_dropped(uint64_t uniffi_handle,uint64_t count,void * uniffi_out_return,RustCallStatus *out_status);
 
         static void uniffi_free(uint64_t uniffi_handle);
         static void init();
@@ -913,6 +990,7 @@ namespace uniffi {
             .on_error = reinterpret_cast<void *>(&on_error),
             .on_reconnecting = reinterpret_cast<void *>(&on_reconnecting),
             .on_reconnect_failed = reinterpret_cast<void *>(&on_reconnect_failed),
+            .on_messages_dropped = reinterpret_cast<void *>(&on_messages_dropped),
             .uniffi_free = reinterpret_cast<void *>(&uniffi_free)
         };
     };
@@ -1016,6 +1094,17 @@ struct WebSocketListenerImpl
      * further lifecycle callbacks follow for this connection.
      */
     void on_reconnect_failed(uint32_t attempts);
+    /**
+     * Called when messages were dropped because `on_message` fell behind
+     * while the client's message queue held `buffer` unread messages
+     * (`MessageOverflowRecord::DropNewest`).
+     *
+     * `count` is the number dropped since the previous call. The first drop
+     * on a connection is reported at once, later ones at most once per
+     * second, and the rest before `on_disconnected`. The connection's total
+     * is `WebSocketClient::messages_dropped_total()`.
+     */
+    void on_messages_dropped(uint64_t count);
 
     private:
     WebSocketListenerImpl(const WebSocketListenerImpl &);
@@ -1623,6 +1712,14 @@ struct FfiConverterTypeHealthCheckConfigRecord {
     static uint64_t allocation_size(const HealthCheckConfigRecord &);
 };
 
+struct FfiConverterTypeMessageQueueConfigRecord {
+    static MessageQueueConfigRecord lift(RustBuffer);
+    static RustBuffer lower(const MessageQueueConfigRecord &);
+    static MessageQueueConfigRecord read(RustStream &);
+    static void write(RustStream &, const MessageQueueConfigRecord &);
+    static uint64_t allocation_size(const MessageQueueConfigRecord &);
+};
+
 struct FfiConverterTypeReconnectConfigRecord {
     static ReconnectConfigRecord lift(RustBuffer);
     static RustBuffer lower(const ReconnectConfigRecord &);
@@ -1661,6 +1758,13 @@ struct FfiConverterMarketDataError {
     static std::shared_ptr<MarketDataError> read(RustStream &stream);
     static void write(RustStream &stream, const MarketDataError &);
     static uint64_t allocation_size(const MarketDataError &);
+};
+struct FfiConverterMessageOverflowRecord {
+    static MessageOverflowRecord lift(RustBuffer);
+    static RustBuffer lower(const MessageOverflowRecord &);
+    static MessageOverflowRecord read(RustStream &);
+    static void write(RustStream &, const MessageOverflowRecord &);
+    static uint64_t allocation_size(const MessageOverflowRecord &);
 };
 struct FfiConverterWebSocketEndpoint {
     static WebSocketEndpoint lift(RustBuffer);
@@ -1717,6 +1821,13 @@ struct FfiConverterOptionalTypeHealthCheckConfigRecord {
     static std::optional<HealthCheckConfigRecord> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<HealthCheckConfigRecord>& value);
     static uint64_t allocation_size(const std::optional<HealthCheckConfigRecord> &val);
+};
+struct FfiConverterOptionalTypeMessageQueueConfigRecord {
+    static std::optional<MessageQueueConfigRecord> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<MessageQueueConfigRecord>& val);
+    static std::optional<MessageQueueConfigRecord> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<MessageQueueConfigRecord>& value);
+    static uint64_t allocation_size(const std::optional<MessageQueueConfigRecord> &val);
 };
 struct FfiConverterOptionalTypeReconnectConfigRecord {
     static std::optional<ReconnectConfigRecord> lift(RustBuffer buf);

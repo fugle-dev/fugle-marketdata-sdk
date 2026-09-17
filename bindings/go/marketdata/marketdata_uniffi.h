@@ -490,6 +490,20 @@ static void call_UniffiCallbackInterfaceWebSocketListenerMethod7(
 
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_WEB_SOCKET_LISTENER_METHOD8
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_WEB_SOCKET_LISTENER_METHOD8
+typedef void (*UniffiCallbackInterfaceWebSocketListenerMethod8)(uint64_t uniffi_handle, uint64_t count, void* uniffi_out_return, RustCallStatus* callStatus );
+
+// Making function static works arround:
+// https://github.com/golang/go/issues/11263
+static void call_UniffiCallbackInterfaceWebSocketListenerMethod8(
+				UniffiCallbackInterfaceWebSocketListenerMethod8 cb, uint64_t uniffi_handle, uint64_t count, void* uniffi_out_return, RustCallStatus* callStatus )
+{
+	return cb(uniffi_handle, count, uniffi_out_return, callStatus );
+}
+
+
+#endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_WEB_SOCKET_LISTENER
 #define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_WEB_SOCKET_LISTENER
 typedef struct UniffiVTableCallbackInterfaceWebSocketListener {
@@ -501,6 +515,7 @@ typedef struct UniffiVTableCallbackInterfaceWebSocketListener {
     UniffiCallbackInterfaceWebSocketListenerMethod5 onError;
     UniffiCallbackInterfaceWebSocketListenerMethod6 onReconnecting;
     UniffiCallbackInterfaceWebSocketListenerMethod7 onReconnectFailed;
+    UniffiCallbackInterfaceWebSocketListenerMethod8 onMessagesDropped;
     UniffiCallbackInterfaceFree uniffiFree;
 } UniffiVTableCallbackInterfaceWebSocketListener;
 
@@ -1025,6 +1040,11 @@ void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint(
 void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(RustBuffer api_key, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustCallStatus *out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_OPTIONS
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_OPTIONS
+void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer api_key, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustCallStatus *out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_URL
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_URL
 void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_url(RustBuffer api_key, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustCallStatus *out_status
@@ -1048,6 +1068,11 @@ int8_t uniffi_marketdata_uniffi_fn_method_websocketclient_is_closed(void* ptr, R
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_IS_CONNECTED
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_IS_CONNECTED
 int8_t uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(void* ptr, RustCallStatus *out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_MESSAGES_DROPPED_TOTAL
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_MESSAGES_DROPPED_TOTAL
+uint64_t uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(void* ptr, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_PING
@@ -1123,6 +1148,11 @@ void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(void* 
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_RECONNECT_FAILED
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_RECONNECT_FAILED
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(void* ptr, uint32_t attempts, RustCallStatus *out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_MESSAGES_DROPPED
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_MESSAGES_DROPPED
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(void* ptr, uint64_t count, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_FUNC_NEW_REST_CLIENT_WITH_API_KEY
@@ -1984,6 +2014,12 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected(v
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_MESSAGES_DROPPED_TOTAL
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_MESSAGES_DROPPED_TOTAL
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_PING
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_PING
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_ping(void
@@ -2056,6 +2092,12 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETLISTENER_ON_MESSAGES_DROPPED
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETLISTENER_ON_MESSAGES_DROPPED
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_CONSTRUCTOR_WEBSOCKETCLIENT_NEW
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_CONSTRUCTOR_WEBSOCKETCLIENT_NEW
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new(void
@@ -2080,6 +2122,12 @@ uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_OPTIONS
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_OPTIONS
+uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_URL
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_URL
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url(void
@@ -2101,6 +2149,7 @@ uint32_t ffi_marketdata_uniffi_uniffi_contract_version(void
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uint64_t uniffi_handle, RustBuffer error_message, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod6(uint64_t uniffi_handle, uint32_t attempt, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7(uint64_t uniffi_handle, uint32_t attempts, void* uniffi_out_return, RustCallStatus* callStatus );
+ void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod8(uint64_t uniffi_handle, uint64_t count, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerFree(uint64_t handle);
 
 void marketdata_uniffi_uniffiFutureContinuationCallback(uint64_t, int8_t);

@@ -36,6 +36,8 @@ pub enum EventType {
     Authenticated,
     /// Authentication rejected by server
     Unauthenticated,
+    /// Messages dropped because the consumer fell behind
+    MessagesDropped,
 }
 
 impl EventType {
@@ -49,6 +51,7 @@ impl EventType {
             "error" => Some(EventType::Error),
             "authenticated" => Some(EventType::Authenticated),
             "unauthenticated" => Some(EventType::Unauthenticated),
+            "messages_dropped" => Some(EventType::MessagesDropped),
             _ => None,
         }
     }
@@ -226,6 +229,13 @@ impl CallbackRegistry {
         let attempt_obj: Py<PyAny> = attempt.into_pyobject(py).expect("Failed to convert attempt").unbind().into_any();
         let args = pyo3::types::PyTuple::new(py, [attempt_obj]).expect("Failed to create tuple");
         self.invoke(py, EventType::Reconnect, &args);
+    }
+
+    /// Invoke messages_dropped callbacks with `(dropped, total)`: messages
+    /// dropped since the previous call, and on the connection so far.
+    pub fn invoke_messages_dropped(&self, py: Python<'_>, dropped: u64, total: u64) {
+        let args = pyo3::types::PyTuple::new(py, [dropped, total]).expect("Failed to create tuple");
+        self.invoke(py, EventType::MessagesDropped, &args);
     }
 
     /// Invoke error callbacks with message and code

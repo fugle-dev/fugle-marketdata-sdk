@@ -305,6 +305,112 @@ public class ConfigOptionsTests
         }
     }
 
+    // ========== Message queue (MessageOverflow / MessageBuffer) Tests ==========
+
+    [TestMethod]
+    public void WebSocketClientOptions_MessageQueue_DefaultValues_AreNull()
+    {
+        var options = new FugleMarketData.WebSocketClientOptions();
+
+        Assert.IsNull(options.MessageOverflow);
+        Assert.IsNull(options.MessageBuffer);
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_MessageBuffer_Zero_ThrowsArgumentOutOfRangeException()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            MessageBuffer = 0
+        };
+        var listener = new TestWebSocketListener();
+
+        var ex = Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+            new FugleMarketData.WebSocketClient(options, listener)
+        );
+
+        StringAssert.Contains(ex.ParamName, "MessageBuffer");
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_MessageBuffer_Negative_ThrowsArgumentOutOfRangeException()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            MessageBuffer = -1
+        };
+        var listener = new TestWebSocketListener();
+
+        var ex = Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+            new FugleMarketData.WebSocketClient(options, listener)
+        );
+
+        StringAssert.Contains(ex.ParamName, "MessageBuffer");
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_AcceptsDropNewestOverflow()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            MessageOverflow = FugleMarketData.MessageOverflow.DropNewest,
+            MessageBuffer = 8
+        };
+        var listener = new TestWebSocketListener();
+
+        try
+        {
+            using var client = new FugleMarketData.WebSocketClient(options, listener);
+            Assert.IsNotNull(client);
+            Assert.AreEqual(0ul, client.MessagesDroppedTotal);
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        {
+            Assert.Fail("Should not throw ArgumentException for valid auth and message queue config");
+        }
+        catch
+        {
+            // Other exceptions (UniFFI errors) are acceptable
+        }
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_AcceptsUnboundedOverflow()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            MessageOverflow = FugleMarketData.MessageOverflow.Unbounded
+        };
+        var listener = new TestWebSocketListener();
+
+        try
+        {
+            using var client = new FugleMarketData.WebSocketClient(options, listener);
+            Assert.IsNotNull(client);
+            Assert.AreEqual(0ul, client.MessagesDroppedTotal);
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("Provide exactly one of"))
+        {
+            Assert.Fail("Should not throw ArgumentException for valid auth and message queue config");
+        }
+        catch
+        {
+            // Other exceptions (UniFFI errors) are acceptable
+        }
+    }
+
     // ========== Helper Classes ==========
 
     private class TestWebSocketListener : FugleMarketData.IWebSocketListener
@@ -317,5 +423,6 @@ public class ConfigOptionsTests
         public void OnError(string errorMessage) { }
         public void OnReconnecting(uint attempt) { }
         public void OnReconnectFailed(uint attempts) { }
+        public void OnMessagesDropped(ulong count) { }
     }
 }

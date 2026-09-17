@@ -274,3 +274,78 @@ def test_iterator_waits_without_holding_the_gil():
             assert next(messages)["event"] == "subscribed"
         finally:
             disconnect_quietly(ws)
+
+
+# --- Message queue settings and drop reports (#46).
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"message_overflow": "dropNewest"},
+        {"message_overflow": ""},
+        {"message_buffer": 0},
+        {"message_buffer": -1},
+    ],
+)
+def test_message_queue_settings_reject_bad_values(kwargs):
+    from fugle_marketdata import WebSocketClient
+
+    with pytest.raises(ValueError):
+        WebSocketClient(api_key="k", **kwargs)
+
+
+def _slow_flood_ws(srv, **kwargs):
+    """A stock client whose message callback is slower than the flood."""
+    ws = product_ws(srv.url, "stock", **kwargs)
+    ws.on("message", lambda msg: time.sleep(0.001))
+    return ws
+
+
+@hard_timeout
+def test_messages_dropped_reports_add_up_to_the_count_after_disconnect():
+    with LoopbackServer(flood=True) as srv:
+        ws = _slow_flood_ws(srv, message_buffer=16)
+        reports = []
+        ws.on("messages_dropped", lambda dropped, total: reports.append((dropped, total)))
+        assert ws.messages_dropped_total() == 0
+        try:
+            ws.connect()
+            ws.subscribe(SUBSCRIPTION)
+            deadline = time.monotonic() + TIMEOUT_S
+            while not reports and time.monotonic() < deadline:
+                time.sleep(0.05)
+            ws.disconnect()
+        finally:
+            disconnect_quietly(ws)
+
+    total = ws.messages_dropped_total()
+    assert reports, "no messages_dropped report"
+    assert total > 0
+    # Every drop is reported before `disconnect` returns, and the count stays
+    # readable after it.
+    assert sum(dropped for dropped, _ in reports) == total
+    assert reports[-1][1] == total
+
+
+@hard_timeout
+def test_unbounded_message_overflow_never_drops():
+    # A burst far larger than `message_buffer` reaches a slow callback in full.
+    # (A bounded flood would do too, but everything queued before
+    # `disconnect` is delivered before disconnect() returns.)
+    burst = 500
+    with LoopbackServer(burst_on_close=burst) as srv:
+        ws = _slow_flood_ws(srv, message_overflow="unbounded", message_buffer=16)
+        reports = []
+        data = []
+        ws.on("messages_dropped", lambda dropped, total: reports.append((dropped, total)))
+        ws.on("message", lambda msg: data.append(msg) if msg["event"] == "data" else None)
+        try:
+            ws.connect()
+            ws.disconnect()
+        finally:
+            disconnect_quietly(ws)
+
+    assert len(data) == burst
+    assert reports == []
+    assert ws.messages_dropped_total() == 0

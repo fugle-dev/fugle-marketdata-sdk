@@ -270,6 +270,24 @@ client.messages()                          # Get message iterator
 | `connect` | `fn()` | Connection established |
 | `disconnect` | `fn(code: int, reason: str)` | Connection closed |
 | `error` | `fn(message: str, code: int)` | Error occurred |
+| `messages_dropped` | `fn(dropped: int, total: int)` | Messages dropped because you fell behind (at most once per second, and before `disconnect`) |
+
+#### Message Queue
+
+```python
+ws = WebSocketClient(
+    api_key="key",
+    message_overflow="drop_newest",  # default; or "unbounded"
+    message_buffer=4096,             # unread messages held (default 4096)
+)
+ws.stock.on("messages_dropped", lambda dropped, total: print(dropped, total))
+ws.stock.messages_dropped_total()    # this connection's drops; still readable after disconnect()
+```
+
+With `"drop_newest"`, while `message_buffer` messages are unread (your
+`message` callback or iterator is behind), new messages are dropped, counted
+and reported through `messages_dropped`. `"unbounded"` never drops; memory
+grows for as long as you lag.
 
 #### Channels
 

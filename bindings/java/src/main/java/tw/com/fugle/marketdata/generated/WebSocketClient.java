@@ -236,6 +236,44 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     
 
   
+    /**
+     * Messages dropped because they arrived while the message queue held
+     * `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+     *
+     * Counted from the start of the current connection (every `connect()` or
+     * reconnect restarts it); after `disconnect()` it still reads the last
+     * connection's count. 0 before the first `connect()`.
+     */
+    @Override
+    public Long messagesDroppedTotal()  {
+            try {
+                return FfiConverterLong.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCall( _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(
+            it, _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
     @Override
     
     public CompletableFuture<Void> ping(String state){
@@ -399,6 +437,44 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     UniffiHelpers.uniffiRustCall( _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(
             FfiConverterString.INSTANCE.lower(apiKey), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), _status);
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
+     * Create a new WebSocket client with full configuration plus the
+     * message queue settings.
+     *
+     * Same as `new_with_full_config`, with `message_queue` choosing what
+     * happens while `on_message` falls behind (None for the defaults:
+     * `DropNewest`, 4096 messages).
+     *
+     * # Arguments
+     * * `api_key` - Fugle API key for authentication
+     * * `listener` - Callback interface for receiving WebSocket events
+     * * `endpoint` - The market data endpoint (Stock or FutOpt)
+     * * `base_url` - Optional base URL override
+     * * `reconnect_config` - Optional reconnection configuration
+     * * `health_check_config` - Optional health check configuration
+     * * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
+     * * `version` - Optional per-product streaming version
+     * * `message_queue` - Optional message queue configuration
+     */public static WebSocketClient newWithOptions(String apiKey, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version, MessageQueueConfigRecord messageQueue)  {
+            try {
+                return FfiConverterTypeWebSocketClient.INSTANCE.lift(
+    UniffiHelpers.uniffiRustCall( _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(
+            FfiConverterString.INSTANCE.lower(apiKey), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.lower(messageQueue), _status);
     })
     );
             } catch (RuntimeException _e) {

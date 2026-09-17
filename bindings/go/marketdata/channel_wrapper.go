@@ -167,6 +167,17 @@ func (l *channelListener) OnReconnectFailed(attempts uint32) {
 	l.ch.Close()
 }
 
+// OnMessagesDropped implements WebSocketListener
+//
+// Reported when messages were dropped because Messages() fell behind while
+// the queue held its configured buffer of unread messages
+// (MessageOverflowDropNewest). Not terminal, so like OnError and
+// OnUnauthenticated it is forwarded on Errors() without closing the
+// channels; count is the number dropped since the previous report.
+func (l *channelListener) OnMessagesDropped(count uint64) {
+	l.ch.sendError(fmt.Errorf("messages dropped: %d", count))
+}
+
 // StreamingClient wraps WebSocketClient with channel-based API
 //
 // This provides an idiomatic Go interface for consuming WebSocket messages
@@ -263,6 +274,17 @@ func (sc *StreamingClient) IsConnected() bool {
 // IsClosed returns true if the WebSocket client has been shut down
 func (sc *StreamingClient) IsClosed() bool {
 	return sc.client.IsClosed()
+}
+
+// MessagesDroppedTotal returns the number of messages dropped because
+// Messages() fell behind while the queue held its configured buffer of
+// unread messages (MessageOverflowDropNewest).
+//
+// Counted from the start of the current connection (every Connect() or
+// reconnect restarts it); after disconnecting it still reads the last
+// connection's count. 0 before the first Connect().
+func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
+	return sc.client.MessagesDroppedTotal()
 }
 
 // Ping sends a ping message to the server.

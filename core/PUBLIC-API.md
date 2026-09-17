@@ -35,6 +35,13 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — dropped-message count that outlives the client (#46)
+
+- `+` `aio::WebSocketClient::messages_dropped_handle`,
+  `WebSocketClient::messages_dropped_handle`.
+- `+` `websocket::stream::MessagesDroppedHandle` (`Clone`, `Debug`, `total()`),
+  re-exported at the crate root and from `websocket`.
+
 ### Unreleased — one ordered stream of messages and events (#68)
 
 - `-` `aio::WebSocketClient::{messages, message_stream, events, state_events}`

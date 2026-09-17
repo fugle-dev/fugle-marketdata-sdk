@@ -34,6 +34,7 @@ struct UniffiVTableCallbackInterfaceWebSocketListener {
     void * on_error;
     void * on_reconnecting;
     void * on_reconnect_failed;
+    void * on_messages_dropped;
     void * uniffi_free;
 };
 void * uniffi_marketdata_uniffi_fn_clone_futoptclient(void * ptr, RustCallStatus *out_status);
@@ -108,11 +109,13 @@ void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new(RustBuffer ap
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_config(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer reconnect_config, RustBuffer health_check_config, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint(RustBuffer api_key, void * listener, RustBuffer endpoint, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustCallStatus *out_status);
+void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_url(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_connect_sync(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_disconnect_sync(void * ptr, RustCallStatus *out_status);
 int8_t uniffi_marketdata_uniffi_fn_method_websocketclient_is_closed(void * ptr, RustCallStatus *out_status);
 int8_t uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(void * ptr, RustCallStatus *out_status);
+uint64_t uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_ping_sync(void * ptr, RustBuffer state, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions_sync(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe_sync(void * ptr, RustBuffer channel, RustBuffer symbol, RustCallStatus *out_status);
@@ -128,6 +131,7 @@ void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_message(void * ptr,
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(void * ptr, RustBuffer error_message, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(void * ptr, uint32_t attempt, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(void * ptr, uint32_t attempts, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(void * ptr, uint64_t count, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_func_new_rest_client_with_api_key(RustBuffer api_key, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_func_new_rest_client_with_api_key_and_tls(RustBuffer api_key, RustBuffer base_url, RustBuffer tls, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_func_new_rest_client_with_bearer_token(RustBuffer bearer_token, RustCallStatus *out_status);
@@ -198,6 +202,7 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_connect_sync()
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_ping_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync();
@@ -210,10 +215,12 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message()
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed();
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config();
+uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();
 uint16_t uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url();
 uint32_t ffi_marketdata_uniffi_uniffi_contract_version();
 #ifdef __cplusplus

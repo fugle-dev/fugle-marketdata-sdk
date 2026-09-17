@@ -1540,6 +1540,8 @@ class WebSocketClient:
         tls_ca_file: str | None = None,
         tls_root_cert_pem: bytes | None = None,
         tls_accept_invalid_certs: bool = False,
+        message_overflow: Literal["drop_newest", "unbounded"] | None = None,
+        message_buffer: int | None = None,
     ) -> None:
         """Create a new WebSocket client with authentication and configuration.
 
@@ -1566,12 +1568,19 @@ class WebSocketClient:
             tls_accept_invalid_certs: DANGER — disable ALL TLS verification
                 (chain + hostname). Equivalent to ``wscat --no-check``. Prefer
                 tls_ca_file for production. Emits UserWarning when set.
+            message_overflow: What happens while message_buffer messages are
+                unread. "drop_newest" (default) drops new ones and reports
+                them through the "messages_dropped" callback; "unbounded"
+                never drops, and memory grows while you fall behind.
+            message_buffer: Unread messages held before message_overflow
+                applies (default 4096; must be positive).
 
         Raises:
             TypeError: zero/multiple auth methods, both TLS cert options set,
                 or a base_url carrying a version segment
             OSError: tls_ca_file path not readable
-            ValueError: tls_root_cert_pem contents not a valid PEM certificate
+            ValueError: tls_root_cert_pem contents not a valid PEM certificate,
+                an unknown message_overflow, or a message_buffer below 1
 
         Example:
             ```python
@@ -1668,6 +1677,15 @@ class StockWebSocketClient:
 
         Returns:
             True if connected, False otherwise
+        """
+        ...
+
+    def messages_dropped_total(self) -> int:
+        """Messages dropped because message_buffer were unread.
+
+        Counted from the start of the current connection (every connect() or
+        reconnect restarts it); after disconnect() it still reads the last
+        connection's count. 0 before the first connect().
         """
         ...
 
@@ -1787,6 +1805,10 @@ class StockWebSocketClient:
           - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection closed
           - "reconnect" / "reconnecting": Called with the attempt number when reconnecting
           - "error": Called with a WebSocketError instance when an error occurs
+          - "messages_dropped": Called with (dropped, total) when messages were
+            dropped because you fell behind: dropped since the previous call,
+            and on the connection so far. At most once per second, and once
+            more before "disconnect".
 
         Args:
             event: Event type string
@@ -1853,6 +1875,15 @@ class FutOptWebSocketClient:
 
         Returns:
             True if connected, False otherwise
+        """
+        ...
+
+    def messages_dropped_total(self) -> int:
+        """Messages dropped because message_buffer were unread.
+
+        Counted from the start of the current connection (every connect() or
+        reconnect restarts it); after disconnect() it still reads the last
+        connection's count. 0 before the first connect().
         """
         ...
 

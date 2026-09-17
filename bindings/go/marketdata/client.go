@@ -145,17 +145,28 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 				HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
 			}
 		}
-
-		if cfg.baseUrl != "" {
-			// Use custom base URL constructor
-			client = WebSocketClientNewWithUrl(cfg.apiKey, channelListener, cfg.endpoint, cfg.baseUrl, reconnectRecord, healthCheckRecord)
-		} else if cfg.reconnect != nil || cfg.healthCheck != nil {
-			client = WebSocketClientNewWithConfig(cfg.apiKey, channelListener, cfg.endpoint, reconnectRecord, healthCheckRecord)
-		} else if cfg.endpoint == WebSocketEndpointStock {
-			client = NewWebSocketClient(cfg.apiKey, channelListener)
-		} else {
-			client = WebSocketClientNewWithEndpoint(cfg.apiKey, channelListener, cfg.endpoint)
+		var messageQueueRecord *MessageQueueConfigRecord
+		if cfg.messageOverflow != nil || cfg.messageBuffer != nil {
+			overflow := MessageOverflowRecordDropNewest
+			if cfg.messageOverflow != nil && *cfg.messageOverflow == MessageOverflowUnbounded {
+				overflow = MessageOverflowRecordUnbounded
+			}
+			var buffer uint32
+			if cfg.messageBuffer != nil {
+				buffer = *cfg.messageBuffer
+			}
+			messageQueueRecord = &MessageQueueConfigRecord{
+				Overflow: overflow,
+				Buffer:   buffer,
+			}
 		}
+
+		var baseUrl *string
+		if cfg.baseUrl != "" {
+			baseUrl = &cfg.baseUrl
+		}
+
+		client = WebSocketClientNewWithOptions(cfg.apiKey, channelListener, cfg.endpoint, baseUrl, reconnectRecord, healthCheckRecord, nil, nil, messageQueueRecord)
 	} else {
 		return nil, errors.New("bearer token and SDK token authentication not yet supported for WebSocket client")
 	}

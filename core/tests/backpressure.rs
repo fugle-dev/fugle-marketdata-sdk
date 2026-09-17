@@ -188,6 +188,7 @@ async fn stream_receiver_keeps_up_with_flood() {
 async fn full_queue_drops_newest_reports_in_place_and_keeps_every_event() {
     let server = common::spawn(common::AfterAuth::FloodData { count: 100 }).await;
     let client = client_for(&server.url, |b| b.message_buffer(8));
+    let dropped = client.messages_dropped_handle();
     client.connect().await.expect("connect");
 
     // Nothing reads the stream: `authenticated` and 7 data frames fit, the
@@ -225,6 +226,11 @@ async fn full_queue_drops_newest_reports_in_place_and_keeps_every_event() {
     assert_eq!(reports.iter().map(|(dropped, _)| dropped).sum::<u64>(), 93, "{labels:?}");
     assert_eq!(reports.last().map(|r| r.1), Some(93), "{labels:?}");
     assert!(labels.last().expect("items").starts_with("Disconnected"), "{labels:?}");
+
+    // The handle outlives the client.
+    drop(seen);
+    drop(client);
+    assert_eq!(dropped.total(), 93);
 }
 
 #[tokio::test]

@@ -49,6 +49,26 @@ namespace FugleMarketData
     }
 
     /// <summary>
+    /// What the client does with an inbound market data message while
+    /// <see cref="WebSocketClientOptions.MessageBuffer"/> unread messages are
+    /// already queued (i.e. <see cref="IWebSocketListener.OnMessage"/> is
+    /// falling behind).
+    /// </summary>
+    public enum MessageOverflow
+    {
+        /// <summary>
+        /// Drop new messages and report the dropped count through
+        /// <see cref="IWebSocketListener.OnMessagesDropped"/> (default).
+        /// </summary>
+        DropNewest,
+
+        /// <summary>
+        /// Never drop: the queue keeps growing while <see cref="IWebSocketListener.OnMessage"/> lags.
+        /// </summary>
+        Unbounded,
+    }
+
+    /// <summary>
     /// Configuration options for constructing a WebSocketClient.
     /// Exactly one authentication method must be provided.
     /// </summary>
@@ -95,5 +115,18 @@ namespace FugleMarketData
         /// Determines which market data stream to connect to.
         /// </summary>
         public WebSocketEndpoint Endpoint { get; set; } = WebSocketEndpoint.Stock;
+
+        /// <summary>
+        /// What to do with inbound messages while <see cref="MessageBuffer"/>
+        /// unread messages are already queued (optional, default: <see cref="MessageOverflow.DropNewest"/>).
+        /// </summary>
+        public MessageOverflow? MessageOverflow { get; set; }
+
+        /// <summary>
+        /// Number of unread messages the client holds before applying
+        /// <see cref="MessageOverflow"/> (optional; null uses the default of 4096).
+        /// Must be greater than 0 when set.
+        /// </summary>
+        public int? MessageBuffer { get; set; }
     }
 }

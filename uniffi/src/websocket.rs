@@ -108,6 +108,16 @@ pub trait WebSocketListener: Send + Sync {
     /// Called when all reconnection attempts are exhausted. Terminal: no
     /// further lifecycle callbacks follow for this connection.
     fn on_reconnect_failed(&self, attempts: u32);
+
+    /// Called when messages were dropped because `on_message` fell behind
+    /// while the client's message queue held `buffer` unread messages
+    /// (`MessageOverflowRecord::DropNewest`).
+    ///
+    /// `count` is the number dropped since the previous call. The first drop
+    /// on a connection is reported at once, later ones at most once per
+    /// second, and the rest before `on_disconnected`. The connection's total
+    /// is `WebSocketClient::messages_dropped_total()`.
+    fn on_messages_dropped(&self, count: u64);
 }
 
 /// Reconnection configuration record for FFI
@@ -168,6 +178,41 @@ impl HealthCheckConfigRecord {
                 default.heartbeat_timeout
             },
         }
+    }
+}
+
+/// What the client does with an inbound message while its queue already
+/// holds `buffer` unread messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MessageOverflowRecord {
+    /// Drop new messages and report them through `on_messages_dropped`.
+    DropNewest,
+    /// Never drop: the queue grows while `on_message` lags.
+    Unbounded,
+}
+
+/// Message queue configuration record for FFI
+///
+/// `buffer` is 0 for the default (4096).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct MessageQueueConfigRecord {
+    /// What happens to new messages while `buffer` are unread
+    pub overflow: MessageOverflowRecord,
+    /// Unread messages held (default 4096; 0 means default)
+    pub buffer: u32,
+}
+
+impl MessageQueueConfigRecord {
+    fn apply(&self, config: &mut marketdata_core::ConnectionConfig) {
+        config.message_overflow = match self.overflow {
+            MessageOverflowRecord::DropNewest => marketdata_core::MessageOverflow::DropNewest,
+            MessageOverflowRecord::Unbounded => marketdata_core::MessageOverflow::Unbounded,
+        };
+        config.message_buffer = if self.buffer > 0 {
+            self.buffer as usize
+        } else {
+            marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER
+        };
     }
 }
 
@@ -259,6 +304,10 @@ pub struct WebSocketClient {
     reconnect_config: Option<marketdata_core::ReconnectionConfig>,
     health_check_config: Option<marketdata_core::HealthCheckConfig>,
     tls_config: Option<marketdata_core::TlsConfig>,
+    message_queue: Option<MessageQueueConfigRecord>,
+    /// Dropped-message count of the current or last connection; outlives the
+    /// core client, which `disconnect()` drops.
+    messages_dropped: std::sync::Mutex<Option<marketdata_core::MessagesDroppedHandle>>,
     /// Tokio runtime for sync wrappers (C++ feature). Kept alive for background tasks.
     #[cfg(feature = "cpp")]
     sync_runtime: std::sync::Mutex<Option<tokio::runtime::Runtime>>,
@@ -275,6 +324,7 @@ impl WebSocketClient {
         base_url: Option<String>,
         tls_config: Option<marketdata_core::TlsConfig>,
         version: StreamingVersionRecord,
+        message_queue: Option<MessageQueueConfigRecord>,
     ) -> Arc<Self> {
         Arc::new(Self {
             inner: std::sync::Mutex::new(None),
@@ -288,6 +338,8 @@ impl WebSocketClient {
             reconnect_config,
             health_check_config,
             tls_config,
+            message_queue,
+            messages_dropped: std::sync::Mutex::new(None),
             #[cfg(feature = "cpp")]
             sync_runtime: std::sync::Mutex::new(None),
         })
@@ -303,7 +355,7 @@ impl WebSocketClient {
     /// * `listener` - Callback interface for receiving WebSocket events
     #[uniffi::constructor]
     pub fn new(api_key: String, listener: Arc<dyn WebSocketListener>) -> Arc<Self> {
-        Self::new_internal(api_key, listener, WebSocketEndpoint::Stock, None, None, None, None, Default::default())
+        Self::new_internal(api_key, listener, WebSocketEndpoint::Stock, None, None, None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client for a specific endpoint
@@ -318,7 +370,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
     ) -> Arc<Self> {
-        Self::new_internal(api_key, listener, endpoint, None, None, None, None, Default::default())
+        Self::new_internal(api_key, listener, endpoint, None, None, None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client with full configuration
@@ -346,6 +398,7 @@ impl WebSocketClient {
             None,
             None,
             Default::default(),
+            None,
         )
     }
 
@@ -368,6 +421,7 @@ impl WebSocketClient {
             Some(base_url),
             None,
             Default::default(),
+            None,
         )
     }
 
@@ -405,7 +459,65 @@ impl WebSocketClient {
             base_url,
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
+            None,
         )
+    }
+
+    /// Create a new WebSocket client with full configuration plus the
+    /// message queue settings.
+    ///
+    /// Same as `new_with_full_config`, with `message_queue` choosing what
+    /// happens while `on_message` falls behind (None for the defaults:
+    /// `DropNewest`, 4096 messages).
+    ///
+    /// # Arguments
+    /// * `api_key` - Fugle API key for authentication
+    /// * `listener` - Callback interface for receiving WebSocket events
+    /// * `endpoint` - The market data endpoint (Stock or FutOpt)
+    /// * `base_url` - Optional base URL override
+    /// * `reconnect_config` - Optional reconnection configuration
+    /// * `health_check_config` - Optional health check configuration
+    /// * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
+    /// * `version` - Optional per-product streaming version
+    /// * `message_queue` - Optional message queue configuration
+    #[uniffi::constructor]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_options(
+        api_key: String,
+        listener: Arc<dyn WebSocketListener>,
+        endpoint: WebSocketEndpoint,
+        base_url: Option<String>,
+        reconnect_config: Option<ReconnectConfigRecord>,
+        health_check_config: Option<HealthCheckConfigRecord>,
+        tls: Option<crate::tls::TlsConfigRecord>,
+        version: Option<StreamingVersionRecord>,
+        message_queue: Option<MessageQueueConfigRecord>,
+    ) -> Arc<Self> {
+        Self::new_internal(
+            api_key,
+            listener,
+            endpoint,
+            reconnect_config.map(|c| c.to_core()),
+            health_check_config.map(|c| c.to_core()),
+            base_url,
+            tls.map(|t| t.to_core()),
+            version.unwrap_or_default(),
+            message_queue,
+        )
+    }
+
+    /// Messages dropped because they arrived while the message queue held
+    /// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
+    ///
+    /// Counted from the start of the current connection (every `connect()` or
+    /// reconnect restarts it); after `disconnect()` it still reads the last
+    /// connection's count. 0 before the first `connect()`.
+    pub fn messages_dropped_total(&self) -> u64 {
+        self.messages_dropped
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map_or(0, |handle| handle.total())
     }
 
     /// Check if the client is currently connected
@@ -474,6 +586,9 @@ impl WebSocketClient {
         if let Some(ref tls) = self.tls_config {
             config.tls = tls.clone();
         }
+        if let Some(ref message_queue) = self.message_queue {
+            message_queue.apply(&mut config);
+        }
 
         // Create core WebSocket client with optional reconnection/health-check config
         let core_ws = if let (Some(rc), Some(hc)) = (&self.reconnect_config, &self.health_check_config) {
@@ -506,6 +621,11 @@ impl WebSocketClient {
                 marketdata_core::ReconnectionConfig::disabled(),
             )
         };
+
+        *self
+            .messages_dropped
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(core_ws.messages_dropped_handle());
 
         // Forward core's stream: messages and lifecycle events in the order
         // core produced them (#68). The thread starts before `connect()` so
@@ -772,7 +892,7 @@ fn forward_event(event: ConnectionEvent, listener: &dyn WebSocketListener) -> bo
             return false;
         }
         ConnectionEvent::Error { message, .. } => listener.on_error(message),
-        // `MessagesDropped` gets a listener callback with #46's bindings PR.
+        ConnectionEvent::MessagesDropped { dropped, .. } => listener.on_messages_dropped(dropped),
         _ => {}
     }
     true
@@ -866,11 +986,14 @@ mod tests {
         error_count: AtomicUsize,
         reconnecting_count: AtomicUsize,
         reconnect_failed_count: AtomicUsize,
+        messages_dropped: AtomicUsize,
         last_error: Mutex<Option<String>>,
         /// Lifecycle callbacks in delivery order.
         events: Mutex<Vec<String>>,
         /// Also record `on_message` in `events`, as `message(<event>)`.
         record_messages: std::sync::atomic::AtomicBool,
+        /// Milliseconds `on_message` blocks, to fall behind on purpose.
+        message_delay_ms: std::sync::atomic::AtomicU64,
     }
 
     impl TestListener {
@@ -882,9 +1005,11 @@ mod tests {
                 error_count: AtomicUsize::new(0),
                 reconnecting_count: AtomicUsize::new(0),
                 reconnect_failed_count: AtomicUsize::new(0),
+                messages_dropped: AtomicUsize::new(0),
                 last_error: Mutex::new(None),
                 events: Mutex::new(Vec::new()),
                 record_messages: std::sync::atomic::AtomicBool::new(false),
+                message_delay_ms: std::sync::atomic::AtomicU64::new(0),
             }
         }
 
@@ -938,6 +1063,10 @@ mod tests {
         }
 
         fn on_message(&self, message: StreamMessage) {
+            let delay = self.message_delay_ms.load(Ordering::SeqCst);
+            if delay > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
             self.message_count.fetch_add(1, Ordering::SeqCst);
             if self.record_messages.load(Ordering::SeqCst) {
                 self.record(format!("message({})", message.event));
@@ -960,6 +1089,11 @@ mod tests {
         fn on_reconnect_failed(&self, attempts: u32) {
             self.reconnect_failed_count.fetch_add(1, Ordering::SeqCst);
             self.record(format!("reconnect_failed({attempts})"));
+        }
+
+        fn on_messages_dropped(&self, count: u64) {
+            self.messages_dropped.fetch_add(count as usize, Ordering::SeqCst);
+            self.record(format!("messages_dropped({count})"));
         }
     }
 
@@ -1057,6 +1191,98 @@ mod tests {
             None,
             None,
         )
+    }
+
+    /// A client with `message_queue`, whose listener takes 5 ms per message.
+    fn slow_queue_client(
+        server: &MockWsServer,
+        listener: &Arc<TestListener>,
+        message_queue: MessageQueueConfigRecord,
+    ) -> Arc<WebSocketClient> {
+        listener.message_delay_ms.store(5, Ordering::SeqCst);
+        WebSocketClient::new_with_options(
+            "test-key".to_string(),
+            Arc::clone(listener) as Arc<dyn WebSocketListener>,
+            WebSocketEndpoint::Stock,
+            Some(format!("ws://{}/marketdata", server.address())),
+            None,
+            None,
+            None,
+            None,
+            Some(message_queue),
+        )
+    }
+
+    /// Inject `n` frames, wait until each was delivered or dropped (none
+    /// reach `on_message` once `disconnect()` is called), disconnect, and
+    /// wait for the final `disconnected`.
+    async fn burst_then_disconnect(
+        server: &MockWsServer,
+        client: &WebSocketClient,
+        listener: &TestListener,
+        n: usize,
+    ) {
+        client.connect_impl().await.expect("connect");
+        for _ in 0..n {
+            server
+                .inject_frame(marketdata_core::models::streaming::StreamMessage::Pong { state: None })
+                .await;
+        }
+        // Plus the `authenticated` frame.
+        let settled = || {
+            listener.message_count.load(Ordering::SeqCst) as u64 + client.messages_dropped_total()
+                == n as u64 + 1
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !settled() {
+            assert!(std::time::Instant::now() < deadline, "burst did not settle");
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        client.disconnect_impl().await;
+        listener.wait_for("disconnected(false)").await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn slow_listener_with_drop_newest_reports_every_drop() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = slow_queue_client(
+            &server,
+            &listener,
+            MessageQueueConfigRecord { overflow: MessageOverflowRecord::DropNewest, buffer: 8 },
+        );
+        assert_eq!(client.messages_dropped_total(), 0);
+
+        burst_then_disconnect(&server, &client, &listener, 200).await;
+
+        let total = client.messages_dropped_total();
+        assert!(total > 0, "nothing dropped: {:?}", listener.events());
+        // Reported before `disconnected`, adding up to the total that stays
+        // readable after disconnect().
+        assert_eq!(listener.messages_dropped.load(Ordering::SeqCst) as u64, total);
+        let events = listener.events();
+        let last_report = events.iter().rposition(|e| e.starts_with("messages_dropped("));
+        let disconnected = events.iter().position(|e| e == "disconnected(false)");
+        assert!(last_report < disconnected, "{events:?}");
+        // The authenticated frame plus the 200 injected ones.
+        assert_eq!(listener.message_count.load(Ordering::SeqCst) as u64 + total, 201);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn slow_listener_with_unbounded_gets_every_message() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = slow_queue_client(
+            &server,
+            &listener,
+            MessageQueueConfigRecord { overflow: MessageOverflowRecord::Unbounded, buffer: 8 },
+        );
+
+        burst_then_disconnect(&server, &client, &listener, 200).await;
+
+        assert_eq!(client.messages_dropped_total(), 0);
+        assert_eq!(listener.messages_dropped.load(Ordering::SeqCst), 0);
+        assert_eq!(listener.message_count.load(Ordering::SeqCst), 201);
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -407,6 +407,45 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
     
 
   
+    /**
+     * Called when messages were dropped because `on_message` fell behind
+     * while the client's message queue held `buffer` unread messages
+     * (`MessageOverflowRecord::DropNewest`).
+     *
+     * `count` is the number dropped since the previous call. The first drop
+     * on a connection is reported at once, later ones at most once per
+     * second, and the rest before `on_disconnected`. The connection's total
+     * is `WebSocketClient::messages_dropped_total()`.
+     */
+    @Override
+    public void onMessagesDropped(Long count)  {
+            try {
+                
+    callWithPointer(it -> {
+        try {
+    
+    UniffiHelpers.uniffiRustCall( _status -> {
+        UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(
+            it, FfiConverterLong.INSTANCE.lower(count), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    ;
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
 
   
 }

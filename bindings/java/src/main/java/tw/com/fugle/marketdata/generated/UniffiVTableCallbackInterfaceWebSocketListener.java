@@ -4,7 +4,7 @@ package tw.com.fugle.marketdata.generated;
 import com.sun.jna.Structure;
 import com.sun.jna.Pointer;
 
-@Structure.FieldOrder({ "onConnected", "onAuthenticated", "onUnauthenticated", "onDisconnected", "onMessage", "onError", "onReconnecting", "onReconnectFailed", "uniffiFree" })
+@Structure.FieldOrder({ "onConnected", "onAuthenticated", "onUnauthenticated", "onDisconnected", "onMessage", "onError", "onReconnecting", "onReconnectFailed", "onMessagesDropped", "uniffiFree" })
 public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
     public UniffiCallbackInterfaceWebSocketListenerMethod0 onConnected = null;
     public UniffiCallbackInterfaceWebSocketListenerMethod1 onAuthenticated = null;
@@ -14,6 +14,7 @@ public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
     public UniffiCallbackInterfaceWebSocketListenerMethod5 onError = null;
     public UniffiCallbackInterfaceWebSocketListenerMethod6 onReconnecting = null;
     public UniffiCallbackInterfaceWebSocketListenerMethod7 onReconnectFailed = null;
+    public UniffiCallbackInterfaceWebSocketListenerMethod8 onMessagesDropped = null;
     public UniffiCallbackInterfaceFree uniffiFree = null;
 
     // no-arg constructor required so JNA can instantiate and reflect
@@ -30,6 +31,7 @@ public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
         UniffiCallbackInterfaceWebSocketListenerMethod5 onError,
         UniffiCallbackInterfaceWebSocketListenerMethod6 onReconnecting,
         UniffiCallbackInterfaceWebSocketListenerMethod7 onReconnectFailed,
+        UniffiCallbackInterfaceWebSocketListenerMethod8 onMessagesDropped,
         UniffiCallbackInterfaceFree uniffiFree
     ) {
         this.onConnected = onConnected;
@@ -40,6 +42,7 @@ public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
         this.onError = onError;
         this.onReconnecting = onReconnecting;
         this.onReconnectFailed = onReconnectFailed;
+        this.onMessagesDropped = onMessagesDropped;
         this.uniffiFree = uniffiFree;
     }
 
@@ -53,6 +56,7 @@ public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
             UniffiCallbackInterfaceWebSocketListenerMethod5 onError,
             UniffiCallbackInterfaceWebSocketListenerMethod6 onReconnecting,
             UniffiCallbackInterfaceWebSocketListenerMethod7 onReconnectFailed,
+            UniffiCallbackInterfaceWebSocketListenerMethod8 onMessagesDropped,
             UniffiCallbackInterfaceFree uniffiFree
         ) {
             super(onConnected,        
@@ -63,6 +67,7 @@ public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
             onError,        
             onReconnecting,        
             onReconnectFailed,        
+            onMessagesDropped,        
             uniffiFree        
             );
         }
@@ -77,10 +82,17 @@ public class UniffiVTableCallbackInterfaceWebSocketListener extends Structure {
         onError = other.onError;
         onReconnecting = other.onReconnecting;
         onReconnectFailed = other.onReconnectFailed;
+        onMessagesDropped = other.onMessagesDropped;
         uniffiFree = other.uniffiFree;
     }
 
 }
+
+
+
+
+
+
 
 
 

@@ -38,6 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per second, and any remainder right before that connection's
   `Disconnected`. `total` counts from the start of the connection. Previously
   drops were only counted (#46).
+- **Core**: `messages_dropped_handle()` on both clients returns a
+  `MessagesDroppedHandle` that reads `messages_dropped_total()` and stays
+  readable after the client is dropped (#46).
+- **Python**: `WebSocketClient(message_overflow="drop_newest"|"unbounded",
+  message_buffer=...)`, the `messages_dropped` callback `(dropped, total)` and
+  `messages_dropped_total()` on the stock / futopt clients (#46).
+- **Node**: `messageOverflow: 'dropNewest' | 'unbounded'` and `messageBuffer`
+  options, the `messagesDropped` event `{ dropped, total }` and the
+  `messagesDroppedTotal` getter (#46). Frames waiting for a `message` listener
+  count against `messageBuffer`: once that many are pending, the SDK stops
+  handing over more, so a slow listener leads to drops (per
+  `messageOverflow`) instead of an ever-growing queue in Node. Events behind
+  those frames wait with them, keeping their order.
+- **C#, Go, Java, C++**: `WebSocketClient::new_with_options(...)` takes a
+  `MessageQueueConfigRecord { overflow, buffer }`; `WebSocketListener` gains
+  `on_messages_dropped(count)` and the client `messages_dropped_total()`. The
+  C#, Go and Java wrappers expose them as options (#46). Go's
+  `StreamingClient` reports drops on `Errors()`, Java's pull mode on the
+  error queue.
 
 ### Changed
 
@@ -205,6 +224,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and again after every successful reconnect. Previously it fired once,
     after `connect()` had authenticated. Wait for `on_authenticated` before
     treating the connection as usable.
+- **C#, Go, C++, Java**: `WebSocketListener` gains
+  `on_messages_dropped(count)` (#46). Every listener implementation must add
+  it, including C# `IWebSocketListener.OnMessagesDropped(ulong count)`, which
+  has no default implementation; see
+  [MIGRATION-0.9.md](MIGRATION-0.9.md#12-c-go-c-java-dropped-messages).
+- **Java**: pull mode no longer drops messages silently when the
+  `queueCapacity` queue is full. The client waits for `poll()` to make room
+  (until `disconnect()` or `close()`), so messages you do not keep up with are
+  dropped by the SDK per `messageOverflow`, counted in
+  `messagesDroppedTotal()` and reported on the error queue (#46).
 
 > **Release order:** the `futopt/historical` changes below follow
 > fugle-realtime #727. Publish this release only after #727 is live in

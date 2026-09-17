@@ -3,6 +3,8 @@ package tw.com.fugle.marketdata;
 import tw.com.fugle.marketdata.generated.*;
 
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Idiomatic Java wrapper for WebSocket client with dual streaming patterns.
@@ -79,13 +81,17 @@ public class FugleWebSocketClient implements AutoCloseable {
     private final WebSocketClient webSocketClient;
     private final BlockingQueue<StreamMessage> messageQueue;
     private final BlockingQueue<String> errorQueue;
+    /** The pull-mode listener, or null in callback mode. */
+    private final InternalListener pullListener;
 
     private FugleWebSocketClient(WebSocketClient webSocketClient,
                                   BlockingQueue<StreamMessage> messageQueue,
-                                  BlockingQueue<String> errorQueue) {
+                                  BlockingQueue<String> errorQueue,
+                                  InternalListener pullListener) {
         this.webSocketClient = webSocketClient;
         this.messageQueue = messageQueue;
         this.errorQueue = errorQueue;
+        this.pullListener = pullListener;
     }
 
     /**
@@ -96,6 +102,9 @@ public class FugleWebSocketClient implements AutoCloseable {
      * @throws AuthException if authentication fails
      */
     public CompletableFuture<Void> connect() {
+        if (pullListener != null) {
+            pullListener.resume();
+        }
         return webSocketClient.connect()
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
     }
@@ -106,6 +115,9 @@ public class FugleWebSocketClient implements AutoCloseable {
      * @return CompletableFuture that completes when disconnected
      */
     public CompletableFuture<Void> disconnect() {
+        if (pullListener != null) {
+            pullListener.stop();
+        }
         return webSocketClient.disconnect();
     }
 
@@ -126,6 +138,22 @@ public class FugleWebSocketClient implements AutoCloseable {
     public boolean isClosed() {
         try {
             return webSocketClient.isClosed();
+        } catch (Exception e) {
+            throw FugleException.unwrap(e);
+        }
+    }
+
+    /**
+     * Messages dropped this connection because the message queue held
+     * {@code messageBuffer} unread messages ({@link MessageOverflow#DROP_NEWEST}).
+     *
+     * <p>Counted from the start of the current connection (every {@link #connect()}
+     * or reconnect restarts it); after {@link #disconnect()} it still reads the
+     * last connection's count. 0 before the first {@code connect()}.
+     */
+    public long messagesDroppedTotal() {
+        try {
+            return webSocketClient.messagesDroppedTotal();
         } catch (Exception e) {
             throw FugleException.unwrap(e);
         }
@@ -268,6 +296,9 @@ public class FugleWebSocketClient implements AutoCloseable {
 
     @Override
     public void close() {
+        if (pullListener != null) {
+            pullListener.stop();
+        }
         webSocketClient.close();
     }
 
@@ -291,6 +322,8 @@ public class FugleWebSocketClient implements AutoCloseable {
         private int queueCapacity = 10000;
         private ReconnectOptions reconnectOptions;
         private HealthCheckOptions healthCheckOptions;
+        private MessageOverflow messageOverflow;
+        private Integer messageBuffer;
 
         private Builder() {}
 
@@ -396,6 +429,38 @@ public class FugleWebSocketClient implements AutoCloseable {
         }
 
         /**
+         * Set what happens to an inbound message while the message queue
+         * already holds {@code messageBuffer} unread messages.
+         *
+         * <p>Default: {@link MessageOverflow#DROP_NEWEST}.
+         *
+         * @param messageOverflow Overflow behavior
+         * @return This builder for chaining
+         */
+        public Builder messageOverflow(MessageOverflow messageOverflow) {
+            this.messageOverflow = messageOverflow;
+            return this;
+        }
+
+        /**
+         * Set how many unread messages the message queue holds before
+         * {@code messageOverflow} applies.
+         *
+         * <p>Default: 4096.
+         *
+         * @param messageBuffer Must be greater than 0
+         * @return This builder for chaining
+         * @throws IllegalArgumentException if messageBuffer is not greater than 0
+         */
+        public Builder messageBuffer(int messageBuffer) {
+            if (messageBuffer <= 0) {
+                throw new IllegalArgumentException("messageBuffer must be > 0");
+            }
+            this.messageBuffer = messageBuffer;
+            return this;
+        }
+
+        /**
          * Build the FugleWebSocketClient.
          *
          * @throws FugleException if exactly one authentication method is not provided
@@ -417,18 +482,21 @@ public class FugleWebSocketClient implements AutoCloseable {
             WebSocketListener effectiveListener;
             BlockingQueue<StreamMessage> messageQueue;
             BlockingQueue<String> errorQueue;
+            InternalListener pullListener;
 
             if (listener != null) {
                 // Callback mode: use provided listener directly
                 effectiveListener = listener;
                 messageQueue = null;
                 errorQueue = null;
+                pullListener = null;
             } else {
                 // Pull mode: create internal listener with BlockingQueue
                 messageQueue = new LinkedBlockingQueue<>(queueCapacity);
                 errorQueue = new LinkedBlockingQueue<>();
 
-                effectiveListener = new InternalListener(messageQueue, errorQueue);
+                pullListener = new InternalListener(messageQueue, errorQueue);
+                effectiveListener = pullListener;
             }
 
             // TODO: Current UniFFI WebSocketClient constructors only accept api_key
@@ -455,18 +523,25 @@ public class FugleWebSocketClient implements AutoCloseable {
                     );
                 }
 
-                WebSocketClient client;
-                if (baseUrl != null) {
-                    client = WebSocketClient.newWithUrl(
-                        apiKey, effectiveListener, endpoint, baseUrl, reconnectRecord, healthCheckRecord
-                    );
-                } else {
-                    client = WebSocketClient.newWithConfig(
-                        apiKey, effectiveListener, endpoint, reconnectRecord, healthCheckRecord
+                // Unset overflow/buffer both mean "use the core defaults"
+                // (DropNewest, 4096), so leave the whole record null then.
+                MessageQueueConfigRecord messageQueueRecord = null;
+                if (messageOverflow != null || messageBuffer != null) {
+                    MessageOverflowRecord overflowRecord = messageOverflow != null
+                        ? MessageOverflowRecord.valueOf(messageOverflow.name())
+                        : MessageOverflowRecord.DROP_NEWEST;
+                    messageQueueRecord = new MessageQueueConfigRecord(
+                        overflowRecord,
+                        messageBuffer != null ? messageBuffer : 0
                     );
                 }
 
-                return new FugleWebSocketClient(client, messageQueue, errorQueue);
+                WebSocketClient client = WebSocketClient.newWithOptions(
+                    apiKey, effectiveListener, endpoint, baseUrl, reconnectRecord, healthCheckRecord,
+                    null, null, messageQueueRecord
+                );
+
+                return new FugleWebSocketClient(client, messageQueue, errorQueue, pullListener);
             } else {
                 // bearerToken or sdkToken provided but not yet supported by UniFFI WebSocketClient
                 throw new FugleException("WebSocket currently only supports apiKey authentication. " +
@@ -477,15 +552,41 @@ public class FugleWebSocketClient implements AutoCloseable {
 
     /**
      * Internal listener for pull mode that forwards events to BlockingQueues.
+     *
+     * <p>A full message queue holds the SDK's delivery until {@code poll()}
+     * makes room, so messages you do not keep up with are dropped (per
+     * {@code messageOverflow}), counted in {@code messagesDroppedTotal()} and
+     * reported on the error queue by the SDK itself, never silently here.
+     * {@code disconnect()} and {@code close()} end the wait.
      */
-    private static class InternalListener implements WebSocketListener {
+    static class InternalListener implements WebSocketListener {
+        /** How often a wait for queue room re-checks for disconnect/close. */
+        private static final long WAIT_SLICE_MS = 100;
+
         private final BlockingQueue<StreamMessage> messageQueue;
         private final BlockingQueue<String> errorQueue;
+        /**
+         * The current connection's stop flag. A new one per connection, so a
+         * wait from before {@code disconnect()} still ends when
+         * {@code connect()} is called right after it.
+         */
+        private final AtomicReference<AtomicBoolean> stopped =
+                new AtomicReference<>(new AtomicBoolean(false));
 
         InternalListener(BlockingQueue<StreamMessage> messageQueue,
                         BlockingQueue<String> errorQueue) {
             this.messageQueue = messageQueue;
             this.errorQueue = errorQueue;
+        }
+
+        /** Stop waiting for queue room: the connection is being closed. */
+        void stop() {
+            stopped.get().set(true);
+        }
+
+        /** A new connection: wait for queue room again. */
+        void resume() {
+            stopped.set(new AtomicBoolean(false));
         }
 
         @Override
@@ -512,8 +613,18 @@ public class FugleWebSocketClient implements AutoCloseable {
 
         @Override
         public void onMessage(StreamMessage message) {
-            // Offer to queue (non-blocking, drops if full)
-            messageQueue.offer(message);
+            // Wait for room: holding the SDK here leaves the backlog to its
+            // own queue, which drops and reports per messageOverflow.
+            AtomicBoolean connectionStopped = stopped.get();
+            try {
+                while (!connectionStopped.get()) {
+                    if (messageQueue.offer(message, WAIT_SLICE_MS, TimeUnit.MILLISECONDS)) {
+                        return;
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         @Override
@@ -530,6 +641,13 @@ public class FugleWebSocketClient implements AutoCloseable {
         @Override
         public void onReconnectFailed(Integer attempts) {
             errorQueue.offer("All " + attempts + " reconnection attempts exhausted");
+        }
+
+        @Override
+        public void onMessagesDropped(Long count) {
+            // Reported through the error queue, like onUnauthenticated and
+            // onReconnectFailed; there is no dedicated queue for this event.
+            errorQueue.offer("Dropped " + count + " message(s): listener fell behind");
         }
     }
 }

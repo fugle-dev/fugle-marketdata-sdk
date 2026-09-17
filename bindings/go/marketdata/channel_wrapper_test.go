@@ -55,6 +55,27 @@ func TestChannelListener_ReconnectFailedReportsAndCloses(t *testing.T) {
 	}
 }
 
+func TestChannelListener_MessagesDroppedReportsErrorWithoutClosing(t *testing.T) {
+	ch := NewMessageChannel(4)
+	l := &channelListener{ch: ch}
+
+	l.OnMessagesDropped(3)
+
+	err := <-ch.Errors()
+	if err == nil {
+		t.Fatal("dropped messages not reported on Errors()")
+	}
+	if isClosed(ch) {
+		t.Fatal("channels closed after a non-terminal messages-dropped report")
+	}
+
+	// The connection stays usable: further messages still flow.
+	l.OnMessage(StreamMessage{Event: "data"})
+	if msg := <-ch.Messages(); msg.Event != "data" {
+		t.Fatalf("got %q, want data", msg.Event)
+	}
+}
+
 func TestChannelListener_UnauthenticatedReportsError(t *testing.T) {
 	ch := NewMessageChannel(4)
 	l := &channelListener{ch: ch}

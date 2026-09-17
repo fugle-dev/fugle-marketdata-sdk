@@ -117,11 +117,13 @@ interface UniffiLib extends Library {
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_config(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue baseUrl, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, RustBuffer.ByValue tls, RustBuffer.ByValue version, UniffiRustCallStatus uniffi_out_errmk);
+    Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue baseUrl, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, RustBuffer.ByValue tls, RustBuffer.ByValue version, RustBuffer.ByValue messageQueue, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_url(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue baseUrl, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_connect(Pointer ptr);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_disconnect(Pointer ptr);
     Byte uniffi_marketdata_uniffi_fn_method_websocketclient_is_closed(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Byte uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
+    Long uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_ping(Pointer ptr, RustBuffer.ByValue state);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions(Pointer ptr);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol);
@@ -137,6 +139,7 @@ interface UniffiLib extends Library {
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(Pointer ptr, RustBuffer.ByValue errorMessage, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(Pointer ptr, Integer attempt, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(Pointer ptr, Integer attempts, UniffiRustCallStatus uniffi_out_errmk);
+    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(Pointer ptr, Long count, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_func_new_rest_client_with_api_key(RustBuffer.ByValue apiKey, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_func_new_rest_client_with_api_key_and_tls(RustBuffer.ByValue apiKey, RustBuffer.ByValue baseUrl, RustBuffer.ByValue tls, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_func_new_rest_client_with_bearer_token(RustBuffer.ByValue bearerToken, UniffiRustCallStatus uniffi_out_errmk);
@@ -291,6 +294,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_ping();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe();
@@ -303,10 +307,12 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config();
+    Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url();
     Integer ffi_marketdata_uniffi_uniffi_contract_version();
     

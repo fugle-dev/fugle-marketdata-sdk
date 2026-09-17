@@ -117,6 +117,11 @@ class MyListener : IWebSocketListener
     {
         Console.WriteLine($"✗ 重新連線失敗 (已嘗試 {attempts} 次)");
     }
+
+    public void OnMessagesDropped(ulong count)
+    {
+        Console.WriteLine($"⚠ 訊息佇列已滿，捨棄了 {count} 筆訊息");
+    }
 }
 
 class Program

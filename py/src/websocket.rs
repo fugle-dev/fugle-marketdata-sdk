@@ -452,6 +452,7 @@ pub struct WebSocketClient {
     reconnect_config: ReconnectConfig,
     health_check_config: HealthCheckConfig,
     tls: marketdata_core::TlsConfig,
+    message_queue: MessageQueueSettings,
 }
 
 #[pymethods]
@@ -467,6 +468,11 @@ impl WebSocketClient {
     ///   - base_url: Custom base URL for WebSocket endpoint
     ///   - reconnect: ReconnectConfig for auto-reconnection behavior
     ///   - health_check: HealthCheckConfig for connection monitoring
+    ///   - message_overflow: "drop_newest" (default) keeps at most
+    ///     `message_buffer` unread messages and drops new ones meanwhile,
+    ///     reporting them through the `messages_dropped` callback;
+    ///     "unbounded" never drops, and memory grows while you lag
+    ///   - message_buffer: unread messages held (default 4096)
     ///
     /// Returns:
     ///     A new WebSocketClient instance
@@ -488,7 +494,7 @@ impl WebSocketClient {
     ///     ws = WebSocketClient(api_key="key", health_check=hc)
     ///     ```
     #[new]
-    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None, base_url=None, version=None, reconnect=None, health_check=None, tls_ca_file=None, tls_root_cert_pem=None, tls_accept_invalid_certs=false))]
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None, base_url=None, version=None, reconnect=None, health_check=None, tls_ca_file=None, tls_root_cert_pem=None, tls_accept_invalid_certs=false, message_overflow=None, message_buffer=None))]
     pub fn new(
         py: Python<'_>,
         api_key: Option<String>,
@@ -501,6 +507,8 @@ impl WebSocketClient {
         tls_ca_file: Option<String>,
         tls_root_cert_pem: Option<Vec<u8>>,
         tls_accept_invalid_certs: bool,
+        message_overflow: Option<String>,
+        message_buffer: Option<i64>,
     ) -> PyResult<Self> {
         // Validate exactly one auth method (fail fast)
         let auth_count = [&api_key, &bearer_token, &sdk_token]
@@ -538,6 +546,7 @@ impl WebSocketClient {
         )?;
 
         let (stock_version, futopt_version) = parse_ws_versions(version)?;
+        let message_queue = MessageQueueSettings::parse(message_overflow.as_deref(), message_buffer)?;
 
         // Resolve both endpoints now so a bad `base_url` raises here rather
         // than from `.stock.connect()` much later. Matches the official SDK,
@@ -561,6 +570,7 @@ impl WebSocketClient {
             reconnect_config,
             health_check_config,
             tls,
+            message_queue,
         })
     }
 
@@ -578,6 +588,7 @@ impl WebSocketClient {
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls.clone(),
+            self.message_queue,
         )
     }
 
@@ -595,6 +606,7 @@ impl WebSocketClient {
             self.reconnect_config.clone(),
             self.health_check_config.clone(),
             self.tls.clone(),
+            self.message_queue,
         )
     }
 }
@@ -606,6 +618,44 @@ impl WebSocketClient {
 /// so an unsupported pairing cannot be built at all — but a Python caller
 /// hands us untyped strings, so the validation has to happen here, with the
 /// same error text the official SDK raises.
+/// `message_overflow` / `message_buffer` of a `WebSocketClient` (#46).
+#[derive(Clone, Copy)]
+struct MessageQueueSettings {
+    overflow: marketdata_core::MessageOverflow,
+    buffer: usize,
+}
+
+impl MessageQueueSettings {
+    fn parse(overflow: Option<&str>, buffer: Option<i64>) -> PyResult<Self> {
+        let overflow = match overflow {
+            None | Some("drop_newest") => marketdata_core::MessageOverflow::DropNewest,
+            Some("unbounded") => marketdata_core::MessageOverflow::Unbounded,
+            Some(other) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "message_overflow must be \"drop_newest\" or \"unbounded\", got {other:?}"
+                )))
+            }
+        };
+        let buffer = match buffer {
+            None => marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER,
+            Some(n) if n > 0 => usize::try_from(n).map_err(|_| {
+                pyo3::exceptions::PyValueError::new_err(format!("message_buffer is too large: {n}"))
+            })?,
+            Some(n) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "message_buffer must be a positive integer, got {n}"
+                )))
+            }
+        };
+        Ok(Self { overflow, buffer })
+    }
+
+    fn apply(self, config: &mut marketdata_core::ConnectionConfig) {
+        config.message_overflow = self.overflow;
+        config.message_buffer = self.buffer;
+    }
+}
+
 fn parse_ws_versions(
     version: Option<&Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<(marketdata_core::websocket::StockVersion, marketdata_core::websocket::FutOptVersion)> {
@@ -918,6 +968,9 @@ fn forward_event(
             -1,
         ),
         ConnectionEvent::Error { message, code } => callbacks.invoke_error(py, &message, code),
+        ConnectionEvent::MessagesDropped { dropped, total } => {
+            callbacks.invoke_messages_dropped(py, dropped, total)
+        }
         _ => {}
     }
 }
@@ -987,6 +1040,10 @@ pub struct StockWebSocketClient {
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
     // Background thread control
     reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    message_queue: MessageQueueSettings,
+    /// Dropped-message count of the current or last connection; outlives the
+    /// core client, which `disconnect()` drops.
+    messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
 }
 
 impl StockWebSocketClient {
@@ -998,6 +1055,7 @@ impl StockWebSocketClient {
         reconnect_config: ReconnectConfig,
         health_check_config: HealthCheckConfig,
         tls: marketdata_core::TlsConfig,
+        message_queue: MessageQueueSettings,
     ) -> Self {
         Self {
             api_key,
@@ -1011,6 +1069,8 @@ impl StockWebSocketClient {
             state: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(None)),
             reader_thread_handle: Arc::new(Mutex::new(None)),
+            message_queue,
+            messages_dropped: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1031,6 +1091,7 @@ impl StockWebSocketClient {
             )
         });
         config.tls = self.tls.clone();
+        self.message_queue.apply(&mut config);
         config
     }
 
@@ -1107,6 +1168,7 @@ impl StockWebSocketClient {
             self.reconnect_config.to_core(),
             self.health_check_config.to_core(),
         );
+        *self.messages_dropped.lock().map_err(lock_err)? = Some(ws_client.messages_dropped_handle());
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
@@ -1343,6 +1405,21 @@ impl StockWebSocketClient {
         Ok(())
     }
 
+    /// Messages dropped because they arrived while `message_buffer` unread
+    /// messages were already held (`message_overflow="drop_newest"`).
+    ///
+    /// Counted from the start of the current connection (every `connect()`
+    /// or reconnect restarts it); after `disconnect()` it still reads the
+    /// last connection's count. 0 before the first `connect()`.
+    #[pyo3(signature = ())]
+    pub fn messages_dropped_total(&self) -> u64 {
+        self.messages_dropped
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|handle| handle.total()))
+            .unwrap_or(0)
+    }
+
     /// Get message iterator for consuming streaming data
     ///
     /// Returns:
@@ -1453,6 +1530,8 @@ impl StockWebSocketClient {
         let callbacks = Arc::clone(&self.callbacks);
         let state_arc = Arc::clone(&self.state);
         let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
+        let message_queue = self.message_queue;
+        let messages_dropped = Arc::clone(&self.messages_dropped);
         let test_panic = test_panic_site();
 
         future_into_py(py, async move {
@@ -1465,12 +1544,17 @@ impl StockWebSocketClient {
                 futopt_version,
             )
             .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
+            let mut config = config;
+            message_queue.apply(&mut config);
             let capacity = handoff_capacity(&config);
             let ws_client = marketdata_core::aio::WebSocketClient::with_full_config(
                 config,
                 reconnect_config,
                 health_check_config,
             );
+            if let Ok(mut slot) = messages_dropped.lock() {
+                *slot = Some(ws_client.messages_dropped_handle());
+            }
 
             let handoff = Arc::new(Handoff::new(capacity));
             let stop = Arc::new(AtomicBool::new(false));
@@ -1670,6 +1754,10 @@ pub struct FutOptWebSocketClient {
     state: Arc<Mutex<Option<WebSocketState>>>,
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
     reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    message_queue: MessageQueueSettings,
+    /// Dropped-message count of the current or last connection; outlives the
+    /// core client, which `disconnect()` drops.
+    messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
 }
 
 impl FutOptWebSocketClient {
@@ -1681,6 +1769,7 @@ impl FutOptWebSocketClient {
         reconnect_config: ReconnectConfig,
         health_check_config: HealthCheckConfig,
         tls: marketdata_core::TlsConfig,
+        message_queue: MessageQueueSettings,
     ) -> Self {
         Self {
             api_key,
@@ -1694,6 +1783,8 @@ impl FutOptWebSocketClient {
             state: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(None)),
             reader_thread_handle: Arc::new(Mutex::new(None)),
+            message_queue,
+            messages_dropped: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1712,6 +1803,7 @@ impl FutOptWebSocketClient {
             )
         });
         config.tls = self.tls.clone();
+        self.message_queue.apply(&mut config);
         config
     }
 
@@ -1776,6 +1868,7 @@ impl FutOptWebSocketClient {
             self.reconnect_config.to_core(),
             self.health_check_config.to_core(),
         );
+        *self.messages_dropped.lock().map_err(lock_err)? = Some(ws_client.messages_dropped_handle());
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
@@ -1985,6 +2078,21 @@ impl FutOptWebSocketClient {
         Ok(())
     }
 
+    /// Messages dropped because they arrived while `message_buffer` unread
+    /// messages were already held (`message_overflow="drop_newest"`).
+    ///
+    /// Counted from the start of the current connection (every `connect()`
+    /// or reconnect restarts it); after `disconnect()` it still reads the
+    /// last connection's count. 0 before the first `connect()`.
+    #[pyo3(signature = ())]
+    pub fn messages_dropped_total(&self) -> u64 {
+        self.messages_dropped
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|handle| handle.total()))
+            .unwrap_or(0)
+    }
+
     /// Get message iterator for consuming streaming data
     ///
     /// Returns:
@@ -2160,6 +2268,7 @@ mod tests {
             ReconnectConfig::default(),
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
+            MessageQueueSettings::parse(None, None).unwrap(),
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
@@ -2175,9 +2284,23 @@ mod tests {
             ReconnectConfig::default(),
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
+            MessageQueueSettings::parse(None, None).unwrap(),
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
+    }
+
+    #[test]
+    fn message_queue_settings_parse_names_and_reject_bad_values() {
+        let default = MessageQueueSettings::parse(None, None).unwrap();
+        assert_eq!(default.overflow, marketdata_core::MessageOverflow::DropNewest);
+        assert_eq!(default.buffer, marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER);
+        let unbounded = MessageQueueSettings::parse(Some("unbounded"), Some(16)).unwrap();
+        assert_eq!(unbounded.overflow, marketdata_core::MessageOverflow::Unbounded);
+        assert_eq!(unbounded.buffer, 16);
+        assert!(MessageQueueSettings::parse(Some("dropNewest"), None).is_err());
+        assert!(MessageQueueSettings::parse(None, Some(0)).is_err());
+        assert!(MessageQueueSettings::parse(None, Some(-1)).is_err());
     }
 
     #[test]
@@ -2190,6 +2313,7 @@ mod tests {
             ReconnectConfig::default(),
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
+            MessageQueueSettings::parse(None, None).unwrap(),
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
