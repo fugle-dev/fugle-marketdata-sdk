@@ -1715,11 +1715,7 @@ impl StockWebSocketClient {
 /// FutOpt (futures and options) WebSocket client
 ///
 /// Access via `ws.futopt`
-///
-/// Note: `unsendable` is required because the underlying WebSocket state contains
-/// `std::sync::mpsc::Receiver` which is not `Sync`. This means the client
-/// should only be used from the thread that created it.
-#[pyclass(unsendable)]
+#[pyclass]
 pub struct FutOptWebSocketClient {
     auth: marketdata_core::AuthRequest,
     base_url: Option<String>,
