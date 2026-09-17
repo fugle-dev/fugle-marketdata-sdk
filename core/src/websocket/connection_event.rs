@@ -291,7 +291,8 @@ impl ConnectionEvent {
     }
 
     /// `Error` for a subscription that could not be re-sent after a
-    /// reconnect; the message names its key.
+    /// reconnect; the message names its key, or for a batch the channel,
+    /// modifier and symbol count label (e.g. `trades:oddlot (3 symbols)`).
     pub(crate) fn resubscribe_failed(key: &str, err: &MarketDataError) -> Self {
         Self::error_with_message(err, format!("Failed to resubscribe {key}: {err}"))
     }
