@@ -2000,11 +2000,11 @@ class MessageIterator:
         """Return self for async iteration."""
         ...
 
-    async def __anext__(self) -> dict[str, Any]:
+    async def __anext__(self) -> Optional[dict[str, Any]]:
         """Get next message (async).
 
         Returns:
-            Message dict
+            Message dict, or None on timeout
 
         Raises:
             StopAsyncIteration: When the channel is closed

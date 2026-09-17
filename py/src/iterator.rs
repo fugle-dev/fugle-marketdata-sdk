@@ -78,19 +78,18 @@ impl MessageIterator {
     ///
     /// Note: This method blocks the current thread while waiting for
     /// messages, with the GIL released.
-    fn __next__(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+    fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let handoff = Arc::clone(&self.handoff);
         let timeout = self.timeout;
         let result = py.detach(move || handoff.receive(timeout));
 
         match result {
-            Ok(Some(msg)) => {
-                let dict = message_to_dict(py, &msg)?;
-                Ok(Some(dict.into_any()))
-            }
+            Ok(Some(msg)) => Ok(message_to_dict(py, &msg)?.into_any()),
             Ok(None) => {
-                // Timeout with no message - return None but don't stop iteration
-                Ok(None)
+                // Timeout: yield None and keep iterating. Returning a Rust
+                // `None` here would end the iteration, as pyo3 maps an empty
+                // `Option` from `__next__` to StopIteration.
+                Ok(py.None())
             }
             Err(_) => {
                 // Channel closed, stop iteration
@@ -153,7 +152,7 @@ impl MessageIterator {
     ///
     /// Returns:
     ///     dict: Message data containing event, channel, symbol, data fields
-    ///     None: When channel is closed (raises StopAsyncIteration in Python)
+    ///     None: If timeout specified and no message received within timeout
     ///
     /// Raises:
     ///     StopAsyncIteration: When channel is closed (connection disconnected)
@@ -184,8 +183,10 @@ impl MessageIterator {
                     Ok(None)
                 }
                 Err(_) => {
-                    // Channel closed - return None to trigger StopAsyncIteration
-                    Ok(None)
+                    // Channel closed: end `async for`.
+                    Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
+                        "Message channel closed",
+                    ))
                 }
             }
         })

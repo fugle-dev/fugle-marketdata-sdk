@@ -6,6 +6,7 @@ bridge task, for one — panics there. The core crate's tests all run inside
 ``#[tokio::test]`` and cannot see that, so these go through the real binding
 (#13, #24).
 """
+import asyncio
 import threading
 import time
 
@@ -176,3 +177,73 @@ def test_blocking_calls_work_with_server_in_same_process(product_case):
             assert time.monotonic() - started < 2
         finally:
             _disconnect_quietly(ws)
+
+
+# The iterators end once the connection is gone: the reader closes their
+# queue when core's stream closes. A closed queue that yielded None instead
+# would spin forever; `GUARD` turns that into a failure instead of a hang.
+GUARD = 1000
+
+
+@hard_timeout
+@pytest.mark.parametrize("product_case", PRODUCTS)
+def test_for_loop_over_messages_ends_after_disconnect(server, product_case):
+    product, _ = product_case
+    ws = _product_ws(server.url, product)
+    ws.connect()
+    messages = ws.messages()
+    seen = []
+    done = threading.Event()
+
+    def consume():
+        for msg in messages:
+            seen.append(msg)
+            if len(seen) >= GUARD:
+                break
+        done.set()
+
+    threading.Thread(target=consume, daemon=True).start()
+    try:
+        time.sleep(0.2)
+        ws.disconnect()
+        assert done.wait(TIMEOUT_S), "for loop did not end after disconnect()"
+    finally:
+        _disconnect_quietly(ws)
+    assert [m["event"] for m in seen] == ["authenticated"], seen[:5]
+
+
+@hard_timeout
+async def test_async_for_over_messages_ends_after_disconnect(server):
+    ws = _product_ws(server.url, "stock")
+    await ws.connect_async()
+    seen = []
+
+    async def consume():
+        async for msg in ws.messages():
+            seen.append(msg)
+            if len(seen) >= GUARD:
+                break
+
+    task = asyncio.create_task(consume())
+    try:
+        await asyncio.sleep(0.2)
+        await ws.disconnect_async()
+        await asyncio.wait_for(task, TIMEOUT_S)
+    finally:
+        task.cancel()
+    assert [m["event"] for m in seen] == ["authenticated"], seen[:5]
+
+
+@hard_timeout
+def test_iterator_timeout_yields_none_and_keeps_iterating(server):
+    ws = _product_ws(server.url, "stock")
+    try:
+        ws.connect()
+        messages = ws.messages(timeout_ms=50)
+        assert next(messages)["event"] == "authenticated"
+        # Nothing more arrives: each timeout yields None, not StopIteration.
+        assert [next(messages) for _ in range(3)] == [None, None, None]
+        ws.subscribe({"channel": "trades", "symbol": "2330"})
+        assert next(msg for msg in messages if msg is not None)["event"] == "subscribed"
+    finally:
+        _disconnect_quietly(ws)

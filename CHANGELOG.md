@@ -231,6 +231,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python**: `async for msg in ws.stock.messages()` ends once the connection
+  is gone. `__anext__` returned `None` for a closed channel instead of raising
+  `StopAsyncIteration`, so the loop spun on `None` forever after
+  `disconnect()`. With `messages(timeout_ms=...)`, a timeout now yields `None`
+  and iteration continues, as documented; the sync iterator used to end the
+  `for` loop at the first timeout (#68).
 - **All languages**: under a fast, continuous stream the async client no
   longer stalls message delivery. The network loop never yielded while the
   socket had data, so a consumer on the same tokio runtime (every binding's

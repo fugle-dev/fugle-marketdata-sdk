@@ -279,6 +279,11 @@ pub fn label(item: &marketdata_core::StreamItem) -> String {
 
 /// The events of a client's stream, skipping its messages: the shape tests
 /// used before `events()` was folded into the stream (#68).
+///
+/// It reads the client's one `stream_receiver()` and discards every message
+/// it passes. Do not use it together with [`MessageReceiver`] (or another
+/// reader of the same stream) on one client: each would silently swallow the
+/// items the other is waiting for. Read the stream directly instead.
 pub struct EventReceiver(pub std::sync::Arc<marketdata_core::StreamReceiver>);
 
 impl EventReceiver {
@@ -334,6 +339,9 @@ impl EventReceiver {
 }
 
 /// The messages of a client's stream, skipping its events.
+///
+/// Like [`EventReceiver`], it discards what it passes over: never combine the
+/// two on one client.
 pub struct MessageReceiver(pub std::sync::Arc<marketdata_core::StreamReceiver>);
 
 impl MessageReceiver {

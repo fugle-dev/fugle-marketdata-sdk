@@ -17,7 +17,7 @@
 //! Two counters are registered per `WebSocketClient::new` (when the
 //! `metrics` feature is enabled):
 //!
-//! - [`COUNTER_MESSAGES_DROPPED`] — channel back-pressure on `messages()`.
+//! - [`COUNTER_MESSAGES_DROPPED`] — message back-pressure on the client's stream.
 //! - [`COUNTER_EVENTS_DROPPED`] — broadcast back-pressure on
 //!   `connection_events()`.
 //!
@@ -113,7 +113,7 @@ pub(crate) fn describe_drop_counters() {
         ::metrics::describe_counter!(
             COUNTER_MESSAGES_DROPPED,
             ::metrics::Unit::Count,
-            "Inbound messages dropped because the consumer's `messages()` channel was saturated."
+            "Inbound messages dropped because the consumer's stream held `message_buffer` unread messages."
         );
         ::metrics::describe_counter!(
             COUNTER_EVENTS_DROPPED,
