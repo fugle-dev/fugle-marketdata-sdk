@@ -392,6 +392,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while reconnecting. One visible change: a `connect()` that fails after a
   `disconnect()` now leaves `is_closed()` `false` (the failed attempt's state);
   it used to stay `true` (#95).
+- **Python**: the `futopt` WebSocket client can be used from a callback or
+  any other thread, like the `stock` client. Calling one of its methods
+  (`is_connected()`, `subscribe()`, `disconnect()`, …) from a callback used to
+  panic with "FutOptWebSocketClient is unsendable, but sent to another
+  thread" (#94).
 - **Python, Node**: the WebSocket auth frame sends a bearer token as `token`
   and an SDK token as `sdkToken`, as the server expects. Every credential used
   to go out as `apikey`, so token authentication failed (#91).

@@ -72,10 +72,10 @@ def test_rejected_key_fires_unauthenticated_before_raising(server, product):
 
 
 @hard_timeout
-def test_disconnect_callback_reads_the_closed_state_of_a_lost_connection():
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_disconnect_callback_reads_the_closed_state_of_a_lost_connection(product):
     # Core records the close before reporting it, so a callback reading the
-    # state sees it closed (#86). Stock only: `FutOptWebSocketClient` is
-    # `unsendable`, so a callback thread cannot call its methods at all.
+    # state sees it closed (#86), on either product's client (#94).
     seen = []
     recorded = threading.Event()
 
@@ -84,7 +84,7 @@ def test_disconnect_callback_reads_the_closed_state_of_a_lost_connection():
         recorded.set()
 
     with LoopbackServer() as srv:
-        ws = product_ws(srv.url, "stock")
+        ws = product_ws(srv.url, product)
         recorder = Recorder(ws)
         ws.on("disconnect", record_state)
         ws.connect()
@@ -130,9 +130,9 @@ def test_disconnect_callback_has_fired_when_disconnect_returns(server, product):
 
 
 @hard_timeout
-def test_disconnect_from_disconnect_callback_still_waits(server):
-    # Stock only: futopt is `unsendable`, so a callback cannot call back into it.
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_disconnect_from_disconnect_callback_still_waits(server, product):
+    ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     finished = []
 
@@ -151,6 +151,52 @@ def test_disconnect_from_disconnect_callback_still_waits(server):
 
     assert finished == [1000]
     assert recorder.args_of("disconnect") == [(1000, "Normal closure")]
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_message_callback_can_call_client_methods(server, product):
+    # Callbacks run on the stream reader's thread, which may call back into
+    # the client on either product (#94): the first `subscribed` ack
+    # subscribes again from inside the callback.
+    first, second = SUBSCRIPTIONS[product], dict(SUBSCRIPTIONS[product], symbol="OTHER")
+    ws = product_ws(server.url, product)
+    errors = []
+    seen = []
+    called = threading.Event()
+
+    def subscribe_again(message):
+        if message.get("event") != "subscribed" or called.is_set():
+            return
+        try:
+            seen.append(ws.is_connected())
+            ws.subscribe(second)
+        except BaseException as exc:  # an unsendable client panics here
+            errors.append(exc)
+        finally:
+            called.set()
+
+    ws.on("error", errors.append)
+    ws.on("message", subscribe_again)
+    recorder = Recorder(ws, messages=True)
+    try:
+        ws.connect()
+        ws.subscribe(first)
+        recorder.wait_until(
+            lambda calls: any(
+                name == "message"
+                and args[0].get("event") == "subscribed"
+                and args[0]["data"]["symbol"] == "OTHER"
+                for name, args in calls
+            ),
+            TIMEOUT_S,
+            "the second subscribed ack",
+        )
+    finally:
+        disconnect_quietly(ws)
+
+    assert errors == []
+    assert seen == [True]
 
 
 @hard_timeout
@@ -187,6 +233,7 @@ async def test_connect_async_rejected_key_fires_unauthenticated_before_raising(s
 
 
 SUBSCRIPTION = {"channel": "trades", "symbol": "2330"}
+SUBSCRIPTIONS = {"stock": SUBSCRIPTION, "futopt": {"channel": "trades", "symbol": "TXFA4"}}
 
 
 def _names(calls):
@@ -259,9 +306,7 @@ def test_message_callback_registered_after_connect_receives_messages(server, pro
     try:
         ws.connect()
         recorder = Recorder(ws, messages=True)
-        ws.subscribe(
-            SUBSCRIPTION if product == "stock" else {"channel": "trades", "symbol": "TXFA4"}
-        )
+        ws.subscribe(SUBSCRIPTIONS[product])
         recorder.wait_for("message", TIMEOUT_S)
     finally:
         disconnect_quietly(ws)
@@ -287,17 +332,18 @@ def test_disconnect_returns_while_an_unread_iterator_holds_up_the_stream():
 
 
 @hard_timeout
-def test_iterator_waits_without_holding_the_gil():
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_iterator_waits_without_holding_the_gil(product):
     # The server answers from a Python thread of this process, and the
     # subscribe comes from another thread while the iterator waits: both need
     # the GIL the waiting iterator must have released (#68).
     with InProcessLoopbackServer() as srv:
-        ws = product_ws(srv.url, "stock")
+        ws = product_ws(srv.url, product)
         try:
             ws.connect()
             messages = ws.messages()
             assert next(messages)["event"] == "authenticated"
-            threading.Timer(0.2, ws.subscribe, args=(SUBSCRIPTION,)).start()
+            threading.Timer(0.2, ws.subscribe, args=(SUBSCRIPTIONS[product],)).start()
             assert next(messages)["event"] == "subscribed"
         finally:
             disconnect_quietly(ws)
