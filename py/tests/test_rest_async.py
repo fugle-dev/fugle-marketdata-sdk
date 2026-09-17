@@ -7,7 +7,6 @@ import pytest
 from fugle_marketdata import (
     RestClient,
     MarketDataError,
-    ApiError,
     AuthError,
 )
 
@@ -44,49 +43,53 @@ class TestRestClientCreation:
 
 
 class TestAsyncMethods:
-    """Test that methods return awaitables."""
+    """Test that methods return awaitables.
+
+    Requests go to a loopback server that rejects the key like the real API
+    does, so these run without network (#71).
+    """
 
     @pytest.mark.asyncio
-    async def test_quote_returns_awaitable(self, mock_api_key):
-        """quote() should return an awaitable that raises error with invalid key."""
-        client = RestClient(api_key=mock_api_key)
-        # This should raise an error (invalid key) but BE awaitable
-        with pytest.raises((MarketDataError, ApiError, AuthError)):
+    async def test_quote_returns_awaitable(self, rest_server):
+        """quote() should return an awaitable that raises error with a rejected key."""
+        client = RestClient(api_key="test-key", base_url=rest_server.url)
+        # This should raise an error (rejected key) but BE awaitable
+        with pytest.raises(AuthError):
             await client.stock.intraday.quote_async("2330")
 
     @pytest.mark.asyncio
-    async def test_ticker_returns_awaitable(self, mock_api_key):
+    async def test_ticker_returns_awaitable(self, rest_server):
         """ticker() should return an awaitable."""
-        client = RestClient(api_key=mock_api_key)
-        with pytest.raises((MarketDataError, ApiError, AuthError)):
+        client = RestClient(api_key="test-key", base_url=rest_server.url)
+        with pytest.raises(AuthError):
             await client.stock.intraday.ticker_async("2330")
 
     @pytest.mark.asyncio
-    async def test_candles_returns_awaitable(self, mock_api_key):
+    async def test_candles_returns_awaitable(self, rest_server):
         """candles() should return an awaitable."""
-        client = RestClient(api_key=mock_api_key)
-        with pytest.raises((MarketDataError, ApiError, AuthError)):
+        client = RestClient(api_key="test-key", base_url=rest_server.url)
+        with pytest.raises(AuthError):
             await client.stock.intraday.candles_async("2330")
 
     @pytest.mark.asyncio
-    async def test_trades_returns_awaitable(self, mock_api_key):
+    async def test_trades_returns_awaitable(self, rest_server):
         """trades() should return an awaitable."""
-        client = RestClient(api_key=mock_api_key)
-        with pytest.raises((MarketDataError, ApiError, AuthError)):
+        client = RestClient(api_key="test-key", base_url=rest_server.url)
+        with pytest.raises(AuthError):
             await client.stock.intraday.trades_async("2330")
 
     @pytest.mark.asyncio
-    async def test_volumes_returns_awaitable(self, mock_api_key):
+    async def test_volumes_returns_awaitable(self, rest_server):
         """volumes() should return an awaitable."""
-        client = RestClient(api_key=mock_api_key)
-        with pytest.raises((MarketDataError, ApiError, AuthError)):
+        client = RestClient(api_key="test-key", base_url=rest_server.url)
+        with pytest.raises(AuthError):
             await client.stock.intraday.volumes_async("2330")
 
     @pytest.mark.asyncio
-    async def test_futopt_quote_returns_awaitable(self, mock_api_key):
+    async def test_futopt_quote_returns_awaitable(self, rest_server):
         """futopt.intraday.quote() should return an awaitable."""
-        client = RestClient(api_key=mock_api_key)
-        with pytest.raises((MarketDataError, ApiError, AuthError)):
+        client = RestClient(api_key="test-key", base_url=rest_server.url)
+        with pytest.raises(AuthError):
             await client.futopt.intraday.quote_async("TXFC4")
 
 

@@ -3,6 +3,8 @@ import os
 import pytest
 from fugle_marketdata import RestClient, WebSocketClient
 
+from tests.rest_loopback import RestLoopbackServer
+
 # Get API key from environment for integration tests
 API_KEY = os.environ.get("FUGLE_API_KEY", "test-api-key")
 
@@ -29,6 +31,14 @@ def ws_client(api_key):
 def mock_api_key():
     """Provide mock API key for unit tests (no network)."""
     return "mock-api-key-for-unit-tests"
+
+
+@pytest.fixture
+def rest_server():
+    """Loopback REST server answering 401 on every path, so unit tests never
+    reach the real API (#71)."""
+    with RestLoopbackServer() as srv:
+        yield srv
 
 
 def pytest_collection_modifyitems(config, items):
