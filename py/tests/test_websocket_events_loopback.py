@@ -77,14 +77,22 @@ def test_disconnect_callback_reads_the_closed_state_of_a_lost_connection():
     # state sees it closed (#86). Stock only: `FutOptWebSocketClient` is
     # `unsendable`, so a callback thread cannot call its methods at all.
     seen = []
+    recorded = threading.Event()
+
+    def record_state(*_):
+        seen.append((ws.is_connected(), ws.is_closed()))
+        recorded.set()
+
     with LoopbackServer() as srv:
         ws = product_ws(srv.url, "stock")
         recorder = Recorder(ws)
-        ws.on("disconnect", lambda *_: seen.append((ws.is_connected(), ws.is_closed())))
+        ws.on("disconnect", record_state)
         ws.connect()
     # Leaving the block stops the server, which drops the connection.
     try:
-        recorder.wait_for("disconnect", TIMEOUT_S)
+        # Callbacks run in registration order, so the recorder hears the
+        # disconnect before `record_state` has appended; wait for the latter.
+        assert recorded.wait(TIMEOUT_S), recorder.calls
         assert seen == [(False, True)], recorder.calls
     finally:
         disconnect_quietly(ws)
