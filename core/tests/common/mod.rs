@@ -72,6 +72,15 @@ pub enum AfterAuth {
         frames: mpsc::UnboundedSender<String>,
         id_prefix: String,
     },
+    /// Like [`AfterAuth::AckSubscribes`], with each ack held until `notify`
+    /// is signalled, so a test can unsubscribe before the ack arrives. Use
+    /// `notify_one` per ack: its permit stands even if the ack is not waiting
+    /// yet.
+    AckSubscribesOnNotify {
+        frames: mpsc::UnboundedSender<String>,
+        id_prefix: String,
+        notify: Arc<tokio::sync::Notify>,
+    },
 }
 
 /// Collect items from `recv` until none arrives for [`QUIET`], capped at
@@ -296,6 +305,23 @@ async fn serve(
                 Some(Ok(Message::Text(text))) => {
                     let _ = frames.send(text.to_string());
                     if let Some(ack) = subscribed_ack(&text, &id_prefix) {
+                        let _ = sink.send(Message::Text(ack.into())).await;
+                    }
+                }
+                Some(Ok(Message::Close(_))) => {
+                    let _ = sink.close().await;
+                    break;
+                }
+                Some(Ok(_)) => continue,
+                _ => break,
+            }
+        },
+        AfterAuth::AckSubscribesOnNotify { frames, id_prefix, notify } => loop {
+            match stream.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    let _ = frames.send(text.to_string());
+                    if let Some(ack) = subscribed_ack(&text, &id_prefix) {
+                        notify.notified().await;
                         let _ = sink.send(Message::Text(ack.into())).await;
                     }
                 }

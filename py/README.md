@@ -253,7 +253,8 @@ client.is_connected()                      # Check connection status
 client.is_closed()                         # Check if client is closed
 
 client.subscribe(channel, symbol)          # Subscribe to channel
-client.unsubscribe(subscription_id)        # Unsubscribe by ID
+client.unsubscribe(subscription_id)        # Unsubscribe by server ID (or ids=[...])
+client.unsubscribe(channel=channel, symbol=symbol)  # Unsubscribe by subscribe() arguments
 client.subscriptions()                     # List active subscriptions
 
 client.on(event, callback)                 # Register event callback (not async def)

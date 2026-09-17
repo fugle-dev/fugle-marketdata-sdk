@@ -77,5 +77,13 @@ public interface WebSocketClientInterface {
      */
     public CompletableFuture<Void> unsubscribe(String channel, String symbol, Boolean afterHours) ;
     
+    /**
+     * Unsubscribe by the ids the server issued in its `subscribed` messages.
+     *
+     * Removes the subscriptions those ids name, so a reconnect does not
+     * restore them. An empty list is 1005 `INVALID_PARAMETER`.
+     */
+    public CompletableFuture<Void> unsubscribeIds(List<String> ids) ;
+    
 }
 

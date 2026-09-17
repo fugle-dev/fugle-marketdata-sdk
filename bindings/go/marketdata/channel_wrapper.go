@@ -293,6 +293,21 @@ func (sc *StreamingClient) Unsubscribe(channel, symbol string, opts ...Subscribe
 	return nil
 }
 
+// UnsubscribeIds removes the subscriptions named by the ids the server issued
+// in its "subscribed" messages
+//
+// A reconnect does not restore them. Passing no ids is error 1005.
+func (sc *StreamingClient) UnsubscribeIds(ids ...string) error {
+	if ids == nil {
+		ids = []string{}
+	}
+	err := sc.client.UnsubscribeIds(ids)
+	if err != nil {
+		return fmt.Errorf("unsubscribe failed: %w", err)
+	}
+	return nil
+}
+
 // Messages returns the message channel for range iteration
 //
 // This channel will be closed when the WebSocket connection is closed.

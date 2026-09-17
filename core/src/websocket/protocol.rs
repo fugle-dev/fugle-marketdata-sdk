@@ -14,6 +14,7 @@ use crate::websocket::channels::{FutOptSubscription, StockSubscription};
 use crate::websocket::SubscriptionManager;
 use crate::MarketDataError;
 use indexmap::IndexMap;
+use std::collections::HashSet;
 
 /// Classification of the inbound auth response.
 #[derive(Debug, PartialEq)]
@@ -205,6 +206,34 @@ pub(crate) fn frame_unsubscribe(wire_ids: Vec<String>) -> Result<String, MarketD
     serde_json::to_string(&msg).map_err(|e| MarketDataError::DeserializationError { source: e })
 }
 
+/// Remove what each of `targets` names from `subscriptions` and return the
+/// server ids to send, without duplicates (see
+/// [`SubscriptionManager::resolve_unsubscribe`]).
+pub(crate) fn unsubscribe_wire_ids(
+    subscriptions: &SubscriptionManager,
+    targets: &[String],
+) -> Vec<String> {
+    let mut wire_ids: Vec<String> = Vec::with_capacity(targets.len());
+    for target in targets {
+        if let Some(id) = subscriptions.resolve_unsubscribe(target) {
+            wire_ids.push(id);
+        }
+    }
+    dedupe_in_place(&mut wire_ids);
+    wire_ids
+}
+
+/// Drop repeated ids, keeping the first of each. Two keys can share one
+/// server id (a FutOpt alias and the contract it resolves to), and a caller
+/// may name the same subscription twice.
+fn dedupe_in_place(ids: &mut Vec<String>) {
+    if ids.len() < 2 {
+        return;
+    }
+    let mut seen: HashSet<String> = HashSet::with_capacity(ids.len());
+    ids.retain(|id| seen.insert(id.clone()));
+}
+
 /// Serialize any [`WebSocketRequest`] (used by the public `send()` API).
 pub(crate) fn frame_request(req: &WebSocketRequest) -> Result<String, MarketDataError> {
     serde_json::to_string(req).map_err(|e| MarketDataError::DeserializationError { source: e })
@@ -263,15 +292,17 @@ fn build_sub_key(channel: &str, symbol: &str, after_hours: bool, odd_lot: bool) 
 /// - single: top-level `{event, id, channel, symbol, afterHours?, intradayOddLot?}`
 /// - batched: `{event, data: [{id, channel, symbol, afterHours?, intradayOddLot?}, ...]}`
 ///
-/// Any shape we can't parse is silently ignored — the unsub fallback path
-/// (sending the local key as id) keeps the wire format valid even without
-/// a recorded server id.
+/// Any shape we can't parse is silently ignored.
+///
+/// Returns the ids of subscriptions unsubscribed before this ack arrived;
+/// the caller sends the unsubscribe frame for them (#136).
 pub(crate) fn handle_subscribed_event(
     subscriptions: &SubscriptionManager,
     msg: &WebSocketMessage,
-) {
+) -> Vec<String> {
+    let mut cancels = Vec::new();
     if msg.event != "subscribed" {
-        return;
+        return cancels;
     }
 
     // Batched shape: data is an array of subscription entries.
@@ -294,12 +325,14 @@ pub(crate) fn handle_subscribed_event(
                 .get("intradayOddLot")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            subscriptions.record_server_id(
+            cancels.extend(subscriptions.record_ack(
                 build_sub_key(channel, symbol, after_hours, odd_lot),
                 id.to_string(),
-            );
+            ));
         }
-        return;
+        // One ack can carry two keys the server issued the same id for.
+        dedupe_in_place(&mut cancels);
+        return cancels;
     }
 
     // Single shape: pull fields from data object when present, falling back
@@ -330,11 +363,12 @@ pub(crate) fn handle_subscribed_event(
         .unwrap_or(false);
 
     if let (Some(id), Some(channel), Some(symbol)) = (id, channel, symbol) {
-        subscriptions.record_server_id(
+        cancels.extend(subscriptions.record_ack(
             build_sub_key(&channel, &symbol, after_hours, odd_lot),
             id,
-        );
+        ));
     }
+    cancels
 }
 
 #[cfg(test)]
@@ -475,6 +509,43 @@ mod tests {
         let msg = parse_msg(r#"{"event":"subscribed","symbol":"2330"}"#);
         handle_subscribed_event(&manager, &msg);
         assert!(manager.take_server_id("trades:2330").is_none());
+    }
+
+    #[test]
+    fn handle_subscribed_returns_ids_unsubscribed_before_ack() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2317"));
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
+
+        let msg = parse_msg(
+            r#"{"event":"subscribed","data":[
+                {"id":"sub-1","channel":"trades","symbol":"2330"},
+                {"id":"sub-2","channel":"trades","symbol":"2317"}
+            ]}"#,
+        );
+        assert_eq!(handle_subscribed_event(&manager, &msg), ["sub-1"]);
+        assert!(manager.take_server_id("trades:2330").is_none());
+        assert_eq!(manager.take_server_id("trades:2317"), Some("sub-2".into()));
+    }
+
+    #[test]
+    fn handle_subscribed_sends_one_cancel_per_shared_server_id() {
+        let manager = SubscriptionManager::new();
+        // A FutOpt alias and the contract it resolves to: the server issues
+        // one id for both, so one unsubscribe covers them.
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "TXF1"));
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "TXFK6"));
+        assert_eq!(manager.resolve_unsubscribe("trades:TXF1"), None);
+        assert_eq!(manager.resolve_unsubscribe("trades:TXFK6"), None);
+
+        let msg = parse_msg(
+            r#"{"event":"subscribed","data":[
+                {"id":"sub-1","channel":"trades","symbol":"TXF1"},
+                {"id":"sub-1","channel":"trades","symbol":"TXFK6"}
+            ]}"#,
+        );
+        assert_eq!(handle_subscribed_event(&manager, &msg), ["sub-1"]);
     }
 
     fn resubscribe(rows: Vec<SubscribeRequest>) -> Vec<(String, serde_json::Value)> {

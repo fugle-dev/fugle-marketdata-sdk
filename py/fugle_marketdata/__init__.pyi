@@ -1788,15 +1788,29 @@ class StockWebSocketClient:
         subscription_id: Mapping[str, Any] | str | None = None,
         *,
         ids: list[str] | None = None,
+        channel: str | None = None,
+        symbol: str | None = None,
+        symbols: list[str] | None = None,
+        odd_lot: bool | None = None,
     ) -> None:
         """Unsubscribe from a channel.
 
-        Two call shapes are supported::
+        By the server id from the ``subscribed`` message::
 
             ws.stock.unsubscribe({"id": "abc123"})
             ws.stock.unsubscribe({"ids": ["abc123", "def456"]})
             ws.stock.unsubscribe("abc123")
             ws.stock.unsubscribe(ids=["abc123", "def456"])
+
+        Or by the arguments given to ``subscribe()``; ``channel`` is
+        keyword-only::
+
+            ws.stock.unsubscribe({"channel": "trades", "symbol": "2330"})
+            ws.stock.unsubscribe({"channel": "candles", "symbols": ["2330"], "oddLot": True})
+            ws.stock.unsubscribe(channel="trades", symbol="2330")
+            ws.stock.unsubscribe(channel="candles", symbols=["2330"], odd_lot=True)
+
+        Naming a channel together with an id raises ``MarketDataError`` 1005.
         """
         ...
 
@@ -1960,15 +1974,24 @@ class FutOptWebSocketClient:
         subscription_id: Mapping[str, Any] | str | None = None,
         *,
         ids: list[str] | None = None,
+        channel: str | None = None,
+        symbol: str | None = None,
+        symbols: list[str] | None = None,
+        after_hours: bool | None = None,
     ) -> None:
         """Unsubscribe from a channel.
 
-        Accepts the same dual-shape input as the stock client::
+        Accepts the same shapes as the stock client, with ``afterHours`` /
+        ``after_hours`` as the modifier::
 
             ws.futopt.unsubscribe({"id": "abc123"})
             ws.futopt.unsubscribe({"ids": ["abc123", "def456"]})
             ws.futopt.unsubscribe("abc123")
             ws.futopt.unsubscribe(ids=["abc123", "def456"])
+            ws.futopt.unsubscribe({"channel": "books", "symbol": "TXFC4", "afterHours": True})
+            ws.futopt.unsubscribe(channel="books", symbol="TXFC4", after_hours=True)
+
+        Naming a channel together with an id raises ``MarketDataError`` 1005.
         """
         ...
 

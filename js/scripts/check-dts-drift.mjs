@@ -281,6 +281,8 @@ const INTENTIONALLY_UNMAPPED = {
   StockSubscribeOptions: 'WebSocket param type, not a core response struct',
   FutOptSubscribeOptions: 'WebSocket param type, not a core response struct',
   UnsubscribeOptions: 'WebSocket param type, not a core response struct',
+  StockUnsubscribeOptions: 'WebSocket param type, not a core response struct',
+  FutOptUnsubscribeOptions: 'WebSocket param type, not a core response struct',
   WebSocketEventMap: 'callback signature map, no data fields',
   WebSocketPingParams: 'WebSocket param type, not a core response struct',
   WebSocketAuthData: 'server auth frame data, passed through verbatim',

@@ -8,7 +8,7 @@ use crate::websocket::connect_gate::ConnectGate;
 use crate::websocket::stream_queue::QueueReceiver;
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
-    frame_unsubscribe,
+    frame_unsubscribe, unsubscribe_wire_ids,
 };
 use crate::websocket::sync::owner_thread::{
     do_auth_handshake, do_blocking_connect, replay_subscriptions, run_supervisor, OwnerShared,
@@ -444,6 +444,10 @@ impl WebSocketClient {
 
     /// Unsubscribe by server id or local key.
     ///
+    /// Same semantics as the async client's `unsubscribe`: both forms remove
+    /// the local subscription, and a key whose ACK has not arrived yet is
+    /// unsubscribed when the ACK brings its server id (#136).
+    ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
     /// validation, or peer-initiated failures.
@@ -464,18 +468,8 @@ impl WebSocketClient {
             return Ok(());
         }
 
-        let mut wire_ids = Vec::with_capacity(keys.len());
-        for key in &keys {
-            let id = self
-                .shared
-                .subscriptions
-                .take_server_id(key)
-                .unwrap_or_else(|| key.clone());
-            self.shared.subscriptions.unsubscribe(key);
-            wire_ids.push(id);
-        }
-
-        if !self.is_connected() {
+        let wire_ids = unsubscribe_wire_ids(&self.shared.subscriptions, &keys);
+        if wire_ids.is_empty() || !self.is_connected() {
             return Ok(());
         }
 

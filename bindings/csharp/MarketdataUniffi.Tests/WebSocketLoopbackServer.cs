@@ -38,6 +38,12 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     /// <summary>Text frames other than auth, in arrival order.</summary>
     public ConcurrentQueue<string> OtherFrames { get; } = new();
 
+    /// <summary>
+    /// Answer each single-symbol <c>subscribe</c> frame with a <c>subscribed</c>
+    /// ack whose id is <c>id-&lt;channel&gt;-&lt;symbol&gt;[-ah]</c>.
+    /// </summary>
+    public bool AckSubscribes { get; init; }
+
     /// <summary>Cut every open connection at the transport, as a network failure would.</summary>
     public void DropConnections()
     {
@@ -85,9 +91,15 @@ internal sealed class WebSocketLoopbackServer : IDisposable
 
                 var text = Encoding.UTF8.GetString(buffer, 0, received);
                 using var frame = JsonDocument.Parse(text);
-                if (frame.RootElement.GetProperty("event").GetString() != "auth")
+                var eventName = frame.RootElement.GetProperty("event").GetString();
+                if (eventName != "auth")
                 {
                     OtherFrames.Enqueue(text);
+                    if (AckSubscribes && eventName == "subscribe")
+                    {
+                        var ack = Encoding.UTF8.GetBytes(SubscribedAck(frame.RootElement.GetProperty("data")));
+                        await socket.SendAsync(ack, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
+                    }
                 }
                 else
                 {
@@ -101,6 +113,17 @@ internal sealed class WebSocketLoopbackServer : IDisposable
         {
             // The client hung up or the server is shutting down.
         }
+    }
+
+    private static string SubscribedAck(JsonElement data)
+    {
+        var id = $"id-{data.GetProperty("channel").GetString()}-{data.GetProperty("symbol").GetString()}";
+        if (data.TryGetProperty("afterHours", out var afterHours) && afterHours.ValueKind == JsonValueKind.True)
+        {
+            id += "-ah";
+        }
+        var raw = data.GetRawText();
+        return $"{{\"event\":\"subscribed\",\"data\":{{\"id\":\"{id}\",{raw.Substring(1)}}}";
     }
 
     private static int FreePort()

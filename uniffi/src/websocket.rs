@@ -656,6 +656,15 @@ impl WebSocketClient {
         self.unsubscribe_impl(sub).await
     }
 
+    /// Unsubscribe by the ids the server issued in its `subscribed` messages.
+    ///
+    /// Removes the subscriptions those ids name, so a reconnect does not
+    /// restore them. An empty list is 1005 `INVALID_PARAMETER`.
+    pub async fn unsubscribe_ids(&self, ids: Vec<String>) -> Result<(), MarketDataError> {
+        let ids = non_empty_ids(ids)?;
+        self.unsubscribe_ids_impl(ids).await
+    }
+
     pub async fn ping(&self, state: Option<String>) -> Result<(), MarketDataError> {
         self.ping_impl(state).await
     }
@@ -902,6 +911,20 @@ impl WebSocketClient {
         }
     }
 
+    /// Unsubscribe by server ids
+    ///
+    /// # Errors
+    ///
+    /// Returns error if not connected.
+    async fn unsubscribe_ids_impl(&self, ids: Vec<String>) -> Result<(), MarketDataError> {
+        if let Some(ws) = self.client() {
+            ws.unsubscribe(ids).await?;
+            Ok(())
+        } else {
+            Err(crate::errors::not_connected_error("Not connected"))
+        }
+    }
+
     /// Send a ping message to the server
     ///
     /// # Arguments
@@ -994,6 +1017,19 @@ impl Subscription {
     }
 }
 
+/// `ids` for `unsubscribe_ids`: an empty list names no subscription and is
+/// 1005 `INVALID_PARAMETER`, checked before the connection.
+fn non_empty_ids(ids: Vec<String>) -> Result<Vec<String>, MarketDataError> {
+    if ids.is_empty() {
+        return Err(marketdata_core::MarketDataError::InvalidParameter {
+            name: "ids".to_string(),
+            reason: "must not be empty".to_string(),
+        }
+        .into());
+    }
+    Ok(ids)
+}
+
 /// Sync (blocking) wrappers for C++ compatibility.
 /// Uses a persistent tokio runtime stored in the client to keep background tasks alive.
 #[cfg(feature = "cpp")]
@@ -1036,6 +1072,19 @@ impl WebSocketClient {
         let guard = self.sync_runtime.lock().unwrap();
         if let Some(ref rt) = *guard {
             rt.block_on(self.unsubscribe_impl(sub))
+        } else {
+            Err(crate::errors::not_connected_error("Not connected"))
+        }
+    }
+
+    /// Unsubscribe by the ids the server issued (blocking).
+    ///
+    /// An empty list is 1005 `INVALID_PARAMETER`.
+    pub fn unsubscribe_ids_sync(&self, ids: Vec<String>) -> Result<(), MarketDataError> {
+        let ids = non_empty_ids(ids)?;
+        let guard = self.sync_runtime.lock().unwrap();
+        if let Some(ref rt) = *guard {
+            rt.block_on(self.unsubscribe_ids_impl(ids))
         } else {
             Err(crate::errors::not_connected_error("Not connected"))
         }
@@ -2669,6 +2718,47 @@ mod tests {
         client.unsubscribe("Books".into(), "TXFE6".into(), None).await.expect("unsubscribe");
         assert_eq!(core.subscription_count(), 0);
         client.disconnect_impl().await;
+    }
+
+    const EMPTY_IDS: &str = "Invalid parameter 'ids': must not be empty";
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unsubscribe_ids_rejects_empty_list_before_connecting() {
+        let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        assert_invalid_parameter(client.unsubscribe_ids(Vec::new()).await, EMPTY_IDS);
+        assert_not_connected(client.unsubscribe_ids(vec!["abc".into()]).await);
+    }
+
+    /// The mock server does not ack, so this unsubscribes by local key with
+    /// the ack outstanding: core records the cancel and removes the
+    /// subscription. `core/tests/unsubscribe.rs` covers the server-id path.
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unsubscribe_ids_removes_subscriptions_it_names() {
+        let server = MockWsServer::start().await;
+        let client = mock_client_for(
+            &server,
+            Arc::new(TestListener::new()),
+            WebSocketEndpoint::Stock,
+            None,
+        );
+        client.connect_impl().await.expect("connect");
+        let core = client.client().expect("connected");
+
+        client.subscribe("trades".into(), "2330".into(), None).await.expect("subscribe");
+        client.subscribe("books".into(), "2330".into(), None).await.expect("subscribe");
+        client.unsubscribe_ids(vec!["trades:2330".into()]).await.expect("unsubscribe");
+        let keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
+        assert_eq!(keys, ["books:2330"]);
+        client.disconnect_impl().await;
+    }
+
+    #[cfg(feature = "cpp")]
+    #[test]
+    fn unsubscribe_ids_sync_rejects_empty_list_before_connecting() {
+        let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        assert_invalid_parameter(client.unsubscribe_ids_sync(Vec::new()), EMPTY_IDS);
     }
 
     #[cfg(feature = "cpp")]

@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -66,6 +67,9 @@ type authFrameServer struct {
 	auth   []map[string]any
 	others []string
 	conns  []net.Conn
+	// ackSubscribes answers each single-symbol subscribe with a subscribed
+	// ack whose id is "id-<channel>-<symbol>[-ah]".
+	ackSubscribes bool
 }
 
 func newAuthFrameServer(t *testing.T) *authFrameServer {
@@ -143,7 +147,11 @@ func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 			if frame.Event != "auth" {
 				s.mu.Lock()
 				s.others = append(s.others, string(payload))
+				ack := s.ackSubscribes && frame.Event == "subscribe"
 				s.mu.Unlock()
+				if ack {
+					_ = writeFrame(conn, 0x1, subscribedAck(frame.Data))
+				}
 				continue
 			}
 			s.mu.Lock()
@@ -152,6 +160,19 @@ func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 			_ = writeFrame(conn, 0x1, []byte(`{"event":"authenticated","data":{"message":"Authenticated successfully"}}`))
 		}
 	}
+}
+
+func subscribedAck(data map[string]any) []byte {
+	id := fmt.Sprintf("id-%v-%v", data["channel"], data["symbol"])
+	if data["afterHours"] == true {
+		id += "-ah"
+	}
+	ack := map[string]any{"id": id}
+	for k, v := range data {
+		ack[k] = v
+	}
+	out, _ := json.Marshal(map[string]any{"event": "subscribed", "data": ack})
+	return out
 }
 
 func readFrame(r *bufio.Reader) (byte, []byte, error) {

@@ -1,5 +1,7 @@
 // Public wrapper providing FubonNeo-compatible WebSocket API over UniFFI-generated bindings
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace FugleMarketData
@@ -390,6 +392,19 @@ namespace FugleMarketData
         /// <returns>Task that completes when unsubscription is confirmed</returns>
         public Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null) =>
             _inner.Unsubscribe(channel, symbol, afterHours);
+
+        /// <summary>
+        /// Unsubscribe by the ids the server issued in its <c>subscribed</c> messages.
+        /// A reconnect does not restore these subscriptions.
+        /// </summary>
+        /// <param name="ids">Server subscription ids; an empty list is error 1005</param>
+        /// <returns>Task that completes when the unsubscribe is sent</returns>
+        public Task UnsubscribeAsync(IEnumerable<string> ids)
+        {
+            if (ids == null)
+                throw new ArgumentNullException(nameof(ids));
+            return _inner.UnsubscribeIds(ids.ToArray());
+        }
 
         /// <summary>
         /// Whether the client is currently connected to the server.

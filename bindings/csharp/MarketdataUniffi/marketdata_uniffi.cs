@@ -1829,6 +1829,12 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(
+        IntPtr @ptr,
+        RustBuffer @ids
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_clone_websocketlistener(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -2538,6 +2544,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
@@ -3547,6 +3556,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe` checksum `49934`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids();
+            if (checksum != 5738)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids` checksum `5738`, library returned `{checksum}`"
                 );
             }
         }
@@ -8828,6 +8847,15 @@ public interface IWebSocketClient
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     Task Unsubscribe(string @channel, string @symbol, bool? @afterHours = null);
+
+    /// <summary>
+    /// Unsubscribe by the ids the server issued in its `subscribed` messages.
+    ///
+    /// Removes the subscriptions those ids name, so a reconnect does not
+    /// restore them. An empty list is 1005 `INVALID_PARAMETER`.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task UnsubscribeIds(string[] @ids);
 }
 
 /// <summary>
@@ -9205,6 +9233,39 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                     FfiConverterString.INSTANCE.Lower(@channel),
                     FfiConverterString.INSTANCE.Lower(@symbol),
                     FfiConverterOptionalBoolean.INSTANCE.Lower(@afterHours)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_void(future, continuation, data),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_void(future, ref status);
+            },
+            // Free
+            (IntPtr future) => _UniFFILib.ffi_marketdata_uniffi_rust_future_free_void(future),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Unsubscribe by the ids the server issued in its `subscribed` messages.
+    ///
+    /// Removes the subscriptions those ids name, so a reconnect does not
+    /// restore them. An empty list is 1005 `INVALID_PARAMETER`.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task UnsubscribeIds(string[] @ids)
+    {
+        await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(
+                    thisPtr,
+                    FfiConverterSequenceString.INSTANCE.Lower(@ids)
                 );
             }),
             // Poll
@@ -11977,6 +12038,57 @@ class FfiConverterOptionalTypeTlsConfigRecord : FfiConverterRustBuffer<TlsConfig
             stream.WriteByte(1);
             FfiConverterTypeTlsConfigRecord.INSTANCE.Write((TlsConfigRecord)value, stream);
         }
+    }
+}
+
+class FfiConverterSequenceString : FfiConverterRustBuffer<string[]>
+{
+    public static FfiConverterSequenceString INSTANCE = new FfiConverterSequenceString();
+
+    public override string[] Read(BigEndianStream stream)
+    {
+        var length = stream.ReadInt();
+        if (length == 0)
+        {
+            return [];
+        }
+
+        var result = new string[(length)];
+        var readFn = FfiConverterString.INSTANCE.Read;
+        for (int i = 0; i < length; i++)
+        {
+            result[i] = readFn(stream);
+        }
+        return result;
+    }
+
+    public override int AllocationSize(string[] value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationSizeFn = FfiConverterString.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item => allocationSizeFn(item));
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(string[] value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Length);
+        var writerFn = FfiConverterString.INSTANCE.Write;
+        value.ForEach(item => writerFn(item, stream));
     }
 }
 

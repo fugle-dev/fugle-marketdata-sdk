@@ -1228,6 +1228,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids()
+		})
+		if checksum != 5738 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected()
 		})
 		if checksum != 42437 {
@@ -4508,6 +4517,11 @@ type WebSocketClientInterface interface {
 	// Pass the same after-hours value as the `subscribe` call: an after-hours
 	// subscription is a separate subscription from the regular one.
 	Unsubscribe(channel string, symbol string, afterHours *bool) error
+	// Unsubscribe by the ids the server issued in its `subscribed` messages.
+	//
+	// Removes the subscriptions those ids name, so a reconnect does not
+	// restore them. An empty list is 1005 `INVALID_PARAMETER`.
+	UnsubscribeIds(ids []string) error
 }
 
 // WebSocket client for real-time market data streaming
@@ -4852,6 +4866,41 @@ func (_self *WebSocketClient) Unsubscribe(channel string, symbol string, afterHo
 		func(_ struct{}) struct{} { return struct{}{} },
 		C.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(
 			_pointer, FfiConverterStringINSTANCE.Lower(channel), FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalBoolINSTANCE.Lower(afterHours)),
+		// pollFn
+		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_poll_void(handle, continuation, data)
+		},
+		// freeFn
+		func(handle C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_free_void(handle)
+		},
+	)
+
+	if err == nil {
+		return nil
+	}
+
+	return err
+}
+
+// Unsubscribe by the ids the server issued in its `subscribed` messages.
+//
+// Removes the subscriptions those ids name, so a reconnect does not
+// restore them. An empty list is 1005 `INVALID_PARAMETER`.
+func (_self *WebSocketClient) UnsubscribeIds(ids []string) error {
+	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
+	defer _self.ffiObject.decrementPointer()
+	_, err := uniffiRustCallAsync[MarketDataError](
+		FfiConverterMarketDataErrorINSTANCE,
+		// completeFn
+		func(handle C.uint64_t, status *C.RustCallStatus) struct{} {
+			C.ffi_marketdata_uniffi_rust_future_complete_void(handle, status)
+			return struct{}{}
+		},
+		// liftFn
+		func(_ struct{}) struct{} { return struct{}{} },
+		C.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(
+			_pointer, FfiConverterSequenceStringINSTANCE.Lower(ids)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_void(handle, continuation, data)
@@ -7129,6 +7178,53 @@ type FfiDestroyerOptionalTlsConfigRecord struct{}
 func (_ FfiDestroyerOptionalTlsConfigRecord) Destroy(value *TlsConfigRecord) {
 	if value != nil {
 		FfiDestroyerTlsConfigRecord{}.Destroy(*value)
+	}
+}
+
+type FfiConverterSequenceString struct{}
+
+var FfiConverterSequenceStringINSTANCE = FfiConverterSequenceString{}
+
+func (c FfiConverterSequenceString) Lift(rb RustBufferI) []string {
+	return LiftFromRustBuffer[[]string](c, rb)
+}
+
+func (c FfiConverterSequenceString) Read(reader io.Reader) []string {
+	length := readInt32(reader)
+	if length == 0 {
+		return nil
+	}
+	result := make([]string, 0, length)
+	for i := int32(0); i < length; i++ {
+		result = append(result, FfiConverterStringINSTANCE.Read(reader))
+	}
+	return result
+}
+
+func (c FfiConverterSequenceString) Lower(value []string) C.RustBuffer {
+	return LowerIntoRustBuffer[[]string](c, value)
+}
+
+func (c FfiConverterSequenceString) LowerExternal(value []string) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[[]string](c, value))
+}
+
+func (c FfiConverterSequenceString) Write(writer io.Writer, value []string) {
+	if len(value) > math.MaxInt32 {
+		panic("[]string is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(value)))
+	for _, item := range value {
+		FfiConverterStringINSTANCE.Write(writer, item)
+	}
+}
+
+type FfiDestroyerSequenceString struct{}
+
+func (FfiDestroyerSequenceString) Destroy(sequence []string) {
+	for _, value := range sequence {
+		FfiDestroyerString{}.Destroy(value)
 	}
 }
 

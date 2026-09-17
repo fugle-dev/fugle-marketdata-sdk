@@ -3,6 +3,7 @@ package tw.com.fugle.marketdata;
 import tw.com.fugle.marketdata.generated.*;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -266,6 +267,20 @@ public class FugleWebSocketClient implements AutoCloseable {
 
     private CompletableFuture<Void> unsubscribeSession(String channel, String symbol, Boolean afterHours) {
         return webSocketClient.unsubscribe(channel, symbol, afterHours)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+    }
+
+    /**
+     * Unsubscribe by the ids the server issued in its {@code subscribed} messages.
+     *
+     * <p>A reconnect does not restore these subscriptions. An empty list fails
+     * with error 1005.
+     *
+     * @param ids Server subscription ids
+     * @return CompletableFuture that completes when the unsubscribe is sent
+     */
+    public CompletableFuture<Void> unsubscribe(List<String> ids) {
+        return webSocketClient.unsubscribeIds(ids)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
     }
 

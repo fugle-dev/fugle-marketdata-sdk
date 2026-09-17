@@ -9,7 +9,7 @@ use crate::websocket::connect_gate::ConnectGate;
 use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
-    frame_unsubscribe,
+    frame_unsubscribe, unsubscribe_wire_ids,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, HealthCheckConfig,
@@ -845,13 +845,14 @@ impl WebSocketClient {
         Ok(())
     }
 
-    /// Unsubscribe by server id(s) — accepts single or batch via
-    /// `impl IntoIterator<Item = impl Into<String>>`.
+    /// Unsubscribe by server id(s) or local key(s) — accepts single or batch
+    /// via `impl IntoIterator<Item = impl Into<String>>`.
     ///
-    /// Each id is preferentially the server-assigned id returned in a
-    /// `subscribed` ACK. The internal `SubscriptionManager` falls back to
-    /// the local key (`"{channel}:{symbol}[:modifier]"`) when an ACK
-    /// hasn't been recorded yet (rare race on fast subscribe→unsubscribe).
+    /// Each entry is either the server-assigned id returned in a `subscribed`
+    /// ACK or a local key (`"{channel}:{symbol}[:modifier]"`); both remove
+    /// the local subscription, so it is not restored on reconnect. A key
+    /// whose ACK has not arrived yet is unsubscribed when the ACK brings its
+    /// server id (#136). An entry that is neither is sent as is.
     ///
     /// Sends a single `{event:"unsubscribe", data:{ids:[...]}}` frame on
     /// the wire when there is more than one id, or `{data:{id:"..."}}`
@@ -877,19 +878,8 @@ impl WebSocketClient {
             return Ok(());
         }
 
-        // Translate keys to server ids where possible; fall back to the
-        // caller-supplied string (works for both server ids and local keys).
-        let mut wire_ids = Vec::with_capacity(keys.len());
-        for key in &keys {
-            let id = self
-                .subscriptions
-                .take_server_id(key)
-                .unwrap_or_else(|| key.clone());
-            self.subscriptions.unsubscribe(key);
-            wire_ids.push(id);
-        }
-
-        if !self.is_connected().await {
+        let wire_ids = unsubscribe_wire_ids(&self.subscriptions, &keys);
+        if wire_ids.is_empty() || !self.is_connected().await {
             return Ok(());
         }
 
@@ -1056,6 +1046,7 @@ impl WebSocketClient {
                     stream.clone(),
                     heartbeat_timeout,
                     Arc::clone(&subscriptions),
+                    Arc::clone(&write_tx_slot),
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&reconnection),
                     Arc::clone(&state),

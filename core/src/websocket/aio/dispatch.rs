@@ -6,14 +6,16 @@ use crate::websocket::aio::writer::WriteFailure;
 use crate::websocket::aio::{SharedState, WsStream};
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
 use crate::websocket::stream_queue::StreamSender;
-use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
+use crate::websocket::protocol::{
+    frame_unsubscribe, handle_subscribed_event, parse_binary_frame, parse_text_frame,
+};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, ReconnectionManager, SubscriptionManager};
 use futures_util::{FutureExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc as tokio_mpsc, oneshot, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 
 /// Most frames read after a failed write before it is reported. Bounds how
@@ -29,6 +31,33 @@ enum Next {
     /// No frame is waiting behind a failed write: report it.
     ReportWriteFailure(WriteFailure),
     WriterGone,
+}
+
+/// Queue the unsubscribe frame for subscriptions unsubscribed before their
+/// ack arrived. A connection without a writer is going away; its
+/// subscriptions go with it.
+///
+/// Queued with `try_send` so the read loop keeps reading: the writer drains
+/// the queue concurrently, so a free slot is the normal case. Only a full
+/// queue awaits, as the caller's own `unsubscribe()` would — dropping the
+/// frame would leave the subscription running on the server.
+async fn send_cancels(
+    write_tx: &Mutex<Option<tokio_mpsc::Sender<String>>>,
+    cancels: Vec<String>,
+) {
+    if cancels.is_empty() {
+        return;
+    }
+    let Ok(frame) = frame_unsubscribe(cancels) else {
+        return;
+    };
+    let sender = write_tx.lock().await.clone();
+    let Some(sender) = sender else {
+        return;
+    };
+    if let Err(tokio_mpsc::error::TrySendError::Full(frame)) = sender.try_send(frame) {
+        let _ = sender.send(frame).await;
+    }
 }
 
 /// Dispatch incoming WebSocket messages to appropriate channels
@@ -53,6 +82,8 @@ enum Next {
 ///   `Disconnected { intent: Network }` when the timer fires. If
 ///   `None`, liveness detection is disabled and reads block indefinitely.
 /// * `subscriptions` - Subscription manager for `subscribed` event handling
+/// * `write_tx` - The client's outbound queue, for unsubscribing what was
+///   unsubscribed before its `subscribed` ack arrived (#136)
 /// * `reconnection` - Reconnect policy, consulted for each `Disconnected`'s
 ///   `will_reconnect` so it matches the decision the caller makes next
 /// * `state` - The client's connection state, updated to match each
@@ -74,6 +105,7 @@ pub(crate) async fn dispatch_messages(
     stream: StreamSender,
     heartbeat_timeout: Option<Duration>,
     subscriptions: Arc<SubscriptionManager>,
+    write_tx: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     shutdown_requested: Arc<AtomicBool>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     state: SharedState,
@@ -243,7 +275,8 @@ pub(crate) async fn dispatch_messages(
                     Ok(ws_msg) => {
                         // Mutex is only taken when event == "subscribed" (cheap
                         // string compare for every other message).
-                        handle_subscribed_event(&subscriptions, &ws_msg);
+                        let cancels = handle_subscribed_event(&subscriptions, &ws_msg);
+                        send_cancels(&write_tx, cancels).await;
                         stream.push_message(ws_msg);
                     }
                     Err(e) => {
@@ -263,7 +296,8 @@ pub(crate) async fn dispatch_messages(
                 );
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) => {
-                        handle_subscribed_event(&subscriptions, &ws_msg);
+                        let cancels = handle_subscribed_event(&subscriptions, &ws_msg);
+                        send_cancels(&write_tx, cancels).await;
                         stream.push_message(ws_msg);
                     }
                     Err(e) => {

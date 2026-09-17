@@ -121,9 +121,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an after-hours subscription is separate from the regular one. On the Stock
   endpoint any after-hours value, `false` included, is 1005
   `INVALID_PARAMETER`.
+- **C#, Go, Java, C++**: WebSocket unsubscribe by the ids the server issued in
+  its `subscribed` messages, like Python and Node (#136): C#
+  `UnsubscribeAsync(IEnumerable<string> ids)`, Go `UnsubscribeIds(ids...)`,
+  Java `unsubscribe(List<String> ids)`, C++ `unsubscribe_ids_sync(ids)`
+  (generated layer: `unsubscribe_ids`). An empty list is 1005
+  `INVALID_PARAMETER`.
+- **Node, Python**: WebSocket `unsubscribe()` also takes the `subscribe()`
+  arguments (#136). Node: `{ channel, symbol | symbols, intradayOddLot? }`
+  (FutOpt `afterHours?`), used when the object has no `id` / `ids`. Python: a
+  dict `{"channel", "symbol" | "symbols", "oddLot"?}` (FutOpt `"afterHours"`),
+  or `unsubscribe(channel=..., symbol=... | symbols=[...], odd_lot=...)`
+  (FutOpt `after_hours=`). A channel together with an id is 1005
+  `INVALID_PARAMETER`.
 
 ### Changed
 
+- **All languages**: WebSocket unsubscribe sends the id the server issued and
+  keeps the local subscriptions in step with it (#136). Unsubscribing by the
+  server id now also removes the local subscription, so a reconnect no longer
+  subscribes it again. Unsubscribing before the `subscribed` ack arrived used
+  to send the local key (e.g. `trades:2330`) as the id, which the server
+  acknowledged without removing anything; the unsubscribe is now sent when
+  the ack brings the id. Since a FutOpt symbol alias and the contract it
+  resolves to share one server id, unsubscribing either also removes the
+  other on the server, and that id is sent once rather than per key.
 - **All languages**: a reconnect (automatic, or `reconnect()`) re-sends the
   stored subscriptions as one `subscribe` frame per channel and modifier
   (`intradayOddLot`, `afterHours`), with `symbols: [...]`, instead of one

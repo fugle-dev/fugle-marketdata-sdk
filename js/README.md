@@ -266,7 +266,8 @@ class StockWebSocketClient {
   connect(): Promise<WebSocketAuthData | undefined>;
   ping(params?: string | { state?: unknown }): void;
   subscribe(options: { channel: string; symbol: string; oddLot?: boolean }): void;
-  unsubscribe(subscriptionId: string): void;
+  // A server id, { id } / { ids }, or the subscribe() options (FutOpt: afterHours)
+  unsubscribe(options: string | { id?: string; ids?: string[] } | { channel: string; symbol?: string; symbols?: string[]; intradayOddLot?: boolean }): void;
   disconnect(): void;
   get isConnected(): boolean;
   get isClosed(): boolean;

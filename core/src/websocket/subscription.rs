@@ -2,7 +2,7 @@
 
 use crate::models::SubscribeRequest;
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 /// Manages WebSocket subscription state with insertion order preservation
@@ -18,10 +18,24 @@ pub struct SubscriptionManager {
     /// IndexMap preserves insertion order for ordered reconnection
     subscriptions: RwLock<IndexMap<String, SubscribeRequest>>,
 
-    /// Maps local subscription key to the server-assigned id from the
-    /// `subscribed` event. Empty until the server acks; fallback path in
-    /// unsubscribe uses the local key when a server id isn't recorded yet.
-    server_ids: RwLock<HashMap<String, String>>,
+    /// Server ids and cancels awaiting an ack, under one lock so an
+    /// unsubscribe and the ack it waits for cannot miss each other (#136).
+    ids: RwLock<ServerIds>,
+}
+
+#[derive(Default)]
+struct ServerIds {
+    /// Local subscription key to the server-assigned id from the
+    /// `subscribed` event. Empty until the server acks.
+    by_key: HashMap<String, String>,
+    /// Keys unsubscribed before their ack arrived. The server only accepts
+    /// the id it issued, so the unsubscribe is sent when the ack brings it.
+    ///
+    /// An entry is dropped by the ack it waits for, by subscribing the key
+    /// again, by the next [`SubscriptionManager::clear_server_ids`] (the
+    /// connection it was waiting on is gone), or by
+    /// [`SubscriptionManager::clear`].
+    pending_cancels: HashSet<String>,
 }
 
 impl SubscriptionManager {
@@ -29,7 +43,7 @@ impl SubscriptionManager {
     pub fn new() -> Self {
         Self {
             subscriptions: RwLock::new(IndexMap::new()),
-            server_ids: RwLock::new(HashMap::new()),
+            ids: RwLock::new(ServerIds::default()),
         }
     }
 
@@ -37,10 +51,15 @@ impl SubscriptionManager {
     ///
     /// From CONTEXT.md: "立即加入訂閱狀態" (immediately add to state)
     /// Subscriptions are stored even when disconnected, allowing restoration on reconnect.
+    /// Subscribing again drops a cancel still waiting for this key's ack.
     pub fn subscribe(&self, req: SubscribeRequest) {
         let key = req.key();
-        let mut subs = self.subscriptions.write().unwrap();
-        subs.insert(key, req);
+        // Lock order: `ids`, then `subscriptions`, and both in one critical
+        // section so a `subscribed` ack in flight cannot see the cancel this
+        // call drops and unsubscribe the subscription it just added (#136).
+        let mut ids = self.ids.write().unwrap();
+        self.subscriptions.write().unwrap().insert(key.clone(), req);
+        ids.pending_cancels.remove(&key);
     }
 
     /// Remove a subscription from state (also drops any recorded server id)
@@ -53,33 +72,95 @@ impl SubscriptionManager {
         // Keep id map coherent — unsub drops any server id for this key. Use
         // a separate write() to avoid holding both locks simultaneously.
         drop(subs);
-        self.server_ids.write().unwrap().remove(key);
+        self.ids.write().unwrap().by_key.remove(key);
     }
 
     /// Record the server-assigned subscription id for a local key.
     ///
-    /// Called when a `subscribed` event arrives from the server. Overwrites
-    /// any previous id for the same key (which is correct behavior: a fresh
-    /// server id replaces the old one, e.g. on reconnect).
+    /// The ack path uses [`Self::record_ack`] instead, which also answers a
+    /// cancel that arrived before the ack; this one only records.
+    ///
+    /// Overwrites any previous id for the same key (which is correct
+    /// behavior: a fresh server id replaces the old one, e.g. on reconnect).
     pub fn record_server_id(&self, key: String, server_id: String) {
-        self.server_ids.write().unwrap().insert(key, server_id);
+        self.ids.write().unwrap().by_key.insert(key, server_id);
+    }
+
+    /// Record the id a `subscribed` ack carries for `key`. Returns the id
+    /// instead when `key` was unsubscribed before the ack: the caller sends
+    /// the unsubscribe for it, and the id is not kept.
+    pub(crate) fn record_ack(&self, key: String, server_id: String) -> Option<String> {
+        let mut ids = self.ids.write().unwrap();
+        if ids.pending_cancels.remove(&key) {
+            return Some(server_id);
+        }
+        ids.by_key.insert(key, server_id);
+        None
     }
 
     /// Remove and return the recorded server id for a key.
     ///
-    /// Returns `None` if the ack hasn't arrived yet (rare race on fast
-    /// subscribe+unsubscribe), in which case the caller should fall back to
-    /// sending the local key as the id so the wire format stays valid.
+    /// Returns `None` if the ack hasn't arrived yet. Unsubscribing uses
+    /// [`Self::resolve_unsubscribe`] instead, which also accepts a server id
+    /// and records a cancel when the ack is still outstanding.
     pub fn take_server_id(&self, key: &str) -> Option<String> {
-        self.server_ids.write().unwrap().remove(key)
+        self.ids.write().unwrap().by_key.remove(key)
+    }
+
+    /// Remove what `target` names from state and return the id to send in
+    /// the unsubscribe frame, if any. `target` is either:
+    ///
+    /// - a local key with a recorded server id: sends that id;
+    /// - a recorded server id: removes every key the id was issued for
+    ///   (a FutOpt alias and its contract share one) and sends it;
+    /// - a local key whose ack has not arrived: nothing is sent now, the
+    ///   unsubscribe goes out when the ack does (see [`Self::record_ack`]);
+    /// - anything else: sent as is, as the server may know the id.
+    pub(crate) fn resolve_unsubscribe(&self, target: &str) -> Option<String> {
+        // Lock order: `ids`, then `subscriptions`.
+        let mut ids = self.ids.write().unwrap();
+        if let Some(id) = ids.by_key.remove(target) {
+            self.subscriptions.write().unwrap().shift_remove(target);
+            return Some(id);
+        }
+        let keys: Vec<String> = ids
+            .by_key
+            .iter()
+            .filter(|(_, id)| id.as_str() == target)
+            .map(|(key, _)| key.clone())
+            .collect();
+        if !keys.is_empty() {
+            let mut subs = self.subscriptions.write().unwrap();
+            for key in &keys {
+                ids.by_key.remove(key);
+                subs.shift_remove(key);
+            }
+            return Some(target.to_string());
+        }
+        if self.subscriptions.write().unwrap().shift_remove(target).is_some() {
+            ids.pending_cancels.insert(target.to_string());
+            return None;
+        }
+        Some(target.to_string())
     }
 
     /// Clear the server id map.
     ///
-    /// Called on reconnect — every server id is now stale because the server
-    /// will issue fresh ids on the new connection.
+    /// Called on reconnect, before the subscriptions to replay are read:
+    /// every server id is now stale because the server will issue fresh ids
+    /// on the new connection.
+    ///
+    /// Cancels awaiting an ack are dropped along with them unless the key is
+    /// still subscribed: a key this call leaves unsubscribed is not replayed,
+    /// so no ack for it can arrive and the cancel would sit there forever. A
+    /// cancel recorded after this call — the unsubscribe that races a replay
+    /// already under way — is kept, and the new connection's ack answers it.
     pub fn clear_server_ids(&self) {
-        self.server_ids.write().unwrap().clear();
+        // Lock order: `ids`, then `subscriptions`.
+        let mut ids = self.ids.write().unwrap();
+        ids.by_key.clear();
+        let subs = self.subscriptions.read().unwrap();
+        ids.pending_cancels.retain(|key| subs.contains_key(key));
     }
 
     /// Remove subscription by channel and symbol
@@ -116,7 +197,7 @@ impl SubscriptionManager {
         let mut subs = self.subscriptions.write().unwrap();
         subs.clear();
         drop(subs);
-        self.server_ids.write().unwrap().clear();
+        *self.ids.write().unwrap() = ServerIds::default();
     }
 
     /// Get all subscription keys
@@ -332,5 +413,104 @@ mod tests {
 
         assert_eq!(manager.count(), 0);
         assert!(manager.take_server_id("trades:2330").is_none());
+    }
+    #[test]
+    fn resolve_local_key_sends_recorded_id() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+        assert_eq!(manager.record_ack("trades:2330".into(), "sub-a".into()), None);
+
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), Some("sub-a".into()));
+        assert_eq!(manager.count(), 0);
+        assert!(manager.take_server_id("trades:2330").is_none());
+    }
+
+    #[test]
+    fn resolve_server_id_removes_local_subscription() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+        manager.subscribe(SubscribeRequest::new(Channel::Books, "2317"));
+        manager.record_ack("trades:2330".into(), "sub-a".into());
+        manager.record_ack("books:2317".into(), "sub-b".into());
+
+        assert_eq!(manager.resolve_unsubscribe("sub-a"), Some("sub-a".into()));
+        assert_eq!(manager.keys(), ["books:2317"]);
+        assert!(manager.take_server_id("trades:2330").is_none());
+    }
+
+    #[test]
+    fn resolve_server_id_removes_every_key_it_was_issued_for() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "TXF1"));
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "TXFK6"));
+        manager.record_ack("trades:TXF1".into(), "sub-a".into());
+        manager.record_ack("trades:TXFK6".into(), "sub-a".into());
+
+        assert_eq!(manager.resolve_unsubscribe("sub-a"), Some("sub-a".into()));
+        assert_eq!(manager.count(), 0);
+    }
+
+    #[test]
+    fn resolve_before_ack_sends_id_when_ack_arrives() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
+        assert_eq!(manager.count(), 0);
+
+        assert_eq!(
+            manager.record_ack("trades:2330".into(), "sub-a".into()),
+            Some("sub-a".into())
+        );
+        assert!(manager.take_server_id("trades:2330").is_none());
+        // Answered once: a later ack for the key is recorded again.
+        assert_eq!(manager.record_ack("trades:2330".into(), "sub-b".into()), None);
+    }
+
+    #[test]
+    fn subscribing_again_drops_pending_cancel() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
+
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+
+        assert_eq!(manager.record_ack("trades:2330".into(), "sub-a".into()), None);
+        assert!(manager.contains("trades:2330"));
+    }
+
+    #[test]
+    fn clear_server_ids_drops_a_cancel_whose_key_is_gone() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
+
+        // The key is not subscribed any more, so the replay leaves it out and
+        // no ack for it can arrive: the cancel goes with the stale ids.
+        manager.clear_server_ids();
+
+        assert_eq!(manager.record_ack("trades:2330".into(), "sub-a".into()), None);
+    }
+
+    #[test]
+    fn a_cancel_recorded_after_clear_server_ids_is_kept() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+
+        // Reconnect: ids cleared, then the replay goes out. An unsubscribe
+        // landing here is answered by the new connection's ack.
+        manager.clear_server_ids();
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
+
+        assert_eq!(
+            manager.record_ack("trades:2330".into(), "sub-a".into()),
+            Some("sub-a".into())
+        );
+    }
+
+    #[test]
+    fn resolve_unknown_target_is_sent_as_is() {
+        let manager = SubscriptionManager::new();
+        assert_eq!(manager.resolve_unsubscribe("sub-x"), Some("sub-x".into()));
     }
 }

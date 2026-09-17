@@ -46,23 +46,25 @@ use crate::handoff::Handoff;
 // breaking either form.
 // ---------------------------------------------------------------------------
 
-/// Resolve `(symbol, symbols)` kwargs into a non-empty `Vec<String>`.
+/// Resolve `(symbol, symbols)` kwargs into a non-empty `Vec<String>`. `call`
+/// names the method in error messages.
 fn resolve_symbol_args(
+    call: &str,
     symbol: Option<&str>,
     symbols: Option<Vec<String>>,
 ) -> PyResult<Vec<String>> {
     match (symbol, symbols) {
         (Some(s), None) => Ok(vec![s.to_string()]),
         (None, Some(list)) if !list.is_empty() => Ok(list),
-        (None, Some(_)) => Err(pyo3::exceptions::PyValueError::new_err(
-            "subscribe(symbols=[]) is empty - provide at least one symbol",
-        )),
-        (Some(_), Some(_)) => Err(pyo3::exceptions::PyValueError::new_err(
-            "subscribe() accepts either `symbol` or `symbols`, not both",
-        )),
-        (None, None) => Err(pyo3::exceptions::PyValueError::new_err(
-            "subscribe() requires either `symbol` or `symbols`",
-        )),
+        (None, Some(_)) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "{call}(symbols=[]) is empty - provide at least one symbol"
+        ))),
+        (Some(_), Some(_)) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "{call}() accepts either `symbol` or `symbols`, not both"
+        ))),
+        (None, None) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "{call}() requires either `symbol` or `symbols`"
+        ))),
     }
 }
 
@@ -82,54 +84,29 @@ fn dict_bool_alias(
     Ok(None)
 }
 
-/// Extract `(channel, symbols, odd_lot)` from a stock subscribe dict.
-/// Accepts both `oddLot` and `odd_lot` keys for legacy parity.
-fn extract_stock_subscribe_dict(
-    d: &Bound<'_, PyDict>,
-) -> PyResult<(String, Vec<String>, bool)> {
-    let channel = d
-        .get_item("channel")?
-        .ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err("subscribe(dict): missing 'channel'")
-        })?
-        .extract::<String>()?;
-
-    let symbols: Vec<String> = match (d.get_item("symbol")?, d.get_item("symbols")?) {
-        (Some(s), None) => vec![s.extract::<String>()?],
-        (None, Some(list)) => {
-            let v: Vec<String> = list.extract()?;
-            if v.is_empty() {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "subscribe(dict): 'symbols' is empty",
-                ));
-            }
-            v
-        }
-        (Some(_), Some(_)) => {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "subscribe(dict): provide either 'symbol' or 'symbols', not both",
-            ));
-        }
-        (None, None) => {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "subscribe(dict): missing 'symbol' or 'symbols'",
-            ));
-        }
-    };
-
-    let odd_lot = dict_bool_alias(d, "oddLot", "odd_lot")?.unwrap_or(false);
-
-    Ok((channel, symbols, odd_lot))
+/// The session modifier of a product: its dict key and its kwarg name.
+#[derive(Clone, Copy)]
+struct Modifier {
+    key: &'static str,
+    kwarg: &'static str,
 }
 
-/// Extract `(channel, symbols, after_hours)` from a futopt subscribe dict.
-fn extract_futopt_subscribe_dict(
+/// Stock: odd lot. Accepts both `oddLot` and `odd_lot` keys for legacy parity.
+const ODD_LOT: Modifier = Modifier { key: "oddLot", kwarg: "odd_lot" };
+/// FutOpt: after hours.
+const AFTER_HOURS: Modifier = Modifier { key: "afterHours", kwarg: "after_hours" };
+
+/// Extract `(channel, symbols, modifier)` from a subscribe-shaped dict.
+/// `call` names the method in error messages.
+fn extract_subscribe_dict(
+    call: &str,
     d: &Bound<'_, PyDict>,
+    modifier: Modifier,
 ) -> PyResult<(String, Vec<String>, bool)> {
     let channel = d
         .get_item("channel")?
         .ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err("subscribe(dict): missing 'channel'")
+            pyo3::exceptions::PyValueError::new_err(format!("{call}(dict): missing 'channel'"))
         })?
         .extract::<String>()?;
 
@@ -138,27 +115,27 @@ fn extract_futopt_subscribe_dict(
         (None, Some(list)) => {
             let v: Vec<String> = list.extract()?;
             if v.is_empty() {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "subscribe(dict): 'symbols' is empty",
-                ));
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "{call}(dict): 'symbols' is empty"
+                )));
             }
             v
         }
         (Some(_), Some(_)) => {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "subscribe(dict): provide either 'symbol' or 'symbols', not both",
-            ));
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "{call}(dict): provide either 'symbol' or 'symbols', not both"
+            )));
         }
         (None, None) => {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "subscribe(dict): missing 'symbol' or 'symbols'",
-            ));
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "{call}(dict): missing 'symbol' or 'symbols'"
+            )));
         }
     };
 
-    let after_hours = dict_bool_alias(d, "afterHours", "after_hours")?.unwrap_or(false);
+    let flag = dict_bool_alias(d, modifier.key, modifier.kwarg)?.unwrap_or(false);
 
-    Ok((channel, symbols, after_hours))
+    Ok((channel, symbols, flag))
 }
 
 /// Extract a list of subscription IDs from an unsubscribe dict.
@@ -201,6 +178,78 @@ fn resolve_unsubscribe_args(
         (None, None) => Err(pyo3::exceptions::PyValueError::new_err(
             "unsubscribe() requires either `subscription_id` or `ids`",
         )),
+    }
+}
+
+/// What `unsubscribe()` names.
+enum UnsubscribeTarget {
+    /// Server ids from the `subscribed` message.
+    Ids(Vec<String>),
+    /// The arguments given to `subscribe()`: channel, symbols, modifier.
+    Channel(String, Vec<String>, bool),
+}
+
+/// The `unsubscribe()` arguments other than the server id forms.
+struct ChannelArgs<'a> {
+    channel: Option<String>,
+    symbol: Option<&'a str>,
+    symbols: Option<Vec<String>>,
+    modifier: Option<bool>,
+}
+
+/// Resolve every `unsubscribe()` shape: a server id (positional), `ids=`,
+/// `{"id"}` / `{"ids"}`, a subscribe-shaped dict, or `channel=` with
+/// `symbol=` / `symbols=` and the modifier kwarg. Naming a channel together
+/// with an id is 1005 `INVALID_PARAMETER`.
+fn resolve_unsubscribe_target(
+    subscription_id: Option<&Bound<'_, PyAny>>,
+    ids: Option<Vec<String>>,
+    args: ChannelArgs<'_>,
+    modifier: Modifier,
+) -> PyResult<UnsubscribeTarget> {
+    let channel_with_id = || {
+        errors::to_py_err(marketdata_core::MarketDataError::InvalidParameter {
+            name: "channel".to_string(),
+            reason: "cannot be combined with 'id' or 'ids'".to_string(),
+        })
+    };
+
+    if let Some(channel) = args.channel {
+        if subscription_id.is_some() || ids.is_some() {
+            return Err(channel_with_id());
+        }
+        let symbols = resolve_symbol_args("unsubscribe", args.symbol, args.symbols)?;
+        return Ok(UnsubscribeTarget::Channel(
+            channel,
+            symbols,
+            args.modifier.unwrap_or(false),
+        ));
+    }
+    if args.symbol.is_some() || args.symbols.is_some() || args.modifier.is_some() {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unsubscribe(): `symbol`, `symbols` and `{}` require `channel`",
+            modifier.kwarg
+        )));
+    }
+
+    let Some(arg) = subscription_id else {
+        return resolve_unsubscribe_args(None, ids).map(UnsubscribeTarget::Ids);
+    };
+    if let Ok(d) = arg.cast::<PyDict>() {
+        if d.contains("channel")? {
+            if d.contains("id")? || d.contains("ids")? {
+                return Err(channel_with_id());
+            }
+            let (channel, symbols, flag) = extract_subscribe_dict("unsubscribe", d, modifier)?;
+            return Ok(UnsubscribeTarget::Channel(channel, symbols, flag));
+        }
+        extract_unsubscribe_dict(d).map(UnsubscribeTarget::Ids)
+    } else if let Ok(s) = arg.extract::<String>() {
+        resolve_unsubscribe_args(Some(s.as_str()), ids).map(UnsubscribeTarget::Ids)
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "unsubscribe() first argument must be a dict or subscription id string",
+        ))
     }
 }
 
@@ -1375,9 +1424,9 @@ impl StockWebSocketClient {
         // Resolve dual-shape input into (channel_str, symbols, odd_lot)
         let (channel_str, target_symbols, effective_odd_lot) =
             if let Ok(d) = channel.cast::<PyDict>() {
-                extract_stock_subscribe_dict(d)?
+                extract_subscribe_dict("subscribe", d, ODD_LOT)?
             } else if let Ok(s) = channel.extract::<String>() {
-                let syms = resolve_symbol_args(symbol, symbols)?;
+                let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
                 (s, syms, odd_lot)
             } else {
                 return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -1402,38 +1451,48 @@ impl StockWebSocketClient {
 
     /// Unsubscribe from a channel.
     ///
-    /// Two call shapes are supported (legacy fugle-marketdata parity):
+    /// By the server id from the `subscribed` message (legacy
+    /// fugle-marketdata parity):
     ///
-    /// **Dict shape**:
     /// ```python
     /// ws.stock.unsubscribe({"id": "abc123"})
     /// ws.stock.unsubscribe({"ids": ["abc123", "def456"]})
-    /// ```
-    ///
-    /// **Positional shape**:
-    /// ```python
     /// ws.stock.unsubscribe("abc123")
     /// ws.stock.unsubscribe(ids=["abc123", "def456"])
     /// ```
-    #[pyo3(signature = (subscription_id=None, *, ids=None))]
+    ///
+    /// Or by the arguments given to `subscribe()`; `channel` is keyword-only:
+    ///
+    /// ```python
+    /// ws.stock.unsubscribe({"channel": "trades", "symbol": "2330"})
+    /// ws.stock.unsubscribe({"channel": "candles", "symbols": ["2330"], "oddLot": True})
+    /// ws.stock.unsubscribe(channel="trades", symbol="2330")
+    /// ws.stock.unsubscribe(channel="candles", symbols=["2330"], odd_lot=True)
+    /// ```
+    ///
+    /// Naming a channel together with an id is 1005 `INVALID_PARAMETER`.
+    #[pyo3(signature = (subscription_id=None, *, ids=None, channel=None, symbol=None, symbols=None, odd_lot=None))]
+    #[allow(clippy::too_many_arguments)]
     pub fn unsubscribe(
         &self,
         py: Python<'_>,
         subscription_id: Option<&Bound<'_, PyAny>>,
         ids: Option<Vec<String>>,
+        channel: Option<String>,
+        symbol: Option<&str>,
+        symbols: Option<Vec<String>>,
+        odd_lot: Option<bool>,
     ) -> PyResult<()> {
-        let target_ids: Vec<String> = if let Some(arg) = subscription_id {
-            if let Ok(d) = arg.cast::<PyDict>() {
-                extract_unsubscribe_dict(d)?
-            } else if let Ok(s) = arg.extract::<String>() {
-                resolve_unsubscribe_args(Some(s.as_str()), ids)?
-            } else {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "unsubscribe() first argument must be a dict or subscription id string",
-                ));
+        let args = ChannelArgs { channel, symbol, symbols, modifier: odd_lot };
+        // Checked before the connection, as in `subscribe()`.
+        let target_ids = match resolve_unsubscribe_target(subscription_id, ids, args, ODD_LOT)? {
+            UnsubscribeTarget::Ids(ids) => ids,
+            UnsubscribeTarget::Channel(channel, symbols, flag) => {
+                let ch = channel
+                    .parse::<marketdata_core::Channel>()
+                    .map_err(errors::to_py_err)?;
+                marketdata_core::StockSubscription::new(ch, symbols).with_odd_lot(flag).keys()
             }
-        } else {
-            resolve_unsubscribe_args(None, ids)?
         };
 
         let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
@@ -1706,9 +1765,9 @@ impl StockWebSocketClient {
         // so the async block only deals with owned, Send-safe data.
         let (channel_str, target_symbols, effective_odd_lot) =
             if let Ok(d) = channel.cast::<PyDict>() {
-                extract_stock_subscribe_dict(d)?
+                extract_subscribe_dict("subscribe", d, ODD_LOT)?
             } else if let Ok(s) = channel.extract::<String>() {
-                let syms = resolve_symbol_args(symbol, symbols)?;
+                let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
                 (s, syms, odd_lot)
             } else {
                 return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -2042,9 +2101,9 @@ impl FutOptWebSocketClient {
     ) -> PyResult<()> {
         let (channel_str, target_symbols, effective_after_hours) =
             if let Ok(d) = channel.cast::<PyDict>() {
-                extract_futopt_subscribe_dict(d)?
+                extract_subscribe_dict("subscribe", d, AFTER_HOURS)?
             } else if let Ok(s) = channel.extract::<String>() {
-                let syms = resolve_symbol_args(symbol, symbols)?;
+                let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
                 (s, syms, after_hours)
             } else {
                 return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -2070,27 +2129,34 @@ impl FutOptWebSocketClient {
 
     /// Unsubscribe from a channel.
     ///
-    /// Accepts dict shape (`{"id": "..."}` / `{"ids": [...]}`) or
-    /// positional/kwargs shape (`subscription_id` / `ids=`).
-    #[pyo3(signature = (subscription_id=None, *, ids=None))]
+    /// By the server id: dict shape (`{"id": "..."}` / `{"ids": [...]}`) or
+    /// positional/kwargs shape (`subscription_id` / `ids=`). Or by the
+    /// arguments given to `subscribe()`: `{"channel", "symbol" | "symbols",
+    /// "afterHours"?}`, or `channel=` with `symbol=` / `symbols=` and
+    /// `after_hours=`. Naming a channel together with an id is 1005
+    /// `INVALID_PARAMETER`.
+    #[pyo3(signature = (subscription_id=None, *, ids=None, channel=None, symbol=None, symbols=None, after_hours=None))]
+    #[allow(clippy::too_many_arguments)]
     pub fn unsubscribe(
         &self,
         py: Python<'_>,
         subscription_id: Option<&Bound<'_, PyAny>>,
         ids: Option<Vec<String>>,
+        channel: Option<String>,
+        symbol: Option<&str>,
+        symbols: Option<Vec<String>>,
+        after_hours: Option<bool>,
     ) -> PyResult<()> {
-        let target_ids: Vec<String> = if let Some(arg) = subscription_id {
-            if let Ok(d) = arg.cast::<PyDict>() {
-                extract_unsubscribe_dict(d)?
-            } else if let Ok(s) = arg.extract::<String>() {
-                resolve_unsubscribe_args(Some(s.as_str()), ids)?
-            } else {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "unsubscribe() first argument must be a dict or subscription id string",
-                ));
+        let args = ChannelArgs { channel, symbol, symbols, modifier: after_hours };
+        // Checked before the connection, as in `subscribe()`.
+        let target_ids = match resolve_unsubscribe_target(subscription_id, ids, args, AFTER_HOURS)? {
+            UnsubscribeTarget::Ids(ids) => ids,
+            UnsubscribeTarget::Channel(channel, symbols, flag) => {
+                let ch = channel
+                    .parse::<marketdata_core::FutOptChannel>()
+                    .map_err(errors::to_py_err)?;
+                marketdata_core::FutOptSubscription::new(ch, symbols).with_after_hours(flag).keys()
             }
-        } else {
-            resolve_unsubscribe_args(None, ids)?
         };
 
         let (inner, runtime) = live_handles(&self.state, &self.runtime)?;

@@ -276,6 +276,7 @@ ulong MessagesDroppedTotal                    // Messages dropped this connectio
 // afterHours: FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
 Task SubscribeAsync(string channel, string symbol, bool? afterHours = null)    // Subscribe to channel
 Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null)  // Unsubscribe (same afterHours as subscribe)
+Task UnsubscribeAsync(IEnumerable<string> ids)                                // Unsubscribe by server ids (empty: 1005)
 List<Subscription> GetSubscriptions()               // List active subscriptions
 ```
 

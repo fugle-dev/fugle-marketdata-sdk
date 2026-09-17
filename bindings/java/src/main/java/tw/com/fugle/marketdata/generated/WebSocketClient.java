@@ -386,6 +386,33 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     }
 
   
+    /**
+     * Unsubscribe by the ids the server issued in its `subscribed` messages.
+     *
+     * Removes the subscriptions those ids name, so a reconnect does not
+     * restore them. An empty list is 1005 `INVALID_PARAMETER`.
+     */
+    @Override
+    
+    public CompletableFuture<Void> unsubscribeIds(List<String> ids){
+        return UniffiAsyncHelpers.uniffiRustCallAsync(
+        callWithPointer(thisPtr -> {
+            return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(
+                thisPtr,
+                FfiConverterSequenceString.INSTANCE.lower(ids)
+            );
+        }),
+        (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_void(future, callback, continuation),
+        (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_void(future, continuation),
+        (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_void(future),
+        // lift function
+        () -> {},
+        // Error FFI converter
+        new MarketDataExceptionErrorHandler()
+    );
+    }
+
+  
 
   
     /**
