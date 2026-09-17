@@ -286,7 +286,11 @@ impl WebSocketMessage {
 }
 
 /// WebSocket authentication request
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is implemented manually to redact the credentials — a set field
+/// prints as `Some(***)`, so logging a request (or anything holding one)
+/// never leaks the secret, matching [`Auth`](crate::Auth).
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AuthRequest {
     /// API key (if using API key auth)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -311,6 +315,26 @@ pub struct AuthRequest {
     /// can negotiate without needing a fresh release.
     #[serde(rename = "heartbeatIntervalMs", skip_serializing_if = "Option::is_none")]
     pub heartbeat_interval_ms: Option<u64>,
+}
+
+impl std::fmt::Debug for AuthRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        /// Prints `***` in place of a secret.
+        struct Redacted;
+        impl std::fmt::Debug for Redacted {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("***")
+            }
+        }
+        let redact = |value: &Option<String>| value.as_ref().map(|_| Redacted);
+
+        f.debug_struct("AuthRequest")
+            .field("apikey", &redact(&self.apikey))
+            .field("token", &redact(&self.token))
+            .field("sdk_token", &redact(&self.sdk_token))
+            .field("heartbeat_interval_ms", &self.heartbeat_interval_ms)
+            .finish()
+    }
 }
 
 impl AuthRequest {
@@ -679,6 +703,27 @@ mod tests {
             let err = req.validate().expect_err("should be rejected");
             assert!(matches!(err, crate::MarketDataError::ConfigError(_)), "{err:?}");
         }
+    }
+
+    #[test]
+    fn test_auth_request_debug_redacts_credentials() {
+        for req in [
+            AuthRequest::with_api_key("secret-api-key"),
+            AuthRequest::with_token("secret-bearer-token"),
+            AuthRequest::with_sdk_token("secret-sdk-token"),
+        ] {
+            let rendered = format!("{req:?}");
+            assert!(!rendered.contains("secret"), "{rendered}");
+            assert!(rendered.contains("Some(***)"), "{rendered}");
+        }
+
+        let rendered = format!("{:#?}", AuthRequest::with_token("secret-bearer-token"));
+        assert!(!rendered.contains("secret"), "{rendered}");
+
+        assert_eq!(
+            format!("{:?}", AuthRequest::with_api_key("k")),
+            "AuthRequest { apikey: Some(***), token: None, sdk_token: None, heartbeat_interval_ms: None }"
+        );
     }
 
     #[test]

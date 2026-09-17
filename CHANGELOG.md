@@ -326,6 +326,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rust**: `Debug` for `AuthRequest` no longer prints the API key, bearer
+  token or SDK token; a set credential shows as `Some(***)`, matching `Auth`
+  (#69).
 - **All languages**: a `disconnect` listener or callback that reads the
   connection state already sees the close it reports: not connected, and
   closed when no reconnect follows (Node `isConnected` / `isClosed`, Python

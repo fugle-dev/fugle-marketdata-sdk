@@ -139,7 +139,7 @@ public class FfiBoundaryTests
         SkipIfNativeLibraryUnavailable();
 
         // Empty API key is rejected by core with a managed exception, not a panic
-        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException>(() =>
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException.ConfigException>(() =>
             new FugleMarketData.RestClient(""));
         Assert.AreEqual(1004, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
     }
@@ -150,7 +150,7 @@ public class FfiBoundaryTests
         SkipIfNativeLibraryUnavailable();
 
         // Null is passed to core as "not provided"
-        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException>(() =>
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException.ConfigException>(() =>
             new FugleMarketData.RestClient((string)null!));
         Assert.AreEqual(1004, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
     }

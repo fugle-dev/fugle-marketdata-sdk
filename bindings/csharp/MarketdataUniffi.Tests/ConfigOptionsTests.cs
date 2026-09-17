@@ -46,7 +46,7 @@ public class ConfigOptionsTests
 
     private static void AssertCredentialsRejected(Action create)
     {
-        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException>(create);
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException.ConfigException>(create);
         var info = FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex);
         Assert.AreEqual(1004, info.code); // marketdata_core::error_code::CONFIG
         StringAssert.Contains(info.message, "exactly one non-empty credential");
