@@ -63,9 +63,21 @@ public class WebSocketDisconnectWaitTests
             listener);
         self = client;
 
-        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        // The listener disconnects during the handshake, so ConnectAsync
+        // either finds the connection stored and closes it, or gives it up
+        // with code 2010 (#121). It ends either way.
+        try
+        {
+            await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (uniffi.marketdata_uniffi.MarketDataException.ClientClosed error)
+        {
+            Assert.AreEqual(2010, FugleMarketData.MarketDataExceptionExtensions.GetInfo(error).code);
+        }
+
         await fromCallback.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsFalse(client.IsConnected, "still connected after the listener disconnected");
         await client.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
     }
 

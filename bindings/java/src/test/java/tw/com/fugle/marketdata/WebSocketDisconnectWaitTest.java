@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -87,10 +88,18 @@ public class WebSocketDisconnectWaitTest {
                      .listener(listener)
                      .build()) {
             self.set(client);
-            client.connect().get(10, TimeUnit.SECONDS);
+            // The listener disconnects during the handshake, so connect()
+            // either finds the connection stored and closes it, or gives it
+            // up with code 2010 (#121). It ends either way.
+            try {
+                client.connect().get(10, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
+                assertEquals(2010, FugleException.unwrap(e).getCode(), String.valueOf(e.getCause()));
+            }
 
             fromCallback.get(10, TimeUnit.SECONDS);
             assertTrue(disconnected.await(5, TimeUnit.SECONDS), "onDisconnected never ran");
+            assertFalse(client.isConnected(), "still connected after the listener disconnected");
             client.disconnect().get(10, TimeUnit.SECONDS);
         }
     }

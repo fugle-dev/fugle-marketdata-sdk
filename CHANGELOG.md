@@ -259,6 +259,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blocking on its future still never returns. The Go `StreamingClient.Close()`
   now closes its channels before disconnecting, so a full `Messages()` or
   `Errors()` channel that nobody reads can no longer block it.
+- **C#, Go, Java, C++**: `disconnect()` called while `connect()` is still
+  handshaking now closes that connection instead of being ignored, and
+  `connect()` fails with the `ClientClosed` variant, code 2010
+  `CLIENT_CLOSED`, as Node does for the same case (#126, the UniFFI half of
+  #121). Before, `connect()` went on to a live connection the caller had
+  already asked to close — which a listener hits by calling `disconnect()`
+  from `onAuthenticated`, since that event is delivered during the handshake.
+  The `disconnect()` returns once that connection is closed and its events
+  have reached the listener, as any other `disconnect()` does.
 
 ### Breaking
 

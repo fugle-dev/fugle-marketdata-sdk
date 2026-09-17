@@ -98,11 +98,19 @@ func TestDisconnectWait_FromListenerDoesNotWaitForItself(t *testing.T) {
 		onDisconnected: func() { disconnected.Store(true) },
 	})
 	defer client.Destroy()
+	// The listener disconnects during the handshake, so Connect either finds
+	// the connection stored and closes it, or gives it up with code 2010
+	// (#121). It ends either way.
 	if err := client.Connect(); err != nil {
-		t.Fatalf("Connect: %v", err)
+		if info, ok := ErrorInfoOf(err); !ok || info.Code != 2010 {
+			t.Fatalf("Connect: got %v (info %+v), want code 2010", err, info)
+		}
 	}
 	waitUntil(t, returned.Load, "Disconnect in OnAuthenticated never returned")
 	waitUntil(t, disconnected.Load, "OnDisconnected never ran")
+	if client.IsConnected() {
+		t.Fatal("IsConnected() = true after the listener disconnected")
+	}
 	within(t, "Disconnect", client.Disconnect)
 }
 
