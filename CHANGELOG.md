@@ -305,6 +305,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rust**: the blocking `WebSocketClient::reconnect()` works on a connected
+  client. Stopping the old connection marked the client closed, so the
+  `connect()` that followed always failed with `ClientClosed`. After
+  reconnect attempts run out the client stays closed and `reconnect()` returns
+  `ClientClosed`, as on the async client. `reconnect()` now also re-sends the
+  stored subscriptions, which it used to skip (#82).
+- **All languages**: a subscription that cannot be re-sent after a reconnect
+  (automatic, or the async and blocking `reconnect()`) emits an `Error` event
+  whose message names the subscription key; the other subscriptions are still
+  sent. Failures used to be ignored, so the subscription looked restored but
+  received nothing. `reconnect()` returns the first failure (#82).
+- **Rust**: the blocking client's automatic reconnect no longer hangs with
+  more than 64 stored subscriptions. Replaying them filled the write queue
+  before anything drained it (#82).
+
 - **Rust**: the blocking `WebSocketClient::force_close()` aborts the
   connection like the async one: it sends no Close frame and discards queued
   writes, and the socket is closed within about 200 ms. It used to run the

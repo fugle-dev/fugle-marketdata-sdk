@@ -9,7 +9,8 @@ use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
 };
 use crate::websocket::sync::owner_thread::{
-    do_auth_handshake, do_blocking_connect, run_supervisor, OwnerShared, WRITE_QUEUE_CAPACITY,
+    do_auth_handshake, do_blocking_connect, replay_subscriptions, run_supervisor, OwnerShared,
+    WRITE_QUEUE_CAPACITY,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
@@ -543,8 +544,11 @@ impl WebSocketClient {
             .any(|k| k == &base || k.starts_with(&modifier_prefix))
     }
 
-    /// Manually reconnect. Calls disconnect() then connect() — simpler and
-    /// safer than poking the supervisor.
+    /// Manually reconnect. Stops the current connection, calls connect() —
+    /// simpler and safer than poking the supervisor — then re-sends every
+    /// stored subscription. A subscription that cannot be re-sent is reported
+    /// as an `Error` event naming its key; the rest are still sent and the
+    /// first failure is returned.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
@@ -559,6 +563,16 @@ impl WebSocketClient {
         if let Some(handle) = self.supervisor_handle.lock().expect("supervisor handle lock poisoned").take() {
             let _ = handle.join();
         }
+        // The supervisor marks our stop as `Closed { intent: Client }`, which
+        // would make `connect()` refuse with `ClientClosed`. Any other
+        // `Closed` (e.g. reconnect attempts exhausted) stays final, like the
+        // async client.
+        {
+            let mut st = self.shared.state.write().expect("state lock poisoned");
+            if matches!(*st, ConnectionState::Closed { intent: DisconnectIntent::Client, .. }) {
+                *st = ConnectionState::Disconnected;
+            }
+        }
         // Reset stop flag and reconnection counter for a fresh attempt.
         self.shared.should_stop.store(false, Ordering::SeqCst);
         {
@@ -566,7 +580,26 @@ impl WebSocketClient {
             mgr.reset();
         }
 
-        self.connect()
+        self.connect()?;
+        self.resubscribe_all()
+    }
+
+    /// Re-send every stored subscription on the connection `connect()` just
+    /// opened. Failures are reported per subscription (see
+    /// [`replay_subscriptions`]); the first one is returned.
+    fn resubscribe_all(&self) -> Result<(), MarketDataError> {
+        // Server ids from the previous connection are stale.
+        self.shared.subscriptions.clear_server_ids();
+        let sender = {
+            let guard = self.shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned");
+            guard.clone()
+        };
+        let Some(sender) = sender else {
+            return Err(MarketDataError::ConnectionError {
+                msg: "Not connected".to_string(),
+            });
+        };
+        replay_subscriptions(self.shared.subscriptions.get_all(), &self.shared.stream, &sender)
     }
 
     /// Send an arbitrary WebSocket request frame.
