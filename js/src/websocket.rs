@@ -83,7 +83,7 @@ use napi_derive::napi;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU8, Ordering}};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Keeps the Node event loop alive while a connection is open (#30).
 ///
@@ -1336,7 +1336,6 @@ impl StockWebSocketClient {
                     }
 
                     // Main event loop
-                    let mut dispatch_ended_at = None;
                     loop {
                         // Once connect() is reported resolved, not merely once
                         // core is connected, so the panic follows `authenticated`.
@@ -1344,19 +1343,16 @@ impl StockWebSocketClient {
                             inject_test_panic(test_panic.as_deref(), "ws_worker");
                         }
                         if dispatch_ended.load(Ordering::SeqCst) {
-                            let since = *dispatch_ended_at.get_or_insert_with(Instant::now);
-                            match on_dispatch_end(
-                                panic_reported.load(Ordering::SeqCst),
-                                state.is_closed(),
-                                since.elapsed(),
-                            ) {
-                                DispatchEnd::CloseAfterPanic => {
-                                    let _ = rt.block_on(client.force_close());
-                                    break;
-                                }
-                                DispatchEnd::Stop => break,
-                                DispatchEnd::WaitForClosed => {}
+                            // Core records its close before reporting it (#86),
+                            // so only an event thread panic (#25) leaves the
+                            // connection up. Closing it otherwise would overwrite
+                            // the server's close in core's state with a client
+                            // force close. This worker has not panicked, so
+                            // `panic_reported` means the event thread did.
+                            if panic_reported.load(Ordering::SeqCst) {
+                                let _ = rt.block_on(client.force_close());
                             }
+                            break;
                         }
 
                         // Wait briefly for a command, then re-check the flags.
@@ -1823,7 +1819,6 @@ impl FutOptWebSocketClient {
                     }
 
                     // Main event loop
-                    let mut dispatch_ended_at = None;
                     loop {
                         // Once connect() is reported resolved, not merely once
                         // core is connected, so the panic follows `authenticated`.
@@ -1831,19 +1826,16 @@ impl FutOptWebSocketClient {
                             inject_test_panic(test_panic.as_deref(), "ws_worker");
                         }
                         if dispatch_ended.load(Ordering::SeqCst) {
-                            let since = *dispatch_ended_at.get_or_insert_with(Instant::now);
-                            match on_dispatch_end(
-                                panic_reported.load(Ordering::SeqCst),
-                                state.is_closed(),
-                                since.elapsed(),
-                            ) {
-                                DispatchEnd::CloseAfterPanic => {
-                                    let _ = rt.block_on(client.force_close());
-                                    break;
-                                }
-                                DispatchEnd::Stop => break,
-                                DispatchEnd::WaitForClosed => {}
+                            // Core records its close before reporting it (#86),
+                            // so only an event thread panic (#25) leaves the
+                            // connection up. Closing it otherwise would overwrite
+                            // the server's close in core's state with a client
+                            // force close. This worker has not panicked, so
+                            // `panic_reported` means the event thread did.
+                            if panic_reported.load(Ordering::SeqCst) {
+                                let _ = rt.block_on(client.force_close());
                             }
+                            break;
                         }
 
                         // Wait briefly for a command, then re-check the flags.
@@ -2241,38 +2233,6 @@ fn spawn_stream_reader(
     });
 }
 
-/// How long a worker keeps the runtime up after core's dispatch ended, waiting
-/// for core to record `Closed`.
-const CLOSED_WAIT: Duration = Duration::from_secs(2);
-
-/// What the worker does once the event thread reports core's dispatch ended.
-#[derive(Debug, PartialEq, Eq)]
-enum DispatchEnd {
-    /// The event thread panicked (#25) and left core's connection up: close
-    /// it before the runtime goes.
-    CloseAfterPanic,
-    /// Stop the worker.
-    Stop,
-    /// Keep the runtime up: core reports `Disconnected` before it records
-    /// `Closed` (#86), and dropping the runtime in between would leave the
-    /// state as it was.
-    WaitForClosed,
-}
-
-/// Decide [`DispatchEnd`]. Only an event thread panic closes the connection
-/// from here: otherwise core already closed it, and closing it again would
-/// overwrite the server's close in core's state with a client force close.
-/// `panic_reported` is the signal: the worker checking it has not panicked.
-fn on_dispatch_end(event_thread_panicked: bool, core_closed: bool, waited: Duration) -> DispatchEnd {
-    if event_thread_panicked {
-        DispatchEnd::CloseAfterPanic
-    } else if core_closed || waited >= CLOSED_WAIT {
-        DispatchEnd::Stop
-    } else {
-        DispatchEnd::WaitForClosed
-    }
-}
-
 /// What a panicked worker or event thread needs to report it (#25).
 struct PanicContext<'a> {
     sink: &'a EventSink,
@@ -2421,18 +2381,6 @@ mod tests {
         drop(call);
         room.recv_timeout(Duration::from_secs(5))
             .expect("a discarded call kept its slot, so the reader would wait forever");
-    }
-
-    #[test]
-    fn dispatch_end_closes_the_connection_only_after_an_event_thread_panic() {
-        let soon = Duration::ZERO;
-        assert_eq!(on_dispatch_end(true, false, soon), DispatchEnd::CloseAfterPanic);
-        assert_eq!(on_dispatch_end(true, true, soon), DispatchEnd::CloseAfterPanic);
-        // A close core reported but has not recorded yet (#86) is waited
-        // for, not force-closed over.
-        assert_eq!(on_dispatch_end(false, false, soon), DispatchEnd::WaitForClosed);
-        assert_eq!(on_dispatch_end(false, true, soon), DispatchEnd::Stop);
-        assert_eq!(on_dispatch_end(false, false, CLOSED_WAIT), DispatchEnd::Stop);
     }
 
     #[test]

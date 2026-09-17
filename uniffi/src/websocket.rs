@@ -983,6 +983,10 @@ mod tests {
         record_messages: std::sync::atomic::AtomicBool,
         /// Milliseconds `on_message` blocks, to fall behind on purpose.
         message_delay_ms: std::sync::atomic::AtomicU64,
+        /// The client `on_disconnected` reads `is_connected()` of, if set.
+        client: std::sync::OnceLock<std::sync::Weak<WebSocketClient>>,
+        /// `is_connected()` as `on_disconnected` read it, per call.
+        connected_on_disconnect: Mutex<Vec<bool>>,
     }
 
     impl TestListener {
@@ -999,6 +1003,8 @@ mod tests {
                 events: Mutex::new(Vec::new()),
                 record_messages: std::sync::atomic::AtomicBool::new(false),
                 message_delay_ms: std::sync::atomic::AtomicU64::new(0),
+                client: std::sync::OnceLock::new(),
+                connected_on_disconnect: Mutex::new(Vec::new()),
             }
         }
 
@@ -1047,6 +1053,9 @@ mod tests {
         }
 
         fn on_disconnected(&self, will_reconnect: bool) {
+            if let Some(client) = self.client.get().and_then(std::sync::Weak::upgrade) {
+                self.connected_on_disconnect.lock().unwrap().push(client.is_connected());
+            }
             self.disconnected_count.fetch_add(1, Ordering::SeqCst);
             self.record(format!("disconnected({will_reconnect})"));
         }
@@ -1498,6 +1507,37 @@ mod tests {
 
         client.disconnect_impl().await;
         assert!(!client.is_connected(), "false as soon as disconnect() returns");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn is_connected_is_false_inside_on_disconnected() {
+        // Core records the close before reporting it (#86): with or without
+        // a reconnect to follow, the listener reads not connected.
+        for reconnect in [
+            None,
+            Some(ReconnectConfigRecord {
+                max_attempts: 3,
+                initial_delay_ms: 500,
+                max_delay_ms: 500,
+            }),
+        ] {
+            let server = MockWsServer::start().await;
+            let listener = Arc::new(TestListener::new());
+            let will_reconnect = reconnect.is_some();
+            let client = mock_client(&server, Arc::clone(&listener), reconnect);
+            let _ = listener.client.set(Arc::downgrade(&client));
+
+            client.connect_impl().await.expect("connect");
+            if will_reconnect {
+                server.drop_transport().await;
+            } else {
+                server.close(4001, "bye").await;
+            }
+            listener.wait_for(&format!("disconnected({will_reconnect})")).await;
+            assert_eq!(*listener.connected_on_disconnect.lock().unwrap(), vec![false]);
+
+            client.disconnect_impl().await;
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

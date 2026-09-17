@@ -47,6 +47,10 @@
 //!    [`ReconnectFailed { attempts >= 1 }`](ConnectionEvent::ReconnectFailed).
 //!    If `disconnect()` is called in the meantime no further events are
 //!    emitted and the state becomes `Closed { intent: Client, .. }`.
+//!    By the time a consumer receives a lost connection's `Disconnected`,
+//!    the state already reflects it (#86): `Closed` with the event's `code`,
+//!    `reason` and `intent` when `will_reconnect == false`, otherwise
+//!    [`ConnectionState::Disconnected`] until the reconnect loop moves on.
 //! 4. Every message of an authenticated connection, including the server's
 //!    `authenticated` frame, comes after that connection's `Authenticated`
 //!    and before its `Disconnected`. Frames a connection receives after it
@@ -284,6 +288,12 @@ impl ConnectionEvent {
     /// `Error` for `err`.
     pub(crate) fn error(err: &MarketDataError) -> Self {
         Self::Error(err.info())
+    }
+
+    /// `Error` for a subscription that could not be re-sent after a
+    /// reconnect; the message names its key.
+    pub(crate) fn resubscribe_failed(key: &str, err: &MarketDataError) -> Self {
+        Self::error_with_message(err, format!("Failed to resubscribe {key}: {err}"))
     }
 }
 

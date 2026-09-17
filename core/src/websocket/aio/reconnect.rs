@@ -1,5 +1,6 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
+use crate::models::SubscribeRequest;
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::StreamSender;
@@ -29,6 +30,31 @@ pub(crate) fn tls_connector_for(
 ) -> Result<Connector, MarketDataError> {
     let client_config = crate::tls::build_rustls_config(&config.tls)?;
     Ok(Connector::Rustls(client_config))
+}
+
+/// Queue a subscribe frame for each of `subs`, in order. A subscription
+/// whose frame cannot be built or queued is reported as an `Error` naming
+/// its key, and the rest are still sent. Returns the first failure.
+pub(crate) async fn replay_subscriptions(
+    subs: Vec<SubscribeRequest>,
+    stream: &StreamSender,
+    write_tx: &tokio_mpsc::Sender<String>,
+) -> Result<(), MarketDataError> {
+    let mut first_err = None;
+    for req in subs {
+        let key = req.key();
+        let sent = match frame_subscribe_raw(req) {
+            Ok(json) => write_tx.send(json).await.map_err(|_| MarketDataError::ConnectionError {
+                msg: "Writer task is not running".to_string(),
+            }),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = sent {
+            stream.emit(ConnectionEvent::resubscribe_failed(&key, &e));
+            first_err.get_or_insert(e);
+        }
+    }
+    first_err.map_or(Ok(()), Err)
 }
 
 /// Send the auth frame, then read frames off `ws_read` until a terminal
@@ -131,14 +157,9 @@ pub(crate) async fn try_reconnect(
 
     if !should_reconnect {
         // Not retriable. The close was already reported as
-        // `Disconnected { will_reconnect: false }`; no attempt was made, so
-        // there is no `ReconnectFailed` to report.
-        let mut st = write_state(&state);
-        *st = ConnectionState::Closed {
-            code: close_code,
-            reason: "Non-retriable error".to_string(),
-            intent: DisconnectIntent::Network,
-        };
+        // `Disconnected { will_reconnect: false }`, which recorded the
+        // matching `Closed` state (#86); no attempt was made, so there is no
+        // `ReconnectFailed` to report.
         return None;
     }
 
@@ -225,12 +246,13 @@ pub(crate) async fn try_reconnect(
                         }
 
                         // Resubscribe all stored subscriptions through the new writer
-                        let subs = subscriptions.get_all();
-                        for req in subs {
-                            if let Ok(sub_json) = frame_subscribe_raw(req) {
-                                let _ = new_write_tx.send(sub_json).await;
-                            }
-                        }
+                        subscriptions.clear_server_ids();
+                        let _ = replay_subscriptions(
+                            subscriptions.get_all(),
+                            &stream,
+                            &new_write_tx,
+                        )
+                        .await;
 
                         // Liveness detection auto-restarts: the caller of
                         // try_reconnect re-enters the dispatch loop with this
@@ -380,5 +402,63 @@ pub(crate) async fn try_connect(
             }
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::error_code;
+    use crate::metrics_compat::DropCounter;
+    use crate::models::Channel;
+    use crate::websocket::stream_queue::stream;
+    use crate::websocket::StreamItem;
+    use crate::AuthRequest;
+
+    fn subs() -> Vec<SubscribeRequest> {
+        vec![
+            SubscribeRequest::new(Channel::Trades, "2330"),
+            SubscribeRequest::new(Channel::Books, "2317"),
+        ]
+    }
+
+    fn event_stream() -> (StreamSender, crate::websocket::stream_queue::QueueReceiver) {
+        let config = ConnectionConfig::new("ws://localhost", AuthRequest::with_api_key("k"));
+        let counter = || DropCounter::new("test", "localhost", "test");
+        stream(&config, counter(), counter())
+    }
+
+    #[tokio::test]
+    async fn replay_queues_every_subscription_in_order() {
+        let (tx, rx) = event_stream();
+        let (write_tx, mut write_rx) = tokio_mpsc::channel(8);
+
+        replay_subscriptions(subs(), &tx, &write_tx).await.expect("replay succeeds");
+
+        let first = write_rx.try_recv().expect("first frame");
+        let second = write_rx.try_recv().expect("second frame");
+        assert!(first.contains("2330") && second.contains("2317"));
+        assert!(rx.try_recv().is_err(), "no events on success");
+    }
+
+    #[tokio::test]
+    async fn replay_reports_each_failed_subscription_and_keeps_going() {
+        let (tx, rx) = event_stream();
+        let (write_tx, write_rx) = tokio_mpsc::channel(8);
+        drop(write_rx);
+
+        let err = replay_subscriptions(subs(), &tx, &write_tx).await.expect_err("replay fails");
+        assert!(matches!(err, MarketDataError::ConnectionError { .. }));
+
+        let errors: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|item| match item {
+                StreamItem::Event(ConnectionEvent::Error(info)) => info,
+                other => panic!("expected Error, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(errors.len(), 2, "one Error per subscription");
+        assert!(errors.iter().all(|info| info.code == error_code::CONNECTION));
+        assert!(errors[0].message.contains("trades:2330"));
+        assert!(errors[1].message.contains("books:2317"));
     }
 }
