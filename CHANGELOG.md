@@ -220,6 +220,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the binding itself and once from core's event — both on `disconnect()`
   and when the connection was lost. It now fires once per connection. A rejected `connect()` delivers its events: the binding only
   started forwarding them after a successful connect (#57).
+- **C#, Go, C++, Java**: `is_connected()` could stay `true` after a connection
+  that dropped right as `connect()` returned, until the next lifecycle event.
+  It now reads core's connection state, so it is `false` as soon as the
+  connection drops or starts reconnecting (#64).
 - **Go**: `StreamingClient` closed `Messages()` / `Errors()` on the first
   disconnect even when the client was about to reconnect, ending a
   `range` loop mid-session. The channels now close on the final disconnect or

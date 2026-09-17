@@ -764,6 +764,9 @@ struct WebSocketClient
     bool is_closed();
     /**
      * Check if the client is currently connected
+     *
+     * Reads core's connection state, so it is false while reconnecting and
+     * right after the connection drops, without waiting for the event thread.
      */
     bool is_connected();
     /**
