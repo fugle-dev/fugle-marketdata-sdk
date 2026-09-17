@@ -13,6 +13,7 @@ use crate::models::{
 use crate::websocket::channels::{FutOptSubscription, StockSubscription};
 use crate::websocket::SubscriptionManager;
 use crate::MarketDataError;
+use indexmap::IndexMap;
 
 /// Classification of the inbound auth response.
 #[derive(Debug, PartialEq)]
@@ -115,11 +116,80 @@ pub(crate) fn frame_subscribe_futopt(
     Ok((json, expanded))
 }
 
-/// Re-serialize an arbitrary stored `SubscribeRequest` row for the
-/// resubscribe-after-reconnect path.
-pub(crate) fn frame_subscribe_raw(req: SubscribeRequest) -> Result<String, MarketDataError> {
-    let msg = WebSocketRequest::subscribe(req);
-    serde_json::to_string(&msg).map_err(|e| MarketDataError::DeserializationError { source: e })
+/// One subscribe frame to re-send after a reconnect.
+#[derive(Debug)]
+pub(crate) struct ResubscribeFrame {
+    /// Names what the frame subscribes, for the `Error` reported when it
+    /// cannot be sent: the key for a single subscription, otherwise the
+    /// channel, modifier and symbol count (`trades:oddlot (3 symbols)`).
+    pub(crate) label: String,
+    /// The serialized frame.
+    pub(crate) frame: Result<String, MarketDataError>,
+}
+
+/// Fold the stored per-symbol rows back into one subscribe frame per channel
+/// and modifier (#111), so a reconnect re-sends a 1000-symbol batch as one
+/// frame rather than 1000.
+///
+/// Groups keep the order in which their channel/modifier first appears, and
+/// symbols keep their order within a group. A group of one is sent with
+/// `symbol`, larger groups with `symbols`. A row without a symbol is sent on
+/// its own, unchanged.
+pub(crate) fn frame_resubscribe(rows: Vec<SubscribeRequest>) -> Vec<ResubscribeFrame> {
+    #[derive(PartialEq, Eq, Hash)]
+    enum Group {
+        /// channel, after hours, intraday odd lot
+        Batch(String, bool, bool),
+        /// A symbol-less row, identified by its position.
+        Alone(usize),
+    }
+
+    let mut groups: IndexMap<Group, Vec<SubscribeRequest>> = IndexMap::new();
+    for (i, row) in rows.into_iter().enumerate() {
+        let group = match row.symbol {
+            Some(_) => Group::Batch(
+                row.channel.clone(),
+                row.after_hours == Some(true),
+                row.intraday_odd_lot == Some(true),
+            ),
+            None => Group::Alone(i),
+        };
+        groups.entry(group).or_default().push(row);
+    }
+
+    groups
+        .into_values()
+        .map(|mut rows| {
+            let (label, req) = if rows.len() == 1 {
+                let row = rows.remove(0);
+                (row.key(), row)
+            } else {
+                let after_hours = rows[0].after_hours == Some(true);
+                let odd_lot = rows[0].intraday_odd_lot == Some(true);
+                // Same precedence as `SubscribeRequest::key()`: a row can only
+                // carry both flags when built by hand, and then the label
+                // names after-hours while the frame still sends both.
+                let modifier = match (after_hours, odd_lot) {
+                    (true, _) => ":afterhours",
+                    (false, true) => ":oddlot",
+                    _ => "",
+                };
+                let channel = rows[0].channel.clone();
+                let label = format!("{channel}{modifier} ({} symbols)", rows.len());
+                let req = SubscribeRequest {
+                    channel,
+                    symbol: None,
+                    symbols: Some(rows.into_iter().filter_map(|row| row.symbol).collect()),
+                    after_hours: after_hours.then_some(true),
+                    intraday_odd_lot: odd_lot.then_some(true),
+                };
+                (label, req)
+            };
+            let frame = serde_json::to_string(&WebSocketRequest::subscribe(req))
+                .map_err(|e| MarketDataError::DeserializationError { source: e });
+            ResubscribeFrame { label, frame }
+        })
+        .collect()
 }
 
 /// Build the unsubscribe frame from a list of server ids. Sends
@@ -270,6 +340,8 @@ pub(crate) fn handle_subscribed_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::Channel;
+    use serde_json::json;
 
     fn parse_msg(json: &str) -> WebSocketMessage {
         serde_json::from_str(json).unwrap()
@@ -403,5 +475,106 @@ mod tests {
         let msg = parse_msg(r#"{"event":"subscribed","symbol":"2330"}"#);
         handle_subscribed_event(&manager, &msg);
         assert!(manager.take_server_id("trades:2330").is_none());
+    }
+
+    fn resubscribe(rows: Vec<SubscribeRequest>) -> Vec<(String, serde_json::Value)> {
+        frame_resubscribe(rows)
+            .into_iter()
+            .map(|f| {
+                let frame = serde_json::from_str(&f.frame.expect("frame serializes")).unwrap();
+                (f.label, frame)
+            })
+            .collect()
+    }
+
+    fn odd_lot(symbol: &str) -> SubscribeRequest {
+        SubscribeRequest {
+            intraday_odd_lot: Some(true),
+            ..SubscribeRequest::new(Channel::Trades, symbol)
+        }
+    }
+
+    #[test]
+    fn resubscribe_batches_by_channel_and_modifier_in_first_seen_order() {
+        let frames = resubscribe(vec![
+            SubscribeRequest::new(Channel::Trades, "2330"),
+            SubscribeRequest::new(Channel::Books, "2317"),
+            odd_lot("2330"),
+            SubscribeRequest::new(Channel::Trades, "2454"),
+            SubscribeRequest::new(Channel::Books, "0050"),
+            odd_lot("2603"),
+            SubscribeRequest::new(Channel::Trades, "2881"),
+        ]);
+
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0].0, "trades (3 symbols)");
+        assert_eq!(
+            frames[0].1,
+            json!({"event":"subscribe","data":{"channel":"trades","symbols":["2330","2454","2881"]}})
+        );
+        assert_eq!(frames[1].0, "books (2 symbols)");
+        assert_eq!(
+            frames[1].1,
+            json!({"event":"subscribe","data":{"channel":"books","symbols":["2317","0050"]}})
+        );
+        assert_eq!(frames[2].0, "trades:oddlot (2 symbols)");
+        assert_eq!(
+            frames[2].1,
+            json!({"event":"subscribe","data":{"channel":"trades","symbols":["2330","2603"],"intradayOddLot":true}})
+        );
+    }
+
+    #[test]
+    fn resubscribe_single_symbol_group_keeps_symbol_field_and_key_label() {
+        let after_hours = SubscribeRequest {
+            channel: "books".into(),
+            symbol: Some("TXFE6".into()),
+            after_hours: Some(true),
+            ..Default::default()
+        };
+        let frames = resubscribe(vec![after_hours]);
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].0, "books:TXFE6:afterhours");
+        assert_eq!(
+            frames[0].1,
+            json!({"event":"subscribe","data":{"channel":"books","symbol":"TXFE6","afterHours":true}})
+        );
+    }
+
+    #[test]
+    fn resubscribe_treats_explicit_false_modifier_as_regular_session() {
+        let explicit_false = SubscribeRequest {
+            after_hours: Some(false),
+            intraday_odd_lot: Some(false),
+            ..SubscribeRequest::new(Channel::Trades, "2454")
+        };
+        let frames = resubscribe(vec![SubscribeRequest::new(Channel::Trades, "2330"), explicit_false]);
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(
+            frames[0].1,
+            json!({"event":"subscribe","data":{"channel":"trades","symbols":["2330","2454"]}})
+        );
+    }
+
+    #[test]
+    fn resubscribe_sends_symbol_less_rows_on_their_own() {
+        let channel_only = || SubscribeRequest {
+            channel: "indices".into(),
+            ..Default::default()
+        };
+        let frames = resubscribe(vec![channel_only(), channel_only()]);
+
+        assert_eq!(frames.len(), 2);
+        for (label, frame) in &frames {
+            assert_eq!(label, "indices");
+            assert_eq!(frame, &json!({"event":"subscribe","data":{"channel":"indices"}}));
+        }
+    }
+
+    #[test]
+    fn resubscribe_nothing_stored_sends_nothing() {
+        assert!(frame_resubscribe(Vec::new()).is_empty());
     }
 }

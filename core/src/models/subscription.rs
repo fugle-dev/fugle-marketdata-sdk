@@ -154,11 +154,12 @@ impl SubscribeRequest {
     /// Expand a batch request into N single-symbol requests.
     ///
     /// For wire transmission a batch `SubscribeRequest` is sent as a single
-    /// frame with `symbols: [...]`, but for internal bookkeeping (and
-    /// reconnect replay) each symbol must occupy its own row in
-    /// `SubscriptionManager` so that the server's per-symbol ACK can be
-    /// recorded against a stable local key. This helper materializes the
-    /// expansion; single-symbol requests pass through unchanged.
+    /// frame with `symbols: [...]`, but for internal bookkeeping each symbol
+    /// must occupy its own row in `SubscriptionManager` so that the server's
+    /// per-symbol ACK can be recorded against a stable local key. This helper
+    /// materializes the expansion; single-symbol requests pass through
+    /// unchanged. A reconnect folds the rows back into one frame per channel
+    /// and modifier.
     ///
     /// Modifier flags (`after_hours`, `intraday_odd_lot`) are duplicated to
     /// every expanded entry — batches always share their modifier flags

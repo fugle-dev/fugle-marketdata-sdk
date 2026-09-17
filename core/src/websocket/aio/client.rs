@@ -7,7 +7,7 @@ use crate::websocket::aio::writer::{retire_writer, start_writer, WriteFailure, W
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
 use crate::websocket::protocol::{
-    frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt,
+    frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
     frame_unsubscribe,
 };
 use crate::websocket::{
@@ -786,8 +786,8 @@ impl WebSocketClient {
 
         // Internal bookkeeping: store N per-symbol rows (1 for single,
         // len() for batch). Each row has its own local key for ACK
-        // recording. On reconnect each row sends its own frame — refolding
-        // back into batches is a future optimization.
+        // recording. On reconnect the rows fold back into one frame per
+        // channel and modifier (see `frame_resubscribe`).
         for entry in expanded {
             self.subscriptions.subscribe(entry);
         }
@@ -948,8 +948,9 @@ impl WebSocketClient {
     /// Internal: Resubscribe all stored subscriptions
     ///
     /// From CONTEXT.md: "重連後按原始訂閱順序重新訂閱"
-    /// A subscription that cannot be re-sent is reported as an `Error` event
-    /// naming its key; the rest are still sent and the first failure is
+    /// Subscriptions are re-sent as one frame per channel and modifier. A
+    /// frame that cannot be re-sent is reported as an `Error` event naming
+    /// its key or batch; the rest are still sent and the first failure is
     /// returned.
     async fn resubscribe_all(&self) -> Result<(), MarketDataError> {
         // Old server ids point at a dead connection — clear before replay so
@@ -963,7 +964,8 @@ impl WebSocketClient {
                 msg: "Not connected".to_string(),
             });
         };
-        replay_subscriptions(self.subscriptions.get_all(), &self.stream, &sender).await
+        replay_subscriptions(frame_resubscribe(self.subscriptions.get_all()), &self.stream, &sender)
+            .await
     }
 
     /// Send a WebSocket request message

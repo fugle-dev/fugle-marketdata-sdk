@@ -386,7 +386,8 @@ namespace FugleMarketData
         public bool IsConnected => _inner.IsConnected();
 
         /// <summary>
-        /// Whether the client has been shut down.
+        /// Whether the connection has ended: after <see cref="DisconnectAsync"/>, or after the
+        /// server closed it with no reconnect to follow. False while reconnecting.
         /// </summary>
         public bool IsClosed => _inner.IsClosed();
 

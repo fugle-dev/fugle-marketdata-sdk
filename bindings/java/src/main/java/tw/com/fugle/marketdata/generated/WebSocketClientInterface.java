@@ -19,7 +19,12 @@ public interface WebSocketClientInterface {
     public CompletableFuture<Void> disconnect();
     
     /**
-     * Check if the client has been shut down
+     * Check if the connection has ended
+     *
+     * Reads core's connection state: true after `disconnect()`, and after
+     * the server closes the connection when no reconnect follows (disabled
+     * or attempts exhausted). False while reconnecting and before the first
+     * `connect()`.
      */
     public Boolean isClosed();
     

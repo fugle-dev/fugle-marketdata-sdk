@@ -113,6 +113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **All languages**: a reconnect (automatic, or `reconnect()`) re-sends the
+  stored subscriptions as one `subscribe` frame per channel and modifier
+  (`intradayOddLot`, `afterHours`), with `symbols: [...]`, instead of one
+  frame per symbol. A 1000-symbol batch comes back as one frame, not 1000.
+  If a batch cannot be re-sent, the `Error` message names its channel,
+  modifier and symbol count, e.g. `trades:oddlot (1000 symbols)`; a single
+  subscription is still named by its key (#111).
 - **Node**: WebSocket `subscribe()` throws for an unknown channel name, e.g.
   `{ channel: 'trade' }`, with code 1005 `INVALID_PARAMETER` and a message
   listing the valid channels. It used to send nothing and report nothing.
@@ -378,6 +385,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **C#, Go, C++, Java**: `is_closed()` stayed `false` after the server closed
+  the connection with no reconnect to follow; it only reflected
+  `disconnect()`. It now reads core's connection state, like `is_connected()`:
+  `true` after `disconnect()` or once the connection ends for good, `false`
+  while reconnecting. One visible change: a `connect()` that fails after a
+  `disconnect()` now leaves `is_closed()` `false` (the failed attempt's state);
+  it used to stay `true` (#95).
 - **Python, Node**: the WebSocket auth frame sends a bearer token as `token`
   and an SDK token as `sdkToken`, as the server expects. Every credential used
   to go out as `apikey`, so token authentication failed (#91).
