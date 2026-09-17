@@ -72,6 +72,25 @@ def test_rejected_key_fires_unauthenticated_before_raising(server, product):
 
 
 @hard_timeout
+def test_disconnect_callback_reads_the_closed_state_of_a_lost_connection():
+    # Core records the close before reporting it, so a callback reading the
+    # state sees it closed (#86). Stock only: `FutOptWebSocketClient` is
+    # `unsendable`, so a callback thread cannot call its methods at all.
+    seen = []
+    with LoopbackServer() as srv:
+        ws = product_ws(srv.url, "stock")
+        recorder = Recorder(ws)
+        ws.on("disconnect", lambda *_: seen.append((ws.is_connected(), ws.is_closed())))
+        ws.connect()
+    # Leaving the block stops the server, which drops the connection.
+    try:
+        recorder.wait_for("disconnect", TIMEOUT_S)
+        assert seen == [(False, True)], recorder.calls
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_heartbeat_timeout_then_disconnect_fires_disconnect_once(server, product):
     ws = product_ws(

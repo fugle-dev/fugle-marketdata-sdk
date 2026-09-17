@@ -372,7 +372,8 @@ fn owner_loop(
                     frame.as_ref().map(|cf| cf.reason.to_string()),
                     shared.should_stop.load(Ordering::SeqCst),
                 ) {
-                    shared.stream.emit_disconnected(
+                    shared.stream.connection_lost(
+                        &shared.state,
                         code,
                         reason,
                         intent,
@@ -402,7 +403,8 @@ fn owner_loop(
                 // `Disconnected { intent: Client }` itself, mirroring
                 // the async `dispatch.rs` short-circuit.
                 if !shared.should_stop.load(Ordering::SeqCst) {
-                    shared.stream.emit_disconnected(
+                    shared.stream.connection_lost(
+                        &shared.state,
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
@@ -427,7 +429,8 @@ fn owner_loop(
                     &MarketDataError::from(e),
                     err_msg.clone(),
                 ));
-                shared.stream.emit_disconnected(
+                shared.stream.connection_lost(
+                    &shared.state,
                     None,
                     err_msg,
                     DisconnectIntent::Network,
@@ -454,7 +457,8 @@ fn owner_loop(
                 });
                 // Through the latch, so a racing `disconnect()` cannot
                 // report this connection's close a second time (#47).
-                shared.stream.emit_disconnected(
+                shared.stream.connection_lost(
+                    &shared.state,
                     None,
                     format!("Heartbeat timeout after {}ms", window.as_millis()),
                     DisconnectIntent::Network,
@@ -484,7 +488,8 @@ fn owner_loop(
                             &MarketDataError::from(e),
                             err_msg.clone(),
                         ));
-                        shared.stream.emit_disconnected(
+                        shared.stream.connection_lost(
+                            &shared.state,
                             None,
                             err_msg,
                             DisconnectIntent::Network,
@@ -621,13 +626,9 @@ pub(crate) fn run_supervisor(
             mgr.should_reconnect(close_code)
         };
         if !should_reconnect {
-            // Already reported as `Disconnected { will_reconnect: false }`;
-            // no attempt was made, so there is no `ReconnectFailed`.
-            set_state(&shared, ConnectionState::Closed {
-                code: close_code,
-                reason: "Non-retriable error".to_string(),
-                intent: DisconnectIntent::Network,
-            });
+            // Already reported as `Disconnected { will_reconnect: false }`,
+            // which recorded the matching `Closed` state (#86); no attempt
+            // was made, so there is no `ReconnectFailed`.
             return;
         }
 

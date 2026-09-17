@@ -1047,6 +1047,7 @@ impl WebSocketClient {
                     Arc::clone(&subscriptions),
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&reconnection),
+                    Arc::clone(&state),
                 )
                 .await;
 
