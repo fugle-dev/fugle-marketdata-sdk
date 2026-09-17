@@ -50,13 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   count against `messageBuffer`: once that many are pending, the SDK stops
   handing over more, so a slow listener leads to drops (per
   `messageOverflow`) instead of an ever-growing queue in Node. Events behind
-  those frames wait with them, keeping their order.
+  those frames wait with them, keeping their order; a listener blocked long
+  enough for more than 1024 events to back up loses events as well.
 - **C#, Go, Java, C++**: `WebSocketClient::new_with_options(...)` takes a
   `MessageQueueConfigRecord { overflow, buffer }`; `WebSocketListener` gains
   `on_messages_dropped(count)` and the client `messages_dropped_total()`. The
   C#, Go and Java wrappers expose them as options (#46). Go's
-  `StreamingClient` reports drops on `Errors()`, Java's pull mode on the
-  error queue.
+  `StreamingClient` reports drops on `Errors()` (skipping a report when
+  `Errors()` is full rather than holding up `Messages()`), Java's pull mode
+  on the error queue.
 
 ### Changed
 

@@ -356,7 +356,9 @@ Behaviour you may notice:
 
 - Go `StreamingClient` and Java pull mode have no listener of their own:
   drops arrive on `Errors()` as `messages dropped: <count>`, and on Java's
-  error queue as `Dropped <count> message(s): listener fell behind`.
+  error queue as `Dropped <count> message(s): listener fell behind`. Go
+  skips a drop report when `Errors()` is full, so read `Errors()` alongside
+  `Messages()`; other errors still wait for room there.
 - Java pull mode used to discard messages silently once its `queueCapacity`
   queue was full. It now waits for `poll()` to make room, so the drop happens
   in the SDK's queue instead, where it is counted and reported. A client that

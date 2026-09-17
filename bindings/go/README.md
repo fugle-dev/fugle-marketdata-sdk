@@ -427,6 +427,12 @@ connection's total (reset on each `Connect()`/reconnect, still readable
 after `Close()`). `MessageOverflowUnbounded` never drops; memory grows for
 as long as the caller lags.
 
+With `StreamingClient`, read `Errors()` alongside `Messages()` (as in the
+`select` loop above). Other errors wait for room on `Errors()`, so leaving
+it unread holds up message delivery once it is full. A drop report is the
+exception: when `Errors()` is full it is skipped instead, so messages keep
+flowing; `MessagesDroppedTotal()` still counts those drops.
+
 #### StreamMessage Type
 
 ```go
