@@ -613,11 +613,17 @@ pub(crate) fn run_supervisor(
         let close_code = owner_loop(ws, write_rx, &shared);
 
         if shared.should_stop.load(Ordering::SeqCst) {
-            set_state(&shared, ConnectionState::Closed {
-                code: Some(1000),
-                reason: "Client disconnected".to_string(),
-                intent: DisconnectIntent::Client,
-            });
+            // A `Closed` recorded with this connection's `Disconnected` (a
+            // server Close racing the stop) keeps agreeing with it (#93).
+            // Otherwise `reconnect()` relies on finding `Closed { Client }`.
+            let mut st = shared.state.write().expect("state lock poisoned");
+            if !matches!(*st, ConnectionState::Closed { .. }) {
+                *st = ConnectionState::Closed {
+                    code: Some(1000),
+                    reason: "Client disconnected".to_string(),
+                    intent: DisconnectIntent::Client,
+                };
+            }
             return;
         }
 

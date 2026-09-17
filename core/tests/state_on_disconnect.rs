@@ -253,3 +253,140 @@ async fn sync_drop_before_reconnect_is_not_connected_when_reported() {
         "{state:?}"
     );
 }
+
+// A caller closing the client after the connection reported its close keeps
+// the state that report recorded (#93).
+
+#[derive(Clone, Copy, Debug)]
+enum ClientClose {
+    Disconnect,
+    ForceClose,
+}
+
+const CLOSES: [ClientClose; 2] = [ClientClose::Disconnect, ClientClose::ForceClose];
+
+/// Run an async client against `behaviour`, close it with `close` once
+/// `Disconnected` has arrived, and return that event and the state after.
+async fn aio_state_after_client_close(
+    behaviour: common::AfterAuth,
+    reconnection: ReconnectionConfig,
+    close: ClientClose,
+) -> (ConnectionEvent, ConnectionState) {
+    let server = common::spawn(behaviour).await;
+    let client =
+        marketdata_core::aio::WebSocketClient::with_reconnection_config(config(&server.url), reconnection);
+    let events = common::EventReceiver::of_async(&client);
+    let handle = client.state_handle();
+    client.connect().await.expect("connect");
+    let (event, _) =
+        tokio::task::spawn_blocking(move || state_on_disconnected(events, || handle.state()))
+            .await
+            .unwrap();
+    match close {
+        ClientClose::Disconnect => client
+            .shutdown_with_timeout(Duration::from_millis(500))
+            .await
+            .expect("disconnect"),
+        ClientClose::ForceClose => client.force_close().await.expect("force_close"),
+    }
+    (event, client.state())
+}
+
+/// The sync counterpart of [`aio_state_after_client_close`].
+async fn sync_state_after_client_close(
+    behaviour: common::AfterAuth,
+    reconnection: ReconnectionConfig,
+    close: ClientClose,
+) -> (ConnectionEvent, ConnectionState) {
+    let server = common::spawn(behaviour).await;
+    tokio::task::spawn_blocking(move || {
+        let client =
+            marketdata_core::WebSocketClient::with_reconnection_config(config(&server.url), reconnection);
+        let events = common::EventReceiver::of_sync(&client);
+        client.connect().expect("connect");
+        let (event, _) = state_on_disconnected(events, || client.state());
+        match close {
+            ClientClose::Disconnect => client
+                .shutdown_with_timeout(Duration::from_millis(500))
+                .expect("disconnect"),
+            ClientClose::ForceClose => client.force_close().expect("force_close"),
+        }
+        // A supervisor still winding down must not overwrite it either.
+        std::thread::sleep(Duration::from_millis(300));
+        (event, client.state())
+    })
+    .await
+    .unwrap()
+}
+
+fn assert_server_close_kept(event: &ConnectionEvent, state: &ConnectionState, close: ClientClose) {
+    assert_closed_like(event, state);
+    assert!(
+        matches!(
+            state,
+            ConnectionState::Closed {
+                code: Some(4001),
+                intent: DisconnectIntent::Server,
+                ..
+            }
+        ),
+        "{close:?}: {state:?}"
+    );
+}
+
+fn assert_client_closed(state: &ConnectionState, close: ClientClose) {
+    assert!(
+        matches!(
+            state,
+            ConnectionState::Closed {
+                intent: DisconnectIntent::Client,
+                ..
+            }
+        ),
+        "{close:?}: {state:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn aio_client_close_after_server_close_keeps_its_state() {
+    for close in CLOSES {
+        let (event, state) =
+            aio_state_after_client_close(server_close(), slow_reconnect(), close).await;
+        assert_server_close_kept(&event, &state, close);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sync_client_close_after_server_close_keeps_its_state() {
+    for close in CLOSES {
+        let (event, state) =
+            sync_state_after_client_close(server_close(), slow_reconnect(), close).await;
+        assert_server_close_kept(&event, &state, close);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn aio_client_close_while_reconnecting_closes_the_client() {
+    for close in CLOSES {
+        let (_, state) = aio_state_after_client_close(
+            common::AfterAuth::ServerDropAfter { delay_ms: 50 },
+            slow_reconnect(),
+            close,
+        )
+        .await;
+        assert_client_closed(&state, close);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sync_client_close_while_reconnecting_closes_the_client() {
+    for close in CLOSES {
+        let (_, state) = sync_state_after_client_close(
+            common::AfterAuth::ServerDropAfter { delay_ms: 50 },
+            slow_reconnect(),
+            close,
+        )
+        .await;
+        assert_client_closed(&state, close);
+    }
+}
