@@ -1514,6 +1514,28 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
+
+        /// Wait until exactly `n` `authenticated` events have been recorded.
+        ///
+        /// Core writes `Connected` before it emits the event (#86), and the
+        /// forwarder runs on its own thread, so `is_connected()` is true
+        /// well before the handshake's event reaches the listener: reading
+        /// the count off the state alone is a race (#116).
+        async fn wait_authenticated(&self, n: usize) {
+            let count = || self.events().iter().filter(|e| e.starts_with("authenticated")).count();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while count() < n {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "timed out waiting for {n} authenticated events; got {:?}",
+                    self.events()
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            // Like `wait_for`, let a stray extra one show up before asserting.
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            assert_eq!(count(), n, "{:?}", self.events());
+        }
     }
 
     impl WebSocketListener for TestListener {
@@ -1949,11 +1971,7 @@ mod tests {
         client.connect_impl().await.expect("connect");
         server.drop_transport_for(0).await;
         listener.wait_for("reconnecting(1)").await;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while listener.events().iter().filter(|e| e.starts_with("authenticated")).count() < 2 {
-            assert!(std::time::Instant::now() < deadline, "no reconnect: {:?}", listener.events());
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
+        listener.wait_authenticated(2).await;
         client.disconnect_impl().await;
         listener.wait_for("disconnected(false)").await;
 
@@ -2115,12 +2133,7 @@ mod tests {
         wait_connected(&client, false).await;
 
         wait_connected(&client, true).await;
-        assert_eq!(
-            listener.events().iter().filter(|e| e.starts_with("authenticated")).count(),
-            2,
-            "{:?}",
-            listener.events()
-        );
+        listener.wait_authenticated(2).await;
 
         client.disconnect_impl().await;
         assert!(!client.is_connected(), "false as soon as disconnect() returns");
