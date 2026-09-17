@@ -5,6 +5,7 @@
 //! On disconnect, optionally runs the reconnect loop and rebuilds the
 //! WebSocket+queue+state in place.
 
+use crate::models::SubscribeRequest;
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
@@ -504,6 +505,30 @@ fn owner_loop(
     }
 }
 
+/// Queue a subscribe frame for each of `subs`, in order. A subscription
+/// whose frame cannot be built or queued is reported as an `Error` naming
+/// its key, and the rest are still sent. Returns the first failure.
+pub(crate) fn replay_subscriptions(
+    subs: Vec<SubscribeRequest>,
+    stream: &StreamSender,
+    write_tx: &mpsc::SyncSender<String>,
+) -> Result<(), MarketDataError> {
+    let mut first_err = None;
+    for req in subs {
+        let key = req.key();
+        let sent = frame_subscribe_raw(req).and_then(|json| {
+            write_tx.send(json).map_err(|_| MarketDataError::ConnectionError {
+                msg: "Writer queue closed (supervisor exited)".to_string(),
+            })
+        });
+        if let Err(e) = sent {
+            stream.emit(ConnectionEvent::resubscribe_failed(&key, &e));
+            first_err.get_or_insert(e);
+        }
+    }
+    first_err.map_or(Ok(()), Err)
+}
+
 /// Run the auth handshake on a freshly-reconnected stream and emit lifecycle events.
 ///
 /// If `should_stop` is set while connecting, the new connection is dropped
@@ -539,8 +564,11 @@ fn reconnect_and_authenticate(
         AuthHandshake::Failed(e) => return Err(e),
     };
 
-    // Build fresh write channel + install into shared slot
-    let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY);
+    // Build fresh write channel + install into shared slot. The replay below
+    // queues one frame per subscription before this thread starts draining,
+    // so the channel must hold them all or `send` would block forever.
+    let subs = shared.subscriptions.get_all();
+    let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY + subs.len());
     *shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = Some(write_tx.clone());
 
     // Reset reconnection counter
@@ -551,11 +579,7 @@ fn reconnect_and_authenticate(
 
     // Replay subscriptions
     shared.subscriptions.clear_server_ids();
-    for req in shared.subscriptions.get_all() {
-        if let Ok(json) = frame_subscribe_raw(req) {
-            let _ = write_tx.send(json);
-        }
-    }
+    let _ = replay_subscriptions(subs, &shared.stream, &write_tx);
 
     set_state(shared, ConnectionState::Connected);
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
@@ -679,3 +703,61 @@ fn set_state(shared: &OwnerShared, new_state: ConnectionState) {
 // Suppress warning: AtomicBool re-export is only used through shared.should_stop.
 #[allow(dead_code)]
 fn _atomic_bool_used(_: &AtomicBool) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::error_code;
+    use crate::metrics_compat::DropCounter;
+    use crate::models::Channel;
+    use crate::websocket::stream_queue::stream;
+    use crate::websocket::StreamItem;
+    use crate::AuthRequest;
+
+    fn subs() -> Vec<SubscribeRequest> {
+        vec![
+            SubscribeRequest::new(Channel::Trades, "2330"),
+            SubscribeRequest::new(Channel::Books, "2317"),
+        ]
+    }
+
+    fn event_stream() -> (StreamSender, crate::websocket::stream_queue::QueueReceiver) {
+        let config = ConnectionConfig::new("ws://localhost", AuthRequest::with_api_key("k"));
+        let counter = || DropCounter::new("test", "localhost", "test");
+        stream(&config, counter(), counter())
+    }
+
+    #[test]
+    fn replay_queues_every_subscription_in_order() {
+        let (tx, rx) = event_stream();
+        let (write_tx, write_rx) = mpsc::sync_channel(8);
+
+        replay_subscriptions(subs(), &tx, &write_tx).expect("replay succeeds");
+
+        let frames: Vec<String> = write_rx.try_iter().collect();
+        assert_eq!(frames.len(), 2);
+        assert!(frames[0].contains("2330") && frames[1].contains("2317"));
+        assert!(rx.try_recv().is_err(), "no events on success");
+    }
+
+    #[test]
+    fn replay_reports_each_failed_subscription_and_keeps_going() {
+        let (tx, rx) = event_stream();
+        let (write_tx, write_rx) = mpsc::sync_channel(8);
+        drop(write_rx);
+
+        let err = replay_subscriptions(subs(), &tx, &write_tx).expect_err("replay fails");
+        assert!(matches!(err, MarketDataError::ConnectionError { .. }));
+
+        let errors: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|item| match item {
+                StreamItem::Event(ConnectionEvent::Error(info)) => info,
+                other => panic!("expected Error, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(errors.len(), 2, "one Error per subscription");
+        assert!(errors.iter().all(|info| info.code == error_code::CONNECTION));
+        assert!(errors[0].message.contains("trades:2330"));
+        assert!(errors[1].message.contains("books:2317"));
+    }
+}

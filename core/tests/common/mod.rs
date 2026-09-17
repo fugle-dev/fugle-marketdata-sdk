@@ -58,6 +58,11 @@ pub enum AfterAuth {
     ReportClientClose {
         ended_by_close: mpsc::UnboundedSender<bool>,
     },
+    /// Idle until the connection ends, forwarding every text frame the
+    /// client sends on `frames`.
+    RecordFrames {
+        frames: mpsc::UnboundedSender<String>,
+    },
 }
 
 /// Collect items from `recv` until none arrives for [`QUIET`], capped at
@@ -238,6 +243,19 @@ async fn serve(
             };
             let _ = ended_by_close.send(by_close);
         }
+        AfterAuth::RecordFrames { frames } => loop {
+            match stream.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    let _ = frames.send(text.to_string());
+                }
+                Some(Ok(Message::Close(_))) => {
+                    let _ = sink.close().await;
+                    break;
+                }
+                Some(Ok(_)) => continue,
+                _ => break,
+            }
+        },
         AfterAuth::FloodDataThenClose { count, code } => {
             send_data_frames(&mut sink, count).await;
             let frame = CloseFrame {
