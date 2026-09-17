@@ -162,7 +162,7 @@ describe.each(['stock', 'futopt'])('%s listener failures (#83)', (product) => {
       await ws.connect();
       ws.subscribe({ channel: 'trades', symbol: '3' });
       await waitFor(() => received === 3, 'three messages');
-      await sleep(1100);
+      await sleep(1500);
       ws.subscribe({ channel: 'books', symbol: '1' });
       await waitFor(() => received === 4, 'fourth message');
       await sleep(100);

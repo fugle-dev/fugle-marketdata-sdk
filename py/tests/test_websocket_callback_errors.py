@@ -96,7 +96,7 @@ def test_later_failures_are_reported_once_per_second_with_their_count(server):
         ws.connect()
         ws.subscribe(SUBSCRIPTION)
         wait_until(lambda: len(received) >= 3, "three messages")
-        time.sleep(1.1)
+        time.sleep(1.5)
         ws.subscribe({"channel": "books", "symbol": "2330"})
         wait_until(lambda: len(reports) == 2, "second report")
     finally:

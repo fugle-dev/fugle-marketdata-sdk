@@ -397,6 +397,41 @@ try {
 }
 ```
 
+#### 13. Python WebSocket callbacks: errors and async callbacks
+
+Three differences in how Python callbacks are handled:
+
+- **"Reconnection failed after N attempts" has code 3005.** The `error`
+  callback's `WebSocketError` for it had code -1, the code of a panicked
+  worker thread. It now has `e.code == 3005` (`RECONNECT_FAILED`,
+  `e.source_kind == "network"`); code that checked for -1 should check 3005.
+- **`on()` refuses `async def` callbacks.** Callbacks run on the SDK's thread,
+  where nothing would await a coroutine, so registering an `async def`
+  function raises `TypeError`. In asyncio code, consume messages with
+  `async for msg in ws.stock.messages()` instead.
+- **A callback that returns a coroutine is reported, not left pending.** For
+  example `ws.stock.on("message", lambda msg: handle(msg))` with an
+  `async def handle`: the coroutine is closed (no "coroutine was never
+  awaited" warning) and reported through `error` with code 3004
+  (`CALLBACK_FAILED`), `e.event`, `e.count` and a `TypeError` as
+  `e.__cause__` — the same report as a callback that raises. Without an
+  `error` callback it goes to `sys.unraisablehook`.
+
+```python
+# Legacy style that no longer registers
+async def on_message(msg): ...
+ws.stock.on("message", on_message)        # TypeError
+
+# This SDK
+def on_error(err):
+    if err.code == 3005:
+        log.error("gave up reconnecting: %s", err.message)
+    elif err.code == 3004:
+        log.error("%s callback failed %dx: %r", err.event, err.count, err.__cause__)
+
+ws.stock.on("error", on_error)
+```
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you
