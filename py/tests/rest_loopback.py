@@ -3,6 +3,11 @@
 Standard library only. Every request is answered the way the Fugle API answers
 an invalid key: ``401`` with ``{"message":"Unauthorized","statusCode":401}``.
 
+Every response carries ``Connection: close``. The handler speaks HTTP/1.0 and
+closes the socket after each reply; without the header the client pools that
+connection and can reuse it before the close lands, failing with "peer
+disconnected" instead of the expected status (#103).
+
 The server runs on a thread of the test process, so a client call that holds
 the GIL while waiting on the response would starve it and the test would time
 out instead of passing.
@@ -31,6 +36,7 @@ class RestLoopbackServer:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(payload)
 
