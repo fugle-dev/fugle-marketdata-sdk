@@ -164,6 +164,11 @@ pub mod error_code {
     pub const WEBSOCKET: i32 = 3002;
     /// [`MarketDataError::HeartbeatTimeout`](super::MarketDataError::HeartbeatTimeout).
     pub const HEARTBEAT_TIMEOUT: i32 = 3003;
+    /// Bindings: a WebSocket callback or listener raised an exception (or,
+    /// in Node, the Promise it returned rejected). The connection stays up.
+    pub const CALLBACK_FAILED: i32 = 3004;
+    /// Automatic reconnection gave up after its last attempt.
+    pub const RECONNECT_FAILED: i32 = 3005;
     /// [`MarketDataError::Other`](super::MarketDataError::Other).
     pub const OTHER: i32 = 9999;
     /// Node and Python: a binding's WebSocket worker thread panicked.

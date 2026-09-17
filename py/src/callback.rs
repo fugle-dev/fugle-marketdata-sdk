@@ -12,9 +12,15 @@
 //! ws.stock.on("message", on_message)
 //! ```
 
+use marketdata_core::websocket::ReportThrottle;
+use marketdata_core::{error_code, ErrorInfo, ErrorKind};
+use pyo3::exceptions::{PyException, PyTypeError};
 use pyo3::prelude::*;
+use pyo3::sync::PyOnceLock;
+use pyo3::types::PyType;
 use std::collections::HashMap;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::time::Instant;
 
 /// Callbacks by event type.
 type CallbackMap = HashMap<EventType, Vec<Py<PyAny>>>;
@@ -55,6 +61,20 @@ impl EventType {
             _ => None,
         }
     }
+
+    /// The name `on()` registers this event under.
+    pub fn name(self) -> &'static str {
+        match self {
+            EventType::Message => "message",
+            EventType::Connect => "connect",
+            EventType::Disconnect => "disconnect",
+            EventType::Reconnect => "reconnect",
+            EventType::Error => "error",
+            EventType::Authenticated => "authenticated",
+            EventType::Unauthenticated => "unauthenticated",
+            EventType::MessagesDropped => "messages_dropped",
+        }
+    }
 }
 
 /// Thread-safe registry for Python callbacks
@@ -64,6 +84,8 @@ impl EventType {
 pub struct CallbackRegistry {
     /// Maps event type to list of callbacks
     callbacks: RwLock<CallbackMap>,
+    /// Throttles the reports of failed callbacks (#83).
+    failures: Mutex<ReportThrottle>,
     /// Debug builds: panic once inside `unregister` while holding the write
     /// lock, poisoning it, for `FUGLE_MARKETDATA_TEST_PANIC=ws_callback_poison`
     /// (#25). Only a writer's panic poisons an `RwLock`.
@@ -76,6 +98,7 @@ impl CallbackRegistry {
     pub fn new() -> Self {
         Self {
             callbacks: RwLock::new(HashMap::new()),
+            failures: Mutex::new(ReportThrottle::new()),
             #[cfg(debug_assertions)]
             test_poison_lock: std::sync::atomic::AtomicBool::new(
                 std::env::var("FUGLE_MARKETDATA_TEST_PANIC").as_deref() == Ok("ws_callback_poison"),
@@ -118,6 +141,19 @@ impl CallbackRegistry {
         if !callback.is_callable() {
             return Err(pyo3::exceptions::PyTypeError::new_err(
                 "Callback must be callable",
+            ));
+        }
+
+        // Nothing would await its coroutine (#83).
+        let py = callback.py();
+        let is_async = py
+            .import("inspect")?
+            .call_method1("iscoroutinefunction", (callback,))?
+            .is_truthy()?;
+        if is_async {
+            return Err(PyTypeError::new_err(
+                "async def callbacks are not supported; use a regular function, \
+                 or consume messages with `async for message in ws.messages()`",
             ));
         }
 
@@ -165,40 +201,96 @@ impl CallbackRegistry {
 
     /// Invoke all callbacks for an event type with given arguments
     ///
-    /// # Arguments
-    ///
-    /// * `py` - Python GIL token
-    /// * `event_type` - Event type to dispatch
-    /// * `args` - Arguments tuple to pass to callbacks
+    /// A callback that raises an `Exception` does not stop the others or
+    /// later events; it is reported as described in [`Self::report_failure`].
+    /// A `BaseException` that is not an `Exception` (`KeyboardInterrupt`,
+    /// `SystemExit`, ...) cannot reach the caller from this thread: it is
+    /// only printed, through `sys.unraisablehook`.
     ///
     /// # Returns
     ///
     /// Number of callbacks invoked successfully
     pub fn invoke(&self, py: Python<'_>, event_type: EventType, args: &Bound<'_, pyo3::types::PyTuple>) -> usize {
-        let callbacks = self.read();
-
-        let Some(handlers) = callbacks.get(&event_type) else {
-            return 0;
+        // Released before calling, so a callback may register callbacks.
+        let handlers: Vec<Py<PyAny>> = match self.read().get(&event_type) {
+            Some(handlers) => handlers.iter().map(|callback| callback.clone_ref(py)).collect(),
+            None => return 0,
         };
 
         let mut invoked = 0;
-
-        for callback in handlers {
-            // Bind callback to current Python context
-            let bound_callback = callback.bind(py);
-
-            // Call with arguments, log errors but continue
-            match bound_callback.call1(args) {
-                Ok(_) => invoked += 1,
-                Err(e) => {
-                    // Log error to Python stderr but don't propagate
-                    // Simply print the error - avoid complex Python runtime calls
-                    eprintln!("Callback error: {}", e);
+        for callback in &handlers {
+            let callback = callback.bind(py);
+            match callback.call1(args) {
+                Ok(returned) => match close_coroutine(py, &returned) {
+                    None => invoked += 1,
+                    Some(err) => self.report_failure(py, event_type, callback, err),
+                },
+                Err(err) if err.is_instance_of::<PyException>(py) => {
+                    self.report_failure(py, event_type, callback, err)
                 }
+                Err(err) => err.write_unraisable(py, Some(callback)),
             }
         }
 
         invoked
+    }
+
+    /// Let the user know `callback`, registered for `event_type`, raised `err`
+    /// — without stopping delivery and without recursing (#83).
+    ///
+    /// A failing `error` callback is only printed. Any other failure goes to
+    /// the `error` callbacks as a `WebSocketError` (code
+    /// [`error_code::CALLBACK_FAILED`], `__cause__`, `event`, `count`),
+    /// throttled like `messages_dropped`: the first at once, later ones at
+    /// most once per second, counting the failures since the previous report.
+    /// With no `error` callback, or one that raises in turn, it is printed
+    /// through `sys.unraisablehook` instead.
+    fn report_failure(&self, py: Python<'_>, event_type: EventType, callback: &Bound<'_, PyAny>, err: PyErr) {
+        if event_type == EventType::Error {
+            err.write_unraisable(py, Some(callback));
+            return;
+        }
+        let count = self
+            .failures
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .record(Instant::now());
+        let Some(count) = count else { return };
+
+        let event = event_type.name();
+        let kind = err
+            .get_type(py)
+            .name()
+            .map(|name| name.to_string())
+            .unwrap_or_else(|_| "Exception".to_string());
+        let message = format!("'{event}' callback raised {kind}: {}", err.value(py));
+        let info = ErrorInfo::new(error_code::CALLBACK_FAILED, ErrorKind::Client, message);
+        let report = crate::errors::websocket_error(py, &info);
+        report.set_cause(py, Some(err));
+        let value = report.value(py);
+        let _ = value.setattr("event", event);
+        let _ = value.setattr("count", count);
+
+        let handlers: Vec<Py<PyAny>> = match self.read().get(&EventType::Error) {
+            Some(handlers) if !handlers.is_empty() => {
+                handlers.iter().map(|handler| handler.clone_ref(py)).collect()
+            }
+            _ => {
+                report.write_unraisable(py, Some(callback));
+                return;
+            }
+        };
+        for handler in &handlers {
+            let handler = handler.bind(py);
+            let failure = match handler.call1((report.clone_ref(py).into_value(py),)) {
+                Ok(returned) => close_coroutine(py, &returned),
+                Err(failure) => Some(failure),
+            };
+            if let Some(failure) = failure {
+                failure.set_context(py, Some(report.clone_ref(py)));
+                failure.write_unraisable(py, Some(handler));
+            }
+        }
     }
 
     /// Invoke message callbacks with a WebSocket message dict
@@ -238,13 +330,12 @@ impl CallbackRegistry {
         self.invoke(py, EventType::MessagesDropped, &args);
     }
 
-    /// Invoke error callbacks with message and code
     /// Invoke error callbacks with a single exception-like argument, matching
-    /// the 2.4.1 SDK's `error(err)` callback arity. Constructs a
-    /// `WebSocketError` instance with `(message, code)` so user code can do
-    /// `on('error', lambda err: print(err))` or inspect `err.args`.
-    pub fn invoke_error(&self, py: Python<'_>, message: &str, code: i32) {
-        let err = crate::errors::WebSocketError::new_err((message.to_string(), code));
+    /// the 2.4.1 SDK's `error(err)` callback arity: a `WebSocketError` whose
+    /// `args` are `(message, code)`, carrying `info`'s unified fields, so user
+    /// code can do `on('error', lambda err: print(err))` or read `err.code`.
+    pub fn invoke_error(&self, py: Python<'_>, info: &ErrorInfo) {
+        let err = crate::errors::websocket_error(py, info);
         let err_obj: Py<PyAny> = err.into_value(py).into_any();
         let args = pyo3::types::PyTuple::new(py, [err_obj]).expect("Failed to create tuple");
         self.invoke(py, EventType::Error, &args);
@@ -267,6 +358,30 @@ impl CallbackRegistry {
         let args = pyo3::types::PyTuple::new(py, [data_obj]).expect("Failed to create tuple");
         self.invoke(py, event_type, &args);
     }
+}
+
+/// If a callback returned a coroutine (say, a lambda around an `async def`),
+/// close it — nothing would await it — and return the error to report.
+///
+/// Runs after every callback, messages included: the usual `None` returns
+/// at once, and the coroutine type is looked up only once.
+fn close_coroutine(py: Python<'_>, returned: &Bound<'_, PyAny>) -> Option<PyErr> {
+    static COROUTINE_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+    if returned.is_none() {
+        return None;
+    }
+    let is_coroutine = COROUTINE_TYPE
+        .import(py, "types", "CoroutineType")
+        .and_then(|coroutine| returned.is_instance(coroutine))
+        .unwrap_or(false);
+    if !is_coroutine {
+        return None;
+    }
+    let _ = returned.call_method0("close");
+    Some(PyTypeError::new_err(
+        "callback returned a coroutine; async callbacks are not supported \
+         (use `async for message in ws.messages()`)",
+    ))
 }
 
 impl Default for CallbackRegistry {

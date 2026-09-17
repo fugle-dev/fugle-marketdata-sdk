@@ -261,6 +261,17 @@ unread, and `WebSocketListener.onMessagesDropped(count)` reports how many.
 `UNBOUNDED` never drops, at the cost of unbounded memory growth if the
 listener falls behind.
 
+In callback mode, an exception thrown by a listener method does not stop
+later events. It is reported to `onError` with code 3004 (`CALLBACK_FAILED`,
+source kind `CLIENT`) and a message naming the method, the exception type and
+message, and the number of failures, e.g.
+`Listener onMessage threw java.lang.RuntimeException: boom (1 in the last 1s)`.
+The first failure is reported at once, later ones at most once per second,
+counting the failures since the previous report; failures after the last
+report are not reported on their own. An exception thrown by `onError` itself
+is logged through `java.util.logging` (WARNING, logger
+`tw.com.fugle.marketdata.FugleWebSocketClient`) and not re-reported.
+
 In pull mode a full `queueCapacity` queue makes the client wait for `poll()`
 rather than discard messages, so what you do not keep up with is dropped
 there instead: counted in `messagesDroppedTotal()` and reported through
@@ -363,6 +374,7 @@ not raised from an SDK error. `WebSocketListener.onError` receives the same
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3004 | CallbackFailed | A listener method threw (`onError` only) |
 | 9999 | Other | Unexpected error |
 
 ## Examples

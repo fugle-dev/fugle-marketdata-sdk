@@ -368,13 +368,19 @@ Two differences remain from 1.x's `error` event:
 
 - **The `error` argument is an `Error` with a numeric `code`.** Its `message`
   is the plain description, without a `[code]` prefix — read the code from
-  `err.code` (absent for "Reconnection failed after N attempts"). 1.x passed
+  `err.code` (3005 for "Reconnection failed after N attempts"). 1.x passed
   the socket's native error. A `connect()` that fails for a reason other than
   rejected credentials rejects with an `Error` carrying the same fields
   (`err.code`, no `[code]` prefix).
 - **No `error` listener means errors are ignored.** 1.x's EventEmitter threw
   an unhandled `'error'` event and could crash the process; this SDK never
   does.
+- **A listener that throws does not crash the process.** 1.x's EventEmitter
+  let the exception propagate as an uncaught exception. This SDK reports it
+  through `error` with code 3004 (`err.event`, `err.count`, `err.cause`), or
+  prints it with `console.error` when there is no `error` listener, and keeps
+  delivering later events. To stop on a listener failure, do so from the
+  `error` listener, e.g. `if (err.code === 3004) process.exit(1)`.
 
 This SDK also has a `reconnect` event (1.x had no auto-reconnect), receiving
 `{ attempt }`.
@@ -389,6 +395,41 @@ try {
 } catch (e) {
   // rejected credentials: e is the server's data, e.g. { message: '...' }
 }
+```
+
+#### 13. Python WebSocket callbacks: errors and async callbacks
+
+Three differences in how Python callbacks are handled:
+
+- **"Reconnection failed after N attempts" has code 3005.** The `error`
+  callback's `WebSocketError` for it had code -1, the code of a panicked
+  worker thread. It now has `e.code == 3005` (`RECONNECT_FAILED`,
+  `e.source_kind == "network"`); code that checked for -1 should check 3005.
+- **`on()` refuses `async def` callbacks.** Callbacks run on the SDK's thread,
+  where nothing would await a coroutine, so registering an `async def`
+  function raises `TypeError`. In asyncio code, consume messages with
+  `async for msg in ws.stock.messages()` instead.
+- **A callback that returns a coroutine is reported, not left pending.** For
+  example `ws.stock.on("message", lambda msg: handle(msg))` with an
+  `async def handle`: the coroutine is closed (no "coroutine was never
+  awaited" warning) and reported through `error` with code 3004
+  (`CALLBACK_FAILED`), `e.event`, `e.count` and a `TypeError` as
+  `e.__cause__` — the same report as a callback that raises. Without an
+  `error` callback it goes to `sys.unraisablehook`.
+
+```python
+# Legacy style that no longer registers
+async def on_message(msg): ...
+ws.stock.on("message", on_message)        # TypeError
+
+# This SDK
+def on_error(err):
+    if err.code == 3005:
+        log.error("gave up reconnecting: %s", err.message)
+    elif err.code == 3004:
+        log.error("%s callback failed %dx: %r", err.event, err.count, err.__cause__)
+
+ws.stock.on("error", on_error)
 ```
 
 ### New things the legacy SDKs did not have
