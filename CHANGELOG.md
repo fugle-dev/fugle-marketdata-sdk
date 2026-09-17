@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rust**: `aio::WebSocketClient::state_handle()` returns a
+  `ConnectionStateHandle` that reads the client's `ConnectionState` and stays
+  readable after the client is dropped, like `messages_dropped_handle()` (#67).
 - **Node**: every REST method accepts the legacy `@fugle/marketdata` 1.x
   object param, e.g. `stock.intraday.trades({ symbol: '2330', limit: 5 })`.
   The path param (`symbol` / `market`) goes into the path and every other key
@@ -353,6 +356,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that dropped right as `connect()` returned, until the next lifecycle event.
   It now reads core's connection state, so it is `false` as soon as the
   connection drops or starts reconnecting (#64).
+- **Node**: `isConnected` stayed `true` while an auto-reconnect was in
+  progress. `isConnected` / `isClosed` now read core's connection state
+  instead of flags the binding kept, so `isConnected` is `false` from the
+  moment a reconnect starts until it authenticates again (#67).
 - **Go**: `StreamingClient` closed `Messages()` / `Errors()` on the first
   disconnect even when the client was about to reconnect, ending a
   `range` loop mid-session. The channels now close on the final disconnect or
