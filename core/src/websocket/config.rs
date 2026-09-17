@@ -31,10 +31,17 @@ pub struct ConnectionConfig {
     /// behaviour.
     pub tls: TlsConfig,
 
-    /// Capacity of the inbound message channel that backs `messages()` and
+    /// Capacity of the inbound message queue that backs `messages()` and
     /// `message_stream()`. Defaults to [`DEFAULT_MESSAGE_BUFFER`]. Use
-    /// [`ConnectionConfigBuilder::message_buffer`] to override.
+    /// [`ConnectionConfigBuilder::message_buffer`] to override. Ignored
+    /// when `message_overflow` is [`MessageOverflow::Unbounded`].
     pub message_buffer: usize,
+
+    /// What happens to an inbound message when the queue already holds
+    /// `message_buffer` unread messages. Defaults to
+    /// [`MessageOverflow::DropNewest`]. Use
+    /// [`ConnectionConfigBuilder::message_overflow`] to override.
+    pub message_overflow: MessageOverflow,
 
     /// Capacity of the lifecycle event channel that backs `events()` and
     /// `state_events()`. Defaults to [`DEFAULT_EVENT_BUFFER`]. Use
@@ -53,13 +60,33 @@ pub struct ConnectionConfig {
 /// Default capacity for the inbound message channel (`message_buffer`).
 ///
 /// Sized for multi-symbol consumers (50–200 symbols across all channels at
-/// the TWSE 9:00 open burst, ~2000 msg/s). Bounded mpsc channels in tokio
-/// and std do not pre-allocate, so a higher cap costs nothing at idle and
-/// only manifests memory cost on saturation. At 4096 this provides ~2 s
-/// of headroom at 2000 msg/s before drop-newest backpressure kicks in.
+/// the TWSE 9:00 open burst, ~2000 msg/s). The queue does not pre-allocate,
+/// so a higher cap costs nothing at idle and only manifests memory cost on
+/// saturation. At 4096 this provides ~2 s of headroom at 2000 msg/s before
+/// drop-newest backpressure kicks in.
 ///
 /// Pre-0.4.0 the cap was hardcoded to 1024. Increased to 4096 in 0.4.0.
 pub const DEFAULT_MESSAGE_BUFFER: usize = 4096;
+
+/// What the client does with an inbound message when its consumer falls
+/// behind (#46).
+///
+/// Whichever policy is in force, the network read loop never waits for the
+/// consumer: waiting would leave frames piling up on the server, which has
+/// no slow-reader handling of its own.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MessageOverflow {
+    /// Hold at most `message_buffer` unread messages and discard new ones
+    /// while the queue is full. Every discarded message counts towards
+    /// `messages_dropped_total()` and is reported by
+    /// [`ConnectionEvent::MessagesDropped`](crate::websocket::ConnectionEvent::MessagesDropped).
+    #[default]
+    DropNewest,
+    /// Never discard: the queue grows for as long as the consumer lags, so
+    /// memory is bounded only by how far behind the consumer falls.
+    Unbounded,
+}
 
 /// Default capacity for the lifecycle event channel (`event_buffer`).
 ///
@@ -125,6 +152,7 @@ impl fmt::Debug for ConnectionConfig {
             .field("read_timeout", &self.read_timeout)
             .field("tls", &self.tls)
             .field("message_buffer", &self.message_buffer)
+            .field("message_overflow", &self.message_overflow)
             .field("event_buffer", &self.event_buffer)
             .field("client_id", &self.client_id)
             .finish()
@@ -141,8 +169,17 @@ impl ConnectionConfig {
             read_timeout: Duration::from_secs(30),
             tls: TlsConfig::default(),
             message_buffer: DEFAULT_MESSAGE_BUFFER,
+            message_overflow: MessageOverflow::DropNewest,
             event_buffer: DEFAULT_EVENT_BUFFER,
             client_id: None,
+        }
+    }
+
+    /// Capacity of the inbound message queue: `None` when unbounded.
+    pub(crate) fn message_capacity(&self) -> Option<usize> {
+        match self.message_overflow {
+            MessageOverflow::DropNewest => Some(self.message_buffer),
+            MessageOverflow::Unbounded => None,
         }
     }
 
@@ -155,6 +192,7 @@ impl ConnectionConfig {
             read_timeout: Duration::from_secs(30),
             tls: TlsConfig::default(),
             message_buffer: DEFAULT_MESSAGE_BUFFER,
+            message_overflow: MessageOverflow::DropNewest,
             event_buffer: DEFAULT_EVENT_BUFFER,
             client_id: None,
         }
@@ -220,6 +258,7 @@ pub struct ConnectionConfigBuilder {
     read_timeout: Duration,
     tls: TlsConfig,
     message_buffer: usize,
+    message_overflow: MessageOverflow,
     event_buffer: usize,
     client_id: Option<String>,
 }
@@ -243,10 +282,11 @@ impl ConnectionConfigBuilder {
         self
     }
 
-    /// Override the inbound message-channel capacity.
+    /// Override the inbound message-queue capacity.
     ///
-    /// Defaults to [`DEFAULT_MESSAGE_BUFFER`] (4096). The channel uses
-    /// drop-newest backpressure on saturation; tune this when the consumer
+    /// Defaults to [`DEFAULT_MESSAGE_BUFFER`] (4096). Under the default
+    /// [`MessageOverflow::DropNewest`] a full queue discards new messages;
+    /// tune this when the consumer
     /// can experience long pauses (e.g. trade peaks while a UI thread is
     /// blocked) or when subscribing to many high-volume symbols at once.
     ///
@@ -257,6 +297,14 @@ impl ConnectionConfigBuilder {
     pub fn message_buffer(mut self, cap: usize) -> Self {
         assert!(cap > 0, "message_buffer must be greater than zero");
         self.message_buffer = cap;
+        self
+    }
+
+    /// Choose what happens to inbound messages while the queue is full.
+    ///
+    /// Defaults to [`MessageOverflow::DropNewest`].
+    pub fn message_overflow(mut self, overflow: MessageOverflow) -> Self {
+        self.message_overflow = overflow;
         self
     }
 
@@ -330,6 +378,7 @@ impl ConnectionConfigBuilder {
             read_timeout: self.read_timeout,
             tls: self.tls,
             message_buffer: self.message_buffer,
+            message_overflow: self.message_overflow,
             event_buffer: self.event_buffer,
             client_id: self.client_id,
         }

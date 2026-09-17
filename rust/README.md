@@ -455,8 +455,12 @@ let on:    bool  = client.is_subscribed(&Channel::Trades, "2330");
 # }
 ```
 
-Default message-channel cap is 4096 (drop-newest backpressure). Tune
-with `ConnectionConfig::builder(...).message_buffer(N)`.
+Up to 4096 unread messages are queued; while the queue is full new messages
+are dropped, counted by `messages_dropped_total()` and reported with
+`ConnectionEvent::MessagesDropped` (at most once per second). Tune the cap
+with `ConnectionConfig::builder(...).message_buffer(N)`, or never drop with
+`.message_overflow(MessageOverflow::Unbounded)` if you accept the queue
+growing while your consumer lags.
 
 ## Error Handling
 

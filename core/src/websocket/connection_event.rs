@@ -11,23 +11,15 @@
 //! per-client `event_buffer` (default
 //! [`DEFAULT_EVENT_BUFFER`](crate::websocket::DEFAULT_EVENT_BUFFER)). The
 //! channel is **drop-newest**: when full, `emit_event` (internal) discards
-//! the incoming event rather than blocking the network task. This is the only
-//! safe choice because `std::sync::mpsc` does not expose receiver-side
-//! access to the sender; switching to a primitive that does (e.g.
-//! `tokio::sync::broadcast`) would break the `events()` /
-//! `state_events()` API surface that bindings depend on.
+//! the incoming event rather than blocking the network task, and bumps
+//! `events_dropped_total()`. A healthy consumer never approaches the cap.
 //!
-//! Drops are surfaced via:
-//! - the per-client
-//!   [`messages_dropped_total`](crate::aio::WebSocketClient::messages_dropped_total)
-//!   counter (for the inbound *message* channel; the *event* channel
-//!   shares the same drop-newest discipline but is small enough that
-//!   saturation is rare); and
-//! - a `tracing::warn!` at the saturation site when the `tracing` feature
-//!   is enabled.
-//!
-//! Saturation is itself the bug signal — a healthy consumer never
-//! approaches the configured cap.
+//! Inbound *messages* use a separate queue, so a consumer falling behind on
+//! messages never costs an event. Its policy is
+//! [`MessageOverflow`](crate::websocket::MessageOverflow): under the default
+//! `DropNewest` a full queue discards new messages, bumps
+//! `messages_dropped_total()` and reports the drops with
+//! [`MessagesDropped`](ConnectionEvent::MessagesDropped) (#46).
 //!
 //! # Delivery guarantees
 //!
@@ -57,11 +49,20 @@
 //!    emitted and the state becomes `Closed { intent: Client, .. }`.
 //! 4. `Error` is diagnostic and may accompany `Disconnected` (a transport
 //!    error emits both, `Error` first).
+//! 5. [`MessagesDropped`](ConnectionEvent::MessagesDropped) is diagnostic and
+//!    leaves the state unchanged. It appears only between a connection's
+//!    `Authenticated` and its `Disconnected`: the first drop is reported at
+//!    once, later ones at most once per second, and the rest right before
+//!    `Disconnected`. Like any event it is lost if the event channel is full;
+//!    `messages_dropped_total()` is the authoritative count.
+//! 6. [`ConnectionEvent`] is `#[non_exhaustive]`: matches need a `_` arm, and
+//!    a new diagnostic variant may be added in a minor release.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
+use crate::websocket::message_queue::{DropReport, QueueSender};
 use crate::websocket::ReconnectionManager;
 
 /// Who initiated the disconnect captured by
@@ -122,6 +123,7 @@ pub enum ConnectionState {
 ///
 /// See the module-level [delivery guarantees](self#delivery-guarantees) for
 /// the ordering bindings can rely on.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionEvent {
     /// Connection attempt started (initial `connect()` or a reconnect).
@@ -192,6 +194,24 @@ pub enum ConnectionEvent {
         /// Wall-clock interval that elapsed since the last inbound frame.
         elapsed: Duration,
     },
+    /// Inbound messages were dropped because the message queue was full
+    /// (the consumer fell behind under
+    /// [`MessageOverflow::DropNewest`](crate::websocket::MessageOverflow::DropNewest)).
+    /// Diagnostic: the connection stays up.
+    ///
+    /// Throttled: the first drop on a connection is reported at once, later
+    /// ones at most once per second, and any drops not yet reported are
+    /// reported right before that connection's `Disconnected`. Drops that
+    /// happen after the connection was reported closed are only counted.
+    /// `messages_dropped_total()` is the authoritative count.
+    MessagesDropped {
+        /// Messages dropped since the previous `MessagesDropped`.
+        dropped: u64,
+        /// Messages dropped on this connection so far: counted from the
+        /// start of its `connect()` (or reconnect), like
+        /// `messages_dropped_total()`.
+        total: u64,
+    },
     /// Error occurred. Diagnostic: a transport error emits both `Error` and
     /// (afterwards) `Disconnected`.
     Error {
@@ -254,17 +274,39 @@ impl DisconnectLatch {
     }
 }
 
+/// [`emit_event`] a `MessagesDropped` for `report`, if there is one.
+pub(crate) fn emit_drop_report(
+    tx: &mpsc::SyncSender<ConnectionEvent>,
+    dropped: &crate::metrics_compat::DropCounter,
+    report: Option<DropReport>,
+) {
+    let Some(DropReport { dropped: messages, total }) = report else {
+        return;
+    };
+    crate::tracing_compat::warn!(
+        target: "fugle_marketdata::ws",
+        dropped = messages,
+        dropped_total = total,
+        "message queue saturated; dropping frames (drop-newest)"
+    );
+    emit_event(tx, dropped, ConnectionEvent::MessagesDropped { dropped: messages, total });
+}
+
 /// [`emit_event`] a `Disconnected`, unless this connection already has one.
+/// Drops on the connection not reported yet are reported first.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_disconnected(
     tx: &mpsc::SyncSender<ConnectionEvent>,
     dropped: &crate::metrics_compat::DropCounter,
     latch: &DisconnectLatch,
+    messages: &QueueSender<crate::models::WebSocketMessage>,
     code: Option<u16>,
     reason: String,
     intent: DisconnectIntent,
     will_reconnect: bool,
 ) {
     if latch.claim() {
+        emit_drop_report(tx, dropped, messages.take_unreported());
         emit_event(
             tx,
             dropped,
@@ -343,8 +385,9 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(8);
         let dropped = crate::metrics_compat::DropCounter::new("test_events_dropped", "localhost", "test");
         let latch = DisconnectLatch::default();
-        emit_disconnected(&tx, &dropped, &latch, None, "server".into(), DisconnectIntent::Server, true);
-        emit_disconnected(&tx, &dropped, &latch, Some(1000), "client".into(), DisconnectIntent::Client, false);
+        let (messages, _rx) = message_queue(Some(1));
+        emit_disconnected(&tx, &dropped, &latch, &messages, None, "server".into(), DisconnectIntent::Server, true);
+        emit_disconnected(&tx, &dropped, &latch, &messages, Some(1000), "client".into(), DisconnectIntent::Client, false);
         let events: Vec<_> = rx.try_iter().collect();
         assert_eq!(
             events,
@@ -354,6 +397,60 @@ mod tests {
                 intent: DisconnectIntent::Server,
                 will_reconnect: true,
             }]
+        );
+    }
+
+    fn message_queue(
+        capacity: Option<usize>,
+    ) -> (
+        QueueSender<crate::models::WebSocketMessage>,
+        crate::websocket::message_queue::QueueReceiver<crate::models::WebSocketMessage>,
+    ) {
+        crate::websocket::message_queue::queue(
+            capacity,
+            crate::metrics_compat::DropCounter::new("test_messages_dropped", "localhost", "test"),
+        )
+    }
+
+    fn data_message() -> crate::models::WebSocketMessage {
+        crate::models::WebSocketMessage {
+            event: "data".into(),
+            data: None,
+            channel: None,
+            symbol: None,
+            id: None,
+            raw: String::new(),
+        }
+    }
+
+    #[test]
+    fn emit_disconnected_reports_unreported_drops_first() {
+        let (tx, rx) = mpsc::sync_channel(8);
+        let dropped = crate::metrics_compat::DropCounter::new("test_events_dropped", "localhost", "test");
+        let latch = DisconnectLatch::default();
+        let (messages, _rx) = message_queue(Some(1));
+        messages.push(data_message());
+        // The first report is due at once; the next two drops are throttled.
+        emit_drop_report(&tx, &dropped, messages.push_and_report(data_message()).1);
+        emit_drop_report(&tx, &dropped, messages.push_and_report(data_message()).1);
+        emit_drop_report(&tx, &dropped, messages.push_and_report(data_message()).1);
+        emit_disconnected(&tx, &dropped, &latch, &messages, None, "gone".into(), DisconnectIntent::Network, false);
+        // A caller-side close losing the latch reports nothing more.
+        messages.push(data_message());
+        emit_disconnected(&tx, &dropped, &latch, &messages, None, "late".into(), DisconnectIntent::Client, false);
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![
+                ConnectionEvent::MessagesDropped { dropped: 1, total: 1 },
+                ConnectionEvent::MessagesDropped { dropped: 2, total: 3 },
+                ConnectionEvent::Disconnected {
+                    code: None,
+                    reason: "gone".into(),
+                    intent: DisconnectIntent::Network,
+                    will_reconnect: false,
+                },
+            ]
         );
     }
 

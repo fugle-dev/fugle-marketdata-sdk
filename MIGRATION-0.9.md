@@ -264,6 +264,40 @@ Behaviour you may have relied on:
   reconnect. Java's pull mode and Go's `Errors()` report a rejection as
   `Unauthenticated: <dataJson>`.
 
+## 11. Rust: inbound message queue
+
+`aio::WebSocketClient::message_stream()` returns `MessageStream` rather than
+a tokio receiver. The common calls are unchanged:
+
+```rust,ignore
+let mut stream = client.message_stream();   // was tokio::sync::mpsc::Receiver
+while let Some(msg) = stream.recv().await {}  // unchanged
+stream.try_recv();                            // Err(std::sync::mpsc::TryRecvError)
+```
+
+It implements `futures::Stream` itself, so drop any
+`tokio_stream::wrappers::ReceiverStream` wrapper. Function signatures that
+named `tokio::sync::mpsc::Receiver<WebSocketMessage>` take
+`marketdata_core::MessageStream` instead.
+
+`ConnectionEvent` is `#[non_exhaustive]`; add a `_` arm to exhaustive
+matches. The new `MessagesDropped { dropped, total }` reports messages
+dropped because your consumer fell behind.
+
+`ConnectionConfig` gains `message_overflow`. Code that builds the struct with
+a literal needs the field (`MessageOverflow::DropNewest` keeps the default);
+code using `ConnectionConfig::new` or the builder is unaffected.
+
+`messages_dropped_total()` now counts from the start of the current
+connection (it restarts at every `connect()` or reconnect attempt) rather than
+from client construction; sum the `MessagesDropped` events if you need a
+lifetime total.
+
+Behaviour you may notice: `messages()` used to queue without limit, so a slow
+consumer never lost messages but used more and more memory. It is now capped
+at `message_buffer` (4096) like `message_stream()`. To keep every message,
+opt in with `.message_overflow(MessageOverflow::Unbounded)`.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

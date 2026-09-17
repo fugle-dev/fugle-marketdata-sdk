@@ -13,6 +13,7 @@ pub mod connection_event;
 pub mod factory;
 pub mod health_check;
 pub mod message;
+pub(crate) mod message_queue;
 pub(crate) mod protocol;
 pub mod reconnection;
 pub mod subscription;
@@ -26,11 +27,14 @@ pub mod aio;
 // Default `WebSocketClient` is the sync implementation. Async users opt in via
 // `marketdata_core::aio::WebSocketClient` with `--features tokio-comp`.
 pub use channels::StockSubscription;
-pub use config::{ConnectionConfig, ConnectionConfigBuilder, DEFAULT_EVENT_BUFFER, DEFAULT_MESSAGE_BUFFER};
+pub use config::{
+    ConnectionConfig, ConnectionConfigBuilder, MessageOverflow, DEFAULT_EVENT_BUFFER,
+    DEFAULT_MESSAGE_BUFFER,
+};
 pub use factory::WebSocketFactory;
 pub use connection_event::{ConnectionEvent, ConnectionState, DisconnectIntent};
 pub use health_check::HealthCheckConfig;
-pub use message::MessageReceiver;
+pub use message::{MessageReceiver, MessageStream};
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};
 pub use subscription::SubscriptionManager;
 pub use sync::WebSocketClient;

@@ -795,7 +795,8 @@ fn forward_event(event: ConnectionEvent, listener: &dyn WebSocketListener) -> bo
             return false;
         }
         ConnectionEvent::Error { message, .. } => listener.on_error(message),
-        ConnectionEvent::Connecting | ConnectionEvent::HeartbeatTimeout { .. } => {}
+        // `MessagesDropped` gets a listener callback with #46's bindings PR.
+        _ => {}
     }
     true
 }

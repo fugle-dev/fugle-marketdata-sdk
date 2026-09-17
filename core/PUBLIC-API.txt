@@ -12,7 +12,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> tokio::sync::mpsc::bounded::Receiver<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -85,7 +85,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> tokio::sync::mpsc::bounded::Receiver<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -3443,7 +3443,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> tokio::sync::mpsc::bounded::Receiver<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -3516,7 +3516,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
-pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> tokio::sync::mpsc::bounded::Receiver<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::message_stream(&self) -> marketdata_core::websocket::message::MessageStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages(&self) -> alloc::sync::Arc<marketdata_core::websocket::message::MessageReceiver>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -3611,12 +3611,34 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::StockSubscription
 pub fn marketdata_core::websocket::channels::parse_channel_data(&str, &serde_json::value::Value, bool) -> core::result::Result<marketdata_core::ChannelData, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::channels::parse_stream_message(&str) -> core::result::Result<marketdata_core::models::streaming::StreamMessage, marketdata_core::errors::MarketDataError>
 pub mod marketdata_core::websocket::config
+#[non_exhaustive] pub enum marketdata_core::websocket::config::MessageOverflow
+pub marketdata_core::websocket::config::MessageOverflow::DropNewest
+pub marketdata_core::websocket::config::MessageOverflow::Unbounded
+impl core::clone::Clone for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::clone(&self) -> marketdata_core::websocket::config::MessageOverflow
+impl core::cmp::Eq for marketdata_core::websocket::config::MessageOverflow
+impl core::cmp::PartialEq for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::eq(&self, &marketdata_core::websocket::config::MessageOverflow) -> bool
+impl core::default::Default for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::default() -> marketdata_core::websocket::config::MessageOverflow
+impl core::fmt::Debug for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::StructuralPartialEq for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Freeze for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Send for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Sync for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Unpin for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::MessageOverflow
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::MessageOverflow
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::MessageOverflow
 pub struct marketdata_core::websocket::config::ConnectionConfig
 pub marketdata_core::websocket::config::ConnectionConfig::auth: marketdata_core::AuthRequest
 pub marketdata_core::websocket::config::ConnectionConfig::client_id: core::option::Option<alloc::string::String>
 pub marketdata_core::websocket::config::ConnectionConfig::connect_timeout: core::time::Duration
 pub marketdata_core::websocket::config::ConnectionConfig::event_buffer: usize
 pub marketdata_core::websocket::config::ConnectionConfig::message_buffer: usize
+pub marketdata_core::websocket::config::ConnectionConfig::message_overflow: marketdata_core::websocket::config::MessageOverflow
 pub marketdata_core::websocket::config::ConnectionConfig::read_timeout: core::time::Duration
 pub marketdata_core::websocket::config::ConnectionConfig::tls: marketdata_core::tls::TlsConfig
 pub marketdata_core::websocket::config::ConnectionConfig::url: alloc::string::String
@@ -3645,6 +3667,7 @@ pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::connect_time
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::event_buffer(self, usize) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::maybe_client_id(self, core::option::Option<impl core::convert::Into<alloc::string::String>>) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::message_buffer(self, usize) -> Self
+pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::message_overflow(self, marketdata_core::websocket::config::MessageOverflow) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::read_timeout(self, core::time::Duration) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::tls(self, marketdata_core::tls::TlsConfig) -> Self
 impl core::marker::Freeze for marketdata_core::websocket::config::ConnectionConfigBuilder
@@ -3658,7 +3681,7 @@ pub const marketdata_core::websocket::config::CLIENT_ID_MAX_LEN: usize
 pub const marketdata_core::websocket::config::DEFAULT_EVENT_BUFFER: usize
 pub const marketdata_core::websocket::config::DEFAULT_MESSAGE_BUFFER: usize
 pub mod marketdata_core::websocket::connection_event
-pub enum marketdata_core::websocket::connection_event::ConnectionEvent
+#[non_exhaustive] pub enum marketdata_core::websocket::connection_event::ConnectionEvent
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated::data: serde_json::value::Value
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Connected
@@ -3673,6 +3696,9 @@ pub marketdata_core::websocket::connection_event::ConnectionEvent::Error::code: 
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Error::message: alloc::string::String
 pub marketdata_core::websocket::connection_event::ConnectionEvent::HeartbeatTimeout
 pub marketdata_core::websocket::connection_event::ConnectionEvent::HeartbeatTimeout::elapsed: core::time::Duration
+pub marketdata_core::websocket::connection_event::ConnectionEvent::MessagesDropped
+pub marketdata_core::websocket::connection_event::ConnectionEvent::MessagesDropped::dropped: u64
+pub marketdata_core::websocket::connection_event::ConnectionEvent::MessagesDropped::total: u64
 pub marketdata_core::websocket::connection_event::ConnectionEvent::ReconnectFailed
 pub marketdata_core::websocket::connection_event::ConnectionEvent::ReconnectFailed::attempts: u32
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Reconnecting
@@ -3816,17 +3842,31 @@ pub const marketdata_core::websocket::health_check::MIN_HEARTBEAT_TIMEOUT_MS: u6
 pub mod marketdata_core::websocket::message
 pub struct marketdata_core::websocket::message::MessageReceiver
 impl marketdata_core::websocket::message::MessageReceiver
-pub fn marketdata_core::websocket::message::MessageReceiver::new(std::sync::mpsc::Receiver<marketdata_core::WebSocketMessage>) -> Self
 pub fn marketdata_core::websocket::message::MessageReceiver::receive(&self) -> core::result::Result<marketdata_core::WebSocketMessage, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::message::MessageReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::WebSocketMessage>, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::message::MessageReceiver::try_receive(&self) -> core::option::Option<marketdata_core::WebSocketMessage>
-impl !core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
+impl core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Send for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Sync for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Unpin for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageReceiver
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageReceiver
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageReceiver
+pub struct marketdata_core::websocket::message::MessageStream
+impl marketdata_core::websocket::message::MessageStream
+pub fn marketdata_core::websocket::message::MessageStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::WebSocketMessage>>
+pub async fn marketdata_core::websocket::message::MessageStream::recv(&mut self) -> core::option::Option<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::message::MessageStream::try_recv(&mut self) -> core::result::Result<marketdata_core::WebSocketMessage, std::sync::mpsc::TryRecvError>
+impl futures_core::stream::Stream for marketdata_core::websocket::message::MessageStream
+pub type marketdata_core::websocket::message::MessageStream::Item = marketdata_core::WebSocketMessage
+pub fn marketdata_core::websocket::message::MessageStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
+impl core::marker::Freeze for marketdata_core::websocket::message::MessageStream
+impl core::marker::Send for marketdata_core::websocket::message::MessageStream
+impl core::marker::Sync for marketdata_core::websocket::message::MessageStream
+impl core::marker::Unpin for marketdata_core::websocket::message::MessageStream
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageStream
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageStream
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageStream
 pub mod marketdata_core::websocket::reconnection
 pub struct marketdata_core::websocket::reconnection::ReconnectionConfig
 pub marketdata_core::websocket::reconnection::ReconnectionConfig::enabled: bool
@@ -4034,7 +4074,7 @@ impl core::marker::Unpin for marketdata_core::websocket::version::StockVersion
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::version::StockVersion
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::version::StockVersion
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::version::StockVersion
-pub enum marketdata_core::websocket::ConnectionEvent
+#[non_exhaustive] pub enum marketdata_core::websocket::ConnectionEvent
 pub marketdata_core::websocket::ConnectionEvent::Authenticated
 pub marketdata_core::websocket::ConnectionEvent::Authenticated::data: serde_json::value::Value
 pub marketdata_core::websocket::ConnectionEvent::Connected
@@ -4049,6 +4089,9 @@ pub marketdata_core::websocket::ConnectionEvent::Error::code: i32
 pub marketdata_core::websocket::ConnectionEvent::Error::message: alloc::string::String
 pub marketdata_core::websocket::ConnectionEvent::HeartbeatTimeout
 pub marketdata_core::websocket::ConnectionEvent::HeartbeatTimeout::elapsed: core::time::Duration
+pub marketdata_core::websocket::ConnectionEvent::MessagesDropped
+pub marketdata_core::websocket::ConnectionEvent::MessagesDropped::dropped: u64
+pub marketdata_core::websocket::ConnectionEvent::MessagesDropped::total: u64
 pub marketdata_core::websocket::ConnectionEvent::ReconnectFailed
 pub marketdata_core::websocket::ConnectionEvent::ReconnectFailed::attempts: u32
 pub marketdata_core::websocket::ConnectionEvent::Reconnecting
@@ -4138,6 +4181,27 @@ impl core::marker::Unpin for marketdata_core::websocket::version::FutOptVersion
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::version::FutOptVersion
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::version::FutOptVersion
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::version::FutOptVersion
+#[non_exhaustive] pub enum marketdata_core::websocket::MessageOverflow
+pub marketdata_core::websocket::MessageOverflow::DropNewest
+pub marketdata_core::websocket::MessageOverflow::Unbounded
+impl core::clone::Clone for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::clone(&self) -> marketdata_core::websocket::config::MessageOverflow
+impl core::cmp::Eq for marketdata_core::websocket::config::MessageOverflow
+impl core::cmp::PartialEq for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::eq(&self, &marketdata_core::websocket::config::MessageOverflow) -> bool
+impl core::default::Default for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::default() -> marketdata_core::websocket::config::MessageOverflow
+impl core::fmt::Debug for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::StructuralPartialEq for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Freeze for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Send for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Sync for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Unpin for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::MessageOverflow
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::MessageOverflow
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::MessageOverflow
 #[non_exhaustive] pub enum marketdata_core::websocket::StockVersion
 pub marketdata_core::websocket::StockVersion::V1_0
 impl marketdata_core::websocket::version::StockVersion
@@ -4166,6 +4230,7 @@ pub marketdata_core::websocket::ConnectionConfig::client_id: core::option::Optio
 pub marketdata_core::websocket::ConnectionConfig::connect_timeout: core::time::Duration
 pub marketdata_core::websocket::ConnectionConfig::event_buffer: usize
 pub marketdata_core::websocket::ConnectionConfig::message_buffer: usize
+pub marketdata_core::websocket::ConnectionConfig::message_overflow: marketdata_core::websocket::config::MessageOverflow
 pub marketdata_core::websocket::ConnectionConfig::read_timeout: core::time::Duration
 pub marketdata_core::websocket::ConnectionConfig::tls: marketdata_core::tls::TlsConfig
 pub marketdata_core::websocket::ConnectionConfig::url: alloc::string::String
@@ -4194,6 +4259,7 @@ pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::connect_time
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::event_buffer(self, usize) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::maybe_client_id(self, core::option::Option<impl core::convert::Into<alloc::string::String>>) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::message_buffer(self, usize) -> Self
+pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::message_overflow(self, marketdata_core::websocket::config::MessageOverflow) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::read_timeout(self, core::time::Duration) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::tls(self, marketdata_core::tls::TlsConfig) -> Self
 impl core::marker::Freeze for marketdata_core::websocket::config::ConnectionConfigBuilder
@@ -4224,17 +4290,31 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::hea
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::health_check::HealthCheckConfig
 pub struct marketdata_core::websocket::MessageReceiver
 impl marketdata_core::websocket::message::MessageReceiver
-pub fn marketdata_core::websocket::message::MessageReceiver::new(std::sync::mpsc::Receiver<marketdata_core::WebSocketMessage>) -> Self
 pub fn marketdata_core::websocket::message::MessageReceiver::receive(&self) -> core::result::Result<marketdata_core::WebSocketMessage, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::message::MessageReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::WebSocketMessage>, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::message::MessageReceiver::try_receive(&self) -> core::option::Option<marketdata_core::WebSocketMessage>
-impl !core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
+impl core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Send for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Sync for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Unpin for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageReceiver
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageReceiver
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageReceiver
+pub struct marketdata_core::websocket::MessageStream
+impl marketdata_core::websocket::message::MessageStream
+pub fn marketdata_core::websocket::message::MessageStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::WebSocketMessage>>
+pub async fn marketdata_core::websocket::message::MessageStream::recv(&mut self) -> core::option::Option<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::message::MessageStream::try_recv(&mut self) -> core::result::Result<marketdata_core::WebSocketMessage, std::sync::mpsc::TryRecvError>
+impl futures_core::stream::Stream for marketdata_core::websocket::message::MessageStream
+pub type marketdata_core::websocket::message::MessageStream::Item = marketdata_core::WebSocketMessage
+pub fn marketdata_core::websocket::message::MessageStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
+impl core::marker::Freeze for marketdata_core::websocket::message::MessageStream
+impl core::marker::Send for marketdata_core::websocket::message::MessageStream
+impl core::marker::Sync for marketdata_core::websocket::message::MessageStream
+impl core::marker::Unpin for marketdata_core::websocket::message::MessageStream
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageStream
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageStream
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageStream
 pub struct marketdata_core::websocket::ReconnectionConfig
 pub marketdata_core::websocket::ReconnectionConfig::enabled: bool
 pub marketdata_core::websocket::ReconnectionConfig::initial_delay: core::time::Duration
@@ -4448,7 +4528,7 @@ impl core::marker::Unpin for marketdata_core::ChannelData
 impl core::marker::UnsafeUnpin for marketdata_core::ChannelData
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::ChannelData
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::ChannelData
-pub enum marketdata_core::ConnectionEvent
+#[non_exhaustive] pub enum marketdata_core::ConnectionEvent
 pub marketdata_core::ConnectionEvent::Authenticated
 pub marketdata_core::ConnectionEvent::Authenticated::data: serde_json::value::Value
 pub marketdata_core::ConnectionEvent::Connected
@@ -4463,6 +4543,9 @@ pub marketdata_core::ConnectionEvent::Error::code: i32
 pub marketdata_core::ConnectionEvent::Error::message: alloc::string::String
 pub marketdata_core::ConnectionEvent::HeartbeatTimeout
 pub marketdata_core::ConnectionEvent::HeartbeatTimeout::elapsed: core::time::Duration
+pub marketdata_core::ConnectionEvent::MessagesDropped
+pub marketdata_core::ConnectionEvent::MessagesDropped::dropped: u64
+pub marketdata_core::ConnectionEvent::MessagesDropped::total: u64
 pub marketdata_core::ConnectionEvent::ReconnectFailed
 pub marketdata_core::ConnectionEvent::ReconnectFailed::attempts: u32
 pub marketdata_core::ConnectionEvent::Reconnecting
@@ -4729,6 +4812,27 @@ impl core::marker::Unpin for marketdata_core::errors::MarketDataError
 impl core::marker::UnsafeUnpin for marketdata_core::errors::MarketDataError
 impl !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::MarketDataError
 impl !core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::MarketDataError
+#[non_exhaustive] pub enum marketdata_core::MessageOverflow
+pub marketdata_core::MessageOverflow::DropNewest
+pub marketdata_core::MessageOverflow::Unbounded
+impl core::clone::Clone for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::clone(&self) -> marketdata_core::websocket::config::MessageOverflow
+impl core::cmp::Eq for marketdata_core::websocket::config::MessageOverflow
+impl core::cmp::PartialEq for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::eq(&self, &marketdata_core::websocket::config::MessageOverflow) -> bool
+impl core::default::Default for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::default() -> marketdata_core::websocket::config::MessageOverflow
+impl core::fmt::Debug for marketdata_core::websocket::config::MessageOverflow
+pub fn marketdata_core::websocket::config::MessageOverflow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::StructuralPartialEq for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Freeze for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Send for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Sync for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::Unpin for marketdata_core::websocket::config::MessageOverflow
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::MessageOverflow
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::MessageOverflow
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::MessageOverflow
 pub enum marketdata_core::OptionRight
 pub marketdata_core::OptionRight::Call
 pub marketdata_core::OptionRight::Put
@@ -5033,6 +5137,7 @@ pub marketdata_core::ConnectionConfig::client_id: core::option::Option<alloc::st
 pub marketdata_core::ConnectionConfig::connect_timeout: core::time::Duration
 pub marketdata_core::ConnectionConfig::event_buffer: usize
 pub marketdata_core::ConnectionConfig::message_buffer: usize
+pub marketdata_core::ConnectionConfig::message_overflow: marketdata_core::websocket::config::MessageOverflow
 pub marketdata_core::ConnectionConfig::read_timeout: core::time::Duration
 pub marketdata_core::ConnectionConfig::tls: marketdata_core::tls::TlsConfig
 pub marketdata_core::ConnectionConfig::url: alloc::string::String
@@ -5462,17 +5567,31 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::IntradayCandle
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::IntradayCandlesResponse
 pub struct marketdata_core::MessageReceiver
 impl marketdata_core::websocket::message::MessageReceiver
-pub fn marketdata_core::websocket::message::MessageReceiver::new(std::sync::mpsc::Receiver<marketdata_core::WebSocketMessage>) -> Self
 pub fn marketdata_core::websocket::message::MessageReceiver::receive(&self) -> core::result::Result<marketdata_core::WebSocketMessage, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::message::MessageReceiver::receive_timeout(&self, core::time::Duration) -> core::result::Result<core::option::Option<marketdata_core::WebSocketMessage>, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::message::MessageReceiver::try_receive(&self) -> core::option::Option<marketdata_core::WebSocketMessage>
-impl !core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
+impl core::marker::Freeze for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Send for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Sync for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::Unpin for marketdata_core::websocket::message::MessageReceiver
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageReceiver
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageReceiver
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageReceiver
+pub struct marketdata_core::MessageStream
+impl marketdata_core::websocket::message::MessageStream
+pub fn marketdata_core::websocket::message::MessageStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::WebSocketMessage>>
+pub async fn marketdata_core::websocket::message::MessageStream::recv(&mut self) -> core::option::Option<marketdata_core::WebSocketMessage>
+pub fn marketdata_core::websocket::message::MessageStream::try_recv(&mut self) -> core::result::Result<marketdata_core::WebSocketMessage, std::sync::mpsc::TryRecvError>
+impl futures_core::stream::Stream for marketdata_core::websocket::message::MessageStream
+pub type marketdata_core::websocket::message::MessageStream::Item = marketdata_core::WebSocketMessage
+pub fn marketdata_core::websocket::message::MessageStream::poll_next(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<Self::Item>>
+impl core::marker::Freeze for marketdata_core::websocket::message::MessageStream
+impl core::marker::Send for marketdata_core::websocket::message::MessageStream
+impl core::marker::Sync for marketdata_core::websocket::message::MessageStream
+impl core::marker::Unpin for marketdata_core::websocket::message::MessageStream
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::message::MessageStream
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::message::MessageStream
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::message::MessageStream
 pub struct marketdata_core::PriceLevel
 pub marketdata_core::PriceLevel::price: f64
 pub marketdata_core::PriceLevel::size: i64

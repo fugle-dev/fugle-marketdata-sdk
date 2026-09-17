@@ -34,7 +34,8 @@ pub use rest::{Auth, RestClient, RetryPolicy};
 // Re-export WebSocket types
 pub use websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
-    MessageReceiver, ReconnectionConfig, WebSocketClient, WebSocketFactory,
+    MessageOverflow, MessageReceiver, MessageStream, ReconnectionConfig, WebSocketClient,
+    WebSocketFactory,
 };
 
 // Re-export WebSocket config constants for binding layers (CON-01).

@@ -86,6 +86,13 @@ impl DropCounter {
         self.inner.metric.increment(1);
     }
 
+    /// Zero the polling count. The `metrics` counter is left alone: it stays
+    /// monotonic, as a recorder expects.
+    #[inline]
+    pub(crate) fn reset(&self) {
+        self.inner.atomic.store(0, Ordering::Relaxed);
+    }
+
     /// Read the underlying atomic value. Used by the polling getters
     /// (`messages_dropped_total`, `events_dropped_total`) so consumers
     /// without the `metrics` feature see the authoritative count.

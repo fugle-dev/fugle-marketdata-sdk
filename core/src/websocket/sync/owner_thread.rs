@@ -7,8 +7,10 @@
 
 use crate::models::WebSocketMessage;
 use crate::websocket::connection_event::{
-    emit_disconnected, emit_event, peer_close_disconnect, will_reconnect_after, DisconnectLatch,
+    emit_disconnected, emit_drop_report, emit_event, peer_close_disconnect, will_reconnect_after,
+    DisconnectLatch,
 };
+use crate::websocket::message_queue::QueueSender;
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, parse_binary_frame, parse_text_frame,
     AuthHandshake, AuthOutcome,
@@ -95,7 +97,7 @@ pub(crate) struct OwnerShared {
     pub state: Arc<RwLock<ConnectionState>>,
     pub subscriptions: Arc<SubscriptionManager>,
     pub event_tx: mpsc::SyncSender<ConnectionEvent>,
-    pub message_tx: mpsc::SyncSender<WebSocketMessage>,
+    pub message_tx: QueueSender<WebSocketMessage>,
     /// Current outbound sender. Replaced on every reconnect so live `subscribe`
     /// callers pick up the new channel via `.lock().clone()`.
     pub write_tx_slot: Mutex<Option<mpsc::SyncSender<String>>>,
@@ -103,7 +105,7 @@ pub(crate) struct OwnerShared {
     /// Ensures a single `Disconnected` per connection when this thread and
     /// a caller-initiated close observe the same close (#41).
     pub disconnect_latch: DisconnectLatch,
-    /// Drop counter for the inbound message channel (drop-newest backpressure).
+    /// Drop counter for the inbound message queue (drop-newest backpressure).
     /// Exposed via `WebSocketClient::messages_dropped_total`. Mirrors to
     /// `metrics_compat::COUNTER_MESSAGES_DROPPED` when the `metrics` feature
     /// is enabled.
@@ -192,8 +194,10 @@ pub(crate) fn set_read_timeout(ws: &mut SyncWs, t: Option<Duration>) {
 pub(crate) fn do_auth_handshake(
     ws: &mut SyncWs,
     config: &ConnectionConfig,
-    message_tx: &mpsc::SyncSender<WebSocketMessage>,
+    message_tx: &QueueSender<WebSocketMessage>,
 ) -> AuthHandshake {
+    // The drop count restarts with each connection, before its auth frames.
+    message_tx.start_connection();
     // Send auth frame
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
@@ -219,7 +223,9 @@ pub(crate) fn do_auth_handshake(
             Ok(Message::Text(text)) => {
                 let parsed = parse_text_frame(&text);
                 if let Ok(ws_msg) = parsed {
-                    let _ = message_tx.try_send(ws_msg.clone());
+                    // No drop report yet: `Authenticated` has not been
+                    // emitted. The owner loop reports these drops.
+                    message_tx.push(ws_msg.clone());
                     match classify_auth_response(&ws_msg) {
                         AuthOutcome::Authenticated(data) => {
                             return AuthHandshake::Authenticated(data);
@@ -307,18 +313,8 @@ fn owner_loop(
                             &shared.subscriptions,
                             &ws_msg,
                         );
-                        // Drop-newest backpressure: full or disconnected receiver
-                        // drops the frame and increments the public counter.
-                        if let Err(mpsc::TrySendError::Full(_)) =
-                            shared.message_tx.try_send(ws_msg)
-                        {
-                            shared.messages_dropped.bump();
-                            warn!(
-                                target: "fugle_marketdata::ws",
-                                dropped_total = shared.messages_dropped.load(),
-                                "message channel saturated; dropping frame (drop-newest)"
-                            );
-                        }
+                        let (_, report) = shared.message_tx.push_and_report(ws_msg);
+                        emit_drop_report(&shared.event_tx, &shared.events_dropped, report);
                     }
                     Err(e) => {
                         emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
@@ -342,16 +338,8 @@ fn owner_loop(
                             &shared.subscriptions,
                             &ws_msg,
                         );
-                        if let Err(mpsc::TrySendError::Full(_)) =
-                            shared.message_tx.try_send(ws_msg)
-                        {
-                            shared.messages_dropped.bump();
-                            warn!(
-                                target: "fugle_marketdata::ws",
-                                dropped_total = shared.messages_dropped.load(),
-                                "message channel saturated; dropping frame (drop-newest)"
-                            );
-                        }
+                        let (_, report) = shared.message_tx.push_and_report(ws_msg);
+                        emit_drop_report(&shared.event_tx, &shared.events_dropped, report);
                     }
                     Err(e) => {
                         emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Error {
@@ -385,6 +373,7 @@ fn owner_loop(
                         &shared.event_tx,
                         &shared.events_dropped,
                         &shared.disconnect_latch,
+                        &shared.message_tx,
                         code,
                         reason,
                         intent,
@@ -418,6 +407,7 @@ fn owner_loop(
                         &shared.event_tx,
                         &shared.events_dropped,
                         &shared.disconnect_latch,
+                        &shared.message_tx,
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
@@ -446,6 +436,7 @@ fn owner_loop(
                     &shared.event_tx,
                     &shared.events_dropped,
                     &shared.disconnect_latch,
+                    &shared.message_tx,
                     None,
                     err_msg,
                     DisconnectIntent::Network,
@@ -476,6 +467,7 @@ fn owner_loop(
                     &shared.event_tx,
                     &shared.events_dropped,
                     &shared.disconnect_latch,
+                    &shared.message_tx,
                     None,
                     format!("Heartbeat timeout after {}ms", window.as_millis()),
                     DisconnectIntent::Network,
@@ -504,6 +496,7 @@ fn owner_loop(
                             &shared.event_tx,
                             &shared.events_dropped,
                             &shared.disconnect_latch,
+                            &shared.message_tx,
                             None,
                             err_msg,
                             DisconnectIntent::Network,

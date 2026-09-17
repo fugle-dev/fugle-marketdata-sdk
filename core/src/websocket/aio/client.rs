@@ -6,18 +6,18 @@ use crate::websocket::aio::reconnect::{tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::{emit_disconnected, emit_event, DisconnectLatch};
+use crate::websocket::message_queue::{QueueReceiver, QueueSender};
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
     frame_unsubscribe,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
-    MessageReceiver, ReconnectionConfig, ReconnectionManager, SubscriptionManager,
+    MessageReceiver, MessageStream, ReconnectionConfig, ReconnectionManager, SubscriptionManager,
 };
 use crate::MarketDataError;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::{mpsc, Arc};
-use tokio::runtime::Handle;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -45,19 +45,16 @@ pub struct WebSocketClient {
     /// `tokio::time::timeout`; no separate runtime struct or background
     /// polling task is needed.
     health_check_config: HealthCheckConfig,
-    /// Inbound message channel (tokio mpsc). Producer side handed to
-    /// `dispatch_messages` and auth handshake; consumer side is taken
-    /// either by `messages()` (lazily spawns bridge to std mpsc for FFI)
-    /// or by `message_stream()` (returns the tokio receiver directly).
-    /// The two consumers are mutually exclusive — see method docs.
-    message_tx: tokio_mpsc::Sender<WebSocketMessage>,
-    message_rx: Arc<std::sync::Mutex<Option<tokio_mpsc::Receiver<WebSocketMessage>>>>,
-    /// Cached `MessageReceiver` for FFI consumers. Initialized lazily on
-    /// first `messages()` call, when we spawn the bridge task that drains
-    /// the tokio receiver into a `std::sync::mpsc::Sender`.
+    /// Inbound message queue. The client keeps a sender so the queue stays
+    /// open until the client is dropped; the auth handshake and the
+    /// dispatch task push through clones. The receiver is taken by either
+    /// `messages()` or `message_stream()` — see method docs.
+    message_tx: QueueSender<WebSocketMessage>,
+    message_rx: Arc<std::sync::Mutex<Option<QueueReceiver<WebSocketMessage>>>>,
+    /// Cached `MessageReceiver`, created by the first `messages()` call.
     message_receiver: Arc<std::sync::Mutex<Option<Arc<MessageReceiver>>>>,
     /// Monotonic counter incremented every time the inbound message
-    /// channel is saturated and a frame is dropped (drop-newest policy).
+    /// queue is full and a frame is dropped (drop-newest policy).
     /// Exposed via [`Self::messages_dropped_total`]. Mirrors to the
     /// `metrics` recorder under counter
     /// [`crate::metrics_compat::COUNTER_MESSAGES_DROPPED`] when the
@@ -81,20 +78,6 @@ pub struct WebSocketClient {
     // Internal handles
     dispatch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    // `Arc` on the two fields below keeps `WebSocketClient: Freeze`; a bare
-    // `std::sync::Mutex` field would flip it and drift `core/PUBLIC-API.txt`.
-    /// Bridge requested by [`WebSocketClient::messages`] that has no
-    /// runtime to run on yet; attached once one is known.
-    pending_bridge: Arc<std::sync::Mutex<Option<PendingBridge>>>,
-    /// Runtime that ran [`WebSocketClient::connect`]. The `messages()`
-    /// bridge is spawned here so FFI callers need no ambient runtime.
-    runtime_handle: Arc<std::sync::Mutex<Option<Handle>>>,
-}
-
-/// Ends of the tokio → std message bridge, parked until a runtime is bound.
-struct PendingBridge {
-    tokio_rx: tokio_mpsc::Receiver<WebSocketMessage>,
-    std_tx: mpsc::Sender<WebSocketMessage>,
 }
 
 /// Default drain timeout for [`WebSocketClient::disconnect`] when no
@@ -151,13 +134,14 @@ impl WebSocketClient {
         health_check_config: HealthCheckConfig,
     ) -> Self {
         let (event_tx, event_rx) = mpsc::sync_channel(config.event_buffer);
-        let (message_tx, message_rx) = tokio_mpsc::channel(config.message_buffer);
 
         // `metrics` feature integration: register counter descriptions and
         // build per-client counters labelled with endpoint + client_id.
         // No-op without `feature = "metrics"`.
         let (messages_dropped, events_dropped) =
             crate::metrics_compat::build_drop_counters(&config);
+        let (message_tx, message_rx) =
+            crate::websocket::message_queue::queue(config.message_capacity(), messages_dropped.clone());
 
         Self {
             config,
@@ -178,13 +162,11 @@ impl WebSocketClient {
             disconnect_latch: Arc::new(DisconnectLatch::default()),
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
-            pending_bridge: Arc::new(std::sync::Mutex::new(None)),
-            runtime_handle: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
-    /// Total number of inbound messages dropped due to consumer-side
-    /// channel saturation since this client was constructed.
+    /// Number of inbound messages dropped because the message queue was
+    /// full, counted from the start of the current connection.
     ///
     /// Frames are dropped under the **drop-newest** backpressure policy:
     /// when `message_buffer` is full, new arrivals are discarded rather
@@ -192,8 +174,10 @@ impl WebSocketClient {
     /// indicates the downstream consumer (your `messages()` /
     /// `message_stream()` reader) is too slow or stalled.
     ///
-    /// Counter is monotonic and thread-safe (`AtomicU64`). Reset only by
-    /// constructing a new client.
+    /// Thread-safe. Restarts from zero when `connect()` or a reconnect
+    /// attempt opens a new connection; after `disconnect()` it still reads the last
+    /// connection's count. With the `metrics` feature the exported counter
+    /// is not reset and keeps counting across connections.
     pub fn messages_dropped_total(&self) -> u64 {
         self.messages_dropped.load()
     }
@@ -300,6 +284,7 @@ impl WebSocketClient {
     /// - `Reconnecting { attempt }` - Reconnection attempt started
     /// - `ReconnectFailed { attempts }` - Reconnection failed after max attempts
     /// - `HeartbeatTimeout { elapsed }` - Liveness window elapsed (precedes `Disconnected`)
+    /// - `MessagesDropped { dropped, total }` - Inbound messages dropped (queue full)
     /// - `Error { message, code }` - Error occurred
     ///
     /// See [`connection_event`](crate::websocket::connection_event) for the
@@ -339,28 +324,18 @@ impl WebSocketClient {
     /// Get reference to message receiver for FFI consumers
     ///
     /// Returns a blocking-API receiver suitable for FFI bindings (PyO3, napi,
-    /// UniFFI). Internally the SDK uses a tokio mpsc channel; the first call
-    /// to this method sets up a lightweight bridge task that drains the tokio
-    /// receiver into a `std::sync::mpsc::Sender`. Subsequent calls return the
-    /// same cached `Arc<MessageReceiver>`.
+    /// UniFFI) that reads the client's inbound message queue directly.
+    /// Subsequent calls return the same cached `Arc<MessageReceiver>`.
     ///
-    /// Does not require a tokio runtime context: it may be called from any
-    /// thread, before or after [`connect`]. The bridge is spawned once, on
-    /// the first runtime available to it: the runtime of an earlier
-    /// [`connect`] if there was one, else the caller's ambient runtime, else
-    /// (called outside any runtime before `connect`) the runtime of the next
-    /// `connect`. It then stays on that runtime — a later `connect` on a
-    /// different runtime does not move it. No messages arrive before
-    /// `connect` either way. If that runtime has been dropped, the receiver
-    /// reports a closed channel.
+    /// Needs no tokio runtime: it may be called from any thread, before or
+    /// after [`connect`]. Messages arrive once `connect` has authenticated.
+    /// The receiver reports a closed channel once the client has been
+    /// dropped and every queued message has been read.
     ///
     /// **Mutually exclusive with [`message_stream`]**: only one of the two
-    /// methods may take ownership of the underlying tokio receiver. Calling
-    /// `messages()` after `message_stream()` (or vice versa) will panic with
-    /// a descriptive message.
-    ///
-    /// Pure-async Rust callers should prefer [`message_stream`] to avoid the
-    /// std-mpsc bridge hop.
+    /// methods may take the queue's receiver. Calling `messages()` after
+    /// `message_stream()` (or vice versa) will panic with a descriptive
+    /// message.
     ///
     /// [`message_stream`]: Self::message_stream
     /// [`connect`]: Self::connect
@@ -369,89 +344,38 @@ impl WebSocketClient {
         if let Some(rx) = slot.as_ref() {
             return Arc::clone(rx);
         }
-        let tokio_rx = self
+        let rx = self
             .message_rx
             .lock()
             .expect("message_rx poisoned")
             .take()
             .expect("message_stream() already consumed the message receiver");
-        let (std_tx, std_rx) = mpsc::channel();
-        *self.pending_bridge.lock().expect("pending_bridge poisoned") =
-            Some(PendingBridge { tokio_rx, std_tx });
-        self.try_attach_bridge();
-        let receiver = Arc::new(MessageReceiver::new(std_rx));
+        let receiver = Arc::new(MessageReceiver::new(rx));
         *slot = Some(Arc::clone(&receiver));
         receiver
     }
 
     /// Get the async message stream for pure-Rust async consumers.
     ///
-    /// Returns the underlying tokio mpsc receiver, allowing direct `.recv().await`
-    /// or use with `tokio_stream::wrappers::ReceiverStream` for `Stream`-based
-    /// processing. Avoids the std-mpsc bridge hop that [`messages`] incurs.
+    /// Returns a [`MessageStream`] over the client's inbound message queue:
+    /// `.recv().await`, `try_recv()`, or use it as a `futures::Stream`.
     ///
     /// **Mutually exclusive with [`messages`]**: takes ownership of the
     /// receiver; can only be called once per client and panics if [`messages`]
     /// has already been called (or this method called twice).
     ///
     /// [`messages`]: Self::messages
-    pub fn message_stream(&self) -> tokio_mpsc::Receiver<WebSocketMessage> {
-        self.message_rx
+    pub fn message_stream(&self) -> MessageStream {
+        let rx = self
+            .message_rx
             .lock()
             .expect("message_rx poisoned")
             .take()
             .expect(
                 "message receiver already taken — `messages()` or `message_stream()` may only be \
                  called once between them",
-            )
-    }
-
-    /// Spawn the pending `messages()` bridge if a runtime is available:
-    /// the one bound by [`connect`](Self::connect), else the ambient one.
-    /// Without either, the bridge stays pending until `connect` binds one.
-    fn try_attach_bridge(&self) {
-        // Lock order makes a concurrent `messages()` / first `connect()` on
-        // different threads always spawn the bridge: `runtime_handle` is
-        // read while holding `pending_bridge`, and `bind_runtime` writes
-        // `runtime_handle` before taking `pending_bridge`. If this call
-        // reads `None`, that write comes later, so `bind_runtime`'s own
-        // attach blocks until this lock is released and then finds the
-        // bridge still pending. If `bind_runtime` attaches first and finds
-        // nothing pending, the handle is already written for this read.
-        let mut pending = self.pending_bridge.lock().expect("pending_bridge poisoned");
-        if pending.is_none() {
-            return;
-        }
-        let bound = self
-            .runtime_handle
-            .lock()
-            .expect("runtime_handle poisoned")
-            .clone();
-        let Some(handle) = bound.or_else(|| Handle::try_current().ok()) else {
-            return;
-        };
-        let bridge = pending.take().expect("checked above");
-        // Detached: the bridge ends when every tokio sender is gone (the
-        // client and its dispatch task) or the consumer drops the
-        // `MessageReceiver`. On a runtime that has already shut down the
-        // task is dropped at once, closing `std_tx`.
-        drop(handle.spawn(async move {
-            let PendingBridge {
-                mut tokio_rx,
-                std_tx,
-            } = bridge;
-            while let Some(msg) = tokio_rx.recv().await {
-                if std_tx.send(msg).is_err() {
-                    break;
-                }
-            }
-        }));
-    }
-
-    /// Record the runtime running `connect()` and attach any pending bridge.
-    fn bind_runtime(&self) {
-        *self.runtime_handle.lock().expect("runtime_handle poisoned") = Some(Handle::current());
-        self.try_attach_bridge();
+            );
+        MessageStream::new(rx)
     }
 
     /// Connect to WebSocket server and authenticate
@@ -482,10 +406,6 @@ impl WebSocketClient {
         if self.dispatch_task_running().await {
             return Ok(());
         }
-
-        // Every background task — dispatch, writer and the `messages()`
-        // bridge — runs on the runtime driving this call.
-        self.bind_runtime();
 
         // Update state to Connecting
         {
@@ -701,10 +621,8 @@ impl WebSocketClient {
         )
         .await;
 
-        // 5. Force-abort background tasks if drain budget elapsed. The
-        //    `messages()` bridge is deliberately left alone: aborting it
-        //    would discard messages still being drained to the consumer.
-        //    It exits when the client is dropped.
+        // 5. Force-abort background tasks if drain budget elapsed. Messages
+        //    already queued stay readable until the client is dropped.
         if drained.is_err() {
             self.abort_background_tasks().await;
         }
@@ -731,6 +649,7 @@ impl WebSocketClient {
             &self.event_tx,
             &self.events_dropped,
             &self.disconnect_latch,
+            &self.message_tx,
             Some(1000),
             "Normal closure".to_string(),
             DisconnectIntent::Client,
@@ -829,8 +748,7 @@ impl WebSocketClient {
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
     /// validation, or peer-initiated failures.
     pub async fn force_close(&self) -> Result<(), MarketDataError> {
-        // The `messages()` bridge is not aborted: it still delivers what is
-        // already queued, then exits when the client is dropped.
+        // Messages already queued stay readable until the client is dropped.
 
         // Abort dispatch task without waiting (read-site liveness timeout
         // tears down with it; no separate health-check task to abort).
@@ -873,6 +791,7 @@ impl WebSocketClient {
             &self.event_tx,
             &self.events_dropped,
             &self.disconnect_latch,
+            &self.message_tx,
             Some(1006),
             "Force closed".to_string(),
             DisconnectIntent::Client,
@@ -1144,7 +1063,6 @@ impl WebSocketClient {
         let write_tx_slot = Arc::clone(&self.write_tx);
         let writer_handle = Arc::clone(&self.writer_handle);
         let subscriptions = Arc::clone(&self.subscriptions);
-        let messages_dropped = self.messages_dropped.clone();
         let events_dropped = self.events_dropped.clone();
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
         let disconnect_latch = Arc::clone(&self.disconnect_latch);
@@ -1160,7 +1078,6 @@ impl WebSocketClient {
                     events_dropped.clone(),
                     heartbeat_timeout,
                     Arc::clone(&subscriptions),
-                    messages_dropped.clone(),
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&disconnect_latch),
                     Arc::clone(&reconnection),

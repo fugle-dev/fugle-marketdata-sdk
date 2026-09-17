@@ -5,6 +5,7 @@ use crate::models::{WebSocketMessage};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::{emit_event, DisconnectLatch};
+use crate::websocket::message_queue::QueueSender;
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_subscribe_raw, AuthHandshake, AuthOutcome,
 };
@@ -35,16 +36,19 @@ pub(crate) fn tls_connector_for(
 
 /// Send the auth frame, then read frames off `ws_read` until a terminal
 /// auth outcome arrives or `auth_timeout` elapses. Each text frame is
-/// forwarded to `message_tx` so subscribers see the auth payloads. Shared by
+/// pushed to `message_tx` so subscribers see the auth payloads; a full
+/// queue drops them rather than stalling the handshake. Shared by
 /// `WebSocketClient::connect` and `try_connect` so the auth protocol cannot
 /// drift between fresh-connect and reconnect.
 pub(crate) async fn authenticate(
     ws_sink: &mut WsSink,
     ws_read: &mut WsStream,
     config: &ConnectionConfig,
-    message_tx: &tokio_mpsc::Sender<WebSocketMessage>,
+    message_tx: &QueueSender<WebSocketMessage>,
     auth_timeout: Duration,
 ) -> AuthHandshake {
+    // The drop count restarts with each connection, before its auth frames.
+    message_tx.start_connection();
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
         Err(e) => return AuthHandshake::Failed(e),
@@ -59,7 +63,7 @@ pub(crate) async fn authenticate(
 /// `auth_timeout` elapses.
 pub(crate) async fn await_auth_response(
     ws_read: &mut WsStream,
-    message_tx: &tokio_mpsc::Sender<WebSocketMessage>,
+    message_tx: &QueueSender<WebSocketMessage>,
     auth_timeout: Duration,
 ) -> AuthHandshake {
     let result = timeout(auth_timeout, async {
@@ -67,7 +71,9 @@ pub(crate) async fn await_auth_response(
             match msg_result {
                 Ok(Message::Text(text)) => {
                     if let Ok(ws_msg) = crate::websocket::protocol::parse_text_frame(&text) {
-                        let _ = message_tx.send(ws_msg.clone()).await;
+                        // No drop report yet: `Authenticated` has not been
+                        // emitted. The dispatch loop reports these drops.
+                        message_tx.push(ws_msg.clone());
                         match classify_auth_response(&ws_msg) {
                             AuthOutcome::Authenticated(data) => {
                                 return AuthHandshake::Authenticated(data)
@@ -118,7 +124,7 @@ pub(crate) async fn try_reconnect(
     write_tx_slot: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     subscriptions: Arc<SubscriptionManager>,
-    message_tx: tokio_mpsc::Sender<WebSocketMessage>,
+    message_tx: QueueSender<WebSocketMessage>,
     disconnect_latch: Arc<DisconnectLatch>,
     shutdown_requested: Arc<AtomicBool>,
 ) -> Option<WsStream> {
@@ -290,7 +296,7 @@ pub(crate) async fn try_connect(
     state: SharedState,
     event_tx: mpsc::SyncSender<ConnectionEvent>,
     events_dropped: DropCounter,
-    message_tx: tokio_mpsc::Sender<WebSocketMessage>,
+    message_tx: QueueSender<WebSocketMessage>,
     shutdown_requested: &AtomicBool,
 ) -> Result<(WsSink, WsStream), MarketDataError> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
