@@ -2,7 +2,7 @@
 # Check C++ UniFFI bindings regenerated in place against the committed ones.
 #
 # Usage (after regenerating into bindings/cpp/):
-#   scripts/check-cpp-bindings.sh [<ref>]    # <ref> defaults to HEAD
+#   scripts/check-cpp-bindings.sh
 #
 # uniffi-bindgen-cpp v0.9.0+v0.29.4 emits the declarations of types that do
 # not depend on each other in a varying order, so marketdata_uniffi.hpp is
@@ -12,26 +12,21 @@
 # printed.
 set -euo pipefail
 
-ref="${1:-HEAD}"
 dir=bindings/cpp
 hpp="$dir/marketdata_uniffi.hpp"
 fail=0
 
-if [ "$ref" = HEAD ]; then
-  others=$(git status --porcelain -- "$dir" ":(exclude)$hpp")
-else
-  others=$(git diff --name-status "$ref" -- "$dir" ":(exclude)$hpp"; git ls-files --others --exclude-standard -- "$dir")
-fi
+others=$(git status --porcelain -- "$dir" ":(exclude)$hpp")
 if [ -n "$others" ]; then
   echo "$others"
-  git diff "$ref" -- "$dir" ":(exclude)$hpp"
+  git diff -- "$dir" ":(exclude)$hpp"
   fail=1
 fi
 
-if [ ! -f "$hpp" ] || ! git cat-file -e "$ref:$hpp" 2>/dev/null \
-  || ! cmp -s <(git show "$ref:$hpp" | LC_ALL=C sort) <(LC_ALL=C sort "$hpp"); then
+if [ ! -f "$hpp" ] || ! git cat-file -e "HEAD:$hpp" 2>/dev/null \
+  || ! cmp -s <(git show "HEAD:$hpp" | LC_ALL=C sort) <(LC_ALL=C sort "$hpp"); then
   echo "$hpp differs beyond declaration order:"
-  git diff "$ref" -- "$hpp"
+  git diff -- "$hpp"
   fail=1
 fi
 
