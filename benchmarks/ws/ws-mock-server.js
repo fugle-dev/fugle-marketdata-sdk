@@ -2,8 +2,10 @@
 /**
  * Mock WebSocket server that simulates the Fugle market data protocol.
  *
- * Listens on /stock/streaming (matching what both old and new SDKs append to
- * baseUrl). On connection:
+ * Listens on /stock/streaming (what the legacy JS / Python SDKs append to
+ * baseUrl) and /v1.0/stock/streaming (what the Rust core appends: the
+ * streaming version, then the endpoint). Any other path is rejected with 400.
+ * On connection:
  *   1. Waits for {"event":"auth",...} from client
  *   2. Replies {"event":"authenticated"}
  *   3. Waits for {"event":"subscribe",...}
@@ -68,7 +70,18 @@ function buildWarmupMsg(serial) {
 // Server
 // ---------------------------------------------------------------------------
 const server = http.createServer();
-const wss = new WebSocketServer({ server, path: '/stock/streaming' });
+const STREAMING_PATHS = new Set(['/stock/streaming', '/v1.0/stock/streaming']);
+const wss = new WebSocketServer({
+  server,
+  verifyClient: (info, callback) => {
+    const { pathname } = new URL(info.req.url, 'http://localhost');
+    if (STREAMING_PATHS.has(pathname)) {
+      callback(true);
+    } else {
+      callback(false, 400);
+    }
+  },
+});
 
 wss.on('connection', (ws) => {
   let authenticated = false;
