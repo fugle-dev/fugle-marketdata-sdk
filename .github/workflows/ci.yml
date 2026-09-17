@@ -143,8 +143,8 @@ jobs:
       - name: Generated loader and types are committed
         run: git diff --exit-code -- js/index.js js/index.d.ts
 
-  # Also checks the Java and C++ generated sources. The job name stays as-is
-  # because it is a required status check on main.
+  # Also checks the Java and C++ generated sources and runs the Java tests.
+  # The job name stays as-is because it is a required status check on main.
   uniffi:
     name: UniFFI bindings (C#, Go)
     runs-on: ubuntu-latest
@@ -164,6 +164,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
 
       # uniffi-bindgen-cpp needs the library built with the `cpp` feature
       # (async methods stripped). Build it first and move it aside: the plain
@@ -286,32 +291,46 @@ jobs:
           CGO_ENABLED: '1'
         run: go test -short ./...
 
-  # Compiles the Java sources (including examples/, which build.gradle.kts puts
-  # in the main source set) and runs the tests that do not need the native
-  # library; tests that construct a client skip here. java.yml / test.yml keep
-  # the full native-library test matrix behind workflow_dispatch.
-  java:
-    name: Java binding (compile)
-    runs-on: ubuntu-latest
+      # The benchmark implements WebSocketListener directly, so an interface
+      # change breaks it; nothing else compiles it. It needs the compiled SDK
+      # classes and JNA, which compileJava resolves into ~/.gradle. Also
+      # compiles examples/, which build.gradle.kts puts in the main source set.
+      - name: Java sources, examples and benchmark compile
+        run: |
+          (cd bindings/java && ./gradlew compileJava compileTestJava --no-daemon)
+          JNA_JAR=$(find ~/.gradle -name 'jna-5*.jar' | head -1)
+          [ -n "$JNA_JAR" ] || { echo "::error::JNA jar not found under ~/.gradle"; exit 1; }
+          javac -cp bindings/java/build/classes/java/main:"$JNA_JAR" \
+            -d "$RUNNER_TEMP/java-bench" benchmarks/ws/java/WebSocketBenchmark.java
+
+      # build.gradle.kts points jna.library.path at target/release. Without
+      # the library every test that builds a client skipped (38 of 115), so
+      # JNA call failures never showed up; -PrequireNative makes a library
+      # that fails to load fail those tests instead.
+      - name: Java tests
+        working-directory: bindings/java
+        run: ./gradlew test -PexcludeTags=integration -PrequireNative --no-daemon
+
+  # Same Java tests against the macOS arm64 library. JNA calls can depend on
+  # the platform calling convention: a constructor with ten by-value
+  # RustBuffer arguments panicked through JNA on macOS arm64 while C# and Go
+  # were fine (#91, #112). Not a required check.
+  java-macos:
+    name: Java binding (macOS arm64)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-java-macos
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
           cache: gradle
-      - name: Compile sources, examples and tests
+      - name: Build native library
+        run: cargo build --locked --release -p marketdata-uniffi
+      - name: Java tests
         working-directory: bindings/java
-        run: ./gradlew compileJava compileTestJava --no-daemon
-      # The benchmark implements WebSocketListener directly, so an interface
-      # change breaks it; nothing else compiles it. It needs the compiled SDK
-      # classes and JNA, which compileJava has just resolved into ~/.gradle.
-      - name: Java benchmark compiles
-        run: |
-          JNA_JAR=$(find ~/.gradle -name 'jna-5*.jar' | head -1)
-          [ -n "$JNA_JAR" ] || { echo "::error::JNA jar not found under ~/.gradle"; exit 1; }
-          javac -cp bindings/java/build/classes/java/main:"$JNA_JAR" \
-            -d "$RUNNER_TEMP/java-bench" benchmarks/ws/java/WebSocketBenchmark.java
-      - name: Structural tests (no native library)
-        working-directory: bindings/java
-        run: ./gradlew test -PexcludeTags=integration --no-daemon
+        run: ./gradlew test -PexcludeTags=integration -PrequireNative --no-daemon

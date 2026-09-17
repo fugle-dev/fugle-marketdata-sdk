@@ -45,13 +45,34 @@ workspace (`0.29.4`):
 cargo install uniffi-bindgen-cs   --git https://github.com/NordSecurity/uniffi-bindgen-cs   --tag v0.10.0+v0.29.4
 cargo install uniffi-bindgen-go   --git https://github.com/NordSecurity/uniffi-bindgen-go   --tag v0.5.0+v0.29.5
 cargo install uniffi-bindgen-cpp  --git https://github.com/NordSecurity/uniffi-bindgen-cpp  --tag v0.9.0+v0.29.4
-cargo install uniffi-bindgen-java --git https://github.com/NordSecurity/uniffi-bindgen-java --tag v0.1.0+v0.29.4
+cargo install uniffi-bindgen-java --git https://github.com/IronCoreLabs/uniffi-bindgen-java --tag 0.2.1 --locked
 
 # C# output is formatted with CSharpier 1.x when it is on PATH; CI pins 1.3.0
 dotnet tool install -g csharpier --version 1.3.0
 
 make gen-csharp gen-go   # committed; CI fails if these drift
 make gen-cpp gen-java
+```
+
+## Adding UniFFI Functions
+
+Keep the number of by-value `String`, `Vec` and record arguments small on
+exported functions and constructors; group related parameters into a
+`uniffi::Record` instead. Each of those arguments crosses the FFI as a
+`RustBuffer` struct passed by value, and JNA (Java) does not always marshal a
+long list of them correctly. A constructor taking ten `RustBuffer` arguments
+panicked with `RustBuffer length exceeds capacity` from Java on macOS arm64
+while C# and Go worked (#91); packing the three credentials into one record
+fixed it.
+
+CI runs the Java tests with the native library loaded on Linux x86_64 and
+macOS arm64 (`-PrequireNative`, so a library that fails to load fails the
+tests instead of skipping them). Run them locally before adding a signature
+like this:
+
+```bash
+cargo build -p marketdata-uniffi --release
+cd bindings/java && ./gradlew test -PexcludeTags=integration -PrequireNative
 ```
 
 ## Language-Specific Usage
