@@ -351,8 +351,11 @@ func (sc *StreamingClient) QuerySubscriptions() error {
 
 // Close disconnects and closes all channels
 func (sc *StreamingClient) Close() error {
-	sc.client.Disconnect()
+	// Channels first: Disconnect waits for the listener to handle the last
+	// events (#126), which a send blocked on a full channel nobody reads
+	// would never let happen.
 	sc.channel.Close()
+	sc.client.Disconnect()
 	sc.client.Destroy()
 	return nil
 }

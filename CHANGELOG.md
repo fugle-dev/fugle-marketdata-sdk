@@ -247,6 +247,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after the call returned. `disconnect()` therefore also waits for calls still
   in flight on the same client from other threads (`subscribe()`, `ping()`, …)
   to return (#54).
+- **C#, Go, Java, C++**: WebSocket `disconnect()` (`DisconnectAsync()`,
+  `Disconnect()`, `disconnect_sync()`) returns only after the listener has
+  handled the connection's remaining events, including the last
+  `on_messages_dropped` and `on_disconnected`, as in Python. Before, these
+  could arrive after it returned (#126). A slow listener now also slows
+  `disconnect()` down. Called from a listener method, `disconnect()` returns
+  without waiting, since those events come on that same thread once the method
+  returns. This holds for the Java wrapper's `FugleWebSocketClient`. Calling the
+  generated Java `WebSocketClient.disconnect()` from a listener method and
+  blocking on its future still never returns. The Go `StreamingClient.Close()`
+  now closes its channels before disconnecting, so a full `Messages()` or
+  `Errors()` channel that nobody reads can no longer block it.
 
 ### Breaking
 

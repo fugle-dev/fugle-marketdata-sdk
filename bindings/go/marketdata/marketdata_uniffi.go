@@ -1158,7 +1158,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect()
 		})
-		if checksum != 57258 {
+		if checksum != 7387 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect: UniFFI API checksum mismatch")
 		}
@@ -4467,6 +4467,12 @@ func (_ FfiDestroyerStockTechnicalClient) Destroy(value *StockTechnicalClient) {
 // WebSocketListener implementation via a background task.
 type WebSocketClientInterface interface {
 	Connect() error
+	// Disconnect, returning once the listener has handled the connection's
+	// remaining events, `on_disconnected` included.
+	//
+	// Called from a listener method, it returns without that wait: those
+	// events are delivered on the thread running the method, after it
+	// returns.
 	Disconnect()
 	// Check if the connection has ended
 	//
@@ -4650,6 +4656,12 @@ func (_self *WebSocketClient) Connect() error {
 	return err
 }
 
+// Disconnect, returning once the listener has handled the connection's
+// remaining events, `on_disconnected` included.
+//
+// Called from a listener method, it returns without that wait: those
+// events are delivered on the thread running the method, after it
+// returns.
 func (_self *WebSocketClient) Disconnect() {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()

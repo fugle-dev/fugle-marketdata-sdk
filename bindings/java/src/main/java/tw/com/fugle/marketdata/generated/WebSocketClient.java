@@ -146,6 +146,14 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     }
 
   
+    /**
+     * Disconnect, returning once the listener has handled the connection's
+     * remaining events, `on_disconnected` included.
+     *
+     * Called from a listener method, it returns without that wait: those
+     * events are delivered on the thread running the method, after it
+     * returns.
+     */
     @Override
     
     public CompletableFuture<Void> disconnect(){
