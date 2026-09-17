@@ -723,6 +723,9 @@ impl WebSocketClient {
                 h.abort();
             }
         }
+        // The writer is aborted without waiting; a write it fails meanwhile
+        // belongs to the connection being closed, not reported (#105).
+        retire_writer(&self.writer_generation);
 
         // Abort writer task and clear sender
         {
