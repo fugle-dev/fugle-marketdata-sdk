@@ -1,4 +1,4 @@
-"""GIL safety stress tests for WebSocket streaming.
+"""GIL safety stress tests for async REST calls and WebSocket streaming.
 
 These tests verify that async operations properly release the GIL, preventing deadlocks.
 GIL deadlock would cause test timeouts or hangs. All tests use timeouts as deadlock detection.
@@ -8,6 +8,7 @@ import pytest
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from fugle_marketdata import AuthError, RestClient
 from tests.ws_loopback import LoopbackServer, disconnect_quietly, product_ws
 
 
@@ -21,64 +22,53 @@ class TestGilSafety:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)
-    async def test_concurrent_async_tasks(self, mock_api_key):
+    async def test_concurrent_async_tasks(self, mock_api_key, rest_server):
         """Multiple concurrent async tasks should not deadlock.
 
         This test spawns multiple concurrent async tasks. If the GIL is held
         during await operations, tasks would block each other and timeout.
+        The loopback server runs on a thread of this process, so it could not
+        answer either (#71).
         """
-        from fugle_marketdata import RestClient
+        client = RestClient(api_key=mock_api_key, base_url=rest_server.url)
 
-        client = RestClient(api_key=mock_api_key)
+        # Run 10 concurrent requests - would deadlock if GIL held during await
+        results = await asyncio.gather(
+            *(client.stock.intraday.quote_async("2330") for _ in range(10)),
+            return_exceptions=True,
+        )
 
-        # Spawn multiple concurrent tasks
-        async def make_request():
-            try:
-                # This will fail with mock key, but we're testing GIL behavior
-                await asyncio.to_thread(lambda: client.stock.intraday.quote_async("2330"))
-            except Exception:
-                pass  # Expected to fail with mock key
-
-        # Run 10 concurrent tasks - would deadlock if GIL held during await
-        tasks = [make_request() for _ in range(10)]
-        await asyncio.gather(*tasks, return_exceptions=True)
-        # Test passes if no hang/timeout
+        assert all(isinstance(r, AuthError) for r in results), results
+        assert len(rest_server.requests) == 10
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)
-    async def test_async_with_thread_pool(self, mock_api_key):
+    async def test_async_with_thread_pool(self, mock_api_key, rest_server):
         """Async operations should work alongside thread pool executor.
 
         This test mixes async and threaded sync operations. If GIL handling
         is incorrect, thread pool tasks would deadlock with async tasks.
         """
-        from fugle_marketdata import RestClient
-
-        client = RestClient(api_key=mock_api_key)
+        client = RestClient(api_key=mock_api_key, base_url=rest_server.url)
 
         def sync_work():
             """Simulate CPU-bound work in thread."""
             time.sleep(0.1)
             return "done"
 
-        async def async_request():
-            try:
-                await asyncio.to_thread(lambda: client.stock.intraday.quote_async("2330"))
-            except Exception:
-                pass
-
         # Run async and sync concurrently
         with ThreadPoolExecutor(max_workers=4) as executor:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             # Mix of async and sync tasks
-            async_task = asyncio.create_task(async_request())
+            async_request = client.stock.intraday.quote_async("2330")
             thread_future = loop.run_in_executor(executor, sync_work)
 
-            results = await asyncio.gather(async_task, thread_future, return_exceptions=True)
+            results = await asyncio.gather(async_request, thread_future, return_exceptions=True)
 
-            # Thread work should complete even if async fails
-            assert any(r == "done" for r in results if not isinstance(r, Exception))
+        assert isinstance(results[0], AuthError), results
+        assert results[1] == "done"
+        assert len(rest_server.requests) == 1
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(15)
@@ -140,16 +130,3 @@ class TestGilSafety:
         # If GIL was held, monitors would be blocked
         assert len(completed_tasks) >= 3, f"Only {len(completed_tasks)} monitor iterations completed"
 
-
-# Manual testing note for developers:
-#
-# For production GIL verification with real API key:
-#   FUGLE_API_KEY=your_real_key pytest tests/test_gil_safety.py -v --timeout=30
-#
-# Monitor for hangs during concurrent operations. All tests should complete
-# within their timeout periods without hanging.
-#
-# Additional stress test (not automated):
-#   - Run with higher concurrency (50+ tasks)
-#   - Monitor system resources
-#   - Watch for thread deadlocks or hangs

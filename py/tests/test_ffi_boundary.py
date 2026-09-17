@@ -19,7 +19,12 @@ import sys
 
 
 class TestErrorHandlingBoundary:
-    """Test Rust error to Python exception mapping."""
+    """Test Rust error to Python exception mapping.
+
+    REST calls in this file go to the ``rest_server`` loopback fixture, which
+    answers 401 like the real API does for a bad key, so no test needs
+    network (#71).
+    """
 
     @pytest.fixture
     def mock_api_key(self):
@@ -27,11 +32,11 @@ class TestErrorHandlingBoundary:
         return "mock_api_key_for_boundary_testing"
 
     @pytest.mark.asyncio
-    async def test_invalid_symbol_raises_typed_error(self, mock_api_key):
+    async def test_invalid_symbol_raises_typed_error(self, mock_api_key, rest_server):
         """Invalid symbol should raise specific error type (not base MarketDataError)."""
         from fugle_marketdata import RestClient, MarketDataError
 
-        client = RestClient(api_key=mock_api_key)
+        client = RestClient(api_key=mock_api_key, base_url=rest_server.url)
 
         # Invalid symbol should raise a specific error subclass
         with pytest.raises(MarketDataError) as exc_info:
@@ -46,12 +51,12 @@ class TestErrorHandlingBoundary:
         assert isinstance(msg, str)
 
     @pytest.mark.asyncio
-    async def test_auth_error_type_mapping(self, mock_api_key):
+    async def test_auth_error_type_mapping(self, mock_api_key, rest_server):
         """Authentication failure should raise AuthError."""
         from fugle_marketdata import RestClient, AuthError, MarketDataError
 
-        # Mock key will likely fail authentication
-        client = RestClient(api_key=mock_api_key)
+        # The loopback server rejects every key
+        client = RestClient(api_key=mock_api_key, base_url=rest_server.url)
 
         try:
             await client.stock.intraday.quote_async("2330")
@@ -67,11 +72,11 @@ class TestErrorHandlingBoundary:
             assert len(str(e)) > 0
 
     @pytest.mark.asyncio
-    async def test_error_message_no_corruption(self, mock_api_key):
+    async def test_error_message_no_corruption(self, mock_api_key, rest_server):
         """Error messages should be valid strings (no memory corruption)."""
         from fugle_marketdata import RestClient, MarketDataError
 
-        client = RestClient(api_key=mock_api_key)
+        client = RestClient(api_key=mock_api_key, base_url=rest_server.url)
 
         try:
             # This will likely fail - we're testing error handling
@@ -87,11 +92,11 @@ class TestErrorHandlingBoundary:
             msg.encode("utf-8")
 
     @pytest.mark.asyncio
-    async def test_error_args_accessible(self, mock_api_key):
+    async def test_error_args_accessible(self, mock_api_key, rest_server):
         """Error args should contain message and error code."""
         from fugle_marketdata import RestClient, MarketDataError
 
-        client = RestClient(api_key=mock_api_key)
+        client = RestClient(api_key=mock_api_key, base_url=rest_server.url)
 
         try:
             await client.stock.intraday.quote_async("INVALID")
@@ -124,11 +129,11 @@ class TestPanicRecovery:
             assert len(str(e)) > 0
 
     @pytest.mark.asyncio
-    async def test_long_input_doesnt_overflow(self):
+    async def test_long_input_doesnt_overflow(self, rest_server):
         """Very long input strings should not cause buffer overflow."""
         from fugle_marketdata import RestClient
 
-        client = RestClient(api_key="test_key")
+        client = RestClient(api_key="test_key", base_url=rest_server.url)
 
         # Try extremely long symbol (potential buffer overflow)
         long_symbol = "A" * 10000
@@ -139,11 +144,11 @@ class TestPanicRecovery:
         # Should raise exception, not segfault
 
     @pytest.mark.asyncio
-    async def test_unicode_input_handled_safely(self):
+    async def test_unicode_input_handled_safely(self, rest_server):
         """Unicode input should be handled without panic."""
         from fugle_marketdata import RestClient
 
-        client = RestClient(api_key="test_key")
+        client = RestClient(api_key="test_key", base_url=rest_server.url)
 
         # Unicode characters that might cause issues
         unicode_symbols = [
@@ -198,11 +203,11 @@ class TestMemorySafety:
         gc.collect()
 
     @pytest.mark.asyncio
-    async def test_client_reuse_after_error(self):
+    async def test_client_reuse_after_error(self, rest_server):
         """Client should remain usable after error (no state corruption)."""
         from fugle_marketdata import RestClient
 
-        client = RestClient(api_key="test_key")
+        client = RestClient(api_key="test_key", base_url=rest_server.url)
 
         # Cause an error
         try:
@@ -218,11 +223,11 @@ class TestMemorySafety:
 
     @pytest.mark.asyncio
     @pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9+")
-    async def test_buffer_protocol_safety(self):
+    async def test_buffer_protocol_safety(self, rest_server):
         """Test that any buffer handling is memory safe."""
         from fugle_marketdata import RestClient
 
-        client = RestClient(api_key="test_key")
+        client = RestClient(api_key="test_key", base_url=rest_server.url)
 
         # Test with various input types that might use buffer protocol
         inputs = [
@@ -245,12 +250,12 @@ class TestGilSafety:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)
-    async def test_blocking_call_releases_gil(self):
+    async def test_blocking_call_releases_gil(self, rest_server):
         """Async call should not block event loop."""
         import asyncio
         from fugle_marketdata import RestClient
 
-        client = RestClient(api_key="test_key")
+        client = RestClient(api_key="test_key", base_url=rest_server.url)
         results = []
 
         async def make_request():
@@ -272,7 +277,7 @@ class TestGilSafety:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)
-    async def test_multiple_clients_parallel(self):
+    async def test_multiple_clients_parallel(self, rest_server):
         """Multiple concurrent async calls should not deadlock."""
         import asyncio
         from fugle_marketdata import RestClient
@@ -280,7 +285,7 @@ class TestGilSafety:
         results = []
 
         async def use_client(client_id):
-            client = RestClient(api_key=f"key_{client_id}")
+            client = RestClient(api_key=f"key_{client_id}", base_url=rest_server.url)
             try:
                 await client.stock.intraday.quote_async("2330")
             except Exception:
