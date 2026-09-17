@@ -113,6 +113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Node**: WebSocket `subscribe()` throws for an unknown channel name, e.g.
+  `{ channel: 'trade' }`, with code 1005 `INVALID_PARAMETER` and a message
+  listing the valid channels. It used to send nothing and report nothing.
+  Names are still matched ignoring case (#113).
+- **Rust**: `Channel` and `FutOptChannel` implement `FromStr`, ignoring case;
+  an unknown name is `MarketDataError::InvalidParameter` listing the valid
+  channels (#113).
 - **Node**: a listener that throws no longer surfaces as an uncaught
   exception; it is reported through `error` (code 3004), see Added (#83).
 - **Node**: the `error` event for "Reconnection failed after N attempts" has

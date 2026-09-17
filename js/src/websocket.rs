@@ -841,13 +841,29 @@ pub(crate) fn build_stream_config(
 /// Command sent to WebSocket worker thread
 #[derive(Debug)]
 enum WsCommand {
-    Subscribe { channel: String, symbols: Vec<String>, extra: Option<bool> },
+    Subscribe(Subscription),
     Unsubscribe { ids: Vec<String> },
     /// Send a `ping` frame carrying `data` (mirrors 1.x `ping(params)`)
     Ping { data: Option<serde_json::Value> },
     /// Ask the server for its current subscription list (response arrives via `message`)
     QuerySubscriptions,
     Disconnect,
+}
+
+/// A subscription whose channel `subscribe()` already parsed (#113).
+#[derive(Debug)]
+enum Subscription {
+    Stock(marketdata_core::StockSubscription),
+    FutOpt(marketdata_core::FutOptSubscription),
+}
+
+impl Subscription {
+    async fn send(self, client: &marketdata_core::aio::WebSocketClient) -> Result<(), marketdata_core::MarketDataError> {
+        match self {
+            Subscription::Stock(sub) => client.subscribe(sub).await,
+            Subscription::FutOpt(sub) => client.subscribe_futopt(sub).await,
+        }
+    }
 }
 
 /// A `ping()` argument as the frame's `data` (#23): an object (or any other
@@ -1416,8 +1432,6 @@ impl StockWebSocketClient {
             .spawn(move || {
                 use marketdata_core::aio::WebSocketClient as CoreClient;
                 use marketdata_core::websocket::ConnectionConfig;
-                use marketdata_core::models::Channel;
-                use marketdata_core::websocket::channels::StockSubscription;
 
                 let ending = ending_for_worker;
                 // A connection being reused: let the previous worker finish
@@ -1541,18 +1555,8 @@ impl StockWebSocketClient {
 
                         // Wait briefly for a command, then re-check the flags.
                         match cmd_rx.recv_timeout(Duration::from_millis(50)) {
-                            Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
-                                let channel_enum = match channel.to_lowercase().as_str() {
-                                    "trades" => Channel::Trades,
-                                    "candles" => Channel::Candles,
-                                    "books" => Channel::Books,
-                                    "aggregates" => Channel::Aggregates,
-                                    "indices" => Channel::Indices,
-                                    _ => continue,
-                                };
-                                let odd_lot = extra.unwrap_or(false);
-                                let sub = StockSubscription::new(channel_enum, symbols).with_odd_lot(odd_lot);
-                                let _ = rt.block_on(client.subscribe(sub));
+                            Ok(WsCommand::Subscribe(sub)) => {
+                                let _ = rt.block_on(sub.send(&client));
                             }
                             Ok(WsCommand::Unsubscribe { ids }) => {
                                 let _ = rt.block_on(client.unsubscribe(ids));
@@ -1616,11 +1620,13 @@ impl StockWebSocketClient {
     ///                  the old `@fugle/marketdata` shape.
     ///                  Shape: `{ channel, symbol?, symbols?, intradayOddLot? }`
     #[napi(ts_args_type = "options: StockSubscribeOptions")]
-    pub fn subscribe(&self, options: serde_json::Value) -> napi::Result<()> {
-        let channel_str = options
+    pub fn subscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+        let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| napi::Error::from_reason("Missing 'channel' field"))?;
+            .ok_or_else(|| napi::Error::from_reason("Missing 'channel' field"))?
+            .parse::<marketdata_core::models::Channel>()
+            .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
         let single_symbol = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
         let batch_symbols = options
@@ -1652,13 +1658,10 @@ impl StockWebSocketClient {
             }
         };
 
-        let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool());
+        let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
+        let sub = marketdata_core::StockSubscription::new(channel, target_symbols).with_odd_lot(odd_lot);
 
-        send_command(&self.worker, WsCommand::Subscribe {
-            channel: channel_str.to_string(),
-            symbols: target_symbols,
-            extra: odd_lot,
-        }, "subscribe")
+        send_command(&self.worker, WsCommand::Subscribe(Subscription::Stock(sub)), "subscribe")
     }
 
     /// Unsubscribe from a channel
@@ -1900,8 +1903,6 @@ impl FutOptWebSocketClient {
             .spawn(move || {
                 use marketdata_core::aio::WebSocketClient as CoreClient;
                 use marketdata_core::websocket::ConnectionConfig;
-                use marketdata_core::models::futopt::FutOptChannel;
-                use marketdata_core::websocket::channels::FutOptSubscription;
 
                 let ending = ending_for_worker;
                 // A connection being reused: let the previous worker finish
@@ -2023,17 +2024,8 @@ impl FutOptWebSocketClient {
 
                         // Wait briefly for a command, then re-check the flags.
                         match cmd_rx.recv_timeout(Duration::from_millis(50)) {
-                            Ok(WsCommand::Subscribe { channel, symbols, extra }) => {
-                                let channel_enum = match channel.to_lowercase().as_str() {
-                                    "trades" => FutOptChannel::Trades,
-                                    "candles" => FutOptChannel::Candles,
-                                    "books" => FutOptChannel::Books,
-                                    "aggregates" => FutOptChannel::Aggregates,
-                                    _ => continue,
-                                };
-                                let after_hours = extra.unwrap_or(false);
-                                let sub = FutOptSubscription::new(channel_enum, symbols).with_after_hours(after_hours);
-                                let _ = rt.block_on(client.subscribe_futopt(sub));
+                            Ok(WsCommand::Subscribe(sub)) => {
+                                let _ = rt.block_on(sub.send(&client));
                             }
                             Ok(WsCommand::Unsubscribe { ids }) => {
                                 let _ = rt.block_on(client.unsubscribe(ids));
@@ -2096,11 +2088,13 @@ impl FutOptWebSocketClient {
     ///                  or `symbols` (batch list) — exactly one is required.
     ///                  Shape: `{ channel, symbol?, symbols?, afterHours? }`
     #[napi(ts_args_type = "options: FutOptSubscribeOptions")]
-    pub fn subscribe(&self, options: serde_json::Value) -> napi::Result<()> {
-        let channel_str = options
+    pub fn subscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+        let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| napi::Error::from_reason("Missing 'channel' field"))?;
+            .ok_or_else(|| napi::Error::from_reason("Missing 'channel' field"))?
+            .parse::<marketdata_core::models::futopt::FutOptChannel>()
+            .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
         let single_symbol = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
         let batch_symbols = options
@@ -2132,13 +2126,10 @@ impl FutOptWebSocketClient {
             }
         };
 
-        let after_hours = options.get("afterHours").and_then(|v| v.as_bool());
+        let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
+        let sub = marketdata_core::FutOptSubscription::new(channel, target_symbols).with_after_hours(after_hours);
 
-        send_command(&self.worker, WsCommand::Subscribe {
-            channel: channel_str.to_string(),
-            symbols: target_symbols,
-            extra: after_hours,
-        }, "subscribe")
+        send_command(&self.worker, WsCommand::Subscribe(Subscription::FutOpt(sub)), "subscribe")
     }
 
     /// Unsubscribe from a channel
