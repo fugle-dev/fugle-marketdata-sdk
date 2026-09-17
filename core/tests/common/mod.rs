@@ -52,6 +52,12 @@ pub enum AfterAuth {
     /// Idle until the client sends Close, then drop the TCP socket
     /// without acking it (a peer that skips the closing handshake).
     DropOnClientClose,
+    /// Idle until the connection ends, then report on `ended_by_close`
+    /// whether the client sent a Close frame (`true`) or dropped the
+    /// socket without one (`false`).
+    ReportClientClose {
+        ended_by_close: mpsc::UnboundedSender<bool>,
+    },
 }
 
 /// Collect items from `recv` until none arrives for [`QUIET`], capped at
@@ -218,6 +224,19 @@ async fn serve(
                     break;
                 }
             }
+        }
+        AfterAuth::ReportClientClose { ended_by_close } => {
+            let by_close = loop {
+                match stream.next().await {
+                    Some(Ok(Message::Close(_))) => {
+                        let _ = sink.close().await;
+                        break true;
+                    }
+                    Some(Ok(_)) => continue,
+                    _ => break false,
+                }
+            };
+            let _ = ended_by_close.send(by_close);
         }
         AfterAuth::FloodDataThenClose { count, code } => {
             send_data_frames(&mut sink, count).await;

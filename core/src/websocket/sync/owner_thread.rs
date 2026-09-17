@@ -98,6 +98,10 @@ pub(crate) struct OwnerShared {
     /// callers pick up the new channel via `.lock().clone()`.
     pub write_tx_slot: Mutex<Option<mpsc::SyncSender<String>>>,
     pub should_stop: Arc<AtomicBool>,
+    /// Set by `force_close()` before `should_stop`: the owner loop then
+    /// drops the socket without draining writes or sending Close, like the
+    /// async client's abort.
+    pub abort: AtomicBool,
     /// Drop counter for the inbound message queue (drop-newest backpressure).
     /// Exposed via `WebSocketClient::messages_dropped_total`. Mirrors to
     /// `metrics_compat::COUNTER_MESSAGES_DROPPED` when the `metrics` feature
@@ -262,7 +266,8 @@ fn will_reconnect(shared: &OwnerShared, intent: DisconnectIntent, code: Option<u
 /// The owner loop. Reads frames + drains outbound queue + emits events.
 /// Returns the close code observed (Some on clean close, None on
 /// error/heartbeat-timeout/stream-end). On `should_stop` returns
-/// `Some(1000)` after sending a close frame.
+/// `Some(1000)` after sending a close frame, or `None` without one when
+/// `abort` is also set.
 fn owner_loop(
     mut ws: SyncWs,
     write_rx: mpsc::Receiver<String>,
@@ -278,6 +283,10 @@ fn owner_loop(
 
     loop {
         if shared.should_stop.load(Ordering::SeqCst) {
+            // `force_close()`: dropping `ws` closes the TCP socket as is.
+            if shared.abort.load(Ordering::SeqCst) {
+                return None;
+            }
             // Graceful shutdown sequence:
             //   a) drain any queued writes so subscribe/unsubscribe acks
             //      that the caller already enqueued reach the wire,
@@ -454,7 +463,12 @@ fn owner_loop(
             }
         }
 
-        // 3. Drain outbound queue (non-blocking)
+        // 3. Drain outbound queue (non-blocking). A `force_close()` that
+        // landed during the read sends nothing further, not even the Close
+        // of the `Disconnected` arm below.
+        if shared.abort.load(Ordering::SeqCst) {
+            return None;
+        }
         loop {
             match write_rx.try_recv() {
                 Ok(json) => {
