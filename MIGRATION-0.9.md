@@ -549,6 +549,34 @@ error rather than "Not connected".
   (`ex.GetInfo().code`, `ErrorInfoOf(err).Code`, `e.getCode()`, `e.info.code`)
   rather than the variant.
 
+## 16. WebSocket: `connect()` while connected, code 2011
+
+`connect()` on a client that is connected, still connecting, or
+auto-reconnecting fails with code `2011` (`ALREADY_CONNECTED`), `source_kind`
+`client`, message `Already connected; call disconnect() first` (#119), as
+Node already did. The live connection is not touched. Call `disconnect()`
+first to open a new one, or `reconnect()` (Rust) to replace it.
+
+| Language | Before | After |
+|---|---|---|
+| Rust | `Ok(())`, nothing done | `Err(MarketDataError::AlreadyConnected)` |
+| C#, Go, Java, C++ | A second connection replaced the first one's event delivery | `WebSocketError` variant, code `2011` |
+
+- **Rust**: `MarketDataError` is now `#[non_exhaustive]`, so a `match` on it
+  needs a `_` arm; the new variant is `AlreadyConnected`.
+
+  ```rust,ignore
+  match err {
+      MarketDataError::AuthError { msg, .. } => eprintln!("auth: {msg}"),
+      MarketDataError::AlreadyConnected => {}
+      other => eprintln!("{other}"),
+  }
+  ```
+
+- **C#, Go, Java, C++**: branch on the code (`ex.GetInfo().code`,
+  `ErrorInfoOf(err).Code`, `e.getCode()`, `e.info.code`) rather than the
+  variant.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

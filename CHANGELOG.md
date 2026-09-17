@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     process and a Java one stopped event delivery.
   - **C++ and the generated bindings**: the stream reader catches a failing
     listener call and reports it to `on_error` instead of stopping.
+- **Rust**: `ConnectionStateHandle::is_active()`, true while connecting,
+  authenticating, connected or reconnecting: when `connect()` is refused with
+  `AlreadyConnected` (#119).
 - **Rust**: `websocket::ReportThrottle` / `REPORT_INTERVAL`, the throttle
   behind `MessagesDropped` and the bindings' callback failure reports, and
   `error_code::CALLBACK_FAILED` (3004) / `error_code::RECONNECT_FAILED` (3005).
@@ -247,6 +250,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Rust**: `MarketDataError` is `#[non_exhaustive]` and gains
+  `AlreadyConnected` (code 2011, `source_kind` `client`) (#119). A `match` on
+  it needs a `_` arm. `connect()` on `aio::WebSocketClient` and
+  `WebSocketClient` returns `AlreadyConnected` while the client is connected,
+  connecting or auto-reconnecting; it used to return `Ok(())` without doing
+  anything, and two concurrent calls could both open a connection.
+  `reconnect()` is unaffected. See
+  [MIGRATION-0.9.md](MIGRATION-0.9.md#16-websocket-connect-while-connected-code-2011).
 - **C#, Go, Java (generated UniFFI layer)**: `WebSocketClient.subscribe` and
   `unsubscribe` take a third argument, `after_hours` (C# `bool? afterHours =
   null`, Go `afterHours *bool`, Java `Boolean afterHours`); pass null / nil
@@ -402,6 +413,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **C#, Go, C++, Java**: WebSocket `connect()` while connected, connecting or
+  auto-reconnecting opened a second connection and switched event delivery
+  and `is_connected()` to it; if that connection failed, `is_connected()`
+  read `false` while the first one stayed open (#119). It now fails with the
+  `WebSocketError` variant, code 2011 `ALREADY_CONNECTED` (Node's code for
+  the same case), and the live connection is untouched. Call `disconnect()`
+  first. C++ `connect_sync()` no longer replaces the live connection's
+  runtime when refused, and a refused Java pull-mode `connect()` no longer
+  keeps `disconnect()` from ending a wait for queue room.
+- **Go**: errors returned by `StreamingClient.Connect`, `Ping` and
+  `QuerySubscriptions` wrapped the SDK error with `%v`, so `ErrorInfoOf(err)`
+  returned `false` and the code (for example 2011) was unreachable. They now
+  wrap it with `%w`, like `Subscribe` / `Unsubscribe` (#123); the message is
+  unchanged (#119).
 - **C#, Go, Java, C++**: a WebSocket client on the FutOpt endpoint parsed
   subscribe channels as stock channels and sent a stock subscription, so
   `indices` was accepted and after-hours could not be requested. It now takes

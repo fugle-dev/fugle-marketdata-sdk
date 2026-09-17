@@ -159,6 +159,24 @@ impl ConnectionStateHandle {
     pub fn is_closed(&self) -> bool {
         matches!(*self.read(), ConnectionState::Closed { .. })
     }
+
+    /// Whether the connection is open, being established or auto-reconnecting
+    /// ([`Connecting`](ConnectionState::Connecting),
+    /// [`Authenticating`](ConnectionState::Authenticating),
+    /// [`Connected`](ConnectionState::Connected) or
+    /// [`Reconnecting`](ConnectionState::Reconnecting)): the states in which
+    /// `connect()` is refused with [`MarketDataError::AlreadyConnected`].
+    /// Lets a binding that opens each connection on a new client refuse the
+    /// same way while its previous client is still live.
+    pub fn is_active(&self) -> bool {
+        matches!(
+            *self.read(),
+            ConnectionState::Connecting
+                | ConnectionState::Authenticating
+                | ConnectionState::Connected
+                | ConnectionState::Reconnecting { .. }
+        )
+    }
 }
 
 impl std::fmt::Debug for ConnectionStateHandle {

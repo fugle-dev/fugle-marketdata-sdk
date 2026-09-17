@@ -369,7 +369,7 @@ client uses the OS trust store (rustls loads it via
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned an error |
 | 2010 | ClientClosed | Client already closed |
-| 2011 | AlreadyConnected | WebSocket `connect()` called while connected or connecting (Node only) |
+| 2011 | AlreadyConnected | WebSocket `connect()` called while connected or connecting |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |

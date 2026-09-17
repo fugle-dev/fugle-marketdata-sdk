@@ -9,6 +9,7 @@
 
 pub mod channels;
 pub mod config;
+pub(crate) mod connect_gate;
 pub mod connection_event;
 pub mod factory;
 pub mod health_check;

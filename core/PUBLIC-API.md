@@ -58,6 +58,18 @@ PR number and listing the new/changed/removed symbols.
 - `~` `ConnectionEvent::Error { message, code }` becomes
   `ConnectionEvent::Error(ErrorInfo)`.
 
+### Unreleased — `connect()` while connected (#119)
+
+- `~` `MarketDataError` becomes `#[non_exhaustive]`.
+- `+` `MarketDataError::AlreadyConnected` (code 2011).
+- `+` `ConnectionStateHandle::is_active`.
+- `~` `aio::WebSocketClient` is no longer `Freeze` (it holds an atomic
+  directly); `Send` / `Sync` are unchanged.
+- The regenerated snapshot also picks up earlier unrecorded additions:
+  `error_code::CALLBACK_FAILED` / `RECONNECT_FAILED` (#83),
+  `websocket::report_throttle` (#83) and `FromStr` for `Channel` /
+  `FutOptChannel` (#113).
+
 ### Unreleased — connection state that outlives the client (#67)
 
 - `+` `aio::WebSocketClient::state_handle`.
