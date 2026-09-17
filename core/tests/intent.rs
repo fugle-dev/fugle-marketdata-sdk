@@ -19,10 +19,10 @@ use std::time::Duration;
 async fn first_disconnect_intent(
     client: &WebSocketClient,
 ) -> Option<DisconnectIntent> {
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(client);
     tokio::time::timeout(Duration::from_secs(5), async move {
         tokio::task::spawn_blocking(move || {
-            let rx = events.blocking_lock();
+            let rx = &events;
             loop {
                 match rx.recv() {
                     Ok(ConnectionEvent::Disconnected { intent, .. }) => return Some(intent),

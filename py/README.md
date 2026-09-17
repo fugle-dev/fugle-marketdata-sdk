@@ -297,6 +297,12 @@ msg = messages.try_recv()     # Non-blocking, returns None if no message
 msg = messages.recv_timeout(5.0)  # Timeout in seconds
 ```
 
+Messages go to `message` callbacks when any are registered as they arrive,
+otherwise to the iterator. The iterator holds at most 4096 unread messages;
+while it does, lifecycle callbacks (`disconnect`, `reconnect`, …) that follow
+those messages wait until you read or call `disconnect()`. Every wait releases
+the GIL.
+
 ## Error Handling
 
 All API errors raise `MarketDataError`:

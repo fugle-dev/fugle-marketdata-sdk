@@ -29,7 +29,7 @@ async fn shutdown_with_timeout_respects_bound_when_peer_wedges() {
 
     client.connect().await.expect("connect");
 
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(&client);
 
     // The mock server's Idle path will echo the Close frame back, so
     // a 5 s default would still exit fast. Use a small explicit bound
@@ -53,7 +53,7 @@ async fn shutdown_with_timeout_respects_bound_when_peer_wedges() {
     // the executor.
     let drain = tokio::time::timeout(Duration::from_secs(1), async move {
         tokio::task::spawn_blocking(move || {
-            let rx = events.blocking_lock();
+            let rx = &events;
             loop {
                 match rx.recv() {
                     Ok(ConnectionEvent::Disconnected { intent, .. }) => return Some(intent),
@@ -112,9 +112,9 @@ async fn events_after_shutdown(client: &WebSocketClient) -> Vec<ConnectionEvent>
         .shutdown_with_timeout(Duration::from_millis(500))
         .await
         .expect("shutdown returns");
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(client);
     tokio::task::spawn_blocking(move || {
-        let rx = events.blocking_lock();
+        let rx = &events;
         common::drain_until_quiet(|timeout| rx.recv_timeout(timeout).ok())
     })
     .await
@@ -177,9 +177,9 @@ fn disconnects(events: &[ConnectionEvent]) -> Vec<&ConnectionEvent> {
 /// Block until a `Disconnected` arrives (or 5 s pass), returning every
 /// event seen up to and including it.
 async fn events_until_disconnect(client: &WebSocketClient) -> Vec<ConnectionEvent> {
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(client);
     tokio::task::spawn_blocking(move || {
-        let rx = events.blocking_lock();
+        let rx = &events;
         let mut seen = Vec::new();
         while let Ok(event) = rx.recv_timeout(Duration::from_secs(5)) {
             let done = matches!(event, ConnectionEvent::Disconnected { .. });
@@ -269,9 +269,9 @@ async fn repeated_disconnect_emits_single_disconnect() {
 /// Collect events until a `Disconnected` with `code` arrives (or 5 s pass),
 /// then keep draining until the channel goes quiet.
 async fn events_through_disconnect_code(client: &WebSocketClient, code: u16) -> Vec<ConnectionEvent> {
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(client);
     tokio::task::spawn_blocking(move || {
-        let rx = events.blocking_lock();
+        let rx = &events;
         let mut seen = Vec::new();
         while let Ok(event) = rx.recv_timeout(Duration::from_secs(5)) {
             let done = matches!(event, ConnectionEvent::Disconnected { code: Some(c), .. } if c == code);
@@ -323,10 +323,10 @@ async fn connect_while_connected_is_noop() {
     let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
     let client = WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
     client.connect().await.expect("connect");
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(&client);
     tokio::task::spawn_blocking(move || {
-        let rx = events.blocking_lock();
-        while rx.try_recv().is_ok() {}
+        let rx = &events;
+        while rx.try_recv().is_some() {}
     })
     .await
     .expect("drain initial events");
@@ -337,9 +337,9 @@ async fn connect_while_connected_is_noop() {
         .expect("second connect");
 
     assert!(client.is_connected().await);
-    let events = std::sync::Arc::clone(client.state_events());
+    let events = common::EventReceiver::of_async(&client);
     let extra = tokio::task::spawn_blocking(move || {
-        let rx = events.blocking_lock();
+        let rx = &events;
         rx.try_iter().collect::<Vec<_>>()
     })
     .await

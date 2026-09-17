@@ -8,12 +8,14 @@ use pyo3_async_runtimes::tokio::future_into_py;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::handoff::Handoff;
 use crate::websocket::message_to_dict;
 
 /// Python iterator for WebSocket messages
 ///
 /// Implements both sync (__iter__/__next__) and async (__aiter__/__anext__) iterator protocols.
-/// Bridges marketdata_core::MessageReceiver to Python iteration.
+/// Reads the messages the connection's stream reader hands over when no
+/// `message` callback is registered (#68).
 ///
 /// # Example (Python)
 ///
@@ -36,27 +38,25 @@ use crate::websocket::message_to_dict;
 ///
 /// # GIL Safety
 ///
-/// Sync iteration (__next__): GIL held during blocking (std::sync::mpsc limitation)
-/// Async iteration (__anext__): GIL released during await (recommended pattern)
+/// Every wait releases the GIL: the connection's stream reader needs it to
+/// run the lifecycle callbacks queued ahead of the next message.
 ///
-/// # Note
+/// # Backpressure
 ///
-/// The `unsendable` attribute is required because `MessageReceiver` contains
-/// `std::sync::mpsc::Receiver` which is not `Sync`. This means the iterator
-/// can only be used from the thread that created it.
-#[pyclass(unsendable)]
+/// At most `message_buffer` unread messages are held for iterators. While
+/// that many are, the reader stops taking items from the connection, so
+/// lifecycle callbacks (`disconnect`, `reconnect`, ...) queued after those
+/// messages wait until the iterator reads or `disconnect()` is called.
+#[pyclass]
 pub struct MessageIterator {
-    receiver: Arc<marketdata_core::MessageReceiver>,
+    handoff: Arc<Handoff>,
     timeout: Option<Duration>,
 }
 
 impl MessageIterator {
     /// Create a new message iterator
-    pub fn new(
-        receiver: Arc<marketdata_core::MessageReceiver>,
-        timeout: Option<Duration>,
-    ) -> Self {
-        Self { receiver, timeout }
+    pub(crate) fn new(handoff: Arc<Handoff>, timeout: Option<Duration>) -> Self {
+        Self { handoff, timeout }
     }
 }
 
@@ -76,22 +76,12 @@ impl MessageIterator {
     /// Raises:
     ///     StopIteration: When channel is closed (connection disconnected)
     ///
-    /// Note: This method blocks the current thread while waiting for messages.
-    /// The GIL is NOT released during blocking because MessageReceiver is not Sync.
-    /// For long-running message consumption, consider using a separate thread
-    /// or async patterns in Python.
+    /// Note: This method blocks the current thread while waiting for
+    /// messages, with the GIL released.
     fn __next__(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        // Note: We cannot use py.allow_threads() here because MessageReceiver
-        // contains std::sync::mpsc::Receiver which is not Sync.
-        // The blocking call happens with GIL held, which may impact Python
-        // responsiveness. For production use, consider using Python's
-        // concurrent.futures or asyncio patterns.
-
-        let result = if let Some(timeout) = self.timeout {
-            self.receiver.receive_timeout(timeout)
-        } else {
-            self.receiver.receive().map(Some)
-        };
+        let handoff = Arc::clone(&self.handoff);
+        let timeout = self.timeout;
+        let result = py.detach(move || handoff.receive(timeout));
 
         match result {
             Ok(Some(msg)) => {
@@ -117,7 +107,7 @@ impl MessageIterator {
     ///     dict: Message data if available
     ///     None: If no message available
     fn try_recv(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        match self.receiver.try_receive() {
+        match self.handoff.try_receive() {
             Some(msg) => {
                 let dict = message_to_dict(py, &msg)?;
                 Ok(Some(dict.into_any()))
@@ -138,14 +128,17 @@ impl MessageIterator {
     /// Raises:
     ///     MarketDataError: If channel is closed
     fn recv_timeout(&self, py: Python<'_>, timeout_ms: u64) -> PyResult<Option<Py<PyAny>>> {
+        let handoff = Arc::clone(&self.handoff);
         let timeout = Duration::from_millis(timeout_ms);
-        match self.receiver.receive_timeout(timeout) {
+        match py.detach(move || handoff.receive(Some(timeout))) {
             Ok(Some(msg)) => {
                 let dict = message_to_dict(py, &msg)?;
                 Ok(Some(dict.into_any()))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(crate::errors::to_py_err(e)),
+            Err(()) => Err(crate::errors::to_py_err(marketdata_core::MarketDataError::ConnectionError {
+                msg: "Message channel closed".to_string(),
+            })),
         }
     }
 
@@ -166,21 +159,13 @@ impl MessageIterator {
     ///     StopAsyncIteration: When channel is closed (connection disconnected)
     ///
     /// Note: This method releases the GIL while waiting for messages.
-    /// Uses tokio::task::spawn_blocking to poll the blocking std::sync::mpsc channel
-    /// without holding the GIL, enabling true async concurrency.
+    /// The wait runs on tokio's blocking pool, enabling true async concurrency.
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let receiver = Arc::clone(&self.receiver);
+        let handoff = Arc::clone(&self.handoff);
         let timeout = self.timeout;
 
         future_into_py(py, async move {
-            // Poll the blocking channel in a blocking thread pool without holding GIL
-            let result = tokio::task::spawn_blocking(move || {
-                if let Some(t) = timeout {
-                    receiver.receive_timeout(t)
-                } else {
-                    receiver.receive().map(Some)
-                }
-            })
+            let result = tokio::task::spawn_blocking(move || handoff.receive(timeout))
             .await
             .map_err(|e| {
                 pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e))

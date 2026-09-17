@@ -247,14 +247,15 @@ TIMEOUT_S = 5
 
 
 class Recorder:
-    """Records ``(event, args)`` for every connection callback."""
+    """Records ``(event, args)`` for every connection callback, and with
+    ``messages`` for the ``message`` callback too, in delivery order."""
 
     EVENTS = ("connect", "authenticated", "unauthenticated", "disconnect", "reconnect", "error")
 
-    def __init__(self, ws):
+    def __init__(self, ws, messages=False):
         self.calls = []
         self._cond = threading.Condition()
-        for event in self.EVENTS:
+        for event in self.EVENTS + (("message",) if messages else ()):
             ws.on(event, self._handler(event))
 
     def _handler(self, event):
@@ -277,6 +278,12 @@ class Recorder:
         with self._cond:
             hit = self._cond.wait_for(lambda: event in [n for n, _ in self.calls], timeout=timeout)
         assert hit, f'no "{event}" callback within {timeout}s; got {self.calls}'
+
+    def wait_until(self, predicate, timeout, what):
+        """Wait until ``predicate(calls)`` holds."""
+        with self._cond:
+            hit = self._cond.wait_for(lambda: predicate(self.calls), timeout=timeout)
+        assert hit, f"no {what} within {timeout}s; got {len(self.calls)} calls"
 
 
 def product_ws(url, product, api_key="test-key", **kwargs):

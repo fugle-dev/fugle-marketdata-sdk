@@ -35,15 +35,25 @@ pub(crate) enum AuthOutcome {
 /// so both map it to the same lifecycle events.
 #[derive(Debug)]
 pub(crate) enum AuthHandshake {
-    /// Server accepted the credentials; emit `Authenticated { data }`.
-    Authenticated(serde_json::Value),
-    /// Server rejected the credentials; emit `Unauthenticated { message, data }`
-    /// and fail `connect()` with `AuthError`.
+    /// Server accepted the credentials; report `Authenticated { data }`
+    /// followed by `frames`.
+    Authenticated {
+        /// The `authenticated` frame's `data` (`Null` when absent).
+        data: serde_json::Value,
+        /// Every frame read during the handshake, in order, so it can be
+        /// queued after `Authenticated` rather than before it (#68).
+        frames: Vec<WebSocketMessage>,
+    },
+    /// Server rejected the credentials; report
+    /// `Unauthenticated { message, data }` followed by `frames`, and fail
+    /// `connect()` with `AuthError`.
     Rejected {
         /// Server-provided rejection message.
         message: String,
         /// The rejection frame's `data` (`Null` when absent).
         data: serde_json::Value,
+        /// Every frame read during the handshake, in order.
+        frames: Vec<WebSocketMessage>,
     },
     /// Transport, timeout or protocol failure before a verdict; emit `Error`.
     Failed(MarketDataError),

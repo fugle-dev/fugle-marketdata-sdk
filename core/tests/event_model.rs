@@ -26,7 +26,6 @@ use marketdata_core::{
     AuthRequest, ConnectionConfig, ConnectionState, HealthCheckConfig, ReconnectionConfig,
 };
 use serde_json::json;
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -68,13 +67,13 @@ fn assert_silent_after_disconnect(after: &[ConnectionEvent], state: &ConnectionS
 }
 
 /// Everything currently queued, without waiting.
-fn queued(rx: &mpsc::Receiver<ConnectionEvent>) -> Vec<ConnectionEvent> {
+fn queued(rx: &common::EventReceiver) -> Vec<ConnectionEvent> {
     rx.try_iter().collect()
 }
 
 /// Receive until `done` matches an event (inclusive) or [`WAIT`] elapses.
 fn recv_until(
-    rx: &mpsc::Receiver<ConnectionEvent>,
+    rx: &common::EventReceiver,
     done: impl Fn(&ConnectionEvent) -> bool,
 ) -> Vec<ConnectionEvent> {
     let deadline = Instant::now() + WAIT;
@@ -94,7 +93,7 @@ fn recv_until(
     events
 }
 
-fn drain(rx: &mpsc::Receiver<ConnectionEvent>) -> Vec<ConnectionEvent> {
+fn drain(rx: &common::EventReceiver) -> Vec<ConnectionEvent> {
     common::drain_until_quiet(|d| rx.recv_timeout(d).ok())
 }
 
@@ -217,10 +216,10 @@ mod aio {
 
     async fn with_events<T: Send + 'static>(
         client: &WebSocketClient,
-        f: impl FnOnce(&mpsc::Receiver<ConnectionEvent>) -> T + Send + 'static,
+        f: impl FnOnce(&common::EventReceiver) -> T + Send + 'static,
     ) -> T {
-        let events = std::sync::Arc::clone(client.events());
-        tokio::task::spawn_blocking(move || f(&events.blocking_lock()))
+        let events = common::EventReceiver::of_async(client);
+        tokio::task::spawn_blocking(move || f(&events))
             .await
             .expect("event reader")
     }
@@ -327,8 +326,8 @@ mod sync {
         tokio::task::spawn_blocking(f).await.expect("blocking task")
     }
 
-    fn event_rx(client: &WebSocketClient) -> std::sync::MutexGuard<'_, mpsc::Receiver<ConnectionEvent>> {
-        client.events().lock().expect("events lock")
+    fn event_rx(client: &WebSocketClient) -> common::EventReceiver {
+        common::EventReceiver::of_sync(client)
     }
 
     #[tokio::test(flavor = "multi_thread")]

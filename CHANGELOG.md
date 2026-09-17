@@ -45,23 +45,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exports directly instead of running the async call via `Task.Run` (#37).
 - **Node**: `stock.intraday.candles` and `futopt.intraday.candles` no longer
   require `timeframe`; the server defaults to `1`, as in 1.x.
-- **Core**: `aio::WebSocketClient::messages()` no longer needs a tokio runtime
-  context. It can be called from any thread, before or after `connect()`,
-  instead of panicking with `there is no reactor running` (#26). The receiver
-  reads the client's message queue directly; no bridge task runs (#46).
-- **Core**: messages read through `aio::WebSocketClient::messages()` are
-  capped at `message_buffer` (default 4096) like every other consumer. The
-  bridge behind it used to queue without limit, so a slow consumer (a Node,
+- **Core**: `aio::WebSocketClient::stream_receiver()` (formerly `messages()`)
+  needs no tokio runtime context. It can be called from any thread, before or
+  after `connect()`, instead of panicking with `there is no reactor running`
+  (#26). The receiver reads the client's stream directly; no bridge task runs
+  (#46).
+- **Core**: messages read through the blocking receiver are capped at
+  `message_buffer` (default 4096) like every other consumer. The bridge behind
+  the former `messages()` queued without limit, so a slow consumer (a Node,
   Python or UniFFI callback) grew memory without bound instead of dropping.
   Use `MessageOverflow::Unbounded` to keep the old behaviour (#46).
+- **All languages**: messages and connection events arrive in one order.
+  Every message of a connection, including the server's `authenticated`
+  frame, comes after that connection's `authenticated` event and before its
+  `disconnect`; frames that arrive after the connection was reported closed
+  are discarded (not counted as dropped). Messages and events used to travel
+  on separate channels, so e.g. the last messages could follow `disconnect`
+  (#68).
+- **Node, Python, C#, Go, C++, Java**: frames read while authenticating a
+  connection that is then rejected (the server's `error` frame) no longer
+  reach the `message` callback, including on a reconnect, where they used to
+  (#68).
+- **Python**: whether a `message` callback is registered is checked for each
+  message. A callback registered after `connect()` now receives messages; one
+  registered before `connect()` used to be the only way to get them through
+  callbacks. Without one, messages wait for a `messages()` iterator: at most
+  `message_buffer` of them, and while that many are unread, lifecycle
+  callbacks (`disconnect`, `reconnect`, …) that follow them wait until the
+  iterator reads or `disconnect()` is called. The iterator releases the GIL
+  while it waits. Events and messages share one background thread, so a panic
+  on it (#25) now stops lifecycle callbacks as well as messages (#68).
+- **Node, Python**: messages that arrive while `disconnect()` closes the
+  connection, before its `disconnect` event, still reach the `message`
+  listeners. They used to be dropped from the moment `disconnect()` was called
+  (#68). C#, Go, C++ and Java still stop `OnMessage` at `disconnect()`.
 - **Core**: `messages_dropped_total()` counts the current connection's drops:
   it restarts from zero when `connect()` or a reconnect attempt opens a new
   connection, and still reads the last connection's count after
   `disconnect()`. It used to count from client construction. The `metrics`
   counter is unchanged and keeps counting across connections (#46).
 - **Core**: while the message queue is full, the auth handshake of a
-  reconnect drops the server's `authenticated` frame from the message stream
-  instead of waiting for room, which could stall the reconnect until its 10 s
+  reconnect drops the server's `authenticated` frame from the stream instead
+  of waiting for room, which could stall the reconnect until its 10 s
   auth timeout (#46).
 - **All languages**: a WebSocket connection emits `Disconnected` (the
   `disconnect` callback in the bindings) at most once. A server Close or
@@ -112,15 +137,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **Rust**: inbound message queue (#46). See
-  [MIGRATION-0.9.md](MIGRATION-0.9.md#11-rust-inbound-message-queue).
-  - `aio::WebSocketClient::message_stream()` returns `MessageStream` instead
-    of `tokio::sync::mpsc::Receiver`. It has `recv()`, `try_recv()` and
-    `poll_recv()`, and implements `futures::Stream`.
-  - `MessageReceiver::new` is no longer public.
+- **Rust**: one ordered stream of messages and connection events (#46, #68).
+  See [MIGRATION-0.9.md](MIGRATION-0.9.md#11-rust-one-stream-for-messages-and-events).
+  - `messages()`, `message_stream()`, `events()` and `state_events()` are
+    replaced by `stream_receiver()` (blocking `StreamReceiver`, both clients)
+    and `stream()` (async `ConnectionStream`, `aio` client), which yield
+    `StreamItem::Message` / `StreamItem::Event`. `MessageReceiver` and the
+    `websocket::message` module are removed.
+  - `ConnectionStream` has `recv()`, `try_recv()` and `poll_recv()`, and
+    implements `futures::Stream`.
   - `ConnectionConfig` gains the public field `message_overflow`.
-  - `ConnectionEvent` is `#[non_exhaustive]` and gains `MessagesDropped`;
-    matches need a `_` arm.
+  - `ConnectionEvent` and `StreamItem` are `#[non_exhaustive]`;
+    `ConnectionEvent` gains `MessagesDropped`. Matches need a `_` arm.
 - **Rust**: `ConnectionEvent` carries what bindings previously had to
   re-derive (#55). See [MIGRATION-0.9.md](MIGRATION-0.9.md#8-rust-connection-events).
   - `Authenticated` becomes `Authenticated { data }`, the server frame's
@@ -220,8 +248,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while the JS thread was busy) receives it, and one replaced by `on()` while
   events are queued receives none of them (#62). `message` frames that arrive
   while no `message` listener is registered are dropped rather than queued, and
-  are not delivered to a listener registered later. The order of `message`
-  relative to the other events is not guaranteed yet (#68).
+  are not delivered to a listener registered later. `message` keeps its place
+  among the other events since #68.
 - **Node, Python**: a panic on a WebSocket background thread no longer leaves
   the connection silently dead (#25). Node's worker and event threads report
   it as an `error` (`Error` with `code` -1, "WebSocket <thread> thread

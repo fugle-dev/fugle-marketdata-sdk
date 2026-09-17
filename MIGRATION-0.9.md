@@ -264,25 +264,45 @@ Behaviour you may have relied on:
   reconnect. Java's pull mode and Go's `Errors()` report a rejection as
   `Unauthenticated: <dataJson>`.
 
-## 11. Rust: inbound message queue
+## 11. Rust: one stream for messages and events
 
-`aio::WebSocketClient::message_stream()` returns `MessageStream` rather than
-a tokio receiver. The common calls are unchanged:
+A client reports its messages and its connection events on one stream, in
+the order they happened: every message of a connection comes after its
+`Authenticated` and before its `Disconnected`. `messages()`,
+`message_stream()`, `events()` and `state_events()` are gone:
 
 ```rust,ignore
-let mut stream = client.message_stream();   // was tokio::sync::mpsc::Receiver
-while let Some(msg) = stream.recv().await {}  // unchanged
-stream.try_recv();                            // Err(std::sync::mpsc::TryRecvError)
+// Before
+let messages = client.messages();                 // blocking
+let mut stream = client.message_stream();         // async (aio)
+let events = client.events().lock().unwrap();     // lifecycle
+
+// After
+use marketdata_core::{StreamItem, websocket::ConnectionEvent};
+
+let items = client.stream_receiver();             // blocking, both clients
+while let Ok(item) = items.receive() {
+    match item {
+        StreamItem::Message(msg) => { /* was messages() */ }
+        StreamItem::Event(ConnectionEvent::Disconnected { .. }) => break,
+        StreamItem::Event(_) => { /* was events() */ }
+        _ => {}
+    }
+}
+
+let mut stream = client.stream();                 // async (aio): futures::Stream
+while let Some(item) = stream.recv().await { /* same items */ }
 ```
 
-It implements `futures::Stream` itself, so drop any
-`tokio_stream::wrappers::ReceiverStream` wrapper. Function signatures that
-named `tokio::sync::mpsc::Receiver<WebSocketMessage>` take
-`marketdata_core::MessageStream` instead.
+`stream()` and `stream_receiver()` take the same stream, so use one of them.
+Reading messages and events from two places no longer works; dispatch on the
+item instead. `ConnectionStream::try_recv()` returns
+`Err(std::sync::mpsc::TryRecvError)`, and `ConnectionStream` implements
+`futures::Stream` itself, so drop any `tokio_stream` wrapper.
 
-`ConnectionEvent` is `#[non_exhaustive]`; add a `_` arm to exhaustive
-matches. The new `MessagesDropped { dropped, total }` reports messages
-dropped because your consumer fell behind.
+`ConnectionEvent` and `StreamItem` are `#[non_exhaustive]`; add a `_` arm to
+exhaustive matches. The new `MessagesDropped { dropped, total }` reports
+messages dropped because your consumer fell behind.
 
 `ConnectionConfig` gains `message_overflow`. Code that builds the struct with
 a literal needs the field (`MessageOverflow::DropNewest` keeps the default);
@@ -293,10 +313,17 @@ connection (it restarts at every `connect()` or reconnect attempt) rather than
 from client construction; sum the `MessagesDropped` events if you need a
 lifetime total.
 
-Behaviour you may notice: `messages()` used to queue without limit, so a slow
-consumer never lost messages but used more and more memory. It is now capped
-at `message_buffer` (4096) like `message_stream()`. To keep every message,
-opt in with `.message_overflow(MessageOverflow::Unbounded)`.
+Behaviour you may notice:
+
+- Messages are capped at `message_buffer` (4096). The former `messages()`
+  queued without limit, so a slow consumer never lost messages but used more
+  and more memory. To keep every message, opt in with
+  `.message_overflow(MessageOverflow::Unbounded)`. Events have their own
+  `event_buffer` allowance, so a full message queue never costs an event.
+- The server's `authenticated` frame now follows the `Authenticated` event;
+  it used to be queued on the message channel before the event was emitted.
+- Frames that arrive after a connection's `Disconnected` (only possible after
+  `force_close()` or a `disconnect()` that timed out) are discarded.
 
 ## Fields you could not reach before
 

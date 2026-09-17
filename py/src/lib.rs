@@ -96,6 +96,7 @@ use pyo3::prelude::*;
 mod callback;
 mod client;
 mod errors;
+mod handoff;
 pub mod iterator;
 mod tls_kwargs;
 mod types;

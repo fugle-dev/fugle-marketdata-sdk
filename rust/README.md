@@ -92,7 +92,7 @@ println!("Futures close price: {:?}", futopt_quote["closePrice"].as_f64());
 
 ```rust,no_run
 use fugle_marketdata::{
-    AuthRequest, Channel, WebSocketClient,
+    AuthRequest, Channel, StreamItem, WebSocketClient,
     websocket::{ConnectionConfig, StockSubscription},
 };
 use std::time::Duration;
@@ -120,9 +120,10 @@ client.subscribe(
     StockSubscription::new(Channel::Trades, "2330").with_odd_lot(true)
 )?;
 
-let messages = client.messages();
+// Messages and connection events arrive on one stream, in order.
+let stream = client.stream_receiver();
 for _ in 0..10 {
-    if let Ok(Some(msg)) = messages.receive_timeout(Duration::from_secs(5)) {
+    if let Ok(Some(StreamItem::Message(msg))) = stream.receive_timeout(Duration::from_secs(5)) {
         if msg.is_data() {
             println!("Data: {:?} - {:?}", msg.channel, msg.symbol);
         }
@@ -144,7 +145,7 @@ and add `.await`:
 
 ```rust,ignore
 use fugle_marketdata::aio::WebSocketClient;
-use fugle_marketdata::{AuthRequest, Channel, websocket::{ConnectionConfig, StockSubscription}};
+use fugle_marketdata::{AuthRequest, Channel, StreamItem, websocket::{ConnectionConfig, StockSubscription}};
 
 # async fn run() -> Result<(), fugle_marketdata::MarketDataError> {
 let config = ConnectionConfig::fugle_stock(AuthRequest::with_api_key("..."));
@@ -152,9 +153,11 @@ let client = WebSocketClient::new(config);
 client.connect().await?;
 client.subscribe(StockSubscription::new(Channel::Trades, "2330")).await?;
 
-let mut stream = client.message_stream();
-while let Some(msg) = stream.recv().await {
-    if msg.is_data() { /* ... */ }
+let mut stream = client.stream();
+while let Some(item) = stream.recv().await {
+    if let StreamItem::Message(msg) = item {
+        if msg.is_data() { /* ... */ }
+    }
 }
 client.disconnect().await?;
 # Ok(())
@@ -163,13 +166,15 @@ client.disconnect().await?;
 
 ### Connection events
 
-`events()` yields the connection lifecycle. The channel exists from
+The stream carries the connection lifecycle as `StreamItem::Event`, in order
+with the messages: every message of a connection comes after its
+`Authenticated` and before its `Disconnected`. The stream exists from
 construction, so events emitted during `connect()` are waiting when you start
 reading:
 
 ```rust,no_run
 use fugle_marketdata::{
-    AuthRequest, WebSocketClient,
+    AuthRequest, StreamItem, WebSocketClient,
     websocket::{ConnectionConfig, ConnectionEvent},
 };
 
@@ -177,8 +182,9 @@ use fugle_marketdata::{
 let client = WebSocketClient::new(ConnectionConfig::fugle_stock(AuthRequest::with_api_key("...")));
 client.connect()?;
 
-let events = client.events().lock().expect("events lock");
-while let Ok(event) = events.recv() {
+let stream = client.stream_receiver();
+while let Ok(item) = stream.receive() {
+    let StreamItem::Event(event) = item else { continue };
     match event {
         ConnectionEvent::Connected => println!("socket open, authenticating"),
         ConnectionEvent::Authenticated { data } => println!("authenticated: {data}"),

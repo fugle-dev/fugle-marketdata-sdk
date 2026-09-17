@@ -37,7 +37,7 @@ async fn assert_single_client_disconnect(behaviour: common::AfterAuth) {
             .shutdown_with_timeout(Duration::from_secs(3))
             .expect("shutdown returns");
 
-        let rx = client.state_events().lock().expect("events lock");
+        let rx = common::EventReceiver::of_sync(&client);
         common::drain_until_quiet(|timeout| rx.recv_timeout(timeout).ok())
     })
     .await
@@ -105,7 +105,7 @@ async fn sync_disconnect_after_server_close_emits_no_second_disconnect() {
             WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
         client.connect().expect("connect");
 
-        let rx = client.state_events().lock().expect("events lock");
+        let rx = common::EventReceiver::of_sync(&client);
         let mut events = Vec::new();
         while let Ok(event) = rx.recv_timeout(Duration::from_secs(5)) {
             let done = matches!(event, ConnectionEvent::Disconnected { .. });

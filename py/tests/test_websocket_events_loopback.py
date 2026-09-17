@@ -2,10 +2,12 @@
 
 The binding only forwards core's connection events (#55, #56): ``connect``,
 ``authenticated(data)`` / ``unauthenticated(data)`` and ``disconnect`` all come
-from core's event channel, and ``disconnect()`` / a failed ``connect()`` return
-only once the event thread has delivered what core queued (#54).
+from core's stream, and ``disconnect()`` / a failed ``connect()`` return only
+once the stream reader has delivered what core queued (#54). Messages arrive
+on the same stream, so ``message`` keeps its place among the events (#68).
 """
 import asyncio
+import threading
 import time
 
 import pytest
@@ -14,6 +16,7 @@ from fugle_marketdata import AuthError, HealthCheckConfig
 from tests.ws_loopback import (
     REJECTED_API_KEY,
     TIMEOUT_S,
+    InProcessLoopbackServer,
     LoopbackServer,
     Recorder,
     disconnect_quietly,
@@ -60,7 +63,7 @@ def test_rejected_key_fires_unauthenticated_before_raising(server, product):
     with pytest.raises(AuthError):
         ws.connect()
 
-    # No waiting: connect() raises only after the event thread delivered.
+    # No waiting: connect() raises only after the stream reader delivered.
     assert recorder.args_of("unauthenticated") == [
         ({"message": "Invalid authentication credentials"},)
     ]
@@ -107,7 +110,7 @@ def test_disconnect_from_disconnect_callback_still_waits(server):
     finished = []
 
     def disconnect_again(code, reason):
-        # Runs on the event thread: must neither self-join nor stop the outer
+        # Runs on the stream reader: must neither self-join nor stop the outer
         # disconnect() from waiting for the callbacks after this one.
         ws.disconnect()
         time.sleep(0.2)
@@ -154,3 +157,97 @@ async def test_connect_async_rejected_key_fires_unauthenticated_before_raising(s
         ({"message": "Invalid authentication credentials"},)
     ]
 
+
+
+SUBSCRIPTION = {"channel": "trades", "symbol": "2330"}
+
+
+def _names(calls):
+    return [name for name, _ in calls]
+
+
+@hard_timeout
+def test_messages_arrive_between_authenticated_and_disconnect_while_disconnecting():
+    # Messages still flowing when disconnect() is called reach the callback,
+    # and all of them before `disconnect` (#68).
+    with LoopbackServer(flood=True) as srv:
+        ws = product_ws(srv.url, "stock")
+        recorder = Recorder(ws, messages=True)
+        try:
+            ws.connect()
+            ws.subscribe(SUBSCRIPTION)
+            recorder.wait_until(
+                lambda calls: _names(calls).count("message") >= 50, TIMEOUT_S, "50 messages"
+            )
+            ws.disconnect()
+        finally:
+            disconnect_quietly(ws)
+
+    names = _names(recorder.calls)
+    assert names[:2] == ["connect", "authenticated"], names[:5]
+    assert names[-1] == "disconnect", names[-5:]
+    assert names.count("disconnect") == 1
+    assert set(names[2:-1]) == {"message"}, [n for n in names[2:-1] if n != "message"]
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_rejected_authentication_frame_never_reaches_message(server, product):
+    ws = product_ws(server.url, product, api_key=REJECTED_API_KEY)
+    recorder = Recorder(ws, messages=True)
+    with pytest.raises(AuthError):
+        ws.connect()
+
+    assert "message" not in recorder.names(), recorder.calls
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_message_callback_registered_after_connect_receives_messages(server, product):
+    # Whether a `message` callback exists is checked per message (#68).
+    ws = product_ws(server.url, product)
+    try:
+        ws.connect()
+        recorder = Recorder(ws, messages=True)
+        ws.subscribe(
+            SUBSCRIPTION if product == "stock" else {"channel": "trades", "symbol": "TXFA4"}
+        )
+        recorder.wait_for("message", TIMEOUT_S)
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
+def test_disconnect_returns_while_an_unread_iterator_holds_up_the_stream():
+    # Nobody iterates, so the handoff to `messages()` fills and the reader
+    # waits; disconnect() must still return and fire `disconnect` (#54, #68).
+    with LoopbackServer(flood=True) as srv:
+        ws = product_ws(srv.url, "stock")
+        recorder = Recorder(ws)
+        try:
+            ws.connect()
+            ws.subscribe(SUBSCRIPTION)
+            time.sleep(1)
+            started = time.monotonic()
+            ws.disconnect()
+            assert time.monotonic() - started < TIMEOUT_S
+            assert recorder.args_of("disconnect") == [(1000, "Normal closure")]
+        finally:
+            disconnect_quietly(ws)
+
+
+@hard_timeout
+def test_iterator_waits_without_holding_the_gil():
+    # The server answers from a Python thread of this process, and the
+    # subscribe comes from another thread while the iterator waits: both need
+    # the GIL the waiting iterator must have released (#68).
+    with InProcessLoopbackServer() as srv:
+        ws = product_ws(srv.url, "stock")
+        try:
+            ws.connect()
+            messages = ws.messages(timeout_ms=TIMEOUT_S * 1000)
+            assert next(messages)["event"] == "authenticated"
+            threading.Timer(0.2, ws.subscribe, args=(SUBSCRIPTION,)).start()
+            assert next(messages)["event"] == "subscribed"
+        finally:
+            disconnect_quietly(ws)

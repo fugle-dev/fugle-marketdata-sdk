@@ -135,7 +135,7 @@ def test_still_accepts_commands_well_after_connect(product_ws):
 @hard_timeout
 def test_disconnect_returns_while_messages_flow(product_case):
     product, subscription = product_case
-    # The message thread is delivering frames non-stop, so disconnect() must
+    # The stream reader is delivering frames non-stop, so disconnect() must
     # join it without holding the GIL that thread needs (#39).
     with LoopbackServer(flood=True) as srv:
         ws = _product_ws(srv.url, product)
