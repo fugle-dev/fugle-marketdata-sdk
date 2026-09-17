@@ -630,12 +630,34 @@ impl WebSocketClient {
         self.connect_impl().await
     }
 
-    pub async fn subscribe(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
-        self.subscribe_impl(channel.parse()?, symbol).await
+    /// Subscribe to a channel for a symbol.
+    ///
+    /// After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+    /// other than null is 1005 `INVALID_PARAMETER`.
+    #[uniffi::method(default(after_hours = None))]
+    pub async fn subscribe(
+        &self,
+        channel: String,
+        symbol: String,
+        after_hours: Option<bool>,
+    ) -> Result<(), MarketDataError> {
+        let sub = self.subscription(&channel, &symbol, after_hours)?;
+        self.subscribe_impl(sub).await
     }
 
-    pub async fn unsubscribe(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
-        self.unsubscribe_impl(channel, symbol).await
+    /// Unsubscribe from a channel for a symbol.
+    ///
+    /// Pass the same after-hours value as the `subscribe` call: an after-hours
+    /// subscription is a separate subscription from the regular one.
+    #[uniffi::method(default(after_hours = None))]
+    pub async fn unsubscribe(
+        &self,
+        channel: String,
+        symbol: String,
+        after_hours: Option<bool>,
+    ) -> Result<(), MarketDataError> {
+        let sub = self.subscription(&channel, &symbol, after_hours)?;
+        self.unsubscribe_impl(sub).await
     }
 
     pub async fn ping(&self, state: Option<String>) -> Result<(), MarketDataError> {
@@ -751,41 +773,63 @@ impl WebSocketClient {
         Ok(())
     }
 
-    /// Subscribe to a channel for a symbol
+    /// The subscription for this client's endpoint: FutOpt channels and
+    /// `after_hours` on FutOpt, stock channels on Stock.
     ///
-    /// Callers parse the channel name first, so an unknown one is 1005
-    /// `INVALID_PARAMETER` whether or not the client is connected.
+    /// Callers build it before checking the connection, so an unknown channel,
+    /// or `after_hours` on the Stock endpoint, is 1005 `INVALID_PARAMETER`
+    /// whether or not the client is connected.
+    fn subscription(
+        &self,
+        channel: &str,
+        symbol: &str,
+        after_hours: Option<bool>,
+    ) -> Result<Subscription, MarketDataError> {
+        match self.endpoint {
+            WebSocketEndpoint::Stock => {
+                // The channel first, as on the FutOpt endpoint.
+                let channel = channel.parse()?;
+                if after_hours.is_some() {
+                    return Err(marketdata_core::MarketDataError::InvalidParameter {
+                        name: "afterHours".to_string(),
+                        reason: "only supported on the FutOpt endpoint".to_string(),
+                    }
+                    .into());
+                }
+                Ok(Subscription::Stock(marketdata_core::StockSubscription::new(channel, symbol)))
+            }
+            WebSocketEndpoint::FutOpt => Ok(Subscription::FutOpt(
+                marketdata_core::FutOptSubscription::new(channel.parse()?, symbol)
+                    .with_after_hours(after_hours.unwrap_or(false)),
+            )),
+        }
+    }
+
+    /// Subscribe to a channel for a symbol
     ///
     /// # Errors
     ///
     /// Returns error if not connected or subscription fails.
-    async fn subscribe_impl(
-        &self,
-        channel: marketdata_core::models::Channel,
-        symbol: String,
-    ) -> Result<(), MarketDataError> {
+    async fn subscribe_impl(&self, sub: Subscription) -> Result<(), MarketDataError> {
         if let Some(ws) = self.client() {
-            let sub = marketdata_core::StockSubscription::new(channel, &symbol);
-            ws.subscribe(sub).await?;
+            match sub {
+                Subscription::Stock(sub) => ws.subscribe(sub).await?,
+                Subscription::FutOpt(sub) => ws.subscribe_futopt(sub).await?,
+            }
             Ok(())
         } else {
             Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
-    /// Unsubscribe from a channel for a symbol
-    ///
-    /// # Arguments
-    /// * `channel` - Channel name
-    /// * `symbol` - Symbol to unsubscribe
+    /// Unsubscribe the subscription `sub` names
     ///
     /// # Errors
     ///
     /// Returns error if not connected.
-    async fn unsubscribe_impl(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
+    async fn unsubscribe_impl(&self, sub: Subscription) -> Result<(), MarketDataError> {
         if let Some(ws) = self.client() {
-            let key = format!("{}:{}", channel, symbol);
-            ws.unsubscribe([key]).await?;
+            ws.unsubscribe(sub.keys()).await?;
             Ok(())
         } else {
             Err(crate::errors::not_connected_error("Not connected"))
@@ -840,6 +884,22 @@ impl WebSocketClient {
     }
 }
 
+/// A subscription built for the client's endpoint.
+enum Subscription {
+    Stock(marketdata_core::StockSubscription),
+    FutOpt(marketdata_core::FutOptSubscription),
+}
+
+impl Subscription {
+    /// Core's subscription keys, which `unsubscribe` looks up.
+    fn keys(&self) -> Vec<String> {
+        match self {
+            Subscription::Stock(sub) => sub.keys(),
+            Subscription::FutOpt(sub) => sub.keys(),
+        }
+    }
+}
+
 /// Sync (blocking) wrappers for C++ compatibility.
 /// Uses a persistent tokio runtime stored in the client to keep background tasks alive.
 #[cfg(feature = "cpp")]
@@ -867,10 +927,10 @@ impl WebSocketClient {
     /// Subscribe to a channel for a symbol (blocking).
     pub fn subscribe_sync(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
         // Before the runtime check, as in `subscribe`.
-        let channel = channel.parse()?;
+        let sub = self.subscription(&channel, &symbol, None)?;
         let guard = self.sync_runtime.lock().unwrap();
         if let Some(ref rt) = *guard {
-            rt.block_on(self.subscribe_impl(channel, symbol))
+            rt.block_on(self.subscribe_impl(sub))
         } else {
             Err(crate::errors::not_connected_error("Not connected (call connect_sync first)"))
         }
@@ -878,9 +938,10 @@ impl WebSocketClient {
 
     /// Unsubscribe from a channel for a symbol (blocking).
     pub fn unsubscribe_sync(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
+        let sub = self.subscription(&channel, &symbol, None)?;
         let guard = self.sync_runtime.lock().unwrap();
         if let Some(ref rt) = *guard {
-            rt.block_on(self.unsubscribe_impl(channel, symbol))
+            rt.block_on(self.unsubscribe_impl(sub))
         } else {
             Err(crate::errors::not_connected_error("Not connected"))
         }
@@ -1383,10 +1444,19 @@ mod tests {
         listener: Arc<TestListener>,
         reconnect: Option<ReconnectConfigRecord>,
     ) -> Arc<WebSocketClient> {
+        mock_client_for(server, listener, WebSocketEndpoint::Stock, reconnect)
+    }
+
+    fn mock_client_for(
+        server: &MockWsServer,
+        listener: Arc<TestListener>,
+        endpoint: WebSocketEndpoint,
+        reconnect: Option<ReconnectConfigRecord>,
+    ) -> Arc<WebSocketClient> {
         WebSocketClient::new_with_full_config(
             "test-key".to_string(),
             listener,
-            WebSocketEndpoint::Stock,
+            endpoint,
             Some(format!("ws://{}/marketdata", server.address())),
             reconnect,
             None,
@@ -2098,17 +2168,44 @@ mod tests {
         }
     }
 
-    fn assert_unknown_channel(result: Result<(), MarketDataError>) {
+    fn assert_invalid_parameter(result: Result<(), MarketDataError>, expected: &str) {
         match result {
             Err(MarketDataError::ApiError { msg, info }) => {
                 assert_eq!(info.code, marketdata_core::error_code::INVALID_PARAMETER);
-                assert_eq!(
-                    msg,
-                    "Invalid parameter 'channel': unknown channel 'trade'. \
-                     Valid channels: trades, candles, books, aggregates, indices"
-                );
+                assert_eq!(msg, expected);
             }
             other => panic!("expected INVALID_PARAMETER, got {other:?}"),
+        }
+    }
+
+    fn assert_unknown_channel(result: Result<(), MarketDataError>) {
+        assert_invalid_parameter(
+            result,
+            "Invalid parameter 'channel': unknown channel 'trade'. \
+             Valid channels: trades, candles, books, aggregates, indices",
+        );
+    }
+
+    const FUTOPT_INDICES: &str = "Invalid parameter 'channel': unknown channel 'indices'. \
+                                  Valid channels: trades, candles, books, aggregates";
+
+    #[cfg(not(feature = "cpp"))]
+    const STOCK_AFTER_HOURS: &str =
+        "Invalid parameter 'afterHours': only supported on the FutOpt endpoint";
+
+    fn futopt_client() -> Arc<WebSocketClient> {
+        WebSocketClient::new_with_endpoint(
+            "test-key".to_string(),
+            Arc::new(TestListener::new()),
+            WebSocketEndpoint::FutOpt,
+        )
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    fn assert_not_connected(result: Result<(), MarketDataError>) {
+        match result {
+            Err(MarketDataError::WebSocketError { msg, .. }) if msg == "Not connected" => {}
+            other => panic!("expected \"Not connected\", got {other:?}"),
         }
     }
 
@@ -2116,12 +2213,73 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn subscribe_rejects_unknown_channel_before_connecting() {
         let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
-        assert_unknown_channel(client.subscribe("trade".into(), "2330".into()).await);
+        assert_unknown_channel(client.subscribe("trade".into(), "2330".into(), None).await);
+        assert_unknown_channel(client.unsubscribe("trade".into(), "2330".into(), None).await);
+        // The channel is checked before after-hours.
+        assert_unknown_channel(client.subscribe("trade".into(), "2330".into(), Some(true)).await);
         // A known name, in any case, gets past the check to "not connected".
-        match client.subscribe("Trades".into(), "2330".into()).await {
-            Err(MarketDataError::WebSocketError { msg, .. }) if msg == "Not connected" => {}
-            other => panic!("expected \"Not connected\", got {other:?}"),
+        assert_not_connected(client.subscribe("Trades".into(), "2330".into(), None).await);
+        assert_not_connected(client.unsubscribe("Trades".into(), "2330".into(), None).await);
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn futopt_endpoint_parses_futopt_channels_before_connecting() {
+        let client = futopt_client();
+        assert_invalid_parameter(
+            client.subscribe("indices".into(), "TXFE6".into(), None).await,
+            FUTOPT_INDICES,
+        );
+        assert_invalid_parameter(
+            client.unsubscribe("indices".into(), "TXFE6".into(), Some(true)).await,
+            FUTOPT_INDICES,
+        );
+        assert_not_connected(client.subscribe("Books".into(), "TXFE6".into(), Some(true)).await);
+        assert_not_connected(client.unsubscribe("books".into(), "TXFE6".into(), None).await);
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stock_endpoint_rejects_after_hours_before_connecting() {
+        let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        for after_hours in [true, false] {
+            assert_invalid_parameter(
+                client.subscribe("trades".into(), "2330".into(), Some(after_hours)).await,
+                STOCK_AFTER_HOURS,
+            );
+            assert_invalid_parameter(
+                client.unsubscribe("trades".into(), "2330".into(), Some(after_hours)).await,
+                STOCK_AFTER_HOURS,
+            );
         }
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn futopt_after_hours_subscription_is_unsubscribed_with_after_hours() {
+        let server = MockWsServer::start().await;
+        let client = mock_client_for(
+            &server,
+            Arc::new(TestListener::new()),
+            WebSocketEndpoint::FutOpt,
+            None,
+        );
+        client.connect_impl().await.expect("connect");
+        let core = client.client().expect("connected");
+
+        client.subscribe("books".into(), "TXFE6".into(), Some(true)).await.expect("subscribe");
+        client.subscribe("books".into(), "TXFE6".into(), None).await.expect("subscribe");
+        let mut keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
+        keys.sort();
+        assert_eq!(keys, ["books:TXFE6", "books:TXFE6:afterhours"]);
+
+        client.unsubscribe("books".into(), "TXFE6".into(), Some(true)).await.expect("unsubscribe");
+        let keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
+        assert_eq!(keys, ["books:TXFE6"]);
+
+        client.unsubscribe("Books".into(), "TXFE6".into(), None).await.expect("unsubscribe");
+        assert_eq!(core.subscription_count(), 0);
+        client.disconnect_impl().await;
     }
 
     #[cfg(feature = "cpp")]
@@ -2129,5 +2287,14 @@ mod tests {
     fn subscribe_sync_rejects_unknown_channel_before_connecting() {
         let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
         assert_unknown_channel(client.subscribe_sync("trade".into(), "2330".into()));
+        assert_unknown_channel(client.unsubscribe_sync("trade".into(), "2330".into()));
+    }
+
+    #[cfg(feature = "cpp")]
+    #[test]
+    fn sync_futopt_endpoint_parses_futopt_channels() {
+        let client = futopt_client();
+        assert_invalid_parameter(client.subscribe_sync("indices".into(), "TXFE6".into()), FUTOPT_INDICES);
+        assert_invalid_parameter(client.unsubscribe_sync("indices".into(), "TXFE6".into()), FUTOPT_INDICES);
     }
 }

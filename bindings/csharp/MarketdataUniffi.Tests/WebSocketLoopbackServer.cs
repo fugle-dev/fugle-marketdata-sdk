@@ -11,7 +11,8 @@ namespace MarketdataUniffi.Tests;
 
 /// <summary>
 /// A loopback WebSocket server that records the <c>data</c> of every
-/// <c>auth</c> frame (as compact JSON) and acks it.
+/// <c>auth</c> frame (as compact JSON) and acks it, and records every other
+/// text frame as is.
 /// <see cref="DropConnections"/> cuts the open connections without a Close frame.
 /// </summary>
 internal sealed class WebSocketLoopbackServer : IDisposable
@@ -33,6 +34,9 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     public string Url { get; }
 
     public ConcurrentQueue<string> AuthData { get; } = new();
+
+    /// <summary>Text frames other than auth, in arrival order.</summary>
+    public ConcurrentQueue<string> OtherFrames { get; } = new();
 
     /// <summary>Cut every open connection at the transport, as a network failure would.</summary>
     public void DropConnections()
@@ -79,8 +83,13 @@ internal sealed class WebSocketLoopbackServer : IDisposable
                     return;
                 }
 
-                using var frame = JsonDocument.Parse(Encoding.UTF8.GetString(buffer, 0, received));
-                if (frame.RootElement.GetProperty("event").GetString() == "auth")
+                var text = Encoding.UTF8.GetString(buffer, 0, received);
+                using var frame = JsonDocument.Parse(text);
+                if (frame.RootElement.GetProperty("event").GetString() != "auth")
+                {
+                    OtherFrames.Enqueue(text);
+                }
+                else
                 {
                     AuthData.Enqueue(frame.RootElement.GetProperty("data").GetRawText());
                     var ack = Encoding.UTF8.GetBytes("{\"event\":\"authenticated\",\"data\":{\"message\":\"Authenticated successfully\"}}");

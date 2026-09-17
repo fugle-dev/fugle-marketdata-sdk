@@ -1212,7 +1212,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe()
 		})
-		if checksum != 39559 {
+		if checksum != 4743 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe: UniFFI API checksum mismatch")
 		}
@@ -1221,7 +1221,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe()
 		})
-		if checksum != 21735 {
+		if checksum != 49934 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe: UniFFI API checksum mismatch")
 		}
@@ -4489,8 +4489,16 @@ type WebSocketClientInterface interface {
 	MessagesDroppedTotal() uint64
 	Ping(state *string) error
 	QuerySubscriptions() error
-	Subscribe(channel string, symbol string) error
-	Unsubscribe(channel string, symbol string) error
+	// Subscribe to a channel for a symbol.
+	//
+	// After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+	// other than null is 1005 `INVALID_PARAMETER`.
+	Subscribe(channel string, symbol string, afterHours *bool) error
+	// Unsubscribe from a channel for a symbol.
+	//
+	// Pass the same after-hours value as the `subscribe` call: an after-hours
+	// subscription is a separate subscription from the regular one.
+	Unsubscribe(channel string, symbol string, afterHours *bool) error
 }
 
 // WebSocket client for real-time market data streaming
@@ -4773,7 +4781,11 @@ func (_self *WebSocketClient) QuerySubscriptions() error {
 	return err
 }
 
-func (_self *WebSocketClient) Subscribe(channel string, symbol string) error {
+// Subscribe to a channel for a symbol.
+//
+// After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+// other than null is 1005 `INVALID_PARAMETER`.
+func (_self *WebSocketClient) Subscribe(channel string, symbol string, afterHours *bool) error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4786,7 +4798,7 @@ func (_self *WebSocketClient) Subscribe(channel string, symbol string) error {
 		// liftFn
 		func(_ struct{}) struct{} { return struct{}{} },
 		C.uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(
-			_pointer, FfiConverterStringINSTANCE.Lower(channel), FfiConverterStringINSTANCE.Lower(symbol)),
+			_pointer, FfiConverterStringINSTANCE.Lower(channel), FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalBoolINSTANCE.Lower(afterHours)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_void(handle, continuation, data)
@@ -4804,7 +4816,11 @@ func (_self *WebSocketClient) Subscribe(channel string, symbol string) error {
 	return err
 }
 
-func (_self *WebSocketClient) Unsubscribe(channel string, symbol string) error {
+// Unsubscribe from a channel for a symbol.
+//
+// Pass the same after-hours value as the `subscribe` call: an after-hours
+// subscription is a separate subscription from the regular one.
+func (_self *WebSocketClient) Unsubscribe(channel string, symbol string, afterHours *bool) error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()
 	_, err := uniffiRustCallAsync[MarketDataError](
@@ -4817,7 +4833,7 @@ func (_self *WebSocketClient) Unsubscribe(channel string, symbol string) error {
 		// liftFn
 		func(_ struct{}) struct{} { return struct{}{} },
 		C.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(
-			_pointer, FfiConverterStringINSTANCE.Lower(channel), FfiConverterStringINSTANCE.Lower(symbol)),
+			_pointer, FfiConverterStringINSTANCE.Lower(channel), FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalBoolINSTANCE.Lower(afterHours)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_void(handle, continuation, data)

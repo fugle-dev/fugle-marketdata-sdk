@@ -113,6 +113,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingClient` reports drops on `Errors()` (skipping a report when
   `Errors()` is full rather than holding up `Messages()`), Java's pull mode
   on the error queue.
+- **C#, Go, Java**: WebSocket subscribe and unsubscribe take the FutOpt
+  after-hours (盤後) session, like Python and Node (#123): C#
+  `SubscribeAsync(channel, symbol, afterHours: true)`, Go
+  `Subscribe(channel, symbol, WithAfterHours(true))`, Java
+  `subscribe(channel, symbol, true)`; unsubscribe takes the same value, since
+  an after-hours subscription is separate from the regular one. On the Stock
+  endpoint any after-hours value, `false` included, is 1005
+  `INVALID_PARAMETER`.
 
 ### Changed
 
@@ -250,6 +258,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anything, and two concurrent calls could both open a connection.
   `reconnect()` is unaffected. See
   [MIGRATION-0.9.md](MIGRATION-0.9.md#16-websocket-connect-while-connected-code-2011).
+- **C#, Go, Java (generated UniFFI layer)**: `WebSocketClient.subscribe` and
+  `unsubscribe` take a third argument, `after_hours` (C# `bool? afterHours =
+  null`, Go `afterHours *bool`, Java `Boolean afterHours`); pass null / nil
+  for the regular session (#123). The C#, Go and Java wrappers keep their
+  two-argument calls. Go's `StreamingClient.Subscribe` / `Unsubscribe` now wrap
+  the `*MarketDataError`, so `ErrorInfoOf` reads its code.
+- **C#, Go, Java, C++**: WebSocket unsubscribe checks the channel name like
+  subscribe does: an unknown name is 1005 `INVALID_PARAMETER`, before the
+  connection (#123).
 - **Python, C#, Go, Java, C++**: WebSocket `subscribe()` with an unknown
   channel name fails with code 1005 `INVALID_PARAMETER`, parsed by core, and
   the same message as Node (#114). Python raised `ValueError` (now
@@ -405,11 +422,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. C++ `connect_sync()` no longer replaces the live connection's
   runtime when refused, and a refused Java pull-mode `connect()` no longer
   keeps `disconnect()` from ending a wait for queue room.
-- **Go**: errors returned by `StreamingClient` (`Connect`, `Subscribe`,
-  `Unsubscribe`, `Ping`, `QuerySubscriptions`) wrapped the SDK error with
-  `%v`, so `ErrorInfoOf(err)` returned `false` and the code (for example 1005
-  or 2011) was unreachable. They now wrap it with `%w`; the message is
+- **Go**: errors returned by `StreamingClient.Connect`, `Ping` and
+  `QuerySubscriptions` wrapped the SDK error with `%v`, so `ErrorInfoOf(err)`
+  returned `false` and the code (for example 2011) was unreachable. They now
+  wrap it with `%w`, like `Subscribe` / `Unsubscribe` (#123); the message is
   unchanged (#119).
+- **C#, Go, Java, C++**: a WebSocket client on the FutOpt endpoint parsed
+  subscribe channels as stock channels and sent a stock subscription, so
+  `indices` was accepted and after-hours could not be requested. It now takes
+  FutOpt channels (an unknown one is 1005 listing `trades, candles, books,
+  aggregates`) and sends a FutOpt subscription (#123). Unsubscribe also
+  matched the channel name case-sensitively and never found an after-hours
+  subscription; it now uses core's subscription keys.
 - **C#, Go, C++, Java**: `is_closed()` stayed `false` after the server closed
   the connection with no reconnect to follow; it only reflected
   `disconnect()`. It now reads core's connection state, like `is_connected()`:

@@ -1,6 +1,7 @@
 // ws_wrapper_errors_test.go - StreamingClient errors keep the SDK error (#119).
 //
-// They used to be flattened with %v, so ErrorInfoOf found no ErrorInfo.
+// Connect, Ping and QuerySubscriptions flattened it with %v, so ErrorInfoOf
+// found no ErrorInfo. Connect is covered by ws_already_connected_test.go.
 //
 // Run: CGO_ENABLED=1 go test -run WrapperErrors -short .
 
@@ -15,9 +16,14 @@ func TestStreamingClient_WrapperErrorsCarryErrorInfo(t *testing.T) {
 	}
 	defer client.Close()
 
-	err = client.Subscribe("trade", "2330")
-	info, ok := ErrorInfoOf(err)
-	if !ok || info.Code != 1005 {
-		t.Fatalf("Subscribe(unknown channel): got %v (info %+v), want code 1005", err, info)
+	for name, call := range map[string]func() error{
+		"Ping":               func() error { return client.Ping(nil) },
+		"QuerySubscriptions": client.QuerySubscriptions,
+	} {
+		err := call()
+		info, ok := ErrorInfoOf(err)
+		if !ok || info.Code != 2001 {
+			t.Errorf("%s before Connect: got %v (info %+v), want code 2001", name, err, info)
+		}
 	}
 }

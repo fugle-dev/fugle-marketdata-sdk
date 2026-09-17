@@ -108,7 +108,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := client.Subscribe("trades", "2330"); err != nil {
+	if err := client.Subscribe("trades", "2330", nil); err != nil {
 		fmt.Fprintf(os.Stderr, "subscribe failed: %v\n", err)
 		os.Exit(1)
 	}

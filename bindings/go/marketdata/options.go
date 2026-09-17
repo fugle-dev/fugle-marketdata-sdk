@@ -124,3 +124,27 @@ func WithMessageBuffer(n int) Option {
 		return nil
 	}
 }
+
+// SubscribeOption configures a StreamingClient Subscribe or Unsubscribe call
+type SubscribeOption func(*subscribeConfig)
+
+type subscribeConfig struct {
+	afterHours *bool
+}
+
+// WithAfterHours selects the after-hours (盤後) session. FutOpt endpoint only:
+// on the Stock endpoint, Subscribe and Unsubscribe return error 1005.
+func WithAfterHours(afterHours bool) SubscribeOption {
+	return func(cfg *subscribeConfig) {
+		cfg.afterHours = &afterHours
+	}
+}
+
+// subscribeAfterHours is the after-hours value opts set, nil if none does.
+func subscribeAfterHours(opts []SubscribeOption) *bool {
+	var cfg subscribeConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg.afterHours
+}
