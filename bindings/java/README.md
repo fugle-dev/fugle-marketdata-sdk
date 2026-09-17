@@ -293,8 +293,10 @@ boolean isClosed()                            // Check if client is closed
 long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
 
 // Subscription management
-CompletableFuture<Void> subscribe(String channel, String symbol)  // Subscribe
-CompletableFuture<Void> unsubscribe(String subscriptionId)        // Unsubscribe
+CompletableFuture<Void> subscribe(String channel, String symbol)                        // Subscribe
+CompletableFuture<Void> subscribe(String channel, String symbol, boolean afterHours)    // FutOpt after-hours (FutOpt endpoint only; 1005 on Stock)
+CompletableFuture<Void> unsubscribe(String channel, String symbol)                      // Unsubscribe
+CompletableFuture<Void> unsubscribe(String channel, String symbol, boolean afterHours)  // Same afterHours as subscribe
 List<Subscription> getSubscriptions()                              // List subscriptions
 
 // Message polling (pull mode)

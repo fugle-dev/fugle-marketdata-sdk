@@ -50,9 +50,21 @@ public interface WebSocketClientInterface {
     
     public CompletableFuture<Void> querySubscriptions() ;
     
-    public CompletableFuture<Void> subscribe(String channel, String symbol) ;
+    /**
+     * Subscribe to a channel for a symbol.
+     *
+     * After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+     * other than null is 1005 `INVALID_PARAMETER`.
+     */
+    public CompletableFuture<Void> subscribe(String channel, String symbol, Boolean afterHours) ;
     
-    public CompletableFuture<Void> unsubscribe(String channel, String symbol) ;
+    /**
+     * Unsubscribe from a channel for a symbol.
+     *
+     * Pass the same after-hours value as the `subscribe` call: an after-hours
+     * subscription is a separate subscription from the regular one.
+     */
+    public CompletableFuture<Void> unsubscribe(String channel, String symbol, Boolean afterHours) ;
     
 }
 

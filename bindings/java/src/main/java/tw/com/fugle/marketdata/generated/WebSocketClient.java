@@ -321,14 +321,20 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     }
 
   
+    /**
+     * Subscribe to a channel for a symbol.
+     *
+     * After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+     * other than null is 1005 `INVALID_PARAMETER`.
+     */
     @Override
     
-    public CompletableFuture<Void> subscribe(String channel, String symbol){
+    public CompletableFuture<Void> subscribe(String channel, String symbol, Boolean afterHours){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(channel), FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(channel), FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalBoolean.INSTANCE.lower(afterHours)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_void(future, callback, continuation),
@@ -342,14 +348,20 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     }
 
   
+    /**
+     * Unsubscribe from a channel for a symbol.
+     *
+     * Pass the same after-hours value as the `subscribe` call: an after-hours
+     * subscription is a separate subscription from the regular one.
+     */
     @Override
     
-    public CompletableFuture<Void> unsubscribe(String channel, String symbol){
+    public CompletableFuture<Void> unsubscribe(String channel, String symbol, Boolean afterHours){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(channel), FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(channel), FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalBoolean.INSTANCE.lower(afterHours)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_void(future, callback, continuation),

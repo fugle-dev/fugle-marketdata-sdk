@@ -194,7 +194,26 @@ public class FugleWebSocketClient implements AutoCloseable {
      * @throws ApiException if subscription fails
      */
     public CompletableFuture<Void> subscribe(String channel, String symbol) {
-        return webSocketClient.subscribe(channel, symbol)
+        return subscribeSession(channel, symbol, null);
+    }
+
+    /**
+     * Subscribe to a channel for a symbol in the regular or after-hours (盤後) session.
+     *
+     * <p>FutOpt endpoint only: on the Stock endpoint this fails with error 1005.
+     *
+     * @param channel Channel name (e.g., "trades", "candles", "books")
+     * @param symbol Symbol to subscribe (e.g., "TXFE6")
+     * @param afterHours Whether to subscribe to the after-hours session
+     * @return CompletableFuture that completes when subscribed
+     * @throws ApiException if subscription fails
+     */
+    public CompletableFuture<Void> subscribe(String channel, String symbol, boolean afterHours) {
+        return subscribeSession(channel, symbol, afterHours);
+    }
+
+    private CompletableFuture<Void> subscribeSession(String channel, String symbol, Boolean afterHours) {
+        return webSocketClient.subscribe(channel, symbol, afterHours)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
     }
 
@@ -206,7 +225,27 @@ public class FugleWebSocketClient implements AutoCloseable {
      * @return CompletableFuture that completes when unsubscribed
      */
     public CompletableFuture<Void> unsubscribe(String channel, String symbol) {
-        return webSocketClient.unsubscribe(channel, symbol)
+        return unsubscribeSession(channel, symbol, null);
+    }
+
+    /**
+     * Unsubscribe a subscription made with {@link #subscribe(String, String, boolean)}.
+     *
+     * <p>Pass the same {@code afterHours}: an after-hours subscription is separate
+     * from the regular one. FutOpt endpoint only: on the Stock endpoint this fails
+     * with error 1005.
+     *
+     * @param channel Channel name
+     * @param symbol Symbol to unsubscribe
+     * @param afterHours The value passed to {@code subscribe}
+     * @return CompletableFuture that completes when unsubscribed
+     */
+    public CompletableFuture<Void> unsubscribe(String channel, String symbol, boolean afterHours) {
+        return unsubscribeSession(channel, symbol, afterHours);
+    }
+
+    private CompletableFuture<Void> unsubscribeSession(String channel, String symbol, Boolean afterHours) {
+        return webSocketClient.unsubscribe(channel, symbol, afterHours)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
     }
 

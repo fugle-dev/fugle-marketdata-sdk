@@ -273,8 +273,9 @@ bool IsConnected                              // Check connection status
 bool IsClosed                                 // Check if client is closed
 ulong MessagesDroppedTotal                    // Messages dropped this connection (see below)
 
-Task SubscribeAsync(string channel, string symbol)  // Subscribe to channel
-Task UnsubscribeAsync(string subscriptionId)        // Unsubscribe by ID
+// afterHours: FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
+Task SubscribeAsync(string channel, string symbol, bool? afterHours = null)    // Subscribe to channel
+Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null)  // Unsubscribe (same afterHours as subscribe)
 List<Subscription> GetSubscriptions()               // List active subscriptions
 ```
 
