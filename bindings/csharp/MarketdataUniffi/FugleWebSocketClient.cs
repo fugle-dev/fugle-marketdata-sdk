@@ -367,18 +367,22 @@ namespace FugleMarketData
         /// <summary>
         /// Subscribe to a market data channel for a symbol.
         /// </summary>
-        /// <param name="channel">Channel name: "trades", "candles", "books", "meta"</param>
+        /// <param name="channel">Channel name: "trades", "candles", "books", "aggregates", plus "indices" on the Stock endpoint</param>
         /// <param name="symbol">Symbol to subscribe (e.g., "2330" for TSMC)</param>
+        /// <param name="afterHours">After-hours (盤後) session. FutOpt endpoint only: on the Stock endpoint any non-null value is error 1005</param>
         /// <returns>Task that completes when subscription is confirmed</returns>
-        public Task SubscribeAsync(string channel, string symbol) => _inner.Subscribe(channel, symbol);
+        public Task SubscribeAsync(string channel, string symbol, bool? afterHours = null) =>
+            _inner.Subscribe(channel, symbol, afterHours);
 
         /// <summary>
         /// Unsubscribe from a market data channel for a symbol.
         /// </summary>
         /// <param name="channel">Channel name</param>
         /// <param name="symbol">Symbol to unsubscribe</param>
+        /// <param name="afterHours">The same value as the <see cref="SubscribeAsync"/> call: an after-hours subscription is separate from the regular one</param>
         /// <returns>Task that completes when unsubscription is confirmed</returns>
-        public Task UnsubscribeAsync(string channel, string symbol) => _inner.Unsubscribe(channel, symbol);
+        public Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null) =>
+            _inner.Unsubscribe(channel, symbol, afterHours);
 
         /// <summary>
         /// Whether the client is currently connected to the server.

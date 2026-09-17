@@ -57,13 +57,15 @@ func TestWebSocketAuthFrame_CredentialInItsField(t *testing.T) {
 }
 
 // authFrameServer is a loopback WebSocket server on the standard library
-// alone: it records the `data` of every auth frame and acks it.
-// dropConnections cuts the open connections without a Close frame.
+// alone: it records the `data` of every auth frame and acks it, and records
+// every other text frame as is. dropConnections cuts the open connections
+// without a Close frame.
 type authFrameServer struct {
-	srv   *httptest.Server
-	mu    sync.Mutex
-	auth  []map[string]any
-	conns []net.Conn
+	srv    *httptest.Server
+	mu     sync.Mutex
+	auth   []map[string]any
+	others []string
+	conns  []net.Conn
 }
 
 func newAuthFrameServer(t *testing.T) *authFrameServer {
@@ -76,6 +78,13 @@ func newAuthFrameServer(t *testing.T) *authFrameServer {
 
 func (s *authFrameServer) url() string {
 	return "ws" + strings.TrimPrefix(s.srv.URL, "http")
+}
+
+// otherFrames are the text frames other than auth, in arrival order.
+func (s *authFrameServer) otherFrames() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.others...)
 }
 
 func (s *authFrameServer) authData() []map[string]any {
@@ -128,7 +137,13 @@ func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 				Event string         `json:"event"`
 				Data  map[string]any `json:"data"`
 			}
-			if json.Unmarshal(payload, &frame) != nil || frame.Event != "auth" {
+			if json.Unmarshal(payload, &frame) != nil {
+				continue
+			}
+			if frame.Event != "auth" {
+				s.mu.Lock()
+				s.others = append(s.others, string(payload))
+				s.mu.Unlock()
 				continue
 			}
 			s.mu.Lock()

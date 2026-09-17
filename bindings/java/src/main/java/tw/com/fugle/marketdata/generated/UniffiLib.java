@@ -127,8 +127,8 @@ interface UniffiLib extends Library {
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_ping(Pointer ptr, RustBuffer.ByValue state);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions(Pointer ptr);
-    Long uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol);
-    Long uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol);
+    Long uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol, RustBuffer.ByValue afterHours);
+    Long uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol, RustBuffer.ByValue afterHours);
     Pointer uniffi_marketdata_uniffi_fn_clone_websocketlistener(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_websocketlistener(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_init_callback_vtable_websocketlistener(UniffiVTableCallbackInterfaceWebSocketListener vtable);

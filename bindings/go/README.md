@@ -402,8 +402,9 @@ IsConnected() bool                 // Check connection status
 IsClosed() bool                    // Check if client is closed
 
 // Subscription management
-Subscribe(channel string, symbol string) error       // Subscribe to channel
-Unsubscribe(subscriptionId string) error            // Unsubscribe by ID
+// opts: WithAfterHours(true) for the FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
+Subscribe(channel string, symbol string, opts ...SubscribeOption) error    // Subscribe to channel
+Unsubscribe(channel string, symbol string, opts ...SubscribeOption) error  // Unsubscribe (same opts as Subscribe)
 GetSubscriptions() []Subscription                    // List active subscriptions
 
 // Message channels (Go idiom)

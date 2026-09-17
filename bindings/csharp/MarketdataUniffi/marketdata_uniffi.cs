@@ -1816,14 +1816,16 @@ static class _UniFFILib
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(
         IntPtr @ptr,
         RustBuffer @channel,
-        RustBuffer @symbol
+        RustBuffer @symbol,
+        RustBuffer @afterHours
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(
         IntPtr @ptr,
         RustBuffer @channel,
-        RustBuffer @symbol
+        RustBuffer @symbol,
+        RustBuffer @afterHours
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -3531,20 +3533,20 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe();
-            if (checksum != 39559)
+            if (checksum != 4743)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe` checksum `39559`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe` checksum `4743`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe();
-            if (checksum != 21735)
+            if (checksum != 49934)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe` checksum `21735`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe` checksum `49934`, library returned `{checksum}`"
                 );
             }
         }
@@ -8797,11 +8799,23 @@ public interface IWebSocketClient
     /// <exception cref="MarketDataException"></exception>
     Task QuerySubscriptions();
 
+    /// <summary>
+    /// Subscribe to a channel for a symbol.
+    ///
+    /// After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+    /// other than null is 1005 `INVALID_PARAMETER`.
+    /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task Subscribe(string @channel, string @symbol);
+    Task Subscribe(string @channel, string @symbol, bool? @afterHours = null);
 
+    /// <summary>
+    /// Unsubscribe from a channel for a symbol.
+    ///
+    /// Pass the same after-hours value as the `subscribe` call: an after-hours
+    /// subscription is a separate subscription from the regular one.
+    /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task Unsubscribe(string @channel, string @symbol);
+    Task Unsubscribe(string @channel, string @symbol, bool? @afterHours = null);
 }
 
 /// <summary>
@@ -9115,8 +9129,14 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         );
     }
 
+    /// <summary>
+    /// Subscribe to a channel for a symbol.
+    ///
+    /// After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
+    /// other than null is 1005 `INVALID_PARAMETER`.
+    /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task Subscribe(string @channel, string @symbol)
+    public async Task Subscribe(string @channel, string @symbol, bool? @afterHours = null)
     {
         await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -9125,7 +9145,8 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(
                     thisPtr,
                     FfiConverterString.INSTANCE.Lower(@channel),
-                    FfiConverterString.INSTANCE.Lower(@symbol)
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalBoolean.INSTANCE.Lower(@afterHours)
                 );
             }),
             // Poll
@@ -9143,8 +9164,14 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         );
     }
 
+    /// <summary>
+    /// Unsubscribe from a channel for a symbol.
+    ///
+    /// Pass the same after-hours value as the `subscribe` call: an after-hours
+    /// subscription is a separate subscription from the regular one.
+    /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task Unsubscribe(string @channel, string @symbol)
+    public async Task Unsubscribe(string @channel, string @symbol, bool? @afterHours = null)
     {
         await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -9153,7 +9180,8 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(
                     thisPtr,
                     FfiConverterString.INSTANCE.Lower(@channel),
-                    FfiConverterString.INSTANCE.Lower(@symbol)
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalBoolean.INSTANCE.Lower(@afterHours)
                 );
             }),
             // Poll

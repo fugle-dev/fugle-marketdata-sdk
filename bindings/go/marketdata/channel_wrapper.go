@@ -270,20 +270,25 @@ func (sc *StreamingClient) Connect() error {
 
 // Subscribe adds a subscription to a channel/symbol pair
 //
-// Valid channels: "trades", "candles", "books", "aggregates", "indices"
-func (sc *StreamingClient) Subscribe(channel, symbol string) error {
-	err := sc.client.Subscribe(channel, symbol)
+// Valid channels: "trades", "candles", "books", "aggregates", "indices" on the
+// Stock endpoint; "trades", "candles", "books", "aggregates" on FutOpt.
+// WithAfterHours is FutOpt only; on the Stock endpoint it is error 1005.
+func (sc *StreamingClient) Subscribe(channel, symbol string, opts ...SubscribeOption) error {
+	err := sc.client.Subscribe(channel, symbol, subscribeAfterHours(opts))
 	if err != nil {
-		return fmt.Errorf("subscribe failed: %v", err)
+		return fmt.Errorf("subscribe failed: %w", err)
 	}
 	return nil
 }
 
 // Unsubscribe removes a subscription
-func (sc *StreamingClient) Unsubscribe(channel, symbol string) error {
-	err := sc.client.Unsubscribe(channel, symbol)
+//
+// Pass the same options as the Subscribe call: an after-hours subscription
+// is separate from the regular one.
+func (sc *StreamingClient) Unsubscribe(channel, symbol string, opts ...SubscribeOption) error {
+	err := sc.client.Unsubscribe(channel, symbol, subscribeAfterHours(opts))
 	if err != nil {
-		return fmt.Errorf("unsubscribe failed: %v", err)
+		return fmt.Errorf("unsubscribe failed: %w", err)
 	}
 	return nil
 }
