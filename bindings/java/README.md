@@ -150,6 +150,11 @@ FugleRestClient client = FugleRestClient.builder()
     .build();
 ```
 
+`FugleWebSocketClient.builder()` takes the same three credentials
+(`apiKey`, `bearerToken` or `sdkToken`). Do not log them, nor the generated
+`tw.com.fugle.marketdata.generated.CredentialsRecord` they reach the native client in: its fields are
+the secrets themselves.
+
 ## Advanced: Custom TLS / self-signed servers
 
 For connecting to servers with a private CA (enterprise deployments) or

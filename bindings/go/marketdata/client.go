@@ -1,7 +1,6 @@
 package marketdata_uniffi
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -93,62 +92,55 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		}
 	}
 
-	// Core requires exactly one non-blank credential (ConfigError, code 1004)
-	// and reports which one to use.
-	kind, err := ValidateCredentials(&cfg.apiKey, &cfg.bearerToken, &cfg.sdkToken)
-	if err != nil {
-		return nil, err
+	var reconnectRecord *ReconnectConfigRecord
+	if cfg.reconnect != nil {
+		reconnectRecord = &ReconnectConfigRecord{
+			MaxAttempts:    cfg.reconnect.MaxAttempts,
+			InitialDelayMs: cfg.reconnect.InitialDelayMs,
+			MaxDelayMs:     cfg.reconnect.MaxDelayMs,
+		}
+	}
+	var healthCheckRecord *HealthCheckConfigRecord
+	if cfg.healthCheck != nil {
+		healthCheckRecord = &HealthCheckConfigRecord{
+			Enabled:            cfg.healthCheck.Enabled,
+			HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
+		}
+	}
+	var messageQueueRecord *MessageQueueConfigRecord
+	if cfg.messageOverflow != nil || cfg.messageBuffer != nil {
+		overflow := MessageOverflowRecordDropNewest
+		if cfg.messageOverflow != nil && *cfg.messageOverflow == MessageOverflowUnbounded {
+			overflow = MessageOverflowRecordUnbounded
+		}
+		var buffer uint32
+		if cfg.messageBuffer != nil {
+			buffer = *cfg.messageBuffer
+		}
+		messageQueueRecord = &MessageQueueConfigRecord{
+			Overflow: overflow,
+			Buffer:   buffer,
+		}
+	}
+
+	var baseUrl *string
+	if cfg.baseUrl != "" {
+		baseUrl = &cfg.baseUrl
 	}
 
 	// Create channel-based wrapper
 	ch := NewMessageChannel(100)
 	channelListener := &channelListener{ch: ch}
 
-	// Call appropriate UniFFI constructor based on auth method and endpoint
-	// NOTE: Current UniFFI WebSocketClient constructors only accept api_key string.
-	// For bearerToken/sdkToken support, this would need additional UniFFI constructors.
-	var client *WebSocketClient
-
-	if kind == CredentialKindApiKey {
-		var reconnectRecord *ReconnectConfigRecord
-		if cfg.reconnect != nil {
-			reconnectRecord = &ReconnectConfigRecord{
-				MaxAttempts:    cfg.reconnect.MaxAttempts,
-				InitialDelayMs: cfg.reconnect.InitialDelayMs,
-				MaxDelayMs:     cfg.reconnect.MaxDelayMs,
-			}
-		}
-		var healthCheckRecord *HealthCheckConfigRecord
-		if cfg.healthCheck != nil {
-			healthCheckRecord = &HealthCheckConfigRecord{
-				Enabled:            cfg.healthCheck.Enabled,
-				HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
-			}
-		}
-		var messageQueueRecord *MessageQueueConfigRecord
-		if cfg.messageOverflow != nil || cfg.messageBuffer != nil {
-			overflow := MessageOverflowRecordDropNewest
-			if cfg.messageOverflow != nil && *cfg.messageOverflow == MessageOverflowUnbounded {
-				overflow = MessageOverflowRecordUnbounded
-			}
-			var buffer uint32
-			if cfg.messageBuffer != nil {
-				buffer = *cfg.messageBuffer
-			}
-			messageQueueRecord = &MessageQueueConfigRecord{
-				Overflow: overflow,
-				Buffer:   buffer,
-			}
-		}
-
-		var baseUrl *string
-		if cfg.baseUrl != "" {
-			baseUrl = &cfg.baseUrl
-		}
-
-		client = WebSocketClientNewWithOptions(cfg.apiKey, channelListener, cfg.endpoint, baseUrl, reconnectRecord, healthCheckRecord, nil, nil, messageQueueRecord)
-	} else {
-		return nil, errors.New("bearer token and SDK token authentication not yet supported for WebSocket client")
+	// Core requires exactly one non-blank credential (ConfigError, code 1004)
+	// and sends it in the auth frame as apikey, token or sdkToken to match
+	// its kind.
+	client, err := WebSocketClientNewWithCredentials(
+		CredentialsRecord{ApiKey: &cfg.apiKey, BearerToken: &cfg.bearerToken, SdkToken: &cfg.sdkToken},
+		channelListener, cfg.endpoint, baseUrl, reconnectRecord, healthCheckRecord, nil, nil, messageQueueRecord,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &StreamingClient{
