@@ -16,7 +16,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration};
 use tokio_tungstenite::{connect_async_tls_with_config, Connector};
@@ -133,7 +133,10 @@ pub(crate) async fn await_auth_response(
 ///
 /// Once `disconnect()` sets `shutdown_requested` this emits nothing further:
 /// the flag is checked before each attempt, after its backoff sleep, and
-/// inside [`try_connect`] before each lifecycle event.
+/// inside [`try_connect`] before each lifecycle event. `shutdown_notify`
+/// ends a backoff sleep or connection attempt in progress, and a connection
+/// that authenticates after shutdown was requested is dropped instead of
+/// installed, so `disconnect()` need not wait out its drain budget (#110).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn try_reconnect(
     close_code: Option<u16>,
@@ -147,8 +150,14 @@ pub(crate) async fn try_reconnect(
     writer_generation: WriterGeneration,
     subscriptions: Arc<SubscriptionManager>,
     shutdown_requested: Arc<AtomicBool>,
+    shutdown_notify: Arc<Notify>,
 ) -> Option<(WsStream, oneshot::Receiver<WriteFailure>)> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
+    // Registered before the flag is first read: shutdown sets the flag
+    // before notifying, so it is either seen by `stopping()` or wakes this.
+    let shutdown = shutdown_notify.notified();
+    tokio::pin!(shutdown);
+    shutdown.as_mut().enable();
 
     // Check if we should attempt reconnection
     let should_reconnect = {
@@ -200,20 +209,27 @@ pub(crate) async fn try_reconnect(
                 });
 
                 // Wait before reconnecting
-                sleep(d).await;
+                tokio::select! {
+                    () = sleep(d) => {}
+                    () = shutdown.as_mut() => return None,
+                }
                 if stopping() {
                     return None;
                 }
 
-                // Try to connect and authenticate
-                match try_connect(
-                    config.clone(),
-                    Arc::clone(&state),
-                    stream.clone(),
-                    &shutdown_requested,
-                )
-                .await
-                {
+                // Try to connect and authenticate. A shutdown drops the
+                // attempt where it stands and nothing further is reported
+                // (whether to report the stopped reconnect: #98).
+                let connected = tokio::select! {
+                    result = try_connect(
+                        config.clone(),
+                        Arc::clone(&state),
+                        stream.clone(),
+                        &shutdown_requested,
+                    ) => result,
+                    () = shutdown.as_mut() => return None,
+                };
+                match connected {
                     Ok((new_sink, ws_read)) => {
                         // Reset reconnection manager on success
                         {
@@ -221,7 +237,8 @@ pub(crate) async fn try_reconnect(
                             reconnection.reset();
                         }
 
-                        // Replace the old writer, then install the new sink
+                        // Replace the old writer, then install the new sink,
+                        // unless shutdown was requested meanwhile.
                         let (new_write_tx, write_failed_rx) = start_writer(
                             new_sink,
                             &ws_sink,
@@ -229,8 +246,9 @@ pub(crate) async fn try_reconnect(
                             &writer_handle,
                             &writer_generation,
                             stream.clone(),
+                            Some(&shutdown_requested),
                         )
-                        .await;
+                        .await?;
 
                         // Resubscribe all stored subscriptions through the new writer
                         subscriptions.clear_server_ids();
