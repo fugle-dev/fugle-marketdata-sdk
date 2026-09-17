@@ -290,6 +290,16 @@ public interface IWebSocketListener
 }
 ```
 
+An exception thrown by a listener method does not crash the process or stop
+later events. It is reported to `OnError` with code 3004 (`CALLBACK_FAILED`,
+`sourceKind` `Client`) and a message naming the method, the exception type and
+message, and the number of failures, e.g.
+`Listener OnMessage threw System.InvalidOperationException: boom (1 in the last 1s)`.
+The first failure is reported at once, later ones at most once per second,
+counting the failures since the previous report; failures after the last
+report are not reported on their own. An exception thrown by `OnError` itself
+is written to `Console.Error` and not re-reported.
+
 #### Message queue overflow
 
 By default the client buffers up to 4096 unread messages and drops the
@@ -384,6 +394,7 @@ catch (MarketDataException ex)
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3004 | CallbackFailed | A listener method threw (`OnError` only) |
 | 9999 | Other | Unexpected error |
 
 ## Examples

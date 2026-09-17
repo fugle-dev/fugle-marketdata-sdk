@@ -10,6 +10,7 @@ casing.
 - [Field names per language](#field-names-per-language)
 - [`source_kind` values](#source_kind-values)
 - [Error codes](#error-codes)
+- [Callback failures](#callback-failures)
 - [Examples](#examples)
 
 ---
@@ -51,13 +52,15 @@ Where the fields live:
 
 - **Node.js** — properties of the `Error` thrown by constructors, rejected by
   REST methods and `connect()`, and passed to the WebSocket `error` event
-  (TypeScript: `MarketDataError`). Absent values are `null`. The one `error`
-  event without these fields is `Reconnection failed after N attempts`, a
-  plain `Error`.
+  (TypeScript: `MarketDataError`). Absent values are `null`. The `error`
+  event reporting a failed listener (code 3004) also has `event`, `count`
+  and `cause`, see [Callback failures](#callback-failures).
 - **Python** — attributes of every `MarketDataError` subclass. `args` stays
   `(message, code)`. Aliases kept from the 2.4.1 `FugleAPIError`:
   `status_code` (= `status`) and `response_text` (= `body`). The WebSocket
-  `error` callback keeps its `(message, code)` signature.
+  `error` callback receives a `WebSocketError` whose `args` stay
+  `(message, code)`; one reporting a failed callback (code 3004) also has
+  `event`, `count` and `__cause__`.
 - **C#** — `GetInfo()` (namespace `FugleMarketData`) on any
   `MarketDataException` returns the `ErrorInfo` record, whose properties keep
   the generated camelCase names; each exception variant also has it as
@@ -109,8 +112,44 @@ Rust constants live in `marketdata_core::error_code`.
 | 3001 | `TIMEOUT` | `TimeoutError` | `network` | A request or the WebSocket connect timed out. |
 | 3002 | `WEBSOCKET` | `WebSocketError` | by kind: I/O `network`, TLS `auth`, upgrade HTTP status as for 2003 (401/403 `auth`), else `protocol` | A WebSocket connect, read or write fails. |
 | 3003 | `HEARTBEAT_TIMEOUT` | `HeartbeatTimeout` | `network` | No inbound WebSocket frame within the heartbeat window. |
+| 3004 | `CALLBACK_FAILED` | — | `client` | A WebSocket callback / listener raised an exception, or (Node) the Promise it returned rejected. See [Callback failures](#callback-failures). |
+| 3005 | `RECONNECT_FAILED` | — | `network` | Automatic reconnection gave up after its last attempt (Node / Python `error`; C#, Go, Java and C++ have a dedicated reconnect-failed callback). |
 | 9999 | `OTHER` | `Other` | `client` | Unexpected error. |
 | -1 | `THREAD_PANIC` | — | `protocol` | Node / Python: a WebSocket worker thread panicked. |
+
+## Callback failures
+
+An exception raised by your WebSocket callback or listener never crashes the
+process and never closes the connection: later events and messages are still
+delivered. It is not silent either:
+
+- It is reported as an error with code **3004** (`CALLBACK_FAILED`,
+  `source_kind` `client`) to your error callback — `error` in Node and
+  Python, `OnError` / `onError` / `on_error` elsewhere.
+- Reports are throttled, like `messagesDropped`: the first failure is
+  reported at once; later ones at most once per second, each report counting
+  the failures since the previous one. Failures after the last report are
+  not reported on their own when they stop.
+- If there is no error callback, or the error callback raises too, the
+  failure is printed instead and nothing is re-reported (no recursion).
+
+| Language | Report | Original exception | Printed with |
+|---|---|---|---|
+| Node.js | `error` event: `err.event` (event name, e.g. `'message'`), `err.count` | `err.cause` | `console.error` |
+| Python | `error` callback: `WebSocketError` with `e.event` (e.g. `"message"`), `e.count` | `e.__cause__` | `sys.unraisablehook` |
+| C# | `OnError(ErrorInfo)` | type, message, method and count in `message` | `Console.Error` |
+| Java | `onError(ErrorInfo)` | type, message, method and count in `getMessage()` | `java.util.logging` |
+| C++ | `on_error(ErrorInfo)` | `what()`, method and count in `message` | stderr |
+
+Go delivers events on channels, so there is no callback to fail.
+
+Node: a listener that returns a Promise is not awaited; a rejection is
+reported like a throw. Python: `async def` callbacks are rejected by `on()`
+with `TypeError` — use `async for` over `messages()` instead — and a callback
+returning a coroutine is reported as a failure. A `BaseException` that is not
+an `Exception` (`KeyboardInterrupt`, `SystemExit`) raised in a callback runs
+on the SDK's thread and cannot reach your code: it is only printed through
+`sys.unraisablehook`.
 
 ## Examples
 

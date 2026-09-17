@@ -96,25 +96,93 @@ namespace FugleMarketData
 
     /// <summary>
     /// Internal adapter to convert IWebSocketListener to UniFFI WebSocketListener interface.
+    ///
+    /// Each callback is wrapped so an exception thrown by the user's
+    /// listener cannot cross the FFI boundary (#83): it is caught, reported
+    /// to <see cref="IWebSocketListener.OnError"/> as a code 3004
+    /// <c>CALLBACK_FAILED</c> error (throttled — see <see cref="ReportThrottle"/>),
+    /// and the stream keeps running. An exception from
+    /// <see cref="IWebSocketListener.OnError"/> itself — whether reporting a
+    /// callback failure or a normal SDK error — is neither re-raised nor
+    /// re-reported; it is printed to <see cref="Console.Error"/>.
     /// </summary>
     internal class WebSocketListenerAdapter : uniffi.marketdata_uniffi.WebSocketListener
     {
+        /// <summary>Numeric code for a listener callback throwing (mirrors the Rust core's error_code table).</summary>
+        internal const int CallbackFailedCode = 3004;
+
         private readonly IWebSocketListener _listener;
+        private readonly ReportThrottle _throttle;
 
         public WebSocketListenerAdapter(IWebSocketListener listener)
+            : this(listener, new ReportThrottle())
         {
-            _listener = listener ?? throw new ArgumentNullException(nameof(listener));
         }
 
-        public void OnConnected() => _listener.OnConnected();
-        public void OnAuthenticated(string? dataJson) => _listener.OnAuthenticated(dataJson);
-        public void OnUnauthenticated(string? dataJson) => _listener.OnUnauthenticated(dataJson);
-        public void OnDisconnected(bool willReconnect) => _listener.OnDisconnected(willReconnect);
-        public void OnMessage(uniffi.marketdata_uniffi.StreamMessage message) => _listener.OnMessage(message);
-        public void OnError(uniffi.marketdata_uniffi.ErrorInfo error) => _listener.OnError(error);
-        public void OnReconnecting(uint attempt) => _listener.OnReconnecting(attempt);
-        public void OnReconnectFailed(uint attempts) => _listener.OnReconnectFailed(attempts);
-        public void OnMessagesDropped(ulong count) => _listener.OnMessagesDropped(count);
+        /// <summary>Test-only constructor to inject the throttle's clock.</summary>
+        internal WebSocketListenerAdapter(IWebSocketListener listener, ReportThrottle throttle)
+        {
+            _listener = listener ?? throw new ArgumentNullException(nameof(listener));
+            _throttle = throttle ?? throw new ArgumentNullException(nameof(throttle));
+        }
+
+        public void OnConnected() => Invoke(nameof(OnConnected), () => _listener.OnConnected());
+        public void OnAuthenticated(string? dataJson) => Invoke(nameof(OnAuthenticated), () => _listener.OnAuthenticated(dataJson));
+        public void OnUnauthenticated(string? dataJson) => Invoke(nameof(OnUnauthenticated), () => _listener.OnUnauthenticated(dataJson));
+        public void OnDisconnected(bool willReconnect) => Invoke(nameof(OnDisconnected), () => _listener.OnDisconnected(willReconnect));
+        public void OnMessage(uniffi.marketdata_uniffi.StreamMessage message) => Invoke(nameof(OnMessage), () => _listener.OnMessage(message));
+        public void OnError(uniffi.marketdata_uniffi.ErrorInfo error) => InvokeOnError(() => _listener.OnError(error));
+        public void OnReconnecting(uint attempt) => Invoke(nameof(OnReconnecting), () => _listener.OnReconnecting(attempt));
+        public void OnReconnectFailed(uint attempts) => Invoke(nameof(OnReconnectFailed), () => _listener.OnReconnectFailed(attempts));
+        public void OnMessagesDropped(ulong count) => Invoke(nameof(OnMessagesDropped), () => _listener.OnMessagesDropped(count));
+
+        /// <summary>Run a listener method; a thrown exception is reported via OnError instead of crossing the FFI boundary.</summary>
+        private void Invoke(string methodName, Action call)
+        {
+            try
+            {
+                call();
+            }
+            catch (Exception ex)
+            {
+                ReportCallbackFailure(methodName, ex);
+            }
+        }
+
+        /// <summary>Run OnError itself; a thrown exception is printed, never re-raised or re-reported.</summary>
+        private void InvokeOnError(Action call)
+        {
+            try
+            {
+                call();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex.ToString());
+            }
+        }
+
+        private void ReportCallbackFailure(string methodName, Exception ex)
+        {
+            var count = _throttle.Record();
+            if (count == null)
+            {
+                return;
+            }
+
+            var message = $"Listener {methodName} threw {ex.GetType().FullName}: {ex.Message} ({count} in the last 1s)";
+            var error = new uniffi.marketdata_uniffi.ErrorInfo(
+                code: CallbackFailedCode,
+                sourceKind: uniffi.marketdata_uniffi.ErrorSourceKind.Client,
+                message: message,
+                status: null,
+                body: null,
+                requestId: null,
+                headers: new System.Collections.Generic.Dictionary<string, string>()
+            );
+
+            InvokeOnError(() => _listener.OnError(error));
+        }
     }
 
     /// <summary>

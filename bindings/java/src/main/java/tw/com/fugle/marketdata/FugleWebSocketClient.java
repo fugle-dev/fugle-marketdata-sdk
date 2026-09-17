@@ -2,9 +2,12 @@ package tw.com.fugle.marketdata;
 
 import tw.com.fugle.marketdata.generated.*;
 
+import java.util.Collections;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Idiomatic Java wrapper for WebSocket client with dual streaming patterns.
@@ -389,9 +392,14 @@ public class FugleWebSocketClient implements AutoCloseable {
          * Provide a listener for callback mode (push-based events).
          *
          * <p>If a listener is provided, poll()/take() methods will throw IllegalStateException.
+         *
+         * <p>The listener is wrapped in {@link SafeListener} (#83): an
+         * exception thrown by any of its methods (other than {@code onError})
+         * is caught, reported to its own {@code onError} as a code 3004
+         * {@code CALLBACK_FAILED} error, and the stream keeps running.
          */
         public Builder listener(WebSocketListener listener) {
-            this.listener = listener;
+            this.listener = listener == null ? null : new SafeListener(listener);
             return this;
         }
 
@@ -545,6 +553,122 @@ public class FugleWebSocketClient implements AutoCloseable {
                 throw new FugleException("WebSocket currently only supports apiKey authentication. " +
                                        "bearerToken and sdkToken support coming in future release.");
             }
+        }
+    }
+
+    /**
+     * Wraps a user-provided {@link WebSocketListener} (callback mode only)
+     * so an exception it throws cannot cross the FFI boundary (#83): it is
+     * caught, reported to the listener's own {@code onError} as a code 3004
+     * {@code CALLBACK_FAILED} error (throttled — see {@link ReportThrottle}),
+     * and the stream keeps running. An exception from {@code onError}
+     * itself — whether reporting a callback failure or a normal SDK error —
+     * is neither re-thrown nor re-reported; it is logged at {@code WARNING}.
+     *
+     * <p>Pull mode's {@link InternalListener} is not wrapped: it is internal
+     * to this class and does not call into user code.
+     */
+    static final class SafeListener implements WebSocketListener {
+        /** Numeric code for a listener callback throwing (mirrors the Rust core's error_code table). */
+        static final int CALLBACK_FAILED_CODE = 3004;
+
+        private static final Logger LOGGER = Logger.getLogger(FugleWebSocketClient.class.getName());
+
+        private final WebSocketListener delegate;
+        private final ReportThrottle throttle;
+
+        SafeListener(WebSocketListener delegate) {
+            this(delegate, new ReportThrottle());
+        }
+
+        /** Test-only constructor to inject the throttle's clock. */
+        SafeListener(WebSocketListener delegate, ReportThrottle throttle) {
+            this.delegate = delegate;
+            this.throttle = throttle;
+        }
+
+        @Override
+        public void onConnected() {
+            invoke("onConnected", delegate::onConnected);
+        }
+
+        @Override
+        public void onAuthenticated(String dataJson) {
+            invoke("onAuthenticated", () -> delegate.onAuthenticated(dataJson));
+        }
+
+        @Override
+        public void onUnauthenticated(String dataJson) {
+            invoke("onUnauthenticated", () -> delegate.onUnauthenticated(dataJson));
+        }
+
+        @Override
+        public void onDisconnected(Boolean willReconnect) {
+            invoke("onDisconnected", () -> delegate.onDisconnected(willReconnect));
+        }
+
+        @Override
+        public void onMessage(StreamMessage message) {
+            invoke("onMessage", () -> delegate.onMessage(message));
+        }
+
+        @Override
+        public void onError(ErrorInfo error) {
+            invokeOnError(() -> delegate.onError(error));
+        }
+
+        @Override
+        public void onReconnecting(Integer attempt) {
+            invoke("onReconnecting", () -> delegate.onReconnecting(attempt));
+        }
+
+        @Override
+        public void onReconnectFailed(Integer attempts) {
+            invoke("onReconnectFailed", () -> delegate.onReconnectFailed(attempts));
+        }
+
+        @Override
+        public void onMessagesDropped(Long count) {
+            invoke("onMessagesDropped", () -> delegate.onMessagesDropped(count));
+        }
+
+        /** Run a listener method; a thrown exception is reported via onError instead of crossing the FFI boundary. */
+        private void invoke(String methodName, Runnable call) {
+            try {
+                call.run();
+            } catch (Exception ex) {
+                reportCallbackFailure(methodName, ex);
+            }
+        }
+
+        /** Run onError itself; a thrown exception is logged, never re-thrown or re-reported. */
+        private void invokeOnError(Runnable call) {
+            try {
+                call.run();
+            } catch (Exception ex) {
+                LOGGER.log(Level.WARNING, "WebSocketListener.onError threw", ex);
+            }
+        }
+
+        private void reportCallbackFailure(String methodName, Exception ex) {
+            Long count = throttle.record();
+            if (count == null) {
+                return;
+            }
+
+            String message = "Listener " + methodName + " threw " + ex.getClass().getName()
+                    + ": " + ex.getMessage() + " (" + count + " in the last 1s)";
+            ErrorInfo error = new ErrorInfo(
+                    CALLBACK_FAILED_CODE,
+                    ErrorSourceKind.CLIENT,
+                    message,
+                    null,
+                    null,
+                    null,
+                    Collections.emptyMap()
+            );
+
+            invokeOnError(() -> delegate.onError(error));
         }
     }
 

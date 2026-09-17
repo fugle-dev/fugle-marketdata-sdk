@@ -304,6 +304,9 @@ pub struct WebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: std::sync::Mutex<Option<marketdata_core::MessagesDroppedHandle>>,
+    /// Throttles the reports of failed listener calls (#83) across the
+    /// client's connections, like the Node, Python, C# and Java bindings.
+    callback_failures: CallbackFailures,
     /// Tokio runtime for sync wrappers (C++ feature). Kept alive for background tasks.
     #[cfg(feature = "cpp")]
     sync_runtime: std::sync::Mutex<Option<tokio::runtime::Runtime>>,
@@ -336,6 +339,7 @@ impl WebSocketClient {
             tls_config,
             message_queue,
             messages_dropped: std::sync::Mutex::new(None),
+            callback_failures: CallbackFailures::default(),
             #[cfg(feature = "cpp")]
             sync_runtime: std::sync::Mutex::new(None),
         })
@@ -633,6 +637,7 @@ impl WebSocketClient {
             core_ws.stream_receiver(),
             Arc::clone(&self.listener),
             stopping,
+            Arc::clone(&self.callback_failures),
         );
 
         // Connect to server
@@ -832,17 +837,19 @@ fn spawn_stream_reader(
     stream: Arc<StreamReceiver>,
     listener: Arc<dyn WebSocketListener>,
     stopping: Arc<AtomicBool>,
+    callback_failures: CallbackFailures,
 ) {
     std::thread::Builder::new()
         .name("ws_stream_reader".to_string())
         .spawn(move || {
             let mut authenticated = false;
+            let mut calls = ListenerCalls::new(listener.as_ref(), callback_failures);
             while let Ok(item) = stream.receive() {
                 match item {
                     StreamItem::Message(message)
                         if authenticated && !stopping.load(Ordering::SeqCst) =>
                     {
-                        listener.on_message(StreamMessage::from(message));
+                        calls.call("on_message", |l| l.on_message(StreamMessage::from(message)));
                     }
                     StreamItem::Event(event) => {
                         match event {
@@ -851,7 +858,7 @@ fn spawn_stream_reader(
                             | ConnectionEvent::Disconnected { .. } => authenticated = false,
                             _ => {}
                         }
-                        if !forward_event(event, listener.as_ref()) {
+                        if !forward_event(event, &mut calls) {
                             break;
                         }
                     }
@@ -864,27 +871,111 @@ fn spawn_stream_reader(
 
 /// Forward one core event to the listener. Returns `false` after a terminal
 /// event.
-fn forward_event(event: ConnectionEvent, listener: &dyn WebSocketListener) -> bool {
+fn forward_event(event: ConnectionEvent, calls: &mut ListenerCalls<'_>) -> bool {
     match event {
-        ConnectionEvent::Connected => listener.on_connected(),
-        ConnectionEvent::Authenticated { data } => listener.on_authenticated(json_or_none(data)),
+        ConnectionEvent::Connected => calls.call("on_connected", |l| l.on_connected()),
+        ConnectionEvent::Authenticated { data } => {
+            calls.call("on_authenticated", |l| l.on_authenticated(json_or_none(data)))
+        }
         ConnectionEvent::Unauthenticated { data, .. } => {
-            listener.on_unauthenticated(json_or_none(data));
+            calls.call("on_unauthenticated", |l| l.on_unauthenticated(json_or_none(data)))
         }
         ConnectionEvent::Disconnected { will_reconnect, .. } => {
-            listener.on_disconnected(will_reconnect);
+            calls.call("on_disconnected", |l| l.on_disconnected(will_reconnect));
             return will_reconnect;
         }
-        ConnectionEvent::Reconnecting { attempt } => listener.on_reconnecting(attempt),
+        ConnectionEvent::Reconnecting { attempt } => {
+            calls.call("on_reconnecting", |l| l.on_reconnecting(attempt))
+        }
         ConnectionEvent::ReconnectFailed { attempts } => {
-            listener.on_reconnect_failed(attempts);
+            calls.call("on_reconnect_failed", |l| l.on_reconnect_failed(attempts));
             return false;
         }
-        ConnectionEvent::Error(info) => listener.on_error(ErrorInfo::from(&info)),
-        ConnectionEvent::MessagesDropped { dropped, .. } => listener.on_messages_dropped(dropped),
+        ConnectionEvent::Error(info) => calls.call("on_error", |l| l.on_error(ErrorInfo::from(&info))),
+        ConnectionEvent::MessagesDropped { dropped, .. } => {
+            calls.call("on_messages_dropped", |l| l.on_messages_dropped(dropped))
+        }
         _ => {}
     }
     true
+}
+
+/// The stream reader's calls into the listener (#83).
+///
+/// A foreign listener method that throws makes UniFFI panic on this thread,
+/// which would end the reader and silence every later event. Each call is
+/// caught instead and reported through `on_error` (code
+/// [`CALLBACK_FAILED`](marketdata_core::error_code::CALLBACK_FAILED)),
+/// throttled: the first at once, later ones at most once per second with the
+/// number of failures since the previous report. A failing `on_error` is only
+/// printed to stderr.
+///
+/// The C# and Java wrappers catch their listener's exceptions before they
+/// reach here; this covers listeners implemented on the generated bindings
+/// directly (C++, or the generated C# / Java interfaces).
+struct ListenerCalls<'a> {
+    listener: &'a dyn WebSocketListener,
+    failures: CallbackFailures,
+}
+
+/// The client's [`ReportThrottle`](marketdata_core::websocket::ReportThrottle)
+/// for failed listener calls, shared by its connections' stream readers.
+type CallbackFailures = Arc<std::sync::Mutex<marketdata_core::websocket::ReportThrottle>>;
+
+impl<'a> ListenerCalls<'a> {
+    fn new(listener: &'a dyn WebSocketListener, failures: CallbackFailures) -> Self {
+        Self { listener, failures }
+    }
+
+    /// Run `call` on the listener; `method` names it in a failure report.
+    fn call(&mut self, method: &'static str, call: impl FnOnce(&dyn WebSocketListener)) {
+        let listener = self.listener;
+        let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(listener))) else {
+            return;
+        };
+        let detail = panic_detail(&*payload);
+        if method == "on_error" {
+            eprintln!("[fugle-marketdata] listener on_error failed: {detail}");
+            return;
+        }
+        let count = self
+            .failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record(std::time::Instant::now());
+        let Some(count) = count else {
+            return;
+        };
+        let info = marketdata_core::ErrorInfo::new(
+            marketdata_core::error_code::CALLBACK_FAILED,
+            marketdata_core::ErrorKind::Client,
+            format!("Listener {method} failed: {detail} ({count} in the last 1s)"),
+        );
+        let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            listener.on_error(ErrorInfo::from(&info))
+        }));
+        if let Err(payload) = report {
+            eprintln!(
+                "[fugle-marketdata] listener on_error failed: {} (while reporting: {})",
+                panic_detail(&*payload),
+                info.message
+            );
+        }
+    }
+}
+
+/// The message of a panic, without the prefix UniFFI adds when a foreign
+/// callback throws.
+fn panic_detail(payload: &(dyn std::any::Any + Send)) -> String {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .map(|message| message.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string());
+    match detail.strip_prefix("Callback interface failure: ") {
+        Some(foreign) => foreign.to_string(),
+        None => detail,
+    }
 }
 
 /// Lock `stopping`, recovering from poison: it only holds an `Arc`.
@@ -1577,5 +1668,114 @@ mod tests {
             );
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
+    }
+
+    /// A listener whose `on_message` fails the way a throwing foreign
+    /// listener does: UniFFI panics with "Callback interface failure: ...".
+    struct ThrowingListener {
+        messages: AtomicUsize,
+        connected: AtomicUsize,
+        errors: Mutex<Vec<ErrorInfo>>,
+        throw_in_on_error: bool,
+    }
+
+    impl ThrowingListener {
+        fn new(throw_in_on_error: bool) -> Self {
+            Self {
+                messages: AtomicUsize::new(0),
+                connected: AtomicUsize::new(0),
+                errors: Mutex::new(Vec::new()),
+                throw_in_on_error,
+            }
+        }
+    }
+
+    impl WebSocketListener for ThrowingListener {
+        fn on_connected(&self) {
+            self.connected.fetch_add(1, Ordering::SeqCst);
+        }
+        fn on_authenticated(&self, _data_json: Option<String>) {}
+        fn on_unauthenticated(&self, _data_json: Option<String>) {}
+        fn on_disconnected(&self, _will_reconnect: bool) {}
+        fn on_message(&self, _message: StreamMessage) {
+            self.messages.fetch_add(1, Ordering::SeqCst);
+            panic!("Callback interface failure: java.lang.RuntimeException: boom");
+        }
+        fn on_error(&self, error: ErrorInfo) {
+            self.errors.lock().unwrap().push(error);
+            if self.throw_in_on_error {
+                panic!("Callback interface failure: on_error boom");
+            }
+        }
+        fn on_reconnecting(&self, _attempt: u32) {}
+        fn on_reconnect_failed(&self, _attempts: u32) {}
+        fn on_messages_dropped(&self, _count: u64) {}
+    }
+
+    fn stream_message() -> StreamMessage {
+        let message: marketdata_core::WebSocketMessage =
+            serde_json::from_str(r#"{"event":"data","data":{"price":1},"channel":"trades"}"#).unwrap();
+        StreamMessage::from(message)
+    }
+
+    #[test]
+    fn failing_listener_call_is_reported_through_on_error_and_later_calls_still_run() {
+        let listener = ThrowingListener::new(false);
+        let mut calls = ListenerCalls::new(&listener, CallbackFailures::default());
+
+        for _ in 0..3 {
+            calls.call("on_message", |l| l.on_message(stream_message()));
+        }
+        assert!(forward_event(ConnectionEvent::Connected, &mut calls));
+
+        assert_eq!(listener.messages.load(Ordering::SeqCst), 3);
+        assert_eq!(listener.connected.load(Ordering::SeqCst), 1);
+        // Three failures within a second: the first is reported.
+        let errors = listener.errors.lock().unwrap();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].code, marketdata_core::error_code::CALLBACK_FAILED);
+        assert!(matches!(errors[0].source_kind, crate::errors::ErrorSourceKind::Client));
+        assert_eq!(
+            errors[0].message,
+            "Listener on_message failed: java.lang.RuntimeException: boom (1 in the last 1s)"
+        );
+        assert_eq!(calls.failures.lock().unwrap().pending(), 2);
+    }
+
+    #[test]
+    fn throttle_is_shared_by_the_readers_of_one_client() {
+        let listener = ThrowingListener::new(false);
+        let failures = CallbackFailures::default();
+
+        // A new connection's reader does not start a new throttle interval.
+        ListenerCalls::new(&listener, Arc::clone(&failures))
+            .call("on_message", |l| l.on_message(stream_message()));
+        ListenerCalls::new(&listener, Arc::clone(&failures))
+            .call("on_message", |l| l.on_message(stream_message()));
+
+        assert_eq!(listener.errors.lock().unwrap().len(), 1);
+        assert_eq!(failures.lock().unwrap().pending(), 1);
+    }
+
+    #[test]
+    fn failing_on_error_is_not_re_reported() {
+        let listener = ThrowingListener::new(true);
+        let mut calls = ListenerCalls::new(&listener, CallbackFailures::default());
+
+        calls.call("on_message", |l| l.on_message(stream_message()));
+        let info = marketdata_core::ErrorInfo::new(
+            marketdata_core::error_code::CONNECTION,
+            marketdata_core::ErrorKind::Network,
+            "down",
+        );
+        assert!(forward_event(ConnectionEvent::Error(info), &mut calls));
+
+        // One report of the on_message failure, one SDK error; neither
+        // failing on_error call led to another.
+        let codes: Vec<i32> = listener.errors.lock().unwrap().iter().map(|e| e.code).collect();
+        assert_eq!(
+            codes,
+            vec![marketdata_core::error_code::CALLBACK_FAILED, marketdata_core::error_code::CONNECTION]
+        );
     }
 }
