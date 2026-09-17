@@ -6,29 +6,28 @@
 //! Architecture:
 //! - WebSocket connection runs in a dedicated background thread with its own tokio runtime
 //! - Commands (connect, subscribe, disconnect) are sent via crossbeam channel
-//! - Core connection events are forwarded to listeners via ThreadsafeFunction callbacks,
-//!   with the argument shapes of `@fugle/marketdata` 1.x (#23)
+//! - Core connection events are delivered to listeners through the connection's
+//!   [`EventSink`], with the argument shapes of `@fugle/marketdata` 1.x (#23)
 
-use napi::bindgen_prelude::{JsValuesTupleIntoVec, PromiseRaw, ToNapiValue, Unknown};
+use napi::bindgen_prelude::{Function, FunctionRef, JsValuesTupleIntoVec, PromiseRaw, ToNapiValue, Unknown};
 use napi::JsValue;
 use napi::Env;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{sys, Status};
 
-/// Event callback.
-///
-/// Uses napi-rs ThreadsafeFunction with `CalleeHandled = false` so the JS
-/// callback receives the event's own arguments instead of a leading `err`,
-/// matching the legacy `@fugle/marketdata` 1.x EventEmitter shape (#23):
+/// An event listener, called on the JS thread with the event's own arguments
+/// and no leading `err`, matching the legacy `@fugle/marketdata` 1.x
+/// EventEmitter shape (#23):
 /// ```js
 /// stock.on('message', (data) => console.log(JSON.parse(data)));
 /// stock.on('authenticated', (data) => console.log(data.message));
 /// ```
 ///
-/// `Weak = true`: a registered listener does not keep the Node event loop
-/// alive, matching an EventEmitter listener. An open connection does, via
-/// the [`KeepAlive`] handle held for the connection's lifetime (#30).
-pub type EventTsfn = ThreadsafeFunction<EventArgs, Unknown<'static>, EventArgs, Status, false, true>;
+/// A plain reference, not a threadsafe function: registering a listener does
+/// not keep the Node event loop alive, matching an EventEmitter listener. An
+/// open connection does, via the [`KeepAlive`] handle held for the
+/// connection's lifetime (#30).
+type Listener = FunctionRef<EventArgs, Unknown<'static>>;
 
 /// Arguments an event listener is called with, built on the JS thread.
 pub enum EventArgs {
@@ -94,22 +93,139 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU8, Ordering}};
 use std::thread;
 use std::time::Duration;
 
-/// Type alias for JavaScript callback
-/// In napi-rs 3.x, ThreadsafeFunction uses const generics instead of ErrorStrategy type.
-/// Default CalleeHandled = true means the callee (JS function) handles errors.
-/// We use Arc<ThreadsafeFunction> to allow cloning for use across threads.
-pub type JsCallback = Arc<EventTsfn>;
-
 /// Keeps the Node event loop alive while a connection is open (#30).
 ///
 /// Wraps a strong (ref'd) threadsafe function that is never called; the loop
 /// is released when the last clone drops. The worker thread and the event
-/// thread each hold a clone, and so does every callback [`fire_callback`]
-/// queues — dropped on the JS thread only after that callback has returned.
-/// The final event (`disconnect`, a connect `error`, …) therefore always runs
-/// before the process is allowed to exit, whichever event turns out to be
-/// last and whether or not any listener is registered.
+/// thread each hold a clone (inside their [`EventSink`]), and so does every
+/// event the sink queues — dropped on the JS thread only after that event's
+/// listener has returned. The final event (`disconnect`, a connect `error`, …)
+/// therefore always runs before the process is allowed to exit, whichever
+/// event turns out to be last and whether or not any listener is registered.
+///
+/// Kept apart from [`DispatchTsfn`]: a queued event holding the last clone of
+/// the very threadsafe function it is queued on would release that function
+/// from its own finalizer when Node discards the queue at teardown.
 type KeepAlive = Arc<ThreadsafeFunction<(), (), (), Status, false>>;
+
+/// The one queue a connection's events go through (#62): a weak threadsafe
+/// function around a no-op, whose per-call completion runs the listener.
+/// Node-API runs a single threadsafe function's calls in the order they were
+/// queued, so listeners run in the order the events were emitted — which a
+/// threadsafe function per listener did not guarantee.
+type DispatchTsfn = ThreadsafeFunction<(), (), (), Status, false, true>;
+
+/// Where a connection emits its events (#62).
+///
+/// Every event, and the `connect()` settlement that follows one, is queued on
+/// one [`DispatchTsfn`] and runs on the JS thread in emission order.
+///
+/// The listener is looked up when the event runs, not when it is queued (see
+/// [`call_listener`]): a listener registered after the event was queued still
+/// receives it, and one that `on()` replaces while events are queued receives
+/// none of them — they all go to its replacement.
+///
+/// `message` is the exception: a frame is only queued if a `message` listener
+/// is registered when it arrives (see [`Self::emit_message`]).
+///
+/// Independent of where events come from: today the worker (`message`) and
+/// the event thread (everything else) each emit in their own order; once core
+/// provides one ordered stream of both (#68), a single reader emits here
+/// instead.
+#[derive(Clone)]
+struct EventSink {
+    dispatch: Arc<DispatchTsfn>,
+    listeners: Arc<Listeners>,
+    keep_alive: KeepAlive,
+}
+
+impl EventSink {
+    /// Create a connection's sink. Must run on the JS thread.
+    fn new(env: &Env, listeners: Arc<Listeners>) -> napi::Result<Self> {
+        let dispatch = env
+            .create_function_from_closure::<(), (), _>("fugleWsDispatch", |_| Ok(()))?
+            .build_threadsafe_function::<()>()
+            .callee_handled::<false>()
+            .weak::<true>()
+            .build()?;
+        Ok(Self {
+            dispatch: Arc::new(dispatch),
+            listeners,
+            keep_alive: loop_keep_alive(env)?,
+        })
+    }
+
+    /// Queue `event` for its listener, if any is registered when it runs.
+    fn emit(&self, event: &'static str, args: EventArgs) {
+        self.emit_then(event, args, || {});
+    }
+
+    /// Queue a `message` frame, or skip it if no `message` listener is
+    /// registered yet: under a flood, queuing frames nobody listens to costs a
+    /// JS-thread call each (#62). A frame skipped this way is not replayed to a
+    /// listener registered later, as an EventEmitter drops what it emits with
+    /// no listener. Frames already queued still go to the current listener.
+    fn emit_message(&self, frame: String) {
+        if self.listeners.has_message.load(Ordering::SeqCst) {
+            self.emit("message", EventArgs::Text(frame));
+        }
+    }
+
+    /// [`Self::emit`], running `then` on the JS thread once the listener has
+    /// returned (or right away when there is none) — or immediately, on this
+    /// thread, if the event cannot be queued.
+    ///
+    /// The call carries a `keep_alive` clone, dropped after `then` (see
+    /// [`KeepAlive`]). An exception the listener throws is handed back
+    /// unchanged, which napi-rs reports as an uncaught exception.
+    fn emit_then(&self, event: &'static str, args: EventArgs, then: impl FnOnce() + Send + 'static) {
+        fn run_then<F: FnOnce()>(then: &Mutex<Option<F>>) {
+            if let Some(then) = then.lock().ok().and_then(|mut guard| guard.take()) {
+                then();
+            }
+        }
+
+        let then = Arc::new(Mutex::new(Some(then)));
+        let then_after_call = Arc::clone(&then);
+        let listeners = Arc::clone(&self.listeners);
+        let keep_alive = Arc::clone(&self.keep_alive);
+        let status = self.dispatch.call_with_return_value(
+            (),
+            ThreadsafeFunctionCallMode::NonBlocking,
+            move |_, env| {
+                let result = call_listener(&listeners, &env, event, args);
+                run_then(&then_after_call);
+                drop(keep_alive);
+                result
+            },
+        );
+        if status != Status::Ok {
+            run_then(&then);
+        }
+    }
+}
+
+/// Call `event`'s listener, if one is registered. On the JS thread.
+fn call_listener(
+    listeners: &Listeners,
+    env: &Env,
+    event: &str,
+    args: EventArgs,
+) -> napi::Result<()> {
+    // Looked up now, on delivery: whatever `on()` registered last, even after
+    // this event was queued, gets it. Released before the call, so the
+    // listener can register listeners. A panic while holding the lock must
+    // not silence the events that report it (#25).
+    let listener = listeners
+        .callbacks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(event);
+    match listener {
+        Some(listener) => listener.borrow_back(env)?.call(args).map(|_| ()),
+        None => Ok(()),
+    }
+}
 
 /// How a `connect()` settles (#23).
 enum AuthOutcome {
@@ -485,16 +601,70 @@ fn request_disconnect(slot: &WorkerSlot) -> napi::Result<()> {
     Ok(())
 }
 
-/// Callback storage for event handlers
+/// The registered listener of each event, one per event.
+///
+/// Shared as `Arc`s so [`call_listener`] can release the lock before calling.
 #[derive(Default)]
 struct EventCallbacks {
-    message: Option<JsCallback>,
-    connect: Option<JsCallback>,
-    disconnect: Option<JsCallback>,
-    reconnect: Option<JsCallback>,
-    error: Option<JsCallback>,
-    authenticated: Option<JsCallback>,
-    unauthenticated: Option<JsCallback>,
+    message: Option<Arc<Listener>>,
+    connect: Option<Arc<Listener>>,
+    disconnect: Option<Arc<Listener>>,
+    reconnect: Option<Arc<Listener>>,
+    error: Option<Arc<Listener>>,
+    authenticated: Option<Arc<Listener>>,
+    unauthenticated: Option<Arc<Listener>>,
+}
+
+impl EventCallbacks {
+    fn slot(&mut self, event: &str) -> Option<&mut Option<Arc<Listener>>> {
+        match event {
+            "message" => Some(&mut self.message),
+            "connect" => Some(&mut self.connect),
+            "disconnect" => Some(&mut self.disconnect),
+            "reconnect" => Some(&mut self.reconnect),
+            "error" => Some(&mut self.error),
+            "authenticated" => Some(&mut self.authenticated),
+            "unauthenticated" => Some(&mut self.unauthenticated),
+            _ => None,
+        }
+    }
+
+    fn get(&mut self, event: &str) -> Option<Arc<Listener>> {
+        self.slot(event).and_then(|slot| slot.clone())
+    }
+}
+
+/// A client's listeners, shared by its connections' [`EventSink`]s.
+#[derive(Default)]
+struct Listeners {
+    callbacks: Mutex<EventCallbacks>,
+    /// Set once a `message` listener is registered; there is no way to remove
+    /// one. Read by the worker for every frame (see [`EventSink::emit_message`]).
+    has_message: AtomicBool,
+}
+
+/// `on(event, callback)`, shared by the stock and futopt clients.
+fn register_listener(
+    listeners: &Listeners,
+    event: &str,
+    callback: Function<'_, EventArgs, Unknown<'static>>,
+) -> napi::Result<()> {
+    let listener = Arc::new(callback.create_ref()?);
+    let mut callbacks = listeners
+        .callbacks
+        .lock()
+        .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
+    let slot = callbacks.slot(event).ok_or_else(|| {
+        napi::Error::from_reason(format!(
+            "Unknown event type: {}. Valid events: message, connect, disconnect, reconnect, error, authenticated, unauthenticated",
+            event
+        ))
+    })?;
+    *slot = Some(listener);
+    if event == "message" {
+        listeners.has_message.store(true, Ordering::SeqCst);
+    }
+    Ok(())
 }
 
 /// WebSocket client for real-time market data (JavaScript wrapper)
@@ -527,11 +697,11 @@ pub struct WebSocketClient {
     tls_config: marketdata_core::TlsConfig,
     // Shared state for child clients — created once in constructor so that
     // every `ws.stock` / `ws.futopt` getter access shares the same Arcs.
-    stock_callbacks: Arc<Mutex<EventCallbacks>>,
+    stock_callbacks: Arc<Listeners>,
     stock_connected: Arc<AtomicBool>,
     stock_closed: Arc<AtomicBool>,
     stock_worker: WorkerSlot,
-    futopt_callbacks: Arc<Mutex<EventCallbacks>>,
+    futopt_callbacks: Arc<Listeners>,
     futopt_connected: Arc<AtomicBool>,
     futopt_closed: Arc<AtomicBool>,
     futopt_worker: WorkerSlot,
@@ -678,11 +848,11 @@ impl WebSocketClient {
             reconnect_config: reconnect_cfg,
             health_check_config: health_check_cfg,
             tls_config,
-            stock_callbacks: Arc::new(Mutex::new(EventCallbacks::default())),
+            stock_callbacks: Arc::new(Listeners::default()),
             stock_connected: Arc::new(AtomicBool::new(false)),
             stock_closed: Arc::new(AtomicBool::new(false)),
             stock_worker: Arc::new(Mutex::new(None)),
-            futopt_callbacks: Arc::new(Mutex::new(EventCallbacks::default())),
+            futopt_callbacks: Arc::new(Listeners::default()),
             futopt_connected: Arc::new(AtomicBool::new(false)),
             futopt_closed: Arc::new(AtomicBool::new(false)),
             futopt_worker: Arc::new(Mutex::new(None)),
@@ -763,7 +933,7 @@ pub struct StockWebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
-    callbacks: Arc<Mutex<EventCallbacks>>,
+    callbacks: Arc<Listeners>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     worker: WorkerSlot,
@@ -783,7 +953,7 @@ impl StockWebSocketClient {
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
-        callbacks: Arc<Mutex<EventCallbacks>>,
+        callbacks: Arc<Listeners>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
         worker: WorkerSlot,
@@ -812,6 +982,9 @@ impl StockWebSocketClient {
     /// `error(Error)` with a numeric `code` when core supplied one. Without an
     /// `error` listener errors are ignored rather than thrown.
     ///
+    /// `message` frames that arrive before a `message` listener is registered
+    /// are dropped, not delivered to it later (#62).
+    ///
     /// @param event - Event type: "message", "connect", "authenticated",
     ///                "unauthenticated", "disconnect", "reconnect", "error"
     /// @param callback - Listener for that event
@@ -827,31 +1000,12 @@ impl StockWebSocketClient {
         ts_generic_types = "E extends WebSocketEvent",
         ts_args_type = "event: E, callback: WebSocketEventMap[E]"
     )]
-    pub fn on(&self, event: String, callback: EventTsfn) -> napi::Result<()> {
-        let mut callbacks = self
-            .callbacks
-            .lock()
-            .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
-
-        // Wrap in Arc for thread-safe sharing (napi-rs 3.x pattern)
-        let arc_callback = Arc::new(callback);
-
-        match event.as_str() {
-            "message" => callbacks.message = Some(arc_callback),
-            "connect" => callbacks.connect = Some(arc_callback),
-            "disconnect" => callbacks.disconnect = Some(arc_callback),
-            "reconnect" => callbacks.reconnect = Some(arc_callback),
-            "error" => callbacks.error = Some(arc_callback),
-            "authenticated" => callbacks.authenticated = Some(arc_callback),
-            "unauthenticated" => callbacks.unauthenticated = Some(arc_callback),
-            _ => {
-                return Err(napi::Error::from_reason(format!(
-                    "Unknown event type: {}. Valid events: message, connect, disconnect, reconnect, error, authenticated, unauthenticated",
-                    event
-                )))
-            }
-        }
-        Ok(())
+    pub fn on(
+        &self,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<()> {
+        register_listener(&self.callbacks, &event, callback)
     }
 
     /// Connect to the stock WebSocket server.
@@ -887,7 +1041,7 @@ impl StockWebSocketClient {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
         let previous = claim_worker_slot(&mut slot)?;
-        let keep_alive = loop_keep_alive(env)?;
+        let sink = EventSink::new(env, Arc::clone(&self.callbacks))?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
         let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
@@ -905,7 +1059,6 @@ impl StockWebSocketClient {
         let reconnect_config = self.reconnect_config.clone();
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
-        let callbacks = Arc::clone(&self.callbacks);
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
         let ending_for_worker = Arc::clone(&ending);
@@ -979,8 +1132,7 @@ impl StockWebSocketClient {
                     let dispatch_ended = Arc::new(AtomicBool::new(false));
                     spawn_event_forwarder(
                         Arc::clone(client.state_events()),
-                        Arc::clone(&callbacks),
-                        Arc::clone(&keep_alive),
+                        sink.clone(),
                         Arc::clone(&auth),
                         Arc::clone(&connected),
                         Arc::clone(&closed),
@@ -1084,7 +1236,7 @@ impl StockWebSocketClient {
                                 // The frame verbatim: re-serializing the routing
                                 // struct would drop unknown fields and emit nulls
                                 // for the ones the server omitted.
-                                fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
+                                sink.emit_message(msg.raw);
                             }
                             Ok(None) => {
                                 // Timeout, continue loop
@@ -1103,8 +1255,7 @@ impl StockWebSocketClient {
                 if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
                     report_panic(
                         &PanicContext {
-                            callbacks: &callbacks,
-                            keep_alive: &keep_alive,
+                            sink: &sink,
                             auth: &auth,
                             connected: &connected,
                             closed: &closed,
@@ -1296,7 +1447,7 @@ pub struct FutOptWebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
-    callbacks: Arc<Mutex<EventCallbacks>>,
+    callbacks: Arc<Listeners>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     worker: WorkerSlot,
@@ -1314,7 +1465,7 @@ impl FutOptWebSocketClient {
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
-        callbacks: Arc<Mutex<EventCallbacks>>,
+        callbacks: Arc<Listeners>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
         worker: WorkerSlot,
@@ -1341,31 +1492,12 @@ impl FutOptWebSocketClient {
         ts_generic_types = "E extends WebSocketEvent",
         ts_args_type = "event: E, callback: WebSocketEventMap[E]"
     )]
-    pub fn on(&self, event: String, callback: EventTsfn) -> napi::Result<()> {
-        let mut callbacks = self
-            .callbacks
-            .lock()
-            .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
-
-        // Wrap in Arc for thread-safe sharing (napi-rs 3.x pattern)
-        let arc_callback = Arc::new(callback);
-
-        match event.as_str() {
-            "message" => callbacks.message = Some(arc_callback),
-            "connect" => callbacks.connect = Some(arc_callback),
-            "disconnect" => callbacks.disconnect = Some(arc_callback),
-            "reconnect" => callbacks.reconnect = Some(arc_callback),
-            "error" => callbacks.error = Some(arc_callback),
-            "authenticated" => callbacks.authenticated = Some(arc_callback),
-            "unauthenticated" => callbacks.unauthenticated = Some(arc_callback),
-            _ => {
-                return Err(napi::Error::from_reason(format!(
-                    "Unknown event type: {}. Valid events: message, connect, disconnect, reconnect, error, authenticated, unauthenticated",
-                    event
-                )))
-            }
-        }
-        Ok(())
+    pub fn on(
+        &self,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<()> {
+        register_listener(&self.callbacks, &event, callback)
     }
 
     /// Connect to the FutOpt WebSocket server.
@@ -1386,7 +1518,7 @@ impl FutOptWebSocketClient {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
         let previous = claim_worker_slot(&mut slot)?;
-        let keep_alive = loop_keep_alive(env)?;
+        let sink = EventSink::new(env, Arc::clone(&self.callbacks))?;
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<WsCommand>();
         let ending = Arc::new(AtomicBool::new(false));
         let decision: AuthDecision = Arc::new(AtomicU8::new(AUTH_PENDING));
@@ -1403,7 +1535,6 @@ impl FutOptWebSocketClient {
         let reconnect_config = self.reconnect_config.clone();
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
-        let callbacks = Arc::clone(&self.callbacks);
         let connected = Arc::clone(&self.connected);
         let closed = Arc::clone(&self.closed);
         let ending_for_worker = Arc::clone(&ending);
@@ -1474,8 +1605,7 @@ impl FutOptWebSocketClient {
                     let dispatch_ended = Arc::new(AtomicBool::new(false));
                     spawn_event_forwarder(
                         Arc::clone(client.state_events()),
-                        Arc::clone(&callbacks),
-                        Arc::clone(&keep_alive),
+                        sink.clone(),
                         Arc::clone(&auth),
                         Arc::clone(&connected),
                         Arc::clone(&closed),
@@ -1578,7 +1708,7 @@ impl FutOptWebSocketClient {
                                 // The frame verbatim: re-serializing the routing
                                 // struct would drop unknown fields and emit nulls
                                 // for the ones the server omitted.
-                                fire_callback(&callbacks, &keep_alive, "message", EventArgs::Text(msg.raw));
+                                sink.emit_message(msg.raw);
                             }
                             Ok(None) => {
                                 // Timeout, continue loop
@@ -1597,8 +1727,7 @@ impl FutOptWebSocketClient {
                 if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
                     report_panic(
                         &PanicContext {
-                            callbacks: &callbacks,
-                            keep_alive: &keep_alive,
+                            sink: &sink,
                             auth: &auth,
                             connected: &connected,
                             closed: &closed,
@@ -1768,8 +1897,7 @@ impl FutOptWebSocketClient {
 /// after its listener has run (see [`fire_and_settle`]).
 fn spawn_event_forwarder(
     events: Arc<tokio::sync::Mutex<std::sync::mpsc::Receiver<marketdata_core::websocket::ConnectionEvent>>>,
-    callbacks: Arc<Mutex<EventCallbacks>>,
-    keep_alive: KeepAlive,
+    sink: EventSink,
     auth: AuthSlot,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
@@ -1790,7 +1918,7 @@ fn spawn_event_forwarder(
             let Ok(event) = event else { break };
             match event {
                 ConnectionEvent::Connected => {
-                    fire_callback(&callbacks, &keep_alive, "connect", EventArgs::None);
+                    sink.emit("connect", EventArgs::None);
                 }
                 ConnectionEvent::Authenticated { data } => {
                     inject_test_panic(test_panic.as_deref(), "ws_events");
@@ -1813,8 +1941,7 @@ fn spawn_event_forwarder(
                     }
                     connected.store(true, Ordering::SeqCst);
                     fire_and_settle(
-                        &callbacks,
-                        &keep_alive,
+                        &sink,
                         "authenticated",
                         EventArgs::Json(data.clone()),
                         &auth,
@@ -1824,8 +1951,7 @@ fn spawn_event_forwarder(
                 }
                 ConnectionEvent::Unauthenticated { data, .. } => {
                     fire_and_settle(
-                        &callbacks,
-                        &keep_alive,
+                        &sink,
                         "unauthenticated",
                         EventArgs::Json(data.clone()),
                         &auth,
@@ -1836,8 +1962,7 @@ fn spawn_event_forwarder(
                 ConnectionEvent::Error { message, code } => {
                     let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
                     fire_and_settle(
-                        &callbacks,
-                        &keep_alive,
+                        &sink,
                         "error",
                         EventArgs::Error { message, code: Some(code) },
                         &auth,
@@ -1851,26 +1976,20 @@ fn spawn_event_forwarder(
                         // Core's dispatch task ends without reconnecting.
                         dispatch_ended.store(true, Ordering::SeqCst);
                     }
-                    fire_callback(
-                        &callbacks,
-                        &keep_alive,
+                    sink.emit(
                         "disconnect",
                         EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
                     );
                 }
                 ConnectionEvent::Reconnecting { attempt } => {
-                    fire_callback(
-                        &callbacks,
-                        &keep_alive,
+                    sink.emit(
                         "reconnect",
                         EventArgs::Json(serde_json::json!({ "attempt": attempt })),
                     );
                 }
                 ConnectionEvent::ReconnectFailed { attempts } => {
                     ending.store(true, Ordering::SeqCst);
-                    fire_callback(
-                        &callbacks,
-                        &keep_alive,
+                    sink.emit(
                         "error",
                         EventArgs::Error {
                             message: format!("Reconnection failed after {} attempts", attempts),
@@ -1887,8 +2006,7 @@ fn spawn_event_forwarder(
         if let Err(payload) = std::panic::catch_unwind(AssertUnwindSafe(run)) {
             report_panic(
                 &PanicContext {
-                    callbacks: &callbacks,
-                    keep_alive: &keep_alive,
+                    sink: &sink,
                     auth: &auth,
                     connected: &connected,
                     closed: &closed,
@@ -1912,8 +2030,7 @@ const PANIC_CODE: i32 = -1;
 
 /// What a panicked worker or event thread needs to report it (#25).
 struct PanicContext<'a> {
-    callbacks: &'a Arc<Mutex<EventCallbacks>>,
-    keep_alive: &'a KeepAlive,
+    sink: &'a EventSink,
     auth: &'a AuthSlot,
     connected: &'a AtomicBool,
     closed: &'a AtomicBool,
@@ -1930,7 +2047,7 @@ struct PanicContext<'a> {
 /// `disconnect` if it was connected.
 /// Only the first panic of a connection fires them.
 ///
-/// Both events go through [`fire_callback`], so each carries a keep-alive
+/// Both events go through the [`EventSink`], so each carries a keep-alive
 /// clone and is delivered before the process may exit (#30). `ending` is set
 /// first, so connect() may be called again from either listener (#44).
 fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::Any + Send)) {
@@ -1955,8 +2072,7 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
     // fired, connect() resolves and this is a disconnect like any other.
     if decide(ctx.decision, AUTH_ABORTED) {
         fire_and_settle(
-            ctx.callbacks,
-            ctx.keep_alive,
+            ctx.sink,
             "error",
             error,
             ctx.auth,
@@ -1964,12 +2080,10 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
             None,
         );
     } else {
-        fire_callback(ctx.callbacks, ctx.keep_alive, "error", error);
+        ctx.sink.emit("error", error);
     }
     if was_connected {
-        fire_callback(
-            ctx.callbacks,
-            ctx.keep_alive,
+        ctx.sink.emit(
             "disconnect",
             EventArgs::Json(serde_json::json!({ "code": null, "reason": reason })),
         );
@@ -2001,34 +2115,17 @@ fn inject_test_panic(site: Option<&str>, here: &str) {
 #[inline(always)]
 fn inject_test_panic(_site: Option<&str>, _here: &str) {}
 
-/// Queue `event` for the registered JS listener, if any.
-///
-/// Callable from any thread. The listener's threadsafe function is weak, so
-/// the call carries a `keep_alive` clone that is dropped on the JS thread
-/// once the listener has returned (see [`KeepAlive`]). An exception the
-/// listener throws is handed back unchanged, which napi-rs reports as an
-/// uncaught exception exactly as a plain `call()` would.
-fn fire_callback(
-    callbacks: &Arc<Mutex<EventCallbacks>>,
-    keep_alive: &KeepAlive,
-    event: &str,
-    data: EventArgs,
-) {
-    fire_callback_then(callbacks, keep_alive, event, data, || {});
-}
-
-/// Fire `event`, then settle the pending `connect()` with `outcome` once the
+/// Emit `event`, then settle the pending `connect()` with `outcome` once the
 /// listener has returned, so it runs before the Promise settles as it did in
 /// 1.x, which emitted before settling (#23). Nothing is settled if
 /// `connect()` already was.
 ///
 /// `ending`, when given and `connect()` is still pending, is set before the
-/// event fires, so calling connect() again from the listener or the
+/// event is emitted, so calling connect() again from the listener or the
 /// rejection is not refused as already connected (#44).
 fn fire_and_settle(
-    callbacks: &Arc<Mutex<EventCallbacks>>,
-    keep_alive: &KeepAlive,
-    event: &str,
+    sink: &EventSink,
+    event: &'static str,
     data: EventArgs,
     auth: &AuthSlot,
     outcome: AuthOutcome,
@@ -2036,66 +2133,14 @@ fn fire_and_settle(
 ) {
     let pending = auth.lock().map(|guard| guard.is_some()).unwrap_or(false);
     if !pending {
-        fire_callback(callbacks, keep_alive, event, data);
+        sink.emit(event, data);
         return;
     }
     if let Some(ending) = ending {
         ending.store(true, Ordering::SeqCst);
     }
     let auth = Arc::clone(auth);
-    fire_callback_then(callbacks, keep_alive, event, data, move || settle(&auth, outcome));
-}
-
-/// [`fire_callback`], running `then` once the listener has returned — or
-/// right away when no listener is registered or the call cannot be queued.
-fn fire_callback_then(
-    callbacks: &Arc<Mutex<EventCallbacks>>,
-    keep_alive: &KeepAlive,
-    event: &str,
-    data: EventArgs,
-    then: impl FnOnce() + Send + 'static,
-) {
-    fn run_then<F: FnOnce()>(then: &Mutex<Option<F>>) {
-        if let Some(then) = then.lock().ok().and_then(|mut guard| guard.take()) {
-            then();
-        }
-    }
-
-    let then = Arc::new(Mutex::new(Some(then)));
-    // A panic while holding the lock must not also silence the events that
-    // report it (#25).
-    {
-        let cb = callbacks.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let callback = match event {
-            "message" => cb.message.as_ref(),
-            "connect" => cb.connect.as_ref(),
-            "disconnect" => cb.disconnect.as_ref(),
-            "reconnect" => cb.reconnect.as_ref(),
-            "error" => cb.error.as_ref(),
-            "authenticated" => cb.authenticated.as_ref(),
-            "unauthenticated" => cb.unauthenticated.as_ref(),
-            _ => None,
-        };
-
-        if let Some(callback) = callback {
-            let keep_alive = Arc::clone(keep_alive);
-            let then_after_call = Arc::clone(&then);
-            let status = callback.call_with_return_value(
-                data,
-                ThreadsafeFunctionCallMode::NonBlocking,
-                move |result, _env| {
-                    run_then(&then_after_call);
-                    drop(keep_alive);
-                    result.map(|_| ())
-                },
-            );
-            if status != Status::Ok {
-                run_then(&then);
-            }
-            return;
-        }
-    }
-    run_then(&then);
+    sink.emit_then(event, data, move || settle(&auth, outcome));
 }
 
 // Unit tests are disabled because ThreadsafeFunction requires Node.js runtime
