@@ -118,9 +118,15 @@ type DispatchTsfn = ThreadsafeFunction<(), (), (), Status, false, true>;
 /// Where a connection emits its events (#62).
 ///
 /// Every event, and the `connect()` settlement that follows one, is queued on
-/// one [`DispatchTsfn`] and runs on the JS thread in emission order. The
-/// listener is looked up when the event runs, so one registered after the
-/// event was queued still receives it, as with an EventEmitter.
+/// one [`DispatchTsfn`] and runs on the JS thread in emission order.
+///
+/// The listener is looked up when the event runs, not when it is queued (see
+/// [`call_listener`]): a listener registered after the event was queued still
+/// receives it, and one that `on()` replaces while events are queued receives
+/// none of them — they all go to its replacement.
+///
+/// `message` is the exception: a frame is only queued if a `message` listener
+/// is registered when it arrives (see [`Self::emit_message`]).
 ///
 /// Independent of where events come from: today the worker (`message`) and
 /// the event thread (everything else) each emit in their own order; once core
@@ -129,13 +135,13 @@ type DispatchTsfn = ThreadsafeFunction<(), (), (), Status, false, true>;
 #[derive(Clone)]
 struct EventSink {
     dispatch: Arc<DispatchTsfn>,
-    listeners: Arc<Mutex<EventCallbacks>>,
+    listeners: Arc<Listeners>,
     keep_alive: KeepAlive,
 }
 
 impl EventSink {
     /// Create a connection's sink. Must run on the JS thread.
-    fn new(env: &Env, listeners: Arc<Mutex<EventCallbacks>>) -> napi::Result<Self> {
+    fn new(env: &Env, listeners: Arc<Listeners>) -> napi::Result<Self> {
         let dispatch = env
             .create_function_from_closure::<(), (), _>("fugleWsDispatch", |_| Ok(()))?
             .build_threadsafe_function::<()>()
@@ -152,6 +158,17 @@ impl EventSink {
     /// Queue `event` for its listener, if any is registered when it runs.
     fn emit(&self, event: &'static str, args: EventArgs) {
         self.emit_then(event, args, || {});
+    }
+
+    /// Queue a `message` frame, or skip it if no `message` listener is
+    /// registered yet: under a flood, queuing frames nobody listens to costs a
+    /// JS-thread call each (#62). A frame skipped this way is not replayed to a
+    /// listener registered later, as an EventEmitter drops what it emits with
+    /// no listener. Frames already queued still go to the current listener.
+    fn emit_message(&self, frame: String) {
+        if self.listeners.has_message.load(Ordering::SeqCst) {
+            self.emit("message", EventArgs::Text(frame));
+        }
     }
 
     /// [`Self::emit`], running `then` on the JS thread once the listener has
@@ -190,15 +207,17 @@ impl EventSink {
 
 /// Call `event`'s listener, if one is registered. On the JS thread.
 fn call_listener(
-    listeners: &Mutex<EventCallbacks>,
+    listeners: &Listeners,
     env: &Env,
     event: &str,
     args: EventArgs,
 ) -> napi::Result<()> {
-    // Released before the call, so the listener can register listeners. A
-    // panic while holding the lock must not silence the events that report
-    // it (#25).
+    // Looked up now, on delivery: whatever `on()` registered last, even after
+    // this event was queued, gets it. Released before the call, so the
+    // listener can register listeners. A panic while holding the lock must
+    // not silence the events that report it (#25).
     let listener = listeners
+        .callbacks
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .get(event);
@@ -615,14 +634,24 @@ impl EventCallbacks {
     }
 }
 
+/// A client's listeners, shared by its connections' [`EventSink`]s.
+#[derive(Default)]
+struct Listeners {
+    callbacks: Mutex<EventCallbacks>,
+    /// Set once a `message` listener is registered; there is no way to remove
+    /// one. Read by the worker for every frame (see [`EventSink::emit_message`]).
+    has_message: AtomicBool,
+}
+
 /// `on(event, callback)`, shared by the stock and futopt clients.
 fn register_listener(
-    callbacks: &Mutex<EventCallbacks>,
+    listeners: &Listeners,
     event: &str,
     callback: Function<'_, EventArgs, Unknown<'static>>,
 ) -> napi::Result<()> {
     let listener = Arc::new(callback.create_ref()?);
-    let mut callbacks = callbacks
+    let mut callbacks = listeners
+        .callbacks
         .lock()
         .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
     let slot = callbacks.slot(event).ok_or_else(|| {
@@ -632,6 +661,9 @@ fn register_listener(
         ))
     })?;
     *slot = Some(listener);
+    if event == "message" {
+        listeners.has_message.store(true, Ordering::SeqCst);
+    }
     Ok(())
 }
 
@@ -665,11 +697,11 @@ pub struct WebSocketClient {
     tls_config: marketdata_core::TlsConfig,
     // Shared state for child clients — created once in constructor so that
     // every `ws.stock` / `ws.futopt` getter access shares the same Arcs.
-    stock_callbacks: Arc<Mutex<EventCallbacks>>,
+    stock_callbacks: Arc<Listeners>,
     stock_connected: Arc<AtomicBool>,
     stock_closed: Arc<AtomicBool>,
     stock_worker: WorkerSlot,
-    futopt_callbacks: Arc<Mutex<EventCallbacks>>,
+    futopt_callbacks: Arc<Listeners>,
     futopt_connected: Arc<AtomicBool>,
     futopt_closed: Arc<AtomicBool>,
     futopt_worker: WorkerSlot,
@@ -816,11 +848,11 @@ impl WebSocketClient {
             reconnect_config: reconnect_cfg,
             health_check_config: health_check_cfg,
             tls_config,
-            stock_callbacks: Arc::new(Mutex::new(EventCallbacks::default())),
+            stock_callbacks: Arc::new(Listeners::default()),
             stock_connected: Arc::new(AtomicBool::new(false)),
             stock_closed: Arc::new(AtomicBool::new(false)),
             stock_worker: Arc::new(Mutex::new(None)),
-            futopt_callbacks: Arc::new(Mutex::new(EventCallbacks::default())),
+            futopt_callbacks: Arc::new(Listeners::default()),
             futopt_connected: Arc::new(AtomicBool::new(false)),
             futopt_closed: Arc::new(AtomicBool::new(false)),
             futopt_worker: Arc::new(Mutex::new(None)),
@@ -901,7 +933,7 @@ pub struct StockWebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
-    callbacks: Arc<Mutex<EventCallbacks>>,
+    callbacks: Arc<Listeners>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     worker: WorkerSlot,
@@ -921,7 +953,7 @@ impl StockWebSocketClient {
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
-        callbacks: Arc<Mutex<EventCallbacks>>,
+        callbacks: Arc<Listeners>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
         worker: WorkerSlot,
@@ -949,6 +981,9 @@ impl StockWebSocketClient {
     /// `disconnect({ code, reason })`, `reconnect({ attempt })`, and
     /// `error(Error)` with a numeric `code` when core supplied one. Without an
     /// `error` listener errors are ignored rather than thrown.
+    ///
+    /// `message` frames that arrive before a `message` listener is registered
+    /// are dropped, not delivered to it later (#62).
     ///
     /// @param event - Event type: "message", "connect", "authenticated",
     ///                "unauthenticated", "disconnect", "reconnect", "error"
@@ -1201,7 +1236,7 @@ impl StockWebSocketClient {
                                 // The frame verbatim: re-serializing the routing
                                 // struct would drop unknown fields and emit nulls
                                 // for the ones the server omitted.
-                                sink.emit("message", EventArgs::Text(msg.raw));
+                                sink.emit_message(msg.raw);
                             }
                             Ok(None) => {
                                 // Timeout, continue loop
@@ -1412,7 +1447,7 @@ pub struct FutOptWebSocketClient {
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
-    callbacks: Arc<Mutex<EventCallbacks>>,
+    callbacks: Arc<Listeners>,
     connected: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     worker: WorkerSlot,
@@ -1430,7 +1465,7 @@ impl FutOptWebSocketClient {
         reconnect_config: marketdata_core::ReconnectionConfig,
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
-        callbacks: Arc<Mutex<EventCallbacks>>,
+        callbacks: Arc<Listeners>,
         connected: Arc<AtomicBool>,
         closed: Arc<AtomicBool>,
         worker: WorkerSlot,
@@ -1673,7 +1708,7 @@ impl FutOptWebSocketClient {
                                 // The frame verbatim: re-serializing the routing
                                 // struct would drop unknown fields and emit nulls
                                 // for the ones the server omitted.
-                                sink.emit("message", EventArgs::Text(msg.raw));
+                                sink.emit_message(msg.raw);
                             }
                             Ok(None) => {
                                 // Timeout, continue loop

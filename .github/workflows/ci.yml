@@ -269,10 +269,10 @@ jobs:
           CGO_ENABLED: '1'
         run: go test -short ./...
 
-  # Only compiles: the Java sources (including examples/, which build.gradle.kts
-  # puts in the main source set) had no PR-time check, so a removed generated
-  # type broke the whole build unnoticed. java.yml / test.yml keep the full
-  # regenerate-and-test matrix behind workflow_dispatch.
+  # Compiles the Java sources (including examples/, which build.gradle.kts puts
+  # in the main source set) and runs the tests that do not need the native
+  # library; tests that construct a client skip here. java.yml / test.yml keep
+  # the full native-library test matrix behind workflow_dispatch.
   java:
     name: Java binding (compile)
     runs-on: ubuntu-latest
@@ -286,3 +286,6 @@ jobs:
       - name: Compile sources, examples and tests
         working-directory: bindings/java
         run: ./gradlew compileJava compileTestJava --no-daemon
+      - name: Structural tests (no native library)
+        working-directory: bindings/java
+        run: ./gradlew test -PexcludeTags=integration --no-daemon

@@ -70,6 +70,8 @@ public class ConfigOptionsTest {
     @Test
     @DisplayName("RestClient with apiKey alone works (no auth validation error)")
     void testRestClientExactlyOneAuth_apiKey() {
+        NativeLibrary.assumeAvailable();
+
         try {
             FugleRestClient client = FugleRestClient.builder()
                 .apiKey("test-api-key")
@@ -88,6 +90,8 @@ public class ConfigOptionsTest {
     @Test
     @DisplayName("RestClient with bearerToken alone works (no auth validation error)")
     void testRestClientExactlyOneAuth_bearerToken() {
+        NativeLibrary.assumeAvailable();
+
         try {
             FugleRestClient client = FugleRestClient.builder()
                 .bearerToken("test-bearer-token")
@@ -103,6 +107,8 @@ public class ConfigOptionsTest {
     @Test
     @DisplayName("RestClient with sdkToken alone works (no auth validation error)")
     void testRestClientExactlyOneAuth_sdkToken() {
+        NativeLibrary.assumeAvailable();
+
         try {
             FugleRestClient client = FugleRestClient.builder()
                 .sdkToken("test-sdk-token")
@@ -151,6 +157,8 @@ public class ConfigOptionsTest {
     @Test
     @DisplayName("WebSocketClient with apiKey alone works (no auth validation error)")
     void testWebSocketExactlyOneAuth_apiKey() {
+        NativeLibrary.assumeAvailable();
+
         try {
             FugleWebSocketClient client = FugleWebSocketClient.builder()
                 .apiKey("test-api-key")
@@ -198,6 +206,8 @@ public class ConfigOptionsTest {
     @Test
     @DisplayName("WebSocketClient builder accepts ReconnectOptions without error")
     void testWebSocketWithReconnectOptions() {
+        NativeLibrary.assumeAvailable();
+
         ReconnectOptions reconnect = ReconnectOptions.builder()
             .maxAttempts(10)
             .initialDelayMs(2000L)
@@ -222,6 +232,8 @@ public class ConfigOptionsTest {
     @Test
     @DisplayName("WebSocketClient builder accepts HealthCheckOptions without error")
     void testWebSocketWithHealthCheckOptions() {
+        NativeLibrary.assumeAvailable();
+
         HealthCheckOptions healthCheck = HealthCheckOptions.builder()
             .enabled(true)
             .heartbeatTimeoutMs(60000L)
