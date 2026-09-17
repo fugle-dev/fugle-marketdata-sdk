@@ -1,11 +1,11 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
-use crate::models::SubscribeRequest;
 use crate::websocket::aio::writer::{start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_subscribe_raw, AuthHandshake, AuthOutcome,
+    classify_auth_response, frame_auth, frame_resubscribe, AuthHandshake, AuthOutcome,
+    ResubscribeFrame,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
@@ -32,25 +32,24 @@ pub(crate) fn tls_connector_for(
     Ok(Connector::Rustls(client_config))
 }
 
-/// Queue a subscribe frame for each of `subs`, in order. A subscription
-/// whose frame cannot be built or queued is reported as an `Error` naming
-/// its key, and the rest are still sent. Returns the first failure.
+/// Queue each of `frames` (see [`frame_resubscribe`]), in order. A frame
+/// that could not be built or queued is reported as an `Error` naming its
+/// label, and the rest are still sent. Returns the first failure.
 pub(crate) async fn replay_subscriptions(
-    subs: Vec<SubscribeRequest>,
+    frames: Vec<ResubscribeFrame>,
     stream: &StreamSender,
     write_tx: &tokio_mpsc::Sender<String>,
 ) -> Result<(), MarketDataError> {
     let mut first_err = None;
-    for req in subs {
-        let key = req.key();
-        let sent = match frame_subscribe_raw(req) {
+    for ResubscribeFrame { label, frame } in frames {
+        let sent = match frame {
             Ok(json) => write_tx.send(json).await.map_err(|_| MarketDataError::ConnectionError {
                 msg: "Writer task is not running".to_string(),
             }),
             Err(e) => Err(e),
         };
         if let Err(e) = sent {
-            stream.emit(ConnectionEvent::resubscribe_failed(&key, &e));
+            stream.emit(ConnectionEvent::resubscribe_failed(&label, &e));
             first_err.get_or_insert(e);
         }
     }
@@ -236,7 +235,7 @@ pub(crate) async fn try_reconnect(
                         // Resubscribe all stored subscriptions through the new writer
                         subscriptions.clear_server_ids();
                         let _ = replay_subscriptions(
-                            subscriptions.get_all(),
+                            frame_resubscribe(subscriptions.get_all()),
                             &stream,
                             &new_write_tx,
                         )
@@ -398,16 +397,18 @@ mod tests {
     use super::*;
     use crate::errors::error_code;
     use crate::metrics_compat::DropCounter;
-    use crate::models::Channel;
+    use crate::models::{Channel, SubscribeRequest};
     use crate::websocket::stream_queue::stream;
     use crate::websocket::StreamItem;
     use crate::AuthRequest;
 
-    fn subs() -> Vec<SubscribeRequest> {
-        vec![
+    /// Two trades rows fold into one frame; books stays on its own.
+    fn frames() -> Vec<ResubscribeFrame> {
+        frame_resubscribe(vec![
             SubscribeRequest::new(Channel::Trades, "2330"),
             SubscribeRequest::new(Channel::Books, "2317"),
-        ]
+            SubscribeRequest::new(Channel::Trades, "2454"),
+        ])
     }
 
     fn event_stream() -> (StreamSender, crate::websocket::stream_queue::QueueReceiver) {
@@ -417,25 +418,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_queues_every_subscription_in_order() {
+    async fn replay_queues_one_frame_per_batch_in_order() {
         let (tx, rx) = event_stream();
         let (write_tx, mut write_rx) = tokio_mpsc::channel(8);
 
-        replay_subscriptions(subs(), &tx, &write_tx).await.expect("replay succeeds");
+        replay_subscriptions(frames(), &tx, &write_tx).await.expect("replay succeeds");
 
         let first = write_rx.try_recv().expect("first frame");
         let second = write_rx.try_recv().expect("second frame");
-        assert!(first.contains("2330") && second.contains("2317"));
+        assert!(write_rx.try_recv().is_err(), "one frame per batch");
+        assert!(first.contains(r#""symbols":["2330","2454"]"#), "{first}");
+        assert!(second.contains(r#""symbol":"2317""#), "{second}");
         assert!(rx.try_recv().is_err(), "no events on success");
     }
 
     #[tokio::test]
-    async fn replay_reports_each_failed_subscription_and_keeps_going() {
+    async fn replay_reports_each_failed_batch_and_keeps_going() {
         let (tx, rx) = event_stream();
         let (write_tx, write_rx) = tokio_mpsc::channel(8);
         drop(write_rx);
 
-        let err = replay_subscriptions(subs(), &tx, &write_tx).await.expect_err("replay fails");
+        let err = replay_subscriptions(frames(), &tx, &write_tx).await.expect_err("replay fails");
         assert!(matches!(err, MarketDataError::ConnectionError { .. }));
 
         let errors: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
@@ -444,9 +447,9 @@ mod tests {
                 other => panic!("expected Error, got {other:?}"),
             })
             .collect();
-        assert_eq!(errors.len(), 2, "one Error per subscription");
+        assert_eq!(errors.len(), 2, "one Error per batch");
         assert!(errors.iter().all(|info| info.code == error_code::CONNECTION));
-        assert!(errors[0].message.contains("trades:2330"));
-        assert!(errors[1].message.contains("books:2317"));
+        assert!(errors[0].message.contains("trades (2 symbols)"), "{}", errors[0].message);
+        assert!(errors[1].message.contains("books:2317"), "{}", errors[1].message);
     }
 }
