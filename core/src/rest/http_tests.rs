@@ -154,7 +154,7 @@ fn error_info_carries_status_body_and_headers() {
     let body = r#"{"message":"Unauthorized","statusCode":401}"#;
     for status in ["401 Unauthorized", "404 Not Found"] {
         let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nX-Request-Id: req-1\r\nX-RateLimit-Remaining: 0\r\nContent-Length: {}\r\n\r\n{body}",
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nX-Request-Id: req-1\r\nX-RateLimit-Remaining: 0\r\nSet-Cookie: session=secret\r\nContent-Length: {}\r\n\r\n{body}",
             body.len()
         );
         let srv = server(vec![Some(response.into_bytes())]);
@@ -164,6 +164,7 @@ fn error_info_carries_status_body_and_headers() {
         assert_eq!(info.request_id.as_deref(), Some("req-1"), "{status}");
         assert_eq!(info.headers.get("x-ratelimit-remaining").map(String::as_str), Some("0"), "{status}");
         assert_eq!(info.headers.get("content-type").map(String::as_str), Some("application/json"), "{status}");
+        assert!(!info.headers.contains_key("set-cookie"), "{status}: set-cookie must not be kept");
     }
 }
 

@@ -177,7 +177,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **Node**: error messages no longer start with `[code] ` (REST rejections,
+- **Node**: error messages no longer start with `[code]` (REST rejections,
   constructor errors, `connect()` rejections), matching the WebSocket `error`
   event; `err.code` is a number on every SDK error (REST errors used to carry
   the string `"GenericFailure"`). Check `err.code` instead of the message

@@ -24,7 +24,10 @@ casing.
 | `status` | integer or null | HTTP errors | HTTP status of a REST response, or of a rejected WebSocket upgrade. |
 | `body` | string or null | REST HTTP errors | Response body exactly as the server sent it; null if it could not be read as text. |
 | `request_id` | string or null | REST HTTP errors | Value of the `x-request-id` response header. The Fugle API does not send one today, so this is null until it does; use `headers` for tracing. |
-| `headers` | string map | REST HTTP errors (empty otherwise) | All response headers, names lowercased; a repeated header is joined with `", "`. Useful ones include `retry-after` and `x-ratelimit-*`. |
+| `headers` | string map | REST HTTP errors (empty otherwise) | Response headers, names lowercased, except `set-cookie`; a repeated header is joined with `", "`. Useful ones include `retry-after` and `x-ratelimit-*`. |
+
+`set-cookie` is never kept, but other headers and `body` come from the
+server as-is: filter them before writing an error to logs.
 
 The SDK does not tell you whether to retry. Decide from `source_kind`,
 `status` and `headers` (for example `retry-after`).

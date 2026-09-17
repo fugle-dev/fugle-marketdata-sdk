@@ -173,6 +173,10 @@ pub mod error_code {
 /// Header carrying the server-assigned request id, when the server sends one.
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
+/// Response headers never kept in [`HttpErrorContext`]: they can carry
+/// session credentials, and errors end up in logs.
+const EXCLUDED_HEADERS: &[&str] = &["set-cookie"];
+
 /// The HTTP response behind an error: status, raw body and headers.
 ///
 /// Attached to [`MarketDataError::ApiError`] and to a REST
@@ -185,14 +189,14 @@ pub struct HttpErrorContext {
     pub status: u16,
     /// Response body as received; `None` when it could not be read as text.
     pub body: Option<String>,
-    /// Response headers with lowercase names. Repeated headers are joined
-    /// with `", "`.
+    /// Response headers with lowercase names, except `set-cookie`. Repeated
+    /// headers are joined with `", "`.
     pub headers: BTreeMap<String, String>,
 }
 
 impl HttpErrorContext {
-    /// Build a context. Header names are lowercased and repeated headers
-    /// joined with `", "`.
+    /// Build a context. Header names are lowercased, repeated headers joined
+    /// with `", "`, and `set-cookie` dropped.
     pub fn new<I, K, V>(status: u16, body: Option<String>, headers: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
@@ -201,7 +205,11 @@ impl HttpErrorContext {
     {
         let mut map: BTreeMap<String, String> = BTreeMap::new();
         for (name, value) in headers {
-            map.entry(name.as_ref().to_ascii_lowercase())
+            let name = name.as_ref().to_ascii_lowercase();
+            if EXCLUDED_HEADERS.contains(&name.as_str()) {
+                continue;
+            }
+            map.entry(name)
                 .and_modify(|joined| {
                     joined.push_str(", ");
                     joined.push_str(value.as_ref());
@@ -1027,6 +1035,18 @@ mod tests {
         assert_eq!(info.body.as_deref(), Some("denied"));
         assert_eq!(info.request_id.as_deref(), Some("abc"));
         assert_eq!(info.headers.get("vary").map(String::as_str), Some("a, b"));
+    }
+
+    #[test]
+    fn http_context_drops_set_cookie_in_any_case() {
+        let http = HttpErrorContext::new(
+            401,
+            None,
+            [("Set-Cookie", "session=secret"), ("SET-COOKIE", "b=2"), ("set-cookie", "c=3"), ("Retry-After", "5")],
+        );
+        assert_eq!(http.header("set-cookie"), None);
+        assert_eq!(http.headers.len(), 1);
+        assert_eq!(http.header("retry-after"), Some("5"));
     }
 
     #[test]

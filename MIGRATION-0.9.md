@@ -373,7 +373,7 @@ and every error code. Error code values are unchanged.
 
 ### Node
 
-- The `[code] ` prefix is gone from `err.message` of REST rejections,
+- The `[code]` prefix is gone from `err.message` of REST rejections,
   constructor errors and `connect()` rejections, matching the WebSocket
   `error` event. Branch on `err.code` (now a number; REST errors used to have
   the string `"GenericFailure"` there) instead of matching the message:
