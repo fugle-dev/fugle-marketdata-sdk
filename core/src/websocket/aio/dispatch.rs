@@ -2,18 +2,34 @@
 //! messages onto the client's stream. Also implements optional outbound ping.
 
 use crate::tracing_compat::{debug, warn};
+use crate::websocket::aio::writer::WriteFailure;
 use crate::websocket::aio::{SharedState, WsStream};
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, ReconnectionManager, SubscriptionManager};
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio_tungstenite::tungstenite::Message;
+
+/// Most frames read after a failed write before it is reported. Bounds how
+/// long a socket that keeps delivering data can postpone the report.
+const WRITE_FAILURE_DRAIN_LIMIT: usize = 256;
+
+/// What ended one wait of the dispatch loop.
+enum Next {
+    Frame(Option<Result<Message, tokio_tungstenite::tungstenite::Error>>),
+    HeartbeatTimeout(Duration),
+    /// The writer failed; frames already received are read first.
+    WriteFailed(WriteFailure),
+    /// No frame is waiting behind a failed write: report it.
+    ReportWriteFailure(WriteFailure),
+    WriterGone,
+}
 
 /// Dispatch incoming WebSocket messages to appropriate channels
 ///
@@ -21,7 +37,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// It will terminate when:
 /// 1. WebSocket connection closes (returns close code)
 /// 2. Server sends Close frame (returns close code from frame)
-/// 3. WebSocket error occurs (returns None)
+/// 3. WebSocket error occurs, reading or writing (returns None)
 /// 4. Task is aborted by disconnect() (task cancelled at .await point)
 ///
 /// The function is cancellation-safe: aborting at any `.await` point
@@ -41,6 +57,9 @@ use tokio_tungstenite::tungstenite::Message;
 ///   `will_reconnect` so it matches the decision the caller makes next
 /// * `state` - The client's connection state, updated to match each
 ///   `Disconnected` before it is queued (#86)
+/// * `write_failed` - Receives this connection's failed write from its
+///   writer task; it is reported and ends the connection like a transport
+///   error (#97)
 ///
 /// # Returns
 ///
@@ -57,7 +76,12 @@ pub(crate) async fn dispatch_messages(
     shutdown_requested: Arc<AtomicBool>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     state: SharedState,
+    write_failed: oneshot::Receiver<WriteFailure>,
 ) -> Option<u16> {
+    let mut write_failed = Some(write_failed);
+    // A failed write waiting for the frames received before it, with the
+    // number read so far.
+    let mut pending_write_failure: Option<(WriteFailure, usize)> = None;
     let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
         let reconnection = Arc::clone(&reconnection);
         let shutdown_requested = shutdown_requested.load(Ordering::SeqCst);
@@ -78,37 +102,109 @@ pub(crate) async fn dispatch_messages(
         // Read-site liveness: if `heartbeat_timeout` is set, the next
         // frame must arrive within that window or we declare the
         // connection dead. When None, fall back to a plain blocking
-        // read (no liveness detection).
-        let frame_result = match heartbeat_timeout {
-            Some(timeout) => match tokio::time::timeout(timeout, ws_read.next()).await {
-                Ok(opt) => opt,
-                Err(_elapsed) => {
-                    // A caller-initiated shutdown reports the close itself.
-                    if shutdown_requested.load(Ordering::SeqCst) {
-                        return None;
+        // read (no liveness detection). A failed write on this connection
+        // ends it as well (#97); every branch is cancel-safe, so the losing
+        // one drops nothing. Reads are polled first, so a frame that is
+        // ready wins over a write failure.
+        let next = if let Some((failure, drained)) = pending_write_failure.take() {
+            // Frames that arrived before the write failed come first: a
+            // peer's Close among them decides the report and the reconnect,
+            // not the write failure. The write failure can wake this task
+            // before the I/O driver has seen them, so yield to it first.
+            tokio::task::yield_now().await;
+            let ready = if drained < WRITE_FAILURE_DRAIN_LIMIT {
+                ws_read.next().now_or_never()
+            } else {
+                None
+            };
+            match ready {
+                Some(frame) => {
+                    pending_write_failure = Some((failure, drained + 1));
+                    Next::Frame(frame)
+                }
+                None => Next::ReportWriteFailure(failure),
+            }
+        } else {
+            tokio::select! {
+                biased;
+                read = async {
+                    match heartbeat_timeout {
+                        Some(timeout) => tokio::time::timeout(timeout, ws_read.next())
+                            .await
+                            .map_err(|_elapsed| timeout),
+                        None => Ok(ws_read.next().await),
                     }
-                    let elapsed_ms = timeout.as_millis() as u64;
-                    warn!(
-                        target: "fugle_marketdata::ws",
-                        elapsed_ms,
-                        "heartbeat timeout: no inbound frame in window"
-                    );
-                    stream.emit(ConnectionEvent::HeartbeatTimeout {
-                        elapsed: timeout,
-                    });
-                    // Through the latch, so a racing `disconnect()` cannot
-                    // report this connection's close a second time (#47).
-                    stream.connection_lost(
-                        &state,
-                        None,
-                        format!("Heartbeat timeout after {elapsed_ms}ms"),
-                        DisconnectIntent::Network,
-                        will_reconnect(DisconnectIntent::Network, None).await,
-                    );
+                } => match read {
+                    Ok(frame) => Next::Frame(frame),
+                    Err(timeout) => Next::HeartbeatTimeout(timeout),
+                },
+                failure = async {
+                    match write_failed.as_mut() {
+                        Some(rx) => rx.await.ok(),
+                        None => std::future::pending().await,
+                    }
+                } => match failure {
+                    Some(failure) => Next::WriteFailed(failure),
+                    None => Next::WriterGone,
+                },
+            }
+        };
+
+        let frame_result = match next {
+            Next::Frame(frame) => frame,
+            Next::HeartbeatTimeout(timeout) => {
+                // A caller-initiated shutdown reports the close itself.
+                if shutdown_requested.load(Ordering::SeqCst) {
                     return None;
                 }
-            },
-            None => ws_read.next().await,
+                let elapsed_ms = timeout.as_millis() as u64;
+                warn!(
+                    target: "fugle_marketdata::ws",
+                    elapsed_ms,
+                    "heartbeat timeout: no inbound frame in window"
+                );
+                stream.emit(ConnectionEvent::HeartbeatTimeout {
+                    elapsed: timeout,
+                });
+                // Through the latch, so a racing `disconnect()` cannot
+                // report this connection's close a second time (#47).
+                stream.connection_lost(
+                    &state,
+                    None,
+                    format!("Heartbeat timeout after {elapsed_ms}ms"),
+                    DisconnectIntent::Network,
+                    will_reconnect(DisconnectIntent::Network, None).await,
+                );
+                return None;
+            }
+            Next::WriteFailed(failure) => {
+                write_failed = None;
+                pending_write_failure = Some((failure, 0));
+                continue;
+            }
+            Next::ReportWriteFailure(WriteFailure { error, message }) => {
+                // Mirrors the transport-error arm below and the sync
+                // client's write-error path: `Error`, then `Disconnected`,
+                // both suppressed when shutdown was caller-initiated.
+                if shutdown_requested.load(Ordering::SeqCst) {
+                    return None;
+                }
+                stream.emit(ConnectionEvent::error_with_message(&error, message.clone()));
+                stream.connection_lost(
+                    &state,
+                    None,
+                    message,
+                    DisconnectIntent::Network,
+                    will_reconnect(DisconnectIntent::Network, None).await,
+                );
+                return None;
+            }
+            Next::WriterGone => {
+                // The writer stopped without a failure (its queue or sink
+                // was cleared); keep reading.
+                write_failed = None;
+                continue;
+            }
         };
 
         let msg_result = match frame_result {
