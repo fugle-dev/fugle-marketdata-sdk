@@ -1333,21 +1333,12 @@ impl StockWebSocketClient {
                 ));
             };
 
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
+        // Checked before the connection, so an unknown channel is 1005 either way.
+        let ch = channel_str
+            .parse::<marketdata_core::Channel>()
+            .map_err(errors::to_py_err)?;
 
-        let ch = match channel_str.to_lowercase().as_str() {
-            "trades" => marketdata_core::Channel::Trades,
-            "candles" => marketdata_core::Channel::Candles,
-            "books" => marketdata_core::Channel::Books,
-            "aggregates" => marketdata_core::Channel::Aggregates,
-            "indices" => marketdata_core::Channel::Indices,
-            _ => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid channel: '{}'. Valid channels: trades, candles, books, aggregates, indices",
-                    channel_str
-                )));
-            }
-        };
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let sub = marketdata_core::StockSubscription::new(ch, target_symbols)
             .with_odd_lot(effective_odd_lot);
@@ -1673,20 +1664,10 @@ impl StockWebSocketClient {
         let state_arc = Arc::clone(&self.state);
 
         future_into_py(py, async move {
-            // Parse channel
-            let ch = match channel_str.to_lowercase().as_str() {
-                "trades" => marketdata_core::Channel::Trades,
-                "candles" => marketdata_core::Channel::Candles,
-                "books" => marketdata_core::Channel::Books,
-                "aggregates" => marketdata_core::Channel::Aggregates,
-                "indices" => marketdata_core::Channel::Indices,
-                _ => {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "Invalid channel: '{}'. Valid channels: trades, candles, books, aggregates, indices",
-                        channel_str
-                    )));
-                }
-            };
+            // Parsed before the connection check; raised on await.
+            let ch = channel_str
+                .parse::<marketdata_core::Channel>()
+                .map_err(errors::to_py_err)?;
 
             // Clone the Arc<WebSocketClient> out of mutex to avoid holding guard across await
             let ws_client = {
@@ -2016,21 +1997,12 @@ impl FutOptWebSocketClient {
                 ));
             };
 
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
+        // Checked before the connection; FutOpt has no `indices` channel.
+        let ch = channel_str
+            .parse::<marketdata_core::FutOptChannel>()
+            .map_err(errors::to_py_err)?;
 
-        // Parse channel (FutOpt doesn't have indices channel)
-        let ch = match channel_str.to_lowercase().as_str() {
-            "trades" => marketdata_core::FutOptChannel::Trades,
-            "candles" => marketdata_core::FutOptChannel::Candles,
-            "books" => marketdata_core::FutOptChannel::Books,
-            "aggregates" => marketdata_core::FutOptChannel::Aggregates,
-            _ => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid channel: '{}'. Valid channels: trades, candles, books, aggregates",
-                    channel_str
-                )));
-            }
-        };
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
 
         let sub = marketdata_core::FutOptSubscription::new(ch, target_symbols)
             .with_after_hours(effective_after_hours);
