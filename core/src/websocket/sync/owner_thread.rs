@@ -5,12 +5,11 @@
 //! On disconnect, optionally runs the reconnect loop and rebuilds the
 //! WebSocket+queue+state in place.
 
-use crate::models::SubscribeRequest;
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_subscribe_raw, parse_binary_frame, parse_text_frame,
-    AuthHandshake, AuthOutcome,
+    classify_auth_response, frame_auth, frame_resubscribe, parse_binary_frame, parse_text_frame,
+    AuthHandshake, AuthOutcome, ResubscribeFrame,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
@@ -510,24 +509,23 @@ fn owner_loop(
     }
 }
 
-/// Queue a subscribe frame for each of `subs`, in order. A subscription
-/// whose frame cannot be built or queued is reported as an `Error` naming
-/// its key, and the rest are still sent. Returns the first failure.
+/// Queue each of `frames` (see [`frame_resubscribe`]), in order. A frame
+/// that could not be built or queued is reported as an `Error` naming its
+/// label, and the rest are still sent. Returns the first failure.
 pub(crate) fn replay_subscriptions(
-    subs: Vec<SubscribeRequest>,
+    frames: Vec<ResubscribeFrame>,
     stream: &StreamSender,
     write_tx: &mpsc::SyncSender<String>,
 ) -> Result<(), MarketDataError> {
     let mut first_err = None;
-    for req in subs {
-        let key = req.key();
-        let sent = frame_subscribe_raw(req).and_then(|json| {
+    for ResubscribeFrame { label, frame } in frames {
+        let sent = frame.and_then(|json| {
             write_tx.send(json).map_err(|_| MarketDataError::ConnectionError {
                 msg: "Writer queue closed (supervisor exited)".to_string(),
             })
         });
         if let Err(e) = sent {
-            stream.emit(ConnectionEvent::resubscribe_failed(&key, &e));
+            stream.emit(ConnectionEvent::resubscribe_failed(&label, &e));
             first_err.get_or_insert(e);
         }
     }
@@ -570,10 +568,10 @@ fn reconnect_and_authenticate(
     };
 
     // Build fresh write channel + install into shared slot. The replay below
-    // queues one frame per subscription before this thread starts draining,
-    // so the channel must hold them all or `send` would block forever.
-    let subs = shared.subscriptions.get_all();
-    let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY + subs.len());
+    // queues every resubscribe frame before this thread starts draining, so
+    // the channel must hold them all or `send` would block forever.
+    let resubscribe = frame_resubscribe(shared.subscriptions.get_all());
+    let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY + resubscribe.len());
     *shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = Some(write_tx.clone());
 
     // Reset reconnection counter
@@ -584,7 +582,7 @@ fn reconnect_and_authenticate(
 
     // Replay subscriptions
     shared.subscriptions.clear_server_ids();
-    let _ = replay_subscriptions(subs, &shared.stream, &write_tx);
+    let _ = replay_subscriptions(resubscribe, &shared.stream, &write_tx);
 
     set_state(shared, ConnectionState::Connected);
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
@@ -716,16 +714,18 @@ mod tests {
     use super::*;
     use crate::errors::error_code;
     use crate::metrics_compat::DropCounter;
-    use crate::models::Channel;
+    use crate::models::{Channel, SubscribeRequest};
     use crate::websocket::stream_queue::stream;
     use crate::websocket::StreamItem;
     use crate::AuthRequest;
 
-    fn subs() -> Vec<SubscribeRequest> {
-        vec![
+    /// Two trades rows fold into one frame; books stays on its own.
+    fn frames() -> Vec<ResubscribeFrame> {
+        frame_resubscribe(vec![
             SubscribeRequest::new(Channel::Trades, "2330"),
             SubscribeRequest::new(Channel::Books, "2317"),
-        ]
+            SubscribeRequest::new(Channel::Trades, "2454"),
+        ])
     }
 
     fn event_stream() -> (StreamSender, crate::websocket::stream_queue::QueueReceiver) {
@@ -735,25 +735,26 @@ mod tests {
     }
 
     #[test]
-    fn replay_queues_every_subscription_in_order() {
+    fn replay_queues_one_frame_per_batch_in_order() {
         let (tx, rx) = event_stream();
         let (write_tx, write_rx) = mpsc::sync_channel(8);
 
-        replay_subscriptions(subs(), &tx, &write_tx).expect("replay succeeds");
+        replay_subscriptions(frames(), &tx, &write_tx).expect("replay succeeds");
 
-        let frames: Vec<String> = write_rx.try_iter().collect();
-        assert_eq!(frames.len(), 2);
-        assert!(frames[0].contains("2330") && frames[1].contains("2317"));
+        let sent: Vec<String> = write_rx.try_iter().collect();
+        assert_eq!(sent.len(), 2, "one frame per batch");
+        assert!(sent[0].contains(r#""symbols":["2330","2454"]"#), "{}", sent[0]);
+        assert!(sent[1].contains(r#""symbol":"2317""#), "{}", sent[1]);
         assert!(rx.try_recv().is_err(), "no events on success");
     }
 
     #[test]
-    fn replay_reports_each_failed_subscription_and_keeps_going() {
+    fn replay_reports_each_failed_batch_and_keeps_going() {
         let (tx, rx) = event_stream();
         let (write_tx, write_rx) = mpsc::sync_channel(8);
         drop(write_rx);
 
-        let err = replay_subscriptions(subs(), &tx, &write_tx).expect_err("replay fails");
+        let err = replay_subscriptions(frames(), &tx, &write_tx).expect_err("replay fails");
         assert!(matches!(err, MarketDataError::ConnectionError { .. }));
 
         let errors: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
@@ -762,9 +763,9 @@ mod tests {
                 other => panic!("expected Error, got {other:?}"),
             })
             .collect();
-        assert_eq!(errors.len(), 2, "one Error per subscription");
+        assert_eq!(errors.len(), 2, "one Error per batch");
         assert!(errors.iter().all(|info| info.code == error_code::CONNECTION));
-        assert!(errors[0].message.contains("trades:2330"));
-        assert!(errors[1].message.contains("books:2317"));
+        assert!(errors[0].message.contains("trades (2 symbols)"), "{}", errors[0].message);
+        assert!(errors[1].message.contains("books:2317"), "{}", errors[1].message);
     }
 }

@@ -107,6 +107,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **All languages**: a reconnect (automatic, or `reconnect()`) re-sends the
+  stored subscriptions as one `subscribe` frame per channel and modifier
+  (`intradayOddLot`, `afterHours`), with `symbols: [...]`, instead of one
+  frame per symbol. A 1000-symbol batch comes back as one frame, not 1000.
+  If a batch cannot be re-sent, the `Error` message names its channel,
+  modifier and symbol count, e.g. `trades:oddlot (1000 symbols)`; a single
+  subscription is still named by its key (#111).
 - **Node**: a listener that throws no longer surfaces as an uncaught
   exception; it is reported through `error` (code 3004), see Added (#83).
 - **Node**: the `error` event for "Reconnection failed after N attempts" has

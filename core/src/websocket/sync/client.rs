@@ -6,7 +6,8 @@
 use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
 use crate::websocket::stream_queue::QueueReceiver;
 use crate::websocket::protocol::{
-    frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_unsubscribe,
+    frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
+    frame_unsubscribe,
 };
 use crate::websocket::sync::owner_thread::{
     do_auth_handshake, do_blocking_connect, replay_subscriptions, run_supervisor, OwnerShared,
@@ -574,8 +575,8 @@ impl WebSocketClient {
     }
 
     /// Re-send every stored subscription on the connection `connect()` just
-    /// opened. Failures are reported per subscription (see
-    /// [`replay_subscriptions`]); the first one is returned.
+    /// opened, one frame per channel and modifier. Failures are reported per
+    /// frame (see [`replay_subscriptions`]); the first one is returned.
     fn resubscribe_all(&self) -> Result<(), MarketDataError> {
         // Server ids from the previous connection are stale.
         self.shared.subscriptions.clear_server_ids();
@@ -588,7 +589,11 @@ impl WebSocketClient {
                 msg: "Not connected".to_string(),
             });
         };
-        replay_subscriptions(self.shared.subscriptions.get_all(), &self.shared.stream, &sender)
+        replay_subscriptions(
+            frame_resubscribe(self.shared.subscriptions.get_all()),
+            &self.shared.stream,
+            &sender,
+        )
     }
 
     /// Send an arbitrary WebSocket request frame.

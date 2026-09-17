@@ -63,6 +63,15 @@ pub enum AfterAuth {
     RecordFrames {
         frames: mpsc::UnboundedSender<String>,
     },
+    /// Like [`AfterAuth::RecordFrames`], and answer every `subscribe` frame
+    /// with a `subscribed` ack: a `data` object for `symbol`, a `data` array
+    /// with one entry per symbol for `symbols`. Each id is
+    /// `<id_prefix>:<channel>:<symbol>`, so a test can tell which connection
+    /// issued it.
+    AckSubscribes {
+        frames: mpsc::UnboundedSender<String>,
+        id_prefix: String,
+    },
 }
 
 /// Collect items from `recv` until none arrives for [`QUIET`], capped at
@@ -140,6 +149,32 @@ where
             break;
         }
     }
+}
+
+/// The `subscribed` ack for a `subscribe` frame, or `None` for any other
+/// frame. Panics on a `subscribe` frame it cannot read, so a malformed frame
+/// fails the test instead of silently going unacked.
+fn subscribed_ack(frame: &str, id_prefix: &str) -> Option<String> {
+    let frame: serde_json::Value = serde_json::from_str(frame).ok()?;
+    if frame["event"] != "subscribe" {
+        return None;
+    }
+    let data = &frame["data"];
+    let channel = data["channel"].as_str().unwrap_or_else(|| panic!("subscribe without channel: {frame}"));
+    let entry = |symbol: &serde_json::Value| {
+        let symbol = symbol.as_str().unwrap_or_else(|| panic!("subscribe without symbol: {frame}"));
+        let mut entry = data.clone();
+        let entry_obj = entry.as_object_mut().expect("subscribe data is an object");
+        entry_obj.remove("symbols");
+        entry_obj.insert("symbol".into(), symbol.into());
+        entry_obj.insert("id".into(), format!("{id_prefix}:{channel}:{symbol}").into());
+        entry
+    };
+    let data = match data["symbols"].as_array() {
+        Some(symbols) => serde_json::Value::Array(symbols.iter().map(entry).collect()),
+        None => entry(&data["symbol"]),
+    };
+    Some(serde_json::json!({"event": "subscribed", "data": data}).to_string())
 }
 
 async fn serve(
@@ -247,6 +282,22 @@ async fn serve(
             match stream.next().await {
                 Some(Ok(Message::Text(text))) => {
                     let _ = frames.send(text.to_string());
+                }
+                Some(Ok(Message::Close(_))) => {
+                    let _ = sink.close().await;
+                    break;
+                }
+                Some(Ok(_)) => continue,
+                _ => break,
+            }
+        },
+        AfterAuth::AckSubscribes { frames, id_prefix } => loop {
+            match stream.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    let _ = frames.send(text.to_string());
+                    if let Some(ack) = subscribed_ack(&text, &id_prefix) {
+                        let _ = sink.send(Message::Text(ack.into())).await;
+                    }
                 }
                 Some(Ok(Message::Close(_))) => {
                     let _ = sink.close().await;
