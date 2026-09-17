@@ -6,7 +6,8 @@ from the client (masked) and to it (unmasked), ping/pong and close.
 
 The protocol mirrors ``js/tests/ws-worker.test.js``: ``auth`` is acked with
 ``authenticated``, or answered with ``error`` for ``REJECTED_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
-``data`` frame. With ``flood`` it keeps sending ``data`` frames until the peer
+``data`` frame. The ``subscribed`` ack echoes ``intradayOddLot`` / ``afterHours``
+and marks them in the id, as ``<channel>-<symbol>[-odd][-ah]``. With ``flood`` it keeps sending ``data`` frames until the peer
 closes. With ``burst_on_close`` it answers the client's Close with that many
 ``data`` frames before its own Close: frames written after ``disconnect()``
 started, and read by the client before the close completes.
@@ -105,6 +106,8 @@ class _Server:
         self._stopped = threading.Event()
         # ``data`` of every ``auth`` frame received, in arrival order.
         self.auth_data = []
+        # ``data`` of every ``unsubscribe`` frame received, in arrival order.
+        self.unsubscribe_data = []
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen()
@@ -144,6 +147,8 @@ class _Server:
                     frame = json.loads(payload)
                     if frame.get("event") == "auth":
                         self.auth_data.append(frame.get("data"))
+                    if frame.get("event") == "unsubscribe":
+                        self.unsubscribe_data.append(frame.get("data"))
                     for reply in self._replies(frame):
                         send(OP_TEXT, json.dumps(reply).encode())
                     if self._flood and frame.get("event") == "subscribe":
@@ -184,9 +189,15 @@ class _Server:
         if event == "subscribe":
             data = frame.get("data") or {}
             channel, symbol = data.get("channel"), data.get("symbol")
+            modifiers = {k: True for k in ("intradayOddLot", "afterHours") if data.get(k)}
             sub_id = f"{channel}-{symbol}"
+            sub_id += "-odd" if "intradayOddLot" in modifiers else ""
+            sub_id += "-ah" if "afterHours" in modifiers else ""
             return [
-                {"event": "subscribed", "data": {"id": sub_id, "channel": channel, "symbol": symbol}},
+                {
+                    "event": "subscribed",
+                    "data": {"id": sub_id, "channel": channel, "symbol": symbol, **modifiers},
+                },
                 {"event": "data", "data": {"symbol": symbol, "price": 100}, "id": sub_id, "channel": channel},
             ]
         return []
@@ -245,6 +256,11 @@ class InProcessLoopbackServer:
     def auth_data(self):
         """``data`` of every ``auth`` frame the server received."""
         return list(self._server.auth_data)
+
+    @property
+    def unsubscribe_data(self):
+        """``data`` of every ``unsubscribe`` frame the server received."""
+        return list(self._server.unsubscribe_data)
 
     def __enter__(self):
         self._server.start()

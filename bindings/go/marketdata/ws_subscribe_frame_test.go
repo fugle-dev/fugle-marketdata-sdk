@@ -1,5 +1,5 @@
 // ws_subscribe_frame_test.go - subscribe and unsubscribe follow the client's
-// endpoint (#123).
+// endpoint (#123), and unsubscribe sends the id the server issued (#136).
 //
 // The FutOpt endpoint takes FutOpt channels and the after-hours session; the
 // Stock endpoint rejects after-hours with 1005.
@@ -17,6 +17,7 @@ import (
 
 func TestSubscribeFrame_FutOptEndpointSendsAfterHours(t *testing.T) {
 	srv := newAuthFrameServer(t)
+	srv.ackSubscribes = true
 	client, err := NewFugleWebSocketClient(nil,
 		WithApiKey("the-key"), WithEndpoint(WebSocketEndpointFutOpt), WithBaseUrl(srv.url()))
 	if err != nil {
@@ -41,8 +42,39 @@ func TestSubscribeFrame_FutOptEndpointSendsAfterHours(t *testing.T) {
 	want := []map[string]any{
 		{"event": "subscribe", "data": map[string]any{"channel": "books", "symbol": "TXFE6", "afterHours": true}},
 		{"event": "subscribe", "data": map[string]any{"channel": "trades", "symbol": "TXFE6"}},
-		{"event": "unsubscribe", "data": map[string]any{"id": "books:TXFE6:afterhours"}},
+		{"event": "unsubscribe", "data": map[string]any{"id": "id-books-TXFE6-ah"}},
 	}
+	assertFrames(t, srv, want)
+}
+
+func TestSubscribeFrame_UnsubscribeIdsSendsIds(t *testing.T) {
+	srv := newAuthFrameServer(t)
+	client, err := NewFugleWebSocketClient(nil, WithApiKey("the-key"), WithBaseUrl(srv.url()))
+	if err != nil {
+		t.Fatalf("NewFugleWebSocketClient: %v", err)
+	}
+	defer client.Close()
+
+	assertErrorCode(t, client.UnsubscribeIds(), 1005)
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if err := client.UnsubscribeIds("id-a"); err != nil {
+		t.Fatalf("UnsubscribeIds: %v", err)
+	}
+	if err := client.UnsubscribeIds("id-b", "id-c"); err != nil {
+		t.Fatalf("UnsubscribeIds: %v", err)
+	}
+
+	assertFrames(t, srv, []map[string]any{
+		{"event": "unsubscribe", "data": map[string]any{"id": "id-a"}},
+		{"event": "unsubscribe", "data": map[string]any{"ids": []any{"id-b", "id-c"}}},
+	})
+}
+
+// assertFrames waits for the frames other than auth to be want.
+func assertFrames(t *testing.T, srv *authFrameServer, want []map[string]any) {
+	t.Helper()
 	var got []map[string]any
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 		if got = decodeFrames(t, srv.otherFrames()); len(got) >= len(want) {

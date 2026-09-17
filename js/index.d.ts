@@ -723,13 +723,46 @@ export interface FutOptSubscribeOptions {
 
 /**
  * Options for `unsubscribe()`, accepted alongside a bare subscription-id
- * string. Provide either `id` (single) or `ids` (batch) — exactly one.
+ * string. Provide either `id` (single) or `ids` (batch) — exactly one. The
+ * ids are the ones the server issued in its `subscribed` message.
  */
 export interface UnsubscribeOptions {
   /** Single subscription id to unsubscribe from */
   id?: string;
   /** Batch of subscription ids to unsubscribe from */
   ids?: string[];
+}
+
+/**
+ * Stock `unsubscribe()` by the options passed to `subscribe()`. Provide
+ * either `symbol` or `symbols`; combining `channel` with `id` / `ids` is
+ * error 1005.
+ */
+export interface StockUnsubscribeOptions {
+  /** Channel to unsubscribe from */
+  channel: StockChannel;
+  /** Stock symbol */
+  symbol?: string;
+  /** Batch of stock symbols */
+  symbols?: string[];
+  /** The value passed to `subscribe()`: odd-lot is a separate subscription */
+  intradayOddLot?: boolean;
+}
+
+/**
+ * FutOpt `unsubscribe()` by the options passed to `subscribe()`. Provide
+ * either `symbol` or `symbols`; combining `channel` with `id` / `ids` is
+ * error 1005.
+ */
+export interface FutOptUnsubscribeOptions {
+  /** Channel to unsubscribe from */
+  channel: FutOptChannel;
+  /** Contract symbol */
+  symbol?: string;
+  /** Batch of contract symbols */
+  symbols?: string[];
+  /** The value passed to `subscribe()`: after-hours is a separate subscription */
+  afterHours?: boolean;
 }
 
 /**
@@ -2086,9 +2119,11 @@ export declare class FutOptWebSocketClient {
   /**
    * Unsubscribe from a channel
    *
-   * Accepts either `{ id: "..." }` (single) or `{ ids: ["...", "..."] }` (batch).
+   * Accepts the server id as a string, `{ id: "..." }` (single) or
+   * `{ ids: ["...", "..."] }` (batch); or the `subscribe` options
+   * `{ channel, symbol | symbols, afterHours? }`.
    */
-  unsubscribe(options: string | UnsubscribeOptions): void
+  unsubscribe(options: string | UnsubscribeOptions | FutOptUnsubscribeOptions): void
   /**
    * Send a `ping` frame to the server.
    *
@@ -2552,10 +2587,12 @@ export declare class StockWebSocketClient {
   /**
    * Unsubscribe from a channel
    *
-   * Accepts either `{ id: "..." }` (single) or `{ ids: ["...", "..."] }` (batch).
-   * Mirrors the old `@fugle/marketdata` Node SDK shape.
+   * Accepts the server id as a string, `{ id: "..." }` (single) or
+   * `{ ids: ["...", "..."] }` (batch), mirroring the old `@fugle/marketdata`
+   * Node SDK shape; or the `subscribe` options
+   * `{ channel, symbol | symbols, intradayOddLot? }`.
    */
-  unsubscribe(options: string | UnsubscribeOptions): void
+  unsubscribe(options: string | UnsubscribeOptions | StockUnsubscribeOptions): void
   /**
    * Send a `ping` frame to the server.
    *

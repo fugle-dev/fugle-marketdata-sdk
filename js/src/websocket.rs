@@ -869,6 +869,86 @@ impl Subscription {
 /// A `ping()` argument as the frame's `data` (#23): an object (or any other
 /// value) as-is, 1.x style; a string as `{ state }`, as rc.2 sent it; nothing
 /// (or `null`) omits `data`.
+/// The server ids `unsubscribe()` names: a string, `{ id }` or `{ ids }`.
+/// `None` for options naming a `channel` instead; naming both is 1005.
+fn unsubscribe_ids(env: &Env, options: &serde_json::Value) -> napi::Result<Option<Vec<String>>> {
+    if let Some(s) = options.as_str() {
+        return Ok(Some(vec![s.to_string()]));
+    }
+    let has_ids = options.get("id").is_some() || options.get("ids").is_some();
+    if options.get("channel").is_some() {
+        if has_ids {
+            let err = marketdata_core::MarketDataError::InvalidParameter {
+                name: "channel".to_string(),
+                reason: "cannot be combined with 'id' or 'ids'".to_string(),
+            };
+            return Err(crate::errors::to_napi_error(env, err));
+        }
+        return Ok(None);
+    }
+
+    let single = options.get("id").and_then(|v| v.as_str()).map(String::from);
+    let batch = options
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        });
+
+    match (single, batch) {
+        (Some(id), None) => Ok(Some(vec![id])),
+        (None, Some(list)) if !list.is_empty() => Ok(Some(list)),
+        (None, Some(_)) => Err(napi::Error::from_reason(
+            "unsubscribe({ids:[]}) is empty - provide at least one id",
+        )),
+        (Some(_), Some(_)) => Err(napi::Error::from_reason(
+            "unsubscribe() accepts either 'id' or 'ids', not both",
+        )),
+        (None, None) => Err(napi::Error::from_reason(
+            "unsubscribe() requires 'id', 'ids' or 'channel'",
+        )),
+    }
+}
+
+/// The `channel` of `unsubscribe()` options, parsed as for `subscribe()` (1005).
+fn unsubscribe_channel<C>(env: &Env, options: &serde_json::Value) -> napi::Result<C>
+where
+    C: std::str::FromStr<Err = marketdata_core::MarketDataError>,
+{
+    options
+        .get("channel")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| napi::Error::from_reason("Missing 'channel' field"))?
+        .parse::<C>()
+        .map_err(|e| crate::errors::to_napi_error(env, e))
+}
+
+/// The `symbol` or `symbols` of subscribe-shaped options — exactly one.
+/// `call` names the method in error messages.
+fn option_symbols(call: &str, options: &serde_json::Value) -> napi::Result<Vec<String>> {
+    let single = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
+    let batch = options.get("symbols").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<_>>()
+    });
+    match (single, batch) {
+        (Some(s), None) => Ok(vec![s]),
+        (None, Some(list)) if !list.is_empty() => Ok(list),
+        (None, Some(_)) => Err(napi::Error::from_reason(format!(
+            "{call}({{symbols:[]}}) is empty - provide at least one symbol"
+        ))),
+        (Some(_), Some(_)) => Err(napi::Error::from_reason(format!(
+            "{call}() accepts either 'symbol' or 'symbols', not both"
+        ))),
+        (None, None) => Err(napi::Error::from_reason(format!(
+            "{call}() requires 'symbol' or 'symbols'"
+        ))),
+    }
+}
+
 fn ping_data(params: Option<serde_json::Value>) -> Option<serde_json::Value> {
     match params? {
         serde_json::Value::Null => None,
@@ -1625,35 +1705,7 @@ impl StockWebSocketClient {
             .parse::<marketdata_core::models::Channel>()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
-        let single_symbol = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
-        let batch_symbols = options
-            .get("symbols")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect::<Vec<_>>()
-            });
-
-        let target_symbols: Vec<String> = match (single_symbol, batch_symbols) {
-            (Some(s), None) => vec![s],
-            (None, Some(list)) if !list.is_empty() => list,
-            (None, Some(_)) => {
-                return Err(napi::Error::from_reason(
-                    "subscribe({symbols:[]}) is empty - provide at least one symbol",
-                ));
-            }
-            (Some(_), Some(_)) => {
-                return Err(napi::Error::from_reason(
-                    "subscribe() accepts either 'symbol' or 'symbols', not both",
-                ));
-            }
-            (None, None) => {
-                return Err(napi::Error::from_reason(
-                    "subscribe() requires 'symbol' or 'symbols'",
-                ));
-            }
-        };
+        let target_symbols = option_symbols("subscribe", &options)?;
 
         let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
         let sub = marketdata_core::StockSubscription::new(channel, target_symbols).with_odd_lot(odd_lot);
@@ -1663,43 +1715,22 @@ impl StockWebSocketClient {
 
     /// Unsubscribe from a channel
     ///
-    /// Accepts either `{ id: "..." }` (single) or `{ ids: ["...", "..."] }` (batch).
-    /// Mirrors the old `@fugle/marketdata` Node SDK shape.
-    #[napi(ts_args_type = "options: string | UnsubscribeOptions")]
-    pub fn unsubscribe(&self, options: serde_json::Value) -> napi::Result<()> {
+    /// Accepts the server id as a string, `{ id: "..." }` (single) or
+    /// `{ ids: ["...", "..."] }` (batch), mirroring the old `@fugle/marketdata`
+    /// Node SDK shape; or the `subscribe` options
+    /// `{ channel, symbol | symbols, intradayOddLot? }`.
+    #[napi(ts_args_type = "options: string | UnsubscribeOptions | StockUnsubscribeOptions")]
+    pub fn unsubscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
         // Accept legacy positional string for backward compat with the previous
         // `unsubscribe(id: string)` signature.
-        let target_ids: Vec<String> = if let Some(s) = options.as_str() {
-            vec![s.to_string()]
-        } else {
-            let single = options.get("id").and_then(|v| v.as_str()).map(String::from);
-            let batch = options
-                .get("ids")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                });
-
-            match (single, batch) {
-                (Some(id), None) => vec![id],
-                (None, Some(list)) if !list.is_empty() => list,
-                (None, Some(_)) => {
-                    return Err(napi::Error::from_reason(
-                        "unsubscribe({ids:[]}) is empty - provide at least one id",
-                    ));
-                }
-                (Some(_), Some(_)) => {
-                    return Err(napi::Error::from_reason(
-                        "unsubscribe() accepts either 'id' or 'ids', not both",
-                    ));
-                }
-                (None, None) => {
-                    return Err(napi::Error::from_reason(
-                        "unsubscribe() requires 'id' or 'ids'",
-                    ));
-                }
+        let target_ids = match unsubscribe_ids(&env, &options)? {
+            Some(ids) => ids,
+            None => {
+                let channel = unsubscribe_channel::<marketdata_core::models::Channel>(&env, &options)?;
+                let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
+                marketdata_core::StockSubscription::new(channel, option_symbols("unsubscribe", &options)?)
+                    .with_odd_lot(odd_lot)
+                    .keys()
             }
         };
 
@@ -2093,35 +2124,7 @@ impl FutOptWebSocketClient {
             .parse::<marketdata_core::models::futopt::FutOptChannel>()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
-        let single_symbol = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
-        let batch_symbols = options
-            .get("symbols")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect::<Vec<_>>()
-            });
-
-        let target_symbols: Vec<String> = match (single_symbol, batch_symbols) {
-            (Some(s), None) => vec![s],
-            (None, Some(list)) if !list.is_empty() => list,
-            (None, Some(_)) => {
-                return Err(napi::Error::from_reason(
-                    "subscribe({symbols:[]}) is empty - provide at least one symbol",
-                ));
-            }
-            (Some(_), Some(_)) => {
-                return Err(napi::Error::from_reason(
-                    "subscribe() accepts either 'symbol' or 'symbols', not both",
-                ));
-            }
-            (None, None) => {
-                return Err(napi::Error::from_reason(
-                    "subscribe() requires 'symbol' or 'symbols'",
-                ));
-            }
-        };
+        let target_symbols = option_symbols("subscribe", &options)?;
 
         let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
         let sub = marketdata_core::FutOptSubscription::new(channel, target_symbols).with_after_hours(after_hours);
@@ -2131,40 +2134,20 @@ impl FutOptWebSocketClient {
 
     /// Unsubscribe from a channel
     ///
-    /// Accepts either `{ id: "..." }` (single) or `{ ids: ["...", "..."] }` (batch).
-    #[napi(ts_args_type = "options: string | UnsubscribeOptions")]
-    pub fn unsubscribe(&self, options: serde_json::Value) -> napi::Result<()> {
-        let target_ids: Vec<String> = if let Some(s) = options.as_str() {
-            vec![s.to_string()]
-        } else {
-            let single = options.get("id").and_then(|v| v.as_str()).map(String::from);
-            let batch = options
-                .get("ids")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                });
-
-            match (single, batch) {
-                (Some(id), None) => vec![id],
-                (None, Some(list)) if !list.is_empty() => list,
-                (None, Some(_)) => {
-                    return Err(napi::Error::from_reason(
-                        "unsubscribe({ids:[]}) is empty - provide at least one id",
-                    ));
-                }
-                (Some(_), Some(_)) => {
-                    return Err(napi::Error::from_reason(
-                        "unsubscribe() accepts either 'id' or 'ids', not both",
-                    ));
-                }
-                (None, None) => {
-                    return Err(napi::Error::from_reason(
-                        "unsubscribe() requires 'id' or 'ids'",
-                    ));
-                }
+    /// Accepts the server id as a string, `{ id: "..." }` (single) or
+    /// `{ ids: ["...", "..."] }` (batch); or the `subscribe` options
+    /// `{ channel, symbol | symbols, afterHours? }`.
+    #[napi(ts_args_type = "options: string | UnsubscribeOptions | FutOptUnsubscribeOptions")]
+    pub fn unsubscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+        let target_ids = match unsubscribe_ids(&env, &options)? {
+            Some(ids) => ids,
+            None => {
+                let channel =
+                    unsubscribe_channel::<marketdata_core::models::futopt::FutOptChannel>(&env, &options)?;
+                let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
+                marketdata_core::FutOptSubscription::new(channel, option_symbols("unsubscribe", &options)?)
+                    .with_after_hours(after_hours)
+                    .keys()
             }
         };
 

@@ -723,13 +723,46 @@ export interface FutOptSubscribeOptions {
 
 /**
  * Options for `unsubscribe()`, accepted alongside a bare subscription-id
- * string. Provide either `id` (single) or `ids` (batch) — exactly one.
+ * string. Provide either `id` (single) or `ids` (batch) — exactly one. The
+ * ids are the ones the server issued in its `subscribed` message.
  */
 export interface UnsubscribeOptions {
   /** Single subscription id to unsubscribe from */
   id?: string;
   /** Batch of subscription ids to unsubscribe from */
   ids?: string[];
+}
+
+/**
+ * Stock `unsubscribe()` by the options passed to `subscribe()`. Provide
+ * either `symbol` or `symbols`; combining `channel` with `id` / `ids` is
+ * error 1005.
+ */
+export interface StockUnsubscribeOptions {
+  /** Channel to unsubscribe from */
+  channel: StockChannel;
+  /** Stock symbol */
+  symbol?: string;
+  /** Batch of stock symbols */
+  symbols?: string[];
+  /** The value passed to `subscribe()`: odd-lot is a separate subscription */
+  intradayOddLot?: boolean;
+}
+
+/**
+ * FutOpt `unsubscribe()` by the options passed to `subscribe()`. Provide
+ * either `symbol` or `symbols`; combining `channel` with `id` / `ids` is
+ * error 1005.
+ */
+export interface FutOptUnsubscribeOptions {
+  /** Channel to unsubscribe from */
+  channel: FutOptChannel;
+  /** Contract symbol */
+  symbol?: string;
+  /** Batch of contract symbols */
+  symbols?: string[];
+  /** The value passed to `subscribe()`: after-hours is a separate subscription */
+  afterHours?: boolean;
 }
 
 /**

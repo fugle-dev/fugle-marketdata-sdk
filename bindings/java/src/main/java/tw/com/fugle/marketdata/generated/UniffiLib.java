@@ -129,6 +129,7 @@ interface UniffiLib extends Library {
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions(Pointer ptr);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol, RustBuffer.ByValue afterHours);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbol, RustBuffer.ByValue afterHours);
+    Long uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(Pointer ptr, RustBuffer.ByValue ids);
     Pointer uniffi_marketdata_uniffi_fn_clone_websocketlistener(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_websocketlistener(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_init_callback_vtable_websocketlistener(UniffiVTableCallbackInterfaceWebSocketListener vtable);
@@ -302,6 +303,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated();
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated();

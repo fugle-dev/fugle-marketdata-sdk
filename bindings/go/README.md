@@ -405,6 +405,7 @@ IsClosed() bool                    // Check if client is closed
 // opts: WithAfterHours(true) for the FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
 Subscribe(channel string, symbol string, opts ...SubscribeOption) error    // Subscribe to channel
 Unsubscribe(channel string, symbol string, opts ...SubscribeOption) error  // Unsubscribe (same opts as Subscribe)
+UnsubscribeIds(ids ...string) error                                        // Unsubscribe by server ids (none: 1005)
 GetSubscriptions() []Subscription                    // List active subscriptions
 
 // Message channels (Go idiom)

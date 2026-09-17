@@ -312,7 +312,8 @@ getFutOptProducts(type)              # Get product listing ("F" or "O")
 connect()                       # Connect to WebSocket server
 disconnect()                    # Disconnect from server
 subscribe(channel, symbol)      # Subscribe to channel
-unsubscribe(subscriptionId)     # Unsubscribe by ID
+unsubscribe(channel, symbol)    # Unsubscribe by channel and symbol
+unsubscribe_ids(ids)            # Unsubscribe by server ids from `subscribed`
 isConnected()                   # Check connection status
 isClosed()                      # Check if client is closed
 ```

@@ -17,6 +17,7 @@ use crate::websocket::{
 };
 use crate::MarketDataError;
 use crate::tracing_compat::{debug, warn};
+use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -280,6 +281,9 @@ fn owner_loop(
         None
     };
     let mut last_activity = Instant::now();
+    // Unsubscribe frames for subscriptions unsubscribed before their ack
+    // arrived (#136); written ahead of the outbound queue.
+    let mut cancel_frames: VecDeque<String> = VecDeque::new();
 
     loop {
         if shared.should_stop.load(Ordering::SeqCst) {
@@ -313,9 +317,12 @@ fn owner_loop(
                 );
                 match parse_text_frame(&text) {
                     Ok(ws_msg) => {
-                        crate::websocket::protocol::handle_subscribed_event(
-                            &shared.subscriptions,
-                            &ws_msg,
+                        queue_cancels(
+                            &mut cancel_frames,
+                            crate::websocket::protocol::handle_subscribed_event(
+                                &shared.subscriptions,
+                                &ws_msg,
+                            ),
                         );
                         shared.stream.push_message(ws_msg);
                     }
@@ -337,9 +344,12 @@ fn owner_loop(
                 );
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) => {
-                        crate::websocket::protocol::handle_subscribed_event(
-                            &shared.subscriptions,
-                            &ws_msg,
+                        queue_cancels(
+                            &mut cancel_frames,
+                            crate::websocket::protocol::handle_subscribed_event(
+                                &shared.subscriptions,
+                                &ws_msg,
+                            ),
                         );
                         shared.stream.push_message(ws_msg);
                     }
@@ -474,36 +484,38 @@ fn owner_loop(
             return None;
         }
         loop {
-            match write_rx.try_recv() {
-                Ok(json) => {
-                    if let Err(e) = ws.send(Message::Text(json.into())) {
-                        // A failed write ends this connection just like a
-                        // failed read: report `Error`, then `Disconnected`.
-                        if shared.should_stop.load(Ordering::SeqCst) {
-                            return None;
-                        }
-                        let err_msg = format!("WebSocket write error: {e}");
-                        shared.stream.emit(ConnectionEvent::error_with_message(
-                            &MarketDataError::from(e),
-                            err_msg.clone(),
-                        ));
-                        shared.stream.connection_lost(
-                            &shared.state,
-                            None,
-                            err_msg,
-                            DisconnectIntent::Network,
-                            will_reconnect(shared, DisconnectIntent::Network, None),
-                        );
-                        return None;
+            let json = match cancel_frames.pop_front() {
+                Some(json) => json,
+                None => match write_rx.try_recv() {
+                    Ok(json) => json,
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        // Client dropped its sender — typically a disconnect()
+                        // signal. Send close frame and exit.
+                        let _ = ws.close(None);
+                        return Some(1000);
                     }
+                },
+            };
+            if let Err(e) = ws.send(Message::Text(json.into())) {
+                // A failed write ends this connection just like a
+                // failed read: report `Error`, then `Disconnected`.
+                if shared.should_stop.load(Ordering::SeqCst) {
+                    return None;
                 }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    // Client dropped its sender — typically a disconnect()
-                    // signal. Send close frame and exit.
-                    let _ = ws.close(None);
-                    return Some(1000);
-                }
+                let err_msg = format!("WebSocket write error: {e}");
+                shared.stream.emit(ConnectionEvent::error_with_message(
+                    &MarketDataError::from(e),
+                    err_msg.clone(),
+                ));
+                shared.stream.connection_lost(
+                    &shared.state,
+                    None,
+                    err_msg,
+                    DisconnectIntent::Network,
+                    will_reconnect(shared, DisconnectIntent::Network, None),
+                );
+                return None;
             }
         }
     }
@@ -589,6 +601,17 @@ fn reconnect_and_authenticate(
     // Before this thread reads the new connection; it may report its own close.
     shared.stream.authenticated(data, frames);
     Ok((ws, write_rx))
+}
+
+/// Queue the unsubscribe frame for `cancels`, the ids of subscriptions
+/// unsubscribed before their ack arrived.
+fn queue_cancels(cancel_frames: &mut VecDeque<String>, cancels: Vec<String>) {
+    if cancels.is_empty() {
+        return;
+    }
+    if let Ok(frame) = crate::websocket::protocol::frame_unsubscribe(cancels) {
+        cancel_frames.push_back(frame);
+    }
 }
 
 /// Entry point for the owner+supervisor thread.

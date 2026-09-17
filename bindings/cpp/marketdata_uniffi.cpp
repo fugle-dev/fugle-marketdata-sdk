@@ -201,6 +201,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync() != 38599) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids_sync() != 4280) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync() != 58011) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -1359,6 +1362,13 @@ void WebSocketClient::subscribe_sync(const std::string &channel, const std::stri
         uniffi::FfiConverterMarketDataError::lift,
         ptr, uniffi::FfiConverterString::lower(channel), uniffi::FfiConverterString::lower(symbol));
 }
+void WebSocketClient::unsubscribe_ids_sync(const std::vector<std::string> &ids) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterSequenceString::lower(ids));
+}
 void WebSocketClient::unsubscribe_sync(const std::string &channel, const std::string &symbol) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     uniffi::rust_call(
@@ -1629,6 +1639,7 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
         this->instance
     );
 }
+
 
 
 
@@ -3426,6 +3437,57 @@ uint64_t FfiConverterOptionalTypeTlsConfigRecord::allocation_size(const std::opt
     }
 
     return ret;
+}
+
+
+std::vector<std::string> FfiConverterSequenceString::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterSequenceString::lower(const std::vector<std::string> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::vector<std::string> FfiConverterSequenceString::read(RustStream &stream) {
+    std::vector<std::string> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.push_back(FfiConverterString::read(stream));
+    }
+
+    return ret;
+}
+
+void FfiConverterSequenceString::write(RustStream &stream, const std::vector<std::string> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &elem : val) {
+        FfiConverterString::write(stream, elem);
+    }
+}
+
+uint64_t FfiConverterSequenceString::allocation_size(const std::vector<std::string> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &elem : val) {
+        size += FfiConverterString::allocation_size(elem);
+    }
+
+    return size;
 }
 
 

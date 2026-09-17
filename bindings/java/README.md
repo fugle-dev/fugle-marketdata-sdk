@@ -297,6 +297,7 @@ CompletableFuture<Void> subscribe(String channel, String symbol)                
 CompletableFuture<Void> subscribe(String channel, String symbol, boolean afterHours)    // FutOpt after-hours (FutOpt endpoint only; 1005 on Stock)
 CompletableFuture<Void> unsubscribe(String channel, String symbol)                      // Unsubscribe
 CompletableFuture<Void> unsubscribe(String channel, String symbol, boolean afterHours)  // Same afterHours as subscribe
+CompletableFuture<Void> unsubscribe(List<String> ids)                                   // Unsubscribe by server ids (empty: 1005)
 List<Subscription> getSubscriptions()                              // List subscriptions
 
 // Message polling (pull mode)

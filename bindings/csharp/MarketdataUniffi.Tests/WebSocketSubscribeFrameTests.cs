@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace MarketdataUniffi.Tests;
@@ -7,7 +8,8 @@ namespace MarketdataUniffi.Tests;
 /// <summary>
 /// Subscribe and unsubscribe follow the client's endpoint (#123): the FutOpt
 /// endpoint takes FutOpt channels and the after-hours session; the Stock
-/// endpoint rejects after-hours with 1005.
+/// endpoint rejects after-hours with 1005. Unsubscribe sends the id the server
+/// issued (#136).
 /// </summary>
 [TestClass]
 public class WebSocketSubscribeFrameTests
@@ -15,7 +17,7 @@ public class WebSocketSubscribeFrameTests
     [TestMethod]
     public async Task FutOptEndpoint_SendsAfterHours()
     {
-        using var server = new WebSocketLoopbackServer();
+        using var server = new WebSocketLoopbackServer { AckSubscribes = true };
         var options = new FugleMarketData.WebSocketClientOptions
         {
             ApiKey = "the-key",
@@ -34,15 +36,39 @@ public class WebSocketSubscribeFrameTests
         {
             "{\"event\":\"subscribe\",\"data\":{\"channel\":\"books\",\"symbol\":\"TXFE6\",\"afterHours\":true}}",
             "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbol\":\"TXFE6\"}}",
-            "{\"event\":\"unsubscribe\",\"data\":{\"id\":\"books:TXFE6:afterhours\"}}",
+            "{\"event\":\"unsubscribe\",\"data\":{\"id\":\"id-books-TXFE6-ah\"}}",
         };
+        await AssertFrames(server, expected);
+        await client.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [TestMethod]
+    public async Task UnsubscribeIds_SendsIds()
+    {
+        using var server = new WebSocketLoopbackServer();
+        var options = new FugleMarketData.WebSocketClientOptions { ApiKey = "the-key", BaseUrl = server.Url };
+        using var client = new FugleMarketData.WebSocketClient(options, new TestWebSocketListener());
+
+        await AssertInvalidParameter(() => client.UnsubscribeAsync(Array.Empty<string>()));
+        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        await client.UnsubscribeAsync(new[] { "id-a" }).WaitAsync(TimeSpan.FromSeconds(10));
+        await client.UnsubscribeAsync(new List<string> { "id-b", "id-c" }).WaitAsync(TimeSpan.FromSeconds(10));
+
+        await AssertFrames(server, new[]
+        {
+            "{\"event\":\"unsubscribe\",\"data\":{\"id\":\"id-a\"}}",
+            "{\"event\":\"unsubscribe\",\"data\":{\"ids\":[\"id-b\",\"id-c\"]}}",
+        });
+        await client.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    private static async Task AssertFrames(WebSocketLoopbackServer server, string[] expected)
+    {
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (server.OtherFrames.Count < expected.Length && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20);
         }
-        await client.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
-
         CollectionAssert.AreEqual(expected, server.OtherFrames.ToArray());
     }
 

@@ -1167,6 +1167,12 @@ struct WebSocketClient
      */
     void subscribe_sync(const std::string &channel, const std::string &symbol);
     /**
+     * Unsubscribe by the ids the server issued (blocking).
+     *
+     * An empty list is 1005 `INVALID_PARAMETER`.
+     */
+    void unsubscribe_ids_sync(const std::vector<std::string> &ids);
+    /**
      * Unsubscribe from a channel for a symbol (blocking).
      */
     void unsubscribe_sync(const std::string &channel, const std::string &symbol);
@@ -2049,6 +2055,14 @@ struct FfiConverterOptionalTypeTlsConfigRecord {
     static std::optional<TlsConfigRecord> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<TlsConfigRecord>& value);
     static uint64_t allocation_size(const std::optional<TlsConfigRecord> &val);
+};
+
+struct FfiConverterSequenceString {
+    static std::vector<std::string> lift(RustBuffer);
+    static RustBuffer lower(const std::vector<std::string> &);
+    static std::vector<std::string> read(RustStream &);
+    static void write(RustStream &, const std::vector<std::string> &);
+    static uint64_t allocation_size(const std::vector<std::string> &);
 };
 
 struct FfiConverterMapStringString {
