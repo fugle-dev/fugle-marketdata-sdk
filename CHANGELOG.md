@@ -444,6 +444,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. C++ `connect_sync()` no longer replaces the live connection's
   runtime when refused, and a refused Java pull-mode `connect()` no longer
   keeps `disconnect()` from ending a wait for queue room.
+- **Python**: WebSocket `connect()` / `connect_async()` while connected,
+  connecting or auto-reconnecting opened a second connection and replaced the
+  first one's event delivery; two concurrent calls could both connect (#130).
+  It now raises `WebSocketError` with `code` 2011 `ALREADY_CONNECTED`, and the
+  live connection is untouched. Call `disconnect()` first. See
+  [MIGRATION-0.9.md](MIGRATION-0.9.md#16-websocket-connect-while-connected-code-2011).
 - **Go**: errors returned by `StreamingClient.Connect`, `Ping` and
   `QuerySubscriptions` wrapped the SDK error with `%v`, so `ErrorInfoOf(err)`
   returned `false` and the code (for example 2011) was unreachable. They now

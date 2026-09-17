@@ -806,6 +806,54 @@ struct WebSocketState {
 /// Shared so blocking calls can clone it out of its lock before they block.
 type SharedRuntime = Arc<tokio::runtime::Runtime>;
 
+/// Admits one `connect()` / `connect_async()` at a time per product client
+/// (#130). Core's own gate cannot see this: each connection is opened on a
+/// new core client.
+#[derive(Clone, Default)]
+struct ConnectGate(Arc<AtomicBool>);
+
+impl ConnectGate {
+    /// Claim the gate, or `None` while another connect holds it. Dropping the
+    /// claim releases it, including when `connect_async()` is cancelled.
+    fn try_claim(&self) -> Option<ConnectClaim> {
+        self.0
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| ConnectClaim(Arc::clone(&self.0)))
+    }
+}
+
+/// A held [`ConnectGate`].
+struct ConnectClaim(Arc<AtomicBool>);
+
+impl Drop for ConnectClaim {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Claim `gate` for a new connection, or fail with core's `AlreadyConnected`
+/// (code 2011) while another connect runs or the stored connection is open,
+/// being established or auto-reconnecting (#119, #130). Checked before
+/// anything of the live connection is replaced; hold the claim until the new
+/// connection is stored.
+fn claim_connect(
+    gate: &ConnectGate,
+    state: &Mutex<Option<WebSocketState>>,
+) -> PyResult<ConnectClaim> {
+    let already = || errors::to_py_err(marketdata_core::MarketDataError::AlreadyConnected);
+    let claim = gate.try_claim().ok_or_else(already)?;
+    let active = state
+        .lock()
+        .map_err(lock_err)?
+        .as_ref()
+        .is_some_and(|s| s.inner.state_handle().is_active());
+    if active {
+        return Err(already());
+    }
+    Ok(claim)
+}
+
 fn lock_err<T>(e: std::sync::PoisonError<T>) -> PyErr {
     pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
 }
@@ -1090,6 +1138,7 @@ pub struct StockWebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    connect_gate: ConnectGate,
 }
 
 impl StockWebSocketClient {
@@ -1117,6 +1166,7 @@ impl StockWebSocketClient {
             reader_thread_handle: Arc::new(Mutex::new(None)),
             message_queue,
             messages_dropped: Arc::new(Mutex::new(None)),
+            connect_gate: ConnectGate::default(),
         }
     }
 
@@ -1199,7 +1249,9 @@ impl StockWebSocketClient {
     ///
     /// Raises:
     ///     MarketDataError: If connection fails
+    ///     WebSocketError: Code 2011 if already connected, connecting or reconnecting
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
+        let _claim = claim_connect(&self.connect_gate, &self.state)?;
         let test_panic = test_panic_site();
         // Ensure runtime exists
         self.ensure_runtime().map_err(|e| {
@@ -1557,6 +1609,7 @@ impl StockWebSocketClient {
     ///
     /// Raises:
     ///     MarketDataError: If connection fails
+    ///     WebSocketError: Code 2011 if already connected, connecting or reconnecting
     ///
     /// Example:
     ///     ```python
@@ -1580,8 +1633,10 @@ impl StockWebSocketClient {
         let message_queue = self.message_queue;
         let messages_dropped = Arc::clone(&self.messages_dropped);
         let test_panic = test_panic_site();
+        let connect_gate = self.connect_gate.clone();
 
         future_into_py(py, async move {
+            let _claim = claim_connect(&connect_gate, &state_arc)?;
             // Create WebSocket client with full config
             let config = build_stream_config(
                 &auth,
@@ -1791,6 +1846,7 @@ pub struct FutOptWebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    connect_gate: ConnectGate,
 }
 
 impl FutOptWebSocketClient {
@@ -1818,6 +1874,7 @@ impl FutOptWebSocketClient {
             reader_thread_handle: Arc::new(Mutex::new(None)),
             message_queue,
             messages_dropped: Arc::new(Mutex::new(None)),
+            connect_gate: ConnectGate::default(),
         }
     }
 
@@ -1885,8 +1942,10 @@ impl FutOptWebSocketClient {
     ///
     /// Raises:
     ///     MarketDataError: If connection fails
+    ///     WebSocketError: Code 2011 if already connected, connecting or reconnecting
     #[pyo3(signature = ())]
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
+        let _claim = claim_connect(&self.connect_gate, &self.state)?;
         let test_panic = test_panic_site();
         // Ensure runtime exists
         self.ensure_runtime().map_err(|e| {
