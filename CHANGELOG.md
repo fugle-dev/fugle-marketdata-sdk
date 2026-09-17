@@ -333,6 +333,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Core queued `Disconnected` before recording the new state, so a listener
   could still read "connected". Both the async and the sync client now record
   the state first (#86).
+- **All languages**: calling `disconnect` after the server closed the
+  connection, or the network dropped it, with no reconnect following, keeps
+  the `Closed` state that close recorded, e.g. `intent: Server` with the
+  server's code (Rust `force_close()` likewise). It used to be overwritten
+  with `Closed { intent: Client }`, disagreeing with the `Disconnected`
+  already delivered. Called while reconnecting, it still closes the client
+  with `intent: Client`. When the blocking Rust `reconnect()` races
+  such a server close, the client stays closed and `reconnect()` returns
+  `ClientClosed`, as the async client does (#93).
 - **Rust**: the blocking `WebSocketClient::reconnect()` works on a connected
   client. Stopping the old connection marked the client closed, so the
   `connect()` that followed always failed with `ClientClosed`. After

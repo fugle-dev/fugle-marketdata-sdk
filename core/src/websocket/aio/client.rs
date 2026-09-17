@@ -11,7 +11,7 @@ use crate::websocket::protocol::{
     frame_unsubscribe,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent, HealthCheckConfig,
+    ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, HealthCheckConfig,
     ConnectionStream, MessagesDroppedHandle, ReconnectionConfig, ReconnectionManager, StreamReceiver,
     SubscriptionManager,
 };
@@ -531,11 +531,12 @@ impl WebSocketClient {
     /// the connection is force-closed.
     ///
     /// The emitted [`ConnectionEvent::Disconnected`] carries
-    /// [`DisconnectIntent::Client`] regardless of whether the drain
-    /// completed in time. It is emitted at most once per connection: if the
-    /// connection was already reported lost (a server Close or transport
-    /// error, including one racing this call) or this client was already
-    /// disconnected, no further `Disconnected` is emitted.
+    /// [`DisconnectIntent::Client`](crate::websocket::DisconnectIntent::Client)
+    /// regardless of whether the drain completed in time. It is emitted at
+    /// most once per connection: if the connection was already reported lost
+    /// (a server Close or transport error, including one racing this call) or
+    /// this client was already disconnected, no further `Disconnected` is
+    /// emitted, and a `Closed` state recorded with that report is kept.
     ///
     /// # Errors
     ///
@@ -615,24 +616,12 @@ impl WebSocketClient {
             *sink_guard = None;
         }
 
-        // 7. Update state to Closed (always, even if close failed)
-        {
-            let mut state = write_state(&self.state);
-            *state = ConnectionState::Closed {
-                code: Some(1000),
-                reason: "Normal closure".to_string(),
-                intent: DisconnectIntent::Client,
-            };
-        }
-
-        // 8. Emit the Client-intent Disconnected event, unless the dispatch
-        //    task already reported this connection's close (#41).
-        self.stream.emit_disconnected(
-            Some(1000),
-            "Normal closure".to_string(),
-            DisconnectIntent::Client,
-            false,
-        );
+        // 7. Mark the client closed (even if the close failed) and emit the
+        //    Client-intent Disconnected, unless the dispatch task already
+        //    reported this connection's close (#41); a `Closed` state that
+        //    report recorded is kept (#93).
+        self.stream
+            .client_closed(&self.state, 1000, "Normal closure".to_string());
 
         close_result
     }
@@ -720,7 +709,8 @@ impl WebSocketClient {
     ///
     /// Like [`disconnect`](Self::disconnect), emits
     /// [`ConnectionEvent::Disconnected`] only if this connection has not
-    /// already reported one.
+    /// already reported one, and keeps a `Closed` state recorded with that
+    /// report.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
@@ -755,22 +745,9 @@ impl WebSocketClient {
             *sink_guard = None;
         }
 
-        // Update state
-        {
-            let mut state = write_state(&self.state);
-            *state = ConnectionState::Closed {
-                code: Some(1006), // Abnormal closure
-                reason: "Force closed".to_string(),
-                intent: DisconnectIntent::Client,
-            };
-        }
-
-        self.stream.emit_disconnected(
-            Some(1006),
-            "Force closed".to_string(),
-            DisconnectIntent::Client,
-            false,
-        );
+        // 1006: abnormal closure.
+        self.stream
+            .client_closed(&self.state, 1006, "Force closed".to_string());
 
         Ok(())
     }
@@ -1145,6 +1122,7 @@ impl WebSocketClient {
 mod tests {
     use super::*;
     use crate::websocket::channels::StockSubscription;
+    use crate::websocket::DisconnectIntent;
     use crate::AuthRequest;
 
     #[test]
