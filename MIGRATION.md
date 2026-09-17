@@ -432,6 +432,24 @@ def on_error(err):
 ws.stock.on("error", on_error)
 ```
 
+#### 14. Node WebSocket `subscribe()` throws for an unknown channel
+
+`subscribe()` checks the channel name when called, whether or not the client
+is connected. A name that is not a channel of that product (`trades`,
+`candles`, `books`, `aggregates`, plus `indices` for stock), such as `'trade'`,
+throws an `Error` with `code` `1005` (`INVALID_PARAMETER`) and nothing is
+sent. Earlier releases of this SDK sent nothing and reported nothing. Names
+are matched ignoring case.
+
+```javascript
+try {
+  ws.stock.subscribe({ channel: 'trade', symbol: '2330' });
+} catch (err) {
+  // err.code === 1005
+  // err.message === "Invalid parameter 'channel': unknown channel 'trade'. Valid channels: trades, candles, books, aggregates, indices"
+}
+```
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you

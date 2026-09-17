@@ -35,6 +35,43 @@ impl Channel {
     }
 }
 
+/// Parses a channel name, ignoring case.
+///
+/// ```rust
+/// use marketdata_core::models::Channel;
+///
+/// assert_eq!("Trades".parse::<Channel>().unwrap(), Channel::Trades);
+/// assert!("trade".parse::<Channel>().is_err());
+/// ```
+impl std::str::FromStr for Channel {
+    type Err = crate::MarketDataError;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        const ALL: [Channel; 5] = [
+            Channel::Trades,
+            Channel::Candles,
+            Channel::Books,
+            Channel::Aggregates,
+            Channel::Indices,
+        ];
+        ALL.into_iter()
+            .find(|channel| channel.as_str().eq_ignore_ascii_case(name))
+            .ok_or_else(|| invalid_channel(name, &ALL.map(|channel| channel.as_str())))
+    }
+}
+
+/// `InvalidParameter` for an unknown channel name, listing the valid ones.
+pub(crate) fn invalid_channel(name: &str, valid: &[&str]) -> crate::MarketDataError {
+    crate::MarketDataError::InvalidParameter {
+        name: "channel".to_string(),
+        reason: format!(
+            "unknown channel '{}'. Valid channels: {}",
+            name,
+            valid.join(", ")
+        ),
+    }
+}
+
 /// Subscription request for WebSocket
 ///
 /// Modifier flags (`after_hours`, `intraday_odd_lot`) are preserved across
@@ -457,6 +494,30 @@ mod tests {
         let channel = Channel::Trades;
         let json = serde_json::to_string(&channel).unwrap();
         assert_eq!(json, "\"trades\"");
+    }
+
+    #[test]
+    fn channel_parses_names_ignoring_case() {
+        assert_eq!("trades".parse::<Channel>().unwrap(), Channel::Trades);
+        assert_eq!("CANDLES".parse::<Channel>().unwrap(), Channel::Candles);
+        assert_eq!("Books".parse::<Channel>().unwrap(), Channel::Books);
+        assert_eq!(
+            "aggregates".parse::<Channel>().unwrap(),
+            Channel::Aggregates
+        );
+        assert_eq!("indices".parse::<Channel>().unwrap(), Channel::Indices);
+    }
+
+    #[test]
+    fn channel_rejects_unknown_name_with_valid_list() {
+        let err = "trade".parse::<Channel>().unwrap_err();
+        let info = err.info();
+        assert_eq!(info.code, crate::error_code::INVALID_PARAMETER);
+        assert_eq!(
+            info.message,
+            "Invalid parameter 'channel': unknown channel 'trade'. \
+             Valid channels: trades, candles, books, aggregates, indices"
+        );
     }
 
     #[test]
