@@ -3409,10 +3409,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
-            if (checksum != 53625)
+            if (checksum != 18665)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected` checksum `53625`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected` checksum `18665`, library returned `{checksum}`"
                 );
             }
         }
@@ -8618,6 +8618,9 @@ public interface IWebSocketClient
 
     /// <summary>
     /// Check if the client is currently connected
+    ///
+    /// Reads core's connection state, so it is false while reconnecting and
+    /// right after the connection drops, without waiting for the event thread.
     /// </summary>
     bool IsConnected();
 
@@ -8845,6 +8848,9 @@ public class WebSocketClient : IWebSocketClient, IDisposable
 
     /// <summary>
     /// Check if the client is currently connected
+    ///
+    /// Reads core's connection state, so it is false while reconnecting and
+    /// right after the connection drops, without waiting for the event thread.
     /// </summary>
     public bool IsConnected()
     {

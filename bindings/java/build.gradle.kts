@@ -69,8 +69,26 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
 }
 
+// `gradle test` has no tag flags on the command line, so tags are picked with
+// properties: -PexcludeTags=integration / -PincludeTags=integration
+// (comma-separated).
+fun tagsProperty(name: String): List<String> =
+    providers.gradleProperty(name).orNull
+        ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+        .orEmpty()
+
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        tagsProperty("includeTags").takeIf { it.isNotEmpty() }?.let { includeTags(*it.toTypedArray()) }
+        tagsProperty("excludeTags").takeIf { it.isNotEmpty() }?.let { excludeTags(*it.toTypedArray()) }
+    }
+
+    // Tests that construct clients load the native library through JNA.
+    // Defaults to the workspace's cargo release output; override with
+    // -PnativeLibDir=<dir>. A missing directory only makes those tests skip.
+    val nativeLibDir = providers.gradleProperty("nativeLibDir")
+        .getOrElse(rootDir.resolve("../../target/release").canonicalPath)
+    systemProperty("jna.library.path", nativeLibDir)
 }
 
 // Source sets - generated code lives in generated/ package

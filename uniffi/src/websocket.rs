@@ -33,7 +33,7 @@
 use crate::errors::MarketDataError;
 use crate::models::StreamMessage;
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
-use marketdata_core::websocket::{ConnectionEvent, MessageReceiver};
+use marketdata_core::websocket::{ConnectionEvent, ConnectionState, MessageReceiver};
 use marketdata_core::AuthRequest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -244,13 +244,14 @@ impl StreamingVersionRecord {
 /// WebSocketListener implementation via a background task.
 #[derive(uniffi::Object)]
 pub struct WebSocketClient {
-    inner: Arc<Mutex<Option<CoreWebSocketClient>>>,
+    /// A `std` mutex so the sync `is_connected()` can read it; async methods
+    /// clone the client out before awaiting.
+    inner: std::sync::Mutex<Option<Arc<CoreWebSocketClient>>>,
     listener: Arc<dyn WebSocketListener>,
     api_key: String,
     base_url: Option<String>,
     version: StreamingVersionRecord,
     endpoint: WebSocketEndpoint,
-    connected: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     reconnect_config: Option<marketdata_core::ReconnectionConfig>,
     health_check_config: Option<marketdata_core::HealthCheckConfig>,
@@ -273,13 +274,12 @@ impl WebSocketClient {
         version: StreamingVersionRecord,
     ) -> Arc<Self> {
         Arc::new(Self {
-            inner: Arc::new(Mutex::new(None)),
+            inner: std::sync::Mutex::new(None),
             listener,
             api_key,
             base_url,
             version,
             endpoint,
-            connected: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
             reconnect_config,
             health_check_config,
@@ -405,8 +405,11 @@ impl WebSocketClient {
     }
 
     /// Check if the client is currently connected
+    ///
+    /// Reads core's connection state, so it is false while reconnecting and
+    /// right after the connection drops, without waiting for the event thread.
     pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::SeqCst)
+        self.client().is_some_and(|ws| ws.state() == ConnectionState::Connected)
     }
 
     /// Check if the client has been shut down
@@ -506,7 +509,6 @@ impl WebSocketClient {
         spawn_event_forwarder(
             Arc::clone(core_ws.state_events()),
             Arc::clone(&self.listener),
-            Arc::clone(&self.connected),
         );
 
         // Connect to server
@@ -518,16 +520,7 @@ impl WebSocketClient {
         let receiver: Arc<MessageReceiver> = core_ws.messages();
 
         // Store client in inner
-        {
-            let mut guard = self.inner.lock().await;
-            *guard = Some(core_ws);
-        }
-
-        // Overlaps with the forwarder's `Authenticated` arm on purpose: that
-        // event is handled on another thread and may not have been processed
-        // yet, and `is_connected()` must already be true when `connect()`
-        // returns. The forwarder's arm is what restores it after a reconnect.
-        self.connected.store(true, Ordering::SeqCst);
+        *lock_inner(&self.inner) = Some(Arc::new(core_ws));
 
         // Reset shutdown flag for this connection
         self.shutdown.store(false, Ordering::SeqCst);
@@ -537,11 +530,10 @@ impl WebSocketClient {
         // eliminates the 100ms polling timeout, delivering messages immediately.
         let listener = Arc::clone(&self.listener);
         let shutdown = Arc::clone(&self.shutdown);
-        let connected = Arc::clone(&self.connected);
         std::thread::Builder::new()
             .name("ws_message_loop".to_string())
             .spawn(move || {
-                run_message_loop_blocking(receiver, listener, shutdown, connected);
+                run_message_loop_blocking(receiver, listener, shutdown);
             })
             .ok();
 
@@ -558,8 +550,7 @@ impl WebSocketClient {
     ///
     /// Returns error if not connected or subscription fails.
     async fn subscribe_impl(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
-        let guard = self.inner.lock().await;
-        if let Some(ref ws) = *guard {
+        if let Some(ws) = self.client() {
             use marketdata_core::models::Channel;
 
             // Parse channel string to Channel enum
@@ -596,8 +587,7 @@ impl WebSocketClient {
     ///
     /// Returns error if not connected.
     async fn unsubscribe_impl(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
-        let guard = self.inner.lock().await;
-        if let Some(ref ws) = *guard {
+        if let Some(ws) = self.client() {
             let key = format!("{}:{}", channel, symbol);
             ws.unsubscribe([key]).await?;
             Ok(())
@@ -613,8 +603,7 @@ impl WebSocketClient {
     /// # Arguments
     /// * `state` - Optional state string echoed back in the pong response
     async fn ping_impl(&self, state: Option<String>) -> Result<(), MarketDataError> {
-        let guard = self.inner.lock().await;
-        if let Some(ref ws) = *guard {
+        if let Some(ws) = self.client() {
             let request = marketdata_core::WebSocketRequest::ping(state);
             ws.send(request).await?;
             Ok(())
@@ -626,8 +615,7 @@ impl WebSocketClient {
     }
 
     async fn query_subscriptions_impl(&self) -> Result<(), MarketDataError> {
-        let guard = self.inner.lock().await;
-        if let Some(ref ws) = *guard {
+        if let Some(ws) = self.client() {
             let request = marketdata_core::WebSocketRequest::subscriptions();
             ws.send(request).await?;
             Ok(())
@@ -642,15 +630,17 @@ impl WebSocketClient {
         // Signal shutdown to message loop
         self.shutdown.store(true, Ordering::SeqCst);
 
-        // Take and disconnect the client
-        let mut guard = self.inner.lock().await;
-        if let Some(ws) = guard.take() {
+        // Take and disconnect the client. `on_disconnected` comes from
+        // core's `Disconnected` event, which `ws.disconnect()` emits.
+        let ws = lock_inner(&self.inner).take();
+        if let Some(ws) = ws {
             let _ = ws.disconnect().await;
         }
+    }
 
-        // Update connected state. `on_disconnected` comes from core's
-        // `Disconnected` event, which `ws.disconnect()` emits.
-        self.connected.store(false, Ordering::SeqCst);
+    /// The current core client, cloned out so no lock is held across awaits.
+    fn client(&self) -> Option<Arc<CoreWebSocketClient>> {
+        lock_inner(&self.inner).clone()
     }
 }
 
@@ -734,7 +724,6 @@ fn run_message_loop_blocking(
     receiver: Arc<MessageReceiver>,
     listener: Arc<dyn WebSocketListener>,
     shutdown: Arc<AtomicBool>,
-    connected: Arc<AtomicBool>,
 ) {
     use std::time::Duration;
 
@@ -758,8 +747,6 @@ fn run_message_loop_blocking(
             }
         }
     }
-
-    connected.store(false, Ordering::SeqCst);
 }
 
 /// Spawn the thread that forwards core `ConnectionEvent`s to the listener.
@@ -771,7 +758,6 @@ fn run_message_loop_blocking(
 fn spawn_event_forwarder(
     events: Arc<Mutex<std::sync::mpsc::Receiver<ConnectionEvent>>>,
     listener: Arc<dyn WebSocketListener>,
-    connected: Arc<AtomicBool>,
 ) {
     std::thread::Builder::new()
         .name("ws_event_monitor".to_string())
@@ -783,7 +769,7 @@ fn spawn_event_forwarder(
             let Ok(event) = event else {
                 break; // Channel closed
             };
-            if !forward_event(event, listener.as_ref(), &connected) {
+            if !forward_event(event, listener.as_ref()) {
                 break;
             }
         })
@@ -792,28 +778,19 @@ fn spawn_event_forwarder(
 
 /// Forward one core event to the listener. Returns `false` after a terminal
 /// event.
-fn forward_event(
-    event: ConnectionEvent,
-    listener: &dyn WebSocketListener,
-    connected: &AtomicBool,
-) -> bool {
+fn forward_event(event: ConnectionEvent, listener: &dyn WebSocketListener) -> bool {
     match event {
         ConnectionEvent::Connected => listener.on_connected(),
-        ConnectionEvent::Authenticated { data } => {
-            connected.store(true, Ordering::SeqCst);
-            listener.on_authenticated(json_or_none(data));
-        }
+        ConnectionEvent::Authenticated { data } => listener.on_authenticated(json_or_none(data)),
         ConnectionEvent::Unauthenticated { data, .. } => {
             listener.on_unauthenticated(json_or_none(data));
         }
         ConnectionEvent::Disconnected { will_reconnect, .. } => {
-            connected.store(false, Ordering::SeqCst);
             listener.on_disconnected(will_reconnect);
             return will_reconnect;
         }
         ConnectionEvent::Reconnecting { attempt } => listener.on_reconnecting(attempt),
         ConnectionEvent::ReconnectFailed { attempts } => {
-            connected.store(false, Ordering::SeqCst);
             listener.on_reconnect_failed(attempts);
             return false;
         }
@@ -822,6 +799,14 @@ fn forward_event(
         _ => {}
     }
     true
+}
+
+/// Lock `inner`, recovering from poison: the slot holds no invariant a
+/// panicking holder could break.
+fn lock_inner(
+    inner: &std::sync::Mutex<Option<Arc<CoreWebSocketClient>>>,
+) -> std::sync::MutexGuard<'_, Option<Arc<CoreWebSocketClient>>> {
+    inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// `Null` means the frame carried no `data`.
@@ -1207,6 +1192,48 @@ mod tests {
                 "disconnected(false)".to_string(),
             ]
         );
+    }
+
+    /// Poll `is_connected()` until it equals `expected`.
+    async fn wait_connected(client: &WebSocketClient, expected: bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while client.is_connected() != expected {
+            assert!(std::time::Instant::now() < deadline, "is_connected() never became {expected}");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn is_connected_follows_core_state_across_reconnect() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord {
+                max_attempts: 3,
+                initial_delay_ms: 500,
+                max_delay_ms: 500,
+            }),
+        );
+
+        client.connect_impl().await.expect("connect");
+        assert!(client.is_connected(), "connected as soon as connect() returns");
+
+        // Core's state flips on the drop itself; no listener event is awaited.
+        server.drop_transport_for(0).await;
+        wait_connected(&client, false).await;
+
+        wait_connected(&client, true).await;
+        assert_eq!(
+            listener.events().iter().filter(|e| e.starts_with("authenticated")).count(),
+            2,
+            "{:?}",
+            listener.events()
+        );
+
+        client.disconnect_impl().await;
+        assert!(!client.is_connected(), "false as soon as disconnect() returns");
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -210,6 +210,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ~4096 messages, and most messages in between were silently dropped. Against
   a loopback server sending about 200,000 messages per second, Rust and Node
   received about 4,500 of them per second and Python about 8,700 (#46).
+- **Node**: WebSocket listeners run in the order core emits the connection
+  events (`connect` → `authenticated`, `disconnect` → `reconnect` → …), and
+  `connect()` settles after the listener of the event that settles it, even
+  when that event has no listener. Each listener had its own threadsafe
+  function, and Node-API does not order calls across them; all events now go
+  through one per connection. A listener is looked up when its event runs, so
+  one registered after the event was queued (e.g. by an earlier listener, or
+  while the JS thread was busy) receives it, and one replaced by `on()` while
+  events are queued receives none of them (#62). `message` frames that arrive
+  while no `message` listener is registered are dropped rather than queued, and
+  are not delivered to a listener registered later. The order of `message`
+  relative to the other events is not guaranteed yet (#68).
 - **Node, Python**: a panic on a WebSocket background thread no longer leaves
   the connection silently dead (#25). Node's worker and event threads report
   it as an `error` (`Error` with `code` -1, "WebSocket <thread> thread
@@ -260,6 +272,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the binding itself and once from core's event — both on `disconnect()`
   and when the connection was lost. It now fires once per connection. A rejected `connect()` delivers its events: the binding only
   started forwarding them after a successful connect (#57).
+- **C#, Go, C++, Java**: `is_connected()` could stay `true` after a connection
+  that dropped right as `connect()` returned, until the next lifecycle event.
+  It now reads core's connection state, so it is `false` as soon as the
+  connection drops or starts reconnecting (#64).
 - **Go**: `StreamingClient` closed `Messages()` / `Errors()` on the first
   disconnect even when the client was about to reconnect, ending a
   `range` loop mid-session. The channels now close on the final disconnect or
