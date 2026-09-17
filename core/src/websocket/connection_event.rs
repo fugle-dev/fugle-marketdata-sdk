@@ -289,6 +289,12 @@ impl ConnectionEvent {
     pub(crate) fn error(err: &MarketDataError) -> Self {
         Self::Error(err.info())
     }
+
+    /// `Error` for a subscription that could not be re-sent after a
+    /// reconnect; the message names its key.
+    pub(crate) fn resubscribe_failed(key: &str, err: &MarketDataError) -> Self {
+        Self::error_with_message(err, format!("Failed to resubscribe {key}: {err}"))
+    }
 }
 
 /// The `will_reconnect` a `Disconnected` should carry: whether the client

@@ -2,12 +2,12 @@
 
 use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
 use crate::websocket::aio::dispatch::dispatch_messages;
-use crate::websocket::aio::reconnect::{tls_connector_for, try_reconnect};
+use crate::websocket::aio::reconnect::{replay_subscriptions, tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::run_writer_task;
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
 use crate::websocket::protocol::{
-    frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt, frame_subscribe_raw,
+    frame_request, AuthHandshake, frame_subscribe, frame_subscribe_futopt,
     frame_unsubscribe,
 };
 use crate::websocket::{
@@ -964,20 +964,22 @@ impl WebSocketClient {
     /// Internal: Resubscribe all stored subscriptions
     ///
     /// From CONTEXT.md: "重連後按原始訂閱順序重新訂閱"
+    /// A subscription that cannot be re-sent is reported as an `Error` event
+    /// naming its key; the rest are still sent and the first failure is
+    /// returned.
     async fn resubscribe_all(&self) -> Result<(), MarketDataError> {
         // Old server ids point at a dead connection — clear before replay so
         // the fresh subscribed acks can overwrite cleanly. Without this,
         // unsubscribe after reconnect could briefly pick up a zombie id.
         self.subscriptions.clear_server_ids();
 
-        let subs = self.subscriptions.get_all();
-
-        for req in subs {
-            let sub_json = frame_subscribe_raw(req)?;
-            self.enqueue_write(sub_json).await?;
-        }
-
-        Ok(())
+        let sender = { self.write_tx.lock().await.clone() };
+        let Some(sender) = sender else {
+            return Err(MarketDataError::ConnectionError {
+                msg: "Not connected".to_string(),
+            });
+        };
+        replay_subscriptions(self.subscriptions.get_all(), &self.stream, &sender).await
     }
 
     /// Send a WebSocket request message
