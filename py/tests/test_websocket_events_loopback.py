@@ -192,6 +192,29 @@ def test_messages_arrive_between_authenticated_and_disconnect_while_disconnectin
 
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
+def test_messages_arriving_during_disconnect_reach_the_callback(product):
+    # The server answers the client's Close with frames before its own Close:
+    # they are written after disconnect() started and still belong to the
+    # connection, so every one reaches `message`, before `disconnect` (#68).
+    burst = 100
+    with LoopbackServer(burst_on_close=burst) as srv:
+        ws = product_ws(srv.url, product)
+        recorder = Recorder(ws, messages=True)
+        try:
+            ws.connect()
+            ws.disconnect()
+        finally:
+            disconnect_quietly(ws)
+
+    data = [args for name, args in recorder.calls if name == "message" and args[0]["event"] == "data"]
+    assert [args[0]["data"]["i"] for args in data] == list(range(burst))
+    names = recorder.names()
+    assert names[-1] == "disconnect", names[-5:]
+    assert names.count("disconnect") == 1
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
 def test_rejected_authentication_frame_never_reaches_message(server, product):
     ws = product_ws(server.url, product, api_key=REJECTED_API_KEY)
     recorder = Recorder(ws, messages=True)

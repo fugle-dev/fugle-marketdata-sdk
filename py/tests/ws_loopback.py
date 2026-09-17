@@ -7,7 +7,9 @@ from the client (masked) and to it (unmasked), ping/pong and close.
 The protocol mirrors ``js/tests/ws-worker.test.js``: ``auth`` is acked with
 ``authenticated``, or answered with ``error`` for ``REJECTED_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
 ``data`` frame. With ``flood`` it keeps sending ``data`` frames until the peer
-closes.
+closes. With ``burst_on_close`` it answers the client's Close with that many
+``data`` frames before its own Close: frames written after ``disconnect()``
+started, and read by the client before the close completes.
 
 ``LoopbackServer`` runs the server in a child process; ``InProcessLoopbackServer``
 runs it on threads of the test process, which only works while the blocking
@@ -98,8 +100,9 @@ def _send_frame(conn, opcode, payload=b""):
 class _Server:
     """Fugle-shaped WebSocket server on ``127.0.0.1`` with an ephemeral port."""
 
-    def __init__(self, flood=False):
+    def __init__(self, flood=False, burst_on_close=0):
         self._flood = flood
+        self._burst_on_close = burst_on_close
         self._stopped = threading.Event()
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
@@ -148,6 +151,9 @@ class _Server:
                     send(OP_PONG, payload)
                 elif opcode == OP_CLOSE:
                     closed.set()
+                    for i in range(self._burst_on_close):
+                        data = {"event": "data", "data": {"i": i}, "channel": "trades"}
+                        send(OP_TEXT, json.dumps(data).encode())
                     send(OP_CLOSE, payload[:2])
                     return
         except (ConnectionError, OSError, ValueError):
@@ -191,8 +197,9 @@ class LoopbackServer:
     ``url`` is the ``base_url`` to hand the client.
     """
 
-    def __init__(self, flood=False):
+    def __init__(self, flood=False, burst_on_close=0):
         self._flood = flood
+        self._burst_on_close = burst_on_close
         self._proc = None
         self.url = None
 
@@ -200,6 +207,8 @@ class LoopbackServer:
         args = [sys.executable, os.path.abspath(__file__)]
         if self._flood:
             args.append("--flood")
+        if self._burst_on_close:
+            args.append(f"--burst-on-close={self._burst_on_close}")
         self._proc = subprocess.Popen(
             args,
             stdin=subprocess.PIPE,
@@ -304,7 +313,11 @@ def disconnect_quietly(ws):
 
 
 if __name__ == "__main__":
-    server = _Server(flood="--flood" in sys.argv[1:])
+    burst = next(
+        (int(arg.split("=", 1)[1]) for arg in sys.argv[1:] if arg.startswith("--burst-on-close=")),
+        0,
+    )
+    server = _Server(flood="--flood" in sys.argv[1:], burst_on_close=burst)
     server.start()
     print(server.port, flush=True)
     sys.stdin.read()
