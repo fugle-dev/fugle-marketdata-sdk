@@ -1,7 +1,7 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
 use crate::models::SubscribeRequest;
-use crate::websocket::aio::writer::{spawn_writer, WriteFailure};
+use crate::websocket::aio::writer::{start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
@@ -145,6 +145,7 @@ pub(crate) async fn try_reconnect(
     ws_sink: Arc<Mutex<Option<WsSink>>>,
     write_tx_slot: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    writer_generation: WriterGeneration,
     subscriptions: Arc<SubscriptionManager>,
     shutdown_requested: Arc<AtomicBool>,
 ) -> Option<(WsStream, oneshot::Receiver<WriteFailure>)> {
@@ -215,32 +216,22 @@ pub(crate) async fn try_reconnect(
                 .await
                 {
                     Ok((new_sink, ws_read)) => {
-                        // Store the new write half
-                        {
-                            let mut sink_guard = ws_sink.lock().await;
-                            *sink_guard = Some(new_sink);
-                        }
-
                         // Reset reconnection manager on success
                         {
                             let mut reconnection = reconnection.lock().await;
                             reconnection.reset();
                         }
 
-                        // Rebuild the writer task for the new sink
-                        if let Some(prev) = writer_handle.lock().await.take() {
-                            prev.abort();
-                        }
-                        let (new_write_tx, writer_task_handle, write_failed_rx) =
-                            spawn_writer(Arc::clone(&ws_sink), stream.clone());
-                        {
-                            let mut guard = write_tx_slot.lock().await;
-                            *guard = Some(new_write_tx.clone());
-                        }
-                        {
-                            let mut guard = writer_handle.lock().await;
-                            *guard = Some(writer_task_handle);
-                        }
+                        // Replace the old writer, then install the new sink
+                        let (new_write_tx, write_failed_rx) = start_writer(
+                            new_sink,
+                            &ws_sink,
+                            &write_tx_slot,
+                            &writer_handle,
+                            &writer_generation,
+                            stream.clone(),
+                        )
+                        .await;
 
                         // Resubscribe all stored subscriptions through the new writer
                         subscriptions.clear_server_ids();
