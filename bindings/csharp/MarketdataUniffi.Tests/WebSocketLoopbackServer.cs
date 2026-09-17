@@ -12,11 +12,13 @@ namespace MarketdataUniffi.Tests;
 /// <summary>
 /// A loopback WebSocket server that records the <c>data</c> of every
 /// <c>auth</c> frame (as compact JSON) and acks it.
+/// <see cref="DropConnections"/> cuts the open connections without a Close frame.
 /// </summary>
 internal sealed class WebSocketLoopbackServer : IDisposable
 {
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly ConcurrentDictionary<HttpListenerContext, WebSocket> _connections = new();
 
     public WebSocketLoopbackServer()
     {
@@ -31,6 +33,17 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     public string Url { get; }
 
     public ConcurrentQueue<string> AuthData { get; } = new();
+
+    /// <summary>Cut every open connection at the transport, as a network failure would.</summary>
+    public void DropConnections()
+    {
+        foreach (var (ctx, socket) in _connections)
+        {
+            _connections.TryRemove(ctx, out _);
+            socket.Abort();
+            ctx.Response.Abort();
+        }
+    }
 
     private async Task AcceptLoop()
     {
@@ -48,6 +61,7 @@ internal sealed class WebSocketLoopbackServer : IDisposable
         try
         {
             var socket = (await ctx.AcceptWebSocketAsync(null).ConfigureAwait(false)).WebSocket;
+            _connections[ctx] = socket;
             var buffer = new byte[64 * 1024];
             while (!_cts.IsCancellationRequested)
             {

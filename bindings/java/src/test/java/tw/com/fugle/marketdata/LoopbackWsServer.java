@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
  * Loopback WebSocket server on the JDK alone, for tests that connect a real
  * client. Each text frame from the client goes to {@code replies}, whose
  * result is sent back as text frames in order; pings are answered and a
- * Close is echoed.
+ * Close is echoed. {@link #dropConnections()} cuts the open connections
+ * without a Close frame.
  */
 final class LoopbackWsServer implements AutoCloseable {
     private final ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
@@ -137,6 +138,14 @@ final class LoopbackWsServer implements AutoCloseable {
         frame.write(payload);
         out.write(frame.toByteArray());
         out.flush();
+    }
+
+    /** Cut every open connection at the transport, as a network failure would. */
+    void dropConnections() throws IOException {
+        for (Socket c : clients) {
+            clients.remove(c);
+            c.close();
+        }
     }
 
     @Override

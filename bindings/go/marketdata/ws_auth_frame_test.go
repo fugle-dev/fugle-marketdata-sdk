@@ -58,10 +58,12 @@ func TestWebSocketAuthFrame_CredentialInItsField(t *testing.T) {
 
 // authFrameServer is a loopback WebSocket server on the standard library
 // alone: it records the `data` of every auth frame and acks it.
+// dropConnections cuts the open connections without a Close frame.
 type authFrameServer struct {
-	srv  *httptest.Server
-	mu   sync.Mutex
-	auth []map[string]any
+	srv   *httptest.Server
+	mu    sync.Mutex
+	auth  []map[string]any
+	conns []net.Conn
 }
 
 func newAuthFrameServer(t *testing.T) *authFrameServer {
@@ -82,6 +84,18 @@ func (s *authFrameServer) authData() []map[string]any {
 	return append([]map[string]any(nil), s.auth...)
 }
 
+// dropConnections cuts every open connection at the transport, as a network
+// failure would.
+func (s *authFrameServer) dropConnections() {
+	s.mu.Lock()
+	conns := s.conns
+	s.conns = nil
+	s.mu.Unlock()
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
+}
+
 func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 	sum := sha1.Sum([]byte(r.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
 	conn, rw, err := w.(http.Hijacker).Hijack()
@@ -89,6 +103,9 @@ func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	s.mu.Lock()
+	s.conns = append(s.conns, conn)
+	s.mu.Unlock()
 	_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
 		"Sec-WebSocket-Accept: " + base64.StdEncoding.EncodeToString(sum[:]) + "\r\n\r\n")
 	if rw.Flush() != nil {

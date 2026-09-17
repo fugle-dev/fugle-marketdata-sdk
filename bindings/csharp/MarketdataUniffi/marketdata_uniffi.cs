@@ -3481,10 +3481,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed();
-            if (checksum != 15116)
+            if (checksum != 1028)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed` checksum `15116`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed` checksum `1028`, library returned `{checksum}`"
                 );
             }
         }
@@ -8764,7 +8764,12 @@ public interface IWebSocketClient
     Task Disconnect();
 
     /// <summary>
-    /// Check if the client has been shut down
+    /// Check if the connection has ended
+    ///
+    /// Reads core's connection state: true after `disconnect()`, and after
+    /// the server closes the connection when no reconnect follows (disabled
+    /// or attempts exhausted). False while reconnecting and before the first
+    /// `connect()`.
     /// </summary>
     bool IsClosed();
 
@@ -8991,7 +8996,12 @@ public class WebSocketClient : IWebSocketClient, IDisposable
     }
 
     /// <summary>
-    /// Check if the client has been shut down
+    /// Check if the connection has ended
+    ///
+    /// Reads core's connection state: true after `disconnect()`, and after
+    /// the server closes the connection when no reconnect follows (disabled
+    /// or attempts exhausted). False while reconnecting and before the first
+    /// `connect()`.
     /// </summary>
     public bool IsClosed()
     {

@@ -363,6 +363,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **C#, Go, C++, Java**: `is_closed()` stayed `false` after the server closed
+  the connection with no reconnect to follow; it only reflected
+  `disconnect()`. It now reads core's connection state, like `is_connected()`:
+  `true` after `disconnect()` or once the connection ends for good, `false`
+  while reconnecting. One visible change: a `connect()` that fails after a
+  `disconnect()` now leaves `is_closed()` `false` (the failed attempt's state);
+  it used to stay `true` (#95).
 - **Python, Node**: the WebSocket auth frame sends a bearer token as `token`
   and an SDK token as `sdkToken`, as the server expects. Every credential used
   to go out as `apikey`, so token authentication failed (#91).
