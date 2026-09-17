@@ -3,6 +3,8 @@ package tw.com.fugle.marketdata;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+import tw.com.fugle.marketdata.generated.MarketDataException;
+
 import java.lang.reflect.Method;
 
 /**
@@ -57,15 +59,15 @@ public class ExceptionTest {
     }
 
     @Test
-    @DisplayName("ApiException has message and statusCode constructor")
+    @DisplayName("ApiException has message and cause constructor")
     void apiExceptionHasConstructor() throws NoSuchMethodException {
-        assertNotNull(ApiException.class.getConstructor(String.class, int.class));
+        assertNotNull(ApiException.class.getConstructor(String.class, Throwable.class));
     }
 
     @Test
     @DisplayName("RateLimitException has constructor with retryAfter")
     void rateLimitExceptionHasConstructor() throws NoSuchMethodException {
-        assertNotNull(RateLimitException.class.getConstructor(String.class, int.class, Long.class));
+        assertNotNull(RateLimitException.class.getConstructor(String.class, Integer.class));
     }
 
     @Test
@@ -79,9 +81,9 @@ public class ExceptionTest {
     @Test
     @DisplayName("FugleException has from() static method")
     void fugleExceptionHasFromMethod() throws NoSuchMethodException {
-        Method method = FugleException.class.getMethod("from", Throwable.class);
+        Method method = FugleException.class.getMethod("from", MarketDataException.class);
         assertNotNull(method);
-        assertEquals(RuntimeException.class, method.getReturnType());
+        assertEquals(FugleException.class, method.getReturnType());
     }
 
     @Test

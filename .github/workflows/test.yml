@@ -338,18 +338,18 @@ jobs:
 
       - name: Build Java bindings
         working-directory: bindings/java
-        run: ./gradlew build --no-daemon
+        run: ./gradlew build -x test --no-daemon
 
       - name: Run Java structural tests
         working-directory: bindings/java
-        run: ./gradlew test --no-daemon --tests '*Test' --exclude-tag integration
+        run: ./gradlew test --no-daemon -PexcludeTags=integration
 
       - name: Run Java integration tests (main branch only with API key)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: bindings/java
         env:
           FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
-        run: ./gradlew test --no-daemon --tests '*Test' --tag integration
+        run: ./gradlew test --no-daemon -PincludeTags=integration
         continue-on-error: true
 
   # ============================================================

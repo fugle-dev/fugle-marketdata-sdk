@@ -54,12 +54,12 @@ jobs:
       - name: Build Java bindings
         run: |
           cd bindings/java
-          ./gradlew build --no-daemon
+          ./gradlew build -x test --no-daemon
 
-      - name: Run structural tests (no native library required)
+      - name: Run tests (excluding integration)
         run: |
           cd bindings/java
-          ./gradlew test --no-daemon --tests '*Test' --exclude-tag integration
+          ./gradlew test --no-daemon -PexcludeTags=integration
 
       - name: Run integration tests (main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -67,7 +67,7 @@ jobs:
           FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
         run: |
           cd bindings/java
-          ./gradlew test --no-daemon --tests '*Test' --tag integration
+          ./gradlew test --no-daemon -PincludeTags=integration
         continue-on-error: true
 
   verify-generation:
