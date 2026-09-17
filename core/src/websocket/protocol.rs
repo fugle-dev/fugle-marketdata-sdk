@@ -214,17 +214,24 @@ pub(crate) fn unsubscribe_wire_ids(
     targets: &[String],
 ) -> Vec<String> {
     let mut wire_ids: Vec<String> = Vec::with_capacity(targets.len());
-    let mut seen: HashSet<String> = HashSet::with_capacity(targets.len());
     for target in targets {
         if let Some(id) = subscriptions.resolve_unsubscribe(target) {
-            // Two keys can share one server id (a FutOpt alias and its
-            // contract), and the caller may name the same one twice.
-            if seen.insert(id.clone()) {
-                wire_ids.push(id);
-            }
+            wire_ids.push(id);
         }
     }
+    dedupe_in_place(&mut wire_ids);
     wire_ids
+}
+
+/// Drop repeated ids, keeping the first of each. Two keys can share one
+/// server id (a FutOpt alias and the contract it resolves to), and a caller
+/// may name the same subscription twice.
+fn dedupe_in_place(ids: &mut Vec<String>) {
+    if ids.len() < 2 {
+        return;
+    }
+    let mut seen: HashSet<String> = HashSet::with_capacity(ids.len());
+    ids.retain(|id| seen.insert(id.clone()));
 }
 
 /// Serialize any [`WebSocketRequest`] (used by the public `send()` API).
@@ -323,6 +330,8 @@ pub(crate) fn handle_subscribed_event(
                 id.to_string(),
             ));
         }
+        // One ack can carry two keys the server issued the same id for.
+        dedupe_in_place(&mut cancels);
         return cancels;
     }
 
@@ -518,6 +527,25 @@ mod tests {
         assert_eq!(handle_subscribed_event(&manager, &msg), ["sub-1"]);
         assert!(manager.take_server_id("trades:2330").is_none());
         assert_eq!(manager.take_server_id("trades:2317"), Some("sub-2".into()));
+    }
+
+    #[test]
+    fn handle_subscribed_sends_one_cancel_per_shared_server_id() {
+        let manager = SubscriptionManager::new();
+        // A FutOpt alias and the contract it resolves to: the server issues
+        // one id for both, so one unsubscribe covers them.
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "TXF1"));
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "TXFK6"));
+        assert_eq!(manager.resolve_unsubscribe("trades:TXF1"), None);
+        assert_eq!(manager.resolve_unsubscribe("trades:TXFK6"), None);
+
+        let msg = parse_msg(
+            r#"{"event":"subscribed","data":[
+                {"id":"sub-1","channel":"trades","symbol":"TXF1"},
+                {"id":"sub-1","channel":"trades","symbol":"TXFK6"}
+            ]}"#,
+        );
+        assert_eq!(handle_subscribed_event(&manager, &msg), ["sub-1"]);
     }
 
     fn resubscribe(rows: Vec<SubscribeRequest>) -> Vec<(String, serde_json::Value)> {

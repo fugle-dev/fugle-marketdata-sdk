@@ -582,6 +582,9 @@ fn reconnect_and_authenticate(
     // Build fresh write channel + install into shared slot. The replay below
     // queues every resubscribe frame before this thread starts draining, so
     // the channel must hold them all or `send` would block forever.
+    // Before the replay is read: the old ids are stale, and a cancel whose
+    // key this leaves unsubscribed can be dropped with them (#136).
+    shared.subscriptions.clear_server_ids();
     let resubscribe = frame_resubscribe(shared.subscriptions.get_all());
     let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY + resubscribe.len());
     *shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = Some(write_tx.clone());
@@ -593,7 +596,6 @@ fn reconnect_and_authenticate(
     }
 
     // Replay subscriptions
-    shared.subscriptions.clear_server_ids();
     let _ = replay_subscriptions(resubscribe, &shared.stream, &write_tx);
 
     set_state(shared, ConnectionState::Connected);

@@ -32,10 +32,9 @@ struct ServerIds {
     /// the id it issued, so the unsubscribe is sent when the ack brings it.
     ///
     /// An entry is dropped by the ack it waits for, by subscribing the key
-    /// again, or by [`SubscriptionManager::clear`]. A key whose ack never
-    /// arrives (its connection died before acking, and nothing subscribes it
-    /// again) keeps one entry until then; the subscription itself is already
-    /// removed, so nothing is replayed on reconnect.
+    /// again, by the next [`SubscriptionManager::clear_server_ids`] (the
+    /// connection it was waiting on is gone), or by
+    /// [`SubscriptionManager::clear`].
     pending_cancels: HashSet<String>,
 }
 
@@ -147,12 +146,21 @@ impl SubscriptionManager {
 
     /// Clear the server id map.
     ///
-    /// Called on reconnect — every server id is now stale because the server
-    /// will issue fresh ids on the new connection. Cancels awaiting an ack
-    /// are kept: a subscription replayed just before its unsubscribe is
-    /// still cancelled when the new connection acks it.
+    /// Called on reconnect, before the subscriptions to replay are read:
+    /// every server id is now stale because the server will issue fresh ids
+    /// on the new connection.
+    ///
+    /// Cancels awaiting an ack are dropped along with them unless the key is
+    /// still subscribed: a key this call leaves unsubscribed is not replayed,
+    /// so no ack for it can arrive and the cancel would sit there forever. A
+    /// cancel recorded after this call — the unsubscribe that races a replay
+    /// already under way — is kept, and the new connection's ack answers it.
     pub fn clear_server_ids(&self) {
-        self.ids.write().unwrap().by_key.clear();
+        // Lock order: `ids`, then `subscriptions`.
+        let mut ids = self.ids.write().unwrap();
+        ids.by_key.clear();
+        let subs = self.subscriptions.read().unwrap();
+        ids.pending_cancels.retain(|key| subs.contains_key(key));
     }
 
     /// Remove subscription by channel and symbol
@@ -472,12 +480,27 @@ mod tests {
     }
 
     #[test]
-    fn pending_cancel_survives_clear_server_ids() {
+    fn clear_server_ids_drops_a_cancel_whose_key_is_gone() {
         let manager = SubscriptionManager::new();
         manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
         assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
 
+        // The key is not subscribed any more, so the replay leaves it out and
+        // no ack for it can arrive: the cancel goes with the stale ids.
         manager.clear_server_ids();
+
+        assert_eq!(manager.record_ack("trades:2330".into(), "sub-a".into()), None);
+    }
+
+    #[test]
+    fn a_cancel_recorded_after_clear_server_ids_is_kept() {
+        let manager = SubscriptionManager::new();
+        manager.subscribe(SubscribeRequest::new(Channel::Trades, "2330"));
+
+        // Reconnect: ids cleared, then the replay goes out. An unsubscribe
+        // landing here is answered by the new connection's ack.
+        manager.clear_server_ids();
+        assert_eq!(manager.resolve_unsubscribe("trades:2330"), None);
 
         assert_eq!(
             manager.record_ack("trades:2330".into(), "sub-a".into()),

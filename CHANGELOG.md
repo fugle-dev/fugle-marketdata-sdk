@@ -145,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   acknowledged without removing anything; the unsubscribe is now sent when
   the ack brings the id. Since a FutOpt symbol alias and the contract it
   resolves to share one server id, unsubscribing either also removes the
-  other on the server.
+  other on the server, and that id is sent once rather than per key.
 - **All languages**: a reconnect (automatic, or `reconnect()`) re-sends the
   stored subscriptions as one `subscribe` frame per channel and modifier
   (`intradayOddLot`, `afterHours`), with `symbols: [...]`, instead of one
