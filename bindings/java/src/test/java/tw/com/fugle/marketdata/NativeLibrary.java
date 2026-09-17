@@ -1,5 +1,6 @@
 package tw.com.fugle.marketdata;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 
 /**
@@ -29,7 +30,12 @@ final class NativeLibrary {
     }
 
     static void assumeAvailable() {
-        Assumptions.assumeTrue(isAvailable(),
-                "Native library not available. Build with: cargo build -p marketdata-uniffi --release");
+        String message = "Native library not available. Build with: cargo build -p marketdata-uniffi --release";
+        // Set by -PrequireNative (CI): a missing library is a failure, not a skip.
+        if (Boolean.getBoolean("fugle.requireNative")) {
+            Assertions.assertTrue(isAvailable(), message);
+        } else {
+            Assumptions.assumeTrue(isAvailable(), message);
+        }
     }
 }

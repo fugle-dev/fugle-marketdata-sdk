@@ -89,6 +89,12 @@ tasks.test {
     val nativeLibDir = providers.gradleProperty("nativeLibDir")
         .getOrElse(rootDir.resolve("../../target/release").canonicalPath)
     systemProperty("jna.library.path", nativeLibDir)
+
+    // CI passes -PrequireNative so a library that fails to load fails those
+    // tests instead of silently skipping them.
+    if (providers.gradleProperty("requireNative").isPresent) {
+        systemProperty("fugle.requireNative", "true")
+    }
 }
 
 // Source sets - generated code lives in generated/ package
