@@ -2248,6 +2248,87 @@ mod write_failure_tests {
         assert_no_event(&client);
     }
 
+    /// Server that authenticates one client, then sends `Close(4001, "bye")`
+    /// when `close` fires. A plain thread, so it runs while the test's
+    /// runtime thread is blocked.
+    fn closing_server() -> (String, std::sync::mpsc::Sender<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (close, close_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().expect("accept");
+            let mut ws = tungstenite::accept(tcp).expect("handshake");
+            ws.read().expect("auth");
+            ws.send(tungstenite::Message::Text(r#"{"event":"authenticated"}"#.into()))
+                .expect("authenticated");
+            let _ = close_rx.recv();
+            let frame = tungstenite::protocol::CloseFrame {
+                code: 4001.into(),
+                reason: "bye".into(),
+            };
+            let _ = ws.close(Some(frame));
+            let _ = ws.flush();
+            // Hold the socket open until the test ends.
+            let _ = close_rx.recv();
+        });
+        (url, close)
+    }
+
+    /// The server's Close already sits in the socket when the write fails:
+    /// the close is reported with its code and reason, and the reconnect
+    /// decision follows that code, not the write failure's.
+    #[tokio::test(flavor = "current_thread")]
+    async fn failed_write_does_not_hide_a_close_already_received() {
+        let (url, close) = closing_server();
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::with_reconnection_config(config, slow_reconnect());
+        client.connect().await.expect("connect");
+        skip_handshake(&client);
+
+        break_writes(&client).await;
+        close.send(()).expect("server closes");
+        // Block the only runtime thread until the Close has arrived, so the
+        // dispatch task has not seen it when the writer fails.
+        std::thread::sleep(Duration::from_millis(200));
+        write(&client).await;
+
+        let rx = client.stream_receiver();
+        let deadline = tokio::time::Instant::now() + WAIT;
+        let (event, state) = loop {
+            match rx.try_receive() {
+                Some(StreamItem::Event(event @ ConnectionEvent::Disconnected { .. })) => {
+                    break (event, client.state());
+                }
+                Some(_) => continue,
+                None => {
+                    assert!(tokio::time::Instant::now() < deadline, "no Disconnected");
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        };
+        assert_eq!(
+            event,
+            ConnectionEvent::Disconnected {
+                code: Some(4001),
+                reason: "bye".to_string(),
+                intent: DisconnectIntent::Server,
+                will_reconnect: false,
+            }
+        );
+        let closed = ConnectionState::Closed {
+            code: Some(4001),
+            reason: "bye".to_string(),
+            intent: DisconnectIntent::Server,
+        };
+        assert_eq!(state, closed);
+
+        // No reconnect follows.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_no_event(&client);
+        assert_eq!(client.state(), closed);
+        drop(close);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn failed_write_after_dispatch_stopped_is_still_reported_as_error() {
         let client = connected_client(ReconnectionConfig::disabled()).await;

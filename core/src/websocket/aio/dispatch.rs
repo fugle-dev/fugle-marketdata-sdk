@@ -8,7 +8,7 @@ use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_a
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{handle_subscribed_event, parse_binary_frame, parse_text_frame};
 use crate::websocket::{ConnectionEvent, DisconnectIntent, ReconnectionManager, SubscriptionManager};
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -16,11 +16,18 @@ use std::time::Duration;
 use tokio::sync::{oneshot, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 
+/// Most frames read after a failed write before it is reported. Bounds how
+/// long a socket that keeps delivering data can postpone the report.
+const WRITE_FAILURE_DRAIN_LIMIT: usize = 256;
+
 /// What ended one wait of the dispatch loop.
 enum Next {
     Frame(Option<Result<Message, tokio_tungstenite::tungstenite::Error>>),
     HeartbeatTimeout(Duration),
+    /// The writer failed; frames already received are read first.
     WriteFailed(WriteFailure),
+    /// No frame is waiting behind a failed write: report it.
+    ReportWriteFailure(WriteFailure),
     WriterGone,
 }
 
@@ -72,6 +79,9 @@ pub(crate) async fn dispatch_messages(
     write_failed: oneshot::Receiver<WriteFailure>,
 ) -> Option<u16> {
     let mut write_failed = Some(write_failed);
+    // A failed write waiting for the frames received before it, with the
+    // number read so far.
+    let mut pending_write_failure: Option<(WriteFailure, usize)> = None;
     let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
         let reconnection = Arc::clone(&reconnection);
         let shutdown_requested = shutdown_requested.load(Ordering::SeqCst);
@@ -94,28 +104,50 @@ pub(crate) async fn dispatch_messages(
         // connection dead. When None, fall back to a plain blocking
         // read (no liveness detection). A failed write on this connection
         // ends it as well (#97); every branch is cancel-safe, so the losing
-        // one drops nothing.
-        let next = tokio::select! {
-            read = async {
-                match heartbeat_timeout {
-                    Some(timeout) => tokio::time::timeout(timeout, ws_read.next())
-                        .await
-                        .map_err(|_elapsed| timeout),
-                    None => Ok(ws_read.next().await),
+        // one drops nothing. Reads are polled first, so a frame that is
+        // ready wins over a write failure.
+        let next = if let Some((failure, drained)) = pending_write_failure.take() {
+            // Frames that arrived before the write failed come first: a
+            // peer's Close among them decides the report and the reconnect,
+            // not the write failure. The write failure can wake this task
+            // before the I/O driver has seen them, so yield to it first.
+            tokio::task::yield_now().await;
+            let ready = if drained < WRITE_FAILURE_DRAIN_LIMIT {
+                ws_read.next().now_or_never()
+            } else {
+                None
+            };
+            match ready {
+                Some(frame) => {
+                    pending_write_failure = Some((failure, drained + 1));
+                    Next::Frame(frame)
                 }
-            } => match read {
-                Ok(frame) => Next::Frame(frame),
-                Err(timeout) => Next::HeartbeatTimeout(timeout),
-            },
-            failure = async {
-                match write_failed.as_mut() {
-                    Some(rx) => rx.await.ok(),
-                    None => std::future::pending().await,
-                }
-            } => match failure {
-                Some(failure) => Next::WriteFailed(failure),
-                None => Next::WriterGone,
-            },
+                None => Next::ReportWriteFailure(failure),
+            }
+        } else {
+            tokio::select! {
+                biased;
+                read = async {
+                    match heartbeat_timeout {
+                        Some(timeout) => tokio::time::timeout(timeout, ws_read.next())
+                            .await
+                            .map_err(|_elapsed| timeout),
+                        None => Ok(ws_read.next().await),
+                    }
+                } => match read {
+                    Ok(frame) => Next::Frame(frame),
+                    Err(timeout) => Next::HeartbeatTimeout(timeout),
+                },
+                failure = async {
+                    match write_failed.as_mut() {
+                        Some(rx) => rx.await.ok(),
+                        None => std::future::pending().await,
+                    }
+                } => match failure {
+                    Some(failure) => Next::WriteFailed(failure),
+                    None => Next::WriterGone,
+                },
+            }
         };
 
         let frame_result = match next {
@@ -145,7 +177,12 @@ pub(crate) async fn dispatch_messages(
                 );
                 return None;
             }
-            Next::WriteFailed(WriteFailure { error, message }) => {
+            Next::WriteFailed(failure) => {
+                write_failed = None;
+                pending_write_failure = Some((failure, 0));
+                continue;
+            }
+            Next::ReportWriteFailure(WriteFailure { error, message }) => {
                 // Mirrors the transport-error arm below and the sync
                 // client's write-error path: `Error`, then `Disconnected`,
                 // both suppressed when shutdown was caller-initiated.
