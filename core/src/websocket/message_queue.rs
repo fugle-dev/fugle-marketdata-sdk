@@ -27,7 +27,7 @@ pub(crate) const DROP_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) struct DropReport {
     /// Messages dropped since the previous report.
     pub dropped: u64,
-    /// Messages dropped since the client was constructed.
+    /// Messages dropped since the connection started.
     pub total: u64,
 }
 
@@ -184,10 +184,15 @@ impl<T> QueueSender<T> {
         self.take_report(&mut state, true)
     }
 
-    /// Start a new connection: its first drop report is not held back by a
-    /// report taken on the previous one.
+    /// Start a new connection, before its auth handshake pushes anything:
+    /// the drop count starts again from zero, and the first drop report is
+    /// not held back by a report taken on the previous connection. Until
+    /// then the count of the previous connection stays readable.
     pub(crate) fn start_connection(&self) {
-        self.shared.lock().last_report = None;
+        let mut state = self.shared.lock();
+        state.dropped.reset();
+        state.unreported = 0;
+        state.last_report = None;
     }
 
     fn take_report(&self, state: &mut State<T>, force: bool) -> Option<DropReport> {
@@ -473,14 +478,19 @@ mod tests {
     }
 
     #[test]
-    fn a_new_connection_reports_its_first_drop_at_once() {
-        let (tx, _rx) = queue(Some(1), counter());
+    fn a_new_connection_counts_from_zero_and_reports_its_first_drop_at_once() {
+        let dropped = counter();
+        let (tx, _rx) = queue(Some(1), dropped.clone());
         tx.push(0);
         assert!(tx.push_and_report(1).1.is_some());
+        tx.push(2);
+        assert_eq!(dropped.load(), 2);
         tx.start_connection();
+        assert_eq!(dropped.load(), 0);
+        assert_eq!(tx.take_unreported(), None);
         assert_eq!(
-            tx.push_and_report(2),
-            (Pushed::Dropped, Some(DropReport { dropped: 1, total: 2 }))
+            tx.push_and_report(3),
+            (Pushed::Dropped, Some(DropReport { dropped: 1, total: 1 }))
         );
     }
 }

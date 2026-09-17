@@ -165,8 +165,8 @@ impl WebSocketClient {
         }
     }
 
-    /// Total number of inbound messages dropped due to consumer-side
-    /// channel saturation since this client was constructed.
+    /// Number of inbound messages dropped because the message queue was
+    /// full, counted from the start of the current connection.
     ///
     /// Frames are dropped under the **drop-newest** backpressure policy:
     /// when `message_buffer` is full, new arrivals are discarded rather
@@ -174,8 +174,10 @@ impl WebSocketClient {
     /// indicates the downstream consumer (your `messages()` /
     /// `message_stream()` reader) is too slow or stalled.
     ///
-    /// Counter is monotonic and thread-safe (`AtomicU64`). Reset only by
-    /// constructing a new client.
+    /// Thread-safe. Restarts from zero when `connect()` or a reconnect
+    /// attempt opens a new connection; after `disconnect()` it still reads the last
+    /// connection's count. With the `metrics` feature the exported counter
+    /// is not reset and keeps counting across connections.
     pub fn messages_dropped_total(&self) -> u64 {
         self.messages_dropped.load()
     }
@@ -493,7 +495,6 @@ impl WebSocketClient {
                     *state = ConnectionState::Connected;
                 }
                 self.disconnect_latch.reset();
-                self.message_tx.start_connection();
                 crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
                 emit_event(&self.event_tx, &self.events_dropped, ConnectionEvent::Authenticated {
                     data,

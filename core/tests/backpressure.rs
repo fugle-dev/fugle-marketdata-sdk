@@ -6,6 +6,8 @@
 //!   counts every drop and reports them with `MessagesDropped`.
 //! - `MessageOverflow::Unbounded` never drops.
 //! - A full queue does not stall the auth handshake of a reconnect.
+//! - The drop count covers the current connection: it survives the end of
+//!   the connection and restarts from zero on the next one.
 
 #![cfg(feature = "tokio-comp")]
 
@@ -153,6 +155,7 @@ async fn full_queue_drops_newest_and_reports_before_disconnected() {
         client.messages_dropped_total()
     );
     client.disconnect().await.expect("disconnect");
+    assert_eq!(client.messages_dropped_total(), 93, "count survives disconnect()");
 
     let receiver = client.messages();
     let kept: Vec<_> = std::iter::from_fn(|| receiver.try_receive()).collect();
@@ -239,11 +242,107 @@ async fn reconnect_authenticates_while_the_queue_is_full() {
 
     client.disconnect().await.expect("disconnect");
     events.extend(queued_events(&client));
+    // The first connection dropped 17 data frames; the second only its
+    // `authenticated` frame, counted from zero.
+    assert_eq!(client.messages_dropped_total(), 1, "{events:?}");
     let reports = drop_reports(&events);
-    let total = client.messages_dropped_total();
-    // 17 data frames of the first connection, then its second `authenticated`.
-    assert_eq!(total, 18, "{events:?}");
-    assert_eq!(reports.iter().map(|(dropped, _)| dropped).sum::<u64>(), total);
+    assert_eq!(reports.iter().map(|(dropped, _)| dropped).sum::<u64>(), 18, "{events:?}");
+    assert_eq!(reports.last(), Some(&(1, 1)), "{events:?}");
+}
+
+/// Reconnect policy slow enough to inspect the client between connections.
+fn slow_single_reconnect() -> ReconnectionConfig {
+    ReconnectionConfig::new(1, Duration::from_millis(500), Duration::from_millis(500))
+        .expect("reconnection config")
+}
+
+#[tokio::test]
+async fn drop_count_survives_the_connection_and_restarts_on_reconnect() {
+    let server = common::spawn_sequence(vec![
+        common::AfterAuth::FloodDataThenDrop { count: 100 },
+        common::AfterAuth::Idle,
+    ])
+    .await;
+    let config = ConnectionConfig::builder(&server.url, AuthRequest::with_api_key("test-key"))
+        .message_buffer(8)
+        .build();
+    let client = WebSocketClient::with_reconnection_config(config, slow_single_reconnect());
+    let receiver = client.messages();
+    client.connect().await.expect("connect");
+
+    let mut events = Vec::new();
+    let is_disconnected = |e: &ConnectionEvent| matches!(e, ConnectionEvent::Disconnected { .. });
+    assert!(
+        wait_for(|| {
+            events.extend(queued_events(&client));
+            events.iter().any(is_disconnected)
+        })
+        .await,
+        "{events:?}"
+    );
+    // Between connections: the first connection's count is still readable.
+    assert_eq!(client.messages_dropped_total(), 93, "{events:?}");
+    assert_eq!(drop_reports(&events).last().map(|r| r.1), Some(93), "{events:?}");
+    // Make room so the second connection drops nothing.
+    assert_eq!(std::iter::from_fn(|| receiver.try_receive()).count(), 8);
+
+    let authenticated = |e: &ConnectionEvent| matches!(e, ConnectionEvent::Authenticated { .. });
+    assert!(
+        wait_for(|| {
+            events.extend(queued_events(&client));
+            events.iter().filter(|e| authenticated(e)).count() == 2
+        })
+        .await,
+        "{events:?}"
+    );
+    assert_eq!(client.messages_dropped_total(), 0, "{events:?}");
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sync_client_drop_count_survives_the_connection_and_restarts_on_reconnect() {
+    let server = common::spawn_sequence(vec![
+        common::AfterAuth::FloodDataThenDrop { count: 100 },
+        common::AfterAuth::Idle,
+    ])
+    .await;
+    tokio::task::spawn_blocking(move || {
+        let config = ConnectionConfig::builder(&server.url, AuthRequest::with_api_key("test-key"))
+            .message_buffer(8)
+            .build();
+        let client =
+            marketdata_core::WebSocketClient::with_reconnection_config(config, slow_single_reconnect());
+        let receiver = client.messages();
+        client.connect().expect("connect");
+        let events = client.events().lock().expect("events lock");
+        let mut seen = Vec::new();
+        let mut wait_until = |done: &dyn Fn(&[ConnectionEvent]) -> bool| {
+            let deadline = Instant::now() + WAIT;
+            while !done(&seen) {
+                let left = deadline.saturating_duration_since(Instant::now());
+                match events.recv_timeout(left) {
+                    Ok(event) => seen.push(event),
+                    Err(_) => panic!("timed out; events so far: {seen:?}"),
+                }
+            }
+        };
+
+        wait_until(&|seen| seen.iter().any(|e| matches!(e, ConnectionEvent::Disconnected { .. })));
+        assert_eq!(client.messages_dropped_total(), 93);
+        assert_eq!(std::iter::from_fn(|| receiver.try_receive()).count(), 8);
+
+        wait_until(&|seen| {
+            seen.iter()
+                .filter(|e| matches!(e, ConnectionEvent::Authenticated { .. }))
+                .count()
+                == 2
+        });
+        assert_eq!(client.messages_dropped_total(), 0);
+        drop(events);
+        client.disconnect().expect("disconnect");
+    })
+    .await
+    .expect("sync client");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

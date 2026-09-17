@@ -288,6 +288,11 @@ dropped because your consumer fell behind.
 a literal needs the field (`MessageOverflow::DropNewest` keeps the default);
 code using `ConnectionConfig::new` or the builder is unaffected.
 
+`messages_dropped_total()` now counts from the start of the current
+connection (it restarts at every `connect()` or reconnect attempt) rather than
+from client construction; sum the `MessagesDropped` events if you need a
+lifetime total.
+
 Behaviour you may notice: `messages()` used to queue without limit, so a slow
 consumer never lost messages but used more and more memory. It is now capped
 at `message_buffer` (4096) like `message_stream()`. To keep every message,

@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Core**: `ConnectionEvent::MessagesDropped { dropped, total }` reports
   dropped messages: the first drop on a connection at once, then at most once
   per second, and any remainder right before that connection's
-  `Disconnected`. Previously drops were only counted (#46).
+  `Disconnected`. `total` counts from the start of the connection. Previously
+  drops were only counted (#46).
 
 ### Changed
 
@@ -53,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bridge behind it used to queue without limit, so a slow consumer (a Node,
   Python or UniFFI callback) grew memory without bound instead of dropping.
   Use `MessageOverflow::Unbounded` to keep the old behaviour (#46).
+- **Core**: `messages_dropped_total()` counts the current connection's drops:
+  it restarts from zero when `connect()` or a reconnect attempt opens a new
+  connection, and still reads the last connection's count after
+  `disconnect()`. It used to count from client construction. The `metrics`
+  counter is unchanged and keeps counting across connections (#46).
 - **Core**: while the message queue is full, the auth handshake of a
   reconnect drops the server's `authenticated` frame from the message stream
   instead of waiting for room, which could stall the reconnect until its 10 s

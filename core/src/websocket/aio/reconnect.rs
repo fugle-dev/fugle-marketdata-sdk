@@ -47,6 +47,8 @@ pub(crate) async fn authenticate(
     message_tx: &QueueSender<WebSocketMessage>,
     auth_timeout: Duration,
 ) -> AuthHandshake {
+    // The drop count restarts with each connection, before its auth frames.
+    message_tx.start_connection();
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
         Err(e) => return AuthHandshake::Failed(e),
@@ -202,7 +204,6 @@ pub(crate) async fn try_reconnect(
                     Ok((new_sink, ws_read)) => {
                         // New connection: it may report its own close.
                         disconnect_latch.reset();
-                        message_tx.start_connection();
 
                         // Store the new write half
                         {

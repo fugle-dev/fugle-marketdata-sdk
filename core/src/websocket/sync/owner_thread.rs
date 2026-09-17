@@ -196,6 +196,8 @@ pub(crate) fn do_auth_handshake(
     config: &ConnectionConfig,
     message_tx: &QueueSender<WebSocketMessage>,
 ) -> AuthHandshake {
+    // The drop count restarts with each connection, before its auth frames.
+    message_tx.start_connection();
     // Send auth frame
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
@@ -573,7 +575,6 @@ fn reconnect_and_authenticate(
 
     set_state(shared, ConnectionState::Connected);
     shared.disconnect_latch.reset();
-    shared.message_tx.start_connection();
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
     emit_event(&shared.event_tx, &shared.events_dropped, ConnectionEvent::Authenticated {
         data,

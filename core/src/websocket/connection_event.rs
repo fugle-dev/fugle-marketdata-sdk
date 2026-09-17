@@ -207,7 +207,9 @@ pub enum ConnectionEvent {
     MessagesDropped {
         /// Messages dropped since the previous `MessagesDropped`.
         dropped: u64,
-        /// Messages dropped since the client was constructed.
+        /// Messages dropped on this connection so far: counted from the
+        /// start of its `connect()` (or reconnect), like
+        /// `messages_dropped_total()`.
         total: u64,
     },
     /// Error occurred. Diagnostic: a transport error emits both `Error` and

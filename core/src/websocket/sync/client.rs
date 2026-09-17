@@ -226,7 +226,6 @@ impl WebSocketClient {
 
         self.set_state(ConnectionState::Connected);
         self.shared.disconnect_latch.reset();
-        self.shared.message_tx.start_connection();
         crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
         emit_event(&self.shared.event_tx, &self.shared.events_dropped, ConnectionEvent::Authenticated {
             data,
@@ -514,13 +513,18 @@ impl WebSocketClient {
         self.shared.subscriptions.count()
     }
 
-    /// Total number of inbound messages dropped due to consumer-side
-    /// channel saturation since this client was constructed.
+    /// Number of inbound messages dropped because the message queue was
+    /// full, counted from the start of the current connection.
     ///
     /// Drop-newest backpressure: when the message buffer is full, new
     /// arrivals are discarded rather than blocking the read thread. A
     /// non-zero value usually indicates the consumer (`messages()`
     /// reader) is too slow or stalled.
+    ///
+    /// Restarts from zero when `connect()` or a reconnect attempt opens a
+    /// new connection; after `disconnect()` it still reads the last
+    /// connection's count. With the `metrics` feature the exported counter
+    /// is not reset and keeps counting across connections.
     pub fn messages_dropped_total(&self) -> u64 {
         self.shared.messages_dropped.load()
     }
