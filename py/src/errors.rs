@@ -34,36 +34,32 @@ create_exception!(fugle_marketdata, WebSocketError, MarketDataError, "WebSocket 
 /// - Connection/WebSocket errors → WebSocketError
 /// - Other errors → MarketDataError (base exception)
 ///
-/// The PyErr's exception instance exposes the following attributes, matching
-/// the 2.4.1 SDK's `FugleAPIError` contract:
+/// The exception instance carries the unified error fields (core's
+/// `ErrorInfo`, see `docs/errors.md`):
 ///
-/// - `message` — human-readable error message (str)
-/// - `status_code` — HTTP status for ApiError variants, else None
-/// - `url` — request URL (None; requires plumbing from HTTP client)
-/// - `params` — request params (None; requires plumbing from HTTP client)
-/// - `response_text` — raw response body (None; requires plumbing from HTTP client)
+/// - `code` — numeric error code (int); also `args[1]`
+/// - `source_kind` — `"network"`, `"protocol"`, `"auth"`, `"rate_limit"` or `"client"`
+/// - `message` — human-readable message (str); also `args[0]` and `str(e)`
+/// - `status` — HTTP status (int) when the error came from an HTTP response, else None
+/// - `body` — raw HTTP response body (str, REST only), else None
+/// - `request_id` — server-assigned request id (`x-request-id`), else None
+/// - `headers` — HTTP response headers with lowercase names (dict, REST only; else empty)
 ///
-/// The legacy `args[0]` (message) and `args[1]` (internal error_code) are
-/// preserved for existing code paths.
+/// Aliases kept from the 2.4.1 SDK's `FugleAPIError`: `status_code` (= `status`),
+/// `response_text` (= `body`); `url` and `params` are always None.
 ///
 /// ```python
 /// try:
-///     quote = client.stock.intraday.quote("INVALID")
-/// except FugleAPIError as e:
-///     print(e.message)      # same as str(e)
-///     print(e.status_code)  # HTTP status for API errors, else None
+///     quote = client.stock.intraday.quote("2330")
+/// except MarketDataError as e:
+///     print(e.code, e.source_kind, e.status, e.body)
 /// ```
 pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
     use marketdata_core::MarketDataError as CoreError;
 
-    let error_code = err.to_error_code();
-    let message = err.to_string();
-
-    // Extract status_code before consuming `err` in the match below.
-    let status_code: Option<u16> = match &err {
-        CoreError::ApiError { status, .. } => Some(*status),
-        _ => None,
-    };
+    let info = err.info();
+    let error_code = info.code;
+    let message = info.message.clone();
 
     // Map to specific exception types based on error variant
     let pyerr = match err {
@@ -84,15 +80,20 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
         _ => MarketDataError::new_err((message.clone(), error_code)),
     };
 
-    // Attach 2.4.1-compatible attributes on the exception instance so
-    // `except FugleAPIError as e: e.status_code` works drop-in.
     Python::attach(|py| {
         let inst = pyerr.value(py);
-        let _ = inst.setattr("message", &message);
-        let _ = inst.setattr("status_code", status_code);
+        let _ = inst.setattr("code", info.code);
+        let _ = inst.setattr("source_kind", info.source_kind.as_str());
+        let _ = inst.setattr("message", &info.message);
+        let _ = inst.setattr("status", info.status);
+        let _ = inst.setattr("body", info.body.as_deref());
+        let _ = inst.setattr("request_id", info.request_id.as_deref());
+        let _ = inst.setattr("headers", &info.headers);
+        // 2.4.1 `FugleAPIError` aliases.
+        let _ = inst.setattr("status_code", info.status);
+        let _ = inst.setattr("response_text", info.body.as_deref());
         let _ = inst.setattr("url", py.None());
         let _ = inst.setattr("params", py.None());
-        let _ = inst.setattr("response_text", py.None());
     });
 
     pyerr
@@ -118,12 +119,14 @@ mod tests {
 
         let err = CoreError::AuthError {
             msg: "test".to_string(),
+            http: None,
         };
         assert_eq!(get_error_code(&err), 2002);
 
         let err = CoreError::ApiError {
             status: 404,
             message: "not found".to_string(),
+            http: None,
         };
         assert_eq!(get_error_code(&err), 2003);
 

@@ -333,7 +333,7 @@ the GIL.
 
 ## Error Handling
 
-All API errors raise `MarketDataError`:
+All API errors raise `MarketDataError` (or a subclass):
 
 ```python
 from fugle_marketdata import RestClient, MarketDataError
@@ -343,10 +343,27 @@ client = RestClient(api_key="invalid-key")
 try:
     quote = client.stock.intraday.quote("2330")
 except MarketDataError as e:
-    message = e.args[0]
-    error_code = e.args[1]
-    print(f"Error [{error_code}]: {message}")
+    print(f"Error [{e.code}] {e.source_kind}: {e.message}")
+    if e.status is not None:
+        print(e.status, e.body, e.headers.get("retry-after"))
 ```
+
+Every exception carries the same fields as the other languages:
+
+| Attribute | Type | |
+|---|---|---|
+| `code` | `int` | Error code (table below); also `args[1]` |
+| `source_kind` | `str` | `"network"`, `"protocol"`, `"auth"`, `"rate_limit"` or `"client"` |
+| `message` | `str` | Human-readable message; also `args[0]` and `str(e)` |
+| `status` | `int \| None` | HTTP status |
+| `body` | `str \| None` | Raw HTTP response body (REST) |
+| `request_id` | `str \| None` | `x-request-id` response header |
+| `headers` | `dict[str, str]` | HTTP response headers, lowercase names (REST; else empty) |
+
+`status_code` and `response_text` remain as aliases of `status` and `body`
+for code written against the 2.4.1 `FugleAPIError`. The WebSocket `error`
+callback still receives `(message, code)`. See the
+[error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for all languages.
 
 ### Error Codes
 
@@ -356,13 +373,16 @@ except MarketDataError as e:
 | 1002 | DeserializationError | JSON parsing failed |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Configuration error |
+| 1005 | InvalidParameter | Invalid or missing parameter |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
-| 3002 | WebSocketError | WebSocket protocol error |
+| 3002 | WebSocketError | WebSocket connect, read or write failed |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 9999 | Other | Unexpected error |
+| -1 | ThreadPanic | A WebSocket worker thread panicked (`error` callback only) |
 
 ## Examples
 

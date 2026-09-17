@@ -15,8 +15,31 @@ class MarketDataError(Exception):
 
     All SDK exceptions inherit from this class, making it easy to catch
     any SDK-related error with a single except clause.
+
+    Every instance carries the unified error fields (see docs/errors.md).
     """
-    ...
+    code: int
+    """Numeric error code (also ``args[1]``)."""
+    source_kind: Literal["network", "protocol", "auth", "rate_limit", "client"]
+    """Category of the failure."""
+    message: str
+    """Human-readable message (also ``args[0]`` and ``str(e)``)."""
+    status: Optional[int]
+    """HTTP status, when the error came from an HTTP response."""
+    body: Optional[str]
+    """Raw HTTP response body (REST only)."""
+    request_id: Optional[str]
+    """Server-assigned request id (``x-request-id``), when present."""
+    headers: dict[str, str]
+    """HTTP response headers with lowercase names (REST only; empty otherwise)."""
+    status_code: Optional[int]
+    """Alias of ``status``, kept from the 2.4.1 SDK's ``FugleAPIError``."""
+    response_text: Optional[str]
+    """Alias of ``body``, kept from the 2.4.1 SDK's ``FugleAPIError``."""
+    url: None
+    """Always None; kept from the 2.4.1 SDK's ``FugleAPIError``."""
+    params: None
+    """Always None; kept from the 2.4.1 SDK's ``FugleAPIError``."""
 
 class ApiError(MarketDataError):
     """API returned an error response.

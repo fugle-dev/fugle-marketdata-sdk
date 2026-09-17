@@ -216,7 +216,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message() != 4936) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error() != 33187) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error() != 44329) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting() != 12322) {
@@ -366,6 +366,28 @@ void rustbuffer_free(RustBuffer buf) {
 }
 
 
+uint16_t FfiConverterUInt16::lift(uint16_t val) {
+    return val;
+}
+
+uint16_t FfiConverterUInt16::lower(uint16_t val) {
+    return val;
+}
+
+uint16_t FfiConverterUInt16::read(RustStream &stream) {
+    uint16_t ret;
+    stream >> ret;
+
+    return ret;
+}
+
+void FfiConverterUInt16::write(RustStream &stream, uint16_t val) {
+    stream << val;
+}
+
+uint64_t FfiConverterUInt16::allocation_size(uint16_t) {
+    return static_cast<uint64_t>(sizeof(uint16_t));
+}
 uint32_t FfiConverterUInt32::lift(uint32_t val) {
     return val;
 }
@@ -558,6 +580,7 @@ uint64_t FfiConverterBytes::allocation_size(const std::vector<uint8_t> &val) {
     return static_cast<uint64_t>(sizeof(int32_t) + sizeof(uint8_t) * val.size());
 }
 } // namespace uniffi
+
 
 
 
@@ -1429,11 +1452,11 @@ namespace uniffi {
         rust_call_trait_interface(out_status, make_call, write_value);
     
 }
- void UniffiCallbackInterfaceWebSocketListener::on_error(uint64_t uniffi_handle,RustBuffer error_message,void * uniffi_out_return,RustCallStatus *out_status) {
+ void UniffiCallbackInterfaceWebSocketListener::on_error(uint64_t uniffi_handle,RustBuffer error,void * uniffi_out_return,RustCallStatus *out_status) {
     auto obj = FfiConverterWebSocketListener::handle_map.at(uniffi_handle);
 
     auto make_call = [&]()  {
-        auto arg0 =FfiConverterString::lift(error_message);obj->on_error(
+        auto arg0 =FfiConverterTypeErrorInfo::lift(error);obj->on_error(
         arg0);
     };
 
@@ -1550,12 +1573,12 @@ void WebSocketListenerImpl::on_message(const StreamMessage &message) {
         nullptr,
         ptr, uniffi::FfiConverterTypeStreamMessage::lower(message));
 }
-void WebSocketListenerImpl::on_error(const std::string &error_message) {
+void WebSocketListenerImpl::on_error(const ErrorInfo &error) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error,
         nullptr,
-        ptr, uniffi::FfiConverterString::lower(error_message));
+        ptr, uniffi::FfiConverterTypeErrorInfo::lower(error));
 }
 void WebSocketListenerImpl::on_reconnecting(uint32_t attempt) {
     auto ptr = this->_uniffi_internal_clone_pointer();
@@ -1615,7 +1638,12 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
 
 
 
+
+
+
+
 namespace uniffi {
+
 
 
 
@@ -1950,6 +1978,60 @@ uint64_t FfiConverterWebSocketListener::allocation_size(const std::shared_ptr<We
 }
 
 
+ErrorInfo FfiConverterTypeErrorInfo::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeErrorInfo::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeErrorInfo::lower(const ErrorInfo &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeErrorInfo::write(stream, val);
+
+    return std::move(buf);
+}
+
+ErrorInfo FfiConverterTypeErrorInfo::read(RustStream &stream) {
+    return {
+        FfiConverterInt32::read(stream),
+        FfiConverterErrorSourceKind::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterOptionalUInt16::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterMapStringString::read(stream)
+    };
+}
+
+void FfiConverterTypeErrorInfo::write(RustStream &stream, const ErrorInfo &val) {
+    FfiConverterInt32::write(stream, val.code);
+    FfiConverterErrorSourceKind::write(stream, val.source_kind);
+    FfiConverterString::write(stream, val.message);
+    FfiConverterOptionalUInt16::write(stream, val.status);
+    FfiConverterOptionalString::write(stream, val.body);
+    FfiConverterOptionalString::write(stream, val.request_id);
+    FfiConverterMapStringString::write(stream, val.headers);
+}
+
+uint64_t FfiConverterTypeErrorInfo::allocation_size(const ErrorInfo &val) {
+    
+    return 
+        FfiConverterInt32::allocation_size(val.code) +
+        FfiConverterErrorSourceKind::allocation_size(val.source_kind) +
+        FfiConverterString::allocation_size(val.message) +
+        FfiConverterOptionalUInt16::allocation_size(val.status) +
+        FfiConverterOptionalString::allocation_size(val.body) +
+        FfiConverterOptionalString::allocation_size(val.request_id) +
+        FfiConverterMapStringString::allocation_size(val.headers);
+    
+}
+
+
 HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterTypeHealthCheckConfigRecord::read(stream);
@@ -2205,6 +2287,83 @@ uint64_t FfiConverterTypeTlsConfigRecord::allocation_size(const TlsConfigRecord 
 }
 
 
+ErrorSourceKind FfiConverterErrorSourceKind::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterErrorSourceKind::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterErrorSourceKind::lower(const ErrorSourceKind &val) {
+    auto buf = rustbuffer_alloc(FfiConverterErrorSourceKind::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterErrorSourceKind::write(stream, val);
+
+    return std::move(buf);
+}
+
+ErrorSourceKind FfiConverterErrorSourceKind::read(RustStream &stream) {
+    int32_t variant;
+    stream >> variant;
+
+    switch (variant) {
+        
+    case 1:
+        return ErrorSourceKind::kNetwork;
+        
+    case 2:
+        return ErrorSourceKind::kProtocol;
+        
+    case 3:
+        return ErrorSourceKind::kAuth;
+        
+    case 4:
+        return ErrorSourceKind::kRateLimit;
+        
+    case 5:
+        return ErrorSourceKind::kClient;
+        
+    default:
+        throw std::runtime_error("No matching ErrorSourceKind variant");
+    }
+}
+
+void FfiConverterErrorSourceKind::write(RustStream &stream, const ErrorSourceKind &val) {
+    switch (val) {
+        
+    case ErrorSourceKind::kNetwork:
+        stream << static_cast<int32_t>(1);
+        break;
+        
+    case ErrorSourceKind::kProtocol:
+        stream << static_cast<int32_t>(2);
+        break;
+        
+    case ErrorSourceKind::kAuth:
+        stream << static_cast<int32_t>(3);
+        break;
+        
+    case ErrorSourceKind::kRateLimit:
+        stream << static_cast<int32_t>(4);
+        break;
+        
+    case ErrorSourceKind::kClient:
+        stream << static_cast<int32_t>(5);
+        break;
+        
+    default:
+        throw std::runtime_error("No matching ErrorSourceKind variant");
+    }
+}
+
+uint64_t FfiConverterErrorSourceKind::allocation_size(const ErrorSourceKind &) {
+    return static_cast<uint64_t>(sizeof(int32_t));
+}
+
+
 std::shared_ptr<MarketDataError> FfiConverterMarketDataError::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterMarketDataError::read(stream);
@@ -2232,65 +2391,76 @@ std::shared_ptr<MarketDataError> FfiConverterMarketDataError::read(RustStream &s
     {
         market_data_error::NetworkError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::NetworkError>(var);
     }
     case 2:
     {
         market_data_error::AuthError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::AuthError>(var);
     }
     case 3:
     {
         market_data_error::RateLimitError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::RateLimitError>(var);
     }
     case 4:
     {
         market_data_error::InvalidSymbol var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::InvalidSymbol>(var);
     }
     case 5:
     {
         market_data_error::ParseError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::ParseError>(var);
     }
     case 6:
     {
         market_data_error::TimeoutError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::TimeoutError>(var);
     }
     case 7:
     {
         market_data_error::WebSocketError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::WebSocketError>(var);
     }
     case 8:
     {
         market_data_error::ClientClosed var;
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::ClientClosed>(var);
     }
     case 9:
     {
         market_data_error::ConfigError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::ConfigError>(var);
     }
     case 10:
     {
         market_data_error::ApiError var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::ApiError>(var);
     }
     case 11:
     {
         market_data_error::Other var;
         var.msg = FfiConverterString::read(stream);
+        var.info = FfiConverterTypeErrorInfo::read(stream);
         return std::make_shared<market_data_error::Other>(var);
     }
     default:
@@ -2305,65 +2475,76 @@ void FfiConverterMarketDataError::write(RustStream &stream, const MarketDataErro
     {
         auto var = static_cast<const market_data_error::NetworkError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 2:
     {
         auto var = static_cast<const market_data_error::AuthError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 3:
     {
         auto var = static_cast<const market_data_error::RateLimitError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 4:
     {
         auto var = static_cast<const market_data_error::InvalidSymbol&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 5:
     {
         auto var = static_cast<const market_data_error::ParseError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 6:
     {
         auto var = static_cast<const market_data_error::TimeoutError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 7:
     {
         auto var = static_cast<const market_data_error::WebSocketError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 8:
     {
         auto var = static_cast<const market_data_error::ClientClosed&>(val);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 9:
     {
         auto var = static_cast<const market_data_error::ConfigError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 10:
     {
         auto var = static_cast<const market_data_error::ApiError&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     case 11:
     {
         auto var = static_cast<const market_data_error::Other&>(val);
         FfiConverterString::write(stream, var.msg);
+        FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
     }
     }
@@ -2375,66 +2556,77 @@ uint64_t FfiConverterMarketDataError::allocation_size(const MarketDataError &val
     {
         auto var = static_cast<const market_data_error::NetworkError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 2:
     {
         auto var = static_cast<const market_data_error::AuthError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 3:
     {
         auto var = static_cast<const market_data_error::RateLimitError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 4:
     {
         auto var = static_cast<const market_data_error::InvalidSymbol&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 5:
     {
         auto var = static_cast<const market_data_error::ParseError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 6:
     {
         auto var = static_cast<const market_data_error::TimeoutError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 7:
     {
         auto var = static_cast<const market_data_error::WebSocketError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 8:
     {
         auto var = static_cast<const market_data_error::ClientClosed&>(val);
-        return static_cast<uint64_t>(sizeof(int32_t));
+        return static_cast<uint64_t>(sizeof(int32_t)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 9:
     {
         auto var = static_cast<const market_data_error::ConfigError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 10:
     {
         auto var = static_cast<const market_data_error::ApiError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     case 11:
     {
         auto var = static_cast<const market_data_error::Other&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
-            + FfiConverterString::allocation_size(var.msg));
+            + FfiConverterString::allocation_size(var.msg)
+            + FfiConverterTypeErrorInfo::allocation_size(var.info));
     }
     default:
         throw std::runtime_error("Unexpected error variant");
@@ -2551,6 +2743,53 @@ void FfiConverterWebSocketEndpoint::write(RustStream &stream, const WebSocketEnd
 
 uint64_t FfiConverterWebSocketEndpoint::allocation_size(const WebSocketEndpoint &) {
     return static_cast<uint64_t>(sizeof(int32_t));
+}
+
+std::optional<uint16_t> FfiConverterOptionalUInt16::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalUInt16::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalUInt16::lower(const std::optional<uint16_t>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalUInt16::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalUInt16::write(stream, val);
+
+    return buf;
+}
+
+std::optional<uint16_t> FfiConverterOptionalUInt16::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterUInt16::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalUInt16::write(RustStream &stream, const std::optional<uint16_t>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterUInt16::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalUInt16::allocation_size(const std::optional<uint16_t> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterUInt16::allocation_size(val.value());
+    }
+
+    return ret;
 }
 
 std::optional<uint32_t> FfiConverterOptionalUInt32::lift(RustBuffer buf) {
@@ -3068,6 +3307,59 @@ uint64_t FfiConverterOptionalTypeTlsConfigRecord::allocation_size(const std::opt
     }
 
     return ret;
+}
+
+
+std::unordered_map<std::string, std::string> FfiConverterMapStringString::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterMapStringString::lower(const std::unordered_map<std::string, std::string> &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    write(stream, val);
+
+    return buf;
+}
+
+std::unordered_map<std::string, std::string> FfiConverterMapStringString::read(RustStream &stream) {
+    std::unordered_map<std::string, std::string> ret;
+    int32_t count;
+    stream >> count;
+
+    ret.reserve(count);
+
+    for (decltype(count) i = 0; i < count; i++) {
+        ret.insert({ FfiConverterString::read(stream), FfiConverterString::read(stream) });
+    }
+
+    return ret;
+}
+
+void FfiConverterMapStringString::write(RustStream &stream, const std::unordered_map<std::string, std::string> &val) {
+    stream << static_cast<int32_t>(val.size());
+
+    for (auto &entry : val) {
+        FfiConverterString::write(stream, entry.first);
+        FfiConverterString::write(stream, entry.second);
+    }
+}
+
+uint64_t FfiConverterMapStringString::allocation_size(const std::unordered_map<std::string, std::string> &val) {
+    uint64_t size = sizeof(int32_t);
+
+    for (auto &entry : val) {
+        size += FfiConverterString::allocation_size(entry.first);
+        size += FfiConverterString::allocation_size(entry.second);
+    }
+
+    return size;
 }
 
 }

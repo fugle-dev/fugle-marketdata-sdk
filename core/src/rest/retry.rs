@@ -211,6 +211,7 @@ mod tests {
                 Err(MarketDataError::ApiError {
                     status: 503,
                     message: "transient".into(),
+                    http: None,
                 })
             } else {
                 Ok(42)
@@ -229,6 +230,7 @@ mod tests {
             Err(MarketDataError::ApiError {
                 status: 401,
                 message: "unauthorized".into(),
+                http: None,
             })
         });
         assert!(result.is_err());
@@ -244,11 +246,12 @@ mod tests {
             Err(MarketDataError::ApiError {
                 status: 503,
                 message: "still down".into(),
+                http: None,
             })
         });
         assert_eq!(attempts.get(), 3);
         match result.unwrap_err() {
-            MarketDataError::ApiError { status, message } => {
+            MarketDataError::ApiError { status, message, .. } => {
                 assert_eq!(status, 503);
                 assert_eq!(message, "still down");
             }

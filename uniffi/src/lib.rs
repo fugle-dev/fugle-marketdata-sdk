@@ -29,6 +29,10 @@
 // C++ at once. Collapsing them into a record to satisfy the lint would change
 // the generated API in all four languages.
 #![allow(clippy::too_many_arguments)]
+// Every `MarketDataError` variant carries an `ErrorInfo` record (#81), which
+// makes the error large. UniFFI errors cannot hold a `Box`, and the variant
+// shape is the generated API, so the size is accepted.
+#![allow(clippy::result_large_err)]
 
 mod client;
 mod errors;
@@ -43,7 +47,7 @@ use marketdata_core::Auth;
 pub use models::*;
 
 // Re-export error type
-pub use errors::MarketDataError;
+pub use errors::{ErrorInfo, ErrorSourceKind, MarketDataError};
 
 // Re-export client types (FutOpt now consolidated in client module)
 pub use client::{RestClient, StockClient, StockIntradayClient, FutOptClient, FutOptIntradayClient};

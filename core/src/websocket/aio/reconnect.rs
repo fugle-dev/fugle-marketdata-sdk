@@ -371,7 +371,7 @@ pub(crate) async fn try_connect(
                 *st = ConnectionState::Disconnected;
             }
             stream.unauthenticated(message.clone(), data, frames);
-            Err(MarketDataError::AuthError { msg: message })
+            Err(MarketDataError::AuthError { msg: message, http: None })
         }
         AuthHandshake::Failed(e) => {
             {

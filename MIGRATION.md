@@ -225,15 +225,19 @@ The legacy SDK only raises `FugleAPIError`. This SDK has a base class
 
 `FugleAPIError` is aliased to `MarketDataError` so your existing
 `except FugleAPIError:` blocks keep catching everything. New code can opt
-into the more specific subclasses for cleaner handling:
+into the more specific subclasses for cleaner handling. Every exception has
+`code`, `source_kind`, `message`, `status`, `body`, `request_id` and
+`headers` ([error reference](docs/errors.md)); the legacy `status_code` and
+`response_text` are kept as aliases of `status` and `body` and are now filled
+in for HTTP errors:
 
 ```python
 try:
     quote = await client.stock.intraday.quote("INVALID")
 except RateLimitError as e:
-    backoff(e.args[1])         # error code is in args[1]
+    backoff(e.headers.get("retry-after"))
 except ApiError as e:
-    log.error(e)
+    log.error("%s %s %s", e.code, e.status, e.body)
 except MarketDataError as e:
     raise
 ```
@@ -251,11 +255,15 @@ layer.
 The legacy Node SDK resolves whatever JSON the server returns, including a
 4xx/5xx error body such as
 `{ "statusCode": 404, "message": "Resource Not Found" }`. This SDK
-**rejects** instead, with an `Error` whose message carries an error code and
-the server's body:
+**rejects** instead, with an `Error` that carries the error code, the HTTP
+status and the server's body as properties:
 
-- `[2003] API error (status 404): {"message":"Resource Not Found",...}`
-- `[2002] Authentication error: {...}` for 401 / 403
+- `err.code === 2003`, `err.status === 404`,
+  `err.message === 'API error (status 404): {"message":"Resource Not Found",...}'`
+- `err.code === 2002`, `err.message === 'Authentication error: {...}'` for 401 / 403
+
+`err.body` is the body as sent and `err.headers` the response headers; see
+[the error reference](docs/errors.md) for every field.
 
 Code that checks `statusCode` inside `.then()` must move that handling into
 `.catch()` / `try`, otherwise the rejection goes unhandled.
@@ -269,7 +277,7 @@ if (res.statusCode) { /* handle error */ }
 try {
   const quote = await rest.stock.intraday.quote({ symbol: 'NOPE' });
 } catch (err) {
-  // err.message: "[2003] API error (status 404): {...}"
+  // err.code: 2003, err.status: 404, err.body: '{"statusCode":404,...}'
 }
 ```
 
@@ -330,7 +338,8 @@ client.futopt.historical.candles("TXF", contract_month="1!", timeframe="D")
 
 The legacy Node SDK let you call `connect()` on a connected client: it opened
 another socket, left the old one open, and registered its listeners again.
-This SDK rejects that call with `[2011] Already connected` and keeps the
+This SDK rejects that call with an error whose `code` is `2011`
+(`Already connected; call disconnect() first`) and keeps the
 existing connection. To reconnect, `disconnect()` first — calling `connect()`
 straight after `disconnect()`, or from a `disconnect` handler when
 auto-reconnect is off, is fine.
@@ -361,7 +370,8 @@ Two differences remain from 1.x's `error` event:
   is the plain description, without a `[code]` prefix — read the code from
   `err.code` (absent for "Reconnection failed after N attempts"). 1.x passed
   the socket's native error. A `connect()` that fails for a reason other than
-  rejected credentials still rejects with `Error("[code] message")`.
+  rejected credentials rejects with an `Error` carrying the same fields
+  (`err.code`, no `[code]` prefix).
 - **No `error` listener means errors are ignored.** 1.x's EventEmitter threw
   an unhandled `'error'` event and could crash the process; this SDK never
   does.

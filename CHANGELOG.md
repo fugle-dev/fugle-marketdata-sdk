@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **All languages**: one set of error fields everywhere, defined in core
+  (#81): `code`, `source_kind`, `message`, `status`, `body`, `request_id`,
+  `headers`. REST errors now keep the HTTP status, the raw response body and
+  the response headers (401 / 403 included). Names per language and every
+  error code are in [docs/errors.md](docs/errors.md).
+  - **Rust**: `ErrorInfo` via `MarketDataError::info()`, `HttpErrorContext`,
+    `error_code` constants, `ErrorKind::as_str()`.
+  - **Node**: errors thrown or rejected by the SDK and the WebSocket `error`
+    event carry `code`, `sourceKind`, `status`, `body`, `requestId`,
+    `headers` (TypeScript `MarketDataError`).
+  - **Python**: exceptions gain `code`, `source_kind`, `status`, `body`,
+    `request_id`, `headers`; `status_code` / `response_text` stay as aliases
+    and `response_text` is no longer always `None`.
+  - **C#, Go, Java, C++**: `ErrorInfo` / `ErrorSourceKind` records; C#
+    `MarketDataException.GetInfo()`, Go `ErrorInfoOf(err)`, Java
+    `FugleException` getters.
 - **Rust**: `aio::WebSocketClient::state_handle()` returns a
   `ConnectionStateHandle` that reads the client's `ConnectionState` and stays
   readable after the client is dropped, like `messages_dropped_handle()` (#67).
@@ -161,6 +177,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Node**: error messages no longer start with `[code]` (REST rejections,
+  constructor errors, `connect()` rejections), matching the WebSocket `error`
+  event; `err.code` is a number on every SDK error (REST errors used to carry
+  the string `"GenericFailure"`). Check `err.code` instead of the message
+  (#81). See [MIGRATION-0.9.md](MIGRATION-0.9.md#13-errors-one-set-of-fields-in-every-language).
+- **Rust**: `MarketDataError::ApiError` and `MarketDataError::AuthError` gain
+  `http: Option<Box<HttpErrorContext>>`; `ConnectionEvent::Error { message,
+  code }` becomes `ConnectionEvent::Error(ErrorInfo)` (#81).
+- **C#, Go, Java, C++**: every `MarketDataError` variant gains
+  `info: ErrorInfo` (`ClientClosed` included) and `WebSocketListener::on_error`
+  receives an `ErrorInfo` instead of a string (#81).
+- **All languages**: WebSocket `error` events report the code matching the
+  failure (#81): an unparsable frame `1002` (was `2003`), a failed read
+  `3002` (was `2001`), a failed write on the Rust blocking client `3002`
+  (was `2002`).
 - **Python**: `messages()` iteration (`for` and `async for`) yields messages
   only and stops only once the connection is gone, raising `StopIteration` /
   `StopAsyncIteration` (#68). It no longer yields `None`, and no longer ends
@@ -203,8 +234,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     authentication fires `connect` then `unauthenticated`, no longer `error`.
   - `connect()` resolves with the server's `authenticated` `data`, and on
     rejected credentials rejects with the server's `data` object instead of
-    `Error("[2002] ...")`. Other failures still reject with
-    `Error("[code] message")`.
+    `Error("[2002] ...")`. Other failures reject with an `Error` carrying
+    the numeric `code` (no `[code]` prefix in the message).
   - `disconnect` receives `{ code, reason }` (`code` is `null` without a close
     code) instead of a JSON string; `reconnect` receives `{ attempt }`.
   - `error` receives an `Error` whose `message` has no `[code]` prefix, with
@@ -307,7 +338,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it as an `error` (`Error` with `code` -1, "WebSocket <thread> thread
   panicked: ..."), followed by `disconnect({ code: null, reason })` if the
   client was connected; `isConnected` turns false, a `connect()` whose
-  authentication was not yet reported rejects with `[-1] ...`, and the
+  authentication was not yet reported rejects with an `Error` with code -1, and the
   connection is closed so the process can exit. Python's event and message threads report it to the `error`
   callbacks as `WebSocketError(message, -1)`.
 - **Core**: `aio::WebSocketClient::state()` and `is_closed_sync()` no longer
@@ -328,13 +359,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Node**: calling WebSocket `connect()` again on a client that was already
   connected or still connecting started a second connection sharing
   `isConnected` and the listeners, so events fired twice and `disconnect()`
-  stopped only one of them. It now rejects with `[2011] Already connected`.
+  stopped only one of them. It now rejects with an `Error` with code 2011
+  (`Already connected; call disconnect() first`).
   Reconnecting after `disconnect()`, from a `disconnect` handler once no
   auto-reconnect follows, or after a failed auth still works, and `isClosed`
   turns back to false on the new connection. A `connect()` that is still
   authenticating when `disconnect()` is called now rejects with
-  `[2010] Connection aborted` and fires no `authenticated` event, instead of
-  resolving and connecting anyway (#44).
+  an `Error` with code 2010 (`Connection aborted: ...`) and fires no
+  `authenticated` event, instead of resolving and connecting anyway (#44).
 
 - Intraday `quote` / `ticker` / `candles` / `trades` / `volumes` sent
   `oddLot=true`, which the server ignores, so odd-lot requests silently

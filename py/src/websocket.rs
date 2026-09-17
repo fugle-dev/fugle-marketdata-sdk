@@ -902,9 +902,6 @@ fn spawn_stream_reader(
         })
 }
 
-/// Error code reported for a panicked WebSocket thread (#25).
-const PANIC_CODE: i32 = -1;
-
 /// Report a panic on a WebSocket `thread` through the `error` callbacks, so
 /// it does not go unnoticed (#25).
 fn report_thread_panic(
@@ -918,7 +915,7 @@ fn report_thread_panic(
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "unknown panic".to_string());
     let message = format!("WebSocket {thread} thread panicked: {detail}");
-    Python::attach(|py| callbacks.invoke_error(py, &message, PANIC_CODE));
+    Python::attach(|py| callbacks.invoke_error(py, &message, marketdata_core::error_code::THREAD_PANIC));
 }
 
 /// `FUGLE_MARKETDATA_TEST_PANIC`, naming where a test wants a WebSocket
@@ -967,7 +964,7 @@ fn forward_event(
             &format!("Reconnection failed after {} attempts", attempts),
             -1,
         ),
-        ConnectionEvent::Error { message, code } => callbacks.invoke_error(py, &message, code),
+        ConnectionEvent::Error(info) => callbacks.invoke_error(py, &info.message, info.code),
         ConnectionEvent::MessagesDropped { dropped, total } => {
             callbacks.invoke_messages_dropped(py, dropped, total)
         }

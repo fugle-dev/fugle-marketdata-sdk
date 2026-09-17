@@ -67,6 +67,7 @@
 
 use std::time::Duration;
 
+use crate::errors::{ErrorInfo, MarketDataError};
 use crate::websocket::ReconnectionManager;
 
 /// Who initiated the disconnect captured by
@@ -268,12 +269,22 @@ pub enum ConnectionEvent {
     },
     /// Error occurred. Diagnostic: a transport error emits both `Error` and
     /// (afterwards) `Disconnected`.
-    Error {
-        /// Diagnostic message describing the error.
-        message: String,
-        /// Numeric error code (mirrors [`MarketDataError::to_error_code`](crate::MarketDataError::to_error_code)).
-        code: i32,
-    },
+    ///
+    /// Carries the same [`ErrorInfo`] fields as a returned error: `code`,
+    /// `source_kind`, `message` and, for a rejected WebSocket upgrade, `status`.
+    Error(ErrorInfo),
+}
+
+impl ConnectionEvent {
+    /// `Error` for `err`, with `message` in place of the error's own text.
+    pub(crate) fn error_with_message(err: &MarketDataError, message: String) -> Self {
+        Self::Error(ErrorInfo { message, ..err.info() })
+    }
+
+    /// `Error` for `err`.
+    pub(crate) fn error(err: &MarketDataError) -> Self {
+        Self::Error(err.info())
+    }
 }
 
 /// The `will_reconnect` a `Disconnected` should carry: whether the client
@@ -322,6 +333,25 @@ mod tests {
             crate::websocket::ReconnectionConfig::disabled()
         };
         ReconnectionManager::new(config)
+    }
+
+    #[test]
+    fn error_events_carry_the_error_info() {
+        use crate::errors::{error_code, ErrorKind};
+        let read = crate::MarketDataError::from(tungstenite::Error::ConnectionClosed);
+        match ConnectionEvent::error_with_message(&read, "WebSocket read error: closed".into()) {
+            ConnectionEvent::Error(info) => {
+                assert_eq!(info.code, error_code::WEBSOCKET);
+                assert_eq!(info.source_kind, ErrorKind::Network);
+                assert_eq!(info.message, "WebSocket read error: closed");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        let parse = crate::websocket::protocol::parse_text_frame("{").unwrap_err();
+        match ConnectionEvent::error(&parse) {
+            ConnectionEvent::Error(info) => assert_eq!(info.code, error_code::DESERIALIZATION),
+            other => panic!("expected Error, got {other:?}"),
+        }
     }
 
     #[test]

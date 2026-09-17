@@ -33,8 +33,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *     public void onMessage(StreamMessage message) {
  *         System.out.println("Event: " + message.event());
  *     }
- *     public void onError(String error) {
- *         System.err.println("Error: " + error);
+ *     public void onError(ErrorInfo error) {
+ *         System.err.println("Error: " + error.message());
  *     }
  * };
  *
@@ -628,9 +628,12 @@ public class FugleWebSocketClient implements AutoCloseable {
         }
 
         @Override
-        public void onError(String errorMessage) {
-            // Offer to error queue
-            errorQueue.offer(errorMessage);
+        public void onError(ErrorInfo error) {
+            // Offer the human-readable message to the error queue, same as
+            // before this callback carried a structured ErrorInfo. Callers
+            // that need `code` / `sourceKind` / HTTP details should switch
+            // to callback mode and read them off the ErrorInfo directly.
+            errorQueue.offer(error.message());
         }
 
         @Override

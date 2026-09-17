@@ -112,19 +112,55 @@ impl core::marker::UnsafeUnpin for marketdata_core::websocket::aio::client::WebS
 impl !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::aio::client::WebSocketClient
 impl !core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::client::WebSocketClient
 pub const marketdata_core::aio::DEFAULT_SHUTDOWN_TIMEOUT: core::time::Duration
+pub mod marketdata_core::error_code
+pub const marketdata_core::error_code::ALREADY_CONNECTED: i32
+pub const marketdata_core::error_code::API: i32
+pub const marketdata_core::error_code::AUTH: i32
+pub const marketdata_core::error_code::CLIENT_CLOSED: i32
+pub const marketdata_core::error_code::CONFIG: i32
+pub const marketdata_core::error_code::CONNECTION: i32
+pub const marketdata_core::error_code::DESERIALIZATION: i32
+pub const marketdata_core::error_code::HEARTBEAT_TIMEOUT: i32
+pub const marketdata_core::error_code::INVALID_PARAMETER: i32
+pub const marketdata_core::error_code::INVALID_SYMBOL: i32
+pub const marketdata_core::error_code::OTHER: i32
+pub const marketdata_core::error_code::RUNTIME: i32
+pub const marketdata_core::error_code::THREAD_PANIC: i32
+pub const marketdata_core::error_code::TIMEOUT: i32
+pub const marketdata_core::error_code::WEBSOCKET: i32
 pub mod marketdata_core::errors
+pub mod marketdata_core::errors::error_code
+pub const marketdata_core::errors::error_code::ALREADY_CONNECTED: i32
+pub const marketdata_core::errors::error_code::API: i32
+pub const marketdata_core::errors::error_code::AUTH: i32
+pub const marketdata_core::errors::error_code::CLIENT_CLOSED: i32
+pub const marketdata_core::errors::error_code::CONFIG: i32
+pub const marketdata_core::errors::error_code::CONNECTION: i32
+pub const marketdata_core::errors::error_code::DESERIALIZATION: i32
+pub const marketdata_core::errors::error_code::HEARTBEAT_TIMEOUT: i32
+pub const marketdata_core::errors::error_code::INVALID_PARAMETER: i32
+pub const marketdata_core::errors::error_code::INVALID_SYMBOL: i32
+pub const marketdata_core::errors::error_code::OTHER: i32
+pub const marketdata_core::errors::error_code::RUNTIME: i32
+pub const marketdata_core::errors::error_code::THREAD_PANIC: i32
+pub const marketdata_core::errors::error_code::TIMEOUT: i32
+pub const marketdata_core::errors::error_code::WEBSOCKET: i32
 #[non_exhaustive] pub enum marketdata_core::errors::ErrorKind
 pub marketdata_core::errors::ErrorKind::Auth
 pub marketdata_core::errors::ErrorKind::Client
 pub marketdata_core::errors::ErrorKind::Network
 pub marketdata_core::errors::ErrorKind::Protocol
 pub marketdata_core::errors::ErrorKind::RateLimit
+impl marketdata_core::errors::ErrorKind
+pub fn marketdata_core::errors::ErrorKind::as_str(self) -> &'static str
 impl core::clone::Clone for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::clone(&self) -> marketdata_core::errors::ErrorKind
 impl core::cmp::Eq for marketdata_core::errors::ErrorKind
 impl core::cmp::PartialEq for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::eq(&self, &marketdata_core::errors::ErrorKind) -> bool
 impl core::fmt::Debug for marketdata_core::errors::ErrorKind
+pub fn marketdata_core::errors::ErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
@@ -139,9 +175,11 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::ErrorK
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::ErrorKind
 pub enum marketdata_core::errors::MarketDataError
 pub marketdata_core::errors::MarketDataError::ApiError
+pub marketdata_core::errors::MarketDataError::ApiError::http: core::option::Option<alloc::boxed::Box<marketdata_core::errors::HttpErrorContext>>
 pub marketdata_core::errors::MarketDataError::ApiError::message: alloc::string::String
 pub marketdata_core::errors::MarketDataError::ApiError::status: u16
 pub marketdata_core::errors::MarketDataError::AuthError
+pub marketdata_core::errors::MarketDataError::AuthError::http: core::option::Option<alloc::boxed::Box<marketdata_core::errors::HttpErrorContext>>
 pub marketdata_core::errors::MarketDataError::AuthError::msg: alloc::string::String
 pub marketdata_core::errors::MarketDataError::ClientClosed
 pub marketdata_core::errors::MarketDataError::ConfigError(alloc::string::String)
@@ -165,6 +203,7 @@ pub marketdata_core::errors::MarketDataError::WebSocketError
 pub marketdata_core::errors::MarketDataError::WebSocketError::kind: marketdata_core::errors::WebSocketErrorKind
 pub marketdata_core::errors::MarketDataError::WebSocketError::msg: alloc::string::String
 impl marketdata_core::errors::MarketDataError
+pub fn marketdata_core::errors::MarketDataError::info(&self) -> marketdata_core::errors::ErrorInfo
 pub fn marketdata_core::errors::MarketDataError::is_retryable(&self) -> bool
 pub fn marketdata_core::errors::MarketDataError::source_kind(&self) -> marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::MarketDataError::to_error_code(&self) -> i32
@@ -213,6 +252,54 @@ impl core::marker::Unpin for marketdata_core::errors::WebSocketErrorKind
 impl core::marker::UnsafeUnpin for marketdata_core::errors::WebSocketErrorKind
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::WebSocketErrorKind
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::WebSocketErrorKind
+#[non_exhaustive] pub struct marketdata_core::errors::ErrorInfo
+pub marketdata_core::errors::ErrorInfo::body: core::option::Option<alloc::string::String>
+pub marketdata_core::errors::ErrorInfo::code: i32
+pub marketdata_core::errors::ErrorInfo::headers: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub marketdata_core::errors::ErrorInfo::message: alloc::string::String
+pub marketdata_core::errors::ErrorInfo::request_id: core::option::Option<alloc::string::String>
+pub marketdata_core::errors::ErrorInfo::source_kind: marketdata_core::errors::ErrorKind
+pub marketdata_core::errors::ErrorInfo::status: core::option::Option<u16>
+impl marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::new(i32, marketdata_core::errors::ErrorKind, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::clone(&self) -> marketdata_core::errors::ErrorInfo
+impl core::cmp::Eq for marketdata_core::errors::ErrorInfo
+impl core::cmp::PartialEq for marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::eq(&self, &marketdata_core::errors::ErrorInfo) -> bool
+impl core::fmt::Debug for marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for marketdata_core::errors::ErrorInfo
+impl core::marker::Freeze for marketdata_core::errors::ErrorInfo
+impl core::marker::Send for marketdata_core::errors::ErrorInfo
+impl core::marker::Sync for marketdata_core::errors::ErrorInfo
+impl core::marker::Unpin for marketdata_core::errors::ErrorInfo
+impl core::marker::UnsafeUnpin for marketdata_core::errors::ErrorInfo
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::ErrorInfo
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::ErrorInfo
+#[non_exhaustive] pub struct marketdata_core::errors::HttpErrorContext
+pub marketdata_core::errors::HttpErrorContext::body: core::option::Option<alloc::string::String>
+pub marketdata_core::errors::HttpErrorContext::headers: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub marketdata_core::errors::HttpErrorContext::status: u16
+impl marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::header(&self, &str) -> core::option::Option<&str>
+pub fn marketdata_core::errors::HttpErrorContext::new<I, K, V>(u16, core::option::Option<alloc::string::String>, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (K, V)>, K: core::convert::AsRef<str>, V: core::convert::AsRef<str>
+pub fn marketdata_core::errors::HttpErrorContext::request_id(&self) -> core::option::Option<&str>
+impl core::clone::Clone for marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::clone(&self) -> marketdata_core::errors::HttpErrorContext
+impl core::cmp::Eq for marketdata_core::errors::HttpErrorContext
+impl core::cmp::PartialEq for marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::eq(&self, &marketdata_core::errors::HttpErrorContext) -> bool
+impl core::fmt::Debug for marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for marketdata_core::errors::HttpErrorContext
+impl core::marker::Freeze for marketdata_core::errors::HttpErrorContext
+impl core::marker::Send for marketdata_core::errors::HttpErrorContext
+impl core::marker::Sync for marketdata_core::errors::HttpErrorContext
+impl core::marker::Unpin for marketdata_core::errors::HttpErrorContext
+impl core::marker::UnsafeUnpin for marketdata_core::errors::HttpErrorContext
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::HttpErrorContext
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::HttpErrorContext
 pub mod marketdata_core::models
 pub mod marketdata_core::models::futopt
 pub enum marketdata_core::models::futopt::ContractType
@@ -3691,9 +3778,7 @@ pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected:
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::intent: marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::reason: alloc::string::String
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected::will_reconnect: bool
-pub marketdata_core::websocket::connection_event::ConnectionEvent::Error
-pub marketdata_core::websocket::connection_event::ConnectionEvent::Error::code: i32
-pub marketdata_core::websocket::connection_event::ConnectionEvent::Error::message: alloc::string::String
+pub marketdata_core::websocket::connection_event::ConnectionEvent::Error(marketdata_core::errors::ErrorInfo)
 pub marketdata_core::websocket::connection_event::ConnectionEvent::HeartbeatTimeout
 pub marketdata_core::websocket::connection_event::ConnectionEvent::HeartbeatTimeout::elapsed: core::time::Duration
 pub marketdata_core::websocket::connection_event::ConnectionEvent::MessagesDropped
@@ -4126,9 +4211,7 @@ pub marketdata_core::websocket::ConnectionEvent::Disconnected::code: core::optio
 pub marketdata_core::websocket::ConnectionEvent::Disconnected::intent: marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::websocket::ConnectionEvent::Disconnected::reason: alloc::string::String
 pub marketdata_core::websocket::ConnectionEvent::Disconnected::will_reconnect: bool
-pub marketdata_core::websocket::ConnectionEvent::Error
-pub marketdata_core::websocket::ConnectionEvent::Error::code: i32
-pub marketdata_core::websocket::ConnectionEvent::Error::message: alloc::string::String
+pub marketdata_core::websocket::ConnectionEvent::Error(marketdata_core::errors::ErrorInfo)
 pub marketdata_core::websocket::ConnectionEvent::HeartbeatTimeout
 pub marketdata_core::websocket::ConnectionEvent::HeartbeatTimeout::elapsed: core::time::Duration
 pub marketdata_core::websocket::ConnectionEvent::MessagesDropped
@@ -4623,9 +4706,7 @@ pub marketdata_core::ConnectionEvent::Disconnected::code: core::option::Option<u
 pub marketdata_core::ConnectionEvent::Disconnected::intent: marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::ConnectionEvent::Disconnected::reason: alloc::string::String
 pub marketdata_core::ConnectionEvent::Disconnected::will_reconnect: bool
-pub marketdata_core::ConnectionEvent::Error
-pub marketdata_core::ConnectionEvent::Error::code: i32
-pub marketdata_core::ConnectionEvent::Error::message: alloc::string::String
+pub marketdata_core::ConnectionEvent::Error(marketdata_core::errors::ErrorInfo)
 pub marketdata_core::ConnectionEvent::HeartbeatTimeout
 pub marketdata_core::ConnectionEvent::HeartbeatTimeout::elapsed: core::time::Duration
 pub marketdata_core::ConnectionEvent::MessagesDropped
@@ -4737,12 +4818,16 @@ pub marketdata_core::ErrorKind::Client
 pub marketdata_core::ErrorKind::Network
 pub marketdata_core::ErrorKind::Protocol
 pub marketdata_core::ErrorKind::RateLimit
+impl marketdata_core::errors::ErrorKind
+pub fn marketdata_core::errors::ErrorKind::as_str(self) -> &'static str
 impl core::clone::Clone for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::clone(&self) -> marketdata_core::errors::ErrorKind
 impl core::cmp::Eq for marketdata_core::errors::ErrorKind
 impl core::cmp::PartialEq for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::eq(&self, &marketdata_core::errors::ErrorKind) -> bool
 impl core::fmt::Debug for marketdata_core::errors::ErrorKind
+pub fn marketdata_core::errors::ErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::ErrorKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
@@ -4849,9 +4934,11 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::FutOptType
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::FutOptType
 pub enum marketdata_core::MarketDataError
 pub marketdata_core::MarketDataError::ApiError
+pub marketdata_core::MarketDataError::ApiError::http: core::option::Option<alloc::boxed::Box<marketdata_core::errors::HttpErrorContext>>
 pub marketdata_core::MarketDataError::ApiError::message: alloc::string::String
 pub marketdata_core::MarketDataError::ApiError::status: u16
 pub marketdata_core::MarketDataError::AuthError
+pub marketdata_core::MarketDataError::AuthError::http: core::option::Option<alloc::boxed::Box<marketdata_core::errors::HttpErrorContext>>
 pub marketdata_core::MarketDataError::AuthError::msg: alloc::string::String
 pub marketdata_core::MarketDataError::ClientClosed
 pub marketdata_core::MarketDataError::ConfigError(alloc::string::String)
@@ -4875,6 +4962,7 @@ pub marketdata_core::MarketDataError::WebSocketError
 pub marketdata_core::MarketDataError::WebSocketError::kind: marketdata_core::errors::WebSocketErrorKind
 pub marketdata_core::MarketDataError::WebSocketError::msg: alloc::string::String
 impl marketdata_core::errors::MarketDataError
+pub fn marketdata_core::errors::MarketDataError::info(&self) -> marketdata_core::errors::ErrorInfo
 pub fn marketdata_core::errors::MarketDataError::is_retryable(&self) -> bool
 pub fn marketdata_core::errors::MarketDataError::source_kind(&self) -> marketdata_core::errors::ErrorKind
 pub fn marketdata_core::errors::MarketDataError::to_error_code(&self) -> i32
@@ -5323,6 +5411,31 @@ impl core::marker::Unpin for marketdata_core::models::streaming::ErrorData
 impl core::marker::UnsafeUnpin for marketdata_core::models::streaming::ErrorData
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::streaming::ErrorData
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::streaming::ErrorData
+#[non_exhaustive] pub struct marketdata_core::ErrorInfo
+pub marketdata_core::ErrorInfo::body: core::option::Option<alloc::string::String>
+pub marketdata_core::ErrorInfo::code: i32
+pub marketdata_core::ErrorInfo::headers: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub marketdata_core::ErrorInfo::message: alloc::string::String
+pub marketdata_core::ErrorInfo::request_id: core::option::Option<alloc::string::String>
+pub marketdata_core::ErrorInfo::source_kind: marketdata_core::errors::ErrorKind
+pub marketdata_core::ErrorInfo::status: core::option::Option<u16>
+impl marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::new(i32, marketdata_core::errors::ErrorKind, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::clone(&self) -> marketdata_core::errors::ErrorInfo
+impl core::cmp::Eq for marketdata_core::errors::ErrorInfo
+impl core::cmp::PartialEq for marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::eq(&self, &marketdata_core::errors::ErrorInfo) -> bool
+impl core::fmt::Debug for marketdata_core::errors::ErrorInfo
+pub fn marketdata_core::errors::ErrorInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for marketdata_core::errors::ErrorInfo
+impl core::marker::Freeze for marketdata_core::errors::ErrorInfo
+impl core::marker::Send for marketdata_core::errors::ErrorInfo
+impl core::marker::Sync for marketdata_core::errors::ErrorInfo
+impl core::marker::Unpin for marketdata_core::errors::ErrorInfo
+impl core::marker::UnsafeUnpin for marketdata_core::errors::ErrorInfo
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::ErrorInfo
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::ErrorInfo
 pub struct marketdata_core::FutOptLastTrade
 pub marketdata_core::FutOptLastTrade::ask: core::option::Option<f64>
 pub marketdata_core::FutOptLastTrade::bid: core::option::Option<f64>
@@ -5610,6 +5723,29 @@ impl core::marker::Unpin for marketdata_core::HistoricalCandlesResponse
 impl core::marker::UnsafeUnpin for marketdata_core::HistoricalCandlesResponse
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::HistoricalCandlesResponse
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::HistoricalCandlesResponse
+#[non_exhaustive] pub struct marketdata_core::HttpErrorContext
+pub marketdata_core::HttpErrorContext::body: core::option::Option<alloc::string::String>
+pub marketdata_core::HttpErrorContext::headers: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub marketdata_core::HttpErrorContext::status: u16
+impl marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::header(&self, &str) -> core::option::Option<&str>
+pub fn marketdata_core::errors::HttpErrorContext::new<I, K, V>(u16, core::option::Option<alloc::string::String>, I) -> Self where I: core::iter::traits::collect::IntoIterator<Item = (K, V)>, K: core::convert::AsRef<str>, V: core::convert::AsRef<str>
+pub fn marketdata_core::errors::HttpErrorContext::request_id(&self) -> core::option::Option<&str>
+impl core::clone::Clone for marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::clone(&self) -> marketdata_core::errors::HttpErrorContext
+impl core::cmp::Eq for marketdata_core::errors::HttpErrorContext
+impl core::cmp::PartialEq for marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::eq(&self, &marketdata_core::errors::HttpErrorContext) -> bool
+impl core::fmt::Debug for marketdata_core::errors::HttpErrorContext
+pub fn marketdata_core::errors::HttpErrorContext::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for marketdata_core::errors::HttpErrorContext
+impl core::marker::Freeze for marketdata_core::errors::HttpErrorContext
+impl core::marker::Send for marketdata_core::errors::HttpErrorContext
+impl core::marker::Sync for marketdata_core::errors::HttpErrorContext
+impl core::marker::Unpin for marketdata_core::errors::HttpErrorContext
+impl core::marker::UnsafeUnpin for marketdata_core::errors::HttpErrorContext
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::errors::HttpErrorContext
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::errors::HttpErrorContext
 pub struct marketdata_core::IndicesData
 pub marketdata_core::IndicesData::data_type: core::option::Option<alloc::string::String>
 pub marketdata_core::IndicesData::exchange: core::option::Option<alloc::string::String>

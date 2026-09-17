@@ -286,7 +286,7 @@ func (m *mockListener) OnAuthenticated(dataJson *string)   {}
 func (m *mockListener) OnUnauthenticated(dataJson *string) {}
 func (m *mockListener) OnDisconnected(willReconnect bool)  {}
 func (m *mockListener) OnMessage(message StreamMessage)    {}
-func (m *mockListener) OnError(errorMessage string)        {}
+func (m *mockListener) OnError(info ErrorInfo)             {}
 func (m *mockListener) OnReconnecting(attempt uint32)      {}
 func (m *mockListener) OnReconnectFailed(attempts uint32)  {}
 func (m *mockListener) OnMessagesDropped(count uint64)     {}

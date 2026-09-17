@@ -58,15 +58,14 @@ describe('FFI Boundary - Error Propagation', () => {
     }
   });
 
-  test('error includes error code in message', async () => {
+  test('error carries a numeric code and sourceKind, not a message prefix', async () => {
     const client = new RestClient({ apiKey: 'test-key', ...OFFLINE_REST });
 
-    try {
-      await client.stock.intraday.quote('INVALID');
-    } catch (error) {
-      // napi-rs errors embed code in message: "[code] message"
-      expect(error.message).toMatch(/\[\d+\]/);
-    }
+    const error = await client.stock.intraday.quote('INVALID').catch((e) => e);
+    expect(Object.prototype.toString.call(error)).toBe('[object Error]');
+    expect(typeof error.code).toBe('number');
+    expect(typeof error.sourceKind).toBe('string');
+    expect(error.message).not.toMatch(/^\[\d+\]/);
   });
 
   test('error stack trace is available', async () => {

@@ -35,6 +35,20 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — unified error spec (#81)
+
+- `+` `errors::ErrorInfo` (`#[non_exhaustive]`; `code`, `source_kind`,
+  `message`, `status`, `body`, `request_id`, `headers`; `new`) and
+  `MarketDataError::info`.
+- `+` `errors::HttpErrorContext` (`#[non_exhaustive]`; `status`, `body`,
+  `headers`; `new`, `header`, `request_id`).
+- `+` `errors::error_code` constants; `ErrorKind::as_str` and
+  `Display for ErrorKind`. All re-exported at the crate root.
+- `~` `MarketDataError::ApiError` and `MarketDataError::AuthError` gain
+  `http: Option<Box<HttpErrorContext>>`.
+- `~` `ConnectionEvent::Error { message, code }` becomes
+  `ConnectionEvent::Error(ErrorInfo)`.
+
 ### Unreleased — connection state that outlives the client (#67)
 
 - `+` `aio::WebSocketClient::state_handle`.

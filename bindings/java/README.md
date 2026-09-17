@@ -325,11 +325,27 @@ try {
         .build();
     String quote = client.stock().intraday().getQuote("2330");
 } catch (FugleException e) {
-    System.err.println("Error: " + e.getMessage());
-    // Message format: "[2002] Authentication failed"
-    e.printStackTrace();
+    System.err.println("Error [" + e.getCode() + "] " + e.getSourceKind() + ": " + e.getMessage());
+    if (e.getStatus() != null) {
+        System.err.println("HTTP " + e.getStatus() + ": " + e.getBody());
+    }
 }
 ```
+
+| Getter | Type | |
+|---|---|---|
+| `getCode()` | `Integer` | Error code (table below) |
+| `getSourceKind()` | `ErrorSourceKind` | `NETWORK`, `PROTOCOL`, `AUTH`, `RATE_LIMIT` or `CLIENT` |
+| `getMessage()` | `String` | Human-readable message |
+| `getStatus()` | `Integer` | HTTP status, or null |
+| `getBody()` | `String` | Raw HTTP response body (REST), or null |
+| `getRequestId()` | `String` | `x-request-id` response header, or null |
+| `getHeaders()` | `Map<String, String>` | HTTP response headers, lowercase names (REST; else empty) |
+| `getInfo()` | `ErrorInfo` | All of the above as one record |
+
+The getters return null (`getHeaders()` an empty map) for a `FugleException`
+not raised from an SDK error. `WebSocketListener.onError` receives the same
+`ErrorInfo`. See the [error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for all languages.
 
 ### Error Codes
 
@@ -339,12 +355,14 @@ try {
 | 1002 | DeserializationError | JSON parsing failed |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Configuration error |
+| 1005 | InvalidParameter | Invalid or missing parameter |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
-| 3002 | WebSocketError | WebSocket protocol error |
+| 3002 | WebSocketError | WebSocket connect, read or write failed |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 9999 | Other | Unexpected error |
 
 ## Examples

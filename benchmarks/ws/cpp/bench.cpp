@@ -76,8 +76,8 @@ public:
     void on_authenticated(std::optional<std::string>) override {}
     void on_unauthenticated(std::optional<std::string>) override {}
     void on_disconnected(bool) override {}
-    void on_error(const std::string &msg) override {
-        std::cerr << "error: " << msg << std::endl;
+    void on_error(const ErrorInfo &error) override {
+        std::cerr << "error: " << error.message << std::endl;
     }
     void on_reconnecting(uint32_t) override {}
     void on_reconnect_failed(uint32_t) override {}

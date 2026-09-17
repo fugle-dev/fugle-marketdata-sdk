@@ -136,7 +136,7 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
     expect(names(calls)).not.toContain('authenticated');
   });
 
-  test('error listener receives an Error with a numeric code and no [code] prefix; connect() rejection is unchanged', async () => {
+  test('error listener receives an Error with a numeric code and no [code] prefix; connect() rejects with the same fields', async () => {
     await setup();
     const { port } = wss.address();
     await closeServer(wss);
@@ -152,7 +152,13 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
     expect(typeof errors[0].code).toBe('number');
     expect(errors[0].message).not.toMatch(/^\[\d+\]/);
     expect(isError(rejection)).toBe(true);
-    expect(rejection.message).toBe(`[${errors[0].code}] ${errors[0].message}`);
+    expect(rejection).toMatchObject({
+      code: errors[0].code,
+      sourceKind: errors[0].sourceKind,
+      message: errors[0].message,
+    });
+    expect(['network', 'protocol', 'auth', 'rate_limit', 'client']).toContain(errors[0].sourceKind);
+    expect(errors[0]).toMatchObject({ status: null, body: null, requestId: null, headers: {} });
   });
 
   test('a connection error without an error listener does not crash the process', async () => {

@@ -469,11 +469,31 @@ defer client.Destroy()
 
 quote, err := client.Stock().Intraday().GetQuote("2330")
 if err != nil {
-    // Error message includes code, e.g., "[2002] Authentication failed"
-    log.Printf("Error: %v", err)
+    if info, ok := mkt.ErrorInfoOf(err); ok {
+        log.Printf("Error [%d] %v: %s", info.Code, info.SourceKind, info.Message)
+        if info.Status != nil {
+            log.Printf("HTTP %d: %s", *info.Status, *info.Body)
+        }
+    }
     return
 }
 ```
+
+`ErrorInfoOf(err)` returns `(ErrorInfo, bool)` for an error returned by the
+SDK or a `*StreamError` read from `StreamingClient.Errors()`:
+
+| `ErrorInfo` field | Type | |
+|---|---|---|
+| `Code` | `int32` | Error code (table below) |
+| `SourceKind` | `ErrorSourceKind` | `ErrorSourceKindNetwork`, `…Protocol`, `…Auth`, `…RateLimit`, `…Client` |
+| `Message` | `string` | Human-readable message |
+| `Status` | `*uint16` | HTTP status |
+| `Body` | `*string` | Raw HTTP response body (REST) |
+| `RequestId` | `*string` | `x-request-id` response header |
+| `Headers` | `map[string]string` | HTTP response headers, lowercase names (REST) |
+
+`WebSocketListener.OnError` receives the same `ErrorInfo`. See the
+[error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for all languages.
 
 ### Error Codes
 
@@ -483,12 +503,14 @@ if err != nil {
 | 1002 | DeserializationError | JSON parsing failed |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Configuration error |
+| 1005 | InvalidParameter | Invalid or missing parameter |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
-| 3002 | WebSocketError | WebSocket protocol error |
+| 3002 | WebSocketError | WebSocket connect, read or write failed |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 9999 | Other | Unexpected error |
 
 ## Examples

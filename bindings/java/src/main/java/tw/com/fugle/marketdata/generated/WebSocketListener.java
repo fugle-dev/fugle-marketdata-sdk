@@ -32,8 +32,8 @@ import com.sun.jna.ptr.*;
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
  * }
- * public void OnError(string errorMessage) {
- * Console.WriteLine($"Error: {errorMessage}");
+ * public void OnError(ErrorInfo error) {
+ * Console.WriteLine($"Error: {error.Message}");
  * }
  * }
  * ```
@@ -82,7 +82,7 @@ public interface WebSocketListener {
     /**
      * Called when an error occurs
      */
-    public void onError(String errorMessage);
+    public void onError(ErrorInfo error);
     
     /**
      * Called when a reconnection attempt starts

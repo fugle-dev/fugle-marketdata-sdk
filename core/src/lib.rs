@@ -23,7 +23,7 @@ mod tracing_compat;
 mod metrics_compat;
 
 // Re-export error types
-pub use errors::{ErrorKind, MarketDataError, WebSocketErrorKind};
+pub use errors::{error_code, ErrorInfo, ErrorKind, HttpErrorContext, MarketDataError, WebSocketErrorKind};
 
 // Re-export TLS config
 pub use tls::TlsConfig;

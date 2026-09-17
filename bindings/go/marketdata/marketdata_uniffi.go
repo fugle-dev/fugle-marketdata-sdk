@@ -1266,7 +1266,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error()
 		})
-		if checksum != 33187 {
+		if checksum != 44329 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error: UniFFI API checksum mismatch")
 		}
@@ -1353,6 +1353,30 @@ func uniffiCheckChecksums() {
 		}
 	}
 }
+
+type FfiConverterUint16 struct{}
+
+var FfiConverterUint16INSTANCE = FfiConverterUint16{}
+
+func (FfiConverterUint16) Lower(value uint16) C.uint16_t {
+	return C.uint16_t(value)
+}
+
+func (FfiConverterUint16) Write(writer io.Writer, value uint16) {
+	writeUint16(writer, value)
+}
+
+func (FfiConverterUint16) Lift(value C.uint16_t) uint16 {
+	return uint16(value)
+}
+
+func (FfiConverterUint16) Read(reader io.Reader) uint16 {
+	return readUint16(reader)
+}
+
+type FfiDestroyerUint16 struct{}
+
+func (FfiDestroyerUint16) Destroy(_ uint16) {}
 
 type FfiConverterUint32 struct{}
 
@@ -4833,8 +4857,8 @@ func (_ FfiDestroyerWebSocketClient) Destroy(value *WebSocketClient) {
 // public void OnMessage(StreamMessage message) {
 // Console.WriteLine($"Got {message.Event} for {message.Symbol}");
 // }
-// public void OnError(string errorMessage) {
-// Console.WriteLine($"Error: {errorMessage}");
+// public void OnError(ErrorInfo error) {
+// Console.WriteLine($"Error: {error.Message}");
 // }
 // }
 // ```
@@ -4864,7 +4888,7 @@ type WebSocketListener interface {
 	// Called when a message is received
 	OnMessage(message StreamMessage)
 	// Called when an error occurs
-	OnError(errorMessage string)
+	OnError(error ErrorInfo)
 	// Called when a reconnection attempt starts
 	OnReconnecting(attempt uint32)
 	// Called when all reconnection attempts are exhausted. Terminal: no
@@ -4906,8 +4930,8 @@ type WebSocketListener interface {
 // public void OnMessage(StreamMessage message) {
 // Console.WriteLine($"Got {message.Event} for {message.Symbol}");
 // }
-// public void OnError(string errorMessage) {
-// Console.WriteLine($"Error: {errorMessage}");
+// public void OnError(ErrorInfo error) {
+// Console.WriteLine($"Error: {error.Message}");
 // }
 // }
 // ```
@@ -4985,12 +5009,12 @@ func (_self *WebSocketListenerImpl) OnMessage(message StreamMessage) {
 }
 
 // Called when an error occurs
-func (_self *WebSocketListenerImpl) OnError(errorMessage string) {
+func (_self *WebSocketListenerImpl) OnError(error ErrorInfo) {
 	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
 	defer _self.ffiObject.decrementPointer()
 	rustCall(func(_uniffiStatus *C.RustCallStatus) bool {
 		C.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(
-			_pointer, FfiConverterStringINSTANCE.Lower(errorMessage), _uniffiStatus)
+			_pointer, FfiConverterErrorInfoINSTANCE.Lower(error), _uniffiStatus)
 		return false
 	})
 }
@@ -5212,7 +5236,7 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4(uni
 }
 
 //export marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5
-func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uniffiHandle C.uint64_t, errorMessage C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
+func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uniffiHandle C.uint64_t, error C.RustBuffer, uniffiOutReturn *C.void, callStatus *C.RustCallStatus) {
 	handle := uint64(uniffiHandle)
 	uniffiObj, ok := FfiConverterWebSocketListenerINSTANCE.handleMap.tryGet(handle)
 	if !ok {
@@ -5220,8 +5244,8 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uni
 	}
 
 	uniffiObj.OnError(
-		FfiConverterStringINSTANCE.Lift(GoRustBuffer{
-			inner: errorMessage,
+		FfiConverterErrorInfoINSTANCE.Lift(GoRustBuffer{
+			inner: error,
 		}),
 	)
 
@@ -5290,6 +5314,81 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerFree(handle
 
 func (c FfiConverterWebSocketListener) register() {
 	C.uniffi_marketdata_uniffi_fn_init_callback_vtable_websocketlistener(&UniffiVTableCallbackInterfaceWebSocketListenerINSTANCE)
+}
+
+// The cross-language view of an error: the fields every binding exposes
+// under the same names. Mirrors `marketdata_core::ErrorInfo`.
+type ErrorInfo struct {
+	// Numeric code from `marketdata_core::error_code`, stable across
+	// languages and releases.
+	Code int32
+	// Category of the failure.
+	SourceKind ErrorSourceKind
+	// Human-readable message.
+	Message string
+	// HTTP status, when the error came from an HTTP response (REST, or the
+	// WebSocket upgrade).
+	Status *uint16
+	// Raw HTTP response body (REST only).
+	Body *string
+	// Server-assigned request id (`x-request-id`), when present.
+	RequestId *string
+	// HTTP response headers (REST only; empty otherwise).
+	Headers map[string]string
+}
+
+func (r *ErrorInfo) Destroy() {
+	FfiDestroyerInt32{}.Destroy(r.Code)
+	FfiDestroyerErrorSourceKind{}.Destroy(r.SourceKind)
+	FfiDestroyerString{}.Destroy(r.Message)
+	FfiDestroyerOptionalUint16{}.Destroy(r.Status)
+	FfiDestroyerOptionalString{}.Destroy(r.Body)
+	FfiDestroyerOptionalString{}.Destroy(r.RequestId)
+	FfiDestroyerMapStringString{}.Destroy(r.Headers)
+}
+
+type FfiConverterErrorInfo struct{}
+
+var FfiConverterErrorInfoINSTANCE = FfiConverterErrorInfo{}
+
+func (c FfiConverterErrorInfo) Lift(rb RustBufferI) ErrorInfo {
+	return LiftFromRustBuffer[ErrorInfo](c, rb)
+}
+
+func (c FfiConverterErrorInfo) Read(reader io.Reader) ErrorInfo {
+	return ErrorInfo{
+		FfiConverterInt32INSTANCE.Read(reader),
+		FfiConverterErrorSourceKindINSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterOptionalUint16INSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterMapStringStringINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterErrorInfo) Lower(value ErrorInfo) C.RustBuffer {
+	return LowerIntoRustBuffer[ErrorInfo](c, value)
+}
+
+func (c FfiConverterErrorInfo) LowerExternal(value ErrorInfo) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ErrorInfo](c, value))
+}
+
+func (c FfiConverterErrorInfo) Write(writer io.Writer, value ErrorInfo) {
+	FfiConverterInt32INSTANCE.Write(writer, value.Code)
+	FfiConverterErrorSourceKindINSTANCE.Write(writer, value.SourceKind)
+	FfiConverterStringINSTANCE.Write(writer, value.Message)
+	FfiConverterOptionalUint16INSTANCE.Write(writer, value.Status)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.Body)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.RequestId)
+	FfiConverterMapStringStringINSTANCE.Write(writer, value.Headers)
+}
+
+type FfiDestroyerErrorInfo struct{}
+
+func (_ FfiDestroyerErrorInfo) Destroy(value ErrorInfo) {
+	value.Destroy()
 }
 
 // Health check configuration record for FFI
@@ -5638,10 +5737,67 @@ func (_ FfiDestroyerTlsConfigRecord) Destroy(value TlsConfigRecord) {
 	value.Destroy()
 }
 
+// Coarse-grained classification of the source of a [`MarketDataError`].
+//
+// Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
+// so a future variant this crate doesn't know about yet maps to `Client`
+// (see the `From` impl below) rather than failing to compile.
+type ErrorSourceKind uint
+
+const (
+	// Transport-level transient failure: connection reset, timeout,
+	// heartbeat gap, server outage (5xx). Generally safe to retry with
+	// backoff.
+	ErrorSourceKindNetwork ErrorSourceKind = 1
+	// Protocol-level violation or unclassified WebSocket failure. Indicates
+	// an SDK / version mismatch or a server-side bug; retry is unlikely to
+	// help.
+	ErrorSourceKindProtocol ErrorSourceKind = 2
+	// Authentication / authorization failure: bad credentials, 401/403,
+	// expired token, TLS cert failure. Human intervention required.
+	ErrorSourceKindAuth ErrorSourceKind = 3
+	// Server is rejecting requests because the caller is exceeding its
+	// rate budget (HTTP 429).
+	ErrorSourceKindRateLimit ErrorSourceKind = 4
+	// Caller-side problem: invalid input, configuration error, client
+	// already closed, serialization failure, non-auth/non-throttle 4xx.
+	ErrorSourceKindClient ErrorSourceKind = 5
+)
+
+type FfiConverterErrorSourceKind struct{}
+
+var FfiConverterErrorSourceKindINSTANCE = FfiConverterErrorSourceKind{}
+
+func (c FfiConverterErrorSourceKind) Lift(rb RustBufferI) ErrorSourceKind {
+	return LiftFromRustBuffer[ErrorSourceKind](c, rb)
+}
+
+func (c FfiConverterErrorSourceKind) Lower(value ErrorSourceKind) C.RustBuffer {
+	return LowerIntoRustBuffer[ErrorSourceKind](c, value)
+}
+
+func (c FfiConverterErrorSourceKind) LowerExternal(value ErrorSourceKind) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ErrorSourceKind](c, value))
+}
+func (FfiConverterErrorSourceKind) Read(reader io.Reader) ErrorSourceKind {
+	id := readInt32(reader)
+	return ErrorSourceKind(id)
+}
+
+func (FfiConverterErrorSourceKind) Write(writer io.Writer, value ErrorSourceKind) {
+	writeInt32(writer, int32(value))
+}
+
+type FfiDestroyerErrorSourceKind struct{}
+
+func (_ FfiDestroyerErrorSourceKind) Destroy(value ErrorSourceKind) {
+}
+
 // Error type for UniFFI bindings
 //
 // Maps to MarketDataError in the UDL file. Each variant becomes an exception
-// in the target language with the error message preserved.
+// in the target language with the error message preserved, plus an `info`
+// field carrying the unified [`ErrorInfo`].
 //
 // Note: This is a FLAT enum per UniFFI constraints - no nested error types.
 type MarketDataError struct {
@@ -5681,18 +5837,22 @@ var ErrMarketDataErrorOther = fmt.Errorf("MarketDataErrorOther")
 
 // Variant structs
 type MarketDataErrorNetworkError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorNetworkError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorNetworkError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorNetworkError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorNetworkError) Error() string {
@@ -5701,6 +5861,9 @@ func (err MarketDataErrorNetworkError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5709,18 +5872,22 @@ func (self MarketDataErrorNetworkError) Is(target error) bool {
 }
 
 type MarketDataErrorAuthError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorAuthError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorAuthError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorAuthError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorAuthError) Error() string {
@@ -5729,6 +5896,9 @@ func (err MarketDataErrorAuthError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5737,18 +5907,22 @@ func (self MarketDataErrorAuthError) Is(target error) bool {
 }
 
 type MarketDataErrorRateLimitError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorRateLimitError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorRateLimitError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorRateLimitError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorRateLimitError) Error() string {
@@ -5757,6 +5931,9 @@ func (err MarketDataErrorRateLimitError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5765,18 +5942,22 @@ func (self MarketDataErrorRateLimitError) Is(target error) bool {
 }
 
 type MarketDataErrorInvalidSymbol struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorInvalidSymbol(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorInvalidSymbol{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorInvalidSymbol) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorInvalidSymbol) Error() string {
@@ -5785,6 +5966,9 @@ func (err MarketDataErrorInvalidSymbol) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5793,18 +5977,22 @@ func (self MarketDataErrorInvalidSymbol) Is(target error) bool {
 }
 
 type MarketDataErrorParseError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorParseError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorParseError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorParseError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorParseError) Error() string {
@@ -5813,6 +6001,9 @@ func (err MarketDataErrorParseError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5821,18 +6012,22 @@ func (self MarketDataErrorParseError) Is(target error) bool {
 }
 
 type MarketDataErrorTimeoutError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorTimeoutError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorTimeoutError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorTimeoutError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorTimeoutError) Error() string {
@@ -5841,6 +6036,9 @@ func (err MarketDataErrorTimeoutError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5849,18 +6047,22 @@ func (self MarketDataErrorTimeoutError) Is(target error) bool {
 }
 
 type MarketDataErrorWebSocketError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorWebSocketError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorWebSocketError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorWebSocketError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorWebSocketError) Error() string {
@@ -5869,6 +6071,9 @@ func (err MarketDataErrorWebSocketError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5877,17 +6082,27 @@ func (self MarketDataErrorWebSocketError) Is(target error) bool {
 }
 
 type MarketDataErrorClientClosed struct {
+	Info ErrorInfo
 }
 
-func NewMarketDataErrorClientClosed() *MarketDataError {
-	return &MarketDataError{err: &MarketDataErrorClientClosed{}}
+func NewMarketDataErrorClientClosed(
+	info ErrorInfo,
+) *MarketDataError {
+	return &MarketDataError{err: &MarketDataErrorClientClosed{
+		Info: info}}
 }
 
 func (e MarketDataErrorClientClosed) destroy() {
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorClientClosed) Error() string {
-	return fmt.Sprint("ClientClosed")
+	return fmt.Sprint("ClientClosed",
+		": ",
+
+		"Info=",
+		err.Info,
+	)
 }
 
 func (self MarketDataErrorClientClosed) Is(target error) bool {
@@ -5895,18 +6110,22 @@ func (self MarketDataErrorClientClosed) Is(target error) bool {
 }
 
 type MarketDataErrorConfigError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorConfigError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorConfigError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorConfigError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorConfigError) Error() string {
@@ -5915,6 +6134,9 @@ func (err MarketDataErrorConfigError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5923,18 +6145,22 @@ func (self MarketDataErrorConfigError) Is(target error) bool {
 }
 
 type MarketDataErrorApiError struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorApiError(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorApiError{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorApiError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorApiError) Error() string {
@@ -5943,6 +6169,9 @@ func (err MarketDataErrorApiError) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -5951,18 +6180,22 @@ func (self MarketDataErrorApiError) Is(target error) bool {
 }
 
 type MarketDataErrorOther struct {
-	Msg string
+	Msg  string
+	Info ErrorInfo
 }
 
 func NewMarketDataErrorOther(
 	msg string,
+	info ErrorInfo,
 ) *MarketDataError {
 	return &MarketDataError{err: &MarketDataErrorOther{
-		Msg: msg}}
+		Msg:  msg,
+		Info: info}}
 }
 
 func (e MarketDataErrorOther) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
+	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
 func (err MarketDataErrorOther) Error() string {
@@ -5971,6 +6204,9 @@ func (err MarketDataErrorOther) Error() string {
 
 		"Msg=",
 		err.Msg,
+		", ",
+		"Info=",
+		err.Info,
 	)
 }
 
@@ -6000,45 +6236,57 @@ func (c FfiConverterMarketDataError) Read(reader io.Reader) *MarketDataError {
 	switch errorID {
 	case 1:
 		return &MarketDataError{&MarketDataErrorNetworkError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 2:
 		return &MarketDataError{&MarketDataErrorAuthError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 3:
 		return &MarketDataError{&MarketDataErrorRateLimitError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 4:
 		return &MarketDataError{&MarketDataErrorInvalidSymbol{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 5:
 		return &MarketDataError{&MarketDataErrorParseError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 6:
 		return &MarketDataError{&MarketDataErrorTimeoutError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 7:
 		return &MarketDataError{&MarketDataErrorWebSocketError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 8:
-		return &MarketDataError{&MarketDataErrorClientClosed{}}
+		return &MarketDataError{&MarketDataErrorClientClosed{
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
+		}}
 	case 9:
 		return &MarketDataError{&MarketDataErrorConfigError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 10:
 		return &MarketDataError{&MarketDataErrorApiError{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	case 11:
 		return &MarketDataError{&MarketDataErrorOther{
-			Msg: FfiConverterStringINSTANCE.Read(reader),
+			Msg:  FfiConverterStringINSTANCE.Read(reader),
+			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
 	default:
 		panic(fmt.Sprintf("Unknown error code %d in FfiConverterMarketDataError.Read()", errorID))
@@ -6050,35 +6298,46 @@ func (c FfiConverterMarketDataError) Write(writer io.Writer, value *MarketDataEr
 	case *MarketDataErrorNetworkError:
 		writeInt32(writer, 1)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorAuthError:
 		writeInt32(writer, 2)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorRateLimitError:
 		writeInt32(writer, 3)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorInvalidSymbol:
 		writeInt32(writer, 4)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorParseError:
 		writeInt32(writer, 5)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorTimeoutError:
 		writeInt32(writer, 6)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorWebSocketError:
 		writeInt32(writer, 7)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorClientClosed:
 		writeInt32(writer, 8)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorConfigError:
 		writeInt32(writer, 9)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorApiError:
 		writeInt32(writer, 10)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	case *MarketDataErrorOther:
 		writeInt32(writer, 11)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
+		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
 	default:
 		_ = variantValue
 		panic(fmt.Sprintf("invalid error value `%v` in FfiConverterMarketDataError.Write", value))
@@ -6194,6 +6453,47 @@ func (FfiConverterWebSocketEndpoint) Write(writer io.Writer, value WebSocketEndp
 type FfiDestroyerWebSocketEndpoint struct{}
 
 func (_ FfiDestroyerWebSocketEndpoint) Destroy(value WebSocketEndpoint) {
+}
+
+type FfiConverterOptionalUint16 struct{}
+
+var FfiConverterOptionalUint16INSTANCE = FfiConverterOptionalUint16{}
+
+func (c FfiConverterOptionalUint16) Lift(rb RustBufferI) *uint16 {
+	return LiftFromRustBuffer[*uint16](c, rb)
+}
+
+func (_ FfiConverterOptionalUint16) Read(reader io.Reader) *uint16 {
+	if readInt8(reader) == 0 {
+		return nil
+	}
+	temp := FfiConverterUint16INSTANCE.Read(reader)
+	return &temp
+}
+
+func (c FfiConverterOptionalUint16) Lower(value *uint16) C.RustBuffer {
+	return LowerIntoRustBuffer[*uint16](c, value)
+}
+
+func (c FfiConverterOptionalUint16) LowerExternal(value *uint16) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*uint16](c, value))
+}
+
+func (_ FfiConverterOptionalUint16) Write(writer io.Writer, value *uint16) {
+	if value == nil {
+		writeInt8(writer, 0)
+	} else {
+		writeInt8(writer, 1)
+		FfiConverterUint16INSTANCE.Write(writer, *value)
+	}
+}
+
+type FfiDestroyerOptionalUint16 struct{}
+
+func (_ FfiDestroyerOptionalUint16) Destroy(value *uint16) {
+	if value != nil {
+		FfiDestroyerUint16{}.Destroy(*value)
+	}
 }
 
 type FfiConverterOptionalUint32 struct{}
@@ -6644,6 +6944,54 @@ type FfiDestroyerOptionalTlsConfigRecord struct{}
 func (_ FfiDestroyerOptionalTlsConfigRecord) Destroy(value *TlsConfigRecord) {
 	if value != nil {
 		FfiDestroyerTlsConfigRecord{}.Destroy(*value)
+	}
+}
+
+type FfiConverterMapStringString struct{}
+
+var FfiConverterMapStringStringINSTANCE = FfiConverterMapStringString{}
+
+func (c FfiConverterMapStringString) Lift(rb RustBufferI) map[string]string {
+	return LiftFromRustBuffer[map[string]string](c, rb)
+}
+
+func (_ FfiConverterMapStringString) Read(reader io.Reader) map[string]string {
+	result := make(map[string]string)
+	length := readInt32(reader)
+	for i := int32(0); i < length; i++ {
+		key := FfiConverterStringINSTANCE.Read(reader)
+		value := FfiConverterStringINSTANCE.Read(reader)
+		result[key] = value
+	}
+	return result
+}
+
+func (c FfiConverterMapStringString) Lower(value map[string]string) C.RustBuffer {
+	return LowerIntoRustBuffer[map[string]string](c, value)
+}
+
+func (c FfiConverterMapStringString) LowerExternal(value map[string]string) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[map[string]string](c, value))
+}
+
+func (_ FfiConverterMapStringString) Write(writer io.Writer, mapValue map[string]string) {
+	if len(mapValue) > math.MaxInt32 {
+		panic("map[string]string is too large to fit into Int32")
+	}
+
+	writeInt32(writer, int32(len(mapValue)))
+	for key, value := range mapValue {
+		FfiConverterStringINSTANCE.Write(writer, key)
+		FfiConverterStringINSTANCE.Write(writer, value)
+	}
+}
+
+type FfiDestroyerMapStringString struct{}
+
+func (_ FfiDestroyerMapStringString) Destroy(mapValue map[string]string) {
+	for key, value := range mapValue {
+		FfiDestroyerString{}.Destroy(key)
+		FfiDestroyerString{}.Destroy(value)
 	}
 }
 

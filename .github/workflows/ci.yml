@@ -233,12 +233,10 @@ jobs:
           rm -rf bindings/cpp
           mkdir -p bindings/cpp
           uniffi-bindgen-cpp --library "$RUNNER_TEMP/cpp/libmarketdata_uniffi.so" -o bindings/cpp/
-          if [ -n "$(git status --porcelain -- bindings/cpp/)" ]; then
-            git status --short -- bindings/cpp/
-            git diff -- bindings/cpp/
-            echo "::error::C++ UniFFI bindings are stale or hand-edited. Run 'make gen-cpp' and commit the result."
-            exit 1
-          fi
+          # The generator orders some declarations in marketdata_uniffi.hpp
+          # differently between runs; the script ignores that order only.
+          scripts/check-cpp-bindings.sh \
+            || { echo "::error::C++ UniFFI bindings are stale or hand-edited. Run 'make gen-cpp' and commit the result."; exit 1; }
 
       # Without the native library on the loader path every test that builds
       # a client hits Assert.Inconclusive and silently skips — 36 of 55 used

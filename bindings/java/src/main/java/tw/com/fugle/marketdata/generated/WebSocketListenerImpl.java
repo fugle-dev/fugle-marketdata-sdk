@@ -35,8 +35,8 @@ import java.util.concurrent.CompletableFuture;
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
  * }
- * public void OnError(string errorMessage) {
- * Console.WriteLine($"Error: {errorMessage}");
+ * public void OnError(ErrorInfo error) {
+ * Console.WriteLine($"Error: {error.Message}");
  * }
  * }
  * ```
@@ -314,7 +314,7 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
      * Called when an error occurs
      */
     @Override
-    public void onError(String errorMessage)  {
+    public void onError(ErrorInfo error)  {
             try {
                 
     callWithPointer(it -> {
@@ -322,7 +322,7 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
     
     UniffiHelpers.uniffiRustCall( _status -> {
         UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(
-            it, FfiConverterString.INSTANCE.lower(errorMessage), _status);
+            it, FfiConverterTypeErrorInfo.INSTANCE.lower(error), _status);
     });
     
         } catch (Exception e) {

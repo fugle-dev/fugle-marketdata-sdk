@@ -247,7 +247,7 @@ mod aio {
         let result = client.connect().await;
 
         assert!(
-            matches!(result, Err(MarketDataError::AuthError { ref msg }) if msg == "Invalid token"),
+            matches!(result, Err(MarketDataError::AuthError { ref msg, .. }) if msg == "Invalid token"),
             "{result:?}"
         );
         assert_rejection_sequence(&with_events(&client, queued).await);
@@ -363,7 +363,7 @@ mod sync {
         .await;
 
         assert!(
-            matches!(result, Err(MarketDataError::AuthError { ref msg }) if msg == "Invalid token"),
+            matches!(result, Err(MarketDataError::AuthError { ref msg, .. }) if msg == "Invalid token"),
             "{result:?}"
         );
         assert_rejection_sequence(&events);

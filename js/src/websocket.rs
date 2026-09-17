@@ -10,6 +10,7 @@
 //!   [`EventSink`], with the argument shapes of `@fugle/marketdata` 1.x (#23)
 
 use napi::bindgen_prelude::{Function, FunctionRef, JsValuesTupleIntoVec, PromiseRaw, ToNapiValue, Unknown};
+use marketdata_core::{error_code, ErrorInfo, ErrorKind};
 use napi::JsValue;
 use napi::Env;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -38,9 +39,10 @@ pub enum EventArgs {
     /// A plain object; JSON `null` becomes `undefined`, as destructuring the
     /// frame's absent `data` did in 1.x.
     Json(serde_json::Value),
-    /// An `Error` whose message is `message`, with a numeric `code` property
-    /// when one is given.
-    Error { message: String, code: Option<i32> },
+    /// An `Error` with the unified error fields (see `errors.rs`).
+    Error(ErrorInfo),
+    /// A plain `Error(message)`, for a failure that has no error code.
+    PlainError(String),
 }
 
 impl JsValuesTupleIntoVec for EventArgs {
@@ -51,7 +53,8 @@ impl JsValuesTupleIntoVec for EventArgs {
             EventArgs::None => return Ok(Vec::new()),
             EventArgs::Text(text) => unsafe { String::to_napi_value(env, text)? },
             EventArgs::Json(value) => json_to_napi(env, value)?,
-            EventArgs::Error { message, code } => error_to_napi(env, &message, code)?,
+            EventArgs::Error(info) => crate::errors::error_value(env, &info)?,
+            EventArgs::PlainError(message) => plain_error(env, &message)?,
         };
         Ok(vec![value])
     }
@@ -66,25 +69,14 @@ fn json_to_napi(env: sys::napi_env, value: serde_json::Value) -> napi::Result<sy
     }
 }
 
-/// A plain `new Error(message)` plus `code`. `Env::create_error` would set
-/// `code` to the napi status name instead.
-fn error_to_napi(
-    env: sys::napi_env,
-    message: &str,
-    code: Option<i32>,
-) -> napi::Result<sys::napi_value> {
+/// A plain `new Error(message)`.
+fn plain_error(env: sys::napi_env, message: &str) -> napi::Result<sys::napi_value> {
     let env_ref = Env::from_raw(env);
     let message = env_ref.create_string(message)?;
     let mut error = std::ptr::null_mut();
     napi::check_status!(unsafe {
         sys::napi_create_error(env, std::ptr::null_mut(), message.raw(), &mut error)
     })?;
-    if let Some(code) = code {
-        let code = unsafe { i32::to_napi_value(env, code)? };
-        napi::check_status!(unsafe {
-            sys::napi_set_named_property(env, error, c"code".as_ptr(), code)
-        })?;
-    }
     Ok(error)
 }
 use napi_derive::napi;
@@ -309,8 +301,16 @@ enum AuthOutcome {
     Authenticated(serde_json::Value),
     /// Credentials rejected: reject with the server's `data` object itself.
     Rejected(serde_json::Value),
-    /// Any other failure: reject with `Error(message)`.
-    Failed(String),
+    /// Any other failure: reject with an `Error`.
+    Failed(Failure),
+}
+
+/// Why `connect()` failed, other than rejected credentials.
+enum Failure {
+    /// An SDK error: reject with the unified error fields.
+    Coded(ErrorInfo),
+    /// A failure with no error code: reject with `Error(message)`.
+    Plain(String),
 }
 
 type AuthTx = tokio::sync::oneshot::Sender<AuthOutcome>;
@@ -372,7 +372,9 @@ fn auth_promise<'env>(
     env.spawn_future_with_callback(
         async move {
             Ok(started?.await.unwrap_or_else(|_| {
-                AuthOutcome::Failed("Worker thread terminated before authentication signal".to_string())
+                AuthOutcome::Failed(Failure::Plain(
+                    "Worker thread terminated before authentication signal".to_string(),
+                ))
             }))
         },
         |env, outcome| match outcome {
@@ -383,7 +385,8 @@ fn auth_promise<'env>(
                 let data = unsafe { Unknown::from_raw_unchecked(env.raw(), json_to_napi(env.raw(), data)?) };
                 Err(napi::Error::from(data))
             }
-            AuthOutcome::Failed(message) => Err(napi::Error::from_reason(message)),
+            AuthOutcome::Failed(Failure::Coded(info)) => Err(crate::errors::js_error(env, &info)),
+            AuthOutcome::Failed(Failure::Plain(message)) => Err(napi::Error::from_reason(message)),
         },
     )
 }
@@ -684,12 +687,23 @@ fn ping_data(params: Option<serde_json::Value>) -> Option<serde_json::Value> {
 
 /// Rejection for `connect()` while a connection is open or still being
 /// established (#44). JS-binding-only code; core has no counterpart.
-const ALREADY_CONNECTED: &str = "[2011] Already connected; call disconnect() first";
+fn already_connected() -> ErrorInfo {
+    ErrorInfo::new(
+        error_code::ALREADY_CONNECTED,
+        ErrorKind::Client,
+        "Already connected; call disconnect() first",
+    )
+}
 
 /// Rejection for a `connect()` whose connection was given up because
 /// `disconnect()` was called before authentication completed (#44).
-const CONNECT_ABORTED: &str =
-    "[2010] Connection aborted: disconnect() called before authentication completed";
+fn connect_aborted() -> Failure {
+    Failure::Coded(ErrorInfo::new(
+        error_code::CLIENT_CLOSED,
+        ErrorKind::Client,
+        "Connection aborted: disconnect() called before authentication completed",
+    ))
+}
 
 /// The worker thread that owns a client's connection (#44).
 struct Worker {
@@ -714,7 +728,7 @@ type WorkerSlot = Arc<Mutex<Option<Worker>>>;
 /// before the new one replaces it.
 fn claim_worker_slot(
     slot: &mut Option<Worker>,
-) -> napi::Result<Option<thread::JoinHandle<()>>> {
+) -> Result<Option<thread::JoinHandle<()>>, ErrorInfo> {
     match slot.take() {
         None => Ok(None),
         Some(worker)
@@ -724,7 +738,7 @@ fn claim_worker_slot(
         }
         Some(worker) => {
             *slot = Some(worker);
-            Err(napi::Error::from_reason(ALREADY_CONNECTED))
+            Err(already_connected())
         }
     }
 }
@@ -889,7 +903,7 @@ impl WebSocketClient {
     /// });
     /// ```
     #[napi(constructor)]
-    pub fn new(options: WebSocketClientOptions) -> napi::Result<Self> {
+    pub fn new(env: Env, options: WebSocketClientOptions) -> napi::Result<Self> {
         use marketdata_core::{
             DEFAULT_MAX_ATTEMPTS, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_DELAY_MS,
             DEFAULT_HEALTH_CHECK_ENABLED, DEFAULT_HEARTBEAT_TIMEOUT_MS,
@@ -940,7 +954,7 @@ impl WebSocketClient {
                 stock_version,
                 futopt_version,
             )
-            .map_err(crate::errors::to_napi_error)?;
+            .map_err(|e| crate::errors::to_napi_error(&env, e))?;
         }
 
         // Extract the one provided auth method
@@ -1180,9 +1194,10 @@ impl StockWebSocketClient {
     ///
     /// If the server rejects the credentials, the Promise rejects with the
     /// server's `data` object itself (after `unauthenticated` fires); any other
-    /// failure rejects with an `Error` whose message is `[code] message`.
+    /// failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
+    /// properties; no `[code]` prefix in the message).
     ///
-    /// Rejects with `[2011] Already connected` while a connection is open or
+    /// Rejects with code `2011` (`Already connected`) while a connection is open or
     /// being established (#44). Call disconnect() first to reconnect; calling
     /// connect() right after disconnect(), or from a `disconnect` handler once
     /// no auto-reconnect will follow, is fine.
@@ -1198,7 +1213,8 @@ impl StockWebSocketClient {
         let mut slot = self.worker.lock().map_err(|e| {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
-        let previous = claim_worker_slot(&mut slot)?;
+        let previous = claim_worker_slot(&mut slot)
+            .map_err(|info| crate::errors::js_error(env, &info))?;
         let sink = EventSink::new(
             env,
             Arc::clone(&self.callbacks),
@@ -1263,7 +1279,7 @@ impl StockWebSocketClient {
                         // No core client yet, so no event to forward: only
                         // the Promise reports it.
                         ending.store(true, Ordering::SeqCst);
-                        settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
+                        settle(&auth, AuthOutcome::Failed(Failure::Plain(format!("Failed to create runtime: {}", e))));
                         return;
                     }
                 };
@@ -1332,7 +1348,7 @@ impl StockWebSocketClient {
                     // case the queued Disconnect ends it like any other.
                     if ending.load(Ordering::SeqCst) && decide(&decision, AUTH_ABORTED) {
                         let _ = rt.block_on(client.disconnect());
-                        settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                        settle(&auth, AuthOutcome::Failed(connect_aborted()));
                         return;
                     }
 
@@ -1675,7 +1691,7 @@ impl FutOptWebSocketClient {
     ///
     /// Returns a Promise that resolves with the server's `authenticated`
     /// `data`. See `StockWebSocketClient::connect` for the rejections,
-    /// including `[2011] Already connected` (#44).
+    /// including code `2011` (`Already connected`) (#44).
     #[napi(ts_return_type = "Promise<WebSocketAuthData | undefined>")]
     pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
         auth_promise(env, self.start_worker(env))
@@ -1688,7 +1704,8 @@ impl FutOptWebSocketClient {
         let mut slot = self.worker.lock().map_err(|e| {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
-        let previous = claim_worker_slot(&mut slot)?;
+        let previous = claim_worker_slot(&mut slot)
+            .map_err(|info| crate::errors::js_error(env, &info))?;
         let sink = EventSink::new(
             env,
             Arc::clone(&self.callbacks),
@@ -1750,7 +1767,7 @@ impl FutOptWebSocketClient {
                         // No core client yet, so no event to forward: only
                         // the Promise reports it.
                         ending.store(true, Ordering::SeqCst);
-                        settle(&auth, AuthOutcome::Failed(format!("Failed to create runtime: {}", e)));
+                        settle(&auth, AuthOutcome::Failed(Failure::Plain(format!("Failed to create runtime: {}", e))));
                         return;
                     }
                 };
@@ -1818,7 +1835,7 @@ impl FutOptWebSocketClient {
                     // case the queued Disconnect ends it like any other.
                     if ending.load(Ordering::SeqCst) && decide(&decision, AUTH_ABORTED) {
                         let _ = rt.block_on(client.disconnect());
-                        settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                        settle(&auth, AuthOutcome::Failed(connect_aborted()));
                         return;
                     }
 
@@ -2078,7 +2095,7 @@ impl FutOptWebSocketClient {
 ///
 /// The first authentication outcome settles `connect()`: `Authenticated`
 /// resolves with the server's `data`, `Unauthenticated` rejects with it, and
-/// an `Error` before either rejects with `Error("[code] message")` — each
+/// an `Error` before either rejects with that error's `MarketDataError` — each
 /// after its listener has run (see [`fire_and_settle`]).
 ///
 /// A message is forwarded only between an `Authenticated` this reader
@@ -2132,7 +2149,7 @@ fn spawn_stream_reader(
                                 // disconnect() came first. The queued Disconnect
                                 // closes the connection; nothing else settles.
                                 if decide(&decision, AUTH_ABORTED) {
-                                    settle(&auth, AuthOutcome::Failed(CONNECT_ABORTED.to_string()));
+                                    settle(&auth, AuthOutcome::Failed(connect_aborted()));
                                 }
                                 continue;
                             }
@@ -2163,12 +2180,12 @@ fn spawn_stream_reader(
                             Some(&ending),
                         );
                     }
-                    ConnectionEvent::Error { message, code } => {
-                        let rejection = AuthOutcome::Failed(format!("[{}] {}", code, message));
+                    ConnectionEvent::Error(info) => {
+                        let rejection = AuthOutcome::Failed(Failure::Coded(info.clone()));
                         fire_and_settle(
                             &sink,
                             "error",
-                            EventArgs::Error { message, code: Some(code) },
+                            EventArgs::Error(info),
                             &auth,
                             rejection,
                             Some(&ending),
@@ -2207,10 +2224,10 @@ fn spawn_stream_reader(
                         ending.store(true, Ordering::SeqCst);
                         sink.emit(
                             "error",
-                            EventArgs::Error {
-                                message: format!("Reconnection failed after {} attempts", attempts),
-                                code: None,
-                            },
+                            EventArgs::PlainError(format!(
+                                "Reconnection failed after {} attempts",
+                                attempts
+                            )),
                         );
                         // Core's dispatch task has ended for good.
                         dispatch_ended.store(true, Ordering::SeqCst);
@@ -2273,9 +2290,6 @@ fn on_dispatch_end(event_thread_panicked: bool, core_closed: bool, waited: Durat
     }
 }
 
-/// Error code reported for a panicked WebSocket thread (#25).
-const PANIC_CODE: i32 = -1;
-
 /// What a panicked worker or event thread needs to report it (#25).
 struct PanicContext<'a> {
     sink: &'a EventSink,
@@ -2312,7 +2326,8 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
         return;
     }
 
-    let error = EventArgs::Error { message: reason.clone(), code: Some(PANIC_CODE) };
+    let info = ErrorInfo::new(error_code::THREAD_PANIC, ErrorKind::Protocol, reason.clone());
+    let error = EventArgs::Error(info.clone());
     // Reject connect() only if its authentication has not been reported yet,
     // taking that decision so it will not be (#44); once `authenticated` has
     // fired, connect() resolves and this is a disconnect like any other.
@@ -2322,7 +2337,7 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
             "error",
             error,
             ctx.auth,
-            AuthOutcome::Failed(format!("[{}] {}", PANIC_CODE, reason)),
+            AuthOutcome::Failed(Failure::Coded(info)),
             None,
         );
         return;

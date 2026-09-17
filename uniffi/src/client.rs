@@ -18,9 +18,8 @@ use crate::errors::MarketDataError;
 
 /// Serialise a decoded response body back to a JSON string for the FFI boundary.
 fn to_json(value: &serde_json::Value) -> Result<String, MarketDataError> {
-    serde_json::to_string(value).map_err(|e| MarketDataError::Other {
-        msg: format!("Failed to serialize response: {}", e),
-    })
+    serde_json::to_string(value)
+        .map_err(|e| crate::errors::other_error(format!("Failed to serialize response: {}", e)))
 }
 
 // ============================================================================
@@ -173,7 +172,7 @@ impl StockIntradayClient {
             inner.stock().intraday().quote().symbol(&symbol).send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -187,7 +186,7 @@ impl StockIntradayClient {
             inner.stock().intraday().ticker().symbol(&symbol).send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -201,7 +200,7 @@ impl StockIntradayClient {
             inner.stock().intraday().trades().symbol(&symbol).send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -219,7 +218,7 @@ impl StockIntradayClient {
                 .send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -233,7 +232,7 @@ impl StockIntradayClient {
             inner.stock().intraday().volumes().symbol(&symbol).send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -249,7 +248,7 @@ impl StockIntradayClient {
                 .send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 }
@@ -344,7 +343,7 @@ impl StockHistoricalClient {
             build_historical_candles_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -358,7 +357,7 @@ impl StockHistoricalClient {
             inner.stock().historical().stats().symbol(&symbol).send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -424,7 +423,7 @@ impl StockSnapshotClient {
             build_snapshot_quotes_request(&inner, &market, type_filter.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -446,7 +445,7 @@ impl StockSnapshotClient {
             build_snapshot_movers_request(&inner, &market, direction.as_deref(), change.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -466,7 +465,7 @@ impl StockSnapshotClient {
             build_snapshot_actives_request(&inner, &market, trade.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -543,7 +542,7 @@ impl StockTechnicalClient {
             build_sma_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -561,7 +560,7 @@ impl StockTechnicalClient {
             build_rsi_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -581,7 +580,7 @@ impl StockTechnicalClient {
             build_kdj_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), r_period, k_period, d_period)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -601,7 +600,7 @@ impl StockTechnicalClient {
             build_macd_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), fast, slow, signal)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -620,7 +619,7 @@ impl StockTechnicalClient {
             build_bb_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 }
@@ -733,7 +732,7 @@ impl StockCorporateActionsClient {
             build_capital_changes_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -749,7 +748,7 @@ impl StockCorporateActionsClient {
             build_dividends_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -765,7 +764,7 @@ impl StockCorporateActionsClient {
             build_listing_applicants_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 }
@@ -866,7 +865,7 @@ impl FutOptIntradayClient {
             builder.send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -882,7 +881,7 @@ impl FutOptIntradayClient {
             builder.send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -897,7 +896,7 @@ impl FutOptIntradayClient {
             inner.futopt().intraday().products().typ(futopt_type).send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
 
         to_json(&result)
     }
@@ -912,7 +911,7 @@ impl FutOptIntradayClient {
                 .send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -925,7 +924,7 @@ impl FutOptIntradayClient {
                 .send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -938,7 +937,7 @@ impl FutOptIntradayClient {
                 .send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -960,7 +959,7 @@ impl FutOptIntradayClient {
             builder.send()
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 }
@@ -1082,7 +1081,7 @@ impl FutOptHistoricalClient {
             build_futopt_historical_candles_request(&inner, &symbol, &query)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -1098,7 +1097,7 @@ impl FutOptHistoricalClient {
             build_futopt_daily_request(&inner, &symbol, date.as_deref(), after_hours)
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 }
@@ -1147,9 +1146,10 @@ fn parse_futopt_type(typ: &str) -> Result<marketdata_core::FutOptType, MarketDat
     match typ.to_uppercase().as_str() {
         "F" | "FUTURE" | "FUTURES" => Ok(FutOptType::Future),
         "O" | "OPTION" | "OPTIONS" => Ok(FutOptType::Option),
-        _ => Err(MarketDataError::ConfigError {
-            msg: format!("Invalid FutOpt type: '{}'. Use 'F' for futures or 'O' for options.", typ)
-        }),
+        _ => Err(crate::errors::config_error(format!(
+            "Invalid FutOpt type: '{}'. Use 'F' for futures or 'O' for options.",
+            typ
+        ))),
     }
 }
 
@@ -1524,7 +1524,7 @@ impl StockOwnershipClient {
             )
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -1547,7 +1547,7 @@ impl StockOwnershipClient {
             )
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -1570,7 +1570,7 @@ impl StockOwnershipClient {
             )
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 
@@ -1593,7 +1593,7 @@ impl StockOwnershipClient {
             )
         })
         .await
-        .map_err(|e| MarketDataError::Other { msg: e.to_string() })??;
+        .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
 }

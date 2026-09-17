@@ -450,14 +450,14 @@ static void call_UniffiCallbackInterfaceWebSocketListenerMethod4(
 #endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_WEB_SOCKET_LISTENER_METHOD5
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_WEB_SOCKET_LISTENER_METHOD5
-typedef void (*UniffiCallbackInterfaceWebSocketListenerMethod5)(uint64_t uniffi_handle, RustBuffer error_message, void* uniffi_out_return, RustCallStatus* callStatus );
+typedef void (*UniffiCallbackInterfaceWebSocketListenerMethod5)(uint64_t uniffi_handle, RustBuffer error, void* uniffi_out_return, RustCallStatus* callStatus );
 
 // Making function static works arround:
 // https://github.com/golang/go/issues/11263
 static void call_UniffiCallbackInterfaceWebSocketListenerMethod5(
-				UniffiCallbackInterfaceWebSocketListenerMethod5 cb, uint64_t uniffi_handle, RustBuffer error_message, void* uniffi_out_return, RustCallStatus* callStatus )
+				UniffiCallbackInterfaceWebSocketListenerMethod5 cb, uint64_t uniffi_handle, RustBuffer error, void* uniffi_out_return, RustCallStatus* callStatus )
 {
-	return cb(uniffi_handle, error_message, uniffi_out_return, callStatus );
+	return cb(uniffi_handle, error, uniffi_out_return, callStatus );
 }
 
 
@@ -1137,7 +1137,7 @@ void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_message(void* ptr, 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_ERROR
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_ERROR
-void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(void* ptr, RustBuffer error_message, RustCallStatus *out_status
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(void* ptr, RustBuffer error, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETLISTENER_ON_RECONNECTING
@@ -2146,7 +2146,7 @@ uint32_t ffi_marketdata_uniffi_uniffi_contract_version(void
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod2(uint64_t uniffi_handle, RustBuffer data_json, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod3(uint64_t uniffi_handle, int8_t will_reconnect, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod4(uint64_t uniffi_handle, RustBuffer message, void* uniffi_out_return, RustCallStatus* callStatus );
- void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uint64_t uniffi_handle, RustBuffer error_message, void* uniffi_out_return, RustCallStatus* callStatus );
+ void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod5(uint64_t uniffi_handle, RustBuffer error, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod6(uint64_t uniffi_handle, uint32_t attempt, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod7(uint64_t uniffi_handle, uint32_t attempts, void* uniffi_out_return, RustCallStatus* callStatus );
  void marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerMethod8(uint64_t uniffi_handle, uint64_t count, void* uniffi_out_return, RustCallStatus* callStatus );

@@ -26,10 +26,7 @@ pub(crate) async fn run_writer_task(
         };
         if let Err(e) = sink.send(Message::Text(text.into())).await {
             let err: MarketDataError = e.into();
-            stream.emit(ConnectionEvent::Error {
-                message: format!("Writer error: {}", err),
-                code: err.to_error_code(),
-            });
+            stream.emit(ConnectionEvent::error_with_message(&err, format!("Writer error: {}", err)));
             break;
         }
     }

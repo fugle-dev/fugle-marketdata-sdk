@@ -145,10 +145,10 @@ pub(crate) async fn dispatch_messages(
                         stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        stream.emit(ConnectionEvent::Error {
-                            message: format!("Failed to deserialize message: {}", e),
-                            code: 2003,
-                        });
+                        stream.emit(ConnectionEvent::error_with_message(
+                            &e,
+                            format!("Failed to deserialize message: {}", e),
+                        ));
                     }
                 }
             }
@@ -165,10 +165,10 @@ pub(crate) async fn dispatch_messages(
                         stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        stream.emit(ConnectionEvent::Error {
-                            message: format!("Failed to deserialize binary message: {}", e),
-                            code: 2003,
-                        });
+                        stream.emit(ConnectionEvent::error_with_message(
+                            &e,
+                            format!("Failed to deserialize binary message: {}", e),
+                        ));
                     }
                 }
             }
@@ -218,10 +218,10 @@ pub(crate) async fn dispatch_messages(
                     return None;
                 }
                 let err_msg = format!("WebSocket error: {}", e);
-                stream.emit(ConnectionEvent::Error {
-                    message: err_msg.clone(),
-                    code: 2001,
-                });
+                stream.emit(ConnectionEvent::error_with_message(
+                    &crate::MarketDataError::from(e),
+                    err_msg.clone(),
+                ));
                 stream.emit_disconnected(
                     None,
                     err_msg,

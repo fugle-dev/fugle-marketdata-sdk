@@ -422,10 +422,7 @@ impl WebSocketClient {
                     let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
-                self.stream.emit(ConnectionEvent::Error {
-                    message: err.to_string(),
-                    code: err.to_error_code(),
-                });
+                self.stream.emit(ConnectionEvent::error(&err));
                 return Err(err);
             }
             Err(_) => {
@@ -436,10 +433,7 @@ impl WebSocketClient {
                     let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
-                self.stream.emit(ConnectionEvent::Error {
-                    message: err.to_string(),
-                    code: err.to_error_code(),
-                });
+                self.stream.emit(ConnectionEvent::error(&err));
                 return Err(err);
             }
         };
@@ -505,17 +499,14 @@ impl WebSocketClient {
                 // Server-rejected credentials are reported only as
                 // Unauthenticated, never as a generic Error.
                 self.stream.unauthenticated(message.clone(), data, frames);
-                Err(MarketDataError::AuthError { msg: message })
+                Err(MarketDataError::AuthError { msg: message, http: None })
             }
             AuthHandshake::Failed(err) => {
                 {
                     let mut state = write_state(&self.state);
                     *state = ConnectionState::Disconnected;
                 }
-                self.stream.emit(ConnectionEvent::Error {
-                    message: err.to_string(),
-                    code: err.to_error_code(),
-                });
+                self.stream.emit(ConnectionEvent::error(&err));
                 Err(err)
             }
         }
@@ -1188,10 +1179,11 @@ mod tests {
         let _failed = ConnectionEvent::ReconnectFailed {
             attempts: 5,
         };
-        let _error = ConnectionEvent::Error {
-            message: "Connection failed".to_string(),
-            code: 2001,
-        };
+        let _error = ConnectionEvent::Error(crate::errors::ErrorInfo::new(
+            crate::errors::error_code::CONNECTION,
+            crate::errors::ErrorKind::Network,
+            "Connection failed",
+        ));
     }
 
     #[tokio::test]
