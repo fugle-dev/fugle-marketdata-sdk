@@ -46,22 +46,26 @@ jobs:
         run: cargo build -p marketdata-uniffi --release
 
       - name: Generate Java bindings
+        shell: bash
         run: |
           uniffi-bindgen-java generate --library target/release/${{ matrix.lib-name }} \
             --out-dir bindings/java/src/main/java \
             --crate marketdata_uniffi --config uniffi/uniffi.toml
 
       - name: Build Java bindings
+        shell: bash
         run: |
           cd bindings/java
           ./gradlew build -x test --no-daemon
 
       - name: Run tests (excluding integration)
+        shell: bash
         run: |
           cd bindings/java
           ./gradlew test --no-daemon -PexcludeTags=integration
 
       - name: Run integration tests (main branch only)
+        shell: bash
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
