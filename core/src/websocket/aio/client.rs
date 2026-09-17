@@ -379,6 +379,7 @@ impl WebSocketClient {
     ///
     /// Returns error if:
     /// - Client has been closed (ClientClosed)
+    /// - The credential is missing, blank or ambiguous (ConfigError)
     /// - Connection fails
     /// - Authentication fails or times out
     /// - WebSocket handshake fails
@@ -391,6 +392,9 @@ impl WebSocketClient {
         if self.is_closed().await {
             return Err(MarketDataError::ClientClosed);
         }
+        // Bindings reject bad credentials at construction; this catches a
+        // config built directly in Rust or through the UniFFI constructors.
+        self.config.auth.validate()?;
         // A second dispatch task would orphan the first, whose later close
         // would then be reported through the shared latch as this new
         // connection's `Disconnected` (#41).
@@ -1194,6 +1198,18 @@ mod tests {
 
         let state = client.state_async().await;
         assert_eq!(state, ConnectionState::Disconnected);
+    }
+
+    #[tokio::test]
+    async fn test_connect_rejects_blank_credential_before_connecting() {
+        for auth in [AuthRequest::with_api_key(""), AuthRequest::with_token("  ")] {
+            let config = ConnectionConfig::new("ws://127.0.0.1:1", auth);
+            let client = WebSocketClient::new(config);
+
+            let err = client.connect().await.expect_err("blank credential");
+            assert!(matches!(err, MarketDataError::ConfigError(_)), "{err:?}");
+            assert_eq!(client.state_async().await, ConnectionState::Disconnected);
+        }
     }
 
     #[tokio::test]

@@ -44,14 +44,33 @@ describe('RestClient constructor', () => {
       expect(() => {
         // @ts-expect-error - Testing runtime validation for JS users
         new RestClient({});
-      }).toThrow('exactly one');
+      }).toThrow('exactly one non-empty credential');
     });
 
     it('throws error when multiple auth provided', () => {
       expect(() => {
         // @ts-expect-error - Testing runtime validation for JS users
         new RestClient({ apiKey: 'key', bearerToken: 'token' });
-      }).toThrow('exactly one');
+      }).toThrow('exactly one non-empty credential');
+    });
+
+    it.each([{ apiKey: '' }, { bearerToken: '   ' }, { sdkToken: '\t' }])(
+      'rejects blank credential %p with code 1004',
+      (options) => {
+        let caught: any;
+        try {
+          new RestClient(options);
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(Error);
+        expect(caught.code).toBe(1004);
+        expect(caught.sourceKind).toBe('client');
+      },
+    );
+
+    it('ignores a blank credential next to a real one', () => {
+      expect(new RestClient({ apiKey: '', sdkToken: 'token' })).toBeDefined();
     });
   });
 });
@@ -74,7 +93,18 @@ describe('WebSocketClient constructor', () => {
       expect(() => {
         // @ts-expect-error - Testing runtime validation for JS users
         new WebSocketClient({});
-      }).toThrow('exactly one');
+      }).toThrow('exactly one non-empty credential');
+    });
+
+    it('rejects a blank credential with code 1004', () => {
+      let caught: any;
+      try {
+        new WebSocketClient({ apiKey: '  ' });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught.code).toBe(1004);
     });
   });
 

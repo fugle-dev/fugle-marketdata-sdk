@@ -243,7 +243,7 @@ interface RestClientOptions {
 }
 ```
 
-Exactly one of `apiKey`, `bearerToken`, or `sdkToken` must be provided.
+Exactly one of `apiKey`, `bearerToken`, or `sdkToken` must be provided. An empty or whitespace-only value counts as not provided; otherwise the constructor throws an error with `code` 1004.
 
 ### WebSocketClient
 

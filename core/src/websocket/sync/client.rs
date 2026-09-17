@@ -161,6 +161,9 @@ impl WebSocketClient {
         if self.is_closed() {
             return Err(MarketDataError::ClientClosed);
         }
+        // Bindings reject bad credentials at construction; this catches a
+        // config built directly in Rust or through the UniFFI constructors.
+        self.shared.config.auth.validate()?;
         if self.supervisor_handle.lock().expect("supervisor handle lock poisoned").is_some() {
             // Already connected (or supervisor still alive). No-op rather than error.
             return Ok(());
@@ -628,6 +631,18 @@ mod tests {
         assert_eq!(client.state(), ConnectionState::Disconnected);
         assert!(!client.is_closed());
         assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn test_connect_rejects_blank_credential_before_connecting() {
+        for auth in [AuthRequest::with_api_key(""), AuthRequest::with_sdk_token("\t")] {
+            let config = ConnectionConfig::new("ws://127.0.0.1:1", auth);
+            let client = WebSocketClient::new(config);
+
+            let err = client.connect().expect_err("blank credential");
+            assert!(matches!(err, MarketDataError::ConfigError(_)), "{err:?}");
+            assert_eq!(client.state(), ConnectionState::Disconnected);
+        }
     }
 
     #[test]

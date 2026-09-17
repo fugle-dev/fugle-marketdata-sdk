@@ -70,7 +70,8 @@ namespace FugleMarketData
 
     /// <summary>
     /// Configuration options for constructing a WebSocketClient.
-    /// Exactly one authentication method must be provided.
+    /// Exactly one non-empty authentication method must be provided; an empty
+    /// or whitespace-only value counts as not provided.
     /// </summary>
     public class WebSocketClientOptions
     {

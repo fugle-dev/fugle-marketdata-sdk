@@ -127,9 +127,9 @@ class RestClient:
         """Create a new REST client with authentication.
 
         Args:
-            api_key: Your Fugle API key (exactly one auth method required)
-            bearer_token: Bearer token for authentication (exactly one auth method required)
-            sdk_token: SDK token for authentication (exactly one auth method required)
+            api_key: Your Fugle API key (exactly one non-empty auth method required)
+            bearer_token: Bearer token for authentication (exactly one non-empty auth method required)
+            sdk_token: SDK token for authentication (exactly one non-empty auth method required)
             base_url: Optional custom base URL — host and path prefix ONLY.
                 The SDK appends the version segment; a base_url that already
                 ends in one (e.g. ".../v1.0") raises TypeError. Changed in
@@ -143,8 +143,11 @@ class RestClient:
                 tls_ca_file for production. Emits UserWarning when set.
 
         Raises:
-            TypeError: zero/multiple auth methods, both TLS cert options set,
-                or a base_url carrying a version segment
+            MarketDataError: code 1004 if zero or multiple non-empty auth
+                methods are given (empty or whitespace-only values count as
+                not given)
+            TypeError: both TLS cert options set, or a base_url carrying a
+                version segment
             OSError: tls_ca_file path not readable
             ValueError: tls_root_cert_pem contents not a valid PEM certificate
 
@@ -190,6 +193,9 @@ class RestClient:
         Returns:
             A new RestClient instance
 
+        Raises:
+            MarketDataError: code 1004 if the token is empty or whitespace
+
         Note:
             This is a convenience method for backwards compatibility.
             Prefer using RestClient(bearer_token="token").
@@ -205,6 +211,9 @@ class RestClient:
 
         Returns:
             A new RestClient instance
+
+        Raises:
+            MarketDataError: code 1004 if the token is empty or whitespace
 
         Note:
             This is a convenience method for backwards compatibility.
@@ -1569,9 +1578,9 @@ class WebSocketClient:
         """Create a new WebSocket client with authentication and configuration.
 
         Args:
-            api_key: Your Fugle API key (exactly one auth method required)
-            bearer_token: Bearer token for authentication (exactly one auth method required)
-            sdk_token: SDK token for authentication (exactly one auth method required)
+            api_key: Your Fugle API key (exactly one non-empty auth method required)
+            bearer_token: Bearer token for authentication (exactly one non-empty auth method required)
+            sdk_token: SDK token for authentication (exactly one non-empty auth method required)
             base_url: Optional custom base URL — host and path prefix ONLY.
                 The SDK appends the version segment; a base_url that already
                 ends in one (e.g. ".../v1.0") raises TypeError. Changed in
@@ -1599,8 +1608,11 @@ class WebSocketClient:
                 applies (default 4096; must be positive).
 
         Raises:
-            TypeError: zero/multiple auth methods, both TLS cert options set,
-                or a base_url carrying a version segment
+            MarketDataError: code 1004 if zero or multiple non-empty auth
+                methods are given (empty or whitespace-only values count as
+                not given)
+            TypeError: both TLS cert options set, or a base_url carrying a
+                version segment
             OSError: tls_ca_file path not readable
             ValueError: tls_root_cert_pem contents not a valid PEM certificate,
                 an unknown message_overflow, or a message_buffer below 1

@@ -192,20 +192,19 @@ public class RestClientTest {
         FugleException e = assertThrows(FugleException.class, () ->
                 FugleRestClient.builder().build()
         );
-        assertTrue(e.getMessage().contains("Provide exactly one of"));
+        assertEquals(Integer.valueOf(1004), e.getCode());
+        assertTrue(e.getMessage().contains("exactly one non-empty credential"));
     }
 
     @Test
-    @DisplayName("Builder counts an empty apiKey as a provided credential")
-    void builderWithEmptyApiKeyIsNotRejected() {
+    @DisplayName("Builder rejects an empty apiKey with code 1004")
+    void builderWithEmptyApiKeyIsRejected() {
         NativeLibrary.assumeAvailable();
 
-        // The builder only checks how many credentials are set, like the
-        // Python and Node.js bindings. Rejecting empty values is tracked in
-        // #69 and belongs in core.
-        try (FugleRestClient client = FugleRestClient.builder().apiKey("").build()) {
-            assertNotNull(client);
-        }
+        FugleException e = assertThrows(FugleException.class, () ->
+                FugleRestClient.builder().apiKey("").build()
+        );
+        assertEquals(Integer.valueOf(1004), e.getCode());
     }
 
     @Test

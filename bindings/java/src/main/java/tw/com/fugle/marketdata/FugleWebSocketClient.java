@@ -463,20 +463,18 @@ public class FugleWebSocketClient implements AutoCloseable {
         /**
          * Build the FugleWebSocketClient.
          *
-         * @throws FugleException if exactly one authentication method is not provided
+         * @throws FugleException with code 1004 if not exactly one non-empty
+         *     authentication method is provided (empty or whitespace-only values
+         *     count as not provided)
          */
         public FugleWebSocketClient build() {
-            // Exactly-one-auth validation
-            int authCount = 0;
-            if (apiKey != null) authCount++;
-            if (bearerToken != null) authCount++;
-            if (sdkToken != null) authCount++;
-
-            if (authCount == 0) {
-                throw new FugleException("Provide exactly one of: apiKey, bearerToken, sdkToken");
-            }
-            if (authCount > 1) {
-                throw new FugleException("Provide exactly one of: apiKey, bearerToken, sdkToken");
+            // Core requires exactly one non-blank credential (ConfigError,
+            // code 1004) and reports which one to use.
+            CredentialKind kind;
+            try {
+                kind = MarketdataUniffi.validateCredentials(apiKey, bearerToken, sdkToken);
+            } catch (MarketDataException e) {
+                throw FugleException.from(e);
             }
 
             WebSocketListener effectiveListener;
@@ -502,7 +500,7 @@ public class FugleWebSocketClient implements AutoCloseable {
             // TODO: Current UniFFI WebSocketClient constructors only accept api_key
             // For bearerToken/sdkToken support, store values for future use
             // (same pattern as Python/Node.js phases 12-02, 13-02)
-            if (apiKey != null) {
+            if (kind == CredentialKind.API_KEY) {
                 // Convert config options to UniFFI record types
                 ReconnectConfigRecord reconnectRecord = null;
                 if (reconnectOptions != null) {

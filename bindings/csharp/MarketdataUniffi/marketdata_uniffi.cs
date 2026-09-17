@@ -1959,6 +1959,14 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_func_validate_credentials(
+        RustBuffer @apiKey,
+        RustBuffer @bearerToken,
+        RustBuffer @sdkToken,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern RustBuffer ffi_marketdata_uniffi_rustbuffer_alloc(
         ulong @size,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -2256,6 +2264,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_endpoint();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_func_validate_credentials();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_futoptclient_historical();
@@ -2660,6 +2671,15 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_endpoint` checksum `15148`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum = _UniFFILib.uniffi_marketdata_uniffi_checksum_func_validate_credentials();
+            if (checksum != 23718)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_func_validate_credentials` checksum `23718`, library returned `{checksum}`"
                 );
             }
         }
@@ -10623,6 +10643,60 @@ class FfiConverterTypeTlsConfigRecord : FfiConverterRustBuffer<TlsConfigRecord>
 }
 
 /// <summary>
+/// Which credential [`validate_credentials`] accepted.
+/// </summary>
+public enum CredentialKind : int
+{
+    /// <summary>
+    /// `api_key` was the credential provided.
+    /// </summary>
+    ApiKey,
+
+    /// <summary>
+    /// `bearer_token` was the credential provided.
+    /// </summary>
+    BearerToken,
+
+    /// <summary>
+    /// `sdk_token` was the credential provided.
+    /// </summary>
+    SdkToken,
+}
+
+class FfiConverterTypeCredentialKind : FfiConverterRustBuffer<CredentialKind>
+{
+    public static FfiConverterTypeCredentialKind INSTANCE = new FfiConverterTypeCredentialKind();
+
+    public override CredentialKind Read(BigEndianStream stream)
+    {
+        var value = stream.ReadInt() - 1;
+        if (Enum.IsDefined(typeof(CredentialKind), value))
+        {
+            return (CredentialKind)value;
+        }
+        else
+        {
+            throw new InternalException(
+                String.Format(
+                    "invalid enum value '{0}' in FfiConverterTypeCredentialKind.Read()",
+                    value
+                )
+            );
+        }
+    }
+
+    public override int AllocationSize(CredentialKind value)
+    {
+        return 4;
+    }
+
+    public override void Write(CredentialKind value, BigEndianStream stream)
+    {
+        stream.WriteInt((int)value + 1);
+    }
+}
+
+/// <summary>
 /// Coarse-grained classification of the source of a [`MarketDataError`].
 ///
 /// Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -12121,6 +12195,35 @@ public static class MarketdataUniffiMethods
                         FfiConverterString.INSTANCE.Lower(@apiKey),
                         FfiConverterTypeWebSocketListener.INSTANCE.Lower(@listener),
                         FfiConverterTypeWebSocketEndpoint.INSTANCE.Lower(@endpoint),
+                        ref _status
+                    )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Check a set of credentials the way every client constructor does.
+    ///
+    /// A value that is empty or only whitespace counts as not provided; exactly
+    /// one of the three must remain. Wrappers that accept all three options call
+    /// this and pass the value of the returned kind to the matching constructor,
+    /// so the rule and the error (a `ConfigError`, code 1004) come from the core.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public static CredentialKind ValidateCredentials(
+        string? @apiKey,
+        string? @bearerToken,
+        string? @sdkToken
+    )
+    {
+        return FfiConverterTypeCredentialKind.INSTANCE.Lift(
+            _UniffiHelpers.RustCallWithError(
+                FfiConverterTypeMarketDataError.INSTANCE,
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_func_validate_credentials(
+                        FfiConverterOptionalString.INSTANCE.Lower(@apiKey),
+                        FfiConverterOptionalString.INSTANCE.Lower(@bearerToken),
+                        FfiConverterOptionalString.INSTANCE.Lower(@sdkToken),
                         ref _status
                     )
             )

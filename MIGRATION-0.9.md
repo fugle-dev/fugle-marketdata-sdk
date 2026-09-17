@@ -450,6 +450,62 @@ They now report:
 If you matched `2001` to detect a lost connection, react to `Disconnected`
 (or match `3002` together with `source_kind == network`).
 
+## 14. Credentials: checked once, in core
+
+Every client constructor now applies the same rule, from core (#69): exactly
+one of API key, bearer token and SDK token, and a value that is empty or only
+whitespace counts as not provided. Otherwise it throws a configuration error,
+code `1004`, `source_kind` `client`, with the message `Provide exactly one
+non-empty credential: API key, bearer token, or SDK token`. Branch on the
+code rather than the message.
+
+What changes for you:
+
+| Language | Empty / whitespace credential | Zero or several credentials |
+|---|---|---|
+| Python | Was accepted; now `MarketDataError` (`e.code == 1004`) | `TypeError` → `MarketDataError` (`e.code == 1004`) |
+| Node | Was accepted; now an `Error` with `err.code === 1004` | Same `Error`, now with `err.code === 1004`; message changed |
+| Java | Was accepted; now `FugleException` with `getCode() == 1004` | `FugleException` without `getInfo()` → with it, `getCode() == 1004`; message changed |
+| Go | `WithApiKey("")` etc. returned `"... cannot be empty"` from the option; now the constructor returns a `*MarketDataError` | `errors.New("provide exactly one of ...")` → `*MarketDataError`; read it with `ErrorInfoOf(err)` |
+| C# | `ArgumentNullException` / `ArgumentException` → `MarketDataException` (`ex.GetInfo().code == 1004`) | `ArgumentException` → `MarketDataException` |
+
+- **Python**: `RestClient.with_bearer_token()` and `with_sdk_token()` also
+  reject a blank token.
+
+  ```python
+  # Before
+  try:
+      client = RestClient(api_key=key)
+  except TypeError: ...
+  # After
+  try:
+      client = RestClient(api_key=key)
+  except MarketDataError as e:
+      if e.code == 1004: ...
+  ```
+
+- **Node**: `new RestClient({ apiKey: '' })` used to succeed and fail on the
+  first request; it now throws.
+- **C#**: `new RestClient(string)`, `RestClient.WithBearerToken`,
+  `RestClient.WithSdkToken` and the `WebSocketClient(string apiKey, ...)`
+  constructors throw `MarketDataException` for a null, empty or whitespace
+  credential (was `ArgumentNullException`). A null `options` or `listener` is
+  still `ArgumentNullException`.
+- A blank credential next to a real one is ignored:
+  `RestClient(api_key="", sdk_token="t")` builds an SDK-token client instead
+  of rejecting two credentials.
+- **Rust**: `Auth::from_credentials(api_key, bearer_token, sdk_token)` applies
+  the rule; `Auth::validate()` and `AuthRequest::validate()` check a
+  credential you built yourself. `RestClient::new` stays infallible and
+  returns the `ConfigError` from the first request; `connect()` on either
+  WebSocket client returns it before connecting. `Auth::from_env()` also
+  treats a whitespace-only variable as unset.
+- **C#, Go, Java, C++ (UniFFI)**: the `new_rest_client_with_*` factories
+  return the `ConfigError` for a blank credential, and the new
+  `validate_credentials(api_key, bearer_token, sdk_token)` returns which
+  `CredentialKind` was given. The WebSocket constructors still cannot fail;
+  a blank key is reported by `connect()`.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

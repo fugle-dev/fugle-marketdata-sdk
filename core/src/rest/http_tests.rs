@@ -139,6 +139,25 @@ fn credential_with_invalid_header_characters_is_config_error() {
 }
 
 #[test]
+fn blank_credential_is_config_error_without_network() {
+    for auth in [
+        Auth::ApiKey(String::new()),
+        Auth::BearerToken("   ".into()),
+        Auth::SdkToken("\t".into()),
+    ] {
+        let srv = server(vec![Some(raw("200 OK", QUOTE))]);
+        let c = RestClient::new(auth).base_url(&srv.base);
+        match quote(&c) {
+            Err(MarketDataError::ConfigError(msg)) => {
+                assert!(msg.contains("exactly one non-empty credential"), "{msg}")
+            }
+            other => panic!("expected ConfigError, got {other:?}"),
+        }
+        assert!(srv.heads.lock().unwrap().is_empty(), "must not reach the network");
+    }
+}
+
+#[test]
 fn status_401_and_403_are_auth_errors_with_body() {
     for status in ["401 Unauthorized", "403 Forbidden"] {
         let srv = server(vec![Some(raw(status, r#"{"message":"Unauthorized"}"#))]);

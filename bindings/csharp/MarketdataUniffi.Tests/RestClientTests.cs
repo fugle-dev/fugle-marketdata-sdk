@@ -47,6 +47,14 @@ public class RestClientTests
         }
     }
 
+    private static void AssertCredentialsRejected(Action create)
+    {
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException>(create);
+        var info = FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex);
+        Assert.AreEqual(1004, info.code); // marketdata_core::error_code::CONFIG
+        StringAssert.Contains(info.message, "exactly one non-empty credential");
+    }
+
     // ========== Structural Tests (Type Existence) ==========
 
     [TestMethod]
@@ -135,19 +143,22 @@ public class RestClientTests
     }
 
     [TestMethod]
-    public void CreateRestClient_WithEmptyApiKey_ThrowsArgumentNullException()
+    public void CreateRestClient_WithEmptyApiKey_ThrowsConfigError()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
-            new FugleMarketData.RestClient("")
-        );
+        SkipIfNativeLibraryUnavailable();
+
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient(""));
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient("   "));
+        AssertCredentialsRejected(() => FugleMarketData.RestClient.WithBearerToken(""));
+        AssertCredentialsRejected(() => FugleMarketData.RestClient.WithSdkToken(" "));
     }
 
     [TestMethod]
-    public void CreateRestClient_WithNullApiKey_ThrowsArgumentNullException()
+    public void CreateRestClient_WithNullApiKey_ThrowsConfigError()
     {
-        Assert.ThrowsException<ArgumentNullException>(() =>
-            new FugleMarketData.RestClient((string)null!)
-        );
+        SkipIfNativeLibraryUnavailable();
+
+        AssertCredentialsRejected(() => new FugleMarketData.RestClient((string)null!));
     }
 
     [TestMethod]

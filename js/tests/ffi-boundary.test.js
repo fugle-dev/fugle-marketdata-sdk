@@ -82,15 +82,16 @@ describe('FFI Boundary - Error Propagation', () => {
 });
 
 describe('FFI Boundary - Panic Recovery', () => {
-  test('empty API key does not crash process', () => {
-    // Empty API key is valid (counts as exactly one auth method)
-    // Will fail at runtime when making API calls, but doesn't crash at construction
-    expect(() => {
+  test('empty API key throws a readable error instead of crashing', () => {
+    let caught;
+    try {
       new RestClient({ apiKey: '', ...OFFLINE_REST });
-    }).not.toThrow();
-
-    const client = new RestClient({ apiKey: '', ...OFFLINE_REST });
-    expect(client).toBeTruthy();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(caught.code).toBe(1004);
+    expect(caught.message).toContain('exactly one non-empty credential');
   });
 
   test('null options throws Error', () => {
@@ -111,7 +112,7 @@ describe('FFI Boundary - Panic Recovery', () => {
     // Empty options should fail "exactly one auth" validation
     expect(() => {
       new RestClient({});
-    }).toThrow(/exactly one of/i);
+    }).toThrow(/exactly one non-empty credential/i);
   });
 
   test('very long input strings do not overflow', async () => {

@@ -138,26 +138,21 @@ public class FfiBoundaryTests
     {
         SkipIfNativeLibraryUnavailable();
 
-        // Empty API key should not panic
-        try
-        {
-            using var client = new FugleMarketData.RestClient("");
-            Assert.IsNotNull(client);
-        }
-        catch (ArgumentNullException)
-        {
-            // Validation exception is acceptable
-        }
+        // Empty API key is rejected by core with a managed exception, not a panic
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException>(() =>
+            new FugleMarketData.RestClient(""));
+        Assert.AreEqual(1004, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
     }
 
     [TestMethod]
-    public void NullApiKey_ThrowsArgumentNullException()
+    public void NullApiKey_ThrowsConfigError()
     {
-        // Null should be caught at C# validation level
-        Assert.ThrowsException<ArgumentNullException>(() =>
-        {
-            new FugleMarketData.RestClient((string)null!);
-        });
+        SkipIfNativeLibraryUnavailable();
+
+        // Null is passed to core as "not provided"
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException>(() =>
+            new FugleMarketData.RestClient((string)null!));
+        Assert.AreEqual(1004, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
     }
 
     [TestMethod]

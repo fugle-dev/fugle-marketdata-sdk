@@ -141,6 +141,7 @@ void * uniffi_marketdata_uniffi_fn_func_new_rest_client_with_sdk_token_and_tls(R
 void * uniffi_marketdata_uniffi_fn_func_new_websocket_client(RustBuffer api_key, void * listener, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_config(RustBuffer api_key, void * listener, RustBuffer endpoint, RustBuffer reconnect_config, RustBuffer health_check_config, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_func_new_websocket_client_with_endpoint(RustBuffer api_key, void * listener, RustBuffer endpoint, RustCallStatus *out_status);
+RustBuffer uniffi_marketdata_uniffi_fn_func_validate_credentials(RustBuffer api_key, RustBuffer bearer_token, RustBuffer sdk_token, RustCallStatus *out_status);
 RustBuffer ffi_marketdata_uniffi_rustbuffer_alloc(uint64_t size, RustCallStatus *out_status);
 RustBuffer ffi_marketdata_uniffi_rustbuffer_from_bytes(ForeignBytes bytes, RustCallStatus *out_status);
 void ffi_marketdata_uniffi_rustbuffer_free(RustBuffer buf, RustCallStatus *out_status);
@@ -154,6 +155,7 @@ uint16_t uniffi_marketdata_uniffi_checksum_func_new_rest_client_with_sdk_token_a
 uint16_t uniffi_marketdata_uniffi_checksum_func_new_websocket_client();
 uint16_t uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_config();
 uint16_t uniffi_marketdata_uniffi_checksum_func_new_websocket_client_with_endpoint();
+uint16_t uniffi_marketdata_uniffi_checksum_func_validate_credentials();
 uint16_t uniffi_marketdata_uniffi_checksum_method_futoptclient_historical();
 uint16_t uniffi_marketdata_uniffi_checksum_method_futoptclient_intraday();
 uint16_t uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync();

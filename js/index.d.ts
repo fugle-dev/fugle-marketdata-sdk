@@ -2730,7 +2730,8 @@ export interface ReconnectOptions {
 /**
  * REST client options
  *
- * Exactly ONE of apiKey, bearerToken, or sdkToken must be provided.
+ * Exactly ONE non-empty apiKey, bearerToken, or sdkToken must be provided;
+ * an empty or whitespace-only value counts as not provided.
  * baseUrl is optional for custom endpoint override.
  */
 export interface RestClientOptions {
@@ -2784,7 +2785,8 @@ export interface TdccDistributionParams {
 /**
  * WebSocket client options
  *
- * Exactly ONE of apiKey, bearerToken, or sdkToken must be provided.
+ * Exactly ONE non-empty apiKey, bearerToken, or sdkToken must be provided;
+ * an empty or whitespace-only value counts as not provided.
  * reconnect and healthCheck are optional configuration objects.
  */
 export interface WebSocketClientOptions {

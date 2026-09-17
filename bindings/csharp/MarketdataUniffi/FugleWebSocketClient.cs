@@ -152,13 +152,13 @@ namespace FugleMarketData
         /// </summary>
         /// <param name="apiKey">Fugle API key</param>
         /// <param name="listener">Listener to receive WebSocket events</param>
-        /// <exception cref="ArgumentNullException">If apiKey or listener is null</exception>
+        /// <exception cref="ArgumentNullException">If listener is null</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if apiKey is null, empty or whitespace</exception>
         public WebSocketClient(string apiKey, IWebSocketListener listener)
         {
-            if (string.IsNullOrEmpty(apiKey))
-                throw new ArgumentNullException(nameof(apiKey));
             if (listener == null)
                 throw new ArgumentNullException(nameof(listener));
+            uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(apiKey, null, null);
 
             var adapter = new WebSocketListenerAdapter(listener);
             _inner = new uniffi.marketdata_uniffi.WebSocketClient(apiKey, adapter);
@@ -172,13 +172,13 @@ namespace FugleMarketData
         /// <param name="apiKey">Fugle API key</param>
         /// <param name="listener">Listener to receive WebSocket events</param>
         /// <param name="endpoint">Endpoint type: Stock or FutOpt</param>
-        /// <exception cref="ArgumentNullException">If apiKey or listener is null</exception>
+        /// <exception cref="ArgumentNullException">If listener is null</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if apiKey is null, empty or whitespace</exception>
         public WebSocketClient(string apiKey, IWebSocketListener listener, WebSocketEndpoint endpoint)
         {
-            if (string.IsNullOrEmpty(apiKey))
-                throw new ArgumentNullException(nameof(apiKey));
             if (listener == null)
                 throw new ArgumentNullException(nameof(listener));
+            uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(apiKey, null, null);
 
             var adapter = new WebSocketListenerAdapter(listener);
             var uniffiEndpoint = endpoint switch
@@ -195,13 +195,14 @@ namespace FugleMarketData
 
         /// <summary>
         /// Create a WebSocket client with configuration options.
-        /// Exactly one authentication method must be provided in the options.
+        /// Exactly one non-empty authentication method must be provided in the
+        /// options; an empty or whitespace-only value counts as not provided.
         /// </summary>
         /// <param name="options">Configuration options including authentication, connection, and
         /// message queue (<see cref="WebSocketClientOptions.MessageOverflow"/>, <see cref="WebSocketClientOptions.MessageBuffer"/>) settings</param>
         /// <param name="listener">Listener to receive WebSocket events</param>
         /// <exception cref="ArgumentNullException">If options or listener is null</exception>
-        /// <exception cref="ArgumentException">If zero or multiple authentication methods are provided</exception>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if zero or multiple non-empty authentication methods are provided</exception>
         /// <exception cref="ArgumentOutOfRangeException">If <see cref="WebSocketClientOptions.MessageBuffer"/> is set to a value that is not greater than 0</exception>
         public WebSocketClient(WebSocketClientOptions options, IWebSocketListener listener)
         {
@@ -210,17 +211,10 @@ namespace FugleMarketData
             if (listener == null)
                 throw new ArgumentNullException(nameof(listener));
 
-            // Count non-null/non-empty auth properties
-            int authCount = 0;
-            if (!string.IsNullOrEmpty(options.ApiKey)) authCount++;
-            if (!string.IsNullOrEmpty(options.BearerToken)) authCount++;
-            if (!string.IsNullOrEmpty(options.SdkToken)) authCount++;
-
-            // Validate exactly-one-auth
-            if (authCount == 0)
-                throw new ArgumentException("Provide exactly one of: ApiKey, BearerToken, SdkToken", nameof(options));
-            if (authCount > 1)
-                throw new ArgumentException("Provide exactly one of: ApiKey, BearerToken, SdkToken", nameof(options));
+            // Core requires exactly one non-blank credential (ConfigError,
+            // code 1004) and reports which one to use.
+            var kind = uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(
+                options.ApiKey, options.BearerToken, options.SdkToken);
 
             if (options.MessageBuffer.HasValue && options.MessageBuffer.Value <= 0)
                 throw new ArgumentOutOfRangeException(nameof(options.MessageBuffer), options.MessageBuffer, "MessageBuffer must be greater than 0 when set");
@@ -240,7 +234,7 @@ namespace FugleMarketData
             // BearerToken and SdkToken support will be added when UniFFI layer is updated
             try
             {
-                if (!string.IsNullOrEmpty(options.ApiKey))
+                if (kind == uniffi.marketdata_uniffi.CredentialKind.ApiKey)
                 {
                     // Convert config options to UniFFI record types
                     uniffi.marketdata_uniffi.ReconnectConfigRecord? reconnectRecord = null;
@@ -279,7 +273,7 @@ namespace FugleMarketData
                     }
 
                     _inner = uniffi.marketdata_uniffi.WebSocketClient.NewWithOptions(
-                        options.ApiKey,
+                        options.ApiKey!,
                         adapter,
                         uniffiEndpoint,
                         options.BaseUrl,

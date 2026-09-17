@@ -62,6 +62,42 @@ pub use websocket::{WebSocketClient, WebSocketListener, WebSocketEndpoint};
 // This replaces include_scaffolding!() and allows using derive macros for types
 uniffi::setup_scaffolding!();
 
+/// Which credential [`validate_credentials`] accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum CredentialKind {
+    /// `api_key` was the credential provided.
+    ApiKey,
+    /// `bearer_token` was the credential provided.
+    BearerToken,
+    /// `sdk_token` was the credential provided.
+    SdkToken,
+}
+
+/// Check a set of credentials the way every client constructor does.
+///
+/// A value that is empty or only whitespace counts as not provided; exactly
+/// one of the three must remain. Wrappers that accept all three options call
+/// this and pass the value of the returned kind to the matching constructor,
+/// so the rule and the error (a `ConfigError`, code 1004) come from the core.
+#[uniffi::export]
+pub fn validate_credentials(
+    api_key: Option<String>,
+    bearer_token: Option<String>,
+    sdk_token: Option<String>,
+) -> Result<CredentialKind, MarketDataError> {
+    Ok(match Auth::from_credentials(api_key, bearer_token, sdk_token)? {
+        Auth::ApiKey(_) => CredentialKind::ApiKey,
+        Auth::BearerToken(_) => CredentialKind::BearerToken,
+        Auth::SdkToken(_) => CredentialKind::SdkToken,
+    })
+}
+
+/// Validate a single credential and build a REST client from it.
+fn build_rest_client(auth: Auth) -> Result<Arc<RestClient>, MarketDataError> {
+    auth.validate()?;
+    Ok(Arc::new(RestClient::new(auth)))
+}
+
 /// Create a REST client with API key authentication
 ///
 /// # Arguments
@@ -71,7 +107,7 @@ uniffi::setup_scaffolding!();
 /// A RestClient instance wrapped in Arc for thread-safe access
 #[uniffi::export]
 pub fn new_rest_client_with_api_key(api_key: String) -> Result<Arc<RestClient>, MarketDataError> {
-    Ok(Arc::new(RestClient::new(Auth::ApiKey(api_key))))
+    build_rest_client(Auth::ApiKey(api_key))
 }
 
 /// Create a REST client with bearer token authentication
@@ -83,7 +119,7 @@ pub fn new_rest_client_with_api_key(api_key: String) -> Result<Arc<RestClient>, 
 /// A RestClient instance wrapped in Arc for thread-safe access
 #[uniffi::export]
 pub fn new_rest_client_with_bearer_token(bearer_token: String) -> Result<Arc<RestClient>, MarketDataError> {
-    Ok(Arc::new(RestClient::new(Auth::BearerToken(bearer_token))))
+    build_rest_client(Auth::BearerToken(bearer_token))
 }
 
 /// Create a REST client with SDK token authentication
@@ -95,7 +131,7 @@ pub fn new_rest_client_with_bearer_token(bearer_token: String) -> Result<Arc<Res
 /// A RestClient instance wrapped in Arc for thread-safe access
 #[uniffi::export]
 pub fn new_rest_client_with_sdk_token(sdk_token: String) -> Result<Arc<RestClient>, MarketDataError> {
-    Ok(Arc::new(RestClient::new(Auth::SdkToken(sdk_token))))
+    build_rest_client(Auth::SdkToken(sdk_token))
 }
 
 // ============================================================================
@@ -112,6 +148,7 @@ fn build_rest_client_with_tls(
     base_url: Option<String>,
     tls: TlsConfigRecord,
 ) -> Result<Arc<RestClient>, MarketDataError> {
+    auth.validate()?;
     let mut client = RestClient::with_tls(auth, tls.to_core())?;
     if let Some(url) = base_url {
         client = client.with_base_url(&url)?;
@@ -147,4 +184,50 @@ pub fn new_rest_client_with_sdk_token_and_tls(
     tls: TlsConfigRecord,
 ) -> Result<Arc<RestClient>, MarketDataError> {
     build_rest_client_with_tls(Auth::SdkToken(sdk_token), base_url, tls)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_config_error<T>(result: Result<T, MarketDataError>) {
+        match result {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert_eq!(info.code, marketdata_core::error_code::CONFIG)
+            }
+            Err(other) => panic!("expected ConfigError, got {other:?}"),
+            Ok(_) => panic!("expected ConfigError, got Ok"),
+        }
+    }
+
+    #[test]
+    fn validate_credentials_requires_exactly_one_non_blank() {
+        assert_eq!(
+            validate_credentials(Some(" ".into()), Some("t".into()), None).unwrap(),
+            CredentialKind::BearerToken
+        );
+        assert_eq!(
+            validate_credentials(None, Some("".into()), Some("s".into())).unwrap(),
+            CredentialKind::SdkToken
+        );
+        assert_eq!(
+            validate_credentials(Some("k".into()), None, None).unwrap(),
+            CredentialKind::ApiKey
+        );
+        assert_config_error(validate_credentials(None, None, None));
+        assert_config_error(validate_credentials(Some("".into()), None, Some("\t".into())));
+        assert_config_error(validate_credentials(Some("k".into()), Some("t".into()), None));
+    }
+
+    #[test]
+    fn rest_factories_reject_blank_credentials() {
+        assert_config_error(new_rest_client_with_api_key(String::new()));
+        assert_config_error(new_rest_client_with_bearer_token("  ".into()));
+        assert_config_error(new_rest_client_with_sdk_token_and_tls(
+            String::new(),
+            None,
+            TlsConfigRecord { root_cert_pem: None, accept_invalid_certs: false },
+        ));
+        assert!(new_rest_client_with_api_key("k".into()).is_ok());
+    }
 }

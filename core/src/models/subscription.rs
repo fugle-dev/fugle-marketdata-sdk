@@ -343,6 +343,32 @@ impl AuthRequest {
             heartbeat_interval_ms: None,
         }
     }
+
+    /// Check that exactly one credential is set and it is not empty or only
+    /// whitespace — the same rule as [`Auth::from_credentials`](crate::Auth::from_credentials).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`](crate::MarketDataError::ConfigError)
+    /// when none or more than one credential is provided.
+    pub fn validate(&self) -> Result<(), crate::MarketDataError> {
+        crate::rest::auth::check_credentials(
+            self.apikey.as_deref(),
+            self.token.as_deref(),
+            self.sdk_token.as_deref(),
+        )
+    }
+}
+
+impl From<crate::Auth> for AuthRequest {
+    /// Send the credential in the field matching its kind.
+    fn from(auth: crate::Auth) -> Self {
+        match auth {
+            crate::Auth::ApiKey(key) => Self::with_api_key(key),
+            crate::Auth::BearerToken(token) => Self::with_token(token),
+            crate::Auth::SdkToken(token) => Self::with_sdk_token(token),
+        }
+    }
 }
 
 /// WebSocket outgoing message (for sending to server)
@@ -634,6 +660,36 @@ mod tests {
         let json = r#"{"event": "authenticated"}"#;
         let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
         assert!(msg.is_authenticated());
+    }
+
+    #[test]
+    fn test_auth_request_validate() {
+        assert!(AuthRequest::with_api_key("k").validate().is_ok());
+        assert!(AuthRequest::with_token("t").validate().is_ok());
+        assert!(AuthRequest::with_sdk_token("s").validate().is_ok());
+
+        let mut both = AuthRequest::with_api_key("k");
+        both.token = Some("t".into());
+        for req in [
+            AuthRequest::with_api_key(""),
+            AuthRequest::with_token("  "),
+            AuthRequest::with_sdk_token("\n"),
+            both,
+        ] {
+            let err = req.validate().expect_err("should be rejected");
+            assert!(matches!(err, crate::MarketDataError::ConfigError(_)), "{err:?}");
+        }
+    }
+
+    #[test]
+    fn test_auth_request_from_auth_keeps_kind() {
+        let req = AuthRequest::from(crate::Auth::BearerToken("t".into()));
+        assert_eq!(req.token.as_deref(), Some("t"));
+        assert!(req.apikey.is_none() && req.sdk_token.is_none());
+        let req = AuthRequest::from(crate::Auth::SdkToken("s".into()));
+        assert_eq!(req.sdk_token.as_deref(), Some("s"));
+        let req = AuthRequest::from(crate::Auth::ApiKey("k".into()));
+        assert_eq!(req.apikey.as_deref(), Some("k"));
     }
 
     #[test]
