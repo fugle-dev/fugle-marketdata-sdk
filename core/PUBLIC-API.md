@@ -35,6 +35,13 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — connection state that outlives the client (#67)
+
+- `+` `aio::WebSocketClient::state_handle`.
+- `+` `websocket::connection_event::ConnectionStateHandle` (`Clone`, `Debug`,
+  `state()`, `is_connected()`, `is_closed()`), re-exported at the crate root
+  and from `websocket`.
+
 ### Unreleased — dropped-message count that outlives the client (#46)
 
 - `+` `aio::WebSocketClient::messages_dropped_handle`,
