@@ -361,7 +361,14 @@ namespace FugleMarketData
         /// <summary>
         /// Disconnect from the WebSocket server.
         /// </summary>
-        /// <returns>Task that completes when disconnected</returns>
+        /// <returns>
+        /// Task that completes once the listener has handled the connection's remaining
+        /// events, <see cref="IWebSocketListener.OnDisconnected"/> included. There is no
+        /// timeout on that wait: a listener method that blocks keeps it waiting for as
+        /// long as it does. Called from a
+        /// listener method, it completes without that wait: those events are delivered on
+        /// the thread running the method, after it returns.
+        /// </returns>
         public Task DisconnectAsync() => _inner.Disconnect();
 
         /// <summary>

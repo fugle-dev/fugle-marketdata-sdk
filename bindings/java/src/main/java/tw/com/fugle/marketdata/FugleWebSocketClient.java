@@ -86,15 +86,19 @@ public class FugleWebSocketClient implements AutoCloseable {
     private final BlockingQueue<String> errorQueue;
     /** The pull-mode listener, or null in callback mode. */
     private final InternalListener pullListener;
+    /** The wrapped callback-mode listener, or null in pull mode. */
+    private final SafeListener callbackListener;
 
     private FugleWebSocketClient(WebSocketClient webSocketClient,
                                   BlockingQueue<StreamMessage> messageQueue,
                                   BlockingQueue<String> errorQueue,
-                                  InternalListener pullListener) {
+                                  InternalListener pullListener,
+                                  SafeListener callbackListener) {
         this.webSocketClient = webSocketClient;
         this.messageQueue = messageQueue;
         this.errorQueue = errorQueue;
         this.pullListener = pullListener;
+        this.callbackListener = callbackListener;
     }
 
     /**
@@ -115,13 +119,29 @@ public class FugleWebSocketClient implements AutoCloseable {
     /**
      * Disconnect from the WebSocket server.
      *
+     * <p>The future completes once the listener has handled the connection's
+     * remaining events, {@code onDisconnected} included. There is no timeout on
+     * that wait: a listener method that blocks keeps it waiting for as long as
+     * it does. Called from a
+     * listener method, it completes at once instead: those events are
+     * delivered on the thread running that method, after it returns. The
+     * generated {@code WebSocketClient.disconnect()} has no such check: its
+     * future completes on another thread, so blocking on it from a listener
+     * method never returns.
+     *
      * @return CompletableFuture that completes when disconnected
      */
     public CompletableFuture<Void> disconnect() {
         if (pullListener != null) {
             pullListener.stop();
         }
-        return webSocketClient.disconnect();
+        CompletableFuture<Void> disconnected = webSocketClient.disconnect();
+        // Waiting there would never end (#126): the SDK's own wait skips a
+        // caller on the listener thread, but this future polls elsewhere.
+        if (callbackListener != null && callbackListener.isRunningOnCurrentThread()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return disconnected;
     }
 
     /**
@@ -361,7 +381,7 @@ public class FugleWebSocketClient implements AutoCloseable {
         private String sdkToken;
         private String baseUrl;
         private WebSocketEndpoint endpoint = WebSocketEndpoint.STOCK;
-        private WebSocketListener listener;
+        private SafeListener listener;
         private int queueCapacity = 10000;
         private ReconnectOptions reconnectOptions;
         private HealthCheckOptions healthCheckOptions;
@@ -582,7 +602,7 @@ public class FugleWebSocketClient implements AutoCloseable {
                 throw FugleException.from(e);
             }
 
-            return new FugleWebSocketClient(client, messageQueue, errorQueue, pullListener);
+            return new FugleWebSocketClient(client, messageQueue, errorQueue, pullListener, listener);
         }
     }
 
@@ -606,6 +626,8 @@ public class FugleWebSocketClient implements AutoCloseable {
 
         private final WebSocketListener delegate;
         private final ReportThrottle throttle;
+        /** True on the thread while it runs one of this listener's methods. */
+        private final ThreadLocal<Boolean> running = ThreadLocal.withInitial(() -> false);
 
         SafeListener(WebSocketListener delegate) {
             this(delegate, new ReportThrottle());
@@ -662,21 +684,32 @@ public class FugleWebSocketClient implements AutoCloseable {
             invoke("onMessagesDropped", () -> delegate.onMessagesDropped(count));
         }
 
+        /** Whether the current thread is running one of this listener's methods. */
+        boolean isRunningOnCurrentThread() {
+            return running.get();
+        }
+
         /** Run a listener method; a thrown exception is reported via onError instead of crossing the FFI boundary. */
         private void invoke(String methodName, Runnable call) {
+            running.set(true);
             try {
                 call.run();
             } catch (Exception ex) {
                 reportCallbackFailure(methodName, ex);
+            } finally {
+                running.remove();
             }
         }
 
         /** Run onError itself; a thrown exception is logged, never re-thrown or re-reported. */
         private void invokeOnError(Runnable call) {
+            running.set(true);
             try {
                 call.run();
             } catch (Exception ex) {
                 LOGGER.log(Level.WARNING, "WebSocketListener.onError threw", ex);
+            } finally {
+                running.remove();
             }
         }
 

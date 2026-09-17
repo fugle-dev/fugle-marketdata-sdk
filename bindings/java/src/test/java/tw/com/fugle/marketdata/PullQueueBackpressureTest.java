@@ -136,16 +136,9 @@ public class PullQueueBackpressureTest {
 
             long reported = 0;
             Pattern dropped = Pattern.compile("^Dropped (\\d+) message");
-            // The report covering the burst's tail is queued by disconnect()
-            // and reaches the listener on its own thread, possibly after
-            // disconnect() returns: wait for it rather than read once.
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (reported < total && System.nanoTime() < deadline) {
-                String error = client.pollError();
-                if (error == null) {
-                    Thread.sleep(10);
-                    continue;
-                }
+            // The report covering the burst's tail is queued by disconnect(),
+            // which completes once the listener has handled it (#126).
+            for (String error = client.pollError(); error != null; error = client.pollError()) {
                 Matcher m = dropped.matcher(error);
                 if (m.find()) {
                     reported += Long.parseLong(m.group(1));

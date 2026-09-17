@@ -3473,10 +3473,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect();
-            if (checksum != 57258)
+            if (checksum != 58180)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect` checksum `57258`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect` checksum `58180`, library returned `{checksum}`"
                 );
             }
         }
@@ -8763,6 +8763,18 @@ public interface IWebSocketClient
 {
     /// <exception cref="MarketDataException"></exception>
     Task Connect();
+
+    /// <summary>
+    /// Disconnect, returning once the listener has handled the connection's
+    /// remaining events, `on_disconnected` included.
+    ///
+    /// There is no timeout on that wait: a listener method that blocks keeps
+    /// `disconnect()` waiting for as long as it does.
+    ///
+    /// Called from a listener method, it returns without that wait: those
+    /// events are delivered on the thread running the method, after it
+    /// returns.
+    /// </summary>
     Task Disconnect();
 
     /// <summary>
@@ -8984,6 +8996,17 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         );
     }
 
+    /// <summary>
+    /// Disconnect, returning once the listener has handled the connection's
+    /// remaining events, `on_disconnected` included.
+    ///
+    /// There is no timeout on that wait: a listener method that blocks keeps
+    /// `disconnect()` waiting for as long as it does.
+    ///
+    /// Called from a listener method, it returns without that wait: those
+    /// events are delivered on the thread running the method, after it
+    /// returns.
+    /// </summary>
     public async Task Disconnect()
     {
         await _UniFFIAsync.UniffiRustCallAsync(
