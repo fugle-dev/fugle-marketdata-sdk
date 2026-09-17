@@ -170,6 +170,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Node**: WebSocket listeners run in the order core emits the connection
+  events (`connect` → `authenticated`, `disconnect` → `reconnect` → …), and
+  `connect()` settles after the listener of the event that settles it, even
+  when that event has no listener. Each listener had its own threadsafe
+  function, and Node-API does not order calls across them; all events now go
+  through one per connection. A listener is looked up when its event runs, so
+  one registered after the event was queued (e.g. by an earlier listener, or
+  while the JS thread was busy) receives it (#62). The order of `message`
+  relative to the other events is not guaranteed yet (#68).
 - **Node, Python**: a panic on a WebSocket background thread no longer leaves
   the connection silently dead (#25). Node's worker and event threads report
   it as an `error` (`Error` with `code` -1, "WebSocket <thread> thread
