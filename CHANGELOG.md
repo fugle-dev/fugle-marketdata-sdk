@@ -271,6 +271,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rust**: the blocking `WebSocketClient::force_close()` aborts the
+  connection like the async one: it sends no Close frame and discards queued
+  writes, and the socket is closed within about 200 ms. It used to run the
+  graceful `disconnect()` sequence in the background, so the socket stayed
+  open for up to about 2 seconds waiting for the server's Close ack (#79).
 - **Python**: `async for msg in ws.stock.messages()` ends once the connection
   is gone. `__anext__` returned `None` for a closed channel instead of raising
   `StopAsyncIteration`, so the loop spun on `None` forever after

@@ -136,3 +136,34 @@ async fn sync_disconnect_after_server_close_emits_no_second_disconnect() {
         disconnects[0]
     );
 }
+
+/// #79: `force_close()` aborts like the async client — no Close frame, and
+/// the socket is gone within one read-poll interval instead of after the
+/// graceful drain / Close-ack wait.
+#[tokio::test(flavor = "multi_thread")]
+async fn sync_force_close_drops_socket_without_close_frame() {
+    let (ended_tx, mut ended_rx) = tokio::sync::mpsc::unbounded_channel();
+    let server = common::spawn(common::AfterAuth::ReportClientClose {
+        ended_by_close: ended_tx,
+    })
+    .await;
+
+    let client = tokio::task::spawn_blocking(move || {
+        let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+        let client =
+            WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
+        client.connect().expect("connect");
+        client.force_close().expect("force close");
+        // Kept alive past the assertion so only `force_close` can close the socket.
+        client
+    })
+    .await
+    .expect("sync client thread");
+
+    let ended_by_close = tokio::time::timeout(Duration::from_secs(1), ended_rx.recv())
+        .await
+        .expect("socket still open 1s after force_close")
+        .expect("server reports how the connection ended");
+    assert!(!ended_by_close, "force_close must not send a Close frame");
+    drop(client);
+}

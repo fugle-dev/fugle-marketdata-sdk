@@ -95,6 +95,7 @@ impl WebSocketClient {
             stream,
             write_tx_slot: Mutex::new(None),
             should_stop: Arc::new(AtomicBool::new(false)),
+            abort: AtomicBool::new(false),
             messages_dropped,
             events_dropped,
         });
@@ -350,6 +351,11 @@ impl WebSocketClient {
 
     /// Force-close without waiting for the supervisor.
     ///
+    /// Unlike [`disconnect`](Self::disconnect), queued writes are discarded
+    /// and no Close frame is sent: the supervisor drops the socket within
+    /// one read-poll interval (200 ms), like the async client's
+    /// `force_close`.
+    ///
     /// Like [`disconnect`](Self::disconnect), emits
     /// [`ConnectionEvent::Disconnected`] only if this connection has not
     /// already reported one.
@@ -358,6 +364,9 @@ impl WebSocketClient {
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
     /// validation, or peer-initiated failures.
     pub fn force_close(&self) -> Result<(), MarketDataError> {
+        // `abort` first, so the owner loop never sees `should_stop` alone
+        // and takes the graceful path.
+        self.shared.abort.store(true, Ordering::SeqCst);
         self.shared.should_stop.store(true, Ordering::SeqCst);
         *self.shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = None;
         // Drop the join handle without joining — supervisor will exit on its own.
