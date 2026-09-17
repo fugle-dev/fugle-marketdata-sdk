@@ -1167,7 +1167,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed()
 		})
-		if checksum != 15116 {
+		if checksum != 1028 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed: UniFFI API checksum mismatch")
 		}
@@ -4468,7 +4468,12 @@ func (_ FfiDestroyerStockTechnicalClient) Destroy(value *StockTechnicalClient) {
 type WebSocketClientInterface interface {
 	Connect() error
 	Disconnect()
-	// Check if the client has been shut down
+	// Check if the connection has ended
+	//
+	// Reads core's connection state: true after `disconnect()`, and after
+	// the server closes the connection when no reconnect follows (disabled
+	// or attempts exhausted). False while reconnecting and before the first
+	// `connect()`.
 	IsClosed() bool
 	// Check if the client is currently connected
 	//
@@ -4663,7 +4668,12 @@ func (_self *WebSocketClient) Disconnect() {
 
 }
 
-// Check if the client has been shut down
+// Check if the connection has ended
+//
+// Reads core's connection state: true after `disconnect()`, and after
+// the server closes the connection when no reconnect follows (disabled
+// or attempts exhausted). False while reconnecting and before the first
+// `connect()`.
 func (_self *WebSocketClient) IsClosed() bool {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()

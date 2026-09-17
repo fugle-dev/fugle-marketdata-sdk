@@ -136,7 +136,8 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     /**
-     * Check if the client has been shut down.
+     * Check if the connection has ended: after {@link #disconnect()}, or after
+     * the server closed it with no reconnect to follow. False while reconnecting.
      */
     public boolean isClosed() {
         try {

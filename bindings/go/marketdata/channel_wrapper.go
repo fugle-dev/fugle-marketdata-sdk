@@ -307,7 +307,8 @@ func (sc *StreamingClient) IsConnected() bool {
 	return sc.client.IsConnected()
 }
 
-// IsClosed returns true if the WebSocket client has been shut down
+// IsClosed returns true once the server has closed the connection with no
+// reconnect to follow. False while reconnecting.
 func (sc *StreamingClient) IsClosed() bool {
 	return sc.client.IsClosed()
 }

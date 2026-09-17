@@ -33,7 +33,7 @@
 use crate::errors::{ErrorInfo, MarketDataError};
 use crate::models::StreamMessage;
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
-use marketdata_core::websocket::{ConnectionEvent, ConnectionState, StreamItem, StreamReceiver};
+use marketdata_core::websocket::{ConnectionEvent, StreamItem, StreamReceiver};
 use marketdata_core::AuthRequest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -322,8 +322,7 @@ impl StreamingVersionRecord {
 /// WebSocketListener implementation via a background task.
 #[derive(uniffi::Object)]
 pub struct WebSocketClient {
-    /// A `std` mutex so the sync `is_connected()` can read it; async methods
-    /// clone the client out before awaiting.
+    /// Async methods clone the client out before awaiting.
     inner: std::sync::Mutex<Option<Arc<CoreWebSocketClient>>>,
     listener: Arc<dyn WebSocketListener>,
     /// Sent in the auth frame; its field follows the credential kind (#91).
@@ -331,7 +330,10 @@ pub struct WebSocketClient {
     base_url: Option<String>,
     version: StreamingVersionRecord,
     endpoint: WebSocketEndpoint,
-    shutdown: Arc<AtomicBool>,
+    /// Core's connection state of the current or last connection, read by
+    /// `is_connected()` and `is_closed()`; outlives the core client, which
+    /// `disconnect()` drops.
+    state: std::sync::Mutex<Option<marketdata_core::ConnectionStateHandle>>,
     /// Tells the current connection's stream reader that `disconnect()` was
     /// called. One per `connect()`, so a reader still draining a previous
     /// connection never sees a later connection's flag.
@@ -371,7 +373,7 @@ impl WebSocketClient {
             base_url,
             version,
             endpoint,
-            shutdown: Arc::new(AtomicBool::new(false)),
+            state: std::sync::Mutex::new(None),
             stopping: std::sync::Mutex::new(Arc::new(AtomicBool::new(false))),
             reconnect_config,
             health_check_config,
@@ -603,12 +605,17 @@ impl WebSocketClient {
     /// Reads core's connection state, so it is false while reconnecting and
     /// right after the connection drops, without waiting for the event thread.
     pub fn is_connected(&self) -> bool {
-        self.client().is_some_and(|ws| ws.state() == ConnectionState::Connected)
+        self.state_handle().is_some_and(|state| state.is_connected())
     }
 
-    /// Check if the client has been shut down
+    /// Check if the connection has ended
+    ///
+    /// Reads core's connection state: true after `disconnect()`, and after
+    /// the server closes the connection when no reconnect follows (disabled
+    /// or attempts exhausted). False while reconnecting and before the first
+    /// `connect()`.
     pub fn is_closed(&self) -> bool {
-        self.shutdown.load(Ordering::SeqCst)
+        self.state_handle().is_some_and(|state| state.is_closed())
     }
 }
 
@@ -704,6 +711,7 @@ impl WebSocketClient {
             .messages_dropped
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(core_ws.messages_dropped_handle());
+        *lock_state(&self.state) = Some(core_ws.state_handle());
 
         // Forward core's stream: messages and lifecycle events in the order
         // core produced them (#68). The thread starts before `connect()` so
@@ -723,9 +731,6 @@ impl WebSocketClient {
 
         // Store client in inner
         *lock_inner(&self.inner) = Some(Arc::new(core_ws));
-
-        // Reset shutdown flag for this connection
-        self.shutdown.store(false, Ordering::SeqCst);
 
         Ok(())
     }
@@ -812,7 +817,6 @@ impl WebSocketClient {
     async fn disconnect_impl(&self) {
         // No messages are delivered once `disconnect()` has been called; the
         // connection's remaining events still are.
-        self.shutdown.store(true, Ordering::SeqCst);
         lock_stopping(&self.stopping).store(true, Ordering::SeqCst);
 
         // Take and disconnect the client. `on_disconnected` comes from
@@ -821,6 +825,11 @@ impl WebSocketClient {
         if let Some(ws) = ws {
             let _ = ws.disconnect().await;
         }
+    }
+
+    /// Core's connection state of the current or last connection.
+    fn state_handle(&self) -> Option<marketdata_core::ConnectionStateHandle> {
+        lock_state(&self.state).clone()
     }
 
     /// The current core client, cloned out so no lock is held across awaits.
@@ -1059,6 +1068,13 @@ fn panic_detail(payload: &(dyn std::any::Any + Send)) -> String {
 /// Lock `stopping`, recovering from poison: it only holds an `Arc`.
 fn lock_stopping(stopping: &std::sync::Mutex<Arc<AtomicBool>>) -> std::sync::MutexGuard<'_, Arc<AtomicBool>> {
     stopping.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Lock `state`, recovering from poison: it only holds a handle.
+fn lock_state(
+    state: &std::sync::Mutex<Option<marketdata_core::ConnectionStateHandle>>,
+) -> std::sync::MutexGuard<'_, Option<marketdata_core::ConnectionStateHandle>> {
+    state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Lock `inner`, recovering from poison: the slot holds no invariant a
@@ -1676,6 +1692,55 @@ mod tests {
 
         client.disconnect_impl().await;
         assert!(!client.is_connected(), "false as soon as disconnect() returns");
+    }
+
+    /// Poll `is_closed()` until it equals `expected`.
+    async fn wait_closed(client: &WebSocketClient, expected: bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while client.is_closed() != expected {
+            assert!(std::time::Instant::now() < deadline, "is_closed() never became {expected}");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn is_closed_after_server_close_without_reconnect() {
+        // Used to read a flag only `disconnect()` set (#95).
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+        assert!(!client.is_closed(), "not closed before connect()");
+
+        client.connect_impl().await.expect("connect");
+        assert!(!client.is_closed());
+
+        server.drop_transport().await;
+        wait_closed(&client, true).await;
+        assert!(!client.is_connected());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn is_closed_is_false_while_reconnecting_and_true_after_disconnect() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord {
+                max_attempts: 3,
+                initial_delay_ms: 1000,
+                max_delay_ms: 1000,
+            }),
+        );
+
+        client.connect_impl().await.expect("connect");
+        server.drop_transport_for(0).await;
+        listener.wait_for("reconnecting(1)").await;
+        assert!(!client.is_closed(), "false while reconnecting");
+
+        client.disconnect_impl().await;
+        assert!(client.is_closed(), "true as soon as disconnect() returns");
+        assert!(!client.is_connected());
     }
 
     #[tokio::test(flavor = "multi_thread")]
