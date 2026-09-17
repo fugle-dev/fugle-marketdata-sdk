@@ -2,6 +2,7 @@
 //! messages onto the client's stream. Also implements optional outbound ping.
 
 use crate::tracing_compat::{debug, warn};
+use crate::websocket::aio::writer::WriteFailure;
 use crate::websocket::aio::{SharedState, WsStream};
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
 use crate::websocket::stream_queue::StreamSender;
@@ -12,8 +13,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio_tungstenite::tungstenite::Message;
+
+/// What ended one wait of the dispatch loop.
+enum Next {
+    Frame(Option<Result<Message, tokio_tungstenite::tungstenite::Error>>),
+    HeartbeatTimeout(Duration),
+    WriteFailed(WriteFailure),
+    WriterGone,
+}
 
 /// Dispatch incoming WebSocket messages to appropriate channels
 ///
@@ -21,7 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// It will terminate when:
 /// 1. WebSocket connection closes (returns close code)
 /// 2. Server sends Close frame (returns close code from frame)
-/// 3. WebSocket error occurs (returns None)
+/// 3. WebSocket error occurs, reading or writing (returns None)
 /// 4. Task is aborted by disconnect() (task cancelled at .await point)
 ///
 /// The function is cancellation-safe: aborting at any `.await` point
@@ -41,6 +50,9 @@ use tokio_tungstenite::tungstenite::Message;
 ///   `will_reconnect` so it matches the decision the caller makes next
 /// * `state` - The client's connection state, updated to match each
 ///   `Disconnected` before it is queued (#86)
+/// * `write_failed` - Receives this connection's failed write from its
+///   writer task; it is reported and ends the connection like a transport
+///   error (#97)
 ///
 /// # Returns
 ///
@@ -57,7 +69,9 @@ pub(crate) async fn dispatch_messages(
     shutdown_requested: Arc<AtomicBool>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     state: SharedState,
+    write_failed: oneshot::Receiver<WriteFailure>,
 ) -> Option<u16> {
+    let mut write_failed = Some(write_failed);
     let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
         let reconnection = Arc::clone(&reconnection);
         let shutdown_requested = shutdown_requested.load(Ordering::SeqCst);
@@ -78,37 +92,82 @@ pub(crate) async fn dispatch_messages(
         // Read-site liveness: if `heartbeat_timeout` is set, the next
         // frame must arrive within that window or we declare the
         // connection dead. When None, fall back to a plain blocking
-        // read (no liveness detection).
-        let frame_result = match heartbeat_timeout {
-            Some(timeout) => match tokio::time::timeout(timeout, ws_read.next()).await {
-                Ok(opt) => opt,
-                Err(_elapsed) => {
-                    // A caller-initiated shutdown reports the close itself.
-                    if shutdown_requested.load(Ordering::SeqCst) {
-                        return None;
-                    }
-                    let elapsed_ms = timeout.as_millis() as u64;
-                    warn!(
-                        target: "fugle_marketdata::ws",
-                        elapsed_ms,
-                        "heartbeat timeout: no inbound frame in window"
-                    );
-                    stream.emit(ConnectionEvent::HeartbeatTimeout {
-                        elapsed: timeout,
-                    });
-                    // Through the latch, so a racing `disconnect()` cannot
-                    // report this connection's close a second time (#47).
-                    stream.connection_lost(
-                        &state,
-                        None,
-                        format!("Heartbeat timeout after {elapsed_ms}ms"),
-                        DisconnectIntent::Network,
-                        will_reconnect(DisconnectIntent::Network, None).await,
-                    );
+        // read (no liveness detection). A failed write on this connection
+        // ends it as well (#97); every branch is cancel-safe, so the losing
+        // one drops nothing.
+        let next = tokio::select! {
+            read = async {
+                match heartbeat_timeout {
+                    Some(timeout) => tokio::time::timeout(timeout, ws_read.next())
+                        .await
+                        .map_err(|_elapsed| timeout),
+                    None => Ok(ws_read.next().await),
+                }
+            } => match read {
+                Ok(frame) => Next::Frame(frame),
+                Err(timeout) => Next::HeartbeatTimeout(timeout),
+            },
+            failure = async {
+                match write_failed.as_mut() {
+                    Some(rx) => rx.await.ok(),
+                    None => std::future::pending().await,
+                }
+            } => match failure {
+                Some(failure) => Next::WriteFailed(failure),
+                None => Next::WriterGone,
+            },
+        };
+
+        let frame_result = match next {
+            Next::Frame(frame) => frame,
+            Next::HeartbeatTimeout(timeout) => {
+                // A caller-initiated shutdown reports the close itself.
+                if shutdown_requested.load(Ordering::SeqCst) {
                     return None;
                 }
-            },
-            None => ws_read.next().await,
+                let elapsed_ms = timeout.as_millis() as u64;
+                warn!(
+                    target: "fugle_marketdata::ws",
+                    elapsed_ms,
+                    "heartbeat timeout: no inbound frame in window"
+                );
+                stream.emit(ConnectionEvent::HeartbeatTimeout {
+                    elapsed: timeout,
+                });
+                // Through the latch, so a racing `disconnect()` cannot
+                // report this connection's close a second time (#47).
+                stream.connection_lost(
+                    &state,
+                    None,
+                    format!("Heartbeat timeout after {elapsed_ms}ms"),
+                    DisconnectIntent::Network,
+                    will_reconnect(DisconnectIntent::Network, None).await,
+                );
+                return None;
+            }
+            Next::WriteFailed(WriteFailure { error, message }) => {
+                // Mirrors the transport-error arm below and the sync
+                // client's write-error path: `Error`, then `Disconnected`,
+                // both suppressed when shutdown was caller-initiated.
+                if shutdown_requested.load(Ordering::SeqCst) {
+                    return None;
+                }
+                stream.emit(ConnectionEvent::error_with_message(&error, message.clone()));
+                stream.connection_lost(
+                    &state,
+                    None,
+                    message,
+                    DisconnectIntent::Network,
+                    will_reconnect(DisconnectIntent::Network, None).await,
+                );
+                return None;
+            }
+            Next::WriterGone => {
+                // The writer stopped without a failure (its queue or sink
+                // was cleared); keep reading.
+                write_failed = None;
+                continue;
+            }
         };
 
         let msg_result = match frame_result {

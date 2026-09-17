@@ -1,7 +1,7 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
 use crate::models::SubscribeRequest;
-use crate::websocket::aio::writer::run_writer_task;
+use crate::websocket::aio::writer::{spawn_writer, WriteFailure};
 use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
@@ -16,7 +16,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration};
 use tokio_tungstenite::{connect_async_tls_with_config, Connector};
@@ -128,8 +128,9 @@ pub(crate) async fn await_auth_response(
 /// Called from within the dispatch loop's spawned task. Takes owned values
 /// (cloned from the spawned task) because `mpsc::Sender` is `!Sync` and
 /// holding `&mpsc::Sender` across await points would make the future `!Send`.
-/// Returns `Some(ws_read)` on successful reconnect, `None` if reconnect is not
-/// configured, all attempts are exhausted, or `shutdown_requested` was set.
+/// Returns the new read half and the receiver of its writer's failed write
+/// on successful reconnect, `None` if reconnect is not configured, all
+/// attempts are exhausted, or `shutdown_requested` was set.
 ///
 /// Once `disconnect()` sets `shutdown_requested` this emits nothing further:
 /// the flag is checked before each attempt, after its backoff sleep, and
@@ -146,7 +147,7 @@ pub(crate) async fn try_reconnect(
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     subscriptions: Arc<SubscriptionManager>,
     shutdown_requested: Arc<AtomicBool>,
-) -> Option<WsStream> {
+) -> Option<(WsStream, oneshot::Receiver<WriteFailure>)> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
 
     // Check if we should attempt reconnection
@@ -230,16 +231,12 @@ pub(crate) async fn try_reconnect(
                         if let Some(prev) = writer_handle.lock().await.take() {
                             prev.abort();
                         }
-                        let (new_write_tx, new_write_rx) = tokio_mpsc::channel::<String>(64);
+                        let (new_write_tx, writer_task_handle, write_failed_rx) =
+                            spawn_writer(Arc::clone(&ws_sink), stream.clone());
                         {
                             let mut guard = write_tx_slot.lock().await;
                             *guard = Some(new_write_tx.clone());
                         }
-                        let writer_task_handle = tokio::spawn(run_writer_task(
-                            new_write_rx,
-                            Arc::clone(&ws_sink),
-                            stream.clone(),
-                        ));
                         {
                             let mut guard = writer_handle.lock().await;
                             *guard = Some(writer_task_handle);
@@ -259,7 +256,7 @@ pub(crate) async fn try_reconnect(
                         // new ws_read, and dispatch_messages's read-site
                         // timeout is a fresh `tokio::time::timeout` per loop
                         // iteration.
-                        return Some(ws_read);
+                        return Some((ws_read, write_failed_rx));
                     }
                     Err(_) => {
                         // Continue loop to next attempt

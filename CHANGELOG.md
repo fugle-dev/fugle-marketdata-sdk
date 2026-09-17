@@ -312,6 +312,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Node, Python, UniFFI, Rust async client**: a failed write (a subscribe,
+  unsubscribe or other frame that cannot be sent) ends the connection, as it
+  already did on the blocking client. The client emits `Error`, then
+  `Disconnected { intent: Network }`, records the matching state, and
+  reconnects when the reconnect policy allows. It used to emit only `Error`
+  and keep reporting itself connected, without reconnecting, until a read
+  failed too. The `Error` message now reads `WebSocket write error: …`, the
+  wording of the blocking client, instead of `Writer error: …` (#97).
 - **All languages**: a `disconnect` listener or callback that reads the
   connection state already sees the close it reports: not connected, and
   closed when no reconnect follows (Node `isConnected` / `isClosed`, Python
