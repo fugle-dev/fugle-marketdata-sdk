@@ -364,7 +364,7 @@ client uses the OS trust store (rustls loads it via
 | 1002 | DeserializationError | Failed to parse a response or WebSocket frame |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Invalid configuration |
-| 1005 | InvalidParameter | Invalid or missing parameter |
+| 1005 | InvalidParameter | Invalid or missing parameter (including an unknown WebSocket channel) |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned an error |

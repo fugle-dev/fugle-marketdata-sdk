@@ -627,7 +627,7 @@ impl WebSocketClient {
     }
 
     pub async fn subscribe(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
-        self.subscribe_impl(channel, symbol).await
+        self.subscribe_impl(channel.parse()?, symbol).await
     }
 
     pub async fn unsubscribe(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
@@ -737,33 +737,19 @@ impl WebSocketClient {
 
     /// Subscribe to a channel for a symbol
     ///
-    /// # Arguments
-    /// * `channel` - Channel name (e.g., "trades", "candles", "books")
-    /// * `symbol` - Symbol to subscribe (e.g., "2330")
+    /// Callers parse the channel name first, so an unknown one is 1005
+    /// `INVALID_PARAMETER` whether or not the client is connected.
     ///
     /// # Errors
     ///
     /// Returns error if not connected or subscription fails.
-    async fn subscribe_impl(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
+    async fn subscribe_impl(
+        &self,
+        channel: marketdata_core::models::Channel,
+        symbol: String,
+    ) -> Result<(), MarketDataError> {
         if let Some(ws) = self.client() {
-            use marketdata_core::models::Channel;
-
-            // Parse channel string to Channel enum
-            let channel_enum = match channel.as_str() {
-                "trades" => Channel::Trades,
-                "candles" => Channel::Candles,
-                "books" => Channel::Books,
-                "aggregates" => Channel::Aggregates,
-                "indices" => Channel::Indices,
-                _ => {
-                    return Err(crate::errors::config_error(format!(
-                        "Unknown channel: {}",
-                        channel
-                    )))
-                }
-            };
-
-            let sub = marketdata_core::StockSubscription::new(channel_enum, &symbol);
+            let sub = marketdata_core::StockSubscription::new(channel, &symbol);
             ws.subscribe(sub).await?;
             Ok(())
         } else {
@@ -857,6 +843,8 @@ impl WebSocketClient {
 
     /// Subscribe to a channel for a symbol (blocking).
     pub fn subscribe_sync(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
+        // Before the runtime check, as in `subscribe`.
+        let channel = channel.parse()?;
         let guard = self.sync_runtime.lock().unwrap();
         if let Some(ref rt) = *guard {
             rt.block_on(self.subscribe_impl(channel, symbol))
@@ -1988,5 +1976,38 @@ mod tests {
                 Ok(_) => panic!("expected ConfigError for {api_key:?}/{bearer_token:?}/{sdk_token:?}"),
             }
         }
+    }
+
+    fn assert_unknown_channel(result: Result<(), MarketDataError>) {
+        match result {
+            Err(MarketDataError::ApiError { msg, info }) => {
+                assert_eq!(info.code, marketdata_core::error_code::INVALID_PARAMETER);
+                assert_eq!(
+                    msg,
+                    "Invalid parameter 'channel': unknown channel 'trade'. \
+                     Valid channels: trades, candles, books, aggregates, indices"
+                );
+            }
+            other => panic!("expected INVALID_PARAMETER, got {other:?}"),
+        }
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn subscribe_rejects_unknown_channel_before_connecting() {
+        let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        assert_unknown_channel(client.subscribe("trade".into(), "2330".into()).await);
+        // A known name, in any case, gets past the check to "not connected".
+        match client.subscribe("Trades".into(), "2330".into()).await {
+            Err(MarketDataError::WebSocketError { msg, .. }) if msg == "Not connected" => {}
+            other => panic!("expected \"Not connected\", got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "cpp")]
+    #[test]
+    fn subscribe_sync_rejects_unknown_channel_before_connecting() {
+        let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        assert_unknown_channel(client.subscribe_sync("trade".into(), "2330".into()));
     }
 }

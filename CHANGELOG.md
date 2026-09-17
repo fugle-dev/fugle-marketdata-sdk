@@ -239,6 +239,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Python, C#, Go, Java, C++**: WebSocket `subscribe()` with an unknown
+  channel name fails with code 1005 `INVALID_PARAMETER`, parsed by core, and
+  the same message as Node (#114). Python raised `ValueError` (now
+  `MarketDataError`); UniFFI returned `ConfigError` 1004 (now `ApiError`
+  1005) and matched names case-sensitively (now ignoring case). The name is
+  checked before the connection, so an unconnected client reports 1005 rather
+  than "Not connected". Python's `subscribe_async()` still raises on await.
+  See [MIGRATION-0.9.md](MIGRATION-0.9.md#15-websocket-unknown-channel-code-1005-everywhere).
 - **All languages**: credentials are checked in core (#69). Exactly one of
   API key, bearer token and SDK token must be given, and an empty or
   whitespace-only value counts as not given; otherwise constructors throw a
