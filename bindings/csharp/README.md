@@ -177,6 +177,11 @@ using var client = RestClient.WithBearerToken("your-bearer-token");
 using var client = RestClient.WithSdkToken("your-sdk-token");
 ```
 
+The WebSocket client takes the same three credentials through
+`WebSocketClientOptions` (`ApiKey`, `BearerToken` or `SdkToken`). Do not log
+the raw `uniffi.marketdata_uniffi.CredentialsRecord` the credentials are passed
+in: a C# record's `ToString()` prints every field, secrets included.
+
 ## Advanced: Custom TLS / self-signed servers
 
 For connecting to servers with a private CA (enterprise deployments) or

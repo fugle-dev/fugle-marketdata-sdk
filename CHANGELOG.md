@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Auth::validate()`, `AuthRequest::validate()` and `From<Auth> for
   AuthRequest`; **UniFFI**: `validate_credentials()` returning a
   `CredentialKind` (#69).
+- **C#, Go, Java**: the WebSocket client accepts a bearer token or an SDK
+  token, not just an API key (#91). They used to throw or return
+  "not yet supported". **UniFFI**: the new constructor
+  `WebSocketClient::new_with_credentials(CredentialsRecord, ...)` takes all
+  three credentials and returns the `ConfigError` (code 1004) unless exactly
+  one is given.
 - **All languages**: an exception raised by a WebSocket callback or listener
   no longer crashes the process or silences later events; it is reported
   through the error callback with the new code 3004 `CALLBACK_FAILED`, or
@@ -364,6 +370,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python, Node**: the WebSocket auth frame sends a bearer token as `token`
+  and an SDK token as `sdkToken`, as the server expects. Every credential used
+  to go out as `apikey`, so token authentication failed (#91).
 - **Node, Python, UniFFI, Rust async client**: a failed write (a subscribe,
   unsubscribe or other frame that cannot be sent) ends the connection, as it
   already did on the blocking client. The client emits `Error`, then

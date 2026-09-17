@@ -89,6 +89,7 @@ struct StockSnapshotClient;
 struct StockTechnicalClient;
 struct WebSocketClient;
 struct WebSocketListener;
+struct CredentialsRecord;
 struct ErrorInfo;
 struct HealthCheckConfigRecord;
 struct MessageQueueConfigRecord;
@@ -101,6 +102,22 @@ enum class ErrorSourceKind;
 struct MarketDataError;
 enum class MessageOverflowRecord;
 enum class WebSocketEndpoint;
+
+
+/**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
+};
 
 
 /**
@@ -142,39 +159,6 @@ enum class ErrorSourceKind: int32_t {
 
 
 /**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
- */
-enum class MessageOverflowRecord: int32_t {
-    /**
-     * Drop new messages and report them through `on_messages_dropped`.
-     */
-    kDropNewest = 1,
-    /**
-     * Never drop: the queue grows while `on_message` lags.
-     */
-    kUnbounded = 2
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
-};
-
-
-/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -209,6 +193,23 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1057,6 +1058,20 @@ struct WebSocketClient
      */
     static std::shared_ptr<WebSocketClient> new_with_config(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config);
     /**
+     * Create a new WebSocket client from whichever credential was given.
+     *
+     * Takes the same three credentials as the REST client: exactly one must
+     * be non-empty (an empty or whitespace-only value counts as not
+     * provided), otherwise this returns a `ConfigError` (code 1004). The
+     * auth frame then carries it as `apikey`, `token` or `sdkToken`.
+     * The other arguments are those of `new_with_options`.
+     *
+     * The credentials are one record rather than three arguments: with three
+     * more buffers than `new_with_options` the Java binding (JNA) passed
+     * garbage to Rust on macOS arm64.
+     */
+    static std::shared_ptr<WebSocketClient> new_with_credentials(const CredentialsRecord &credentials, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue);
+    /**
      * Create a new WebSocket client for a specific endpoint
      *
      * # Arguments
@@ -1415,6 +1430,32 @@ struct WebSocketListenerImpl
     void *_uniffi_internal_clone_pointer() const;
 
     void *instance = nullptr;
+};
+
+
+/**
+ * The credentials a WebSocket client authenticates with.
+ *
+ * Exactly one must be non-empty; an empty or whitespace-only value counts
+ * as not provided.
+ *
+ * Its fields are secrets: do not log this record. `Debug` here redacts
+ * them, but the generated types may not — a C# record's `ToString()` and
+ * Go's `fmt` `%v` print every field.
+ */
+struct CredentialsRecord {
+    /**
+     * Fugle API key, sent as `apikey`
+     */
+    std::optional<std::string> api_key;
+    /**
+     * OAuth bearer token, sent as `token`
+     */
+    std::optional<std::string> bearer_token;
+    /**
+     * Fugle SDK token, sent as `sdkToken`
+     */
+    std::optional<std::string> sdk_token;
 };
 
 
@@ -1819,6 +1860,14 @@ struct FfiConverterWebSocketListener {
 private:
     friend struct UniffiCallbackInterfaceWebSocketListener;
     inline static HandleMap<WebSocketListener> handle_map = {};
+};
+
+struct FfiConverterTypeCredentialsRecord {
+    static CredentialsRecord lift(RustBuffer);
+    static RustBuffer lower(const CredentialsRecord &);
+    static CredentialsRecord read(RustStream &);
+    static void write(RustStream &, const CredentialsRecord &);
+    static uint64_t allocation_size(const CredentialsRecord &);
 };
 
 struct FfiConverterTypeErrorInfo {

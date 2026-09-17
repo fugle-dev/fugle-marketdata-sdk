@@ -237,6 +237,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config() != 8956) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials() != 10661) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint() != 35702) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -1270,6 +1273,12 @@ std::shared_ptr<WebSocketClient> WebSocketClient::new_with_config(const std::str
         nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config))));
 }
 
+std::shared_ptr<WebSocketClient> WebSocketClient::new_with_credentials(const CredentialsRecord &credentials, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue) {
+    return std::shared_ptr<WebSocketClient>(new WebSocketClient(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials,
+        uniffi::FfiConverterMarketDataError::lift, uniffi::FfiConverterTypeCredentialsRecord::lower(credentials), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version), uniffi::FfiConverterOptionalTypeMessageQueueConfigRecord::lower(message_queue))));
+}
+
 std::shared_ptr<WebSocketClient> WebSocketClient::new_with_endpoint(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint) {
     return std::shared_ptr<WebSocketClient>(new WebSocketClient(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint,
@@ -1646,6 +1655,7 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
 
 
 
+
 namespace uniffi {
 
 
@@ -1979,6 +1989,48 @@ void FfiConverterWebSocketListener::write(RustStream &stream, const std::shared_
 
 uint64_t FfiConverterWebSocketListener::allocation_size(const std::shared_ptr<WebSocketListener> &) {
     return 8;
+}
+
+
+CredentialsRecord FfiConverterTypeCredentialsRecord::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeCredentialsRecord::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeCredentialsRecord::lower(const CredentialsRecord &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeCredentialsRecord::write(stream, val);
+
+    return std::move(buf);
+}
+
+CredentialsRecord FfiConverterTypeCredentialsRecord::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeCredentialsRecord::write(RustStream &stream, const CredentialsRecord &val) {
+    FfiConverterOptionalString::write(stream, val.api_key);
+    FfiConverterOptionalString::write(stream, val.bearer_token);
+    FfiConverterOptionalString::write(stream, val.sdk_token);
+}
+
+uint64_t FfiConverterTypeCredentialsRecord::allocation_size(const CredentialsRecord &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.api_key) +
+        FfiConverterOptionalString::allocation_size(val.bearer_token) +
+        FfiConverterOptionalString::allocation_size(val.sdk_token);
+    
 }
 
 

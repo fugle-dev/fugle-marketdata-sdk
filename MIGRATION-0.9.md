@@ -503,8 +503,15 @@ What changes for you:
 - **C#, Go, Java, C++ (UniFFI)**: the `new_rest_client_with_*` factories
   return the `ConfigError` for a blank credential, and the new
   `validate_credentials(api_key, bearer_token, sdk_token)` returns which
-  `CredentialKind` was given. The WebSocket constructors still cannot fail;
-  a blank key is reported by `connect()`.
+  `CredentialKind` was given. The WebSocket constructors that take an API
+  key still cannot fail; a blank key is reported by `connect()`.
+- **WebSocket tokens** (#91): the WebSocket clients now authenticate with a
+  bearer token or an SDK token. Python and Node used to send either one as
+  an API key, which the server rejects; C#, Go and Java refused them. The
+  option wrappers (`WebSocketClientOptions`, `NewFugleWebSocketClient`,
+  `FugleWebSocketClient.builder()`) need no change. Raw UniFFI callers use
+  `WebSocketClient.new_with_credentials(CredentialsRecord, ...)`, which
+  returns the `ConfigError` unless exactly one credential is given.
 
 ## Fields you could not reach before
 

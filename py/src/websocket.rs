@@ -445,7 +445,7 @@ impl Default for HealthCheckConfig {
 /// ```
 #[pyclass]
 pub struct WebSocketClient {
-    api_key: String,
+    auth: marketdata_core::AuthRequest,
     base_url: Option<String>,
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
@@ -511,15 +511,12 @@ impl WebSocketClient {
         message_overflow: Option<String>,
         message_buffer: Option<i64>,
     ) -> PyResult<Self> {
-        // Core requires exactly one non-blank credential (ConfigError, 1004).
-        // Every kind is still sent as the API key here (#91).
-        let auth_key = match marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
-            .map_err(crate::errors::to_py_err)?
-        {
-            marketdata_core::Auth::ApiKey(key)
-            | marketdata_core::Auth::BearerToken(key)
-            | marketdata_core::Auth::SdkToken(key) => key,
-        };
+        // Core requires exactly one non-blank credential (ConfigError, 1004)
+        // and sends it in the auth frame field matching its kind (#91).
+        let auth = marketdata_core::AuthRequest::from(
+            marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
+                .map_err(crate::errors::to_py_err)?,
+        );
 
         // Extract configs with defaults (clone from Bound to avoid lifetime issues)
         let reconnect_config = if let Some(cfg) = reconnect {
@@ -549,7 +546,7 @@ impl WebSocketClient {
         // which rejects a versioned baseUrl at construction.
         for product in [WsProduct::Stock, WsProduct::FutOpt] {
             build_stream_config(
-                &auth_key,
+                &auth,
                 base_url.as_deref(),
                 product,
                 stock_version,
@@ -559,7 +556,7 @@ impl WebSocketClient {
         }
 
         Ok(Self {
-            api_key: auth_key,
+            auth,
             base_url,
             stock_version,
             futopt_version,
@@ -577,7 +574,7 @@ impl WebSocketClient {
     #[getter]
     pub fn stock(&self) -> StockWebSocketClient {
         StockWebSocketClient::new(
-            self.api_key.clone(),
+            self.auth.clone(),
             self.base_url.clone(),
             self.stock_version,
             self.futopt_version,
@@ -595,7 +592,7 @@ impl WebSocketClient {
     #[getter]
     pub fn futopt(&self) -> FutOptWebSocketClient {
         FutOptWebSocketClient::new(
-            self.api_key.clone(),
+            self.auth.clone(),
             self.base_url.clone(),
             self.stock_version,
             self.futopt_version,
@@ -718,20 +715,19 @@ fn parse_ws_versions(
 /// cannot drift on base-URL semantics — which is exactly what happened before
 /// 0.8.0, when each one hand-rolled `format!("{base}/stock/streaming")`.
 fn build_stream_config(
-    api_key: &str,
+    auth: &marketdata_core::AuthRequest,
     base_url: Option<&str>,
     product: WsProduct,
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
-    let auth = marketdata_core::AuthRequest::with_api_key(api_key);
     let mut factory = marketdata_core::WebSocketFactory::new()
         .stock_version(stock_version)
         .futopt_version(futopt_version);
     if let Some(base) = base_url {
         factory = factory.base_url(base);
     }
-    let factory = factory.auth(auth);
+    let factory = factory.auth(auth.clone());
     let builder = match product {
         WsProduct::Stock => factory.stock()?,
         WsProduct::FutOpt => factory.futopt()?,
@@ -1028,7 +1024,7 @@ fn take_thread(
 /// when it arrives, otherwise to `messages()` iterators.
 #[pyclass]
 pub struct StockWebSocketClient {
-    api_key: String,
+    auth: marketdata_core::AuthRequest,
     base_url: Option<String>,
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
@@ -1049,7 +1045,7 @@ pub struct StockWebSocketClient {
 
 impl StockWebSocketClient {
     fn new(
-        api_key: String,
+        auth: marketdata_core::AuthRequest,
         base_url: Option<String>,
         stock_version: marketdata_core::websocket::StockVersion,
         futopt_version: marketdata_core::websocket::FutOptVersion,
@@ -1059,7 +1055,7 @@ impl StockWebSocketClient {
         message_queue: MessageQueueSettings,
     ) -> Self {
         Self {
-            api_key,
+            auth,
             base_url,
             stock_version,
             futopt_version,
@@ -1080,7 +1076,7 @@ impl StockWebSocketClient {
         // only way this can fail is a caller constructing the product client
         // directly — fall back to the production endpoint rather than panic.
         let mut config = build_stream_config(
-            &self.api_key,
+            &self.auth,
             self.base_url.as_deref(),
             WsProduct::Stock,
             self.stock_version,
@@ -1088,7 +1084,7 @@ impl StockWebSocketClient {
         )
         .unwrap_or_else(|_| {
             marketdata_core::ConnectionConfig::fugle_stock(
-                marketdata_core::AuthRequest::with_api_key(&self.api_key),
+                self.auth.clone(),
             )
         });
         config.tls = self.tls.clone();
@@ -1522,7 +1518,7 @@ impl StockWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err(e)
         })?;
 
-        let api_key = self.api_key.clone();
+        let auth = self.auth.clone();
         let stock_version = self.stock_version;
         let futopt_version = self.futopt_version;
         let base_url = self.base_url.clone();
@@ -1538,7 +1534,7 @@ impl StockWebSocketClient {
         future_into_py(py, async move {
             // Create WebSocket client with full config
             let config = build_stream_config(
-                &api_key,
+                &auth,
                 base_url.as_deref(),
                 WsProduct::Stock,
                 stock_version,
@@ -1744,7 +1740,7 @@ impl StockWebSocketClient {
 /// should only be used from the thread that created it.
 #[pyclass(unsendable)]
 pub struct FutOptWebSocketClient {
-    api_key: String,
+    auth: marketdata_core::AuthRequest,
     base_url: Option<String>,
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
@@ -1763,7 +1759,7 @@ pub struct FutOptWebSocketClient {
 
 impl FutOptWebSocketClient {
     fn new(
-        api_key: String,
+        auth: marketdata_core::AuthRequest,
         base_url: Option<String>,
         stock_version: marketdata_core::websocket::StockVersion,
         futopt_version: marketdata_core::websocket::FutOptVersion,
@@ -1773,7 +1769,7 @@ impl FutOptWebSocketClient {
         message_queue: MessageQueueSettings,
     ) -> Self {
         Self {
-            api_key,
+            auth,
             base_url,
             stock_version,
             futopt_version,
@@ -1792,7 +1788,7 @@ impl FutOptWebSocketClient {
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
         // See the stock sibling: validation already happened at construction.
         let mut config = build_stream_config(
-            &self.api_key,
+            &self.auth,
             self.base_url.as_deref(),
             WsProduct::FutOpt,
             self.stock_version,
@@ -1800,7 +1796,7 @@ impl FutOptWebSocketClient {
         )
         .unwrap_or_else(|_| {
             marketdata_core::ConnectionConfig::fugle_futopt(
-                marketdata_core::AuthRequest::with_api_key(&self.api_key),
+                self.auth.clone(),
             )
         });
         config.tls = self.tls.clone();
@@ -2210,7 +2206,7 @@ mod tests {
         // One base URL, two different version segments — the thing a version
         // baked into base_url could never express.
         let stock = build_stream_config(
-            "k",
+            &marketdata_core::AuthRequest::with_api_key("k"),
             Some("wss://staging.fugle.tw/marketdata"),
             WsProduct::Stock,
             Default::default(),
@@ -2223,7 +2219,7 @@ mod tests {
         );
 
         let futopt = build_stream_config(
-            "k",
+            &marketdata_core::AuthRequest::with_api_key("k"),
             Some("wss://staging.fugle.tw/marketdata"),
             WsProduct::FutOpt,
             Default::default(),
@@ -2241,7 +2237,7 @@ mod tests {
         // The 0.6-era form. Python callers see this as a TypeError at
         // construction, matching the official SDK.
         let err = build_stream_config(
-            "k",
+            &marketdata_core::AuthRequest::with_api_key("k"),
             Some("wss://staging.fugle.tw/marketdata/v1.0"),
             WsProduct::Stock,
             Default::default(),
@@ -2253,7 +2249,7 @@ mod tests {
 
     #[test]
     fn test_build_stream_config_defaults_to_production() {
-        let cfg = build_stream_config("k", None, WsProduct::FutOpt, Default::default(), Default::default())
+        let cfg = build_stream_config(&marketdata_core::AuthRequest::with_api_key("k"), None, WsProduct::FutOpt, Default::default(), Default::default())
             .unwrap();
         assert_eq!(cfg.url, marketdata_core::urls::FUTOPT_WS);
     }
@@ -2262,7 +2258,7 @@ mod tests {
     fn test_websocket_client_creation_with_api_key() {
         // WebSocketClient::new requires Python bindings, test the internal child client instead
         let client = StockWebSocketClient::new(
-            "test-key".to_string(),
+            marketdata_core::AuthRequest::with_api_key("test-key"),
             None,
             Default::default(),
             Default::default(),
@@ -2278,7 +2274,7 @@ mod tests {
     #[test]
     fn test_stock_websocket_client_creation() {
         let client = StockWebSocketClient::new(
-            "test-key".to_string(),
+            marketdata_core::AuthRequest::with_api_key("test-key"),
             None,
             Default::default(),
             Default::default(),
@@ -2307,7 +2303,7 @@ mod tests {
     #[test]
     fn test_futopt_websocket_client_creation() {
         let client = FutOptWebSocketClient::new(
-            "test-key".to_string(),
+            marketdata_core::AuthRequest::with_api_key("test-key"),
             None,
             Default::default(),
             Default::default(),

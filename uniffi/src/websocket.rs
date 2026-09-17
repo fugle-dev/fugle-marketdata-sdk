@@ -120,6 +120,44 @@ pub trait WebSocketListener: Send + Sync {
     fn on_messages_dropped(&self, count: u64);
 }
 
+/// The credentials a WebSocket client authenticates with.
+///
+/// Exactly one must be non-empty; an empty or whitespace-only value counts
+/// as not provided.
+///
+/// Its fields are secrets: do not log this record. `Debug` here redacts
+/// them, but the generated types may not — a C# record's `ToString()` and
+/// Go's `fmt` `%v` print every field.
+#[derive(Clone, uniffi::Record)]
+pub struct CredentialsRecord {
+    /// Fugle API key, sent as `apikey`
+    pub api_key: Option<String>,
+    /// OAuth bearer token, sent as `token`
+    pub bearer_token: Option<String>,
+    /// Fugle SDK token, sent as `sdkToken`
+    pub sdk_token: Option<String>,
+}
+
+impl std::fmt::Debug for CredentialsRecord {
+    /// Prints `Some(***)` for a set credential, like `AuthRequest`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        /// Prints `***` in place of a secret.
+        struct Redacted;
+        impl std::fmt::Debug for Redacted {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("***")
+            }
+        }
+        let redact = |value: &Option<String>| value.as_ref().map(|_| Redacted);
+
+        f.debug_struct("CredentialsRecord")
+            .field("api_key", &redact(&self.api_key))
+            .field("bearer_token", &redact(&self.bearer_token))
+            .field("sdk_token", &redact(&self.sdk_token))
+            .finish()
+    }
+}
+
 /// Reconnection configuration record for FFI
 ///
 /// All fields are optional — zero/false values mean "use default".
@@ -288,7 +326,8 @@ pub struct WebSocketClient {
     /// clone the client out before awaiting.
     inner: std::sync::Mutex<Option<Arc<CoreWebSocketClient>>>,
     listener: Arc<dyn WebSocketListener>,
-    api_key: String,
+    /// Sent in the auth frame; its field follows the credential kind (#91).
+    auth: AuthRequest,
     base_url: Option<String>,
     version: StreamingVersionRecord,
     endpoint: WebSocketEndpoint,
@@ -315,7 +354,7 @@ pub struct WebSocketClient {
 impl WebSocketClient {
     /// Create a new WebSocket client (internal constructor)
     fn new_internal(
-        api_key: String,
+        auth: AuthRequest,
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
         reconnect_config: Option<marketdata_core::ReconnectionConfig>,
@@ -328,7 +367,7 @@ impl WebSocketClient {
         Arc::new(Self {
             inner: std::sync::Mutex::new(None),
             listener,
-            api_key,
+            auth,
             base_url,
             version,
             endpoint,
@@ -355,7 +394,7 @@ impl WebSocketClient {
     /// * `listener` - Callback interface for receiving WebSocket events
     #[uniffi::constructor]
     pub fn new(api_key: String, listener: Arc<dyn WebSocketListener>) -> Arc<Self> {
-        Self::new_internal(api_key, listener, WebSocketEndpoint::Stock, None, None, None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, None, None, None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client for a specific endpoint
@@ -370,7 +409,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
     ) -> Arc<Self> {
-        Self::new_internal(api_key, listener, endpoint, None, None, None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, None, None, None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client with full configuration
@@ -390,7 +429,7 @@ impl WebSocketClient {
         health_check_config: Option<HealthCheckConfigRecord>,
     ) -> Arc<Self> {
         Self::new_internal(
-            api_key,
+            AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
@@ -413,7 +452,7 @@ impl WebSocketClient {
         health_check_config: Option<HealthCheckConfigRecord>,
     ) -> Arc<Self> {
         Self::new_internal(
-            api_key,
+            AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
@@ -451,7 +490,7 @@ impl WebSocketClient {
         version: Option<StreamingVersionRecord>,
     ) -> Arc<Self> {
         Self::new_internal(
-            api_key,
+            AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
@@ -494,7 +533,7 @@ impl WebSocketClient {
         message_queue: Option<MessageQueueConfigRecord>,
     ) -> Arc<Self> {
         Self::new_internal(
-            api_key,
+            AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
@@ -504,6 +543,45 @@ impl WebSocketClient {
             version.unwrap_or_default(),
             message_queue,
         )
+    }
+
+    /// Create a new WebSocket client from whichever credential was given.
+    ///
+    /// Takes the same three credentials as the REST client: exactly one must
+    /// be non-empty (an empty or whitespace-only value counts as not
+    /// provided), otherwise this returns a `ConfigError` (code 1004). The
+    /// auth frame then carries it as `apikey`, `token` or `sdkToken`.
+    /// The other arguments are those of `new_with_options`.
+    ///
+    /// The credentials are one record rather than three arguments: with three
+    /// more buffers than `new_with_options` the Java binding (JNA) passed
+    /// garbage to Rust on macOS arm64.
+    #[uniffi::constructor]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_credentials(
+        credentials: CredentialsRecord,
+        listener: Arc<dyn WebSocketListener>,
+        endpoint: WebSocketEndpoint,
+        base_url: Option<String>,
+        reconnect_config: Option<ReconnectConfigRecord>,
+        health_check_config: Option<HealthCheckConfigRecord>,
+        tls: Option<crate::tls::TlsConfigRecord>,
+        version: Option<StreamingVersionRecord>,
+        message_queue: Option<MessageQueueConfigRecord>,
+    ) -> Result<Arc<Self>, MarketDataError> {
+        let CredentialsRecord { api_key, bearer_token, sdk_token } = credentials;
+        let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)?;
+        Ok(Self::new_internal(
+            AuthRequest::from(auth),
+            listener,
+            endpoint,
+            reconnect_config.map(|c| c.to_core()),
+            health_check_config.map(|c| c.to_core()),
+            base_url,
+            tls.map(|t| t.to_core()),
+            version.unwrap_or_default(),
+            message_queue,
+        ))
     }
 
     /// Messages dropped because they arrived while the message queue held
@@ -570,7 +648,7 @@ impl WebSocketClient {
         // hand-rolled `format!("{base}/stock/streaming")`, which is how the
         // version segment ended up being the caller's problem.
         let (stock_version, futopt_version) = self.version.resolve()?;
-        let auth = AuthRequest::with_api_key(&self.api_key);
+        let auth = self.auth.clone();
         let mut factory = marketdata_core::WebSocketFactory::new()
             .stock_version(stock_version)
             .futopt_version(futopt_version);
@@ -1777,5 +1855,73 @@ mod tests {
             codes,
             vec![marketdata_core::error_code::CALLBACK_FAILED, marketdata_core::error_code::CONNECTION]
         );
+    }
+
+    fn client_with_credentials(
+        api_key: Option<&str>,
+        bearer_token: Option<&str>,
+        sdk_token: Option<&str>,
+    ) -> Result<Arc<WebSocketClient>, MarketDataError> {
+        WebSocketClient::new_with_credentials(
+            CredentialsRecord {
+                api_key: api_key.map(String::from),
+                bearer_token: bearer_token.map(String::from),
+                sdk_token: sdk_token.map(String::from),
+            },
+            Arc::new(TestListener::new()),
+            WebSocketEndpoint::Stock,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn new_with_credentials_sends_each_kind_in_its_own_field() {
+        // #91: every kind used to go out as `apikey`.
+        let auth_data = |client: Arc<WebSocketClient>| serde_json::to_value(&client.auth).unwrap();
+        assert_eq!(
+            auth_data(client_with_credentials(Some("k"), None, None).unwrap()),
+            serde_json::json!({ "apikey": "k" })
+        );
+        assert_eq!(
+            auth_data(client_with_credentials(None, Some("t"), None).unwrap()),
+            serde_json::json!({ "token": "t" })
+        );
+        assert_eq!(
+            auth_data(client_with_credentials(Some("  "), None, Some("s")).unwrap()),
+            serde_json::json!({ "sdkToken": "s" })
+        );
+    }
+
+    #[test]
+    fn credentials_record_debug_redacts_secrets() {
+        let credentials = CredentialsRecord {
+            api_key: None,
+            bearer_token: Some("secret-bearer".into()),
+            sdk_token: Some("secret-sdk".into()),
+        };
+        let printed = format!("{credentials:?}");
+        assert_eq!(
+            printed,
+            "CredentialsRecord { api_key: None, bearer_token: Some(***), sdk_token: Some(***) }"
+        );
+        assert!(!printed.contains("secret"), "{printed}");
+    }
+
+    #[test]
+    fn new_with_credentials_rejects_none_or_several() {
+        for (api_key, bearer_token, sdk_token) in
+            [(None, None, None), (Some(" "), None, None), (Some("k"), Some("t"), None)]
+        {
+            match client_with_credentials(api_key, bearer_token, sdk_token) {
+                Err(MarketDataError::ConfigError { .. }) => {}
+                Err(other) => panic!("expected ConfigError, got {other:?}"),
+                Ok(_) => panic!("expected ConfigError for {api_key:?}/{bearer_token:?}/{sdk_token:?}"),
+            }
+        }
     }
 }

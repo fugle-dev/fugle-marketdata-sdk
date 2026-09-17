@@ -115,6 +115,7 @@ interface UniffiLib extends Library {
     void uniffi_marketdata_uniffi_fn_free_websocketclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new(RustBuffer.ByValue apiKey, Pointer listener, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_config(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, UniffiRustCallStatus uniffi_out_errmk);
+    Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(RustBuffer.ByValue credentials, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue baseUrl, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, RustBuffer.ByValue tls, RustBuffer.ByValue version, RustBuffer.ByValue messageQueue, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_config(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue baseUrl, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, RustBuffer.ByValue tls, RustBuffer.ByValue version, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer.ByValue apiKey, Pointer listener, RustBuffer.ByValue endpoint, RustBuffer.ByValue baseUrl, RustBuffer.ByValue reconnectConfig, RustBuffer.ByValue healthCheckConfig, RustBuffer.ByValue tls, RustBuffer.ByValue version, RustBuffer.ByValue messageQueue, UniffiRustCallStatus uniffi_out_errmk);
@@ -312,6 +313,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config();
+    Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config();
     Short uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();

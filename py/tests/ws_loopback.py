@@ -103,6 +103,8 @@ class _Server:
         self._flood = flood
         self._burst_on_close = burst_on_close
         self._stopped = threading.Event()
+        # ``data`` of every ``auth`` frame received, in arrival order.
+        self.auth_data = []
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen()
@@ -140,6 +142,8 @@ class _Server:
                 opcode, payload = _read_frame(conn)
                 if opcode == OP_TEXT:
                     frame = json.loads(payload)
+                    if frame.get("event") == "auth":
+                        self.auth_data.append(frame.get("data"))
                     for reply in self._replies(frame):
                         send(OP_TEXT, json.dumps(reply).encode())
                     if self._flood and frame.get("event") == "subscribe":
@@ -236,6 +240,11 @@ class InProcessLoopbackServer:
     def __init__(self, flood=False):
         self._server = _Server(flood=flood)
         self.url = f"ws://127.0.0.1:{self._server.port}"
+
+    @property
+    def auth_data(self):
+        """``data`` of every ``auth`` frame the server received."""
+        return list(self._server.auth_data)
 
     def __enter__(self):
         self._server.start()

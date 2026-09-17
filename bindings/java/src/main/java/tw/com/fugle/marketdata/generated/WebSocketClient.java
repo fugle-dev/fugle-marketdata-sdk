@@ -390,6 +390,41 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
 
   
     /**
+     * Create a new WebSocket client from whichever credential was given.
+     *
+     * Takes the same three credentials as the REST client: exactly one must
+     * be non-empty (an empty or whitespace-only value counts as not
+     * provided), otherwise this returns a `ConfigError` (code 1004). The
+     * auth frame then carries it as `apikey`, `token` or `sdkToken`.
+     * The other arguments are those of `new_with_options`.
+     *
+     * The credentials are one record rather than three arguments: with three
+     * more buffers than `new_with_options` the Java binding (JNA) passed
+     * garbage to Rust on macOS arm64.
+     */public static WebSocketClient newWithCredentials(CredentialsRecord credentials, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version, MessageQueueConfigRecord messageQueue) throws MarketDataException {
+            try {
+                return FfiConverterTypeWebSocketClient.INSTANCE.lift(
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(
+            FfiConverterTypeCredentialsRecord.INSTANCE.lower(credentials), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.lower(messageQueue), _status);
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
      * Create a new WebSocket client for a specific endpoint
      *
      * # Arguments
