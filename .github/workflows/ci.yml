@@ -304,12 +304,17 @@ jobs:
             -d "$RUNNER_TEMP/java-bench" benchmarks/ws/java/WebSocketBenchmark.java
 
       # build.gradle.kts points jna.library.path at target/release. Without
-      # the library every test that builds a client skipped (38 of 115), so
-      # JNA call failures never showed up; -PrequireNative makes a library
+      # the library every test that builds a client skipped (about a third of
+      # the suite), so JNA call failures never showed up; -PrequireNative makes a library
       # that fails to load fail those tests instead.
       - name: Java tests
+        id: java-tests
         working-directory: bindings/java
         run: ./gradlew test -PexcludeTags=integration -PrequireNative --no-daemon
+      # Also runs when the tests failed, so the counts are in the log.
+      - name: Java test counts
+        if: always() && steps.java-tests.outcome != 'skipped'
+        run: scripts/check-java-test-results.sh
 
   # Same Java tests against the macOS arm64 library. JNA calls can depend on
   # the platform calling convention: a constructor with ten by-value
@@ -332,5 +337,9 @@ jobs:
       - name: Build native library
         run: cargo build --locked --release -p marketdata-uniffi
       - name: Java tests
+        id: java-tests
         working-directory: bindings/java
         run: ./gradlew test -PexcludeTags=integration -PrequireNative --no-daemon
+      - name: Java test counts
+        if: always() && steps.java-tests.outcome != 'skipped'
+        run: scripts/check-java-test-results.sh
