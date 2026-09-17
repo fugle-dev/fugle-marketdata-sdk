@@ -156,7 +156,8 @@ pub mod error_code {
     /// [`MarketDataError::ClientClosed`](super::MarketDataError::ClientClosed),
     /// also a Node `connect()` aborted by `disconnect()`.
     pub const CLIENT_CLOSED: i32 = 2010;
-    /// Node only: WebSocket `connect()` called while connected or connecting.
+    /// [`MarketDataError::AlreadyConnected`](super::MarketDataError::AlreadyConnected):
+    /// WebSocket `connect()` called while connected, connecting or reconnecting.
     pub const ALREADY_CONNECTED: i32 = 2011;
     /// [`MarketDataError::TimeoutError`](super::MarketDataError::TimeoutError).
     pub const TIMEOUT: i32 = 3001;
@@ -286,6 +287,10 @@ impl ErrorInfo {
 }
 
 /// Main error type for marketdata-core operations
+///
+/// `#[non_exhaustive]`: matches need a `_` arm, so a new variant can be added
+/// in a minor release.
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum MarketDataError {
     /// Invalid symbol format or unsupported symbol
@@ -385,6 +390,11 @@ pub enum MarketDataError {
     #[error("Client already closed")]
     ClientClosed,
 
+    /// WebSocket `connect()` called while the client is connected, connecting
+    /// or reconnecting.
+    #[error("Already connected; call disconnect() first")]
+    AlreadyConnected,
+
     /// Other unexpected errors
     #[error(transparent)]
     Other(
@@ -462,7 +472,7 @@ impl MarketDataError {
     /// | `ApiError { status: 429 }` | `RateLimit` |
     /// | `ApiError { status: 500..=599 }` | `Network` |
     /// | `ApiError { status: other 4xx }` | `Client` |
-    /// | `InvalidSymbol`, `InvalidParameter`, `ConfigError`, `DeserializationError`, `ClientClosed` | `Client` |
+    /// | `InvalidSymbol`, `InvalidParameter`, `ConfigError`, `DeserializationError`, `ClientClosed`, `AlreadyConnected` | `Client` |
     /// | `RuntimeError`, `Other` | `Client` |
     #[must_use]
     pub fn source_kind(&self) -> ErrorKind {
@@ -496,6 +506,7 @@ impl MarketDataError {
             | Self::ConfigError(_)
             | Self::DeserializationError { .. }
             | Self::ClientClosed
+            | Self::AlreadyConnected
             | Self::RuntimeError { .. }
             | Self::Other(_) => ErrorKind::Client,
         }
@@ -533,6 +544,7 @@ impl MarketDataError {
             Self::WebSocketError { .. } => error_code::WEBSOCKET,
             Self::HeartbeatTimeout { .. } => error_code::HEARTBEAT_TIMEOUT,
             Self::ClientClosed => error_code::CLIENT_CLOSED,
+            Self::AlreadyConnected => error_code::ALREADY_CONNECTED,
             Self::Other(_) => error_code::OTHER,
         }
     }
@@ -610,6 +622,9 @@ mod tests {
 
         let err = MarketDataError::ClientClosed;
         assert_eq!(err.to_string(), "Client already closed");
+
+        let err = MarketDataError::AlreadyConnected;
+        assert_eq!(err.to_string(), "Already connected; call disconnect() first");
     }
 
     #[test]
@@ -663,6 +678,9 @@ mod tests {
 
         let err = MarketDataError::ClientClosed;
         assert_eq!(err.to_error_code(), 2010);
+
+        let err = MarketDataError::AlreadyConnected;
+        assert_eq!(err.to_error_code(), 2011);
 
         let err = MarketDataError::Other(anyhow::anyhow!("test"));
         assert_eq!(err.to_error_code(), 9999);
@@ -993,6 +1011,9 @@ mod tests {
         assert_eq!(err.source_kind(), ErrorKind::Client);
 
         let err = MarketDataError::ClientClosed;
+        assert_eq!(err.source_kind(), ErrorKind::Client);
+
+        let err = MarketDataError::AlreadyConnected;
         assert_eq!(err.source_kind(), ErrorKind::Client);
     }
 

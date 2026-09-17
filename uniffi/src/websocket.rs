@@ -348,6 +348,9 @@ pub struct WebSocketClient {
     /// Throttles the reports of failed listener calls (#83) across the
     /// client's connections, like the Node, Python, C# and Java bindings.
     callback_failures: CallbackFailures,
+    /// Held for the duration of each `connect()`, so a concurrent one is
+    /// refused rather than opening a second connection (#119).
+    connect_gate: tokio::sync::Mutex<()>,
     /// Tokio runtime for sync wrappers (C++ feature). Kept alive for background tasks.
     #[cfg(feature = "cpp")]
     sync_runtime: std::sync::Mutex<Option<tokio::runtime::Runtime>>,
@@ -381,6 +384,7 @@ impl WebSocketClient {
             message_queue,
             messages_dropped: std::sync::Mutex::new(None),
             callback_failures: CallbackFailures::default(),
+            connect_gate: tokio::sync::Mutex::new(()),
             #[cfg(feature = "cpp")]
             sync_runtime: std::sync::Mutex::new(None),
         })
@@ -649,7 +653,19 @@ impl WebSocketClient {
 
 impl WebSocketClient {
     /// Connect to the WebSocket server (implementation).
+    ///
+    /// Refused with code 2011 while another `connect()` is running or the
+    /// current connection is open or auto-reconnecting (#119), before
+    /// anything of that connection is replaced.
     async fn connect_impl(&self) -> Result<(), MarketDataError> {
+        let Ok(_claim) = self.connect_gate.try_lock() else {
+            return Err(marketdata_core::MarketDataError::AlreadyConnected.into());
+        };
+        // `inner` holds only a client whose `connect()` succeeded; a closed
+        // one (disconnect() takes it) or one that ended leaves room.
+        if self.client().is_some_and(|ws| ws.state_handle().is_active()) {
+            return Err(marketdata_core::MarketDataError::AlreadyConnected.into());
+        }
         // Resolve the endpoint through core's factory so `base_url` semantics
         // and the per-product version live in one place. Before 0.8.0 this
         // hand-rolled `format!("{base}/stock/streaming")`, which is how the
@@ -834,6 +850,13 @@ impl WebSocketClient {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| crate::errors::other_error(e.to_string()))?;
         let result = rt.block_on(self.connect_impl());
+        // A refused connect leaves the live connection's runtime in place;
+        // replacing it would abort that connection's tasks (#119).
+        if let Err(MarketDataError::WebSocketError { info, .. }) = &result {
+            if info.code == marketdata_core::error_code::ALREADY_CONNECTED {
+                return result;
+            }
+        }
         // Store runtime to keep background tasks alive
         if let Ok(mut guard) = self.sync_runtime.lock() {
             *guard = Some(rt);
@@ -1638,6 +1661,103 @@ mod tests {
                 "disconnected(false)".to_string(),
             ]
         );
+    }
+
+    /// Assert `result` is the 2011 refusal of a second `connect()` (#119).
+    fn assert_already_connected(result: Result<(), MarketDataError>) {
+        match result {
+            Err(MarketDataError::WebSocketError { info, .. }) => {
+                assert_eq!(info.code, marketdata_core::error_code::ALREADY_CONNECTED, "{info:?}");
+            }
+            other => panic!("expected ALREADY_CONNECTED, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_while_connected_is_refused_and_keeps_the_connection() {
+        // Room for a second connection, so opening one would show.
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::recording_messages());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_impl().await.expect("connect");
+        assert_already_connected(client.connect_impl().await);
+        assert!(client.is_connected());
+
+        // The first connection's messages are still forwarded.
+        server
+            .inject_frame_for(0, marketdata_core::models::streaming::StreamMessage::Pong { state: None })
+            .await;
+        listener.wait_for("message(pong)").await;
+        client.disconnect_impl().await;
+        listener.wait_for("disconnected(false)").await;
+        assert_eq!(
+            listener.events(),
+            vec![
+                "connected".to_string(),
+                "authenticated(None)".to_string(),
+                "message(authenticated)".to_string(),
+                "message(pong)".to_string(),
+                "disconnected(false)".to_string(),
+            ]
+        );
+
+        // After disconnect() a new connection is allowed.
+        client.connect_impl().await.expect("connect after disconnect");
+        assert!(client.is_connected());
+        client.disconnect_impl().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_connect_is_refused() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        let (first, second) = tokio::join!(client.connect_impl(), client.connect_impl());
+
+        first.expect("first connect");
+        assert_already_connected(second);
+        assert!(client.is_connected());
+        client.disconnect_impl().await;
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_while_reconnecting_is_refused() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord {
+                max_attempts: 3,
+                initial_delay_ms: 1000,
+                max_delay_ms: 1000,
+            }),
+        );
+
+        client.connect_impl().await.expect("connect");
+        server.drop_transport_for(0).await;
+        listener.wait_for("reconnecting(1)").await;
+
+        assert_already_connected(client.connect_impl().await);
+        client.disconnect_impl().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_after_server_close_without_reconnect_is_allowed() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_impl().await.expect("connect");
+        server.close_for(0, 1000, "bye").await;
+        wait_closed(&client, true).await;
+
+        client.connect_impl().await.expect("connect after the server closed");
+        assert!(client.is_connected());
+        client.disconnect_impl().await;
     }
 
     /// Poll `is_connected()` until it equals `expected`.

@@ -263,7 +263,7 @@ func NewStreamingClientWithEndpoint(apiKey string, endpoint WebSocketEndpoint, b
 func (sc *StreamingClient) Connect() error {
 	err := sc.client.Connect()
 	if err != nil {
-		return fmt.Errorf("connect failed: %v", err)
+		return fmt.Errorf("connect failed: %w", err)
 	}
 	return nil
 }
@@ -274,7 +274,7 @@ func (sc *StreamingClient) Connect() error {
 func (sc *StreamingClient) Subscribe(channel, symbol string) error {
 	err := sc.client.Subscribe(channel, symbol)
 	if err != nil {
-		return fmt.Errorf("subscribe failed: %v", err)
+		return fmt.Errorf("subscribe failed: %w", err)
 	}
 	return nil
 }
@@ -283,7 +283,7 @@ func (sc *StreamingClient) Subscribe(channel, symbol string) error {
 func (sc *StreamingClient) Unsubscribe(channel, symbol string) error {
 	err := sc.client.Unsubscribe(channel, symbol)
 	if err != nil {
-		return fmt.Errorf("unsubscribe failed: %v", err)
+		return fmt.Errorf("unsubscribe failed: %w", err)
 	}
 	return nil
 }
@@ -329,7 +329,7 @@ func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
 func (sc *StreamingClient) Ping(state *string) error {
 	err := sc.client.Ping(state)
 	if err != nil {
-		return fmt.Errorf("ping failed: %v", err)
+		return fmt.Errorf("ping failed: %w", err)
 	}
 	return nil
 }
@@ -339,7 +339,7 @@ func (sc *StreamingClient) Ping(state *string) error {
 func (sc *StreamingClient) QuerySubscriptions() error {
 	err := sc.client.QuerySubscriptions()
 	if err != nil {
-		return fmt.Errorf("query subscriptions failed: %v", err)
+		return fmt.Errorf("query subscriptions failed: %w", err)
 	}
 	return nil
 }

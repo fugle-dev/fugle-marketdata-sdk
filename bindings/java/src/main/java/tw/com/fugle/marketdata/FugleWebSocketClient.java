@@ -697,9 +697,13 @@ public class FugleWebSocketClient implements AutoCloseable {
             stopped.get().set(true);
         }
 
-        /** A new connection: wait for queue room again. */
+        /**
+         * A new connection: wait for queue room again. Keeps the flag while it
+         * is not stopped, so a {@code connect()} refused because a connection
+         * is live leaves that connection's waits ending on {@code disconnect()}.
+         */
         void resume() {
-            stopped.set(new AtomicBoolean(false));
+            stopped.updateAndGet(flag -> flag.get() ? new AtomicBoolean(false) : flag);
         }
 
         @Override

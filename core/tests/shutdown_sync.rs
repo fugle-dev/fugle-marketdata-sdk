@@ -12,7 +12,9 @@
 mod common;
 
 use marketdata_core::websocket::{ConnectionEvent, DisconnectIntent};
-use marketdata_core::{AuthRequest, ConnectionConfig, ReconnectionConfig, WebSocketClient};
+use marketdata_core::{
+    error_code, AuthRequest, ConnectionConfig, MarketDataError, ReconnectionConfig, WebSocketClient,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -166,4 +168,42 @@ async fn sync_force_close_drops_socket_without_close_frame() {
         .expect("server reports how the connection ended");
     assert!(!ended_by_close, "force_close must not send a Close frame");
     drop(client);
+}
+
+/// `connect()` while connected, or while another `connect()` is in its
+/// handshake, is refused with 2011 and leaves the connection up (#119).
+#[tokio::test(flavor = "multi_thread")]
+async fn sync_connect_while_connected_or_connecting_is_refused() {
+    let server = common::spawn(common::AfterAuth::Idle).await;
+
+    tokio::task::spawn_blocking(move || {
+        let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+        let client = Arc::new(WebSocketClient::with_reconnection_config(
+            config,
+            ReconnectionConfig::disabled(),
+        ));
+
+        let results: Vec<_> = (0..2)
+            .map(|_| {
+                let client = Arc::clone(&client);
+                std::thread::spawn(move || client.connect())
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|t| t.join().expect("connect thread"))
+            .collect();
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "{results:?}");
+        assert!(
+            results.iter().any(|r| matches!(r, Err(MarketDataError::AlreadyConnected))),
+            "{results:?}"
+        );
+
+        let err = client.connect().expect_err("connect while connected");
+        assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
+        assert_eq!(err.info().code, error_code::ALREADY_CONNECTED);
+        assert!(client.is_connected());
+        client.shutdown_with_timeout(Duration::from_secs(3)).expect("shutdown");
+    })
+    .await
+    .expect("sync client thread");
 }
