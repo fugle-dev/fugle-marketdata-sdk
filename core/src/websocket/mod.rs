@@ -32,7 +32,7 @@ pub use config::{
     DEFAULT_MESSAGE_BUFFER,
 };
 pub use factory::WebSocketFactory;
-pub use connection_event::{ConnectionEvent, ConnectionState, DisconnectIntent};
+pub use connection_event::{ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent};
 pub use health_check::HealthCheckConfig;
 pub use stream::{ConnectionStream, MessagesDroppedHandle, StreamItem, StreamReceiver};
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};

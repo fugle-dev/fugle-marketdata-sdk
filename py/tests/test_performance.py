@@ -12,7 +12,7 @@ import pytest
 import asyncio
 import json
 from pathlib import Path
-from fugle_marketdata import RestClient
+from fugle_marketdata import AuthError, RestClient
 
 # Skip if native library not available
 pytestmark = pytest.mark.benchmark
@@ -32,9 +32,9 @@ class TestRestClientPerformance:
     """Benchmark REST client operations."""
 
     @pytest.fixture
-    def client(self):
-        """Create test client for benchmarks."""
-        return RestClient(api_key="benchmark-test-key")
+    def client(self, rest_server):
+        """Create test client for benchmarks, pointed at a loopback server."""
+        return RestClient(api_key="benchmark-test-key", base_url=rest_server.url)
 
     def test_client_creation_latency(self, benchmark):
         """Benchmark client instantiation time."""
@@ -45,28 +45,20 @@ class TestRestClientPerformance:
         result = benchmark(create_client)
         assert result is not None
 
-    @pytest.mark.asyncio
-    async def test_quote_ffi_overhead(self, benchmark, client):
+    def test_quote_ffi_overhead(self, benchmark, client):
         """Benchmark quote method call overhead (FFI boundary crossing).
 
-        Note: This measures Python -> Rust -> Python overhead only.
-        The call will fail without valid API key, but we're measuring
-        the FFI boundary crossing time, not the network request.
+        Note: This measures Python -> Rust -> Python overhead plus a loopback
+        HTTP round trip: the request goes to a local server that answers 401,
+        so the timing excludes the network to the real API (#71).
         """
-        def sync_wrapper():
+        def call():
             try:
-                loop = asyncio.new_event_loop()
-                try:
-                    coro = client.stock.intraday.quote("2330")
-                    loop.run_until_complete(coro)
-                except Exception:
-                    pass  # Expected without valid API key
-                finally:
-                    loop.close()
-            except Exception:
-                pass
+                client.stock.intraday.quote("2330")
+            except AuthError:
+                pass  # Expected: the loopback server rejects the key
 
-        benchmark(sync_wrapper)
+        benchmark(call)
 
 
 @pytest.mark.integration

@@ -83,7 +83,7 @@ use napi_derive::napi;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU8, Ordering}};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Keeps the Node event loop alive while a connection is open (#30).
 ///
@@ -548,9 +548,29 @@ impl MessageQueueSettings {
     }
 }
 
-/// Dropped-message count of a client's current or last connection; outlives
-/// the core client, which the worker drops when the connection ends.
-type DroppedSlot = Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>;
+/// Read-only handles on a client's current or last core connection. They
+/// outlive the core client, which the worker drops when the connection ends:
+/// holding the client itself would keep its stream, and so the event thread,
+/// alive.
+struct ConnectionHandles {
+    state: marketdata_core::ConnectionStateHandle,
+    messages_dropped: marketdata_core::MessagesDroppedHandle,
+}
+
+/// The [`ConnectionHandles`] of a client's current or last connection; `None`
+/// before the first `connect()`.
+type ConnectionSlot = Arc<Mutex<Option<ConnectionHandles>>>;
+
+/// Lock `slot`. A poisoned lock still yields the handles: writers only
+/// assign, so they can never be left half-updated.
+fn lock_connection(slot: &ConnectionSlot) -> std::sync::MutexGuard<'_, Option<ConnectionHandles>> {
+    slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Read the handles in `slot`; `None` before the first `connect()`.
+fn read_connection<T>(slot: &ConnectionSlot, read: impl FnOnce(&ConnectionHandles) -> T) -> Option<T> {
+    lock_connection(slot).as_ref().map(read)
+}
 
 /// Per-product streaming version selection.
 ///
@@ -704,9 +724,8 @@ type WorkerSlot = Arc<Mutex<Option<Worker>>>;
 ///
 /// Rejects while the current worker is connecting or connected. A worker
 /// that is ending (or already gone) is taken out and its handle returned: the
-/// new worker joins it before connecting, so the old worker's final writes
-/// to the shared `connected` / `closed` flags cannot land on the new
-/// connection.
+/// new worker joins it before connecting, so the old connection is torn down
+/// before the new one replaces it.
 fn claim_worker_slot(
     slot: &mut Option<Worker>,
 ) -> Result<Option<thread::JoinHandle<()>>, ErrorInfo> {
@@ -850,15 +869,11 @@ pub struct WebSocketClient {
     // Shared state for child clients — created once in constructor so that
     // every `ws.stock` / `ws.futopt` getter access shares the same Arcs.
     stock_callbacks: Arc<Listeners>,
-    stock_connected: Arc<AtomicBool>,
-    stock_closed: Arc<AtomicBool>,
     stock_worker: WorkerSlot,
-    stock_messages_dropped: DroppedSlot,
+    stock_connection: ConnectionSlot,
     futopt_callbacks: Arc<Listeners>,
-    futopt_connected: Arc<AtomicBool>,
-    futopt_closed: Arc<AtomicBool>,
     futopt_worker: WorkerSlot,
-    futopt_messages_dropped: DroppedSlot,
+    futopt_connection: ConnectionSlot,
 }
 
 #[napi]
@@ -1008,22 +1023,18 @@ impl WebSocketClient {
             tls_config,
             message_queue,
             stock_callbacks: Arc::new(Listeners::default()),
-            stock_connected: Arc::new(AtomicBool::new(false)),
-            stock_closed: Arc::new(AtomicBool::new(false)),
             stock_worker: Arc::new(Mutex::new(None)),
-            stock_messages_dropped: Arc::new(Mutex::new(None)),
+            stock_connection: Arc::new(Mutex::new(None)),
             futopt_callbacks: Arc::new(Listeners::default()),
-            futopt_connected: Arc::new(AtomicBool::new(false)),
-            futopt_closed: Arc::new(AtomicBool::new(false)),
             futopt_worker: Arc::new(Mutex::new(None)),
-            futopt_messages_dropped: Arc::new(Mutex::new(None)),
+            futopt_connection: Arc::new(Mutex::new(None)),
         })
     }
 
     /// Get the stock WebSocket client for real-time stock data.
     ///
     /// Every access returns a new JS wrapper but all wrappers share the same
-    /// underlying state (callbacks, connected flag, command channel), so the
+    /// underlying state (callbacks, connection state, command channel), so the
     /// legacy `ws.stock.on(...); ws.stock.connect()` pattern works correctly.
     #[napi(getter)]
     pub fn stock(&self) -> StockWebSocketClient {
@@ -1037,10 +1048,8 @@ impl WebSocketClient {
             self.tls_config.clone(),
             self.message_queue,
             Arc::clone(&self.stock_callbacks),
-            Arc::clone(&self.stock_connected),
-            Arc::clone(&self.stock_closed),
             Arc::clone(&self.stock_worker),
-            Arc::clone(&self.stock_messages_dropped),
+            Arc::clone(&self.stock_connection),
         )
     }
 
@@ -1059,10 +1068,8 @@ impl WebSocketClient {
             self.tls_config.clone(),
             self.message_queue,
             Arc::clone(&self.futopt_callbacks),
-            Arc::clone(&self.futopt_connected),
-            Arc::clone(&self.futopt_closed),
             Arc::clone(&self.futopt_worker),
-            Arc::clone(&self.futopt_messages_dropped),
+            Arc::clone(&self.futopt_connection),
         )
     }
 }
@@ -1100,10 +1107,8 @@ pub struct StockWebSocketClient {
     tls_config: marketdata_core::TlsConfig,
     message_queue: MessageQueueSettings,
     callbacks: Arc<Listeners>,
-    connected: Arc<AtomicBool>,
-    closed: Arc<AtomicBool>,
     worker: WorkerSlot,
-    messages_dropped: DroppedSlot,
+    connection: ConnectionSlot,
 }
 
 #[napi]
@@ -1111,7 +1116,7 @@ impl StockWebSocketClient {
     /// Create from pre-existing shared state (called by WebSocketClient getter).
     /// All mutable state lives behind Arc so multiple JS wrappers returned by
     /// the `ws.stock` getter share the same underlying callbacks, connection
-    /// flag, and command channel.
+    /// state, and command channel.
     fn from_shared(
         api_key: String,
         base_url: Option<String>,
@@ -1122,10 +1127,8 @@ impl StockWebSocketClient {
         tls_config: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
         callbacks: Arc<Listeners>,
-        connected: Arc<AtomicBool>,
-        closed: Arc<AtomicBool>,
         worker: WorkerSlot,
-        messages_dropped: DroppedSlot,
+        connection: ConnectionSlot,
     ) -> Self {
         Self {
             api_key,
@@ -1137,10 +1140,8 @@ impl StockWebSocketClient {
             tls_config,
             message_queue,
             callbacks,
-            connected,
-            closed,
             worker,
-            messages_dropped,
+            connection,
         }
     }
 
@@ -1237,9 +1238,7 @@ impl StockWebSocketClient {
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
         let message_queue = self.message_queue;
-        let messages_dropped = Arc::clone(&self.messages_dropped);
-        let connected = Arc::clone(&self.connected);
-        let closed = Arc::clone(&self.closed);
+        let connection = Arc::clone(&self.connection);
         let ending_for_worker = Arc::clone(&ending);
         let test_panic = test_panic_site();
 
@@ -1254,60 +1253,64 @@ impl StockWebSocketClient {
                 use marketdata_core::websocket::channels::StockSubscription;
 
                 let ending = ending_for_worker;
+                // A connection being reused: let the previous worker finish
+                // its teardown before this connection replaces it. Only the
+                // worker is joined, not its stream reader, so the old
+                // connection's `disconnect` callback may still arrive after
+                // this connection's `connect`.
+                if let Some(previous) = previous {
+                    let _ = previous.join();
+                }
+
+                // Create tokio runtime
+                // Multi-thread runtime so core's dispatch/writer/health-check
+                // tasks keep running while the worker loop blocks on std::mpsc
+                // receive_timeout. With a current_thread runtime those tasks
+                // starve the moment the worker stops driving the executor,
+                // causing incoming frames (subscribed, snapshot, heartbeat...)
+                // to stall in tokio-tungstenite's buffer.
+                let rt = match tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(2)
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        // No core client yet, so no event to forward: only
+                        // the Promise reports it.
+                        ending.store(true, Ordering::SeqCst);
+                        settle(&auth, AuthOutcome::Failed(Failure::Plain(format!("Failed to create runtime: {}", e))));
+                        return;
+                    }
+                };
+
+                // `baseUrl` was validated in the constructor, so the only way
+                // this can fail is a client built by other means — fall back to
+                // production rather than kill the worker thread.
+                let mut config = build_stream_config(
+                    &api_key,
+                    base_url.as_deref(),
+                    WsProduct::Stock,
+                    stock_version,
+                    futopt_version,
+                )
+                .unwrap_or_else(|_| {
+                    ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
+                });
+                config.tls = tls_config;
+                message_queue.apply(&mut config);
+                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+                // isConnected / isClosed read this connection's core state
+                // from here on (#67).
+                let state = client.state_handle();
+                *lock_connection(&connection) = Some(ConnectionHandles {
+                    state: state.clone(),
+                    messages_dropped: client.messages_dropped_handle(),
+                });
+
                 // Supervised: a panic anywhere in here is reported instead of
                 // leaving the connection silently dead (#25).
                 let run = || {
-                    // A connection being reused: let the previous worker finish
-                    // its teardown before this one touches the shared flags. Only
-                    // the worker is joined, not its stream reader, so the old
-                    // connection's `disconnect` callback may still arrive after
-                    // this connection's `connect`.
-                    if let Some(previous) = previous {
-                        let _ = previous.join();
-                    }
-                    closed.store(false, Ordering::SeqCst);
-
-                    // Create tokio runtime
-                    // Multi-thread runtime so core's dispatch/writer/health-check
-                    // tasks keep running while the worker loop blocks on std::mpsc
-                    // receive_timeout. With a current_thread runtime those tasks
-                    // starve the moment the worker stops driving the executor,
-                    // causing incoming frames (subscribed, snapshot, heartbeat...)
-                    // to stall in tokio-tungstenite's buffer.
-                    let rt = match tokio::runtime::Builder::new_multi_thread()
-                        .worker_threads(2)
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(rt) => rt,
-                        Err(e) => {
-                            // No core client yet, so no event to forward: only
-                            // the Promise reports it.
-                            ending.store(true, Ordering::SeqCst);
-                            settle(&auth, AuthOutcome::Failed(Failure::Plain(format!("Failed to create runtime: {}", e))));
-                            return;
-                        }
-                    };
-
-                    // `baseUrl` was validated in the constructor, so the only way
-                    // this can fail is a client built by other means — fall back to
-                    // production rather than kill the worker thread.
-                    let mut config = build_stream_config(
-                        &api_key,
-                        base_url.as_deref(),
-                        WsProduct::Stock,
-                        stock_version,
-                        futopt_version,
-                    )
-                    .unwrap_or_else(|_| {
-                        ConnectionConfig::fugle_stock(AuthRequest::with_api_key(&api_key))
-                    });
-                    config.tls = tls_config;
-                    message_queue.apply(&mut config);
-                    let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
-                    if let Ok(mut slot) = messages_dropped.lock() {
-                        *slot = Some(client.messages_dropped_handle());
-                    }
 
                     // Forward core's stream from before connect(): `Connected` is
                     // emitted when the socket opens, ahead of authentication, and
@@ -1318,8 +1321,7 @@ impl StockWebSocketClient {
                         client.stream_receiver(),
                         sink.clone(),
                         Arc::clone(&auth),
-                        Arc::clone(&connected),
-                        Arc::clone(&closed),
+                        state.clone(),
                         Arc::clone(&ending),
                         Arc::clone(&dispatch_ended),
                         test_panic.clone(),
@@ -1346,21 +1348,32 @@ impl StockWebSocketClient {
                     // case the queued Disconnect ends it like any other.
                     if ending.load(Ordering::SeqCst) && decide(&decision, AUTH_ABORTED) {
                         let _ = rt.block_on(client.disconnect());
-                        connected.store(false, Ordering::SeqCst);
-                        closed.store(true, Ordering::SeqCst);
                         settle(&auth, AuthOutcome::Failed(connect_aborted()));
                         return;
                     }
 
                     // Main event loop
+                    let mut dispatch_ended_at = None;
                     loop {
-                        if connected.load(Ordering::SeqCst) {
+                        // Once connect() is reported resolved, not merely once
+                        // core is connected, so the panic follows `authenticated`.
+                        if decision.load(Ordering::SeqCst) == AUTH_REPORTED {
                             inject_test_panic(test_panic.as_deref(), "ws_worker");
                         }
                         if dispatch_ended.load(Ordering::SeqCst) {
-                            connected.store(false, Ordering::SeqCst);
-                            closed.store(true, Ordering::SeqCst);
-                            break;
+                            let since = *dispatch_ended_at.get_or_insert_with(Instant::now);
+                            match on_dispatch_end(
+                                panic_reported.load(Ordering::SeqCst),
+                                state.is_closed(),
+                                since.elapsed(),
+                            ) {
+                                DispatchEnd::CloseAfterPanic => {
+                                    let _ = rt.block_on(client.force_close());
+                                    break;
+                                }
+                                DispatchEnd::Stop => break,
+                                DispatchEnd::WaitForClosed => {}
+                            }
                         }
 
                         // Wait briefly for a command, then re-check the flags.
@@ -1394,8 +1407,6 @@ impl StockWebSocketClient {
                             }
                             Ok(WsCommand::Disconnect) => {
                                 let _ = rt.block_on(client.disconnect());
-                                connected.store(false, Ordering::SeqCst);
-                                closed.store(true, Ordering::SeqCst);
                                 // Core's disconnect() emits `Disconnected` on its
                                 // stream and the stream reader forwards it;
                                 // firing here too duplicates the callback (#22).
@@ -1405,8 +1416,6 @@ impl StockWebSocketClient {
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                                 // Command channel closed, cleanup
                                 let _ = rt.block_on(client.disconnect());
-                                connected.store(false, Ordering::SeqCst);
-                                closed.store(true, Ordering::SeqCst);
                                 break;
                             }
                         }
@@ -1418,8 +1427,7 @@ impl StockWebSocketClient {
                         &PanicContext {
                             sink: &sink,
                             auth: &auth,
-                            connected: &connected,
-                            closed: &closed,
+                            state: &state,
                             ending: &ending,
                             reported: &panic_reported,
                             decision: &decision,
@@ -1427,6 +1435,9 @@ impl StockWebSocketClient {
                         "worker",
                         &*payload,
                     );
+                    // The panic left core's connection up: close it. The event
+                    // thread does not report its `Disconnected` again.
+                    let _ = rt.block_on(client.force_close());
                 }
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
@@ -1570,17 +1581,17 @@ impl StockWebSocketClient {
     /// connection's count. 0 before the first `connect()`.
     #[napi(getter)]
     pub fn messages_dropped_total(&self) -> f64 {
-        self.messages_dropped
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|handle| handle.total() as f64))
+        read_connection(&self.connection, |handles| handles.messages_dropped.total() as f64)
             .unwrap_or(0.0)
     }
 
     /// Check if connected
+    ///
+    /// True while the connection is authenticated; false while an
+    /// auto-reconnect is in progress.
     #[napi(getter)]
     pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::SeqCst)
+        read_connection(&self.connection, |handles| handles.state.is_connected()).unwrap_or(false)
     }
 
     /// Check if client has been closed
@@ -1591,7 +1602,7 @@ impl StockWebSocketClient {
     /// connection starts.
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
+        read_connection(&self.connection, |handles| handles.state.is_closed()).unwrap_or(false)
     }
 }
 
@@ -1625,10 +1636,8 @@ pub struct FutOptWebSocketClient {
     tls_config: marketdata_core::TlsConfig,
     message_queue: MessageQueueSettings,
     callbacks: Arc<Listeners>,
-    connected: Arc<AtomicBool>,
-    closed: Arc<AtomicBool>,
     worker: WorkerSlot,
-    messages_dropped: DroppedSlot,
+    connection: ConnectionSlot,
 }
 
 #[napi]
@@ -1645,10 +1654,8 @@ impl FutOptWebSocketClient {
         tls_config: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
         callbacks: Arc<Listeners>,
-        connected: Arc<AtomicBool>,
-        closed: Arc<AtomicBool>,
         worker: WorkerSlot,
-        messages_dropped: DroppedSlot,
+        connection: ConnectionSlot,
     ) -> Self {
         Self {
             api_key,
@@ -1660,10 +1667,8 @@ impl FutOptWebSocketClient {
             tls_config,
             message_queue,
             callbacks,
-            connected,
-            closed,
             worker,
-            messages_dropped,
+            connection,
         }
     }
 
@@ -1723,9 +1728,7 @@ impl FutOptWebSocketClient {
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
         let message_queue = self.message_queue;
-        let messages_dropped = Arc::clone(&self.messages_dropped);
-        let connected = Arc::clone(&self.connected);
-        let closed = Arc::clone(&self.closed);
+        let connection = Arc::clone(&self.connection);
         let ending_for_worker = Arc::clone(&ending);
         let test_panic = test_panic_site();
 
@@ -1739,58 +1742,62 @@ impl FutOptWebSocketClient {
                 use marketdata_core::websocket::channels::FutOptSubscription;
 
                 let ending = ending_for_worker;
+                // A connection being reused: let the previous worker finish
+                // its teardown before this connection replaces it. Only the
+                // worker is joined, not its stream reader, so the old
+                // connection's `disconnect` callback may still arrive after
+                // this connection's `connect`.
+                if let Some(previous) = previous {
+                    let _ = previous.join();
+                }
+
+                // Multi-thread runtime so core's dispatch/writer/health-check
+                // tasks keep running while the worker loop blocks on std::mpsc
+                // receive_timeout. With a current_thread runtime those tasks
+                // starve the moment the worker stops driving the executor,
+                // causing incoming frames (subscribed, snapshot, heartbeat...)
+                // to stall in tokio-tungstenite's buffer.
+                let rt = match tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(2)
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        // No core client yet, so no event to forward: only
+                        // the Promise reports it.
+                        ending.store(true, Ordering::SeqCst);
+                        settle(&auth, AuthOutcome::Failed(Failure::Plain(format!("Failed to create runtime: {}", e))));
+                        return;
+                    }
+                };
+
+                // See the stock sibling: `baseUrl` was validated in the
+                // constructor, so this cannot fail for a normally-built client.
+                let mut config = build_stream_config(
+                    &api_key,
+                    base_url.as_deref(),
+                    WsProduct::FutOpt,
+                    stock_version,
+                    futopt_version,
+                )
+                .unwrap_or_else(|_| {
+                    ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
+                });
+                config.tls = tls_config;
+                message_queue.apply(&mut config);
+                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+                // isConnected / isClosed read this connection's core state
+                // from here on (#67).
+                let state = client.state_handle();
+                *lock_connection(&connection) = Some(ConnectionHandles {
+                    state: state.clone(),
+                    messages_dropped: client.messages_dropped_handle(),
+                });
+
                 // Supervised: a panic anywhere in here is reported instead of
                 // leaving the connection silently dead (#25).
                 let run = || {
-                    // A connection being reused: let the previous worker finish
-                    // its teardown before this one touches the shared flags. Only
-                    // the worker is joined, not its stream reader, so the old
-                    // connection's `disconnect` callback may still arrive after
-                    // this connection's `connect`.
-                    if let Some(previous) = previous {
-                        let _ = previous.join();
-                    }
-                    closed.store(false, Ordering::SeqCst);
-
-                    // Multi-thread runtime so core's dispatch/writer/health-check
-                    // tasks keep running while the worker loop blocks on std::mpsc
-                    // receive_timeout. With a current_thread runtime those tasks
-                    // starve the moment the worker stops driving the executor,
-                    // causing incoming frames (subscribed, snapshot, heartbeat...)
-                    // to stall in tokio-tungstenite's buffer.
-                    let rt = match tokio::runtime::Builder::new_multi_thread()
-                        .worker_threads(2)
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(rt) => rt,
-                        Err(e) => {
-                            // No core client yet, so no event to forward: only
-                            // the Promise reports it.
-                            ending.store(true, Ordering::SeqCst);
-                            settle(&auth, AuthOutcome::Failed(Failure::Plain(format!("Failed to create runtime: {}", e))));
-                            return;
-                        }
-                    };
-
-                    // See the stock sibling: `baseUrl` was validated in the
-                    // constructor, so this cannot fail for a normally-built client.
-                    let mut config = build_stream_config(
-                        &api_key,
-                        base_url.as_deref(),
-                        WsProduct::FutOpt,
-                        stock_version,
-                        futopt_version,
-                    )
-                    .unwrap_or_else(|_| {
-                        ConnectionConfig::fugle_futopt(AuthRequest::with_api_key(&api_key))
-                    });
-                    config.tls = tls_config;
-                    message_queue.apply(&mut config);
-                    let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
-                    if let Ok(mut slot) = messages_dropped.lock() {
-                        *slot = Some(client.messages_dropped_handle());
-                    }
 
                     // Forward core's stream from before connect(): `Connected` is
                     // emitted when the socket opens, ahead of authentication, and
@@ -1801,8 +1808,7 @@ impl FutOptWebSocketClient {
                         client.stream_receiver(),
                         sink.clone(),
                         Arc::clone(&auth),
-                        Arc::clone(&connected),
-                        Arc::clone(&closed),
+                        state.clone(),
                         Arc::clone(&ending),
                         Arc::clone(&dispatch_ended),
                         test_panic.clone(),
@@ -1829,21 +1835,32 @@ impl FutOptWebSocketClient {
                     // case the queued Disconnect ends it like any other.
                     if ending.load(Ordering::SeqCst) && decide(&decision, AUTH_ABORTED) {
                         let _ = rt.block_on(client.disconnect());
-                        connected.store(false, Ordering::SeqCst);
-                        closed.store(true, Ordering::SeqCst);
                         settle(&auth, AuthOutcome::Failed(connect_aborted()));
                         return;
                     }
 
                     // Main event loop
+                    let mut dispatch_ended_at = None;
                     loop {
-                        if connected.load(Ordering::SeqCst) {
+                        // Once connect() is reported resolved, not merely once
+                        // core is connected, so the panic follows `authenticated`.
+                        if decision.load(Ordering::SeqCst) == AUTH_REPORTED {
                             inject_test_panic(test_panic.as_deref(), "ws_worker");
                         }
                         if dispatch_ended.load(Ordering::SeqCst) {
-                            connected.store(false, Ordering::SeqCst);
-                            closed.store(true, Ordering::SeqCst);
-                            break;
+                            let since = *dispatch_ended_at.get_or_insert_with(Instant::now);
+                            match on_dispatch_end(
+                                panic_reported.load(Ordering::SeqCst),
+                                state.is_closed(),
+                                since.elapsed(),
+                            ) {
+                                DispatchEnd::CloseAfterPanic => {
+                                    let _ = rt.block_on(client.force_close());
+                                    break;
+                                }
+                                DispatchEnd::Stop => break,
+                                DispatchEnd::WaitForClosed => {}
+                            }
                         }
 
                         // Wait briefly for a command, then re-check the flags.
@@ -1876,8 +1893,6 @@ impl FutOptWebSocketClient {
                             }
                             Ok(WsCommand::Disconnect) => {
                                 let _ = rt.block_on(client.disconnect());
-                                connected.store(false, Ordering::SeqCst);
-                                closed.store(true, Ordering::SeqCst);
                                 // Core's disconnect() emits `Disconnected` on its
                                 // stream and the stream reader forwards it;
                                 // firing here too duplicates the callback (#22).
@@ -1887,8 +1902,6 @@ impl FutOptWebSocketClient {
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                                 // Command channel closed, cleanup
                                 let _ = rt.block_on(client.disconnect());
-                                connected.store(false, Ordering::SeqCst);
-                                closed.store(true, Ordering::SeqCst);
                                 break;
                             }
                         }
@@ -1900,8 +1913,7 @@ impl FutOptWebSocketClient {
                         &PanicContext {
                             sink: &sink,
                             auth: &auth,
-                            connected: &connected,
-                            closed: &closed,
+                            state: &state,
                             ending: &ending,
                             reported: &panic_reported,
                             decision: &decision,
@@ -1909,6 +1921,9 @@ impl FutOptWebSocketClient {
                         "worker",
                         &*payload,
                     );
+                    // The panic left core's connection up: close it. The event
+                    // thread does not report its `Disconnected` again.
+                    let _ = rt.block_on(client.force_close());
                 }
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
@@ -2048,17 +2063,17 @@ impl FutOptWebSocketClient {
     /// connection's count. 0 before the first `connect()`.
     #[napi(getter)]
     pub fn messages_dropped_total(&self) -> f64 {
-        self.messages_dropped
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|handle| handle.total() as f64))
+        read_connection(&self.connection, |handles| handles.messages_dropped.total() as f64)
             .unwrap_or(0.0)
     }
 
     /// Check if connected
+    ///
+    /// True while the connection is authenticated; false while an
+    /// auto-reconnect is in progress.
     #[napi(getter)]
     pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::SeqCst)
+        read_connection(&self.connection, |handles| handles.state.is_connected()).unwrap_or(false)
     }
 
     /// Check if client has been closed
@@ -2069,7 +2084,7 @@ impl FutOptWebSocketClient {
     /// connection starts.
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
+        read_connection(&self.connection, |handles| handles.state.is_closed()).unwrap_or(false)
     }
 }
 
@@ -2091,8 +2106,7 @@ fn spawn_stream_reader(
     stream: Arc<marketdata_core::StreamReceiver>,
     sink: EventSink,
     auth: AuthSlot,
-    connected: Arc<AtomicBool>,
-    closed: Arc<AtomicBool>,
+    state: marketdata_core::ConnectionStateHandle,
     ending: Arc<AtomicBool>,
     dispatch_ended: Arc<AtomicBool>,
     test_panic: Option<String>,
@@ -2145,7 +2159,6 @@ fn spawn_stream_reader(
                         } else if decision.load(Ordering::SeqCst) == AUTH_ABORTED || ending.load(Ordering::SeqCst) {
                             continue; // a re-authentication after the connection was given up
                         }
-                        connected.store(true, Ordering::SeqCst);
                         reported = true;
                         fire_and_settle(
                             &sink,
@@ -2180,6 +2193,11 @@ fn spawn_stream_reader(
                     }
                     ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
                         reported = false;
+                        if panic_reported.load(Ordering::SeqCst) {
+                            // The worker closing the connection after a panic
+                            // that already reported its end (#25).
+                            continue;
+                        }
                         if !will_reconnect {
                             ending.store(true, Ordering::SeqCst);
                             // Core's dispatch task ends without reconnecting.
@@ -2224,8 +2242,7 @@ fn spawn_stream_reader(
                 &PanicContext {
                     sink: &sink,
                     auth: &auth,
-                    connected: &connected,
-                    closed: &closed,
+                    state: &state,
                     ending: &ending,
                     reported: &panic_reported,
                     decision: &decision,
@@ -2241,12 +2258,43 @@ fn spawn_stream_reader(
     });
 }
 
+/// How long a worker keeps the runtime up after core's dispatch ended, waiting
+/// for core to record `Closed`.
+const CLOSED_WAIT: Duration = Duration::from_secs(2);
+
+/// What the worker does once the event thread reports core's dispatch ended.
+#[derive(Debug, PartialEq, Eq)]
+enum DispatchEnd {
+    /// The event thread panicked (#25) and left core's connection up: close
+    /// it before the runtime goes.
+    CloseAfterPanic,
+    /// Stop the worker.
+    Stop,
+    /// Keep the runtime up: core reports `Disconnected` before it records
+    /// `Closed` (#86), and dropping the runtime in between would leave the
+    /// state as it was.
+    WaitForClosed,
+}
+
+/// Decide [`DispatchEnd`]. Only an event thread panic closes the connection
+/// from here: otherwise core already closed it, and closing it again would
+/// overwrite the server's close in core's state with a client force close.
+/// `panic_reported` is the signal: the worker checking it has not panicked.
+fn on_dispatch_end(event_thread_panicked: bool, core_closed: bool, waited: Duration) -> DispatchEnd {
+    if event_thread_panicked {
+        DispatchEnd::CloseAfterPanic
+    } else if core_closed || waited >= CLOSED_WAIT {
+        DispatchEnd::Stop
+    } else {
+        DispatchEnd::WaitForClosed
+    }
+}
+
 /// What a panicked worker or event thread needs to report it (#25).
 struct PanicContext<'a> {
     sink: &'a EventSink,
     auth: &'a AuthSlot,
-    connected: &'a AtomicBool,
-    closed: &'a AtomicBool,
+    state: &'a marketdata_core::ConnectionStateHandle,
     ending: &'a AtomicBool,
     /// Shared by the connection's worker and event thread, so a panic on
     /// both reports one `error`.
@@ -2255,9 +2303,10 @@ struct PanicContext<'a> {
 }
 
 /// Report a panic on a connection's `thread` so the connection does not go
-/// silently dead (#25): mark it closed, fire `error` (code -1) — rejecting
-/// `connect()` after it unless its authentication was already reported — and
-/// `disconnect` if it was connected.
+/// silently dead (#25): fire `error` (code -1) — rejecting `connect()` after
+/// it unless its authentication was already reported — and `disconnect` if
+/// it was reported and core has not closed it. The worker closes the core
+/// connection.
 /// Only the first panic of a connection fires them.
 ///
 /// Both events go through the [`EventSink`], so each carries a keep-alive
@@ -2272,8 +2321,6 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
     let reason = format!("WebSocket {} thread panicked: {}", thread, detail);
 
     ctx.ending.store(true, Ordering::SeqCst);
-    let was_connected = ctx.connected.swap(false, Ordering::SeqCst);
-    ctx.closed.store(true, Ordering::SeqCst);
     // The other thread already reported this connection's end.
     if ctx.reported.swap(true, Ordering::SeqCst) {
         return;
@@ -2293,10 +2340,10 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
             AuthOutcome::Failed(Failure::Coded(info)),
             None,
         );
-    } else {
-        ctx.sink.emit("error", error);
+        return;
     }
-    if was_connected {
+    ctx.sink.emit("error", error);
+    if !ctx.state.is_closed() {
         ctx.sink.emit(
             "disconnect",
             EventArgs::Json(serde_json::json!({ "code": null, "reason": reason })),
@@ -2391,6 +2438,18 @@ mod tests {
         drop(call);
         room.recv_timeout(Duration::from_secs(5))
             .expect("a discarded call kept its slot, so the reader would wait forever");
+    }
+
+    #[test]
+    fn dispatch_end_closes_the_connection_only_after_an_event_thread_panic() {
+        let soon = Duration::ZERO;
+        assert_eq!(on_dispatch_end(true, false, soon), DispatchEnd::CloseAfterPanic);
+        assert_eq!(on_dispatch_end(true, true, soon), DispatchEnd::CloseAfterPanic);
+        // A close core reported but has not recorded yet (#86) is waited
+        // for, not force-closed over.
+        assert_eq!(on_dispatch_end(false, false, soon), DispatchEnd::WaitForClosed);
+        assert_eq!(on_dispatch_end(false, true, soon), DispatchEnd::Stop);
+        assert_eq!(on_dispatch_end(false, false, CLOSED_WAIT), DispatchEnd::Stop);
     }
 
     #[test]

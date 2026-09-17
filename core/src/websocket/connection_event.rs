@@ -115,6 +115,56 @@ pub enum ConnectionState {
     },
 }
 
+/// A handle reading a client's [`ConnectionState`] that stays readable after
+/// the client is dropped, returned by
+/// [`aio::WebSocketClient::state_handle`](crate::aio::WebSocketClient::state_handle).
+///
+/// Lets a binding that drops its client once the connection ends still
+/// report the last connection's state, without keeping the client — and
+/// with it the client's stream — alive. Cheap to clone; every clone reads the
+/// same state. Callable from any thread, on or off a runtime.
+#[derive(Clone)]
+pub struct ConnectionStateHandle {
+    state: std::sync::Arc<std::sync::RwLock<ConnectionState>>,
+}
+
+impl ConnectionStateHandle {
+    pub(crate) fn new(state: std::sync::Arc<std::sync::RwLock<ConnectionState>>) -> Self {
+        Self { state }
+    }
+
+    /// Read guard on the state. A poisoned lock still yields the value:
+    /// writers only assign, so it can never be left half-updated.
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, ConnectionState> {
+        self.state
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The current (or last) state.
+    pub fn state(&self) -> ConnectionState {
+        self.read().clone()
+    }
+
+    /// Whether the state is [`Connected`](ConnectionState::Connected).
+    pub fn is_connected(&self) -> bool {
+        matches!(*self.read(), ConnectionState::Connected)
+    }
+
+    /// Whether the state is [`Closed`](ConnectionState::Closed).
+    pub fn is_closed(&self) -> bool {
+        matches!(*self.read(), ConnectionState::Closed { .. })
+    }
+}
+
+impl std::fmt::Debug for ConnectionStateHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectionStateHandle")
+            .field("state", &self.state())
+            .finish()
+    }
+}
+
 /// Events emitted by WebSocket connection.
 ///
 /// Delivered as [`StreamItem::Event`](crate::websocket::StreamItem::Event)
