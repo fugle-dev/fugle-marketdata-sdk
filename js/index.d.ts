@@ -2422,6 +2422,9 @@ export declare class StockWebSocketClient {
    * `error(Error)` with a numeric `code` when core supplied one. Without an
    * `error` listener errors are ignored rather than thrown.
    *
+   * `message` frames that arrive before a `message` listener is registered
+   * are dropped, not delivered to it later (#62).
+   *
    * @param event - Event type: "message", "connect", "authenticated",
    *                "unauthenticated", "disconnect", "reconnect", "error"
    * @param callback - Listener for that event

@@ -42,7 +42,8 @@ function runChild(script, env, timeoutMs = 10000) {
 
 /**
  * Loopback server. Auth is acked, or rejected while `rejectAuth` is set.
- * With `dropAfterAuth`, the socket is terminated right after the ack.
+ * With `dropAfterAuth`, the socket is terminated right after the ack. Each
+ * `subscribe` is answered with one `data` frame carrying its symbol.
  */
 function startServer({ rejectAuth = false, dropAfterAuth = false } = {}) {
   return new Promise((resolve) => {
@@ -57,6 +58,12 @@ function startServer({ rejectAuth = false, dropAfterAuth = false } = {}) {
         }
         socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
         if (dropAfterAuth) setTimeout(() => socket.terminate(), 20);
+      });
+      socket.on('message', (raw) => {
+        const frame = JSON.parse(raw.toString());
+        if (frame.event !== 'subscribe') return;
+        const { channel, symbol } = frame.data;
+        socket.send(JSON.stringify({ event: 'data', data: { symbol }, id: `${channel}-${symbol}`, channel }));
       });
     });
     wss.on('listening', () => resolve(wss));
@@ -178,6 +185,63 @@ describe.each(['stock', 'futopt'])('%s event order (#62)', (product) => {
       { URL: `ws://127.0.0.1:${wss.address().port}` },
     );
     expect({ code, stderr, result }).toEqual({ code: 0, stderr: '', result: ['connect', 'authenticated', 'resolved'] });
+  });
+
+  test('a listener replaced by on() while its events are queued never receives them', async () => {
+    await setup();
+    const { code, result, stderr } = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+      const events = [];
+      ws.on('connect', () => events.push('old connect'));
+      ws.on('authenticated', () => events.push('old authenticated'));
+      const done = ws.connect().then(() => events.push('resolved'));
+      // Authentication completes, and its events are queued, meanwhile.
+      const until = Date.now() + 1000;
+      while (Date.now() < until);
+      ws.on('connect', () => events.push('new connect'));
+      ws.on('authenticated', () => events.push('new authenticated'));
+      done.then(() => {
+        console.log('RESULT ' + JSON.stringify(events));
+        ws.disconnect();
+      });
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}` },
+    );
+    expect({ code, stderr, result }).toEqual({
+      code: 0,
+      stderr: '',
+      result: ['new connect', 'new authenticated', 'resolved'],
+    });
+  });
+
+  test('message frames that arrive before a message listener is registered are not delivered to it', async () => {
+    await setup();
+    const { code, result, stderr } = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+      const symbols = [];
+      ws.connect().then(() => {
+        ws.subscribe(${JSON.stringify({ channel: 'trades', symbol: 'EARLY' })});
+        // EARLY's frame arrives meanwhile, with no message listener yet.
+        const until = Date.now() + 1000;
+        while (Date.now() < until);
+        ws.on('message', (raw) => {
+          const { symbol } = JSON.parse(raw).data;
+          symbols.push(symbol);
+          if (symbol === 'LATE') {
+            console.log('RESULT ' + JSON.stringify(symbols));
+            ws.disconnect();
+          }
+        });
+        ws.subscribe(${JSON.stringify({ channel: 'trades', symbol: 'LATE' })});
+      });
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}` },
+    );
+    expect({ code, stderr, result }).toEqual({ code: 0, stderr: '', result: ['LATE'] });
   });
 
   test('a listener may register listeners, which receive later events', async () => {
