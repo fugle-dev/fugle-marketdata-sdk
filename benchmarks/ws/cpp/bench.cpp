@@ -67,6 +67,7 @@ static std::atomic<bool> g_t0_set{false};
 static std::vector<double> g_latencies;
 static std::mutex g_lat_mutex;
 static std::atomic<bool> g_done{false};
+static std::atomic<uint64_t> g_dropped{0};
 static long g_ss_count = -1;
 static double g_ss_mps = 0;
 
@@ -81,6 +82,7 @@ public:
     }
     void on_reconnecting(uint32_t) override {}
     void on_reconnect_failed(uint32_t) override {}
+    void on_messages_dropped(uint64_t count) override { g_dropped.fetch_add(count); }
 
     void on_message(const StreamMessage &msg) override {
         if (msg.event == "warmup") return;
@@ -158,6 +160,7 @@ int main(int argc, char **argv) {
         << ",\"count\":" << count
         << ",\"expected\":" << (g_ss_count >= 0 ? std::to_string(g_ss_count) : "null")
         << ",\"lost\":" << (g_ss_count >= 0 ? std::to_string(g_ss_count - count) : "null")
+        << ",\"dropped\":" << g_dropped.load()
         << ",\"elapsed_ms\":" << elapsed
         << ",\"msgs_per_sec\":" << mps
         << ",\"latency_p50_ms\":" << percentile(50)
