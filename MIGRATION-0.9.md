@@ -561,6 +561,7 @@ first to open a new one, or `reconnect()` (Rust) to replace it.
 |---|---|---|
 | Rust | `Ok(())`, nothing done | `Err(MarketDataError::AlreadyConnected)` |
 | C#, Go, Java, C++ | A second connection replaced the first one's event delivery | `WebSocketError` variant, code `2011` |
+| Python | Same (`connect()` and `connect_async()`) | `WebSocketError`, `e.code == 2011` |
 
 - **Rust**: `MarketDataError` is now `#[non_exhaustive]`, so a `match` on it
   needs a `_` arm; the new variant is `AlreadyConnected`.
@@ -576,6 +577,8 @@ first to open a new one, or `reconnect()` (Rust) to replace it.
 - **C#, Go, Java, C++**: branch on the code (`ex.GetInfo().code`,
   `ErrorInfoOf(err).Code`, `e.getCode()`, `e.info.code`) rather than the
   variant.
+- **Python**: catch `WebSocketError` (or `MarketDataError`) and check
+  `e.code == 2011`.
 
 ## Fields you could not reach before
 

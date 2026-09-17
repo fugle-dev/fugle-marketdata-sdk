@@ -76,7 +76,8 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
         }
         CoreError::ConnectionError { .. }
         | CoreError::WebSocketError { .. }
-        | CoreError::ClientClosed => WebSocketError::new_err((message.clone(), error_code)),
+        | CoreError::ClientClosed
+        | CoreError::AlreadyConnected => WebSocketError::new_err((message.clone(), error_code)),
         _ => MarketDataError::new_err((message.clone(), error_code)),
     };
 
