@@ -59,7 +59,8 @@ enum Next {
 ///   `Disconnected` before it is queued (#86)
 /// * `write_failed` - Receives this connection's failed write from its
 ///   writer task; it is reported and ends the connection like a transport
-///   error (#97)
+///   error (#97). Borrowed, so the caller can retire the writer before the
+///   receiver is dropped (#105)
 ///
 /// # Returns
 ///
@@ -76,7 +77,7 @@ pub(crate) async fn dispatch_messages(
     shutdown_requested: Arc<AtomicBool>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     state: SharedState,
-    write_failed: oneshot::Receiver<WriteFailure>,
+    write_failed: &mut oneshot::Receiver<WriteFailure>,
 ) -> Option<u16> {
     let mut write_failed = Some(write_failed);
     // A failed write waiting for the frames received before it, with the
