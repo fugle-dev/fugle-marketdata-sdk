@@ -513,6 +513,42 @@ What changes for you:
   `WebSocketClient.new_with_credentials(CredentialsRecord, ...)`, which
   returns the `ConfigError` unless exactly one credential is given.
 
+## 15. WebSocket: unknown channel, code 1005 everywhere
+
+`subscribe()` checks the channel name with core's parser (#114), as Node does
+since #113. A name that is not a channel of that product (`trades`,
+`candles`, `books`, `aggregates`, plus `indices` for stock) fails with code
+`1005` (`INVALID_PARAMETER`), `source_kind` `client`, and the message
+`Invalid parameter 'channel': unknown channel 'trade'. Valid channels: trades,
+candles, books, aggregates, indices`. Names are matched ignoring case. The
+name is checked before the connection, so an unconnected client reports this
+error rather than "Not connected".
+
+| Language | Before | After |
+|---|---|---|
+| Python | `ValueError` | `MarketDataError` (`e.code == 1005`) |
+| C#, Go, Java, C++ | `ConfigError` variant, code `1004`; `"Trades"` rejected | `ApiError` variant, code `1005`; `"Trades"` accepted |
+
+- **Python**: `MarketDataError` is not a `ValueError`; update `except`
+  clauses. `subscribe_async()` still raises when awaited, not when called.
+
+  ```python
+  # Before
+  try:
+      ws.stock.subscribe("trade", "2330")
+  except ValueError: ...
+  # After
+  try:
+      ws.stock.subscribe("trade", "2330")
+  except MarketDataError as e:
+      if e.code == 1005: ...
+  ```
+
+- **C#, Go, Java, C++**: the error is the `ApiError` variant (core's
+  `InvalidParameter` maps to it) instead of `ConfigError`. Branch on the code
+  (`ex.GetInfo().code`, `ErrorInfoOf(err).Code`, `e.getCode()`, `e.info.code`)
+  rather than the variant.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:
