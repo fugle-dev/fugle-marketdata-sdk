@@ -374,6 +374,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and keep reporting itself connected, without reconnecting, until a read
   failed too. The `Error` message now reads `WebSocket write error: …`, the
   wording of the blocking client, instead of `Writer error: …` (#97).
+- **Node, Python, UniFFI, Rust async client**: after a reconnect (automatic
+  or `reconnect()`), frames queued for the previous connection are no longer
+  written to the new one, and a write that fails on the lost connection no
+  longer emits an `Error` that looks like the new connection's. Frames
+  queued but not yet sent when the connection was lost are now dropped:
+  subscriptions are still restored by the reconnect, but a raw `send()`
+  request still waiting in the queue is not sent (#105).
 - **Rust**: `Debug` for `AuthRequest` no longer prints the API key, bearer
   token or SDK token; a set credential shows as `Some(***)`, matching `Auth`
   (#69).
