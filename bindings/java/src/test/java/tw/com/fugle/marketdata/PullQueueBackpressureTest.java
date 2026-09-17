@@ -4,21 +4,12 @@ import tw.com.fugle.marketdata.generated.*;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 
 /**
  * Pull mode with a full queue (#46): the wrapper waits for {@code poll()} to
@@ -95,7 +86,7 @@ public class PullQueueBackpressureTest {
     void slowPollDropsAreCountedAndReported() throws Exception {
         NativeLibrary.assumeAvailable();
 
-        try (BurstServer server = new BurstServer();
+        try (LoopbackWsServer server = burstServer();
              FugleWebSocketClient client = FugleWebSocketClient.builder()
                      .apiKey("test-key")
                      .stock()
@@ -139,135 +130,20 @@ public class PullQueueBackpressureTest {
     }
 
     /**
-     * Loopback WebSocket server on the JDK alone: acks {@code auth}, answers
-     * {@code subscribe} with {@link #BURST} {@code data} frames and echoes a
-     * Close.
+     * Acks {@code auth} and answers {@code subscribe} with {@link #BURST}
+     * {@code data} frames.
      */
-    private static final class BurstServer implements AutoCloseable {
-        private final ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
-        private final List<Socket> clients = new CopyOnWriteArrayList<>();
-        private final Thread acceptor = new Thread(this::acceptLoop, "burst-server");
-
-        BurstServer() throws IOException {
-            acceptor.setDaemon(true);
-            acceptor.start();
-        }
-
-        String url() {
-            return "ws://127.0.0.1:" + socket.getLocalPort();
-        }
-
-        private void acceptLoop() {
-            while (!socket.isClosed()) {
-                try {
-                    Socket client = socket.accept();
-                    clients.add(client);
-                    Thread t = new Thread(() -> serve(client), "burst-server-conn");
-                    t.setDaemon(true);
-                    t.start();
-                } catch (IOException e) {
-                    return;
-                }
+    private static LoopbackWsServer burstServer() throws IOException {
+        return new LoopbackWsServer(text -> {
+            if (text.contains("\"auth\"")) {
+                return List.of("{\"event\":\"authenticated\",\"data\":{}}");
             }
-        }
-
-        private void serve(Socket client) {
-            try (Socket c = client) {
-                DataInputStream in = new DataInputStream(c.getInputStream());
-                OutputStream out = c.getOutputStream();
-                handshake(in, out);
-                while (true) {
-                    int b0 = in.readUnsignedByte();
-                    int b1 = in.readUnsignedByte();
-                    long len = b1 & 0x7f;
-                    if (len == 126) {
-                        len = in.readUnsignedShort();
-                    } else if (len == 127) {
-                        len = in.readLong();
-                    }
-                    byte[] mask = new byte[4];
-                    if ((b1 & 0x80) != 0) {
-                        in.readFully(mask);
-                    }
-                    byte[] payload = new byte[(int) len];
-                    in.readFully(payload);
-                    for (int i = 0; i < payload.length; i++) {
-                        payload[i] ^= mask[i % 4];
-                    }
-                    int opcode = b0 & 0x0f;
-                    if (opcode == 0x8) {
-                        writeFrame(out, 0x8, payload);
-                        return;
-                    }
-                    if (opcode != 0x1) {
-                        continue;
-                    }
-                    String text = new String(payload, StandardCharsets.UTF_8);
-                    if (text.contains("\"auth\"")) {
-                        sendText(out, "{\"event\":\"authenticated\",\"data\":{}}");
-                    } else if (text.contains("\"subscribe\"")) {
-                        for (int i = 0; i < BURST; i++) {
-                            sendText(out, "{\"event\":\"data\",\"data\":{\"i\":" + i + "},\"channel\":\"trades\"}");
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                // connection gone
+            if (text.contains("\"subscribe\"")) {
+                return IntStream.range(0, BURST)
+                        .mapToObj(i -> "{\"event\":\"data\",\"data\":{\"i\":" + i + "},\"channel\":\"trades\"}")
+                        .toList();
             }
-        }
-
-        private static void handshake(InputStream in, OutputStream out) throws Exception {
-            ByteArrayOutputStream head = new ByteArrayOutputStream();
-            int matched = 0;
-            byte[] end = {'\r', '\n', '\r', '\n'};
-            while (matched < 4) {
-                int b = in.read();
-                if (b < 0) {
-                    throw new IOException("closed during handshake");
-                }
-                head.write(b);
-                matched = b == end[matched] ? matched + 1 : (b == '\r' ? 1 : 0);
-            }
-            Matcher m = Pattern.compile("(?i)Sec-WebSocket-Key:\\s*(\\S+)")
-                    .matcher(head.toString(StandardCharsets.US_ASCII.name()));
-            if (!m.find()) {
-                throw new IOException("no Sec-WebSocket-Key");
-            }
-            byte[] digest = MessageDigest.getInstance("SHA-1").digest(
-                    (m.group(1) + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").getBytes(StandardCharsets.US_ASCII));
-            String response = "HTTP/1.1 101 Switching Protocols\r\n"
-                    + "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                    + "Sec-WebSocket-Accept: " + Base64.getEncoder().encodeToString(digest) + "\r\n\r\n";
-            out.write(response.getBytes(StandardCharsets.US_ASCII));
-            out.flush();
-        }
-
-        private static void sendText(OutputStream out, String text) throws IOException {
-            writeFrame(out, 0x1, text.getBytes(StandardCharsets.UTF_8));
-        }
-
-        private static synchronized void writeFrame(OutputStream out, int opcode, byte[] payload)
-                throws IOException {
-            ByteArrayOutputStream frame = new ByteArrayOutputStream();
-            frame.write(0x80 | opcode);
-            if (payload.length < 126) {
-                frame.write(payload.length);
-            } else {
-                frame.write(126);
-                frame.write(payload.length >> 8);
-                frame.write(payload.length & 0xff);
-            }
-            frame.write(payload);
-            out.write(frame.toByteArray());
-            out.flush();
-        }
-
-        @Override
-        public void close() throws IOException {
-            socket.close();
-            for (Socket c : clients) {
-                c.close();
-            }
-        }
+            return List.of();
+        });
     }
 }

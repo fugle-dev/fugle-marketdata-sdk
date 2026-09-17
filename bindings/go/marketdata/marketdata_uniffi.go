@@ -1327,6 +1327,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials()
+		})
+		if checksum != 10661 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint()
 		})
 		if checksum != 35702 {
@@ -4512,6 +4521,29 @@ func WebSocketClientNewWithConfig(apiKey string, listener WebSocketListener, end
 	}))
 }
 
+// Create a new WebSocket client from whichever credential was given.
+//
+// Takes the same three credentials as the REST client: exactly one must
+// be non-empty (an empty or whitespace-only value counts as not
+// provided), otherwise this returns a `ConfigError` (code 1004). The
+// auth frame then carries it as `apikey`, `token` or `sdkToken`.
+// The other arguments are those of `new_with_options`.
+//
+// The credentials are one record rather than three arguments: with three
+// more buffers than `new_with_options` the Java binding (JNA) passed
+// garbage to Rust on macOS arm64.
+func WebSocketClientNewWithCredentials(credentials CredentialsRecord, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord, messageQueue *MessageQueueConfigRecord) (*WebSocketClient, error) {
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
+		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(FfiConverterCredentialsRecordINSTANCE.Lower(credentials), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), FfiConverterOptionalMessageQueueConfigRecordINSTANCE.Lower(messageQueue), _uniffiStatus)
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue *WebSocketClient
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterWebSocketClientINSTANCE.Lift(_uniffiRV), nil
+	}
+}
+
 // Create a new WebSocket client for a specific endpoint
 //
 // # Arguments
@@ -5323,6 +5355,61 @@ func marketdata_uniffi_cgo_dispatchCallbackInterfaceWebSocketListenerFree(handle
 
 func (c FfiConverterWebSocketListener) register() {
 	C.uniffi_marketdata_uniffi_fn_init_callback_vtable_websocketlistener(&UniffiVTableCallbackInterfaceWebSocketListenerINSTANCE)
+}
+
+// The credentials a WebSocket client authenticates with.
+//
+// Exactly one must be non-empty; an empty or whitespace-only value counts
+// as not provided.
+type CredentialsRecord struct {
+	// Fugle API key, sent as `apikey`
+	ApiKey *string
+	// OAuth bearer token, sent as `token`
+	BearerToken *string
+	// Fugle SDK token, sent as `sdkToken`
+	SdkToken *string
+}
+
+func (r *CredentialsRecord) Destroy() {
+	FfiDestroyerOptionalString{}.Destroy(r.ApiKey)
+	FfiDestroyerOptionalString{}.Destroy(r.BearerToken)
+	FfiDestroyerOptionalString{}.Destroy(r.SdkToken)
+}
+
+type FfiConverterCredentialsRecord struct{}
+
+var FfiConverterCredentialsRecordINSTANCE = FfiConverterCredentialsRecord{}
+
+func (c FfiConverterCredentialsRecord) Lift(rb RustBufferI) CredentialsRecord {
+	return LiftFromRustBuffer[CredentialsRecord](c, rb)
+}
+
+func (c FfiConverterCredentialsRecord) Read(reader io.Reader) CredentialsRecord {
+	return CredentialsRecord{
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterCredentialsRecord) Lower(value CredentialsRecord) C.RustBuffer {
+	return LowerIntoRustBuffer[CredentialsRecord](c, value)
+}
+
+func (c FfiConverterCredentialsRecord) LowerExternal(value CredentialsRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[CredentialsRecord](c, value))
+}
+
+func (c FfiConverterCredentialsRecord) Write(writer io.Writer, value CredentialsRecord) {
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.ApiKey)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.BearerToken)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.SdkToken)
+}
+
+type FfiDestroyerCredentialsRecord struct{}
+
+func (_ FfiDestroyerCredentialsRecord) Destroy(value CredentialsRecord) {
+	value.Destroy()
 }
 
 // The cross-language view of an error: the fields every binding exposes

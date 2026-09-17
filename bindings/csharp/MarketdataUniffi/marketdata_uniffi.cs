@@ -1714,6 +1714,20 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(
+        RustBuffer @credentials,
+        IntPtr @listener,
+        RustBuffer @endpoint,
+        RustBuffer @baseUrl,
+        RustBuffer @reconnectConfig,
+        RustBuffer @healthCheckConfig,
+        RustBuffer @tls,
+        RustBuffer @version,
+        RustBuffer @messageQueue,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_endpoint(
         RustBuffer @apiKey,
         IntPtr @listener,
@@ -2555,6 +2569,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint();
@@ -3638,6 +3655,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config` checksum `8956`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials();
+            if (checksum != 10661)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials` checksum `10661`, library returned `{checksum}`"
                 );
             }
         }
@@ -9172,6 +9199,58 @@ public class WebSocketClient : IWebSocketClient, IDisposable
     }
 
     /// <summary>
+    /// Create a new WebSocket client from whichever credential was given.
+    ///
+    /// Takes the same three credentials as the REST client: exactly one must
+    /// be non-empty (an empty or whitespace-only value counts as not
+    /// provided), otherwise this returns a `ConfigError` (code 1004). The
+    /// auth frame then carries it as `apikey`, `token` or `sdkToken`.
+    /// The other arguments are those of `new_with_options`.
+    ///
+    /// The credentials are one record rather than three arguments: with three
+    /// more buffers than `new_with_options` the Java binding (JNA) passed
+    /// garbage to Rust on macOS arm64.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public static WebSocketClient NewWithCredentials(
+        CredentialsRecord @credentials,
+        WebSocketListener @listener,
+        WebSocketEndpoint @endpoint,
+        string? @baseUrl,
+        ReconnectConfigRecord? @reconnectConfig,
+        HealthCheckConfigRecord? @healthCheckConfig,
+        TlsConfigRecord? @tls,
+        StreamingVersionRecord? @version,
+        MessageQueueConfigRecord? @messageQueue
+    )
+    {
+        return new WebSocketClient(
+            _UniffiHelpers.RustCallWithError(
+                FfiConverterTypeMarketDataError.INSTANCE,
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(
+                        FfiConverterTypeCredentialsRecord.INSTANCE.Lower(@credentials),
+                        FfiConverterTypeWebSocketListener.INSTANCE.Lower(@listener),
+                        FfiConverterTypeWebSocketEndpoint.INSTANCE.Lower(@endpoint),
+                        FfiConverterOptionalString.INSTANCE.Lower(@baseUrl),
+                        FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.Lower(
+                            @reconnectConfig
+                        ),
+                        FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.Lower(
+                            @healthCheckConfig
+                        ),
+                        FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.Lower(@tls),
+                        FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.Lower(@version),
+                        FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.Lower(
+                            @messageQueue
+                        ),
+                        ref _status
+                    )
+            )
+        );
+    }
+
+    /// <summary>
     /// Create a new WebSocket client for a specific endpoint
     ///
     /// # Arguments
@@ -10150,6 +10229,66 @@ class FfiConverterTypeWebSocketListener : FfiConverter<WebSocketListener, IntPtr
     public override void Write(WebSocketListener value, BigEndianStream stream)
     {
         stream.WriteLong(Lower(value).ToInt64());
+    }
+}
+
+/// <summary>
+/// The credentials a WebSocket client authenticates with.
+///
+/// Exactly one must be non-empty; an empty or whitespace-only value counts
+/// as not provided.
+/// </summary>
+/// <param name="api_key">
+/// Fugle API key, sent as `apikey`
+/// </param>
+/// <param name="bearer_token">
+/// OAuth bearer token, sent as `token`
+/// </param>
+/// <param name="sdk_token">
+/// Fugle SDK token, sent as `sdkToken`
+/// </param>
+public record CredentialsRecord(
+    /// <summary>
+    /// Fugle API key, sent as `apikey`
+    /// </summary>
+    string? @apiKey,
+    /// <summary>
+    /// OAuth bearer token, sent as `token`
+    /// </summary>
+    string? @bearerToken,
+    /// <summary>
+    /// Fugle SDK token, sent as `sdkToken`
+    /// </summary>
+    string? @sdkToken
+) { }
+
+class FfiConverterTypeCredentialsRecord : FfiConverterRustBuffer<CredentialsRecord>
+{
+    public static FfiConverterTypeCredentialsRecord INSTANCE =
+        new FfiConverterTypeCredentialsRecord();
+
+    public override CredentialsRecord Read(BigEndianStream stream)
+    {
+        return new CredentialsRecord(
+            @apiKey: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @bearerToken: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @sdkToken: FfiConverterOptionalString.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(CredentialsRecord value)
+    {
+        return 0
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@apiKey)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@bearerToken)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@sdkToken);
+    }
+
+    public override void Write(CredentialsRecord value, BigEndianStream stream)
+    {
+        FfiConverterOptionalString.INSTANCE.Write(value.@apiKey, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@bearerToken, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@sdkToken, stream);
     }
 }
 

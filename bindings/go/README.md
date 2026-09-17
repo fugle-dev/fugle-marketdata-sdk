@@ -377,12 +377,19 @@ defer client.Destroy()
 #### Creation
 
 ```go
-// Create client with buffer size
+// Create client with buffer size (API key only)
 NewStreamingClient(apiKey string, bufferSize int) (*StreamingClient, error)
 
-// Alternative authentication
-NewStreamingClientWithBearerToken(token string, bufferSize int) (*StreamingClient, error)
-NewStreamingClientWithSdkToken(token string, bufferSize int) (*StreamingClient, error)
+// Any credential: exactly one of WithApiKey, WithBearerToken or WithSdkToken,
+// otherwise a *MarketDataError with code 1004
+NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*StreamingClient, error)
+```
+
+```go
+client, err := mkt.NewFugleWebSocketClient(listener,
+    mkt.WithBearerToken("your-bearer-token"), // or mkt.WithSdkToken("your-sdk-token")
+    mkt.WithEndpoint(mkt.WebSocketEndpointStock),
+)
 ```
 
 #### Methods
