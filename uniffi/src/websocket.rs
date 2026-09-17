@@ -326,6 +326,12 @@ pub struct WebSocketClient {
     /// it. One lock for the client and its reader, so `disconnect()` waits
     /// only for the reader of the connection it closed (#126).
     connection: std::sync::Mutex<Option<Connection>>,
+    /// Reader of the connection the last `disconnect()` took, stored under
+    /// the `connection` lock so a concurrent `disconnect()` that finds the
+    /// connection gone waits for that same reader. It belongs to a closed
+    /// connection, so waiting for it always ends; a new connection's reader
+    /// never lands here.
+    closing: std::sync::Mutex<Option<StreamReader>>,
     listener: Arc<dyn WebSocketListener>,
     /// Sent in the auth frame; its field follows the credential kind (#91).
     auth: AuthRequest,
@@ -369,6 +375,7 @@ impl WebSocketClient {
     ) -> Arc<Self> {
         Arc::new(Self {
             connection: std::sync::Mutex::new(None),
+            closing: std::sync::Mutex::new(None),
             listener,
             auth,
             base_url,
@@ -875,22 +882,35 @@ impl WebSocketClient {
         // elsewhere.
         let caller = std::thread::current().id();
 
-        // Only the connection this call takes: a concurrent `disconnect()`
-        // that finds none returns at once.
-        let Some(Connection { ws, stopping, reader }) = lock_connection(&self.connection).take() else {
-            return;
+        // The connection this call closes, handed over in one step with the
+        // reader a concurrent `disconnect()` is to wait for.
+        let taken = {
+            let mut connection = lock_connection(&self.connection);
+            let taken = connection.take();
+            if let Some(taken) = &taken {
+                *lock_closing(&self.closing) = taken.reader.clone();
+            }
+            taken
         };
 
-        // No messages are delivered once `disconnect()` has been called; the
-        // connection's remaining events still are.
-        stopping.store(true, Ordering::SeqCst);
+        let reader = match taken {
+            Some(Connection { ws, stopping, reader }) => {
+                // No messages are delivered once `disconnect()` has been
+                // called; the connection's remaining events still are.
+                stopping.store(true, Ordering::SeqCst);
 
-        // `on_disconnected` comes from core's `Disconnected` event, which
-        // `ws.disconnect()` emits.
-        let _ = ws.disconnect().await;
-        // Mid-reconnect core emits no `Disconnected`: the reader ends when
-        // the stream closes, once the client is dropped.
-        drop(ws);
+                // `on_disconnected` comes from core's `Disconnected` event,
+                // which `ws.disconnect()` emits.
+                let _ = ws.disconnect().await;
+                // Mid-reconnect core emits no `Disconnected`: the reader ends
+                // when the stream closes, once the client is dropped.
+                drop(ws);
+                reader
+            }
+            // Another `disconnect()` took the connection: wait for the same
+            // reader it waits for, so this call keeps the guarantee too.
+            None => lock_closing(&self.closing).clone(),
+        };
 
         if let Some(reader) = reader {
             if reader.thread != caller {
@@ -1076,6 +1096,7 @@ struct Connection {
 }
 
 /// A connection's stream reader thread, as `disconnect()` waits for it.
+#[derive(Clone)]
 struct StreamReader {
     thread: std::thread::ThreadId,
     /// Closed when the thread ends.
@@ -1207,6 +1228,11 @@ fn lock_state(
     state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// Lock `closing`, recovering from poison: it only holds a handle.
+fn lock_closing(closing: &std::sync::Mutex<Option<StreamReader>>) -> std::sync::MutexGuard<'_, Option<StreamReader>> {
+    closing.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Lock `connection`, recovering from poison: the slot is only ever
 /// assigned or taken whole.
 fn lock_connection(connection: &std::sync::Mutex<Option<Connection>>) -> std::sync::MutexGuard<'_, Option<Connection>> {
@@ -1302,6 +1328,8 @@ mod tests {
         connected_on_disconnect: Mutex<Vec<bool>>,
         /// Milliseconds `on_disconnected` blocks before recording.
         disconnected_delay_ms: std::sync::atomic::AtomicU64,
+        /// Set when `on_disconnected` starts, before that delay.
+        disconnected_entered: std::sync::atomic::AtomicBool,
         /// `on_message` disconnects `client`, blocking until that returns.
         disconnect_on_message: std::sync::atomic::AtomicBool,
         /// `on_disconnected` calls `ping_sync` on `client` and records the
@@ -1327,6 +1355,7 @@ mod tests {
                 client: std::sync::OnceLock::new(),
                 connected_on_disconnect: Mutex::new(Vec::new()),
                 disconnected_delay_ms: std::sync::atomic::AtomicU64::new(0),
+                disconnected_entered: std::sync::atomic::AtomicBool::new(false),
                 disconnect_on_message: std::sync::atomic::AtomicBool::new(false),
                 #[cfg(feature = "cpp")]
                 ping_sync_on_disconnect: std::sync::atomic::AtomicBool::new(false),
@@ -1381,6 +1410,7 @@ mod tests {
             if let Some(client) = self.client.get().and_then(std::sync::Weak::upgrade) {
                 self.connected_on_disconnect.lock().unwrap().push(client.is_connected());
             }
+            self.disconnected_entered.store(true, Ordering::SeqCst);
             let delay = self.disconnected_delay_ms.load(Ordering::SeqCst);
             if delay > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(delay));
@@ -2057,6 +2087,36 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(5), client.disconnect_impl())
             .await
             .expect("second disconnect()");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_concurrent_disconnect_waits_for_the_same_connection() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        listener.disconnected_delay_ms.store(300, Ordering::SeqCst);
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_impl().await.expect("connect");
+        listener.wait_for("authenticated(None)").await;
+
+        let first = tokio::spawn({
+            let client = Arc::clone(&client);
+            async move { client.disconnect_impl().await }
+        });
+        // Past the point where the first call took the connection, so the
+        // second finds none and has only the closing reader to wait for.
+        while !listener.disconnected_entered.load(Ordering::SeqCst) {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), client.disconnect_impl())
+            .await
+            .expect("concurrent disconnect()");
+        assert_eq!(
+            listener.events().last().map(String::as_str),
+            Some("disconnected(false)"),
+            "the concurrent disconnect() returned before the listener handled it"
+        );
+        first.await.unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
