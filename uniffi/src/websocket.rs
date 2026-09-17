@@ -124,7 +124,11 @@ pub trait WebSocketListener: Send + Sync {
 ///
 /// Exactly one must be non-empty; an empty or whitespace-only value counts
 /// as not provided.
-#[derive(Debug, Clone, uniffi::Record)]
+///
+/// Its fields are secrets: do not log this record. `Debug` here redacts
+/// them, but the generated types may not — a C# record's `ToString()` and
+/// Go's `fmt` `%v` print every field.
+#[derive(Clone, uniffi::Record)]
 pub struct CredentialsRecord {
     /// Fugle API key, sent as `apikey`
     pub api_key: Option<String>,
@@ -132,6 +136,26 @@ pub struct CredentialsRecord {
     pub bearer_token: Option<String>,
     /// Fugle SDK token, sent as `sdkToken`
     pub sdk_token: Option<String>,
+}
+
+impl std::fmt::Debug for CredentialsRecord {
+    /// Prints `Some(***)` for a set credential, like `AuthRequest`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        /// Prints `***` in place of a secret.
+        struct Redacted;
+        impl std::fmt::Debug for Redacted {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("***")
+            }
+        }
+        let redact = |value: &Option<String>| value.as_ref().map(|_| Redacted);
+
+        f.debug_struct("CredentialsRecord")
+            .field("api_key", &redact(&self.api_key))
+            .field("bearer_token", &redact(&self.bearer_token))
+            .field("sdk_token", &redact(&self.sdk_token))
+            .finish()
+    }
 }
 
 /// Reconnection configuration record for FFI
@@ -1871,6 +1895,21 @@ mod tests {
             auth_data(client_with_credentials(Some("  "), None, Some("s")).unwrap()),
             serde_json::json!({ "sdkToken": "s" })
         );
+    }
+
+    #[test]
+    fn credentials_record_debug_redacts_secrets() {
+        let credentials = CredentialsRecord {
+            api_key: None,
+            bearer_token: Some("secret-bearer".into()),
+            sdk_token: Some("secret-sdk".into()),
+        };
+        let printed = format!("{credentials:?}");
+        assert_eq!(
+            printed,
+            "CredentialsRecord { api_key: None, bearer_token: Some(***), sdk_token: Some(***) }"
+        );
+        assert!(!printed.contains("secret"), "{printed}");
     }
 
     #[test]

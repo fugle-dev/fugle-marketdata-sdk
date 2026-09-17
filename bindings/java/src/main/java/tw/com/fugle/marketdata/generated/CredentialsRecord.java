@@ -10,6 +10,10 @@ import java.util.Objects;
  *
  * Exactly one must be non-empty; an empty or whitespace-only value counts
  * as not provided.
+ *
+ * Its fields are secrets: do not log this record. `Debug` here redacts
+ * them, but the generated types may not — a C# record's `ToString()` and
+ * Go's `fmt` `%v` print every field.
  */
 public class CredentialsRecord {
     /**
