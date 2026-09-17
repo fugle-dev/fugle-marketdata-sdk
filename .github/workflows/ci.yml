@@ -238,6 +238,16 @@ jobs:
           scripts/check-cpp-bindings.sh \
             || { echo "::error::C++ UniFFI bindings are stale or hand-edited. Run 'make gen-cpp' and commit the result."; exit 1; }
 
+      # Nothing else compiles against the C++ bindings, so a listener method
+      # added to the interface used to leave the benchmark broken unnoticed.
+      # Compiled and linked only; it needs a mock server to run.
+      - name: C++ benchmark compiles
+        run: |
+          c++ -std=c++20 -O2 -Ibindings/cpp \
+            benchmarks/ws/cpp/bench.cpp bindings/cpp/marketdata_uniffi.cpp \
+            -L"$RUNNER_TEMP/cpp" -lmarketdata_uniffi \
+            -o "$RUNNER_TEMP/cpp/ws-bench-cpp"
+
       # Without the native library on the loader path every test that builds
       # a client hits Assert.Inconclusive and silently skips — 36 of 55 used
       # to do exactly that, so most of this suite never ran in CI.
