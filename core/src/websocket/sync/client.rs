@@ -272,7 +272,8 @@ impl WebSocketClient {
     /// `Disconnected` is emitted at most once per connection: if the
     /// connection was already reported lost (a server Close or transport
     /// error, including one racing this call) or this client was already
-    /// disconnected, step 6 emits nothing.
+    /// disconnected, step 6 emits nothing and keeps a `Closed` state
+    /// recorded with that report.
     ///
     /// `timeout_dur` of zero is valid and behaves as "fire-and-forget":
     /// the call returns immediately, the supervisor exits in the
@@ -329,17 +330,9 @@ impl WebSocketClient {
             }
         }
 
-        self.set_state(ConnectionState::Closed {
-            code: Some(1000),
-            reason: "Normal closure".to_string(),
-            intent: DisconnectIntent::Client,
-        });
-        self.shared.stream.emit_disconnected(
-            Some(1000),
-            "Normal closure".to_string(),
-            DisconnectIntent::Client,
-            false,
-        );
+        self.shared
+            .stream
+            .client_closed(&self.shared.state, 1000, "Normal closure".to_string());
 
         Ok(())
     }
@@ -353,7 +346,8 @@ impl WebSocketClient {
     ///
     /// Like [`disconnect`](Self::disconnect), emits
     /// [`ConnectionEvent::Disconnected`] only if this connection has not
-    /// already reported one.
+    /// already reported one, and keeps a `Closed` state recorded with that
+    /// report.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
@@ -372,17 +366,9 @@ impl WebSocketClient {
             .expect("supervisor_exit_rx lock poisoned")
             .take();
 
-        self.set_state(ConnectionState::Closed {
-            code: Some(1006),
-            reason: "Force closed".to_string(),
-            intent: DisconnectIntent::Client,
-        });
-        self.shared.stream.emit_disconnected(
-            Some(1006),
-            "Force closed".to_string(),
-            DisconnectIntent::Client,
-            false,
-        );
+        self.shared
+            .stream
+            .client_closed(&self.shared.state, 1006, "Force closed".to_string());
 
         Ok(())
     }

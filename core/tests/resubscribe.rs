@@ -63,6 +63,9 @@ async fn sync_manual_reconnect_resends_subscriptions() {
             .subscribe(StockSubscription::new(Channel::Books, "2317"))
             .expect("subscribe 2317");
         client.reconnect().expect("reconnect");
+        // Stopping the supervisor recorded `Closed { Client }`, which
+        // `reconnect()` reopened (#82, #93).
+        assert!(client.is_connected(), "{:?}", client.state());
         client
     })
     .await
