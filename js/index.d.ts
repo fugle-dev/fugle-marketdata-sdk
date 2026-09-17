@@ -2778,7 +2778,9 @@ export interface WebSocketClientOptions {
   /**
    * Unread messages held before `messageOverflow` applies (default 4096).
    * Up to this many wait in the SDK, and up to this many more may be
-   * queued for `message` listeners that have not run yet.
+   * queued for `message` listeners that have not run yet. While those
+   * listeners hold up delivery, events wait as well; beyond 1024 unread
+   * events the SDK drops them too.
    */
   messageBuffer?: number
 }

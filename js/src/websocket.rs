@@ -142,6 +142,10 @@ struct EventSink {
 /// (#46). The stream reader waits while `limit` of them are, so a slow
 /// listener leaves the backlog in core's queue, where `messageOverflow`
 /// applies, instead of growing without bound in the dispatch queue.
+///
+/// Events wait behind a held-up reader too. Core keeps up to `event_buffer`
+/// (1024) of them apart from messages and drops the rest, so a listener that
+/// blocks for long enough loses events as well as messages.
 struct InFlight {
     count: Mutex<usize>,
     room: std::sync::Condvar,
@@ -150,6 +154,14 @@ struct InFlight {
 }
 
 impl InFlight {
+    fn new(limit: Option<usize>) -> Self {
+        Self {
+            count: Mutex::new(0),
+            room: std::sync::Condvar::new(),
+            limit,
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, usize> {
         self.count.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -206,11 +218,7 @@ impl EventSink {
             dispatch: Arc::new(dispatch),
             listeners,
             keep_alive: loop_keep_alive(env)?,
-            in_flight: Arc::new(InFlight {
-                count: Mutex::new(0),
-                room: std::sync::Condvar::new(),
-                limit: in_flight_limit,
-            }),
+            in_flight: Arc::new(InFlight::new(in_flight_limit)),
         })
     }
 
@@ -487,7 +495,9 @@ pub struct WebSocketClientOptions {
     pub message_overflow: Option<String>,
     /// Unread messages held before `messageOverflow` applies (default 4096).
     /// Up to this many wait in the SDK, and up to this many more may be
-    /// queued for `message` listeners that have not run yet.
+    /// queued for `message` listeners that have not run yet. While those
+    /// listeners hold up delivery, events wait as well; beyond 1024 unread
+    /// events the SDK drops them too.
     pub message_buffer: Option<u32>,
 }
 
@@ -2334,3 +2344,44 @@ fn fire_and_settle(
 
 // Unit tests are disabled because ThreadsafeFunction requires Node.js runtime
 // Integration tests are done via JavaScript (test_websocket.js)
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    /// Whether `wait_for_room()` returns within `timeout`.
+    fn room_within(in_flight: &Arc<InFlight>, timeout: Duration) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel();
+        let waiter = Arc::clone(in_flight);
+        std::thread::spawn(move || {
+            waiter.wait_for_room();
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(timeout).is_err(),
+            "room while the only slot was taken"
+        );
+        rx
+    }
+
+    #[test]
+    fn a_call_discarded_without_running_gives_back_its_in_flight_slot() {
+        // napi drops a queued call's closure without running it when the
+        // threadsafe function is torn down with the environment.
+        let in_flight = Arc::new(InFlight::new(Some(1)));
+        let permit = in_flight.acquire();
+        let call = move || drop(permit);
+        let room = room_within(&in_flight, Duration::from_millis(200));
+        drop(call);
+        room.recv_timeout(Duration::from_secs(5))
+            .expect("a discarded call kept its slot, so the reader would wait forever");
+    }
+
+    #[test]
+    fn unbounded_never_waits() {
+        let in_flight = Arc::new(InFlight::new(None));
+        let _permits: Vec<_> = (0..8).map(|_| in_flight.acquire()).collect();
+        in_flight.wait_for_room();
+    }
+}

@@ -179,6 +179,12 @@ most once per second, and before `disconnect`). Events queued behind those
 frames wait too, since the SDK keeps messages and events in order.
 `'unbounded'` never drops; memory grows for as long as listeners lag.
 
+While a listener keeps delivery held up, events can be lost too: the SDK holds
+up to 1024 unread events (connection events, errors and `messagesDropped`
+reports) separately from messages, and drops any beyond that. This takes a
+listener that stays blocked for a long time, since `messagesDropped` is
+reported at most once per second.
+
 ### Combined Configuration
 
 ```javascript
