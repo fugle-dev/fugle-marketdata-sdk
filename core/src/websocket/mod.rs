@@ -16,6 +16,7 @@ pub mod stream;
 pub(crate) mod stream_queue;
 pub(crate) mod protocol;
 pub mod reconnection;
+pub mod report_throttle;
 pub mod subscription;
 pub mod sync;
 pub mod version;
@@ -36,6 +37,7 @@ pub use connection_event::{ConnectionEvent, ConnectionState, ConnectionStateHand
 pub use health_check::HealthCheckConfig;
 pub use stream::{ConnectionStream, MessagesDroppedHandle, StreamItem, StreamReceiver};
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};
+pub use report_throttle::{ReportThrottle, REPORT_INTERVAL};
 pub use subscription::SubscriptionManager;
 pub use sync::WebSocketClient;
 pub use version::{FutOptVersion, StockVersion};

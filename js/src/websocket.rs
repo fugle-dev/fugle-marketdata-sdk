@@ -41,8 +41,6 @@ pub enum EventArgs {
     Json(serde_json::Value),
     /// An `Error` with the unified error fields (see `errors.rs`).
     Error(ErrorInfo),
-    /// A plain `Error(message)`, for a failure that has no error code.
-    PlainError(String),
 }
 
 impl JsValuesTupleIntoVec for EventArgs {
@@ -54,7 +52,6 @@ impl JsValuesTupleIntoVec for EventArgs {
             EventArgs::Text(text) => unsafe { String::to_napi_value(env, text)? },
             EventArgs::Json(value) => json_to_napi(env, value)?,
             EventArgs::Error(info) => crate::errors::error_value(env, &info)?,
-            EventArgs::PlainError(message) => plain_error(env, &message)?,
         };
         Ok(vec![value])
     }
@@ -69,16 +66,6 @@ fn json_to_napi(env: sys::napi_env, value: serde_json::Value) -> napi::Result<sy
     }
 }
 
-/// A plain `new Error(message)`.
-fn plain_error(env: sys::napi_env, message: &str) -> napi::Result<sys::napi_value> {
-    let env_ref = Env::from_raw(env);
-    let message = env_ref.create_string(message)?;
-    let mut error = std::ptr::null_mut();
-    napi::check_status!(unsafe {
-        sys::napi_create_error(env, std::ptr::null_mut(), message.raw(), &mut error)
-    })?;
-    Ok(error)
-}
 use napi_derive::napi;
 use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU8, Ordering}};
@@ -244,8 +231,8 @@ impl EventSink {
     /// thread, if the event cannot be queued.
     ///
     /// The call carries a `keep_alive` clone, dropped after `then` (see
-    /// [`KeepAlive`]). An exception the listener throws is handed back
-    /// unchanged, which napi-rs reports as an uncaught exception.
+    /// [`KeepAlive`]). An exception the listener throws does not escape: it is
+    /// reported as described in [`call_listener`], and `then` still runs.
     fn emit_then(&self, event: &'static str, args: EventArgs, then: impl FnOnce() + Send + 'static) {
         fn run_then<F: FnOnce()>(then: &Mutex<Option<F>>) {
             if let Some(then) = then.lock().ok().and_then(|mut guard| guard.take()) {
@@ -261,10 +248,10 @@ impl EventSink {
             (),
             ThreadsafeFunctionCallMode::NonBlocking,
             move |_, env| {
-                let result = call_listener(&listeners, &env, event, args);
+                call_listener(&listeners, &env, event, args);
                 run_then(&then_after_call);
                 drop(keep_alive);
-                result
+                Ok(())
             },
         );
         if status != Status::Ok {
@@ -274,24 +261,212 @@ impl EventSink {
 }
 
 /// Call `event`'s listener, if one is registered. On the JS thread.
-fn call_listener(
-    listeners: &Listeners,
-    env: &Env,
-    event: &str,
-    args: EventArgs,
-) -> napi::Result<()> {
+///
+/// A listener that throws, or returns a thenable that rejects, neither
+/// crashes the process nor stops later events (#83): see
+/// [`report_listener_failure`].
+fn call_listener(listeners: &Arc<Listeners>, env: &Env, event: &'static str, args: EventArgs) {
     // Looked up now, on delivery: whatever `on()` registered last, even after
     // this event was queued, gets it. Released before the call, so the
     // listener can register listeners. A panic while holding the lock must
     // not silence the events that report it (#25).
-    let listener = listeners
-        .callbacks
+    let listener = listeners.get(event);
+    let Some(listener) = listener else { return };
+    let returned = listener
+        .borrow_back(env)
+        .and_then(|listener| listener.call(args));
+    match returned {
+        Ok(returned) => on_rejection(listeners, env, event, returned.raw()),
+        Err(err) => {
+            // The thrown value itself (napi-rs keeps a reference to it).
+            if let Ok(thrown) = unsafe { napi::Error::to_napi_value(env.raw(), err) } {
+                report_listener_failure(listeners, env, event, "threw", thrown);
+            }
+        }
+    }
+}
+
+/// If `returned` is a thenable, report its rejection like a thrown exception
+/// (#83). Nothing waits for it to settle.
+fn on_rejection(listeners: &Arc<Listeners>, env: &Env, event: &'static str, returned: sys::napi_value) {
+    let raw = env.raw();
+    if !matches!(type_of(raw, returned), Some(sys::ValueType::napi_object | sys::ValueType::napi_function)) {
+        return;
+    }
+    let Some(then) = named_property(raw, returned, c"then") else { return };
+    if type_of(raw, then) != Some(sys::ValueType::napi_function) {
+        return;
+    }
+    let reporter = Arc::clone(listeners);
+    let on_rejected = env.create_function_from_closure::<(), (), _>("fugleListenerRejected", move |ctx| {
+        let reason = ctx.get::<Unknown>(0).map(|reason| reason.raw());
+        let reason = match reason {
+            Ok(reason) => reason,
+            Err(_) => undefined(ctx.env.raw()),
+        };
+        report_listener_failure(&reporter, ctx.env, event, "rejected", reason);
+        Ok(())
+    });
+    let Ok(on_rejected) = on_rejected else { return };
+    let args = [undefined(raw), on_rejected.raw()];
+    let mut ignored = std::ptr::null_mut();
+    let status = unsafe {
+        sys::napi_call_function(raw, returned, then, args.len(), args.as_ptr(), &mut ignored)
+    };
+    if status != sys::Status::napi_ok {
+        clear_exception(raw);
+    }
+}
+
+/// Let the user know `event`'s listener failed (`how`: `threw` / `rejected`)
+/// with `cause`, without crashing and without recursing (#83).
+///
+/// A failing `error` listener is only printed. Any other failure becomes an
+/// `error` event (code [`error_code::CALLBACK_FAILED`], `cause`, `event`,
+/// `count`) — throttled like `messagesDropped`: the first at once, later ones
+/// at most once per second, counting the failures since the previous report.
+/// With no `error` listener, or one that fails in turn, it is printed with
+/// `console.error` instead.
+fn report_listener_failure(
+    listeners: &Arc<Listeners>,
+    env: &Env,
+    event: &'static str,
+    how: &str,
+    cause: sys::napi_value,
+) {
+    let raw = env.raw();
+    if event == "error" {
+        print_error(raw, &format!("'error' listener {how}:"), &[cause]);
+        return;
+    }
+    let count = listeners
+        .callback_failures
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .get(event);
-    match listener {
-        Some(listener) => listener.borrow_back(env)?.call(args).map(|_| ()),
-        None => Ok(()),
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .record(std::time::Instant::now());
+    let Some(count) = count else { return };
+
+    let message = format!("'{event}' listener {how}: {}", describe(raw, cause));
+    let info = ErrorInfo::new(error_code::CALLBACK_FAILED, ErrorKind::Client, message);
+    let Ok(error) = crate::errors::error_value(raw, &info) else { return };
+    let _ = set_property(raw, error, c"cause", cause);
+    if let Ok(name) = env.create_string(event) {
+        let _ = set_property(raw, error, c"event", name.raw());
+    }
+    if let Ok(count) = env.create_double(count as f64) {
+        let _ = set_property(raw, error, c"count", count.raw());
+    }
+
+    let Some(listener) = listeners.get("error") else {
+        print_error(raw, "unhandled listener failure (no 'error' listener):", &[error]);
+        return;
+    };
+    let Ok(function) = listener.borrow_back(env) else { return };
+    match call_function(raw, function.raw(), &[error]) {
+        // A rejection from the `error` listener is only printed.
+        Ok(returned) => on_rejection(listeners, env, "error", returned),
+        Err(thrown) => {
+            print_error(raw, "'error' listener threw while handling a listener failure:", &[thrown, error]);
+        }
+    }
+}
+
+/// Call `function` with `this` undefined: its return value, or the value it
+/// threw (cleared from the environment).
+fn call_function(
+    env: sys::napi_env,
+    function: sys::napi_value,
+    args: &[sys::napi_value],
+) -> Result<sys::napi_value, sys::napi_value> {
+    let mut returned = std::ptr::null_mut();
+    let status = unsafe {
+        sys::napi_call_function(env, undefined(env), function, args.len(), args.as_ptr(), &mut returned)
+    };
+    if status == sys::Status::napi_ok {
+        return Ok(returned);
+    }
+    let mut thrown = undefined(env);
+    let mut pending = false;
+    if unsafe { sys::napi_is_exception_pending(env, &mut pending) } == sys::Status::napi_ok && pending {
+        unsafe { sys::napi_get_and_clear_last_exception(env, &mut thrown) };
+    }
+    Err(thrown)
+}
+
+/// `value.message` if it is a string, otherwise `String(value)`.
+fn describe(env: sys::napi_env, value: sys::napi_value) -> String {
+    let message = match type_of(env, value) {
+        Some(sys::ValueType::napi_object | sys::ValueType::napi_function) => named_property(env, value, c"message")
+            .filter(|message| type_of(env, *message) == Some(sys::ValueType::napi_string)),
+        _ => None,
+    };
+    let mut string = std::ptr::null_mut();
+    let target = message.unwrap_or(value);
+    if unsafe { sys::napi_coerce_to_string(env, target, &mut string) } != sys::Status::napi_ok {
+        clear_exception(env);
+        return "<unprintable value>".to_string();
+    }
+    unsafe { <String as napi::bindgen_prelude::FromNapiValue>::from_napi_value(env, string) }
+        .unwrap_or_else(|_| "<unprintable value>".to_string())
+}
+
+/// `console.error('[@fugle/marketdata] <label>', ...values)`. Failures are
+/// ignored: there is nowhere left to report them.
+fn print_error(env: sys::napi_env, label: &str, values: &[sys::napi_value]) {
+    let print = || -> Option<()> {
+        let mut global = std::ptr::null_mut();
+        if unsafe { sys::napi_get_global(env, &mut global) } != sys::Status::napi_ok {
+            return None;
+        }
+        let console = named_property(env, global, c"console")?;
+        let error = named_property(env, console, c"error")?;
+        let label = unsafe { String::to_napi_value(env, format!("[@fugle/marketdata] {label}")) }.ok()?;
+        let mut args = vec![label];
+        args.extend_from_slice(values);
+        let mut ignored = std::ptr::null_mut();
+        let status = unsafe { sys::napi_call_function(env, console, error, args.len(), args.as_ptr(), &mut ignored) };
+        (status == sys::Status::napi_ok).then_some(())
+    };
+    if print().is_none() {
+        clear_exception(env);
+    }
+}
+
+fn type_of(env: sys::napi_env, value: sys::napi_value) -> Option<sys::napi_valuetype> {
+    let mut kind = 0;
+    (unsafe { sys::napi_typeof(env, value, &mut kind) } == sys::Status::napi_ok).then_some(kind)
+}
+
+/// `object[name]`, or `None` (with any exception cleared) if reading it fails.
+fn named_property(env: sys::napi_env, object: sys::napi_value, name: &std::ffi::CStr) -> Option<sys::napi_value> {
+    let mut value = std::ptr::null_mut();
+    if unsafe { sys::napi_get_named_property(env, object, name.as_ptr(), &mut value) } != sys::Status::napi_ok {
+        clear_exception(env);
+        return None;
+    }
+    Some(value)
+}
+
+fn set_property(env: sys::napi_env, object: sys::napi_value, name: &std::ffi::CStr, value: sys::napi_value) -> Option<()> {
+    if unsafe { sys::napi_set_named_property(env, object, name.as_ptr(), value) } != sys::Status::napi_ok {
+        clear_exception(env);
+        return None;
+    }
+    Some(())
+}
+
+fn undefined(env: sys::napi_env) -> sys::napi_value {
+    let mut value = std::ptr::null_mut();
+    unsafe { sys::napi_get_undefined(env, &mut value) };
+    value
+}
+
+/// Drop a pending exception a getter or callee left behind.
+fn clear_exception(env: sys::napi_env) {
+    let mut pending = false;
+    if unsafe { sys::napi_is_exception_pending(env, &mut pending) } == sys::Status::napi_ok && pending {
+        let mut ignored = std::ptr::null_mut();
+        unsafe { sys::napi_get_and_clear_last_exception(env, &mut ignored) };
     }
 }
 
@@ -813,6 +988,20 @@ struct Listeners {
     /// Set once a `message` listener is registered; there is no way to remove
     /// one. Read by the worker for every frame (see [`EventSink::emit_message`]).
     has_message: AtomicBool,
+    /// Throttles the reports of failed listeners (#83), across the client's
+    /// connections.
+    callback_failures: Mutex<marketdata_core::websocket::ReportThrottle>,
+}
+
+impl Listeners {
+    /// The listener registered for `event`. A panic while holding the lock
+    /// must not silence the events that report it (#25).
+    fn get(&self, event: &str) -> Option<Arc<Listener>> {
+        self.callbacks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(event)
+    }
 }
 
 /// `on(event, callback)`, shared by the stock and futopt clients.
@@ -2199,9 +2388,10 @@ fn spawn_stream_reader(
                         ending.store(true, Ordering::SeqCst);
                         sink.emit(
                             "error",
-                            EventArgs::PlainError(format!(
-                                "Reconnection failed after {} attempts",
-                                attempts
+                            EventArgs::Error(ErrorInfo::new(
+                                error_code::RECONNECT_FAILED,
+                                ErrorKind::Network,
+                                format!("Reconnection failed after {} attempts", attempts),
                             )),
                         );
                         // Core's dispatch task has ended for good.

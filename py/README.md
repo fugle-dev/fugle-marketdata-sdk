@@ -256,7 +256,7 @@ client.subscribe(channel, symbol)          # Subscribe to channel
 client.unsubscribe(subscription_id)        # Unsubscribe by ID
 client.subscriptions()                     # List active subscriptions
 
-client.on(event, callback)                 # Register event callback
+client.on(event, callback)                 # Register event callback (not async def)
 client.off(event)                          # Unregister callback
 
 client.messages()                          # Get message iterator
@@ -269,8 +269,33 @@ client.messages()                          # Get message iterator
 | `message` | `fn(msg: dict)` | Incoming data message |
 | `connect` | `fn()` | Connection established |
 | `disconnect` | `fn(code: int, reason: str)` | Connection closed |
-| `error` | `fn(message: str, code: int)` | Error occurred |
+| `error` | `fn(err: WebSocketError)` | Error occurred (`err.args == (message, code)`) |
 | `messages_dropped` | `fn(dropped: int, total: int)` | Messages dropped because you fell behind (at most once per second, and before `disconnect`) |
+
+#### Callback Exceptions
+
+An exception raised in a callback does not stop the connection or later
+callbacks. It is passed to the `error` callbacks as a `WebSocketError` with
+code 3004, `err.event` (the event whose callback raised, e.g. `"message"`),
+`err.count` and the original exception as `err.__cause__`:
+
+```python
+def on_error(err):
+    if err.code == 3004:
+        print(f"{err.event} callback failed {err.count}x:", repr(err.__cause__))
+```
+
+The first failure is reported at once, later ones at most once per second,
+each report counting the failures since the previous one; failures after the
+last report are not reported on their own. Without an `error` callback, or
+when it raises too, the failure goes to `sys.unraisablehook` (printed with its
+traceback by default). `KeyboardInterrupt`, `SystemExit` and other
+`BaseException`s that are not `Exception`s are only printed that way.
+
+Callbacks run on the SDK's thread and must be regular functions: `on()`
+raises `TypeError` for an `async def` callback, and a callback that returns a
+coroutine is reported as a failure. Use `async for msg in stock.messages()`
+in asyncio code.
 
 #### Message Queue
 
@@ -362,7 +387,8 @@ Every exception carries the same fields as the other languages:
 
 `status_code` and `response_text` remain as aliases of `status` and `body`
 for code written against the 2.4.1 `FugleAPIError`. The WebSocket `error`
-callback still receives `(message, code)`. See the
+callback receives a `WebSocketError` with these fields, whose `args` stay
+`(message, code)`. See the
 [error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for all languages.
 
 ### Error Codes
@@ -381,6 +407,8 @@ callback still receives `(message, code)`. See the
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3004 | CallbackFailed | A WebSocket callback raised an exception (`error` callback only) |
+| 3005 | ReconnectFailed | Reconnection failed after the last attempt (`error` callback only) |
 | 9999 | Other | Unexpected error |
 | -1 | ThreadPanic | A WebSocket worker thread panicked (`error` callback only) |
 

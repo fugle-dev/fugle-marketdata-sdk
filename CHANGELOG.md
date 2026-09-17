@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Auth::validate()`, `AuthRequest::validate()` and `From<Auth> for
   AuthRequest`; **UniFFI**: `validate_credentials()` returning a
   `CredentialKind` (#69).
+- **All languages**: an exception raised by a WebSocket callback or listener
+  no longer crashes the process or silences later events; it is reported
+  through the error callback with the new code 3004 `CALLBACK_FAILED`, or
+  printed when there is none (#83). Reports are throttled like
+  `messagesDropped`: the first at once, later ones at most once per second
+  with the number of failures since the previous one. See
+  [docs/errors.md](docs/errors.md#callback-failures).
+  - **Node**: the `error` event carries `event`, `count` and `cause` (what
+    the listener threw); a Promise returned by a listener that rejects is
+    reported the same way. Without an `error` listener it goes to
+    `console.error`.
+  - **Python**: the `error` callback gets a `WebSocketError` with `event`,
+    `count` and the exception as `__cause__`; otherwise it goes to
+    `sys.unraisablehook`. `KeyboardInterrupt` / `SystemExit` are only printed.
+  - **C#, Java**: the wrappers catch listener exceptions and report them to
+    `OnError` / `onError`; previously a C# listener exception ended the
+    process and a Java one stopped event delivery.
+  - **C++ and the generated bindings**: the stream reader catches a failing
+    listener call and reports it to `on_error` instead of stopping.
+- **Rust**: `websocket::ReportThrottle` / `REPORT_INTERVAL`, the throttle
+  behind `MessagesDropped` and the bindings' callback failure reports, and
+  `error_code::CALLBACK_FAILED` (3004) / `error_code::RECONNECT_FAILED` (3005).
 - **All languages**: one set of error fields everywhere, defined in core
   (#81): `code`, `source_kind`, `message`, `status`, `body`, `request_id`,
   `headers`. REST errors now keep the HTTP status, the raw response body and
@@ -85,6 +107,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Node**: a listener that throws no longer surfaces as an uncaught
+  exception; it is reported through `error` (code 3004), see Added (#83).
+- **Node**: the `error` event for "Reconnection failed after N attempts" has
+  code 3005 `RECONNECT_FAILED` (`sourceKind` `'network'`) and the other
+  unified fields, instead of being a plain `Error` (#83).
+- **Python**: the `error` callback for "Reconnection failed after N attempts"
+  has code 3005 instead of -1 (#83); every `WebSocketError` passed to `error`
+  now also carries `code`, `source_kind` and the other unified fields.
+- **Python**: `on()` raises `TypeError` for an `async def` callback (#83).
 - **Rust**: when a connection is lost and no reconnect follows,
   `ConnectionState::Closed` carries the `code`, `reason` and `intent` of the
   `Disconnected` it came with, e.g. `Closed { code: Some(4001), reason: "bye",
