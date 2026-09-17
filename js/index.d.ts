@@ -2073,7 +2073,12 @@ export declare class FutOptWebSocketClient {
    * connection's count. 0 before the first `connect()`.
    */
   get messagesDroppedTotal(): number
-  /** Check if connected */
+  /**
+   * Check if connected
+   *
+   * True while the connection is authenticated; false while an
+   * auto-reconnect is in progress.
+   */
   get isConnected(): boolean
   /**
    * Check if client has been closed
@@ -2534,7 +2539,12 @@ export declare class StockWebSocketClient {
    * connection's count. 0 before the first `connect()`.
    */
   get messagesDroppedTotal(): number
-  /** Check if connected */
+  /**
+   * Check if connected
+   *
+   * True while the connection is authenticated; false while an
+   * auto-reconnect is in progress.
+   */
   get isConnected(): boolean
   /**
    * Check if client has been closed
@@ -2600,7 +2610,7 @@ export declare class WebSocketClient {
    * Get the stock WebSocket client for real-time stock data.
    *
    * Every access returns a new JS wrapper but all wrappers share the same
-   * underlying state (callbacks, connected flag, command channel), so the
+   * underlying state (callbacks, connection state, command channel), so the
    * legacy `ws.stock.on(...); ws.stock.connect()` pattern works correctly.
    */
   get stock(): StockWebSocketClient

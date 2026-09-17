@@ -11,7 +11,7 @@ use crate::websocket::protocol::{
     frame_unsubscribe,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
+    ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent, HealthCheckConfig,
     ConnectionStream, MessagesDroppedHandle, ReconnectionConfig, ReconnectionManager, StreamReceiver,
     SubscriptionManager,
 };
@@ -224,6 +224,12 @@ impl WebSocketClient {
     /// ```
     pub fn state(&self) -> ConnectionState {
         read_state(&self.state).clone()
+    }
+
+    /// A handle reading [`state`](Self::state) that stays readable after
+    /// this client is dropped.
+    pub fn state_handle(&self) -> ConnectionStateHandle {
+        ConnectionStateHandle::new(Arc::clone(&self.state))
     }
 
     /// Get current connection state. Same as [`state`](Self::state).
@@ -1216,6 +1222,28 @@ mod tests {
 
         let state = client.state_async().await;
         assert_eq!(state, ConnectionState::Connecting);
+    }
+
+    #[test]
+    fn state_handle_reads_the_state_after_the_client_is_dropped() {
+        let config =
+            ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::new(config);
+        let handle = client.state_handle();
+        assert_eq!(handle.state(), ConnectionState::Disconnected);
+
+        *write_state(&client.state) = ConnectionState::Connected;
+        assert!(handle.is_connected());
+        assert!(!handle.is_closed());
+
+        *write_state(&client.state) = ConnectionState::Closed {
+            code: Some(1000),
+            reason: "Normal closure".to_string(),
+            intent: DisconnectIntent::Client,
+        };
+        drop(client);
+        assert!(!handle.is_connected());
+        assert!(handle.is_closed());
     }
 
     #[tokio::test]

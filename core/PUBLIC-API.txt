@@ -19,6 +19,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_handle(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -91,6 +92,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_handle(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3448,6 +3450,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_handle(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3520,6 +3523,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&sel
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::state_handle(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream(&self) -> marketdata_core::websocket::stream::ConnectionStream
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::subscribe(&self, marketdata_core::StockSubscription) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3761,6 +3765,22 @@ impl core::marker::Unpin for marketdata_core::websocket::connection_event::Disco
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::connection_event::DisconnectIntent
+pub struct marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::is_closed(&self) -> bool
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::is_connected(&self) -> bool
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::fmt::Debug for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Send for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Sync for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Unpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub mod marketdata_core::websocket::factory
 pub struct marketdata_core::websocket::factory::Unset
 impl core::clone::Clone for marketdata_core::websocket::factory::Unset
@@ -4305,6 +4325,22 @@ impl core::marker::Unpin for marketdata_core::websocket::config::ConnectionConfi
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::ConnectionConfigBuilder
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::ConnectionConfigBuilder
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfigBuilder
+pub struct marketdata_core::websocket::ConnectionStateHandle
+impl marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::is_closed(&self) -> bool
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::is_connected(&self) -> bool
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::fmt::Debug for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Send for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Sync for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Unpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub struct marketdata_core::websocket::ConnectionStream
 impl marketdata_core::websocket::stream::ConnectionStream
 pub fn marketdata_core::websocket::stream::ConnectionStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::websocket::stream::StreamItem>>
@@ -5221,6 +5257,22 @@ impl core::marker::Unpin for marketdata_core::websocket::config::ConnectionConfi
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::ConnectionConfig
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::ConnectionConfig
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfig
+pub struct marketdata_core::ConnectionStateHandle
+impl marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::is_closed(&self) -> bool
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::is_connected(&self) -> bool
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
+impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::fmt::Debug for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub fn marketdata_core::websocket::connection_event::ConnectionStateHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Send for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Sync for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::Unpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub struct marketdata_core::ConnectionStream
 impl marketdata_core::websocket::stream::ConnectionStream
 pub fn marketdata_core::websocket::stream::ConnectionStream::poll_recv(&mut self, &mut core::task::wake::Context<'_>) -> core::task::poll::Poll<core::option::Option<marketdata_core::websocket::stream::StreamItem>>
