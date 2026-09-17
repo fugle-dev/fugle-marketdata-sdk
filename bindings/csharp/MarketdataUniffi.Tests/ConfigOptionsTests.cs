@@ -420,7 +420,7 @@ public class ConfigOptionsTests
         public void OnUnauthenticated(string? dataJson) { }
         public void OnDisconnected(bool willReconnect) { }
         public void OnMessage(uniffi.marketdata_uniffi.StreamMessage message) { }
-        public void OnError(string errorMessage) { }
+        public void OnError(uniffi.marketdata_uniffi.ErrorInfo error) { }
         public void OnReconnecting(uint attempt) { }
         public void OnReconnectFailed(uint attempts) { }
         public void OnMessagesDropped(ulong count) { }

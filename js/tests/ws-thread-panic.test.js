@@ -81,6 +81,7 @@ const PRELUDE = `
   const describeError = (err) => ({
     isError: Object.prototype.toString.call(err) === '[object Error]',
     code: err && err.code,
+    sourceKind: err && err.sourceKind,
     message: err && err.message,
   });
   function record(ws) {
@@ -132,7 +133,7 @@ describe.each(PRODUCTS)('%s thread panic supervision (#25)', (product, subscript
     expect({ code: run.code, detail }).toMatchObject({ code: 0 });
     const { events, afterPanic } = run.result;
     expect(events.error).toHaveLength(1);
-    expect(events.error[0]).toMatchObject({ isError: true, code: -1 });
+    expect(events.error[0]).toMatchObject({ isError: true, code: -1, sourceKind: 'protocol' });
     expect(events.error[0].message).toMatch(/^WebSocket worker thread panicked: injected test panic at ws_worker/);
     expect(events.disconnect).toEqual([{ code: null, reason: events.error[0].message }]);
     expect(afterPanic).toEqual({ isConnected: false, isClosed: true, subscribeThrew: true });
@@ -207,9 +208,10 @@ describe.each(PRODUCTS)('%s thread panic supervision (#25)', (product, subscript
     expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
     const { rejection, events, afterPanic, reconnected } = run.result;
     expect(rejection).toMatchObject({ isError: true });
-    expect(rejection.message).toMatch(/^\[-1\] WebSocket event thread panicked: injected test panic at ws_events/);
+    expect(rejection).toMatchObject({ code: -1, sourceKind: 'protocol' });
+    expect(rejection.message).toMatch(/^WebSocket event thread panicked: injected test panic at ws_events/);
     expect(events.error).toHaveLength(1);
-    expect(events.error[0]).toMatchObject({ isError: true, code: -1 });
+    expect(events.error[0]).toMatchObject({ isError: true, code: -1, sourceKind: 'protocol' });
     expect(events.authenticated).toEqual([]);
     // Never reported connected, so no disconnect either.
     expect(events.disconnect).toEqual([]);

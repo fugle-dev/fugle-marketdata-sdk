@@ -5,19 +5,14 @@
 //! - 2000-2999: Server/API errors (auth, connection, HTTP)
 //! - 3000-3999: Network errors (timeout, WebSocket)
 //! - 9000-9999: Internal errors (unexpected failures)
+//!
+//! Every code is listed in [`error_code`]; `docs/errors.md` is the
+//! cross-language reference built on [`ErrorInfo`].
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 use thiserror::Error;
 
-/// Coarse-grained classification of the source of a [`MarketDataError`].
-///
-/// Returned by [`MarketDataError::source_kind`] so downstream code can branch
-/// on the *category* of failure (network glitch vs SDK / protocol bug vs
-/// auth vs caller-side validation) without pattern-matching every variant or
-/// string-matching the embedded `msg`.
-///
-/// The enum is `#[non_exhaustive]` so future variants can be added in a
-/// minor release without breaking exhaustive matches.
 /// Refined classification of a [`MarketDataError::WebSocketError`].
 ///
 /// Mirrors `tungstenite::Error`'s own categorization without leaking the
@@ -114,6 +109,169 @@ pub enum ErrorKind {
     Client,
 }
 
+impl ErrorKind {
+    /// Stable lowercase name used by every binding: `"network"`,
+    /// `"protocol"`, `"auth"`, `"rate_limit"` or `"client"`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::Protocol => "protocol",
+            Self::Auth => "auth",
+            Self::RateLimit => "rate_limit",
+            Self::Client => "client",
+        }
+    }
+}
+
+impl std::fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Every error code the SDK reports, in core and in the bindings.
+///
+/// Values never change once released. New codes are added within the range
+/// of their category (see the module docs); `docs/errors.md` lists them for
+/// all languages.
+pub mod error_code {
+    /// [`MarketDataError::InvalidSymbol`](super::MarketDataError::InvalidSymbol).
+    pub const INVALID_SYMBOL: i32 = 1001;
+    /// [`MarketDataError::DeserializationError`](super::MarketDataError::DeserializationError),
+    /// also a WebSocket frame that could not be parsed.
+    pub const DESERIALIZATION: i32 = 1002;
+    /// [`MarketDataError::RuntimeError`](super::MarketDataError::RuntimeError).
+    pub const RUNTIME: i32 = 1003;
+    /// [`MarketDataError::ConfigError`](super::MarketDataError::ConfigError).
+    pub const CONFIG: i32 = 1004;
+    /// [`MarketDataError::InvalidParameter`](super::MarketDataError::InvalidParameter).
+    pub const INVALID_PARAMETER: i32 = 1005;
+    /// [`MarketDataError::ConnectionError`](super::MarketDataError::ConnectionError).
+    pub const CONNECTION: i32 = 2001;
+    /// [`MarketDataError::AuthError`](super::MarketDataError::AuthError).
+    pub const AUTH: i32 = 2002;
+    /// [`MarketDataError::ApiError`](super::MarketDataError::ApiError).
+    pub const API: i32 = 2003;
+    /// [`MarketDataError::ClientClosed`](super::MarketDataError::ClientClosed),
+    /// also a Node `connect()` aborted by `disconnect()`.
+    pub const CLIENT_CLOSED: i32 = 2010;
+    /// Node only: WebSocket `connect()` called while connected or connecting.
+    pub const ALREADY_CONNECTED: i32 = 2011;
+    /// [`MarketDataError::TimeoutError`](super::MarketDataError::TimeoutError).
+    pub const TIMEOUT: i32 = 3001;
+    /// [`MarketDataError::WebSocketError`](super::MarketDataError::WebSocketError).
+    pub const WEBSOCKET: i32 = 3002;
+    /// [`MarketDataError::HeartbeatTimeout`](super::MarketDataError::HeartbeatTimeout).
+    pub const HEARTBEAT_TIMEOUT: i32 = 3003;
+    /// [`MarketDataError::Other`](super::MarketDataError::Other).
+    pub const OTHER: i32 = 9999;
+    /// Node and Python: a binding's WebSocket worker thread panicked.
+    pub const THREAD_PANIC: i32 = -1;
+}
+
+/// Header carrying the server-assigned request id, when the server sends one.
+const REQUEST_ID_HEADER: &str = "x-request-id";
+
+/// The HTTP response behind an error: status, raw body and headers.
+///
+/// Attached to [`MarketDataError::ApiError`] and to a REST
+/// [`MarketDataError::AuthError`] (401 / 403) so a failed request can be
+/// traced with the backend.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpErrorContext {
+    /// HTTP status code.
+    pub status: u16,
+    /// Response body as received; `None` when it could not be read as text.
+    pub body: Option<String>,
+    /// Response headers with lowercase names. Repeated headers are joined
+    /// with `", "`.
+    pub headers: BTreeMap<String, String>,
+}
+
+impl HttpErrorContext {
+    /// Build a context. Header names are lowercased and repeated headers
+    /// joined with `", "`.
+    pub fn new<I, K, V>(status: u16, body: Option<String>, headers: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let mut map: BTreeMap<String, String> = BTreeMap::new();
+        for (name, value) in headers {
+            map.entry(name.as_ref().to_ascii_lowercase())
+                .and_modify(|joined| {
+                    joined.push_str(", ");
+                    joined.push_str(value.as_ref());
+                })
+                .or_insert_with(|| value.as_ref().to_string());
+        }
+        Self { status, body, headers: map }
+    }
+
+    /// Value of header `name` (case-insensitive).
+    #[must_use]
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(&name.to_ascii_lowercase()).map(String::as_str)
+    }
+
+    /// The `x-request-id` header, if the server sent one.
+    #[must_use]
+    pub fn request_id(&self) -> Option<&str> {
+        self.header(REQUEST_ID_HEADER)
+    }
+}
+
+/// The cross-language view of an error: the fields every binding exposes
+/// under the same names (cased per language).
+///
+/// Built from a [`MarketDataError`] with [`MarketDataError::info`], or with
+/// [`ErrorInfo::new`] for errors that only exist in a binding.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorInfo {
+    /// Numeric code from [`error_code`].
+    pub code: i32,
+    /// Category of the failure.
+    pub source_kind: ErrorKind,
+    /// Human-readable message.
+    pub message: String,
+    /// HTTP status, when the error came from an HTTP response (REST, or the
+    /// WebSocket upgrade).
+    pub status: Option<u16>,
+    /// Raw HTTP response body (REST only).
+    pub body: Option<String>,
+    /// Server-assigned request id (`x-request-id`), when present.
+    pub request_id: Option<String>,
+    /// HTTP response headers (REST only; empty otherwise).
+    pub headers: BTreeMap<String, String>,
+}
+
+impl ErrorInfo {
+    /// An error without HTTP details.
+    pub fn new(code: i32, source_kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            source_kind,
+            message: message.into(),
+            status: None,
+            body: None,
+            request_id: None,
+            headers: BTreeMap::new(),
+        }
+    }
+
+    fn with_http(mut self, http: &HttpErrorContext) -> Self {
+        self.status = Some(http.status);
+        self.body = http.body.clone();
+        self.request_id = http.request_id().map(str::to_string);
+        self.headers = http.headers.clone();
+        self
+    }
+}
+
 /// Main error type for marketdata-core operations
 #[derive(Error, Debug)]
 pub enum MarketDataError {
@@ -167,6 +325,9 @@ pub enum MarketDataError {
     AuthError {
         /// Diagnostic message describing the authentication failure.
         msg: String,
+        /// The HTTP response, for a REST request rejected with 401 / 403.
+        /// `None` for a WebSocket authentication rejection.
+        http: Option<Box<HttpErrorContext>>,
     },
 
     /// API returned error response
@@ -174,8 +335,11 @@ pub enum MarketDataError {
     ApiError {
         /// HTTP status code returned by the server.
         status: u16,
-        /// Server-provided error message.
+        /// Response body, or `HTTP <status>` when it could not be read.
         message: String,
+        /// The HTTP response (its `status` equals `status`). `None` only for
+        /// errors not built from a response.
+        http: Option<Box<HttpErrorContext>>,
     },
 
     /// Operation timed out
@@ -324,22 +488,39 @@ impl MarketDataError {
         }
     }
 
+    /// The cross-language view of this error; see [`ErrorInfo`].
+    #[must_use]
+    pub fn info(&self) -> ErrorInfo {
+        let info = ErrorInfo::new(self.to_error_code(), self.source_kind(), self.to_string());
+        match self {
+            Self::ApiError { http: Some(http), .. } | Self::AuthError { http: Some(http), .. } => {
+                info.with_http(http)
+            }
+            Self::ApiError { status, .. }
+            | Self::WebSocketError { kind: WebSocketErrorKind::Http(status), .. } => ErrorInfo {
+                status: Some(*status),
+                ..info
+            },
+            _ => info,
+        }
+    }
+
     /// Get numeric error code for FFI consumers
     pub fn to_error_code(&self) -> i32 {
         match self {
-            Self::InvalidSymbol { .. } => 1001,
-            Self::InvalidParameter { .. } => 1005,
-            Self::DeserializationError { .. } => 1002,
-            Self::RuntimeError { .. } => 1003,
-            Self::ConfigError(_) => 1004,
-            Self::ConnectionError { .. } => 2001,
-            Self::AuthError { .. } => 2002,
-            Self::ApiError { .. } => 2003,
-            Self::TimeoutError { .. } => 3001,
-            Self::WebSocketError { .. } => 3002,
-            Self::HeartbeatTimeout { .. } => 3003,
-            Self::ClientClosed => 2010,
-            Self::Other(_) => 9999,
+            Self::InvalidSymbol { .. } => error_code::INVALID_SYMBOL,
+            Self::InvalidParameter { .. } => error_code::INVALID_PARAMETER,
+            Self::DeserializationError { .. } => error_code::DESERIALIZATION,
+            Self::RuntimeError { .. } => error_code::RUNTIME,
+            Self::ConfigError(_) => error_code::CONFIG,
+            Self::ConnectionError { .. } => error_code::CONNECTION,
+            Self::AuthError { .. } => error_code::AUTH,
+            Self::ApiError { .. } => error_code::API,
+            Self::TimeoutError { .. } => error_code::TIMEOUT,
+            Self::WebSocketError { .. } => error_code::WEBSOCKET,
+            Self::HeartbeatTimeout { .. } => error_code::HEARTBEAT_TIMEOUT,
+            Self::ClientClosed => error_code::CLIENT_CLOSED,
+            Self::Other(_) => error_code::OTHER,
         }
     }
 
@@ -410,6 +591,7 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 404,
             message: "not found".to_string(),
+            http: None,
         };
         assert_eq!(err.to_string(), "API error (status 404): not found");
 
@@ -439,12 +621,14 @@ mod tests {
 
         let err = MarketDataError::AuthError {
             msg: "test".to_string(),
+            http: None,
         };
         assert_eq!(err.to_error_code(), 2002);
 
         let err = MarketDataError::ApiError {
             status: 500,
             message: "test".to_string(),
+            http: None,
         };
         assert_eq!(err.to_error_code(), 2003);
 
@@ -517,12 +701,14 @@ mod tests {
 
         let err = MarketDataError::AuthError {
             msg: "test".to_string(),
+            http: None,
         };
         assert!(!err.is_retryable());
 
         let err = MarketDataError::ApiError {
             status: 400,
             message: "test".to_string(),
+            http: None,
         };
         assert!(!err.is_retryable());
 
@@ -530,6 +716,7 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 429,
             message: "rate limit".to_string(),
+            http: None,
         };
         assert!(err.is_retryable());
 
@@ -537,6 +724,7 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 503,
             message: "service unavailable".to_string(),
+            http: None,
         };
         assert!(err.is_retryable());
 
@@ -727,17 +915,20 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 401,
             message: "unauthorized".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Auth);
 
         let err = MarketDataError::ApiError {
             status: 403,
             message: "forbidden".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Auth);
 
         let err = MarketDataError::AuthError {
             msg: "bad token".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Auth);
     }
@@ -747,12 +938,14 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 503,
             message: "service unavailable".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Network);
 
         let err = MarketDataError::ApiError {
             status: 500,
             message: "internal".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Network);
     }
@@ -765,6 +958,7 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 429,
             message: "rate limit".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::RateLimit);
     }
@@ -794,14 +988,73 @@ mod tests {
         let err = MarketDataError::ApiError {
             status: 404,
             message: "not found".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Client);
 
         let err = MarketDataError::ApiError {
             status: 400,
             message: "bad request".to_string(),
+            http: None,
         };
         assert_eq!(err.source_kind(), ErrorKind::Client);
+    }
+
+    #[test]
+    fn info_without_http_has_code_kind_and_message_only() {
+        let err = MarketDataError::TimeoutError { operation: "read".to_string() };
+        let info = err.info();
+        assert_eq!(info.code, error_code::TIMEOUT);
+        assert_eq!(info.source_kind, ErrorKind::Network);
+        assert_eq!(info.message, "Timeout error: read");
+        assert_eq!((info.status, info.body, info.request_id), (None, None, None));
+        assert!(info.headers.is_empty());
+    }
+
+    #[test]
+    fn info_carries_http_context() {
+        let http = HttpErrorContext::new(
+            401,
+            Some("denied".to_string()),
+            [("X-Request-Id", "abc"), ("Vary", "a"), ("vary", "b")],
+        );
+        let err = MarketDataError::AuthError { msg: "denied".to_string(), http: Some(Box::new(http)) };
+        let info = err.info();
+        assert_eq!(info.code, error_code::AUTH);
+        assert_eq!(info.source_kind, ErrorKind::Auth);
+        assert_eq!(info.message, "Authentication error: denied");
+        assert_eq!(info.status, Some(401));
+        assert_eq!(info.body.as_deref(), Some("denied"));
+        assert_eq!(info.request_id.as_deref(), Some("abc"));
+        assert_eq!(info.headers.get("vary").map(String::as_str), Some("a, b"));
+    }
+
+    #[test]
+    fn info_status_for_websocket_upgrade_and_bare_api_error() {
+        let err = MarketDataError::WebSocketError {
+            kind: WebSocketErrorKind::Http(429),
+            msg: "HTTP 429 during WebSocket handshake".to_string(),
+        };
+        assert_eq!(err.info().status, Some(429));
+        assert_eq!(err.info().source_kind, ErrorKind::RateLimit);
+        let err = MarketDataError::ApiError { status: 404, message: "x".to_string(), http: None };
+        assert_eq!(err.info().status, Some(404));
+        assert_eq!(err.info().body, None);
+    }
+
+    #[test]
+    fn error_kind_names_are_stable() {
+        let names: Vec<_> = [
+            ErrorKind::Network,
+            ErrorKind::Protocol,
+            ErrorKind::Auth,
+            ErrorKind::RateLimit,
+            ErrorKind::Client,
+        ]
+        .iter()
+        .map(|k| k.to_string())
+        .collect();
+        assert_eq!(names, ["network", "protocol", "auth", "rate_limit", "client"]);
     }
 
     // `#[non_exhaustive]` only forces wildcard arms in OTHER crates. Same-

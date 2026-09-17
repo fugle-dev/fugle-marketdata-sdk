@@ -142,7 +142,7 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     });
 
     const first = ws.connect();
-    await expect(ws.connect()).rejects.toThrow('[2011] Already connected');
+    await expect(ws.connect()).rejects.toMatchObject({ code: 2011, sourceKind: 'client', message: expect.stringMatching(/^Already connected/) });
     await first;
 
     ws.subscribe(subscription);
@@ -163,7 +163,7 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     });
 
     await ws.connect();
-    await expect(ws.connect()).rejects.toThrow('[2011] Already connected');
+    await expect(ws.connect()).rejects.toMatchObject({ code: 2011, sourceKind: 'client', message: expect.stringMatching(/^Already connected/) });
 
     expect(ws.isConnected).toBe(true);
     ws.subscribe(subscription);
@@ -213,7 +213,7 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     const pending = ws.connect();
     ws.disconnect();
 
-    await expect(pending).rejects.toThrow('[2010] Connection aborted');
+    await expect(pending).rejects.toMatchObject({ code: 2010, message: expect.stringMatching(/^Connection aborted/) });
     await sleep(200);
     expect(authenticated).toHaveLength(0);
     expect(ws.isConnected).toBe(false);
@@ -235,7 +235,7 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     ws.disconnect();
     const current = ws.connect();
 
-    await expect(abandoned).rejects.toThrow('[2010] Connection aborted');
+    await expect(abandoned).rejects.toMatchObject({ code: 2010, message: expect.stringMatching(/^Connection aborted/) });
     await current;
 
     expect(authenticated).toHaveLength(1);

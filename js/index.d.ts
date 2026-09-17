@@ -776,11 +776,46 @@ export interface WebSocketMessagesDroppedEvent {
   total: number;
 }
 
-/** Argument of the `error` event. */
-export interface WebSocketError extends Error {
-  /** Numeric error code, when one applies (see the error code table) */
-  code?: number;
+/** Category of an SDK error (`docs/errors.md`). */
+export type ErrorSourceKind = 'network' | 'protocol' | 'auth' | 'rate_limit' | 'client';
+
+/** The fields every SDK error carries (`docs/errors.md`). */
+export interface MarketDataErrorFields {
+  /** Numeric error code (see the error code table) */
+  code: number;
+  /** Category of the failure */
+  sourceKind: ErrorSourceKind;
+  /** HTTP status, when the error came from an HTTP response */
+  status: number | null;
+  /** Raw HTTP response body (REST only) */
+  body: string | null;
+  /** Server-assigned request id (`x-request-id`), when present */
+  requestId: string | null;
+  /** HTTP response headers, lowercase names (REST only; empty otherwise) */
+  headers: Record<string, string>;
 }
+
+/**
+ * Error thrown by constructors and rejected by REST methods and
+ * `connect()` (except an `unauthenticated` rejection, which rejects with the
+ * server's data).
+ *
+ * ```js
+ * try {
+ *   await client.stock.intraday.quote('2330');
+ * } catch (err) {
+ *   if (err.code === 2002) console.error('auth failed', err.status, err.body);
+ * }
+ * ```
+ */
+export interface MarketDataError extends Error, MarketDataErrorFields {}
+
+/**
+ * Argument of the `error` event: a {@link MarketDataError}, except
+ * "Reconnection failed after N attempts", a plain `Error` with none of the
+ * fields.
+ */
+export interface WebSocketError extends Error, Partial<MarketDataErrorFields> {}
 
 /**
  * Event map for typed WebSocket callbacks; argument shapes match
@@ -2025,7 +2060,7 @@ export declare class FutOptWebSocketClient {
    *
    * Returns a Promise that resolves with the server's `authenticated`
    * `data`. See `StockWebSocketClient::connect` for the rejections,
-   * including `[2011] Already connected` (#44).
+   * including code `2011` (`Already connected`) (#44).
    */
   connect(): Promise<WebSocketAuthData | undefined>
   /**
@@ -2479,9 +2514,10 @@ export declare class StockWebSocketClient {
    *
    * If the server rejects the credentials, the Promise rejects with the
    * server's `data` object itself (after `unauthenticated` fires); any other
-   * failure rejects with an `Error` whose message is `[code] message`.
+   * failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
+   * properties; no `[code]` prefix in the message).
    *
-   * Rejects with `[2011] Already connected` while a connection is open or
+   * Rejects with code `2011` (`Already connected`) while a connection is open or
    * being established (#44). Call disconnect() first to reconnect; calling
    * connect() right after disconnect(), or from a `disconnect` handler once
    * no auto-reconnect will follow, is fine.

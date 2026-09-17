@@ -2,7 +2,7 @@
 
 use super::auth::Auth;
 use super::retry::{self, RetryPolicy};
-use crate::errors::MarketDataError;
+use crate::errors::{HttpErrorContext, MarketDataError};
 use super::error::{status_error, transport_error};
 use crate::tls::{build_ureq_tls_config, TlsConfig};
 
@@ -178,11 +178,15 @@ impl RestClient {
 
         let status = response.status().as_u16();
         if status >= 400 {
-            let message = response
-                .body_mut()
-                .read_to_string()
-                .unwrap_or_else(|_| format!("HTTP {status}"));
-            return Err(status_error(status, message));
+            let headers: Vec<(String, String)> = response
+                .headers()
+                .iter()
+                .map(|(name, value)| {
+                    (name.as_str().to_string(), String::from_utf8_lossy(value.as_bytes()).into_owned())
+                })
+                .collect();
+            let body = response.body_mut().read_to_string().ok();
+            return Err(status_error(HttpErrorContext::new(status, body, headers)));
         }
         Ok(response)
     }

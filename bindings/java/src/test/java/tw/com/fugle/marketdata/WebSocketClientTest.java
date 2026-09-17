@@ -206,7 +206,7 @@ public class WebSocketClientTest {
         assertNotNull(WebSocketListener.class.getMethod("onUnauthenticated", String.class));
         assertNotNull(WebSocketListener.class.getMethod("onDisconnected", Boolean.class));
         assertNotNull(WebSocketListener.class.getMethod("onMessage", StreamMessage.class));
-        assertNotNull(WebSocketListener.class.getMethod("onError", String.class));
+        assertNotNull(WebSocketListener.class.getMethod("onError", ErrorInfo.class));
         assertNotNull(WebSocketListener.class.getMethod("onMessagesDropped", Long.class));
     }
 
@@ -247,7 +247,7 @@ public class WebSocketClientTest {
             public void onMessage(StreamMessage message) {}
 
             @Override
-            public void onError(String errorMessage) {}
+            public void onError(ErrorInfo error) {}
 
             @Override
             public void onReconnecting(Integer attempt) {}
@@ -314,7 +314,7 @@ public class WebSocketClientTest {
             public void onMessage(StreamMessage message) {}
 
             @Override
-            public void onError(String errorMessage) {}
+            public void onError(ErrorInfo error) {}
 
             @Override
             public void onReconnecting(Integer attempt) {}
@@ -485,8 +485,8 @@ public class WebSocketClientTest {
             }
 
             @Override
-            public void onError(String errorMessage) {
-                System.err.println("Error: " + errorMessage);
+            public void onError(ErrorInfo error) {
+                System.err.println("Error: " + error.message());
             }
 
             @Override

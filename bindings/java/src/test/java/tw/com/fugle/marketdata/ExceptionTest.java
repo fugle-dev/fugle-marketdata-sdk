@@ -3,9 +3,12 @@ package tw.com.fugle.marketdata;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+import tw.com.fugle.marketdata.generated.ErrorInfo;
+import tw.com.fugle.marketdata.generated.ErrorSourceKind;
 import tw.com.fugle.marketdata.generated.MarketDataException;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 
 /**
  * Tests for Fugle exception hierarchy.
@@ -154,5 +157,87 @@ public class ExceptionTest {
         assertTrue(java.io.Serializable.class.isAssignableFrom(ApiException.class));
         assertTrue(java.io.Serializable.class.isAssignableFrom(RateLimitException.class));
         assertTrue(java.io.Serializable.class.isAssignableFrom(AuthException.class));
+    }
+
+    // ========== ErrorInfo Tests (unified error spec, #81) ==========
+
+    @Test
+    @DisplayName("FugleException without info exposes null/empty accessors")
+    void fugleExceptionGetInfoNullByDefault() {
+        FugleException ex = new FugleException("plain");
+        assertNull(ex.getInfo());
+        assertNull(ex.getCode());
+        assertNull(ex.getSourceKind());
+        assertNull(ex.getStatus());
+        assertNull(ex.getBody());
+        assertNull(ex.getRequestId());
+        assertTrue(ex.getHeaders().isEmpty());
+    }
+
+    @Test
+    @DisplayName("FugleException.from() carries ErrorInfo for ApiException")
+    void fromCarriesErrorInfoForApiException() {
+        ErrorInfo info = new ErrorInfo(
+                2003,
+                ErrorSourceKind.CLIENT,
+                "HTTP 404: not found",
+                (short) 404,
+                "body",
+                "req-1",
+                Collections.singletonMap("x-request-id", "req-1"));
+        MarketDataException.ApiException generated =
+                new MarketDataException.ApiException("HTTP 404: not found", info);
+
+        FugleException converted = FugleException.from(generated);
+
+        assertInstanceOf(ApiException.class, converted);
+        assertEquals(Integer.valueOf(2003), converted.getCode());
+        assertEquals(ErrorSourceKind.CLIENT, converted.getSourceKind());
+        assertEquals(Integer.valueOf(404), converted.getStatus());
+        assertEquals("body", converted.getBody());
+        assertEquals("req-1", converted.getRequestId());
+        assertEquals("req-1", converted.getHeaders().get("x-request-id"));
+    }
+
+    @Test
+    @DisplayName("FugleException.from() maps ClientClosed to code 2010")
+    void fromMapsClientClosedCode() {
+        ErrorInfo info = new ErrorInfo(
+                2010,
+                ErrorSourceKind.CLIENT,
+                "Client already closed",
+                null,
+                null,
+                null,
+                Collections.emptyMap());
+        MarketDataException.ClientClosed generated = new MarketDataException.ClientClosed(info);
+
+        FugleException converted = FugleException.from(generated);
+
+        assertEquals(Integer.valueOf(2010), converted.getCode());
+    }
+
+    @Test
+    @DisplayName("FugleException.from() preserves RateLimitException.retryAfterSeconds behaviour")
+    void fromRateLimitStillHasNullRetryAfter() {
+        ErrorInfo info = new ErrorInfo(
+                2003,
+                ErrorSourceKind.RATE_LIMIT,
+                "HTTP 429: slow down",
+                (short) 429,
+                null,
+                null,
+                Collections.emptyMap());
+        MarketDataException.RateLimitException generated =
+                new MarketDataException.RateLimitException("HTTP 429: slow down", info);
+
+        FugleException converted = FugleException.from(generated);
+
+        assertInstanceOf(RateLimitException.class, converted);
+        // Unchanged by #81: the generated RateLimitException still carries no
+        // retry-after; only getInfo()/getCode()/etc are new.
+        assertNull(((RateLimitException) converted).getRetryAfterSeconds());
+        assertEquals(Integer.valueOf(2003), converted.getCode());
+        assertEquals(ErrorSourceKind.RATE_LIMIT, converted.getSourceKind());
     }
 }

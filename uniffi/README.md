@@ -346,6 +346,12 @@ catch (AuthErrorException ex)
 }
 ```
 
+Every exception variant carries an `info` field (`ErrorInfo`: `code`,
+`sourceKind`, `message`, `status`, `body`, `requestId`, `headers`), and
+`WebSocketListener.on_error` receives the same record. See
+[docs/errors.md](../docs/errors.md) for the field names per language and all
+error codes.
+
 ### Error Types
 
 | Error Type | Description |

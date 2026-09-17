@@ -292,17 +292,36 @@ const { RestClient } = require('@fugle/marketdata');
 const client = new RestClient({ apiKey: 'your-api-key' });
 
 try {
-  const quote = await client.stock.intraday.quote('INVALID');
+  const quote = await client.stock.intraday.quote('2330');
 } catch (e) {
-  if (e.message.includes('[2010]')) {
-    console.log('Client already closed');
-  } else if (e.message.includes('[2002]')) {
-    console.log('Authentication failed');
+  if (e.code === 2002) {
+    console.log('Authentication failed', e.status, e.body);
+  } else if (e.sourceKind === 'rate_limit') {
+    console.log('Throttled; retry after', e.headers['retry-after']);
   } else {
-    console.error('Error:', e.message);
+    console.error('Error:', e.code, e.message);
   }
 }
 ```
+
+Errors thrown by constructors, rejected by REST methods and `connect()`, and
+passed to the WebSocket `error` event carry the same fields
+(TypeScript: `MarketDataError`):
+
+| Property | Type | |
+|---|---|---|
+| `code` | `number` | Error code (table below) |
+| `sourceKind` | `'network' \| 'protocol' \| 'auth' \| 'rate_limit' \| 'client'` | Category of the failure |
+| `message` | `string` | Human-readable message, without a `[code]` prefix |
+| `status` | `number \| null` | HTTP status |
+| `body` | `string \| null` | Raw HTTP response body (REST) |
+| `requestId` | `string \| null` | `x-request-id` response header |
+| `headers` | `Record<string, string>` | HTTP response headers, lowercase names (REST) |
+
+`connect()` rejected because the server refused the credentials rejects with
+the server's data instead, and the `error` event for "Reconnection failed
+after N attempts" is a plain `Error` without these fields. The
+[error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) has the same table for every language.
 
 ## Custom TLS / self-signed servers
 
@@ -337,14 +356,20 @@ client uses the OS trust store (rustls loads it via
 | Code | Error | Description |
 |------|-------|-------------|
 | 1001 | InvalidSymbol | Invalid symbol format |
-| 1002 | DeserializationError | Failed to parse response |
+| 1002 | DeserializationError | Failed to parse a response or WebSocket frame |
+| 1003 | RuntimeError | Internal runtime error |
+| 1004 | ConfigError | Invalid configuration |
+| 1005 | InvalidParameter | Invalid or missing parameter |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned an error |
 | 2010 | ClientClosed | Client already closed |
 | 2011 | AlreadyConnected | WebSocket `connect()` called while connected or connecting (Node only) |
 | 3001 | TimeoutError | Operation timed out |
-| 3002 | WebSocketError | WebSocket protocol error |
+| 3002 | WebSocketError | WebSocket connect, read or write failed |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 9999 | Other | Unexpected error |
+| -1 | ThreadPanic | A WebSocket worker thread panicked |
 
 ## License
 

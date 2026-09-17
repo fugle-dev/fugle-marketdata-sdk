@@ -30,7 +30,7 @@
 //! The `WebSocketListener` trait requires `Send + Sync` for thread-safe
 //! callback invocation. Foreign implementations must be thread-safe.
 
-use crate::errors::MarketDataError;
+use crate::errors::{ErrorInfo, MarketDataError};
 use crate::models::StreamMessage;
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
 use marketdata_core::websocket::{ConnectionEvent, ConnectionState, StreamItem, StreamReceiver};
@@ -63,8 +63,8 @@ use std::sync::Arc;
 ///     public void OnMessage(StreamMessage message) {
 ///         Console.WriteLine($"Got {message.Event} for {message.Symbol}");
 ///     }
-///     public void OnError(string errorMessage) {
-///         Console.WriteLine($"Error: {errorMessage}");
+///     public void OnError(ErrorInfo error) {
+///         Console.WriteLine($"Error: {error.Message}");
 ///     }
 /// }
 /// ```
@@ -100,7 +100,7 @@ pub trait WebSocketListener: Send + Sync {
     fn on_message(&self, message: StreamMessage);
 
     /// Called when an error occurs
-    fn on_error(&self, error_message: String);
+    fn on_error(&self, error: ErrorInfo);
 
     /// Called when a reconnection attempt starts
     fn on_reconnecting(&self, attempt: u32);
@@ -257,12 +257,10 @@ impl StreamingVersionRecord {
             None => StockVersion::default(),
             Some("v1.0") => StockVersion::V1_0,
             Some(other) => {
-                return Err(MarketDataError::ConfigError {
-                    msg: format!(
-                        "stock streaming does not support {other} (supported: v1.0). \
-                         Leave it unset to use v1.0."
-                    ),
-                })
+                return Err(crate::errors::config_error(format!(
+                    "stock streaming does not support {other} (supported: v1.0). \
+                     Leave it unset to use v1.0."
+                )))
             }
         };
         let futopt = match self.futopt.as_deref() {
@@ -270,12 +268,10 @@ impl StreamingVersionRecord {
             Some("v1.0") => FutOptVersion::V1_0,
             Some("v1.1") => FutOptVersion::V1_1,
             Some(other) => {
-                return Err(MarketDataError::ConfigError {
-                    msg: format!(
-                        "futopt streaming does not support {other} (supported: v1.0, v1.1). \
-                         Leave it unset to use v1.1."
-                    ),
-                })
+                return Err(crate::errors::config_error(format!(
+                    "futopt streaming does not support {other} (supported: v1.0, v1.1). \
+                     Leave it unset to use v1.1."
+                )))
             }
         };
         Ok((stock, futopt))
@@ -672,9 +668,10 @@ impl WebSocketClient {
                 "aggregates" => Channel::Aggregates,
                 "indices" => Channel::Indices,
                 _ => {
-                    return Err(MarketDataError::ConfigError {
-                        msg: format!("Unknown channel: {}", channel),
-                    })
+                    return Err(crate::errors::config_error(format!(
+                        "Unknown channel: {}",
+                        channel
+                    )))
                 }
             };
 
@@ -682,9 +679,7 @@ impl WebSocketClient {
             ws.subscribe(sub).await?;
             Ok(())
         } else {
-            Err(MarketDataError::WebSocketError {
-                msg: "Not connected".to_string(),
-            })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -703,9 +698,7 @@ impl WebSocketClient {
             ws.unsubscribe([key]).await?;
             Ok(())
         } else {
-            Err(MarketDataError::WebSocketError {
-                msg: "Not connected".to_string(),
-            })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -719,9 +712,7 @@ impl WebSocketClient {
             ws.send(request).await?;
             Ok(())
         } else {
-            Err(MarketDataError::WebSocketError {
-                msg: "Not connected".to_string(),
-            })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -731,9 +722,7 @@ impl WebSocketClient {
             ws.send(request).await?;
             Ok(())
         } else {
-            Err(MarketDataError::WebSocketError {
-                msg: "Not connected".to_string(),
-            })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -765,7 +754,7 @@ impl WebSocketClient {
     /// Connect to the WebSocket server (blocking).
     pub fn connect_sync(&self) -> Result<(), MarketDataError> {
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| MarketDataError::Other { msg: e.to_string() })?;
+            .map_err(|e| crate::errors::other_error(e.to_string()))?;
         let result = rt.block_on(self.connect_impl());
         // Store runtime to keep background tasks alive
         if let Ok(mut guard) = self.sync_runtime.lock() {
@@ -780,7 +769,7 @@ impl WebSocketClient {
         if let Some(ref rt) = *guard {
             rt.block_on(self.subscribe_impl(channel, symbol))
         } else {
-            Err(MarketDataError::WebSocketError { msg: "Not connected (call connect_sync first)".to_string() })
+            Err(crate::errors::not_connected_error("Not connected (call connect_sync first)"))
         }
     }
 
@@ -790,7 +779,7 @@ impl WebSocketClient {
         if let Some(ref rt) = *guard {
             rt.block_on(self.unsubscribe_impl(channel, symbol))
         } else {
-            Err(MarketDataError::WebSocketError { msg: "Not connected".to_string() })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -800,7 +789,7 @@ impl WebSocketClient {
         if let Some(ref rt) = *guard {
             rt.block_on(self.ping_impl(state))
         } else {
-            Err(MarketDataError::WebSocketError { msg: "Not connected".to_string() })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -810,7 +799,7 @@ impl WebSocketClient {
         if let Some(ref rt) = *guard {
             rt.block_on(self.query_subscriptions_impl())
         } else {
-            Err(MarketDataError::WebSocketError { msg: "Not connected".to_string() })
+            Err(crate::errors::not_connected_error("Not connected"))
         }
     }
 
@@ -891,7 +880,7 @@ fn forward_event(event: ConnectionEvent, listener: &dyn WebSocketListener) -> bo
             listener.on_reconnect_failed(attempts);
             return false;
         }
-        ConnectionEvent::Error { message, .. } => listener.on_error(message),
+        ConnectionEvent::Error(info) => listener.on_error(ErrorInfo::from(&info)),
         ConnectionEvent::MessagesDropped { dropped, .. } => listener.on_messages_dropped(dropped),
         _ => {}
     }
@@ -987,7 +976,7 @@ mod tests {
         reconnecting_count: AtomicUsize,
         reconnect_failed_count: AtomicUsize,
         messages_dropped: AtomicUsize,
-        last_error: Mutex<Option<String>>,
+        last_error: Mutex<Option<ErrorInfo>>,
         /// Lifecycle callbacks in delivery order.
         events: Mutex<Vec<String>>,
         /// Also record `on_message` in `events`, as `message(<event>)`.
@@ -1073,11 +1062,11 @@ mod tests {
             }
         }
 
-        fn on_error(&self, error_message: String) {
+        fn on_error(&self, error: ErrorInfo) {
             self.error_count.fetch_add(1, Ordering::SeqCst);
-            self.record(format!("error({error_message})"));
+            self.record(format!("error({})", error.message));
             if let Ok(mut guard) = self.last_error.lock() {
-                *guard = Some(error_message);
+                *guard = Some(error);
             }
         }
 
@@ -1159,7 +1148,15 @@ mod tests {
     fn test_websocket_listener_error_callback() {
         let listener = Arc::new(TestListener::new());
 
-        listener.on_error("Test error".to_string());
+        listener.on_error(ErrorInfo {
+            code: 0,
+            source_kind: crate::errors::ErrorSourceKind::Client,
+            message: "Test error".to_string(),
+            status: None,
+            body: None,
+            request_id: None,
+            headers: std::collections::HashMap::new(),
+        });
         assert_eq!(listener.error_count.load(Ordering::SeqCst), 1);
     }
 

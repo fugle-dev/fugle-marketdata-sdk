@@ -288,6 +288,8 @@ const INTENTIONALLY_UNMAPPED = {
   WebSocketReconnectEvent: 'WebSocket event argument built by the binding',
   WebSocketError: 'WebSocket event argument built by the binding',
   WebSocketMessagesDroppedEvent: 'WebSocket event argument built from core\'s MessagesDropped event',
+  MarketDataError: 'SDK error built by the binding from core\'s ErrorInfo',
+  MarketDataErrorFields: 'SDK error fields built by the binding from core\'s ErrorInfo',
 
   // JS-side request param / client-option types — inputs the caller
   // constructs, not server response shapes.

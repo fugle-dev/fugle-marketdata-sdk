@@ -130,11 +130,11 @@ public class UniffiCallbackInterfaceWebSocketListener {
         private onError() {}
 
         @Override
-        public void callback(long uniffiHandle,RustBuffer.ByValue errorMessage,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
+        public void callback(long uniffiHandle,RustBuffer.ByValue error,Pointer uniffiOutReturn,UniffiRustCallStatus uniffiCallStatus) {
             var uniffiObj = FfiConverterTypeWebSocketListener.INSTANCE.handleMap.get(uniffiHandle);
             Supplier<Void> makeCall = () -> {
                 uniffiObj.onError(
-                    FfiConverterString.INSTANCE.lift(errorMessage)
+                    FfiConverterTypeErrorInfo.INSTANCE.lift(error)
                 );
                 return null;
             };

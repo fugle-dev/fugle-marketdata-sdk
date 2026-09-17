@@ -89,15 +89,55 @@ struct StockSnapshotClient;
 struct StockTechnicalClient;
 struct WebSocketClient;
 struct WebSocketListener;
+struct ErrorInfo;
 struct HealthCheckConfigRecord;
 struct MessageQueueConfigRecord;
 struct ReconnectConfigRecord;
 struct StreamMessage;
 struct StreamingVersionRecord;
 struct TlsConfigRecord;
+enum class ErrorSourceKind;
 struct MarketDataError;
 enum class MessageOverflowRecord;
 enum class WebSocketEndpoint;
+
+
+/**
+ * Coarse-grained classification of the source of a [`MarketDataError`].
+ *
+ * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
+ * so a future variant this crate doesn't know about yet maps to `Client`
+ * (see the `From` impl below) rather than failing to compile.
+ */
+enum class ErrorSourceKind: int32_t {
+    /**
+     * Transport-level transient failure: connection reset, timeout,
+     * heartbeat gap, server outage (5xx). Generally safe to retry with
+     * backoff.
+     */
+    kNetwork = 1,
+    /**
+     * Protocol-level violation or unclassified WebSocket failure. Indicates
+     * an SDK / version mismatch or a server-side bug; retry is unlikely to
+     * help.
+     */
+    kProtocol = 2,
+    /**
+     * Authentication / authorization failure: bad credentials, 401/403,
+     * expired token, TLS cert failure. Human intervention required.
+     */
+    kAuth = 3,
+    /**
+     * Server is rejecting requests because the caller is exceeding its
+     * rate budget (HTTP 429).
+     */
+    kRateLimit = 4,
+    /**
+     * Caller-side problem: invalid input, configuration error, client
+     * already closed, serialization failure, non-auth/non-throttle 4xx.
+     */
+    kClient = 5
+};
 
 
 /**
@@ -131,6 +171,266 @@ struct MessageQueueConfigRecord {
      */
     uint32_t buffer;
 };
+
+
+/**
+ * The cross-language view of an error: the fields every binding exposes
+ * under the same names. Mirrors `marketdata_core::ErrorInfo`.
+ */
+struct ErrorInfo {
+    /**
+     * Numeric code from `marketdata_core::error_code`, stable across
+     * languages and releases.
+     */
+    int32_t code;
+    /**
+     * Category of the failure.
+     */
+    ErrorSourceKind source_kind;
+    /**
+     * Human-readable message.
+     */
+    std::string message;
+    /**
+     * HTTP status, when the error came from an HTTP response (REST, or the
+     * WebSocket upgrade).
+     */
+    std::optional<uint16_t> status;
+    /**
+     * Raw HTTP response body (REST only).
+     */
+    std::optional<std::string> body;
+    /**
+     * Server-assigned request id (`x-request-id`), when present.
+     */
+    std::optional<std::string> request_id;
+    /**
+     * HTTP response headers (REST only; empty otherwise).
+     */
+    std::unordered_map<std::string, std::string> headers;
+};
+
+namespace uniffi {
+struct FfiConverterMarketDataError;
+} // namespace uniffi
+
+/**
+ * Error type for UniFFI bindings
+ *
+ * Maps to MarketDataError in the UDL file. Each variant becomes an exception
+ * in the target language with the error message preserved, plus an `info`
+ * field carrying the unified [`ErrorInfo`].
+ *
+ * Note: This is a FLAT enum per UniFFI constraints - no nested error types.
+ */
+struct MarketDataError: std::runtime_error {
+    friend uniffi::FfiConverterMarketDataError;
+
+    MarketDataError() : std::runtime_error("") {}
+    MarketDataError(const std::string &what_arg) : std::runtime_error(what_arg) {}
+
+    virtual ~MarketDataError() = default;
+
+    virtual void throw_underlying() {
+        throw *this;
+    }
+
+protected:
+    virtual int32_t get_variant_idx() const {
+        return 0;
+    };
+};
+/**
+ * Contains variants of MarketDataError
+ */
+namespace market_data_error {
+
+struct NetworkError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    NetworkError() : MarketDataError("") {}
+    NetworkError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 1;
+    }
+};
+
+struct AuthError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    AuthError() : MarketDataError("") {}
+    AuthError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 2;
+    }
+};
+
+struct RateLimitError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    RateLimitError() : MarketDataError("") {}
+    RateLimitError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 3;
+    }
+};
+
+struct InvalidSymbol: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    InvalidSymbol() : MarketDataError("") {}
+    InvalidSymbol(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 4;
+    }
+};
+
+struct ParseError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    ParseError() : MarketDataError("") {}
+    ParseError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 5;
+    }
+};
+
+struct TimeoutError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    TimeoutError() : MarketDataError("") {}
+    TimeoutError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 6;
+    }
+};
+
+struct WebSocketError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    WebSocketError() : MarketDataError("") {}
+    WebSocketError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 7;
+    }
+};
+
+struct ClientClosed: MarketDataError {
+    ErrorInfo info;
+
+    ClientClosed() : MarketDataError("") {}
+    ClientClosed(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 8;
+    }
+};
+
+struct ConfigError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    ConfigError() : MarketDataError("") {}
+    ConfigError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 9;
+    }
+};
+
+struct ApiError: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    ApiError() : MarketDataError("") {}
+    ApiError(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 10;
+    }
+};
+
+struct Other: MarketDataError {
+    std::string msg;
+    ErrorInfo info;
+
+    Other() : MarketDataError("") {}
+    Other(const std::string &what_arg) : MarketDataError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 11;
+    }
+};
+} // namespace market_data_error
 
 
 namespace uniffi {
@@ -889,8 +1189,8 @@ struct WebSocketClient
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
  * }
- * public void OnError(string errorMessage) {
- * Console.WriteLine($"Error: {errorMessage}");
+ * public void OnError(ErrorInfo error) {
+ * Console.WriteLine($"Error: {error.Message}");
  * }
  * }
  * ```
@@ -940,7 +1240,7 @@ struct WebSocketListener {
      * Called when an error occurs
      */
     virtual
-    void on_error(const std::string &error_message) = 0;
+    void on_error(const ErrorInfo &error) = 0;
     /**
      * Called when a reconnection attempt starts
      */
@@ -973,7 +1273,7 @@ namespace uniffi {
         static void on_unauthenticated(uint64_t uniffi_handle,RustBuffer data_json,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_disconnected(uint64_t uniffi_handle,int8_t will_reconnect,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_message(uint64_t uniffi_handle,RustBuffer message,void * uniffi_out_return,RustCallStatus *out_status);
-        static void on_error(uint64_t uniffi_handle,RustBuffer error_message,void * uniffi_out_return,RustCallStatus *out_status);
+        static void on_error(uint64_t uniffi_handle,RustBuffer error,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_reconnecting(uint64_t uniffi_handle,uint32_t attempt,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_reconnect_failed(uint64_t uniffi_handle,uint32_t attempts,void * uniffi_out_return,RustCallStatus *out_status);
         static void on_messages_dropped(uint64_t uniffi_handle,uint64_t count,void * uniffi_out_return,RustCallStatus *out_status);
@@ -1026,8 +1326,8 @@ namespace uniffi {
  * public void OnMessage(StreamMessage message) {
  * Console.WriteLine($"Got {message.Event} for {message.Symbol}");
  * }
- * public void OnError(string errorMessage) {
- * Console.WriteLine($"Error: {errorMessage}");
+ * public void OnError(ErrorInfo error) {
+ * Console.WriteLine($"Error: {error.Message}");
  * }
  * }
  * ```
@@ -1084,7 +1384,7 @@ struct WebSocketListenerImpl
     /**
      * Called when an error occurs
      */
-    void on_error(const std::string &error_message);
+    void on_error(const ErrorInfo &error);
     /**
      * Called when a reconnection attempt starts
      */
@@ -1246,216 +1546,6 @@ struct TlsConfigRecord {
     bool accept_invalid_certs;
 };
 
-namespace uniffi {
-struct FfiConverterMarketDataError;
-} // namespace uniffi
-
-/**
- * Error type for UniFFI bindings
- *
- * Maps to MarketDataError in the UDL file. Each variant becomes an exception
- * in the target language with the error message preserved.
- *
- * Note: This is a FLAT enum per UniFFI constraints - no nested error types.
- */
-struct MarketDataError: std::runtime_error {
-    friend uniffi::FfiConverterMarketDataError;
-
-    MarketDataError() : std::runtime_error("") {}
-    MarketDataError(const std::string &what_arg) : std::runtime_error(what_arg) {}
-
-    virtual ~MarketDataError() = default;
-
-    virtual void throw_underlying() {
-        throw *this;
-    }
-
-protected:
-    virtual int32_t get_variant_idx() const {
-        return 0;
-    };
-};
-/**
- * Contains variants of MarketDataError
- */
-namespace market_data_error {
-
-struct NetworkError: MarketDataError {
-    std::string msg;
-
-    NetworkError() : MarketDataError("") {}
-    NetworkError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 1;
-    }
-};
-
-struct AuthError: MarketDataError {
-    std::string msg;
-
-    AuthError() : MarketDataError("") {}
-    AuthError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 2;
-    }
-};
-
-struct RateLimitError: MarketDataError {
-    std::string msg;
-
-    RateLimitError() : MarketDataError("") {}
-    RateLimitError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 3;
-    }
-};
-
-struct InvalidSymbol: MarketDataError {
-    std::string msg;
-
-    InvalidSymbol() : MarketDataError("") {}
-    InvalidSymbol(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 4;
-    }
-};
-
-struct ParseError: MarketDataError {
-    std::string msg;
-
-    ParseError() : MarketDataError("") {}
-    ParseError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 5;
-    }
-};
-
-struct TimeoutError: MarketDataError {
-    std::string msg;
-
-    TimeoutError() : MarketDataError("") {}
-    TimeoutError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 6;
-    }
-};
-
-struct WebSocketError: MarketDataError {
-    std::string msg;
-
-    WebSocketError() : MarketDataError("") {}
-    WebSocketError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 7;
-    }
-};
-
-struct ClientClosed: MarketDataError {
-
-    ClientClosed() : MarketDataError("") {}
-    ClientClosed(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 8;
-    }
-};
-
-struct ConfigError: MarketDataError {
-    std::string msg;
-
-    ConfigError() : MarketDataError("") {}
-    ConfigError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 9;
-    }
-};
-
-struct ApiError: MarketDataError {
-    std::string msg;
-
-    ApiError() : MarketDataError("") {}
-    ApiError(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 10;
-    }
-};
-
-struct Other: MarketDataError {
-    std::string msg;
-
-    Other() : MarketDataError("") {}
-    Other(const std::string &what_arg) : MarketDataError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 11;
-    }
-};
-} // namespace market_data_error
-
 
 /**
  * Endpoint type for WebSocket connection
@@ -1520,6 +1610,13 @@ template <typename T> struct HandleMap {
         std::mutex mutex;
         uint64_t cur_handle = 0;
         std::map<uint64_t, std::shared_ptr<T>> map;
+};
+struct FfiConverterUInt16 {
+    static uint16_t lift(uint16_t);
+    static uint16_t lower(uint16_t);
+    static uint16_t read(RustStream &);
+    static void write(RustStream &, uint16_t);
+    static uint64_t allocation_size(uint16_t);
 };
 struct FfiConverterUInt32 {
     static uint32_t lift(uint32_t);
@@ -1704,6 +1801,14 @@ private:
     inline static HandleMap<WebSocketListener> handle_map = {};
 };
 
+struct FfiConverterTypeErrorInfo {
+    static ErrorInfo lift(RustBuffer);
+    static RustBuffer lower(const ErrorInfo &);
+    static ErrorInfo read(RustStream &);
+    static void write(RustStream &, const ErrorInfo &);
+    static uint64_t allocation_size(const ErrorInfo &);
+};
+
 struct FfiConverterTypeHealthCheckConfigRecord {
     static HealthCheckConfigRecord lift(RustBuffer);
     static RustBuffer lower(const HealthCheckConfigRecord &);
@@ -1751,6 +1856,13 @@ struct FfiConverterTypeTlsConfigRecord {
     static void write(RustStream &, const TlsConfigRecord &);
     static uint64_t allocation_size(const TlsConfigRecord &);
 };
+struct FfiConverterErrorSourceKind {
+    static ErrorSourceKind lift(RustBuffer);
+    static RustBuffer lower(const ErrorSourceKind &);
+    static ErrorSourceKind read(RustStream &);
+    static void write(RustStream &, const ErrorSourceKind &);
+    static uint64_t allocation_size(const ErrorSourceKind &);
+};
 
 struct FfiConverterMarketDataError {
     static std::shared_ptr<MarketDataError> lift(RustBuffer buf);
@@ -1772,6 +1884,13 @@ struct FfiConverterWebSocketEndpoint {
     static WebSocketEndpoint read(RustStream &);
     static void write(RustStream &, const WebSocketEndpoint &);
     static uint64_t allocation_size(const WebSocketEndpoint &);
+};
+struct FfiConverterOptionalUInt16 {
+    static std::optional<uint16_t> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<uint16_t>& val);
+    static std::optional<uint16_t> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<uint16_t>& value);
+    static uint64_t allocation_size(const std::optional<uint16_t> &val);
 };
 struct FfiConverterOptionalUInt32 {
     static std::optional<uint32_t> lift(RustBuffer buf);
@@ -1849,6 +1968,14 @@ struct FfiConverterOptionalTypeTlsConfigRecord {
     static std::optional<TlsConfigRecord> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<TlsConfigRecord>& value);
     static uint64_t allocation_size(const std::optional<TlsConfigRecord> &val);
+};
+
+struct FfiConverterMapStringString {
+    static std::unordered_map<std::string, std::string> lift(RustBuffer);
+    static RustBuffer lower(const std::unordered_map<std::string, std::string> &);
+    static std::unordered_map<std::string, std::string> read(RustStream &);
+    static void write(RustStream &, const std::unordered_map<std::string, std::string> &);
+    static uint64_t allocation_size(const std::unordered_map<std::string, std::string> &);
 };
 } // namespace uniffi
 

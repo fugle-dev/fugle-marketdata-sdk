@@ -1,5 +1,7 @@
 package tw.com.fugle.marketdata;
 
+import tw.com.fugle.marketdata.generated.ErrorInfo;
+
 /**
  * Exception thrown when API rate limits are exceeded.
  *
@@ -33,6 +35,16 @@ public class RateLimitException extends ApiException {
     public RateLimitException(String message, Integer retryAfterSeconds, Throwable cause) {
         super(message, cause);
         this.retryAfterSeconds = retryAfterSeconds;
+    }
+
+    public RateLimitException(String message, ErrorInfo info) {
+        super(message, info);
+        this.retryAfterSeconds = null;
+    }
+
+    public RateLimitException(String message, ErrorInfo info, Throwable cause) {
+        super(message, info, cause);
+        this.retryAfterSeconds = null;
     }
 
     /**

@@ -320,10 +320,10 @@ fn owner_loop(
                         shared.stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        shared.stream.emit(ConnectionEvent::Error {
-                            message: format!("Failed to deserialize message: {e}"),
-                            code: 2003,
-                        });
+                        shared.stream.emit(ConnectionEvent::error_with_message(
+                            &e,
+                            format!("Failed to deserialize message: {e}"),
+                        ));
                     }
                 }
             }
@@ -344,10 +344,10 @@ fn owner_loop(
                         shared.stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        shared.stream.emit(ConnectionEvent::Error {
-                            message: format!("Failed to deserialize binary message: {e}"),
-                            code: 2003,
-                        });
+                        shared.stream.emit(ConnectionEvent::error_with_message(
+                            &e,
+                            format!("Failed to deserialize binary message: {e}"),
+                        ));
                     }
                 }
             }
@@ -422,10 +422,10 @@ fn owner_loop(
                     return None;
                 }
                 let err_msg = format!("WebSocket read error: {e}");
-                shared.stream.emit(ConnectionEvent::Error {
-                    message: err_msg.clone(),
-                    code: 2001,
-                });
+                shared.stream.emit(ConnectionEvent::error_with_message(
+                    &MarketDataError::from(e),
+                    err_msg.clone(),
+                ));
                 shared.stream.emit_disconnected(
                     None,
                     err_msg,
@@ -479,10 +479,10 @@ fn owner_loop(
                             return None;
                         }
                         let err_msg = format!("WebSocket write error: {e}");
-                        shared.stream.emit(ConnectionEvent::Error {
-                            message: err_msg.clone(),
-                            code: 2002,
-                        });
+                        shared.stream.emit(ConnectionEvent::error_with_message(
+                            &MarketDataError::from(e),
+                            err_msg.clone(),
+                        ));
                         shared.stream.emit_disconnected(
                             None,
                             err_msg,
@@ -534,7 +534,7 @@ fn reconnect_and_authenticate(
         AuthHandshake::Authenticated { data, frames } => (data, frames),
         AuthHandshake::Rejected { message, data, frames } => {
             shared.stream.unauthenticated(message.clone(), data, frames);
-            return Err(MarketDataError::AuthError { msg: message });
+            return Err(MarketDataError::AuthError { msg: message, http: None });
         }
         AuthHandshake::Failed(e) => return Err(e),
     };
@@ -661,10 +661,7 @@ pub(crate) fn run_supervisor(
                 Err(e) => {
                     // A rejection was already reported as `Unauthenticated`.
                     if !matches!(e, MarketDataError::AuthError { .. }) {
-                        shared.stream.emit(ConnectionEvent::Error {
-                            message: e.to_string(),
-                            code: e.to_error_code(),
-                        });
+                        shared.stream.emit(ConnectionEvent::error(&e));
                     }
                     continue;
                 }

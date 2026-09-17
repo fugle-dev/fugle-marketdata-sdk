@@ -132,9 +132,9 @@ class MyListener : IWebSocketListener
         }
     }
 
-    public void OnError(string errorMessage)
+    public void OnError(ErrorInfo error)
     {
-        Console.WriteLine($"Error: {errorMessage}");
+        Console.WriteLine($"Error [{error.code}]: {error.message}");
     }
 
     public void OnReconnecting(uint attempt) { }
@@ -283,7 +283,7 @@ public interface IWebSocketListener
     void OnUnauthenticated(string? dataJson);     // server rejected the credentials
     void OnDisconnected(bool willReconnect);      // at most once per connection
     void OnMessage(StreamMessage message);
-    void OnError(string errorMessage);
+    void OnError(ErrorInfo error);                // code, sourceKind, message, ...
     void OnReconnecting(uint attempt);
     void OnReconnectFailed(uint attempts);        // terminal
     void OnMessagesDropped(ulong count);          // messages dropped since the last call (DropNewest overflow)
@@ -334,22 +334,39 @@ keep up.
 
 ## Error Handling
 
-All API errors throw `FugleException`:
+API errors throw `MarketDataException` (one subclass per error type).
+`GetInfo()` returns the fields every language exposes:
 
 ```csharp
 using FugleMarketData;
+using uniffi.marketdata_uniffi;
 
 try
 {
     using var client = new RestClient("invalid-key");
     var quote = await client.Stock.Intraday.GetQuoteAsync("2330");
 }
-catch (FugleException ex)
+catch (MarketDataException ex)
 {
-    Console.WriteLine($"Error: {ex.Message}");
-    // Exception message includes error code, e.g., "[2002] Authentication failed"
+    var info = ex.GetInfo();
+    Console.WriteLine($"Error [{info.code}] {info.sourceKind}: {info.message}");
+    if (info.status is not null)
+        Console.WriteLine($"HTTP {info.status}: {info.body}");
 }
 ```
+
+| `ErrorInfo` property | Type | |
+|---|---|---|
+| `code` | `int` | Error code (table below) |
+| `sourceKind` | `ErrorSourceKind` | `Network`, `Protocol`, `Auth`, `RateLimit` or `Client` |
+| `message` | `string` | Human-readable message |
+| `status` | `ushort?` | HTTP status |
+| `body` | `string?` | Raw HTTP response body (REST) |
+| `requestId` | `string?` | `x-request-id` response header |
+| `headers` | `Dictionary<string, string>` | HTTP response headers, lowercase names (REST) |
+
+`IWebSocketListener.OnError` receives the same `ErrorInfo`. See the
+[error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for all languages.
 
 ### Error Codes
 
@@ -359,12 +376,14 @@ catch (FugleException ex)
 | 1002 | DeserializationError | JSON parsing failed |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Configuration error |
+| 1005 | InvalidParameter | Invalid or missing parameter |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
-| 3002 | WebSocketError | WebSocket protocol error |
+| 3002 | WebSocketError | WebSocket connect, read or write failed |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 9999 | Other | Unexpected error |
 
 ## Examples
@@ -409,9 +428,9 @@ class Program
             Console.WriteLine($"Futures products: "
                 + JsonDocument.Parse(products).RootElement.GetProperty("data").GetArrayLength());
         }
-        catch (FugleException ex)
+        catch (MarketDataException ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
+            Console.WriteLine($"Error [{ex.GetInfo().code}]: {ex.Message}");
         }
     }
 }
@@ -458,9 +477,9 @@ class MyListener : IWebSocketListener
         }
     }
 
-    public void OnError(string errorMessage)
+    public void OnError(ErrorInfo error)
     {
-        Console.WriteLine($"Error: {errorMessage}");
+        Console.WriteLine($"Error [{error.code}]: {error.message}");
     }
 
     public void OnReconnecting(uint attempt) { }
@@ -496,9 +515,9 @@ class Program
             Console.WriteLine($"\nReceived {listener.MessageCount} messages");
             Console.WriteLine($"Subscriptions: {ws.GetSubscriptions().Count}");
         }
-        catch (FugleException ex)
+        catch (MarketDataException ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
+            Console.WriteLine($"Error [{ex.GetInfo().code}]: {ex.Message}");
         }
         finally
         {

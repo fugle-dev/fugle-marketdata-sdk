@@ -1,6 +1,7 @@
 package marketdata_uniffi
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -104,6 +105,30 @@ func TestChannelListener_MessagesDroppedNeverHoldsUpMessages(t *testing.T) {
 	}
 }
 
+func TestChannelListener_OnErrorDeliversStreamError(t *testing.T) {
+	ch := NewMessageChannel(4)
+	l := &channelListener{ch: ch}
+
+	l.OnError(ErrorInfo{Code: 3002, Message: "boom"})
+
+	err := <-ch.Errors()
+	var se *StreamError
+	if !errors.As(err, &se) {
+		t.Fatalf("got %T, want *StreamError", err)
+	}
+	if se.Error() != "boom" {
+		t.Fatalf("Error() = %q, want %q", se.Error(), "boom")
+	}
+
+	info, ok := ErrorInfoOf(err)
+	if !ok {
+		t.Fatal("ErrorInfoOf did not recognise the delivered error")
+	}
+	if info.Code != 3002 || info.Message != "boom" {
+		t.Fatalf("got %+v, want code=3002 message=boom", info)
+	}
+}
+
 func TestChannelListener_UnauthenticatedReportsError(t *testing.T) {
 	ch := NewMessageChannel(4)
 	l := &channelListener{ch: ch}
@@ -132,7 +157,7 @@ func TestMessageChannel_CloseWhileSending(t *testing.T) {
 				defer wg.Done()
 				for k := 0; k < 20; k++ {
 					l.OnMessage(StreamMessage{Event: "data"})
-					l.OnError("boom")
+					l.OnError(ErrorInfo{Message: "boom"})
 				}
 			}()
 		}

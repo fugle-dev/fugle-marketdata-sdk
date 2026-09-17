@@ -136,7 +136,7 @@ interface UniffiLib extends Library {
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(Pointer ptr, RustBuffer.ByValue dataJson, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(Pointer ptr, Byte willReconnect, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_message(Pointer ptr, RustBuffer.ByValue message, UniffiRustCallStatus uniffi_out_errmk);
-    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(Pointer ptr, RustBuffer.ByValue errorMessage, UniffiRustCallStatus uniffi_out_errmk);
+    void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(Pointer ptr, RustBuffer.ByValue error, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(Pointer ptr, Integer attempt, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(Pointer ptr, Integer attempts, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(Pointer ptr, Long count, UniffiRustCallStatus uniffi_out_errmk);

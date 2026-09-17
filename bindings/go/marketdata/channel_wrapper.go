@@ -178,8 +178,12 @@ func (l *channelListener) OnMessage(message StreamMessage) {
 }
 
 // OnError implements WebSocketListener
-func (l *channelListener) OnError(errorMessage string) {
-	l.ch.sendError(fmt.Errorf("websocket error: %s", errorMessage))
+//
+// Delivers a *StreamError carrying the unified ErrorInfo, instead of a
+// formatted string, so callers reading Errors() can branch on
+// ErrorInfoOf(err) (code, source kind, HTTP status) without parsing text.
+func (l *channelListener) OnError(info ErrorInfo) {
+	l.ch.sendError(&StreamError{Info: info})
 }
 
 // OnReconnecting implements WebSocketListener

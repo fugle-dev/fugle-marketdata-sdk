@@ -1,5 +1,7 @@
 package tw.com.fugle.marketdata;
 
+import tw.com.fugle.marketdata.generated.ErrorInfo;
+
 /**
  * Exception thrown for API-level errors.
  *
@@ -20,5 +22,13 @@ public class ApiException extends FugleException {
 
     public ApiException(Throwable cause) {
         super(cause);
+    }
+
+    public ApiException(String message, ErrorInfo info) {
+        super(message, info);
+    }
+
+    public ApiException(String message, ErrorInfo info, Throwable cause) {
+        super(message, info, cause);
     }
 }

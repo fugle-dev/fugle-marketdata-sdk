@@ -127,9 +127,8 @@ console.log('\nTest 4: Async/Promise API');
             await client.stock.intraday.quote('2330');
             console.log('  - Auth error handling: Unexpected success');
         } catch (err) {
-            const hasErrorCode = err.message.match(/\[\d+\]/);
             console.log('  - Error thrown properly:', err instanceof Error ? 'OK' : 'FAIL');
-            console.log('  - Error has code format [XXXX]:', hasErrorCode ? 'OK' : 'FAIL');
+            console.log('  - Error has numeric code:', typeof err.code === 'number' ? 'OK' : 'FAIL');
             console.log('    Error:', err.message.substring(0, 80));
         }
 

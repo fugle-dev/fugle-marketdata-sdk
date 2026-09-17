@@ -177,10 +177,7 @@ impl WebSocketClient {
             Ok(ws) => ws,
             Err(e) => {
                 self.set_state(ConnectionState::Disconnected);
-                self.shared.stream.emit(ConnectionEvent::Error {
-                    message: e.to_string(),
-                    code: e.to_error_code(),
-                });
+                self.shared.stream.emit(ConnectionEvent::error(&e));
                 return Err(e);
             }
         };
@@ -196,14 +193,11 @@ impl WebSocketClient {
                 // Server-rejected credentials are reported only as
                 // Unauthenticated, never as a generic Error.
                 self.shared.stream.unauthenticated(message.clone(), data, frames);
-                return Err(MarketDataError::AuthError { msg: message });
+                return Err(MarketDataError::AuthError { msg: message, http: None });
             }
             AuthHandshake::Failed(e) => {
                 self.set_state(ConnectionState::Disconnected);
-                self.shared.stream.emit(ConnectionEvent::Error {
-                    message: e.to_string(),
-                    code: e.to_error_code(),
-                });
+                self.shared.stream.emit(ConnectionEvent::error(&e));
                 return Err(e);
             }
         };

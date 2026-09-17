@@ -335,11 +335,14 @@ use marketdata_core::MarketDataError;
 
 match client.stock().intraday().quote().symbol("2330").send() {
     Ok(quote) => println!("Price: {:?}", quote["closePrice"].as_f64()),
-    Err(MarketDataError::AuthError { msg }) => {
+    Err(MarketDataError::AuthError { msg, .. }) => {
         eprintln!("Authentication failed: {}", msg);
     }
-    Err(MarketDataError::ApiError { status, message }) => {
-        eprintln!("API error {}: {}", status, message);
+    Err(e @ MarketDataError::ApiError { .. }) => {
+        // `info()` has the fields every binding exposes: code, source_kind,
+        // message, status, body, request_id, headers.
+        let info = e.info();
+        eprintln!("API error {:?}: {:?} (headers: {:?})", info.status, info.body, info.headers);
     }
     Err(MarketDataError::TimeoutError { operation }) => {
         eprintln!("Timeout during: {}", operation);
@@ -348,21 +351,10 @@ match client.stock().intraday().quote().symbol("2330").send() {
 }
 ```
 
-Error codes for FFI consumers:
-
-| Code | Error Type |
-|------|------------|
-| 1001 | InvalidSymbol |
-| 1002 | DeserializationError |
-| 1003 | RuntimeError |
-| 1004 | ConfigError |
-| 2001 | ConnectionError |
-| 2002 | AuthError |
-| 2003 | ApiError |
-| 2010 | ClientClosed |
-| 3001 | TimeoutError |
-| 3002 | WebSocketError |
-| 9999 | Other |
+`MarketDataError::info()` returns an `ErrorInfo` with the fields every
+binding exposes under the same names; codes are in `error_code`. See the
+[error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for the field table, `source_kind` values and all
+error codes.
 
 ## API Reference
 

@@ -3,7 +3,7 @@
 //! This module provides the JavaScript-facing RestClient that wraps
 //! marketdata-core::RestClient for NAPI-RS bindings.
 
-use crate::errors::to_napi_error;
+use crate::errors::{BuildError, Settled};
 use crate::websocket::RestClientOptions;
 use napi_derive::napi;
 use napi::bindgen_prelude::{FromNapiValue, TypeName, ValueType};
@@ -84,7 +84,7 @@ async fn get_with_params(
     path: &[&str],
     path_key: Option<&str>,
     mut params: Map<String, Value>,
-) -> napi::Result<Value> {
+) -> napi::Result<Settled> {
     let mut segments: Vec<String> = path.iter().map(|s| s.to_string()).collect();
     if let Some(key) = path_key {
         match params.remove(key).as_ref().and_then(scalar_to_string) {
@@ -106,7 +106,7 @@ async fn get_with_params(
     .await
     .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-    result.map_err(to_napi_error)
+    Ok(Settled(result))
 }
 
 /// Flatten params into query pairs the way the legacy SDK's `query-string`
@@ -165,6 +165,62 @@ pub struct RestClient {
     inner: marketdata_core::RestClient,
 }
 
+impl RestClient {
+    /// Build the client; [`RestClient::new`] turns the error into a JS one.
+    fn from_options(options: RestClientOptions) -> Result<Self, BuildError> {
+        // Validate exactly one auth method (fail fast per CONTEXT.md)
+        let auth_count = [
+            options.api_key.is_some(),
+            options.bearer_token.is_some(),
+            options.sdk_token.is_some(),
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+
+        if auth_count == 0 {
+            return Err(napi::Error::from_reason(
+                "Provide exactly one of: apiKey, bearerToken, sdkToken"
+            )
+            .into());
+        }
+
+        if auth_count > 1 {
+            return Err(napi::Error::from_reason(
+                "Provide exactly one of: apiKey, bearerToken, sdkToken"
+            )
+            .into());
+        }
+
+        // Build auth (safe to unwrap after validation)
+        let auth = if let Some(key) = options.api_key {
+            marketdata_core::rest::Auth::ApiKey(key)
+        } else if let Some(token) = options.bearer_token {
+            marketdata_core::rest::Auth::BearerToken(token)
+        } else {
+            marketdata_core::rest::Auth::SdkToken(options.sdk_token.unwrap())
+        };
+
+        // Build TLS config from optional kwargs. When both are default we
+        // use `with_tls(TlsConfig::default())` — same path `new(auth)` takes
+        // internally, so behaviour is preserved for consumers not touching TLS.
+        let tls = marketdata_core::TlsConfig {
+            root_cert_pem: options.tls_root_cert_pem.map(|arr| arr.to_vec()),
+            accept_invalid_certs: options.tls_accept_invalid_certs.unwrap_or(false),
+        };
+
+        let mut inner = marketdata_core::RestClient::with_tls(auth, tls)?;
+        if let Some(url) = options.base_url {
+            // `tryBaseUrl` semantics: a JS caller expects a bad option to throw
+            // from `new RestClient(...)`, matching the official SDK's TypeError,
+            // not to surface later from an unrelated request.
+            inner = inner.try_base_url(&url)?;
+        }
+
+        Ok(Self { inner })
+    }
+}
+
 #[napi]
 impl RestClient {
     /// Create a new REST client with options
@@ -186,55 +242,8 @@ impl RestClient {
     /// });
     /// ```
     #[napi(constructor)]
-    pub fn new(options: RestClientOptions) -> napi::Result<Self> {
-        // Validate exactly one auth method (fail fast per CONTEXT.md)
-        let auth_count = [
-            options.api_key.is_some(),
-            options.bearer_token.is_some(),
-            options.sdk_token.is_some(),
-        ]
-        .iter()
-        .filter(|&&x| x)
-        .count();
-
-        if auth_count == 0 {
-            return Err(napi::Error::from_reason(
-                "Provide exactly one of: apiKey, bearerToken, sdkToken"
-            ));
-        }
-
-        if auth_count > 1 {
-            return Err(napi::Error::from_reason(
-                "Provide exactly one of: apiKey, bearerToken, sdkToken"
-            ));
-        }
-
-        // Build auth (safe to unwrap after validation)
-        let auth = if let Some(key) = options.api_key {
-            marketdata_core::rest::Auth::ApiKey(key)
-        } else if let Some(token) = options.bearer_token {
-            marketdata_core::rest::Auth::BearerToken(token)
-        } else {
-            marketdata_core::rest::Auth::SdkToken(options.sdk_token.unwrap())
-        };
-
-        // Build TLS config from optional kwargs. When both are default we
-        // use `with_tls(TlsConfig::default())` — same path `new(auth)` takes
-        // internally, so behaviour is preserved for consumers not touching TLS.
-        let tls = marketdata_core::TlsConfig {
-            root_cert_pem: options.tls_root_cert_pem.map(|arr| arr.to_vec()),
-            accept_invalid_certs: options.tls_accept_invalid_certs.unwrap_or(false),
-        };
-
-        let mut inner = marketdata_core::RestClient::with_tls(auth, tls).map_err(to_napi_error)?;
-        if let Some(url) = options.base_url {
-            // `tryBaseUrl` semantics: a JS caller expects a bad option to throw
-            // from `new RestClient(...)`, matching the official SDK's TypeError,
-            // not to surface later from an unrelated request.
-            inner = inner.try_base_url(&url).map_err(to_napi_error)?;
-        }
-
-        Ok(Self { inner })
+    pub fn new(env: napi::Env, options: RestClientOptions) -> napi::Result<Self> {
+        Self::from_options(options).map_err(|e| e.into_napi(&env))
     }
 
     /// The prefix every request from this client is built on, fully resolved —
@@ -380,7 +389,7 @@ impl StockOwnershipClient {
     ///
     /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<EtfHoldingsResponse>")]
-    pub async fn etf_holdings(&self, params: EtfHoldingsParams) -> napi::Result<Value> {
+    pub async fn etf_holdings(&self, params: EtfHoldingsParams) -> napi::Result<Settled> {
         let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
         run_ownership(self.inner.clone(), query, send_etf_holdings).await
     }
@@ -394,7 +403,7 @@ impl StockOwnershipClient {
     ///
     /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<InstitutionalTradesResponse>")]
-    pub async fn institutional_trades(&self, params: InstitutionalTradesParams) -> napi::Result<Value> {
+    pub async fn institutional_trades(&self, params: InstitutionalTradesParams) -> napi::Result<Settled> {
         let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
         run_ownership(self.inner.clone(), query, send_institutional_trades).await
     }
@@ -408,7 +417,7 @@ impl StockOwnershipClient {
     ///
     /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<DirectorHoldingsResponse>")]
-    pub async fn director_holdings(&self, params: DirectorHoldingsParams) -> napi::Result<Value> {
+    pub async fn director_holdings(&self, params: DirectorHoldingsParams) -> napi::Result<Settled> {
         let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
         run_ownership(self.inner.clone(), query, send_director_holdings).await
     }
@@ -422,7 +431,7 @@ impl StockOwnershipClient {
     ///
     /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<TdccDistributionResponse>")]
-    pub async fn tdcc_distribution(&self, params: TdccDistributionParams) -> napi::Result<Value> {
+    pub async fn tdcc_distribution(&self, params: TdccDistributionParams) -> napi::Result<Settled> {
         let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
         run_ownership(self.inner.clone(), query, send_tdcc_distribution).await
     }
@@ -493,12 +502,12 @@ async fn run_ownership(
     client: marketdata_core::RestClient,
     query: OwnershipQuery,
     send: fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<Value, marketdata_core::MarketDataError>,
-) -> napi::Result<Value> {
+) -> napi::Result<Settled> {
     let result = tokio::task::spawn_blocking(move || send(&client, query))
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-    result.map_err(to_napi_error)
+    Ok(Settled(result))
 }
 
 /// Stock intraday data client
@@ -526,7 +535,7 @@ impl StockIntradayClient {
         ts_return_type = "Promise<QuoteResponse>",
         ts_args_type = "symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean | undefined | null"
     )]
-    pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Value> {
+    pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Settled> {
         let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(symbol) => (symbol, odd_lot),
             RestArg::Params(mut params) => {
@@ -561,7 +570,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday ticker for a stock symbol
@@ -572,7 +581,7 @@ impl StockIntradayClient {
         ts_return_type = "Promise<TickerResponse>",
         ts_args_type = "symbol: string | RestStockIntradayTickerParams"
     )]
-    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "ticker"], Some("symbol"), params).await,
@@ -586,7 +595,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday candles for a stock symbol
@@ -598,7 +607,7 @@ impl StockIntradayClient {
         ts_return_type = "Promise<CandlesResponse>",
         ts_args_type = "symbol: string | RestStockIntradayCandlesParams, timeframe?: string | undefined | null"
     )]
-    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Value> {
+    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "candles"], Some("symbol"), params).await,
@@ -618,7 +627,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday trades for a stock symbol
@@ -629,7 +638,7 @@ impl StockIntradayClient {
         ts_return_type = "Promise<TradesResponse>",
         ts_args_type = "symbol: string | RestStockIntradayTradesParams"
     )]
-    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "trades"], Some("symbol"), params).await,
@@ -643,7 +652,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday volumes for a stock symbol
@@ -654,7 +663,7 @@ impl StockIntradayClient {
         ts_return_type = "Promise<VolumesResponse>",
         ts_args_type = "symbol: string | RestStockIntradayVolumesParams"
     )]
-    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "volumes"], Some("symbol"), params).await,
@@ -668,7 +677,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get batch ticker list for a security type
@@ -690,7 +699,7 @@ impl StockIntradayClient {
         market: Option<String>,
         industry: Option<String>,
         is_normal: Option<bool>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let r#type = match RestArg::required(r#type, "type")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "tickers"], None, params).await,
@@ -719,7 +728,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -748,7 +757,7 @@ impl StockHistoricalClient {
         from: Option<String>,
         to: Option<String>,
         timeframe: Option<String>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "candles"], Some("symbol"), params).await,
@@ -774,7 +783,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get historical stats for a stock symbol
@@ -785,7 +794,7 @@ impl StockHistoricalClient {
         ts_return_type = "Promise<StatsResponse>",
         ts_args_type = "symbol: string | RestStockHistoricalStatsParams"
     )]
-    pub async fn stats(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn stats(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "stats"], Some("symbol"), params).await,
@@ -799,7 +808,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -820,7 +829,7 @@ impl StockSnapshotClient {
         ts_return_type = "Promise<SnapshotQuotesResponse>",
         ts_args_type = "market: string | RestStockSnapshotQuotesParams, typeFilter?: string | undefined | null"
     )]
-    pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<String>) -> napi::Result<Value> {
+    pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<String>) -> napi::Result<Settled> {
         let market = match RestArg::required(market, "market")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "quotes"], Some("market"), params).await,
@@ -840,7 +849,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get movers (top gainers/losers) for a market
@@ -858,7 +867,7 @@ impl StockSnapshotClient {
         market: Option<RestArg>,
         direction: Option<String>,
         change: Option<String>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let market = match RestArg::required(market, "market")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "movers"], Some("market"), params).await,
@@ -881,7 +890,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get most actively traded stocks for a market
@@ -893,7 +902,7 @@ impl StockSnapshotClient {
         ts_return_type = "Promise<ActivesResponse>",
         ts_args_type = "market: string | RestStockSnapshotActivesParams, trade?: string | undefined | null"
     )]
-    pub async fn actives(&self, market: Option<RestArg>, trade: Option<String>) -> napi::Result<Value> {
+    pub async fn actives(&self, market: Option<RestArg>, trade: Option<String>) -> napi::Result<Settled> {
         let market = match RestArg::required(market, "market")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "actives"], Some("market"), params).await,
@@ -913,7 +922,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -944,7 +953,7 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "sma"], Some("symbol"), params).await,
@@ -973,7 +982,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get RSI (Relative Strength Index) for a stock
@@ -995,7 +1004,7 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "rsi"], Some("symbol"), params).await,
@@ -1024,7 +1033,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get KDJ (Stochastic Oscillator) for a stock
@@ -1050,7 +1059,7 @@ impl StockTechnicalClient {
         r_period: Option<u32>,
         k_period: Option<u32>,
         d_period: Option<u32>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "kdj"], Some("symbol"), params).await,
@@ -1085,7 +1094,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get MACD (Moving Average Convergence Divergence) for a stock
@@ -1111,7 +1120,7 @@ impl StockTechnicalClient {
         fast: Option<u32>,
         slow: Option<u32>,
         signal: Option<u32>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "macd"], Some("symbol"), params).await,
@@ -1146,7 +1155,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get Bollinger Bands for a stock
@@ -1170,7 +1179,7 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>,
         stddev: Option<f64>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "bb"], Some("symbol"), params).await,
@@ -1202,7 +1211,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -1229,7 +1238,7 @@ impl StockCorporateActionsClient {
         date: Option<RestArg>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let date = match date {
             Some(RestArg::Positional(date)) => Some(date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], None, params).await,
@@ -1256,7 +1265,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get dividend announcements
@@ -1274,7 +1283,7 @@ impl StockCorporateActionsClient {
         date: Option<RestArg>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let date = match date {
             Some(RestArg::Positional(date)) => Some(date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], None, params).await,
@@ -1301,7 +1310,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get IPO listing applicants
@@ -1319,7 +1328,7 @@ impl StockCorporateActionsClient {
         date: Option<RestArg>,
         start_date: Option<String>,
         end_date: Option<String>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let date = match date {
             Some(RestArg::Positional(date)) => Some(date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], None, params).await,
@@ -1346,7 +1355,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -1399,7 +1408,7 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<FutOptQuoteResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayQuoteParams"
     )]
-    pub async fn quote(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn quote(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "quote"], Some("symbol"), params).await,
@@ -1413,7 +1422,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday ticker for a futures/options contract
@@ -1424,7 +1433,7 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<FutOptTickerResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayTickerParams"
     )]
-    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "ticker"], Some("symbol"), params).await,
@@ -1438,7 +1447,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday candles for a futures/options contract
@@ -1450,7 +1459,7 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<CandlesResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string | undefined | null"
     )]
-    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Value> {
+    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "candles"], Some("symbol"), params).await,
@@ -1470,7 +1479,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday trades for a futures/options contract
@@ -1481,7 +1490,7 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<TradesResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayTradesParams"
     )]
-    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "trades"], Some("symbol"), params).await,
@@ -1495,7 +1504,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get intraday volumes for a futures/options contract
@@ -1506,7 +1515,7 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<VolumesResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayVolumesParams"
     )]
-    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Value> {
+    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "volumes"], Some("symbol"), params).await,
@@ -1520,7 +1529,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get batch ticker list for a FutOpt contract type
@@ -1541,7 +1550,7 @@ impl FutOptIntradayClient {
         after_hours: Option<bool>,
         contract_type: Option<String>,
         is_spread: Option<bool>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let typ = match RestArg::required(typ, "type")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "tickers"], None, params).await,
@@ -1602,7 +1611,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get product list for futures/options
@@ -1614,7 +1623,7 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<ProductsResponse>",
         ts_args_type = "type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType | undefined | null"
     )]
-    pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<String>) -> napi::Result<Value> {
+    pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<String>) -> napi::Result<Settled> {
         let typ = match RestArg::required(typ, "type")? {
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "products"], None, params).await,
@@ -1666,7 +1675,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -1713,7 +1722,7 @@ impl FutOptHistoricalClient {
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(mut params) => {
@@ -1754,7 +1763,7 @@ impl FutOptHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 
     /// Get one trading day's daily quotes for every contract month of a futures/options product
@@ -1772,7 +1781,7 @@ impl FutOptHistoricalClient {
         symbol: Option<RestArg>,
         date: Option<String>,
         after_hours: Option<bool>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
             RestArg::Params(mut params) => {
@@ -1798,7 +1807,7 @@ impl FutOptHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        result.map_err(to_napi_error)
+        Ok(Settled(result))
     }
 }
 
@@ -1819,7 +1828,7 @@ mod tests {
 
     #[test]
     fn test_rest_client_creation_with_api_key() {
-        let client = RestClient::new(make_options("test-api-key")).unwrap();
+        let client = RestClient::from_options(make_options("test-api-key")).unwrap();
         // Verify client was created (compilation success is the test)
         let _ = client.stock();
         let _ = client.futopt();
@@ -1835,7 +1844,7 @@ mod tests {
             tls_root_cert_pem: None,
             tls_accept_invalid_certs: None,
         };
-        let client = RestClient::new(options).unwrap();
+        let client = RestClient::from_options(options).unwrap();
         let _ = client.stock();
     }
 
@@ -1849,7 +1858,7 @@ mod tests {
             tls_root_cert_pem: None,
             tls_accept_invalid_certs: None,
         };
-        let client = RestClient::new(options).unwrap();
+        let client = RestClient::from_options(options).unwrap();
         let _ = client.stock();
     }
 
@@ -1863,10 +1872,12 @@ mod tests {
             tls_root_cert_pem: None,
             tls_accept_invalid_certs: None,
         };
-        let result = RestClient::new(options);
+        let result = RestClient::from_options(options);
         assert!(result.is_err());
-        if let Err(err) = result {
+        if let Err(BuildError::Napi(err)) = result {
             assert!(err.reason.contains("exactly one"));
+        } else {
+            panic!("expected a validation error");
         }
     }
 
@@ -1880,16 +1891,18 @@ mod tests {
             tls_root_cert_pem: None,
             tls_accept_invalid_certs: None,
         };
-        let result = RestClient::new(options);
+        let result = RestClient::from_options(options);
         assert!(result.is_err());
-        if let Err(err) = result {
+        if let Err(BuildError::Napi(err)) = result {
             assert!(err.reason.contains("exactly one"));
+        } else {
+            panic!("expected a validation error");
         }
     }
 
     #[test]
     fn test_stock_client_chain() {
-        let client = RestClient::new(make_options("test-api-key")).unwrap();
+        let client = RestClient::from_options(make_options("test-api-key")).unwrap();
         let stock = client.stock();
         let _intraday = stock.intraday();
         let _historical = stock.historical();
@@ -1900,7 +1913,7 @@ mod tests {
 
     #[test]
     fn test_futopt_client_chain() {
-        let client = RestClient::new(make_options("test-api-key")).unwrap();
+        let client = RestClient::from_options(make_options("test-api-key")).unwrap();
         let futopt = client.futopt();
         let _intraday = futopt.intraday();
         let _historical = futopt.historical();

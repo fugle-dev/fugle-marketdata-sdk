@@ -884,7 +884,7 @@ static class _UniFFILib
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void UniffiCallbackInterfaceWebSocketListenerMethod5(
         ulong @uniffiHandle,
-        RustBuffer @errorMessage,
+        RustBuffer @error,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -1866,7 +1866,7 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(
         IntPtr @ptr,
-        RustBuffer @errorMessage,
+        RustBuffer @error,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -3564,10 +3564,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();
-            if (checksum != 33187)
+            if (checksum != 44329)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error` checksum `33187`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error` checksum `44329`, library returned `{checksum}`"
                 );
             }
         }
@@ -3667,6 +3667,36 @@ static class _UniFFILib
 // Public interface members begin here.
 
 #pragma warning disable 8625
+
+class FfiConverterUInt16 : FfiConverter<ushort, ushort>
+{
+    public static FfiConverterUInt16 INSTANCE = new FfiConverterUInt16();
+
+    public override ushort Lift(ushort value)
+    {
+        return value;
+    }
+
+    public override ushort Read(BigEndianStream stream)
+    {
+        return stream.ReadUShort();
+    }
+
+    public override ushort Lower(ushort value)
+    {
+        return value;
+    }
+
+    public override int AllocationSize(ushort value)
+    {
+        return 2;
+    }
+
+    public override void Write(ushort value, BigEndianStream stream)
+    {
+        stream.WriteUShort(value);
+    }
+}
 
 class FfiConverterUInt32 : FfiConverter<uint, uint>
 {
@@ -9342,8 +9372,8 @@ class FfiConverterTypeWebSocketClient : FfiConverter<WebSocketClient, IntPtr>
 /// public void OnMessage(StreamMessage message) {
 /// Console.WriteLine($"Got {message.Event} for {message.Symbol}");
 /// }
-/// public void OnError(string errorMessage) {
-/// Console.WriteLine($"Error: {errorMessage}");
+/// public void OnError(ErrorInfo error) {
+/// Console.WriteLine($"Error: {error.Message}");
 /// }
 /// }
 /// ```
@@ -9392,7 +9422,7 @@ public interface WebSocketListener
     /// <summary>
     /// Called when an error occurs
     /// </summary>
-    void OnError(string @errorMessage);
+    void OnError(ErrorInfo @error);
 
     /// <summary>
     /// Called when a reconnection attempt starts
@@ -9444,8 +9474,8 @@ public interface WebSocketListener
 /// public void OnMessage(StreamMessage message) {
 /// Console.WriteLine($"Got {message.Event} for {message.Symbol}");
 /// }
-/// public void OnError(string errorMessage) {
-/// Console.WriteLine($"Error: {errorMessage}");
+/// public void OnError(ErrorInfo error) {
+/// Console.WriteLine($"Error: {error.Message}");
 /// }
 /// }
 /// ```
@@ -9666,14 +9696,14 @@ public class WebSocketListenerImpl : WebSocketListener, IDisposable
     /// <summary>
     /// Called when an error occurs
     /// </summary>
-    public void OnError(string @errorMessage)
+    public void OnError(ErrorInfo @error)
     {
         CallWithPointer(thisPtr =>
             _UniffiHelpers.RustCall(
                 (ref UniffiRustCallStatus _status) =>
                     _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(
                         thisPtr,
-                        FfiConverterString.INSTANCE.Lower(@errorMessage),
+                        FfiConverterTypeErrorInfo.INSTANCE.Lower(@error),
                         ref _status
                     )
             )
@@ -9858,7 +9888,7 @@ class UniffiCallbackInterfaceWebSocketListener
 
     static void OnError(
         ulong @uniffiHandle,
-        RustBuffer @errorMessage,
+        RustBuffer @error,
         IntPtr @uniffiOutReturn,
         ref UniffiRustCallStatus _uniffi_out_err
     )
@@ -9871,7 +9901,7 @@ class UniffiCallbackInterfaceWebSocketListener
             )
         )
         {
-            uniffiObject.OnError(FfiConverterString.INSTANCE.Lift(@errorMessage));
+            uniffiObject.OnError(FfiConverterTypeErrorInfo.INSTANCE.Lift(@error));
         }
         else
         {
@@ -10100,6 +10130,107 @@ class FfiConverterTypeWebSocketListener : FfiConverter<WebSocketListener, IntPtr
     public override void Write(WebSocketListener value, BigEndianStream stream)
     {
         stream.WriteLong(Lower(value).ToInt64());
+    }
+}
+
+/// <summary>
+/// The cross-language view of an error: the fields every binding exposes
+/// under the same names. Mirrors `marketdata_core::ErrorInfo`.
+/// </summary>
+/// <param name="code">
+/// Numeric code from `marketdata_core::error_code`, stable across
+/// languages and releases.
+/// </param>
+/// <param name="source_kind">
+/// Category of the failure.
+/// </param>
+/// <param name="message">
+/// Human-readable message.
+/// </param>
+/// <param name="status">
+/// HTTP status, when the error came from an HTTP response (REST, or the
+/// WebSocket upgrade).
+/// </param>
+/// <param name="body">
+/// Raw HTTP response body (REST only).
+/// </param>
+/// <param name="request_id">
+/// Server-assigned request id (`x-request-id`), when present.
+/// </param>
+/// <param name="headers">
+/// HTTP response headers (REST only; empty otherwise).
+/// </param>
+public record ErrorInfo(
+    /// <summary>
+    /// Numeric code from `marketdata_core::error_code`, stable across
+    /// languages and releases.
+    /// </summary>
+    int @code,
+    /// <summary>
+    /// Category of the failure.
+    /// </summary>
+    ErrorSourceKind @sourceKind,
+    /// <summary>
+    /// Human-readable message.
+    /// </summary>
+    string @message,
+    /// <summary>
+    /// HTTP status, when the error came from an HTTP response (REST, or the
+    /// WebSocket upgrade).
+    /// </summary>
+    ushort? @status,
+    /// <summary>
+    /// Raw HTTP response body (REST only).
+    /// </summary>
+    string? @body,
+    /// <summary>
+    /// Server-assigned request id (`x-request-id`), when present.
+    /// </summary>
+    string? @requestId,
+    /// <summary>
+    /// HTTP response headers (REST only; empty otherwise).
+    /// </summary>
+    Dictionary<string, string> @headers
+) { }
+
+class FfiConverterTypeErrorInfo : FfiConverterRustBuffer<ErrorInfo>
+{
+    public static FfiConverterTypeErrorInfo INSTANCE = new FfiConverterTypeErrorInfo();
+
+    public override ErrorInfo Read(BigEndianStream stream)
+    {
+        return new ErrorInfo(
+            @code: FfiConverterInt32.INSTANCE.Read(stream),
+            @sourceKind: FfiConverterTypeErrorSourceKind.INSTANCE.Read(stream),
+            @message: FfiConverterString.INSTANCE.Read(stream),
+            @status: FfiConverterOptionalUInt16.INSTANCE.Read(stream),
+            @body: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @requestId: FfiConverterOptionalString.INSTANCE.Read(stream),
+            @headers: FfiConverterDictionaryStringString.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(ErrorInfo value)
+    {
+        return 0
+            + FfiConverterInt32.INSTANCE.AllocationSize(value.@code)
+            + FfiConverterTypeErrorSourceKind.INSTANCE.AllocationSize(value.@sourceKind)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@message)
+            + FfiConverterOptionalUInt16.INSTANCE.AllocationSize(value.@status)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@body)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@requestId)
+            + FfiConverterDictionaryStringString.INSTANCE.AllocationSize(value.@headers);
+    }
+
+    public override void Write(ErrorInfo value, BigEndianStream stream)
+    {
+        FfiConverterInt32.INSTANCE.Write(value.@code, stream);
+        FfiConverterTypeErrorSourceKind.INSTANCE.Write(value.@sourceKind, stream);
+        FfiConverterString.INSTANCE.Write(value.@message, stream);
+        FfiConverterOptionalUInt16.INSTANCE.Write(value.@status, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@body, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@requestId, stream);
+        FfiConverterDictionaryStringString.INSTANCE.Write(value.@headers, stream);
     }
 }
 
@@ -10492,10 +10623,86 @@ class FfiConverterTypeTlsConfigRecord : FfiConverterRustBuffer<TlsConfigRecord>
 }
 
 /// <summary>
+/// Coarse-grained classification of the source of a [`MarketDataError`].
+///
+/// Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
+/// so a future variant this crate doesn't know about yet maps to `Client`
+/// (see the `From` impl below) rather than failing to compile.
+/// </summary>
+public enum ErrorSourceKind : int
+{
+    /// <summary>
+    /// Transport-level transient failure: connection reset, timeout,
+    /// heartbeat gap, server outage (5xx). Generally safe to retry with
+    /// backoff.
+    /// </summary>
+    Network,
+
+    /// <summary>
+    /// Protocol-level violation or unclassified WebSocket failure. Indicates
+    /// an SDK / version mismatch or a server-side bug; retry is unlikely to
+    /// help.
+    /// </summary>
+    Protocol,
+
+    /// <summary>
+    /// Authentication / authorization failure: bad credentials, 401/403,
+    /// expired token, TLS cert failure. Human intervention required.
+    /// </summary>
+    Auth,
+
+    /// <summary>
+    /// Server is rejecting requests because the caller is exceeding its
+    /// rate budget (HTTP 429).
+    /// </summary>
+    RateLimit,
+
+    /// <summary>
+    /// Caller-side problem: invalid input, configuration error, client
+    /// already closed, serialization failure, non-auth/non-throttle 4xx.
+    /// </summary>
+    Client,
+}
+
+class FfiConverterTypeErrorSourceKind : FfiConverterRustBuffer<ErrorSourceKind>
+{
+    public static FfiConverterTypeErrorSourceKind INSTANCE = new FfiConverterTypeErrorSourceKind();
+
+    public override ErrorSourceKind Read(BigEndianStream stream)
+    {
+        var value = stream.ReadInt() - 1;
+        if (Enum.IsDefined(typeof(ErrorSourceKind), value))
+        {
+            return (ErrorSourceKind)value;
+        }
+        else
+        {
+            throw new InternalException(
+                String.Format(
+                    "invalid enum value '{0}' in FfiConverterTypeErrorSourceKind.Read()",
+                    value
+                )
+            );
+        }
+    }
+
+    public override int AllocationSize(ErrorSourceKind value)
+    {
+        return 4;
+    }
+
+    public override void Write(ErrorSourceKind value, BigEndianStream stream)
+    {
+        stream.WriteInt((int)value + 1);
+    }
+}
+
+/// <summary>
 /// Error type for UniFFI bindings
 ///
 /// Maps to MarketDataError in the UDL file. Each variant becomes an exception
-/// in the target language with the error message preserved.
+/// in the target language with the error message preserved, plus an `info`
+/// field carrying the unified [`ErrorInfo`].
 ///
 /// Note: This is a FLAT enum per UniFFI constraints - no nested error types.
 /// </summary>
@@ -10513,12 +10720,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public NetworkException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public NetworkException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10526,12 +10736,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public AuthException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public AuthException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10539,12 +10752,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public RateLimitException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public RateLimitException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10552,12 +10768,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public InvalidSymbol(string @msg)
-            : base("@msg" + "=" + @msg)
+        public InvalidSymbol(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10565,12 +10784,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public ParseException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public ParseException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10578,12 +10800,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public TimeoutException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public TimeoutException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10591,31 +10816,44 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public WebSocketException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public WebSocketException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
     public class ClientClosed : MarketDataException
     {
-        public ClientClosed()
-            : base() { }
+        // Members
+        public ErrorInfo @info;
+
+        // Constructor
+        public ClientClosed(ErrorInfo @info)
+            : base("@info" + "=" + @info)
+        {
+            this.@info = @info;
+        }
     }
 
     public class ConfigException : MarketDataException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public ConfigException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public ConfigException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10623,12 +10861,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public ApiException(string @msg)
-            : base("@msg" + "=" + @msg)
+        public ApiException(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 
@@ -10636,12 +10877,15 @@ public class MarketDataException : UniffiException
     {
         // Members
         public string @msg;
+        public ErrorInfo @info;
 
         // Constructor
-        public Other(string @msg)
-            : base("@msg" + "=" + @msg)
+        public Other(string @msg, ErrorInfo @info)
+            : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
+
+            this.@info = @info;
         }
     }
 }
@@ -10659,44 +10903,58 @@ class FfiConverterTypeMarketDataError
         {
             case 1:
                 return new MarketDataException.NetworkException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 2:
                 return new MarketDataException.AuthException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 3:
                 return new MarketDataException.RateLimitException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 4:
                 return new MarketDataException.InvalidSymbol(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 5:
                 return new MarketDataException.ParseException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 6:
                 return new MarketDataException.TimeoutException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 7:
                 return new MarketDataException.WebSocketException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 8:
-                return new MarketDataException.ClientClosed();
+                return new MarketDataException.ClientClosed(
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
+                );
             case 9:
                 return new MarketDataException.ConfigException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 10:
                 return new MarketDataException.ApiException(
-                    FfiConverterString.INSTANCE.Read(stream)
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
             case 11:
-                return new MarketDataException.Other(FfiConverterString.INSTANCE.Read(stream));
+                return new MarketDataException.Other(
+                    FfiConverterString.INSTANCE.Read(stream),
+                    FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
+                );
             default:
                 throw new InternalException(
                     String.Format(
@@ -10712,37 +10970,57 @@ class FfiConverterTypeMarketDataError
         switch (value)
         {
             case MarketDataException.NetworkException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.AuthException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.RateLimitException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.InvalidSymbol variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.ParseException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.TimeoutException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.WebSocketException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.ClientClosed variant_value:
-                return 4;
+                return 4 + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.ConfigException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.ApiException variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
 
             case MarketDataException.Other variant_value:
-                return 4 + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg);
+                return 4
+                    + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
+                    + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
             default:
                 throw new InternalException(
                     String.Format(
@@ -10760,45 +11038,56 @@ class FfiConverterTypeMarketDataError
             case MarketDataException.NetworkException variant_value:
                 stream.WriteInt(1);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.AuthException variant_value:
                 stream.WriteInt(2);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.RateLimitException variant_value:
                 stream.WriteInt(3);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.InvalidSymbol variant_value:
                 stream.WriteInt(4);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.ParseException variant_value:
                 stream.WriteInt(5);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.TimeoutException variant_value:
                 stream.WriteInt(6);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.WebSocketException variant_value:
                 stream.WriteInt(7);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.ClientClosed variant_value:
                 stream.WriteInt(8);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.ConfigException variant_value:
                 stream.WriteInt(9);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.ApiException variant_value:
                 stream.WriteInt(10);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             case MarketDataException.Other variant_value:
                 stream.WriteInt(11);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
+                FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
                 break;
             default:
                 throw new InternalException(
@@ -10909,6 +11198,45 @@ class FfiConverterTypeWebSocketEndpoint : FfiConverterRustBuffer<WebSocketEndpoi
     public override void Write(WebSocketEndpoint value, BigEndianStream stream)
     {
         stream.WriteInt((int)value + 1);
+    }
+}
+
+class FfiConverterOptionalUInt16 : FfiConverterRustBuffer<ushort?>
+{
+    public static FfiConverterOptionalUInt16 INSTANCE = new FfiConverterOptionalUInt16();
+
+    public override ushort? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterUInt16.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(ushort? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1 + FfiConverterUInt16.INSTANCE.AllocationSize((ushort)value);
+        }
+    }
+
+    public override void Write(ushort? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterUInt16.INSTANCE.Write((ushort)value, stream);
+        }
     }
 }
 
@@ -11370,6 +11698,65 @@ class FfiConverterOptionalTypeTlsConfigRecord : FfiConverterRustBuffer<TlsConfig
         {
             stream.WriteByte(1);
             FfiConverterTypeTlsConfigRecord.INSTANCE.Write((TlsConfigRecord)value, stream);
+        }
+    }
+}
+
+class FfiConverterDictionaryStringString : FfiConverterRustBuffer<Dictionary<string, string>>
+{
+    public static FfiConverterDictionaryStringString INSTANCE =
+        new FfiConverterDictionaryStringString();
+
+    public override Dictionary<string, string> Read(BigEndianStream stream)
+    {
+        var len = stream.ReadInt();
+        var result = new Dictionary<string, string>(len);
+        var readerKey = FfiConverterString.INSTANCE.Read;
+        var readerValue = FfiConverterString.INSTANCE.Read;
+        for (int i = 0; i < len; i++)
+        {
+            var key = readerKey(stream);
+            var value = readerValue(stream);
+            result[key] = value;
+        }
+
+        return result;
+    }
+
+    public override int AllocationSize(Dictionary<string, string> value)
+    {
+        var sizeForLength = 4;
+
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            return sizeForLength;
+        }
+
+        var allocationKeySizeFn = FfiConverterString.INSTANCE.AllocationSize;
+        var allocationKValueSizeFn = FfiConverterString.INSTANCE.AllocationSize;
+        var sizeForItems = value.Sum(item =>
+            allocationKeySizeFn(item.Key) + allocationKValueSizeFn(item.Value)
+        );
+        return sizeForLength + sizeForItems;
+    }
+
+    public override void Write(Dictionary<string, string> value, BigEndianStream stream)
+    {
+        // details/1-empty-list-as-default-method-parameter.md
+        if (value == null)
+        {
+            stream.WriteInt(0);
+            return;
+        }
+
+        stream.WriteInt(value.Count);
+        var writerKey = FfiConverterString.INSTANCE.Write;
+        var writerValue = FfiConverterString.INSTANCE.Write;
+        foreach (var item in value)
+        {
+            writerKey(item.Key, stream);
+            writerValue(item.Value, stream);
         }
     }
 }

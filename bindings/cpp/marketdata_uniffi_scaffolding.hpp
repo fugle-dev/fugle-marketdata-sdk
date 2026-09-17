@@ -128,7 +128,7 @@ void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_authenticated(void 
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_unauthenticated(void * ptr, RustBuffer data_json, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_disconnected(void * ptr, int8_t will_reconnect, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_message(void * ptr, RustBuffer message, RustCallStatus *out_status);
-void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(void * ptr, RustBuffer error_message, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_error(void * ptr, RustBuffer error, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnecting(void * ptr, uint32_t attempt, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_reconnect_failed(void * ptr, uint32_t attempts, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketlistener_on_messages_dropped(void * ptr, uint64_t count, RustCallStatus *out_status);

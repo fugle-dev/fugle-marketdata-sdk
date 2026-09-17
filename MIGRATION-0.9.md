@@ -364,6 +364,92 @@ Behaviour you may notice:
   in the SDK's queue instead, where it is counted and reported. A client that
   never polls holds up delivery until `disconnect()` or `close()`.
 
+## 13. Errors: one set of fields in every language
+
+Every error now carries the same fields — `code`, `source_kind`, `message`,
+`status`, `body`, `request_id`, `headers` — defined once in core
+(`ErrorInfo`). [docs/errors.md](docs/errors.md) lists the names per language
+and every error code. Error code values are unchanged.
+
+### Node
+
+- The `[code] ` prefix is gone from `err.message` of REST rejections,
+  constructor errors and `connect()` rejections, matching the WebSocket
+  `error` event. Branch on `err.code` (now a number; REST errors used to have
+  the string `"GenericFailure"` there) instead of matching the message:
+
+  ```javascript
+  // Before
+  if (e.message.includes('[2002]')) { /* auth failed */ }
+  // After
+  if (e.code === 2002) { /* auth failed */ }
+  ```
+
+- New properties: `sourceKind`, `status`, `body`, `requestId`, `headers`
+  (TypeScript: `MarketDataError`).
+
+### Python
+
+New attributes `code`, `source_kind`, `status`, `body`, `request_id`,
+`headers`. `args` is still `(message, code)`; `status_code` and
+`response_text` are aliases of `status` and `body`, and `response_text` is no
+longer always `None`.
+
+### Rust
+
+- `MarketDataError::ApiError` and `MarketDataError::AuthError` gain
+  `http: Option<Box<HttpErrorContext>>` (status, raw body, headers). Add `..`
+  to patterns, and `http: None` where you construct them.
+- A REST 401 / 403 is still `AuthError`, now with `http` set.
+- `ConnectionEvent::Error { message, code }` is now
+  `ConnectionEvent::Error(ErrorInfo)`:
+
+  ```rust,ignore
+  // Before
+  ConnectionEvent::Error { message, code } => eprintln!("[{code}] {message}"),
+  // After
+  ConnectionEvent::Error(info) => eprintln!("[{}] {} ({})", info.code, info.message, info.source_kind),
+  ```
+
+- `MarketDataError::info()` returns the `ErrorInfo`; `error_code` has a
+  constant per code.
+
+### C#, Go, C++, Java
+
+- Every `MarketDataError` / `MarketDataException` variant gains an `info`
+  field (`ErrorInfo` record); `ClientClosed` now has it too. The `msg`
+  fields keep their text.
+- `on_error` receives an `ErrorInfo` instead of a string; update every
+  listener implementation.
+
+| | C# | Go | Java | C++ |
+|---|---|---|---|---|
+| listener | `OnError(ErrorInfo error)` | `OnError(error ErrorInfo)` | `onError(ErrorInfo error)` | `on_error(const ErrorInfo&)` |
+| read from an exception | `ex.GetInfo()` | `ErrorInfoOf(err)` | `e.getCode()`, … `e.getInfo()` | `e.info` |
+
+- Go `StreamingClient.Errors()` delivers a `*StreamError` (its `Error()` is
+  the message) for a WebSocket error event, instead of an error built from
+  the message string.
+- Java's `FugleException` gains `getCode()`, `getSourceKind()`,
+  `getStatus()`, `getBody()`, `getRequestId()`, `getHeaders()` and
+  `getInfo()`. Pull mode's `pollError()` still returns the message.
+- C# `IWebSocketListener` (netstandard2.0, no default interface methods) and
+  the wrappers' listener interfaces change the same way.
+
+### WebSocket error events report the matching code
+
+Three WebSocket `error` events used codes from the wrong row of the table.
+They now report:
+
+| Event | Before | After |
+|---|---|---|
+| A frame could not be parsed | `2003` (API error) | `1002` (deserialization) |
+| Read failed (connection lost) | `2001` | `3002` (WebSocket), `source_kind` from the failure |
+| Write failed, sync client (Rust) | `2002` (auth error) | `3002` (WebSocket), as the async client already did |
+
+If you matched `2001` to detect a lost connection, react to `Disconnected`
+(or match `3002` together with `source_kind == network`).
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

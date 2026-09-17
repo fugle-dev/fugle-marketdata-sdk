@@ -62,8 +62,8 @@ namespace FugleMarketData
         /// <summary>
         /// Called when an error occurs.
         /// </summary>
-        /// <param name="errorMessage">Error description</param>
-        void OnError(string errorMessage);
+        /// <param name="error">The unified error info (code, source kind, message, HTTP details)</param>
+        void OnError(uniffi.marketdata_uniffi.ErrorInfo error);
 
         /// <summary>
         /// Called when a reconnection attempt starts.
@@ -111,7 +111,7 @@ namespace FugleMarketData
         public void OnUnauthenticated(string? dataJson) => _listener.OnUnauthenticated(dataJson);
         public void OnDisconnected(bool willReconnect) => _listener.OnDisconnected(willReconnect);
         public void OnMessage(uniffi.marketdata_uniffi.StreamMessage message) => _listener.OnMessage(message);
-        public void OnError(string errorMessage) => _listener.OnError(errorMessage);
+        public void OnError(uniffi.marketdata_uniffi.ErrorInfo error) => _listener.OnError(error);
         public void OnReconnecting(uint attempt) => _listener.OnReconnecting(attempt);
         public void OnReconnectFailed(uint attempts) => _listener.OnReconnectFailed(attempts);
         public void OnMessagesDropped(ulong count) => _listener.OnMessagesDropped(count);
@@ -130,7 +130,7 @@ namespace FugleMarketData
     ///     public void OnUnauthenticated(string? dataJson) => Console.WriteLine($"Rejected: {dataJson}");
     ///     public void OnDisconnected(bool willReconnect) => Console.WriteLine($"Disconnected (will reconnect: {willReconnect})");
     ///     public void OnMessage(StreamMessage msg) => Console.WriteLine($"{msg.Channel}: {msg.Symbol}");
-    ///     public void OnError(string error) => Console.WriteLine($"Error: {error}");
+    ///     public void OnError(uniffi.marketdata_uniffi.ErrorInfo error) => Console.WriteLine($"Error: {error.message}");
     /// }
     ///
     /// var listener = new MyListener();

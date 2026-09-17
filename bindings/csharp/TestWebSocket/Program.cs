@@ -103,9 +103,9 @@ class MyListener : IWebSocketListener
         }
     }
 
-    public void OnError(string errorMessage)
+    public void OnError(ErrorInfo error)
     {
-        Console.WriteLine($"✗ 錯誤: {errorMessage}");
+        Console.WriteLine($"✗ 錯誤: {error.message} (code={error.code}, sourceKind={error.sourceKind})");
     }
 
     public void OnReconnecting(uint attempt)
