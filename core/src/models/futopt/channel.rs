@@ -74,6 +74,36 @@ impl FutOptChannel {
     }
 }
 
+/// Parses a channel name, ignoring case. `indices` is not a FutOpt channel.
+///
+/// ```rust
+/// use marketdata_core::models::futopt::FutOptChannel;
+///
+/// assert_eq!("Books".parse::<FutOptChannel>().unwrap(), FutOptChannel::Books);
+/// assert!("indices".parse::<FutOptChannel>().is_err());
+/// ```
+impl std::str::FromStr for FutOptChannel {
+    type Err = crate::MarketDataError;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        // Listed in the order Python's error message uses.
+        const ALL: [FutOptChannel; 4] = [
+            FutOptChannel::Trades,
+            FutOptChannel::Candles,
+            FutOptChannel::Books,
+            FutOptChannel::Aggregates,
+        ];
+        ALL.into_iter()
+            .find(|channel| channel.as_str().eq_ignore_ascii_case(name))
+            .ok_or_else(|| {
+                crate::models::subscription::invalid_channel(
+                    name,
+                    &ALL.map(|channel| channel.as_str()),
+                )
+            })
+    }
+}
+
 impl std::fmt::Display for FutOptChannel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
@@ -90,6 +120,37 @@ mod tests {
         assert_eq!(FutOptChannel::Books.as_str(), "books");
         assert_eq!(FutOptChannel::Candles.as_str(), "candles");
         assert_eq!(FutOptChannel::Aggregates.as_str(), "aggregates");
+    }
+
+    #[test]
+    fn futopt_channel_parses_names_ignoring_case() {
+        assert_eq!(
+            "trades".parse::<FutOptChannel>().unwrap(),
+            FutOptChannel::Trades
+        );
+        assert_eq!(
+            "BOOKS".parse::<FutOptChannel>().unwrap(),
+            FutOptChannel::Books
+        );
+        assert_eq!(
+            "Candles".parse::<FutOptChannel>().unwrap(),
+            FutOptChannel::Candles
+        );
+        assert_eq!(
+            "aggregates".parse::<FutOptChannel>().unwrap(),
+            FutOptChannel::Aggregates
+        );
+    }
+
+    #[test]
+    fn futopt_channel_rejects_indices_with_valid_list() {
+        let info = "indices".parse::<FutOptChannel>().unwrap_err().info();
+        assert_eq!(info.code, crate::error_code::INVALID_PARAMETER);
+        assert_eq!(
+            info.message,
+            "Invalid parameter 'channel': unknown channel 'indices'. \
+             Valid channels: trades, candles, books, aggregates"
+        );
     }
 
     #[test]
