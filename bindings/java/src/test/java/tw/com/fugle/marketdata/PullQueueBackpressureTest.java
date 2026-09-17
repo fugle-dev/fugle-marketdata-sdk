@@ -82,6 +82,23 @@ public class PullQueueBackpressureTest {
     }
 
     @Test
+    @DisplayName("A connect() refused while connected keeps disconnect() ending the wait")
+    void refusedConnectKeepsTheLiveConnectionsWaitStoppable() throws Exception {
+        BlockingQueue<StreamMessage> queue = new LinkedBlockingQueue<>(1);
+        FugleWebSocketClient.InternalListener listener =
+                new FugleWebSocketClient.InternalListener(queue, new LinkedBlockingQueue<>());
+        listener.onMessage(message(0));
+
+        CompletableFuture<Void> waiting = CompletableFuture.runAsync(() -> listener.onMessage(message(1)));
+        Thread.sleep(150);
+        // connect() calls resume() before core refuses it with 2011 (#119);
+        // the live connection's wait must still end on disconnect().
+        listener.resume();
+        listener.stop();
+        waiting.get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
     @DisplayName("A slow poll makes the SDK drop, count and report, never the wrapper")
     void slowPollDropsAreCountedAndReported() throws Exception {
         NativeLibrary.assumeAvailable();

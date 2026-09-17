@@ -5,6 +5,7 @@ use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{replay_subscriptions, tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::{retire_writer, start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
+use crate::websocket::connect_gate::ConnectGate;
 use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
@@ -79,6 +80,9 @@ pub struct WebSocketClient {
     writer_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// Generation of the current writer; see [`WriterGeneration`].
     writer_generation: WriterGeneration,
+    /// Held for the duration of each `connect()`, so a concurrent one is
+    /// refused rather than opening a second connection (#119).
+    connect_gate: ConnectGate,
 }
 
 /// Default drain timeout for [`WebSocketClient::disconnect`] when no
@@ -163,6 +167,7 @@ impl WebSocketClient {
             dispatch_handle: Arc::new(Mutex::new(None)),
             writer_handle: Arc::new(Mutex::new(None)),
             writer_generation: Arc::default(),
+            connect_gate: ConnectGate::default(),
         }
     }
 
@@ -378,14 +383,15 @@ impl WebSocketClient {
 
     /// Connect to WebSocket server and authenticate
     ///
-    /// A no-op returning `Ok(())` while this client's dispatch task is still
-    /// running (connected, or auto-reconnecting), matching the sync client.
-    /// Use [`reconnect`](Self::reconnect) to replace a live connection.
+    /// Refused while this client is connected, connecting or
+    /// auto-reconnecting, matching the sync client. Use
+    /// [`reconnect`](Self::reconnect) to replace a live connection.
     ///
     /// # Errors
     ///
     /// Returns error if:
     /// - Client has been closed (ClientClosed)
+    /// - Already connected, connecting or reconnecting (code 2011)
     /// - The credential is missing, blank or ambiguous (ConfigError)
     /// - Connection fails
     /// - Authentication fails or times out
@@ -402,12 +408,19 @@ impl WebSocketClient {
         // Bindings reject bad credentials at construction; this catches a
         // config built directly in Rust or through the UniFFI constructors.
         self.config.auth.validate()?;
+        // Held until this connection's dispatch task is running (#119).
+        let Some(_claim) = self.connect_gate.try_claim() else {
+            return Err(MarketDataError::AlreadyConnected);
+        };
         // A second dispatch task would orphan the first, whose later close
         // would then be reported through the shared latch as this new
         // connection's `Disconnected` (#41).
         if self.dispatch_task_running().await {
-            return Ok(());
+            return Err(MarketDataError::AlreadyConnected);
         }
+        // Before the state leaves its current value, so a bad TLS setting
+        // does not leave the client `Connecting`.
+        let tls_connector = tls_connector_for(&self.config)?;
 
         // Update state to Connecting
         {
@@ -418,7 +431,6 @@ impl WebSocketClient {
         });
 
         // Connect to WebSocket (with optional TLS customization).
-        let tls_connector = tls_connector_for(&self.config)?;
         let connect_result = timeout(
             self.config.connect_timeout,
             connect_async_tls_with_config(&self.config.url, None, false, Some(tls_connector)),
@@ -1254,6 +1266,33 @@ mod tests {
         drop(client);
         assert!(!handle.is_connected());
         assert!(handle.is_closed());
+    }
+
+    #[test]
+    fn state_handle_is_active_while_connecting_connected_or_reconnecting() {
+        let config =
+            ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::new(config);
+        let handle = client.state_handle();
+        let cases = [
+            (ConnectionState::Disconnected, false),
+            (ConnectionState::Connecting, true),
+            (ConnectionState::Authenticating, true),
+            (ConnectionState::Connected, true),
+            (ConnectionState::Reconnecting { attempt: 1 }, true),
+            (
+                ConnectionState::Closed {
+                    code: None,
+                    reason: String::new(),
+                    intent: DisconnectIntent::Server,
+                },
+                false,
+            ),
+        ];
+        for (state, active) in cases {
+            *write_state(&client.state) = state.clone();
+            assert_eq!(handle.is_active(), active, "{state:?}");
+        }
     }
 
     #[tokio::test]

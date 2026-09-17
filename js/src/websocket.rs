@@ -878,13 +878,10 @@ fn ping_data(params: Option<serde_json::Value>) -> Option<serde_json::Value> {
 }
 
 /// Rejection for `connect()` while a connection is open or still being
-/// established (#44). JS-binding-only code; core has no counterpart.
+/// established (#44): core's `AlreadyConnected`, decided here from the
+/// worker slot rather than core's client state (#119).
 fn already_connected() -> ErrorInfo {
-    ErrorInfo::new(
-        error_code::ALREADY_CONNECTED,
-        ErrorKind::Client,
-        "Already connected; call disconnect() first",
-    )
+    marketdata_core::MarketDataError::AlreadyConnected.info()
 }
 
 /// Rejection for a `connect()` whose connection was given up because

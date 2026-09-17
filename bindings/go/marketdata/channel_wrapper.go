@@ -263,7 +263,7 @@ func NewStreamingClientWithEndpoint(apiKey string, endpoint WebSocketEndpoint, b
 func (sc *StreamingClient) Connect() error {
 	err := sc.client.Connect()
 	if err != nil {
-		return fmt.Errorf("connect failed: %v", err)
+		return fmt.Errorf("connect failed: %w", err)
 	}
 	return nil
 }
@@ -334,7 +334,7 @@ func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
 func (sc *StreamingClient) Ping(state *string) error {
 	err := sc.client.Ping(state)
 	if err != nil {
-		return fmt.Errorf("ping failed: %v", err)
+		return fmt.Errorf("ping failed: %w", err)
 	}
 	return nil
 }
@@ -344,7 +344,7 @@ func (sc *StreamingClient) Ping(state *string) error {
 func (sc *StreamingClient) QuerySubscriptions() error {
 	err := sc.client.QuerySubscriptions()
 	if err != nil {
-		return fmt.Errorf("query subscriptions failed: %v", err)
+		return fmt.Errorf("query subscriptions failed: %w", err)
 	}
 	return nil
 }

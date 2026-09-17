@@ -211,12 +211,22 @@ impl From<CoreError> for MarketDataError {
                 info,
             },
             CoreError::ClientClosed => MarketDataError::ClientClosed { info },
+            // A dedicated exception would change every generated binding;
+            // `info.code` (2011) identifies it (#119).
+            CoreError::AlreadyConnected => MarketDataError::WebSocketError {
+                msg: info.message.clone(),
+                info,
+            },
             CoreError::InvalidParameter { name, reason } => MarketDataError::ApiError {
                 msg: format!("Invalid parameter '{}': {}", name, reason),
                 info,
             },
             CoreError::Other(err) => MarketDataError::Other {
                 msg: err.to_string(),
+                info,
+            },
+            other => MarketDataError::Other {
+                msg: other.to_string(),
                 info,
             },
         }

@@ -12,7 +12,7 @@ mod common;
 
 use marketdata_core::aio::WebSocketClient;
 use marketdata_core::websocket::{ConnectionEvent, DisconnectIntent};
-use marketdata_core::{AuthRequest, ConnectionConfig, ReconnectionConfig};
+use marketdata_core::{error_code, AuthRequest, ConnectionConfig, MarketDataError, ReconnectionConfig};
 use std::time::{Duration, Instant};
 
 #[tokio::test]
@@ -315,10 +315,11 @@ async fn reconnect_old_connection_close_does_not_swallow_new_disconnect() {
     );
 }
 
-/// `connect()` while connected is a no-op, as on the sync client: no second
-/// connection (the mock accepts only one) and no lifecycle events.
+/// `connect()` while connected is refused with 2011, as on the sync client:
+/// no second connection (the mock accepts only one) and no lifecycle events
+/// (#119).
 #[tokio::test]
-async fn connect_while_connected_is_noop() {
+async fn connect_while_connected_is_refused() {
     let server = common::spawn(common::AfterAuth::Idle).await;
     let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
     let client = WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
@@ -331,10 +332,12 @@ async fn connect_while_connected_is_noop() {
     .await
     .expect("drain initial events");
 
-    tokio::time::timeout(Duration::from_secs(2), client.connect())
+    let err = tokio::time::timeout(Duration::from_secs(2), client.connect())
         .await
         .expect("second connect must not attempt a new handshake")
-        .expect("second connect");
+        .expect_err("second connect");
+    assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
+    assert_eq!(err.info().code, error_code::ALREADY_CONNECTED);
 
     assert!(client.is_connected().await);
     let events = common::EventReceiver::of_async(&client);
@@ -345,4 +348,42 @@ async fn connect_while_connected_is_noop() {
     .await
     .expect("drain");
     assert!(extra.is_empty(), "second connect emitted {extra:?}");
+}
+
+/// A `connect()` started while another is still in its handshake is refused
+/// rather than opening a second connection (#119).
+#[tokio::test]
+async fn concurrent_connect_is_refused() {
+    let server = common::spawn(common::AfterAuth::Idle).await;
+    let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+    let client = WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled());
+
+    let (first, second) = tokio::join!(client.connect(), client.connect());
+
+    first.expect("first connect");
+    let err = second.expect_err("second connect");
+    assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
+    assert!(client.is_connected().await);
+}
+
+/// While auto-reconnecting, `connect()` is refused; `disconnect()` first
+/// (#119).
+#[tokio::test]
+async fn connect_while_reconnecting_is_refused() {
+    let server = common::spawn(common::AfterAuth::ServerDropAfter { delay_ms: 50 }).await;
+    let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+    let reconnect = ReconnectionConfig::new(3, Duration::from_secs(2), Duration::from_secs(2))
+        .expect("reconnection config");
+    let client = WebSocketClient::with_reconnection_config(config, reconnect);
+    client.connect().await.expect("connect");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while client.is_connected().await {
+        assert!(Instant::now() < deadline, "connection never dropped");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    let err = client.connect().await.expect_err("connect while reconnecting");
+    assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
+    client.shutdown_with_timeout(Duration::from_millis(500)).await.expect("shutdown");
 }

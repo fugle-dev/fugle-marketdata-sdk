@@ -4,6 +4,7 @@
 //! `stream()` (the async stream).
 
 use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
+use crate::websocket::connect_gate::ConnectGate;
 use crate::websocket::stream_queue::QueueReceiver;
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
@@ -40,6 +41,9 @@ pub struct WebSocketClient {
     /// `shutdown_with_timeout` bound its wait without relying on
     /// `JoinHandle::join` (which has no timeout in std).
     supervisor_exit_rx: Mutex<Option<mpsc::Receiver<()>>>,
+    /// Held for the duration of each `connect()`, so a concurrent one is
+    /// refused rather than opening a second connection (#119).
+    connect_gate: ConnectGate,
 }
 
 /// Default drain timeout for [`WebSocketClient::disconnect`] when no
@@ -108,6 +112,7 @@ impl WebSocketClient {
             stream_receiver: Mutex::new(None),
             supervisor_handle: Mutex::new(None),
             supervisor_exit_rx: Mutex::new(None),
+            connect_gate: ConnectGate::default(),
         }
     }
 
@@ -152,9 +157,14 @@ impl WebSocketClient {
     /// Connect to the WebSocket server and authenticate. Blocks until either
     /// authentication succeeds or fails.
     ///
+    /// Refused while this client is connected, connecting or
+    /// auto-reconnecting; use [`reconnect`](Self::reconnect) to replace a
+    /// live connection.
+    ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
-    /// validation, or peer-initiated failures.
+    /// validation, or peer-initiated failures, and code 2011 while already
+    /// connected, connecting or reconnecting.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(target = "fugle_marketdata::ws", name = "ws.sync.connect", skip(self))
@@ -166,9 +176,12 @@ impl WebSocketClient {
         // Bindings reject bad credentials at construction; this catches a
         // config built directly in Rust or through the UniFFI constructors.
         self.shared.config.auth.validate()?;
+        // Held until this connection's supervisor is running (#119).
+        let Some(_claim) = self.connect_gate.try_claim() else {
+            return Err(MarketDataError::AlreadyConnected);
+        };
         if self.supervisor_handle.lock().expect("supervisor handle lock poisoned").is_some() {
-            // Already connected (or supervisor still alive). No-op rather than error.
-            return Ok(());
+            return Err(MarketDataError::AlreadyConnected);
         }
 
         self.set_state(ConnectionState::Connecting);
