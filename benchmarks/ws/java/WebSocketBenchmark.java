@@ -102,8 +102,8 @@ public class WebSocketBenchmark {
             }
 
             @Override
-            public void onError(String errorMessage) {
-                System.err.println("error: " + errorMessage);
+            public void onError(ErrorInfo error) {
+                System.err.println("error: " + error.message());
             }
 
             @Override
@@ -111,12 +111,20 @@ public class WebSocketBenchmark {
 
             @Override
             public void onReconnectFailed(Integer attempts) {}
+
+            @Override
+            public void onMessagesDropped(Long count) {
+                // Reported from messagesDroppedTotal()
+            }
         };
 
-        // Use raw UniFFI WebSocketClient with custom URL
-        WebSocketClient client = WebSocketClient.newWithUrl(
-            "bench-key", listener, WebSocketEndpoint.STOCK,
-            url, null, null
+        // Raw UniFFI WebSocketClient with custom URL and an unbounded queue: the
+        // default drops messages (and possibly bench_done) while onMessage lags
+        // a burst, and the benchmark measures full delivery.
+        WebSocketClient client = WebSocketClient.newWithCredentials(
+            new CredentialsRecord("bench-key", null, null), listener, WebSocketEndpoint.STOCK,
+            url, null, null, null, null,
+            new MessageQueueConfigRecord(MessageOverflowRecord.UNBOUNDED, 0)
         );
 
         client.connect().join();
@@ -127,7 +135,9 @@ public class WebSocketBenchmark {
             System.err.println("TIMEOUT: did not receive bench_done within " + timeout + " ms");
         }
 
-        // Report
+        // Report. Nothing should be dropped with an unbounded queue; the drop
+        // callback batches its counts until onDisconnected, so read the total.
+        long dropped = client.messagesDroppedTotal();
         long endTimeMs = System.currentTimeMillis();
         long endCpuNs = ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime();
         long endMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
@@ -158,6 +168,7 @@ public class WebSocketBenchmark {
         sb.append(",\"count\":").append(count);
         appendNullableInt(sb, "expected", ssCount);
         appendNullableInt(sb, "lost", ssCount != null ? ssCount - count : null);
+        sb.append(",\"dropped\":").append(dropped);
         sb.append(",\"elapsed_ms\":").append(elapsed);
         sb.append(",\"msgs_per_sec\":").append(msgsPerSec);
         appendNullableDouble(sb, "latency_p50_ms", percentile(lats, 50));

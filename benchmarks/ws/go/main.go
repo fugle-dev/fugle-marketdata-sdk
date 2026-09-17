@@ -3,11 +3,8 @@
 // Connects to the mock server, subscribes, receives data messages, and
 // reports throughput / latency / memory metrics as a single JSON line on stdout.
 //
-// Build:
-//   CGO_ENABLED=1 go build -o ws-bench-go .
-//
-// Usage:
-//   ./ws-bench-go --url ws://localhost:8765 --timeout 60000
+// Build and run (run.sh rebuilds when sources change):
+//   ./run.sh --url ws://localhost:8765 --timeout 60000
 
 package main
 
@@ -88,15 +85,23 @@ func main() {
 				}
 			}
 		},
-		onErr: func(err string) {
-			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		onErr: func(err mkt.ErrorInfo) {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err.Message)
 		},
 	}
 
-	client := mkt.WebSocketClientNewWithUrl(
-		"bench-key", listener, mkt.WebSocketEndpointStock,
-		*url, nil, nil,
+	// Unbounded queue: the default drops messages (and possibly bench_done)
+	// while OnMessage lags a burst, and the benchmark measures full delivery.
+	apiKey := "bench-key"
+	client, err := mkt.WebSocketClientNewWithCredentials(
+		mkt.CredentialsRecord{ApiKey: &apiKey}, listener, mkt.WebSocketEndpointStock,
+		url, nil, nil, nil, nil,
+		&mkt.MessageQueueConfigRecord{Overflow: mkt.MessageOverflowRecordUnbounded},
 	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create client failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	if err := client.Connect(); err != nil {
 		fmt.Fprintf(os.Stderr, "connect failed: %v\n", err)
@@ -115,7 +120,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "TIMEOUT: did not receive bench_done within %d ms\n", *timeout)
 	}
 
-	// Report
+	// Report. Nothing should be dropped with an unbounded queue; the drop
+	// callback batches its counts until OnDisconnected, so read the total.
+	dropped := client.MessagesDroppedTotal()
 	var elapsed int64
 	if t0Set {
 		elapsed = time.Now().UnixMilli() - t0
@@ -163,19 +170,20 @@ func main() {
 	}
 
 	result := map[string]interface{}{
-		"sdk":                "rust-core-go",
-		"count":              received,
-		"expected":           ssCount,
-		"lost":               lost,
-		"elapsed_ms":         elapsed,
-		"msgs_per_sec":       msgsPerSec,
-		"latency_p50_ms":     percentile(latencies, 50),
-		"latency_p99_ms":     percentile(latencies, 99),
-		"latency_min_ms":     nil,
-		"latency_max_ms":     nil,
-		"mem_rss_delta_mb":   math.Round(memDelta*10) / 10,
-		"cpu_user_ms":        math.Round(cpuUser*10) / 10,
-		"cpu_system_ms":      0.0,
+		"sdk":                 "rust-core-go",
+		"count":               received,
+		"expected":            ssCount,
+		"lost":                lost,
+		"dropped":             dropped,
+		"elapsed_ms":          elapsed,
+		"msgs_per_sec":        msgsPerSec,
+		"latency_p50_ms":      percentile(latencies, 50),
+		"latency_p99_ms":      percentile(latencies, 99),
+		"latency_min_ms":      nil,
+		"latency_max_ms":      nil,
+		"mem_rss_delta_mb":    math.Round(memDelta*10) / 10,
+		"cpu_user_ms":         math.Round(cpuUser*10) / 10,
+		"cpu_system_ms":       0.0,
 		"server_msgs_per_sec": ssMps,
 	}
 
@@ -197,7 +205,7 @@ func main() {
 // for maximum performance in benchmarking
 type benchListener struct {
 	onMsg func(mkt.StreamMessage)
-	onErr func(string)
+	onErr func(mkt.ErrorInfo)
 }
 
 func (l *benchListener) OnConnected()                        {}
@@ -205,6 +213,7 @@ func (l *benchListener) OnAuthenticated(dataJson *string)    {}
 func (l *benchListener) OnUnauthenticated(dataJson *string)  {}
 func (l *benchListener) OnDisconnected(willReconnect bool)   {}
 func (l *benchListener) OnMessage(message mkt.StreamMessage) { l.onMsg(message) }
-func (l *benchListener) OnError(errorMessage string)         { l.onErr(errorMessage) }
+func (l *benchListener) OnError(err mkt.ErrorInfo)           { l.onErr(err) }
 func (l *benchListener) OnReconnecting(attempt uint32)       {}
 func (l *benchListener) OnReconnectFailed(attempts uint32)   {}
+func (l *benchListener) OnMessagesDropped(count uint64)      {} // reported from MessagesDroppedTotal

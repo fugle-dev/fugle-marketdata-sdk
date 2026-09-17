@@ -32,7 +32,7 @@ const CLIENT_OLD_JS  = path.join(BENCH_DIR, 'js', 'bench-old.js');
 const CLIENT_NEW_PY  = path.join(BENCH_DIR, 'py', 'bench-new.py');
 const CLIENT_OLD_PY  = path.join(BENCH_DIR, 'py', 'bench-old.py');
 const CLIENT_NEW_CS  = path.join(BENCH_DIR, 'cs');
-const CLIENT_NEW_GO  = path.join(BENCH_DIR, 'go', 'ws-bench-go');
+const CLIENT_NEW_GO  = path.join(BENCH_DIR, 'go', 'run.sh');
 const CLIENT_NEW_JAVA = path.join(BENCH_DIR, 'java', 'run.sh');
 const CLIENT_NEW_CPP  = path.join(BENCH_DIR, 'cpp', 'run.sh');
 
@@ -81,14 +81,10 @@ function runClient(script, label) {
     const isPython = script.endsWith('.py');
     const isShell = script.endsWith('.sh');
     const isDotnet = script.includes('/cs') || script.includes('\\cs');
-    const isGo = !isShell && !isPython && !isDotnet && !script.endsWith('.js');
     let cmd, cmdArgs;
     if (isShell) {
       cmd = 'bash';
       cmdArgs = [script, '--url', `ws://localhost:${PORT}`, '--timeout', '60000'];
-    } else if (isGo) {
-      cmd = script;
-      cmdArgs = ['--url', `ws://localhost:${PORT}`, '--timeout', '60000'];
     } else if (isDotnet) {
       cmd = 'dotnet';
       cmdArgs = ['run', '--project', script, '--configuration', 'Release', '--', '--url', `ws://localhost:${PORT}`, '--timeout', '60000'];
