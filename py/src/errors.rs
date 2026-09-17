@@ -80,23 +80,34 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
         _ => MarketDataError::new_err((message.clone(), error_code)),
     };
 
-    Python::attach(|py| {
-        let inst = pyerr.value(py);
-        let _ = inst.setattr("code", info.code);
-        let _ = inst.setattr("source_kind", info.source_kind.as_str());
-        let _ = inst.setattr("message", &info.message);
-        let _ = inst.setattr("status", info.status);
-        let _ = inst.setattr("body", info.body.as_deref());
-        let _ = inst.setattr("request_id", info.request_id.as_deref());
-        let _ = inst.setattr("headers", &info.headers);
-        // 2.4.1 `FugleAPIError` aliases.
-        let _ = inst.setattr("status_code", info.status);
-        let _ = inst.setattr("response_text", info.body.as_deref());
-        let _ = inst.setattr("url", py.None());
-        let _ = inst.setattr("params", py.None());
-    });
+    Python::attach(|py| set_info_attrs(pyerr.value(py).as_any(), &info));
 
     pyerr
+}
+
+/// A `WebSocketError((message, code))` carrying `info`'s fields, as the
+/// WebSocket `error` callbacks receive it.
+pub fn websocket_error(py: Python<'_>, info: &marketdata_core::ErrorInfo) -> PyErr {
+    let err = WebSocketError::new_err((info.message.clone(), info.code));
+    set_info_attrs(err.value(py).as_any(), info);
+    err
+}
+
+/// Set the unified error fields of `info` (and the 2.4.1 aliases) on `inst`.
+fn set_info_attrs(inst: &Bound<'_, PyAny>, info: &marketdata_core::ErrorInfo) {
+    let py = inst.py();
+    let _ = inst.setattr("code", info.code);
+    let _ = inst.setattr("source_kind", info.source_kind.as_str());
+    let _ = inst.setattr("message", &info.message);
+    let _ = inst.setattr("status", info.status);
+    let _ = inst.setattr("body", info.body.as_deref());
+    let _ = inst.setattr("request_id", info.request_id.as_deref());
+    let _ = inst.setattr("headers", &info.headers);
+    // 2.4.1 `FugleAPIError` aliases.
+    let _ = inst.setattr("status_code", info.status);
+    let _ = inst.setattr("response_text", info.body.as_deref());
+    let _ = inst.setattr("url", py.None());
+    let _ = inst.setattr("params", py.None());
 }
 
 /// Helper to get error_code from a MarketDataError

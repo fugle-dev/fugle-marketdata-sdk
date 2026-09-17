@@ -811,11 +811,20 @@ export interface MarketDataErrorFields {
 export interface MarketDataError extends Error, MarketDataErrorFields {}
 
 /**
- * Argument of the `error` event: a {@link MarketDataError}, except
- * "Reconnection failed after N attempts", a plain `Error` with none of the
- * fields.
+ * Argument of the `error` event: a {@link MarketDataError}.
+ *
+ * A listener that throws, or returns a Promise that rejects, is reported with
+ * code 3004 and `event`, `count` and `cause` set — the first failure at once,
+ * later ones at most once per second (#83).
  */
-export interface WebSocketError extends Error, Partial<MarketDataErrorFields> {}
+export interface WebSocketError extends Error, Partial<MarketDataErrorFields> {
+  /** Code 3004: the event whose listener failed, e.g. `'message'` */
+  event?: WebSocketEvent;
+  /** Code 3004: listener failures since the previous report (1 for the first) */
+  count?: number;
+  /** Code 3004: what the listener threw, or the Promise's rejection reason */
+  cause?: unknown;
+}
 
 /**
  * Event map for typed WebSocket callbacks; argument shapes match
@@ -834,7 +843,10 @@ export interface WebSocketEventMap {
   disconnect: (event: WebSocketDisconnectEvent) => void;
   /** Reconnecting to WebSocket server */
   reconnect: (event: WebSocketReconnectEvent) => void;
-  /** Error occurred; ignored when no listener is registered */
+  /**
+   * Error occurred. With no listener, SDK errors are ignored and listener
+   * failures (code 3004) are printed with `console.error`.
+   */
   error: (error: WebSocketError) => void;
   /**
    * Messages were dropped because listeners fell behind. The first drop on a

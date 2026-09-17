@@ -23,6 +23,9 @@
 
 use crate::metrics_compat::DropCounter;
 use crate::models::WebSocketMessage;
+use crate::websocket::report_throttle::ReportThrottle;
+#[cfg(test)]
+use crate::websocket::report_throttle::REPORT_INTERVAL;
 use crate::websocket::stream::StreamItem;
 use crate::websocket::{ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent};
 use std::collections::VecDeque;
@@ -30,9 +33,6 @@ use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
-
-/// Minimum spacing between two throttled drop reports on one connection.
-pub(crate) const DROP_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 
 struct State {
     items: VecDeque<StreamItem>,
@@ -48,10 +48,9 @@ struct State {
     open: bool,
     /// The current connection's `Disconnected` has been reported (#41).
     disconnect_claimed: bool,
-    /// Message drops not covered by a `MessagesDropped` yet.
-    unreported: u64,
-    /// When the last `MessagesDropped` was queued on the current connection.
-    last_report: Option<Instant>,
+    /// Message drops not covered by a `MessagesDropped` yet, and when the
+    /// last one was queued on the current connection.
+    drop_reports: ReportThrottle,
     /// Inside the lock: a bare `DropCounter` (it may hold a `metrics`
     /// handle) would make the public receivers `!RefUnwindSafe`.
     messages_dropped: DropCounter,
@@ -90,8 +89,7 @@ pub(crate) fn stream(
             waker: None,
             open: false,
             disconnect_claimed: false,
-            unreported: 0,
-            last_report: None,
+            drop_reports: ReportThrottle::new(),
             messages_dropped,
             events_dropped,
         }),
@@ -160,7 +158,7 @@ impl StreamSender {
     /// Queue a message of the open connection. Outside a connection's window
     /// it is discarded uncounted; while the message allowance is full it is
     /// dropped and counted. Queues a `MessagesDropped` right after it when
-    /// one is due: the first on this connection, or [`DROP_REPORT_INTERVAL`]
+    /// one is due: the first on this connection, or [`REPORT_INTERVAL`](crate::websocket::REPORT_INTERVAL)
     /// after the previous one. Checking after successful pushes too reports
     /// the tail of a drop burst within the interval.
     pub(crate) fn push_message(&self, message: WebSocketMessage) {
@@ -183,8 +181,7 @@ impl StreamSender {
         let mut state = self.shared.lock();
         state.open = false;
         state.messages_dropped.reset();
-        state.unreported = 0;
-        state.last_report = None;
+        state.drop_reports.reset();
     }
 
     /// Report the connection authenticated: queue `Authenticated`, then the
@@ -378,7 +375,7 @@ impl StreamSender {
             .message_capacity
             .is_some_and(|capacity| state.messages >= capacity);
         if full {
-            state.unreported += 1;
+            state.drop_reports.count();
             state.messages_dropped.bump();
             return;
         }
@@ -390,18 +387,9 @@ impl StreamSender {
     /// Queue a `MessagesDropped` for the unreported drops if one is due
     /// (`force`: regardless of the throttle).
     fn push_report(&self, state: &mut State, force: bool, outcome: &mut Outcome) {
-        if state.unreported == 0 {
+        let Some(dropped) = state.drop_reports.take_due(Instant::now(), force) else {
             return;
-        }
-        let now = Instant::now();
-        let throttled = state
-            .last_report
-            .is_some_and(|last| now.duration_since(last) < DROP_REPORT_INTERVAL);
-        if throttled && !force {
-            return;
-        }
-        state.last_report = Some(now);
-        let dropped = std::mem::take(&mut state.unreported);
+        };
         let total = state.messages_dropped.load();
         outcome.report = Some((dropped, total));
         self.push_event(state, ConnectionEvent::MessagesDropped { dropped, total }, outcome);
@@ -883,7 +871,7 @@ mod tests {
         f.tx.push_message(message(1)); // dropped, reported at once
         f.tx.push_message(message(2)); // dropped, throttled
         drain(&f.rx);
-        thread::sleep(DROP_REPORT_INTERVAL);
+        thread::sleep(REPORT_INTERVAL);
         f.tx.push_message(message(3));
         assert_eq!(
             drain(&f.rx),

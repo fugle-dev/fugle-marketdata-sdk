@@ -307,24 +307,25 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
     });
   }, 20000);
 
-  test('an exception thrown by a listener still surfaces as uncaughtException', async () => {
+  test('an exception thrown by a listener is reported through error, not uncaughtException (#83)', async () => {
     const result = await runChild(
       `
       const { WebSocketClient } = require('./');
-      process.on('uncaughtException', (err) => console.log('UNCAUGHT ' + err.message + ' ' + err.custom));
+      process.on('uncaughtException', (err) => console.log('UNCAUGHT ' + err.message));
       const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
       ws.on('disconnect', () => {
         const err = new Error('boom');
         err.custom = 42;
         throw err;
       });
+      ws.on('error', (err) => console.log('ERROR ' + err.code + ' ' + err.event + ' ' + err.cause.custom));
       ws.connect().then(() => ws.disconnect());
     `,
       { env: { URL: url } },
     );
 
     expectChild(result, () => {
-      expect(result.lines).toEqual(['UNCAUGHT boom 42']);
+      expect(result.lines).toEqual(['ERROR 3004 disconnect 42']);
       expect(result).toMatchObject({ exited: true, code: 0 });
     });
   });

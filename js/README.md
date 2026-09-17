@@ -70,6 +70,12 @@ ws.stock.on('error', (err) => {
   console.error('Error:', err.code, err.message);
 });
 
+// A listener that throws (or whose Promise rejects) does not crash the
+// process or stop later events: it is reported through `error` with code
+// 3004, `err.event` (the listener's event), `err.count` and `err.cause`
+// (what was thrown) — the first at once, then at most once per second.
+// Without an `error` listener it is printed with console.error.
+
 // Connect: resolves with the server's authenticated data, or rejects with
 // the server's data object when the credentials are rejected
 await ws.stock.connect();
@@ -319,8 +325,7 @@ passed to the WebSocket `error` event carry the same fields
 | `headers` | `Record<string, string>` | HTTP response headers, lowercase names (REST) |
 
 `connect()` rejected because the server refused the credentials rejects with
-the server's data instead, and the `error` event for "Reconnection failed
-after N attempts" is a plain `Error` without these fields. The
+the server's data instead. The
 [error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) has the same table for every language.
 
 ## Custom TLS / self-signed servers
@@ -368,6 +373,8 @@ client uses the OS trust store (rustls loads it via
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3004 | CallbackFailed | A WebSocket listener threw, or its Promise rejected (`error` event) |
+| 3005 | ReconnectFailed | Reconnection failed after the last attempt (`error` event) |
 | 9999 | Other | Unexpected error |
 | -1 | ThreadPanic | A WebSocket worker thread panicked |
 

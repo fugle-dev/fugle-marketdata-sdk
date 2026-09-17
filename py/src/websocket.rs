@@ -911,7 +911,12 @@ fn report_thread_panic(
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "unknown panic".to_string());
     let message = format!("WebSocket {thread} thread panicked: {detail}");
-    Python::attach(|py| callbacks.invoke_error(py, &message, marketdata_core::error_code::THREAD_PANIC));
+    let info = marketdata_core::ErrorInfo::new(
+        marketdata_core::error_code::THREAD_PANIC,
+        marketdata_core::ErrorKind::Protocol,
+        message,
+    );
+    Python::attach(|py| callbacks.invoke_error(py, &info));
 }
 
 /// `FUGLE_MARKETDATA_TEST_PANIC`, naming where a test wants a WebSocket
@@ -957,10 +962,13 @@ fn forward_event(
         ConnectionEvent::Reconnecting { attempt } => callbacks.invoke_reconnect(py, attempt),
         ConnectionEvent::ReconnectFailed { attempts } => callbacks.invoke_error(
             py,
-            &format!("Reconnection failed after {} attempts", attempts),
-            -1,
+            &marketdata_core::ErrorInfo::new(
+                marketdata_core::error_code::RECONNECT_FAILED,
+                marketdata_core::ErrorKind::Network,
+                format!("Reconnection failed after {} attempts", attempts),
+            ),
         ),
-        ConnectionEvent::Error(info) => callbacks.invoke_error(py, &info.message, info.code),
+        ConnectionEvent::Error(info) => callbacks.invoke_error(py, &info),
         ConnectionEvent::MessagesDropped { dropped, total } => {
             callbacks.invoke_messages_dropped(py, dropped, total)
         }

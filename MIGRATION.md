@@ -368,13 +368,19 @@ Two differences remain from 1.x's `error` event:
 
 - **The `error` argument is an `Error` with a numeric `code`.** Its `message`
   is the plain description, without a `[code]` prefix — read the code from
-  `err.code` (absent for "Reconnection failed after N attempts"). 1.x passed
+  `err.code` (3005 for "Reconnection failed after N attempts"). 1.x passed
   the socket's native error. A `connect()` that fails for a reason other than
   rejected credentials rejects with an `Error` carrying the same fields
   (`err.code`, no `[code]` prefix).
 - **No `error` listener means errors are ignored.** 1.x's EventEmitter threw
   an unhandled `'error'` event and could crash the process; this SDK never
   does.
+- **A listener that throws does not crash the process.** 1.x's EventEmitter
+  let the exception propagate as an uncaught exception. This SDK reports it
+  through `error` with code 3004 (`err.event`, `err.count`, `err.cause`), or
+  prints it with `console.error` when there is no `error` listener, and keeps
+  delivering later events. To stop on a listener failure, do so from the
+  `error` listener, e.g. `if (err.code === 3004) process.exit(1)`.
 
 This SDK also has a `reconnect` event (1.x had no auto-reconnect), receiving
 `{ attempt }`.
