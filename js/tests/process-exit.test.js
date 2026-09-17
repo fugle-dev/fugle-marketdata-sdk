@@ -8,6 +8,7 @@
  */
 
 const { spawn } = require('child_process');
+const os = require('os');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
@@ -35,11 +36,15 @@ function closeServer(wss) {
 
 /**
  * Run `script` in a child Node process. Resolves with `exited: false` if it is
- * still running after `timeoutMs` (the child is then killed). `lineAt` maps
- * each distinct stdout line to when it first arrived; `exitAt` is exit time.
+ * still running after `timeoutMs`, or when `onLine(line, kill)` kills it; the
+ * deadline is generous because a loaded machine can take seconds just to
+ * start the child and connect (#63). `lineAt` maps each distinct stdout line
+ * to when it first arrived; `exitAt` is exit time; `killedBy` is `'timeout'`,
+ * `'test'` or null.
  */
-function runChild(script, { env = {}, timeoutMs = 5000, onLine } = {}) {
+function runChild(script, { env = {}, timeoutMs = 10000, onLine } = {}) {
   return new Promise((resolve) => {
+    const startAt = Date.now();
     const child = spawn(process.execPath, ['-e', script], {
       cwd: PKG,
       env: { ...process.env, ...env },
@@ -47,21 +52,32 @@ function runChild(script, { env = {}, timeoutMs = 5000, onLine } = {}) {
     });
     const lines = [];
     const lineAt = {};
+    const timeline = [];
     let stderr = '';
+    let killedBy = null;
+    const kill = (by) => {
+      if (killedBy === null) killedBy = by;
+      child.kill('SIGKILL');
+    };
     child.stdout.on('data', (chunk) => {
       for (const line of chunk.toString().split('\n').filter(Boolean)) {
+        const at = Date.now();
         lines.push(line);
-        if (!(line in lineAt)) lineAt[line] = Date.now();
-        if (onLine) onLine(line);
+        timeline.push(`+${at - startAt}ms ${line}`);
+        if (!(line in lineAt)) lineAt[line] = at;
+        if (onLine) onLine(line, () => kill('test'));
       }
     });
     child.stderr.on('data', (chunk) => {
       stderr += chunk;
     });
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    const timer = setTimeout(() => kill('timeout'), timeoutMs);
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
-      resolve({ exited: signal === null, code, lines, lineAt, exitAt: Date.now(), stderr });
+      const exitAt = Date.now();
+      resolve({
+        exited: signal === null, code, lines, lineAt, timeline, startAt, exitAt, killedBy, timeoutMs, stderr,
+      });
     });
   });
 }
@@ -74,8 +90,12 @@ function expectChild(result, assertions) {
   try {
     assertions();
   } catch (err) {
-    err.message += `\n\nchild exited=${result.exited} code=${result.code}`
-      + `\nstdout:\n${result.lines.join('\n')}\nstderr:\n${result.stderr}`;
+    // Elapsed time and load tell a loaded machine from a regression (#63).
+    const killed = result.killedBy ? ` killedBy=${result.killedBy}` : '';
+    err.message += `\n\nchild exited=${result.exited} code=${result.code}${killed}`
+      + ` after ${result.exitAt - result.startAt}ms (timeout ${result.timeoutMs}ms)`
+      + `, loadavg=${os.loadavg().map((n) => n.toFixed(1)).join(' ')}`
+      + `\nstdout:\n${result.timeline.join('\n')}\nstderr:\n${result.stderr}`;
     throw err;
   }
 }
@@ -108,7 +128,10 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
     });
   });
 
+  // Connecting may take seconds on a loaded machine; staying alive is judged
+  // only from CONNECTED on, over a fixed window (#63).
   test('an open connection keeps the process alive', async () => {
+    const STAY_ALIVE_MS = 1000;
     const result = await runChild(
       `
       const { WebSocketClient } = require('./');
@@ -116,12 +139,18 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       ws.on('message', () => {});
       ws.connect().then(() => console.log('CONNECTED'));
     `,
-      { env: { URL: url }, timeoutMs: 2000 },
+      {
+        env: { URL: url },
+        onLine: (line, kill) => {
+          if (line === 'CONNECTED') setTimeout(kill, STAY_ALIVE_MS);
+        },
+      },
     );
 
     expectChild(result, () => {
       expect(result.lines).toContain('CONNECTED');
-      expect(result.exited).toBe(false);
+      expect(result).toMatchObject({ exited: false, killedBy: 'test' });
+      expect(result.exitAt - result.lineAt.CONNECTED).toBeGreaterThanOrEqual(STAY_ALIVE_MS);
     });
   });
 
