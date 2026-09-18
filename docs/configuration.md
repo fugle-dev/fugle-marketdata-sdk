@@ -37,8 +37,8 @@ a reconnect config only to tune it or to turn it off.
 - `initial_delay_ms` must be >= 100ms (prevent connection storms)
 - `max_delay_ms` must be >= `initial_delay_ms` (logical constraint)
 - Both are validated by core in every language, whether or not `enabled` is
-  false: a configuration error (code 1004) in Node.js, C#, Go, Java and C++;
-  a `ValueError` in Python (#171 tracks aligning it). Node.js, Python and
+  false: a configuration error (code 1004) in every language (Python:
+  `ConfigError`, a `MarketDataError`, since #171). Node.js, Python and
   the C#, Go and Java wrappers raise it from the constructor, as does the
   generated `new_with_credentials`; the generated constructors that cannot
   fail (`new_with_config`, `new_with_options`, ...) return it from
@@ -522,7 +522,7 @@ When configuration validation fails, you'll see one of these error messages:
 **"Configuration error: Provide exactly one non-empty credential: API key, bearer token, or SDK token"**
 
 - **Cause:** Zero or multiple authentication methods provided, or the only one is empty or whitespace
-- **Error:** code 1004 (`client`) — Python `MarketDataError`, Node.js `Error`, C# `MarketDataException`, Go `*MarketDataError`, Java `FugleException`
+- **Error:** code 1004 (`client`) — Python `ConfigError` (a `MarketDataError`), Node.js `Error`, C# `MarketDataException`, Go `*MarketDataError`, Java `FugleException`
 - **Solution:** Pass exactly one non-empty auth method
 
 **Example (Python):**
@@ -530,15 +530,15 @@ When configuration validation fails, you'll see one of these error messages:
 ```python
 # ✗ Wrong - no auth
 client = RestClient()
-# MarketDataError: Configuration error: Provide exactly one non-empty credential: ...
+# ConfigError: Configuration error: Provide exactly one non-empty credential: ...
 
 # ✗ Wrong - multiple auth
 client = RestClient(api_key="key", bearer_token="token")
-# MarketDataError: Configuration error: Provide exactly one non-empty credential: ...
+# ConfigError: Configuration error: Provide exactly one non-empty credential: ...
 
 # ✗ Wrong - empty key
 client = RestClient(api_key="")
-# MarketDataError: Configuration error: Provide exactly one non-empty credential: ...
+# ConfigError: Configuration error: Provide exactly one non-empty credential: ...
 
 # ✓ Correct - exactly one auth
 client = RestClient(api_key="key")
@@ -591,7 +591,7 @@ const ws = new WebSocketClient({
 ```python
 # ✗ Wrong - timeout below the floor
 health_check = HealthCheckConfig(heartbeat_timeout_ms=2000)
-# ValueError: Configuration error: heartbeat_timeout must be >= 5000ms (got 2s)
+# ConfigError: Configuration error: heartbeat_timeout must be >= 5000ms (got 2s)
 ```
 
 ---

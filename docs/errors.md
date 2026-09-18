@@ -118,7 +118,7 @@ Rust constants live in `marketdata_core::error_code`.
 | 1001 | `INVALID_SYMBOL` | `InvalidSymbol` | `client` | A symbol fails validation. |
 | 1002 | `DESERIALIZATION` | `DeserializationError` | `client` | A REST response or WebSocket frame cannot be parsed (WebSocket: `error` event, connection stays up). |
 | 1003 | `RUNTIME` | `RuntimeError` | `client` | An internal runtime operation fails. |
-| 1004 | `CONFIG` | `ConfigError` | `client` | Invalid client configuration (for example a `baseUrl` that includes the version, or not exactly one non-empty credential). |
+| 1004 | `CONFIG` | `ConfigError` | `client` | Invalid client configuration (for example a `baseUrl` that includes the version, not exactly one non-empty credential, or a reconnect / health check value below its floor). Python raises its `ConfigError` class, not `ValueError`. |
 | 1005 | `INVALID_PARAMETER` | `InvalidParameter` | `client` | A request parameter is missing or invalid: an unknown WebSocket channel name in `subscribe()`, or (Node) a key the REST endpoint does not take in the object form. Python raises `TypeError` for the latter. |
 | 2001 | `CONNECTION` | `ConnectionError` | `network` | A REST request or WebSocket connection cannot reach the server, or a WebSocket command is sent while not connected. |
 | 2002 | `AUTH` | `AuthError` | `auth` | HTTP 401 / 403, or WebSocket authentication failed. |

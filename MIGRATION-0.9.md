@@ -395,6 +395,29 @@ New attributes `code`, `source_kind`, `status`, `body`, `request_id`,
 `response_text` are aliases of `status` and `body`, and `response_text` is no
 longer always `None`.
 
+`ReconnectConfig` and `HealthCheckConfig` raise the new `ConfigError`
+(`code == 1004`, `source_kind == "client"`) for a value below its floor,
+where 3.0.0-rc.5 and earlier raised the built-in `ValueError` with no
+`code` (#171). `ConfigError` is a `MarketDataError`, not a `ValueError`, so
+an `except ValueError` written against an earlier release candidate no
+longer catches it:
+
+```python
+# Before (3.0.0-rc.5 and earlier)
+try:
+    reconnect = ReconnectConfig(initial_delay_ms=50)
+except ValueError: ...
+# After
+try:
+    reconnect = ReconnectConfig(initial_delay_ms=50)
+except ConfigError as e:
+    assert e.code == 1004
+```
+
+The credential check of the client constructors (§14) raises `ConfigError`
+as well; it was already a `MarketDataError` with code `1004`, so
+`except MarketDataError` keeps working. 2.x had neither config class.
+
 ### Rust
 
 - `MarketDataError::ApiError` and `MarketDataError::AuthError` gain
@@ -463,14 +486,15 @@ What changes for you:
 
 | Language | Empty / whitespace credential | Zero or several credentials |
 |---|---|---|
-| Python | Was accepted; now `MarketDataError` (`e.code == 1004`) | `TypeError` → `MarketDataError` (`e.code == 1004`) |
+| Python | Was accepted; now `ConfigError` (a `MarketDataError`, `e.code == 1004`) | `TypeError` → `ConfigError` (`e.code == 1004`) |
 | Node | Was accepted; now an `Error` with `err.code === 1004` | Same `Error`, now with `err.code === 1004`; message changed |
 | Java | Was accepted; now `FugleException` with `getCode() == 1004` | `FugleException` without `getInfo()` → with it, `getCode() == 1004`; message changed |
 | Go | `WithApiKey("")` etc. returned `"... cannot be empty"` from the option; now the constructor returns a `*MarketDataError` | `errors.New("provide exactly one of ...")` → `*MarketDataError`; read it with `ErrorInfoOf(err)` |
 | C# | `ArgumentNullException` / `ArgumentException` → `MarketDataException` (`ex.GetInfo().code == 1004`) | `ArgumentException` → `MarketDataException` |
 
 - **Python**: `RestClient.with_bearer_token()` and `with_sdk_token()` also
-  reject a blank token.
+  reject a blank token. The error is `ConfigError` (#171), a
+  `MarketDataError`, so either name works in `except`.
 
   ```python
   # Before
@@ -480,8 +504,7 @@ What changes for you:
   # After
   try:
       client = RestClient(api_key=key)
-  except MarketDataError as e:
-      if e.code == 1004: ...
+  except ConfigError: ...          # or: except MarketDataError as e: if e.code == 1004
   ```
 
 - **Node**: `new RestClient({ apiKey: '' })` used to succeed and fail on the

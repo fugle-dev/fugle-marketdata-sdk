@@ -23,6 +23,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's error, like every other parameter. Signatures are unchanged; the
   Python stub widens the ownership methods' `sort` from
   `Literal["asc", "desc"]` to `str`.
+- **Python: `ReconnectConfig` and `HealthCheckConfig` raise `ConfigError`,
+  not `ValueError`** (#171; [migration guide §13](MIGRATION-0.9.md#13-errors-one-set-of-fields-in-every-language)).
+  A value below its floor (`initial_delay_ms` < 100, `max_delay_ms` <
+  `initial_delay_ms`, `heartbeat_timeout_ms` / `idle_probe_after_ms` < 5 000,
+  `probe_timeout_ms` < 1 000) used to raise the built-in `ValueError` with
+  the message only, so Python was the one language whose configuration error
+  carried no `code`. It now raises the new `ConfigError`, a
+  `MarketDataError` subclass carrying the unified fields (`code == 1004`,
+  `source_kind == "client"`, `args == (message, 1004)`), as Node and the C#,
+  Go, Java and C++ bindings report it (#153). `except ValueError` no longer
+  catches it; catch `ConfigError` or `MarketDataError`. `ConfigError` is
+  deliberately not also a `ValueError`: the 2.x SDK on PyPI had neither
+  config class, so only code written against a 3.0 pre-release is affected.
+  Core's `ConfigError` reaches Python as this class everywhere it is raised,
+  so the credential check of `RestClient` and `WebSocketClient` (#69) now
+  raises `ConfigError` too — a `MarketDataError` as before, with the same
+  code.
+  Argument validation (`ValueError` for a bad `type` or `session` value,
+  `TypeError` for an unknown keyword) is unchanged.
 
 ## [Bindings 3.0.0-rc.5 / core 0.9.0-rc.4 / uniffi 0.2.0-rc.4] - 2026-09-18
 
@@ -192,9 +211,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Node.js: an invalid `reconnect` option threw a plain `Error`** without
   the unified fields (#81), unlike the credential and `healthCheck` errors
   thrown by the same constructor. It now carries `code: 1004` and
-  `sourceKind: 'client'`; it is still an `Error` (#153). Python keeps
-  raising `ValueError` for both `ReconnectConfig` and `HealthCheckConfig`;
-  #171 tracks it.
+  `sourceKind: 'client'`; it is still an `Error` (#153). Python kept
+  raising `ValueError` for both `ReconnectConfig` and `HealthCheckConfig`
+  until #171 (unreleased, above).
 
 ## [Bindings 3.0.0-rc.4 / core 0.9.0-rc.3 / uniffi 0.2.0-rc.3] - 2026-09-18
 
