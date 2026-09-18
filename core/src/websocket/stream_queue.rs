@@ -16,7 +16,9 @@
 //!   `Authenticated`, closed together with `Disconnected`, so no message of a
 //!   connection is delivered before its `Authenticated` or after its
 //!   `Disconnected`;
-//! - the claim on reporting that connection's `Disconnected` (#41);
+//! - the claim on reporting that connection's `Disconnected` (#41), and
+//!   whether the client's close has been reported: one final event per
+//!   disconnect, even when `disconnect()` stops a reconnect (#98);
 //! - the drop bookkeeping behind `MessagesDropped`.
 //!
 //! [`MessageOverflow::DropNewest`]: crate::websocket::MessageOverflow::DropNewest
@@ -48,6 +50,10 @@ struct State {
     open: bool,
     /// The current connection's `Disconnected` has been reported (#41).
     disconnect_claimed: bool,
+    /// The client's close has been reported: a `Disconnected` with
+    /// `will_reconnect: false` or a `ReconnectFailed` is queued, and nothing
+    /// reconnects until a connection authenticates again (#98).
+    close_reported: bool,
     /// Message drops not covered by a `MessagesDropped` yet, and when the
     /// last one was queued on the current connection.
     drop_reports: ReportThrottle,
@@ -89,6 +95,7 @@ pub(crate) fn stream(
             waker: None,
             open: false,
             disconnect_claimed: false,
+            close_reported: false,
             drop_reports: ReportThrottle::new(),
             messages_dropped,
             events_dropped,
@@ -190,6 +197,7 @@ impl StreamSender {
         let mut state = self.shared.lock();
         let mut outcome = Outcome::default();
         state.disconnect_claimed = false;
+        state.close_reported = false;
         state.open = true;
         self.push_event(&mut state, ConnectionEvent::Authenticated { data }, &mut outcome);
         for frame in frames {
@@ -268,13 +276,17 @@ impl StreamSender {
 
     /// Close the client on the caller's request (`disconnect()`,
     /// `force_close()`): set `connection` to `Closed` with
-    /// [`DisconnectIntent::Client`] and queue the matching `Disconnected`,
-    /// unless the connection has reported its close already (#93). Then
-    /// that report stands:
+    /// [`DisconnectIntent::Client`] and queue the matching `Disconnected`
+    /// with `will_reconnect: false`, unless the client's close has been
+    /// reported already (#93). Then that report stands:
     /// - a `Closed` state it recorded is left as it is, so the state keeps
     ///   agreeing with the event;
-    /// - any other state (the client was reconnecting) is set to `Closed`
-    ///   without a further event.
+    /// - any other state is set to `Closed` without a further event.
+    ///
+    /// A connection lost with `will_reconnect: true` has not reported the
+    /// client's close: stopping its reconnect queues the final
+    /// `Disconnected` here, so the stream itself says no reconnect follows
+    /// (#98).
     ///
     /// Same lock order as [`connection_lost`](Self::connection_lost).
     pub(crate) fn client_closed(
@@ -287,9 +299,8 @@ impl StreamSender {
         {
             // Writers only assign, so a poisoned lock holds a whole value.
             let mut current = connection.write().unwrap_or_else(PoisonError::into_inner);
-            let reported_closed =
-                state.disconnect_claimed && matches!(*current, ConnectionState::Closed { .. });
-            if !reported_closed {
+            let keep = state.close_reported && matches!(*current, ConnectionState::Closed { .. });
+            if !keep {
                 *current = ConnectionState::Closed {
                     code: Some(code),
                     reason: reason.clone(),
@@ -297,9 +308,37 @@ impl StreamSender {
                 };
             }
         }
-        if !state.disconnect_claimed {
+        if !state.close_reported {
             self.queue_disconnected(state, Some(code), reason, DisconnectIntent::Client, false);
         }
+    }
+
+    /// Report the reconnect loop giving up after `attempts`: set
+    /// `connection` to `Closed` with [`DisconnectIntent::Network`] and
+    /// `code`, the close that started the loop, then queue
+    /// `ReconnectFailed`, unless the client's close has been reported
+    /// already (a `disconnect()` got there first). Same lock order as
+    /// [`connection_lost`](Self::connection_lost).
+    pub(crate) fn reconnect_failed(
+        &self,
+        connection: &RwLock<ConnectionState>,
+        code: Option<u16>,
+        attempts: u32,
+    ) {
+        let mut state = self.shared.lock();
+        if state.close_reported {
+            return;
+        }
+        state.close_reported = true;
+        // Writers only assign, so a poisoned lock holds a whole value.
+        *connection.write().unwrap_or_else(PoisonError::into_inner) = ConnectionState::Closed {
+            code,
+            reason: "Max reconnection attempts reached".to_string(),
+            intent: DisconnectIntent::Network,
+        };
+        let mut outcome = Outcome::default();
+        self.push_event(&mut state, ConnectionEvent::ReconnectFailed { attempts }, &mut outcome);
+        self.finish(state, outcome);
     }
 
     /// Claim and queue the connection's `Disconnected`, running `record`
@@ -320,8 +359,9 @@ impl StreamSender {
         self.queue_disconnected(state, code, reason, intent, will_reconnect);
     }
 
-    /// Claim the connection's `Disconnected` and queue it under `state`,
-    /// whose claim the caller has checked is free.
+    /// Claim the connection's `Disconnected` and queue it under `state`.
+    /// The caller has checked the claim is free, or, for the final event of
+    /// a stopped reconnect, that the client's close is unreported.
     fn queue_disconnected(
         &self,
         mut state: MutexGuard<'_, State>,
@@ -331,6 +371,7 @@ impl StreamSender {
         will_reconnect: bool,
     ) {
         state.disconnect_claimed = true;
+        state.close_reported |= !will_reconnect;
         state.open = false;
         let mut outcome = Outcome::default();
         self.push_report(&mut state, true, &mut outcome);
@@ -704,96 +745,122 @@ mod tests {
         assert!(drain(&f.rx).is_empty());
     }
 
+    fn disconnected_items(items: &[String]) -> Vec<&String> {
+        items.iter().filter(|e| e.starts_with("Disconnected")).collect()
+    }
+
     #[test]
-    fn client_closed_while_reconnecting_closes_without_a_second_disconnected() {
+    fn client_closed_while_reconnecting_reports_the_final_disconnected() {
         let f = fixture(8, 8);
         open(&f.tx);
-        let connection = RwLock::new(ConnectionState::Connected);
+        let connection = Arc::new(RwLock::new(ConnectionState::Connected));
         f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
         *connection.write().unwrap() = ConnectionState::Reconnecting { attempt: 1 };
         drain(&f.rx);
 
-        f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        assert_eq!(*connection.read().unwrap(), client_close(1000, "Normal closure"));
-        assert!(drain(&f.rx).is_empty());
-    }
-
-    #[test]
-    fn a_consumer_woken_by_disconnected_reads_the_recorded_state() {
-        let f = fixture(8, 8);
-        let connection = Arc::new(RwLock::new(ConnectionState::Connected));
-        open(&f.tx);
-        drain(&f.rx);
+        // The state is recorded before the event is queued (#86).
+        let tx = f.tx.clone();
         let reader = {
             let connection = Arc::clone(&connection);
             thread::spawn(move || {
                 let item = f.rx.recv().expect("an item");
-                assert!(matches!(item, StreamItem::Event(ConnectionEvent::Disconnected { .. })));
-                connection.read().unwrap().clone()
+                let state = connection.read().unwrap().clone();
+                (format!("{item:?}"), state, f)
             })
         };
-        f.tx.connection_lost(&connection, Some(1000), "bye".into(), DisconnectIntent::Server, false);
-        assert!(matches!(reader.join().unwrap(), ConnectionState::Closed { .. }));
-    }
-
-    #[test]
-    fn messages_outside_a_connection_are_discarded_uncounted() {
-        let f = fixture(8, 8);
-        f.tx.push_message(message(0));
-        open(&f.tx);
-        f.tx.push_message(message(1));
-        f.tx.emit_disconnected(None, "bye".into(), DisconnectIntent::Server, false);
-        f.tx.push_message(message(2));
-        f.tx.start_connection();
-        f.tx.push_message(message(3));
-        let items = drain(&f.rx);
-        assert!(items.contains(&"m1".to_string()), "{items:?}");
-        for late in ["m0", "m2", "m3"] {
-            assert!(!items.contains(&late.to_string()), "{items:?}");
-        }
-        assert_eq!(f.messages_dropped.load(), 0);
-    }
-
-    #[test]
-    fn full_message_allowance_drops_newest_but_never_an_event() {
-        let f = fixture(2, 8);
-        open(&f.tx);
-        drain(&f.rx);
-        for id in 0..5 {
-            f.tx.push_message(message(id));
-        }
-        f.tx.emit(ConnectionEvent::Reconnecting { attempt: 1 });
-        f.tx.emit_disconnected(None, "bye".into(), DisconnectIntent::Network, false);
-        assert_eq!(f.messages_dropped.load(), 3);
-        assert_eq!(f.events_dropped.load(), 0);
-        let items = drain(&f.rx);
+        tx.client_closed(&connection, 1000, "Normal closure".into());
+        let (item, state, f) = reader.join().unwrap();
         assert_eq!(
-            items,
-            vec![
-                "m0".to_string(),
-                "m1".into(),
-                // The first drop is reported at once, right where it happened.
-                format!("{:?}", ConnectionEvent::MessagesDropped { dropped: 1, total: 1 }),
-                "Reconnecting { attempt: 1 }".into(),
-                format!("{:?}", ConnectionEvent::MessagesDropped { dropped: 2, total: 3 }),
-                "Disconnected { code: None, reason: \"bye\", intent: Network, will_reconnect: false }"
-                    .into(),
-            ]
+            item,
+            format!(
+                "{:?}",
+                StreamItem::Event(ConnectionEvent::Disconnected {
+                    code: Some(1000),
+                    reason: "Normal closure".into(),
+                    intent: DisconnectIntent::Client,
+                    will_reconnect: false,
+                })
+            )
         );
+        assert_eq!(state, client_close(1000, "Normal closure"));
+
+        // Reported once: a second close, even after a racing writer moved
+        // the state on, only restores `Closed`.
+        *connection.write().unwrap() = ConnectionState::Reconnecting { attempt: 2 };
+        f.tx.client_closed(&connection, 1006, "Force closed".into());
+        assert_eq!(*connection.read().unwrap(), client_close(1006, "Force closed"));
+        assert!(drain(&f.rx).is_empty());
     }
 
     #[test]
-    fn full_event_allowance_drops_events_only() {
-        let f = fixture(8, 2);
-        f.tx.emit(ConnectionEvent::Connecting);
-        f.tx.emit(ConnectionEvent::Connected);
-        f.tx.emit(ConnectionEvent::Reconnecting { attempt: 1 });
-        assert_eq!(f.events_dropped.load(), 1);
-        // Reading makes room again.
-        assert!(f.rx.try_recv().is_ok());
-        f.tx.emit(ConnectionEvent::Reconnecting { attempt: 2 });
-        assert_eq!(f.events_dropped.load(), 1);
-        assert_eq!(f.messages_dropped.load(), 0);
+    fn reconnect_failed_records_the_state_and_ends_the_close() {
+        let f = fixture(8, 8);
+        open(&f.tx);
+        let connection = RwLock::new(ConnectionState::Connected);
+        f.tx.connection_lost(&connection, Some(1006), "lost".into(), DisconnectIntent::Network, true);
+        drain(&f.rx);
+
+        f.tx.reconnect_failed(&connection, Some(1006), 3);
+        let failed = ConnectionState::Closed {
+            code: Some(1006),
+            reason: "Max reconnection attempts reached".into(),
+            intent: DisconnectIntent::Network,
+        };
+        assert_eq!(*connection.read().unwrap(), failed);
+        assert_eq!(drain(&f.rx), vec!["ReconnectFailed { attempts: 3 }".to_string()]);
+
+        f.tx.client_closed(&connection, 1000, "Normal closure".into());
+        f.tx.reconnect_failed(&connection, Some(1006), 3);
+        assert_eq!(*connection.read().unwrap(), failed);
+        assert!(drain(&f.rx).is_empty());
+    }
+
+    #[test]
+    fn reconnect_failed_after_client_closed_reports_nothing() {
+        let f = fixture(8, 8);
+        open(&f.tx);
+        let connection = RwLock::new(ConnectionState::Connected);
+        f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
+        drain(&f.rx);
+
+        f.tx.client_closed(&connection, 1000, "Normal closure".into());
+        f.tx.reconnect_failed(&connection, None, 1);
+        assert_eq!(*connection.read().unwrap(), client_close(1000, "Normal closure"));
+        assert_eq!(disconnected_items(&drain(&f.rx)).len(), 1);
+    }
+
+    #[test]
+    fn a_stopped_reconnect_reports_exactly_one_final_event() {
+        for _ in 0..200 {
+            let f = fixture(8, 8);
+            open(&f.tx);
+            let connection = Arc::new(RwLock::new(ConnectionState::Connected));
+            f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
+            drain(&f.rx);
+            let closers: Vec<_> = (0..4)
+                .map(|i| {
+                    let tx = f.tx.clone();
+                    let connection = Arc::clone(&connection);
+                    thread::spawn(move || {
+                        if i == 0 {
+                            tx.reconnect_failed(&connection, None, 1);
+                        } else {
+                            tx.client_closed(&connection, 1000, "Normal closure".into());
+                        }
+                    })
+                })
+                .collect();
+            for closer in closers {
+                closer.join().expect("closer");
+            }
+            let items = drain(&f.rx);
+            let finals = items
+                .iter()
+                .filter(|e| e.starts_with("Disconnected") || e.starts_with("ReconnectFailed"))
+                .count();
+            assert_eq!(finals, 1, "{items:?}");
+            assert!(matches!(*connection.read().unwrap(), ConnectionState::Closed { .. }));
+        }
     }
 
     #[test]

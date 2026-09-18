@@ -676,14 +676,8 @@ pub(crate) fn run_supervisor(
                     let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
                     mgr.current_attempt()
                 };
-                set_state(&shared, ConnectionState::Closed {
-                    code: close_code,
-                    reason: "Max reconnection attempts reached".to_string(),
-                    intent: DisconnectIntent::Network,
-                });
-                shared.stream.emit(ConnectionEvent::ReconnectFailed {
-                    attempts,
-                });
+                // Unless a racing `disconnect()` reported the close first.
+                shared.stream.reconnect_failed(&shared.state, close_code, attempts);
                 return;
             };
 
@@ -703,7 +697,8 @@ pub(crate) fn run_supervisor(
             });
 
             std::thread::sleep(d);
-            // `disconnect()` during the backoff: nothing further is emitted.
+            // `disconnect()` during the backoff: it reports the final
+            // `Disconnected` itself (#98); nothing further from here.
             if shared.should_stop.load(Ordering::SeqCst) {
                 return;
             }

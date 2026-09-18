@@ -100,6 +100,42 @@ def test_disconnect_callback_reads_the_closed_state_of_a_lost_connection(product
 
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
+def test_disconnect_during_reconnect_backoff_fires_a_final_disconnect(product):
+    # The final `Disconnected { Client, will_reconnect: false }` core emits
+    # when `disconnect()` stops a reconnect reaches the callback (#98).
+    from fugle_marketdata import ReconnectConfig, WebSocketClient
+
+    with LoopbackServer() as srv:
+        ws = getattr(
+            WebSocketClient(
+                api_key="test-key",
+                base_url=srv.url,
+                reconnect=ReconnectConfig(max_attempts=3, initial_delay_ms=1000, max_delay_ms=1000),
+            ),
+            product,
+        )
+        recorder = Recorder(ws)
+        ws.connect()
+        recorder.wait_for("authenticated", TIMEOUT_S)
+    # Leaving the block stops the server: the connection drops and the
+    # client waits out its backoff.
+    try:
+        recorder.wait_for("reconnect", TIMEOUT_S)
+        ws.disconnect()
+        # disconnect() returns once the callbacks for what core queued ran.
+        disconnects = recorder.args_of("disconnect")
+        assert len(disconnects) == 2, recorder.calls
+        assert disconnects[1] == (1000, "Normal closure"), recorder.calls
+        # Past the backoff: nothing follows the final event.
+        time.sleep(1.2)
+        assert recorder.names()[-1] == "disconnect", recorder.calls
+        assert recorder.args_of("reconnect") == [(1,)], recorder.calls
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
 def test_heartbeat_timeout_then_disconnect_fires_disconnect_once(server, product):
     ws = product_ws(
         server.url, product, health_check=HealthCheckConfig(heartbeat_timeout_ms=5000)
