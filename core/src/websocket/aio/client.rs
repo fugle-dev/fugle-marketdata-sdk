@@ -87,7 +87,9 @@ pub struct WebSocketClient {
     /// installed the connection or given it up. `disconnect()` and
     /// `force_close()` wait for it after setting `shutdown_requested`, so an
     /// aborted `connect()` never writes state or events after their
-    /// `Disconnected` (#121).
+    /// `Disconnected` (#121). Never held across network I/O once shutdown is
+    /// requested: `connect()` releases it before closing a given-up socket,
+    /// so the wait stays within a small `shutdown_with_timeout()` budget.
     connecting: Mutex<()>,
 }
 
@@ -439,7 +441,7 @@ impl WebSocketClient {
         // A `disconnect()` from here on waits for this call to finish, and
         // wakes it: the connection is given up at the next step instead of
         // installed (#121).
-        let _connecting = self.connecting.lock().await;
+        let connecting = self.connecting.lock().await;
         // Registered before the flag is first read: shutdown sets the flag
         // before notifying, so it is either seen or wakes this.
         let shutdown = self.shutdown_notify.notified();
@@ -466,6 +468,9 @@ impl WebSocketClient {
             () = shutdown.as_mut() => return Err(MarketDataError::ConnectionAborted),
         };
         if self.stopping() {
+            // Released first: closing is this call's own business, not
+            // something `disconnect()` has to wait for.
+            drop(connecting);
             if let Ok(Ok((mut ws_stream, _))) = connect_result {
                 let _ = timeout(ABORTED_CLOSE_TIMEOUT, ws_stream.close(None)).await;
             }
@@ -526,6 +531,7 @@ impl WebSocketClient {
         // closed rather than installed; the state stays as `disconnect()`
         // leaves it, and its `Disconnected` is the only close reported.
         let Some(handshake) = handshake.filter(|_| !self.stopping()) else {
+            drop(connecting);
             let _ = timeout(ABORTED_CLOSE_TIMEOUT, ws_sink.close()).await;
             return Err(MarketDataError::ConnectionAborted);
         };
@@ -534,7 +540,7 @@ impl WebSocketClient {
             AuthHandshake::Authenticated { data, frames } => {
                 // Install the write half and spawn its writer. All
                 // subsequent outbound messages flow through its channel. A
-                // `disconnect()` from here on waits for `_connecting`, then
+                // `disconnect()` from here on waits for `connecting`, then
                 // closes this connection as usual.
                 let write_failed = self.start_writer_task(ws_sink).await;
 
@@ -691,7 +697,9 @@ impl WebSocketClient {
 
     /// Set `shutdown_requested` and wake whatever waits on it, then wait for
     /// a `connect()` in progress to give its connection up, or to finish
-    /// installing it, before the caller closes the client (#121).
+    /// installing it, before the caller closes the client (#121). No network
+    /// I/O happens under that wait: a given-up socket is closed after
+    /// `connect()` releases the lock.
     async fn request_shutdown(&self) {
         self.shutdown_requested
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -3013,21 +3021,57 @@ mod connect_abort_tests {
         );
     }
 
-    /// `disconnect()` completed between `connect()`'s closed check and its
-    /// start: nothing is written over the `Closed` state.
+    /// Shutdown already requested once `connect()` is past its closed check
+    /// (`disconnect()` completing in between): nothing is written. The flag
+    /// is set before the call, which that check does not read, so no timing
+    /// is involved.
     #[tokio::test(flavor = "multi_thread")]
-    async fn shutdown_before_connect_starts_leaves_the_state_alone() {
+    async fn shutdown_requested_before_connect_starts_leaves_the_state_alone() {
         let (url, _authing, _answer, _seen) = auth_server(r#"{"event":"authenticated"}"#).await;
         let client = client(url);
-        let held = client.connecting.lock().await;
-        let connect = spawn_connect(&client);
-        // `connect()` is past its closed check, waiting for the lock.
-        tokio::time::sleep(Duration::from_millis(50)).await;
         client.shutdown_requested.store(true, Ordering::SeqCst);
-        drop(held);
 
-        aborted(connect).await;
+        aborted(spawn_connect(&client)).await;
         assert_eq!(client.state(), ConnectionState::Disconnected);
         assert!(events(&client).is_empty());
+    }
+
+    /// Closing the given-up socket can take `connect()` up to
+    /// `ABORTED_CLOSE_TIMEOUT`; `disconnect()` does not wait for that, so a
+    /// short budget is kept. The server reads one byte of the auth frame (so
+    /// the client has built it and is writing) and no more: the frame, far
+    /// larger than the socket buffers, is still being written when
+    /// `connect()` is woken, and the Close frame queued behind it cannot be
+    /// sent.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn short_shutdown_budget_is_kept_while_connect_closes_its_socket() {
+        const BUDGET: Duration = Duration::from_millis(100);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (writing_tx, writing) = oneshot::channel();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+            ws.get_mut().read_exact(&mut [0u8; 1]).await.expect("auth frame starts");
+            let _ = writing_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        let key = "k".repeat(32 * 1024 * 1024);
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key(key));
+        let client = Arc::new(WebSocketClient::with_reconnection_config(
+            config,
+            ReconnectionConfig::disabled(),
+        ));
+        let connect = spawn_connect(&client);
+        writing.await.expect("auth frame being written");
+
+        let started = std::time::Instant::now();
+        client.shutdown_with_timeout(BUDGET).await.expect("shutdown");
+        let elapsed = started.elapsed();
+
+        assert!(elapsed < ABORTED_CLOSE_TIMEOUT - BUDGET, "took {elapsed:?}");
+        assert_client_closed(&client, 1000);
+        aborted(connect).await;
     }
 }

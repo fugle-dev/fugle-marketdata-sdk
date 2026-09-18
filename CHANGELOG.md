@@ -476,8 +476,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked `Closed` and `Disconnected` reported (#121). `connect()` now stops
   at once and returns `ConnectionAborted` (2010); a socket it had opened is
   closed with a Close frame, and the state stays `Closed { intent: Client }`.
-  `disconnect()` / `force_close()` wait for that before returning (the Close
-  frame is given at most 500 ms).
+  `disconnect()` / `force_close()` do not wait for that Close frame, which
+  `connect()` gives at most 500 ms, so a short `shutdown_with_timeout()`
+  budget is kept.
 - **C#, Go, C++, Java**: WebSocket `connect()` while connected, connecting or
   auto-reconnecting opened a second connection and switched event delivery
   and `is_connected()` to it; if that connection failed, `is_connected()`
