@@ -85,6 +85,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Python**: every REST keyword core can send now exists on the method
+  (#164, #165). The keywords are added after the existing ones, so
+  positional calls keep their meaning. Before, a keyword the method did not
+  list landed in `**kwargs` and was dropped with a `UserWarning`, which is
+  why `stock.intraday.ticker("2330", odd_lot=True)` returned board-lot data
+  (#165).
+  - `stock.intraday.ticker` / `volumes`: `odd_lot`
+  - `stock.intraday.candles`: `odd_lot`, `sort`
+  - `stock.intraday.trades`: `odd_lot`, `offset`, `limit`, `sort`
+    (`"asc"` / `"desc"`; another value raises `ValueError`), `is_trial`
+  - `stock.intraday.tickers`: `is_attention`, `is_disposition`, `is_halted`,
+    `symbol`
+  - `stock.snapshot.movers`: `type_filter` (sent as `type`), `gt`, `gte`,
+    `lt`, `lte`, `eq`
+  - `stock.snapshot.actives`: `type_filter`
+  - `stock.corporate_actions.dividends` / `listing_applicants`: `exchange`,
+    `sort`; `capital_changes`: `sort`
+  - `futopt.intraday.products`: `exchange`, `after_hours`, `status`
+  - `futopt.intraday.tickers`: `product`
+  - `futopt.historical.candles`: `strike_price`, `call_put`
 - **Rust**: REST builders gain the query parameters the server accepts but
   core could not send (#164). Node could already pass them in its object
   form; the other bindings will pick them up in follow-up PRs.

@@ -668,8 +668,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     ticker = await client.stock.intraday.ticker("2330")
     ///     ```
-    #[pyo3(signature = (symbol, **_extra))]
-    pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
+    pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.intraday.ticker", &_extra);
         let client = self.inner.clone();
@@ -677,7 +677,11 @@ impl StockIntradayClient {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
-                intraday.ticker().symbol(&symbol).send()
+                let mut builder = intraday.ticker().symbol(&symbol);
+                if odd_lot {
+                    builder = builder.odd_lot(true);
+                }
+                builder.send()
             }).await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
@@ -689,15 +693,19 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, **_extra))]
-    pub fn ticker(&self, py: Python<'_>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
+    pub fn ticker(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.intraday.ticker", &_extra);
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
-            intraday.ticker().symbol(&symbol).send()
+            let mut builder = intraday.ticker().symbol(&symbol);
+            if odd_lot {
+                builder = builder.odd_lot(true);
+            }
+            builder.send()
         });
         match result {
             Ok(ticker) => types::value_to_dict(py, &ticker),
@@ -721,8 +729,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     candles = await client.stock.intraday.candles("2330", "5")
     ///     ```
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), **_extra))]
-    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=false, sort=None, **_extra))]
+    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, odd_lot: bool, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.intraday.candles", &_extra);
         let client = self.inner.clone();
@@ -730,7 +738,14 @@ impl StockIntradayClient {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
-                intraday.candles().symbol(&symbol).timeframe(&timeframe).send()
+                let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
+                if odd_lot {
+                    builder = builder.odd_lot(true);
+                }
+                if let Some(v) = &sort {
+                    builder = builder.sort(v);
+                }
+                builder.send()
             }).await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
@@ -742,15 +757,22 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), **_extra))]
-    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=false, sort=None, **_extra))]
+    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, odd_lot: bool, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.intraday.candles", &_extra);
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
-            intraday.candles().symbol(&symbol).timeframe(&timeframe).send()
+            let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
+            if odd_lot {
+                builder = builder.odd_lot(true);
+            }
+            if let Some(v) = &sort {
+                builder = builder.sort(v);
+            }
+            builder.send()
         });
         match result {
             Ok(candles) => types::value_to_dict(py, &candles),
@@ -773,16 +795,45 @@ impl StockIntradayClient {
     ///     ```python
     ///     trades = await client.stock.intraday.trades("2330")
     ///     ```
-    #[pyo3(signature = (symbol, **_extra))]
-    pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=false, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
+    pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.intraday.trades", &_extra);
+        // The builder has sort_asc()/sort_desc(), so the value is narrowed here;
+        // any other value could not be sent at all.
+        let sort_asc = match sort.as_deref() {
+            None => None,
+            Some("asc") => Some(true),
+            Some("desc") => Some(false),
+            Some(other) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "sort must be 'asc' or 'desc' (got '{other}')"
+                )))
+            }
+        };
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
-                intraday.trades().symbol(&symbol).send()
+                let mut builder = intraday.trades().symbol(&symbol);
+                if odd_lot {
+                    builder = builder.odd_lot(true);
+                }
+                if let Some(v) = offset {
+                    builder = builder.offset(v);
+                }
+                if let Some(v) = limit {
+                    builder = builder.limit(v);
+                }
+                if let Some(asc) = sort_asc {
+                    builder = if asc { builder.sort_asc() } else { builder.sort_desc() };
+                }
+                if let Some(v) = is_trial {
+                    builder = builder.is_trial(v);
+                }
+                builder.send()
             }).await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
@@ -794,15 +845,44 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, **_extra))]
-    pub fn trades(&self, py: Python<'_>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=false, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
+    pub fn trades(&self, py: Python<'_>, symbol: String, odd_lot: bool, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.intraday.trades", &_extra);
+        // The builder has sort_asc()/sort_desc(), so the value is narrowed here;
+        // any other value could not be sent at all.
+        let sort_asc = match sort.as_deref() {
+            None => None,
+            Some("asc") => Some(true),
+            Some("desc") => Some(false),
+            Some(other) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "sort must be 'asc' or 'desc' (got '{other}')"
+                )))
+            }
+        };
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
-            intraday.trades().symbol(&symbol).send()
+            let mut builder = intraday.trades().symbol(&symbol);
+            if odd_lot {
+                builder = builder.odd_lot(true);
+            }
+            if let Some(v) = offset {
+                builder = builder.offset(v);
+            }
+            if let Some(v) = limit {
+                builder = builder.limit(v);
+            }
+            if let Some(asc) = sort_asc {
+                builder = if asc { builder.sort_asc() } else { builder.sort_desc() };
+            }
+            if let Some(v) = is_trial {
+                builder = builder.is_trial(v);
+            }
+            builder.send()
         });
         match result {
             Ok(trades) => types::value_to_dict(py, &trades),
@@ -825,8 +905,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     volumes = await client.stock.intraday.volumes("2330")
     ///     ```
-    #[pyo3(signature = (symbol, **_extra))]
-    pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
+    pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.intraday.volumes", &_extra);
         let client = self.inner.clone();
@@ -834,7 +914,11 @@ impl StockIntradayClient {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
-                intraday.volumes().symbol(&symbol).send()
+                let mut builder = intraday.volumes().symbol(&symbol);
+                if odd_lot {
+                    builder = builder.odd_lot(true);
+                }
+                builder.send()
             }).await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
@@ -846,15 +930,19 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, **_extra))]
-    pub fn volumes(&self, py: Python<'_>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
+    pub fn volumes(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.intraday.volumes", &_extra);
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
-            intraday.volumes().symbol(&symbol).send()
+            let mut builder = intraday.volumes().symbol(&symbol);
+            if odd_lot {
+                builder = builder.odd_lot(true);
+            }
+            builder.send()
         });
         match result {
             Ok(volumes) => types::value_to_dict(py, &volumes),
@@ -878,7 +966,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     tickers = await client.stock.intraday.tickers(type="EQUITY")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, market=None, industry=None, is_normal=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, market=None, industry=None, is_normal=None, is_attention=None, is_disposition=None, is_halted=None, symbol=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn tickers_async<'py>(
         &self,
         py: Python<'py>,
@@ -886,7 +975,7 @@ impl StockIntradayClient {
         exchange: Option<String>,
         market: Option<String>,
         industry: Option<String>,
-        is_normal: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        is_normal: Option<bool>,is_attention: Option<bool>, is_disposition: Option<bool>, is_halted: Option<bool>, symbol: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.intraday.tickers", &_extra);
         let client = self.inner.clone();
@@ -907,6 +996,18 @@ impl StockIntradayClient {
                 if let Some(n) = is_normal {
                     builder = builder.is_normal(n);
                 }
+                if let Some(v) = is_attention {
+                    builder = builder.is_attention(v);
+                }
+                if let Some(v) = is_disposition {
+                    builder = builder.is_disposition(v);
+                }
+                if let Some(v) = is_halted {
+                    builder = builder.is_halted(v);
+                }
+                if let Some(v) = &symbol {
+                    builder = builder.symbol(v);
+                }
                 builder.send()
             }).await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
@@ -923,7 +1024,8 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, market=None, industry=None, is_normal=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, market=None, industry=None, is_normal=None, is_attention=None, is_disposition=None, is_halted=None, symbol=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn tickers(
         &self,
         py: Python<'_>,
@@ -931,7 +1033,7 @@ impl StockIntradayClient {
         exchange: Option<String>,
         market: Option<String>,
         industry: Option<String>,
-        is_normal: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        is_normal: Option<bool>,is_attention: Option<bool>, is_disposition: Option<bool>, is_halted: Option<bool>, symbol: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
         warn_unknown_kwargs(py, "stock.intraday.tickers", &_extra);
         let inner = self.inner.clone();
@@ -950,6 +1052,18 @@ impl StockIntradayClient {
             }
             if let Some(n) = is_normal {
                 builder = builder.is_normal(n);
+            }
+            if let Some(v) = is_attention {
+                builder = builder.is_attention(v);
+            }
+            if let Some(v) = is_disposition {
+                builder = builder.is_disposition(v);
+            }
+            if let Some(v) = is_halted {
+                builder = builder.is_halted(v);
+            }
+            if let Some(v) = &symbol {
+                builder = builder.symbol(v);
             }
             builder.send()
         });
@@ -1209,13 +1323,14 @@ impl StockSnapshotClient {
     ///     ```python
     ///     movers = await client.stock.snapshot.movers("TSE", direction="up", change="percent")
     ///     ```
-    #[pyo3(signature = (market, direction=None, change=None, **_extra))]
+    #[pyo3(signature = (market, direction=None, change=None, type_filter=None, gt=None, gte=None, lt=None, lte=None, eq=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn movers_async<'py>(
         &self,
         py: Python<'py>,
         market: String,
         direction: Option<String>,
-        change: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        change: Option<String>,type_filter: Option<String>, gt: Option<f64>, gte: Option<f64>, lt: Option<f64>, lte: Option<f64>, eq: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.snapshot.movers", &_extra);
         let client = self.inner.clone();
@@ -1229,6 +1344,24 @@ impl StockSnapshotClient {
                 }
                 if let Some(c) = change {
                     builder = builder.change(&c);
+                }
+                if let Some(v) = &type_filter {
+                    builder = builder.type_filter(v);
+                }
+                if let Some(v) = gt {
+                    builder = builder.gt(v);
+                }
+                if let Some(v) = gte {
+                    builder = builder.gte(v);
+                }
+                if let Some(v) = lt {
+                    builder = builder.lt(v);
+                }
+                if let Some(v) = lte {
+                    builder = builder.lte(v);
+                }
+                if let Some(v) = eq {
+                    builder = builder.eq(v);
                 }
                 builder.send()
             })
@@ -1247,6 +1380,12 @@ impl StockSnapshotClient {
     /// Args:
     ///     market: Market code ("TSE", "OTC", "ESB", "TIB", "PSB")
     ///     trade: Trade type ("volume" or "value")
+    ///     type_filter: Stock type filter, "ALLBUT0999" or "COMMONSTOCK" (sent as `type`)
+    ///     gt: Only changes greater than this
+    ///     gte: Only changes greater than or equal to this
+    ///     lt: Only changes less than this
+    ///     lte: Only changes less than or equal to this
+    ///     eq: Only changes equal to this
     ///
     /// Returns:
     ///     Awaitable[dict]: Most active stocks data
@@ -1255,12 +1394,12 @@ impl StockSnapshotClient {
     ///     ```python
     ///     actives = await client.stock.snapshot.actives("TSE", trade="volume")
     ///     ```
-    #[pyo3(signature = (market, trade=None, **_extra))]
+    #[pyo3(signature = (market, trade=None, type_filter=None, **_extra))]
     pub fn actives_async<'py>(
         &self,
         py: Python<'py>,
         market: String,
-        trade: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        trade: Option<String>,type_filter: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.snapshot.actives", &_extra);
         let client = self.inner.clone();
@@ -1271,6 +1410,9 @@ impl StockSnapshotClient {
                 let mut builder = snapshot.actives().market(&market);
                 if let Some(t) = trade {
                     builder = builder.trade(&t);
+                }
+                if let Some(v) = &type_filter {
+                    builder = builder.type_filter(v);
                 }
                 builder.send()
             })
@@ -1310,13 +1452,14 @@ impl StockSnapshotClient {
     }
 
     /// Sync sibling of `movers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (market, direction=None, change=None, **_extra))]
+    #[pyo3(signature = (market, direction=None, change=None, type_filter=None, gt=None, gte=None, lt=None, lte=None, eq=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn movers(
         &self,
         py: Python<'_>,
         market: String,
         direction: Option<String>,
-        change: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        change: Option<String>,type_filter: Option<String>, gt: Option<f64>, gte: Option<f64>, lt: Option<f64>, lte: Option<f64>, eq: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.snapshot.movers", &_extra);
         let inner = self.inner.clone();
@@ -1330,6 +1473,24 @@ impl StockSnapshotClient {
             if let Some(c) = change {
                 builder = builder.change(&c);
             }
+            if let Some(v) = &type_filter {
+                builder = builder.type_filter(v);
+            }
+            if let Some(v) = gt {
+                builder = builder.gt(v);
+            }
+            if let Some(v) = gte {
+                builder = builder.gte(v);
+            }
+            if let Some(v) = lt {
+                builder = builder.lt(v);
+            }
+            if let Some(v) = lte {
+                builder = builder.lte(v);
+            }
+            if let Some(v) = eq {
+                builder = builder.eq(v);
+            }
             builder.send()
         });
         match result {
@@ -1339,12 +1500,12 @@ impl StockSnapshotClient {
     }
 
     /// Sync sibling of `actives()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (market, trade=None, **_extra))]
+    #[pyo3(signature = (market, trade=None, type_filter=None, **_extra))]
     pub fn actives(
         &self,
         py: Python<'_>,
         market: String,
-        trade: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        trade: Option<String>,type_filter: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.snapshot.actives", &_extra);
         let inner = self.inner.clone();
@@ -1354,6 +1515,9 @@ impl StockSnapshotClient {
             let mut builder = snapshot.actives().market(&market);
             if let Some(t) = trade {
                 builder = builder.trade(&t);
+            }
+            if let Some(v) = &type_filter {
+                builder = builder.type_filter(v);
             }
             builder.send()
         });
@@ -1836,12 +2000,12 @@ impl StockCorporateActionsClient {
     ///         end_date="2024-01-31"
     ///     )
     ///     ```
-    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, sort=None, **_extra))]
     pub fn capital_changes_async<'py>(
         &self,
         py: Python<'py>,
         start_date: Option<String>,
-        end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        end_date: Option<String>,sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.corporate_actions.capital_changes", &_extra);
         let client = self.inner.clone();
@@ -1855,6 +2019,9 @@ impl StockCorporateActionsClient {
                 }
                 if let Some(ed) = end_date {
                     builder = builder.end_date(&ed);
+                }
+                if let Some(v) = &sort {
+                    builder = builder.sort(v);
                 }
                 builder.send()
             })
@@ -1873,6 +2040,7 @@ impl StockCorporateActionsClient {
     /// Args:
     ///     start_date: Start date for range query (YYYY-MM-DD)
     ///     end_date: End date for range query (YYYY-MM-DD)
+    ///     sort: Sort order, "asc" or "desc"
     ///
     /// Returns:
     ///     Awaitable[dict]: Dividend data
@@ -1884,12 +2052,13 @@ impl StockCorporateActionsClient {
     ///         end_date="2024-12-31"
     ///     )
     ///     ```
-    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn dividends_async<'py>(
         &self,
         py: Python<'py>,
         start_date: Option<String>,
-        end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.corporate_actions.dividends", &_extra);
         let client = self.inner.clone();
@@ -1903,6 +2072,12 @@ impl StockCorporateActionsClient {
                 }
                 if let Some(ed) = end_date {
                     builder = builder.end_date(&ed);
+                }
+                if let Some(v) = &exchange {
+                    builder = builder.exchange(v);
+                }
+                if let Some(v) = &sort {
+                    builder = builder.sort(v);
                 }
                 builder.send()
             })
@@ -1921,6 +2096,8 @@ impl StockCorporateActionsClient {
     /// Args:
     ///     start_date: Start date for range query (YYYY-MM-DD)
     ///     end_date: End date for range query (YYYY-MM-DD)
+    ///     exchange: Exchange filter, "TWSE" or "TPEx"
+    ///     sort: Sort order, "asc" or "desc"
     ///
     /// Returns:
     ///     Awaitable[dict]: Listing applicants data
@@ -1929,12 +2106,13 @@ impl StockCorporateActionsClient {
     ///     ```python
     ///     applicants = await client.stock.corporate_actions.listing_applicants()
     ///     ```
-    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn listing_applicants_async<'py>(
         &self,
         py: Python<'py>,
         start_date: Option<String>,
-        end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.corporate_actions.listing_applicants", &_extra);
         let client = self.inner.clone();
@@ -1949,6 +2127,12 @@ impl StockCorporateActionsClient {
                 if let Some(ed) = end_date {
                     builder = builder.end_date(&ed);
                 }
+                if let Some(v) = &exchange {
+                    builder = builder.exchange(v);
+                }
+                if let Some(v) = &sort {
+                    builder = builder.sort(v);
+                }
                 builder.send()
             })
             .await
@@ -1962,12 +2146,12 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `capital_changes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, sort=None, **_extra))]
     pub fn capital_changes(
         &self,
         py: Python<'_>,
         start_date: Option<String>,
-        end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        end_date: Option<String>,sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.corporate_actions.capital_changes", &_extra);
         let inner = self.inner.clone();
@@ -1977,6 +2161,9 @@ impl StockCorporateActionsClient {
             let mut builder = corp.capital_changes();
             if let Some(sd) = start_date { builder = builder.start_date(&sd); }
             if let Some(ed) = end_date { builder = builder.end_date(&ed); }
+            if let Some(v) = &sort {
+                builder = builder.sort(v);
+            }
             builder.send()
         });
         match result {
@@ -1986,12 +2173,13 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `dividends()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn dividends(
         &self,
         py: Python<'_>,
         start_date: Option<String>,
-        end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.corporate_actions.dividends", &_extra);
         let inner = self.inner.clone();
@@ -2001,6 +2189,12 @@ impl StockCorporateActionsClient {
             let mut builder = corp.dividends();
             if let Some(sd) = start_date { builder = builder.start_date(&sd); }
             if let Some(ed) = end_date { builder = builder.end_date(&ed); }
+            if let Some(v) = &exchange {
+                builder = builder.exchange(v);
+            }
+            if let Some(v) = &sort {
+                builder = builder.sort(v);
+            }
             builder.send()
         });
         match result {
@@ -2010,12 +2204,13 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `listing_applicants()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn listing_applicants(
         &self,
         py: Python<'_>,
         start_date: Option<String>,
-        end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.corporate_actions.listing_applicants", &_extra);
         let inner = self.inner.clone();
@@ -2025,6 +2220,12 @@ impl StockCorporateActionsClient {
             let mut builder = corp.listing_applicants();
             if let Some(sd) = start_date { builder = builder.start_date(&sd); }
             if let Some(ed) = end_date { builder = builder.end_date(&ed); }
+            if let Some(v) = &exchange {
+                builder = builder.exchange(v);
+            }
+            if let Some(v) = &sort {
+                builder = builder.sort(v);
+            }
             builder.send()
         });
         match result {
@@ -2136,7 +2337,7 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     tickers = await client.futopt.intraday.tickers(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers_async<'py>(
         &self,
         py: Python<'py>,
@@ -2144,7 +2345,7 @@ impl FutOptIntradayClient {
         exchange: Option<String>,
         after_hours: bool,
         contract_type: Option<String>,
-        is_spread: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        is_spread: Option<bool>,product: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "futopt.intraday.tickers", &_extra);
         let client = self.inner.clone();
@@ -2170,6 +2371,9 @@ impl FutOptIntradayClient {
                 if let Some(sp) = is_spread {
                     builder = builder.is_spread(sp);
                 }
+                if let Some(v) = &product {
+                    builder = builder.product(v);
+                }
                 builder.send()
             }).await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
@@ -2190,6 +2394,7 @@ impl FutOptIntradayClient {
     /// Args:
     ///     type: Contract type ("FUTURE" or "OPTION")
     ///     contract_type: Contract type code ("I", "R", "B", "C", "S", "E")
+    ///     product: Only contracts of this product (e.g. "TXF")
     ///
     /// Returns:
     ///     Awaitable[list[dict]]: List of product info dicts
@@ -2198,12 +2403,13 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     products = await client.futopt.intraday.products(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, contract_type=None, **_extra))]
+    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=false, status=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products_async<'py>(
         &self,
         py: Python<'py>,
         r#type: String,
-        contract_type: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,exchange: Option<String>, after_hours: bool, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "futopt.intraday.products", &_extra);
         let client = self.inner.clone();
@@ -2219,6 +2425,15 @@ impl FutOptIntradayClient {
                 let mut builder = intraday.products().typ(typ);
                 if let Some(c) = ct {
                     builder = builder.contract_type(c);
+                }
+                if let Some(v) = &exchange {
+                    builder = builder.exchange(v);
+                }
+                if after_hours {
+                    builder = builder.after_hours();
+                }
+                if let Some(v) = &status {
+                    builder = builder.status(v);
                 }
                 builder.send()
             }).await
@@ -2257,7 +2472,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers(
         &self,
         py: Python<'_>,
@@ -2265,7 +2480,7 @@ impl FutOptIntradayClient {
         exchange: Option<String>,
         after_hours: bool,
         contract_type: Option<String>,
-        is_spread: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        is_spread: Option<bool>,product: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
         warn_unknown_kwargs(py, "futopt.intraday.tickers", &_extra);
         let typ = parse_futopt_type(&r#type)?;
@@ -2290,6 +2505,9 @@ impl FutOptIntradayClient {
             if let Some(sp) = is_spread {
                 builder = builder.is_spread(sp);
             }
+            if let Some(v) = &product {
+                builder = builder.product(v);
+            }
             builder.send()
         });
         match result {
@@ -2303,12 +2521,13 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `products()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, contract_type=None, **_extra))]
+    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=false, status=None, **_extra))]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products(
         &self,
         py: Python<'_>,
         r#type: String,
-        contract_type: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,exchange: Option<String>, after_hours: bool, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
         warn_unknown_kwargs(py, "futopt.intraday.products", &_extra);
         let typ = parse_futopt_type(&r#type)?;
@@ -2323,6 +2542,15 @@ impl FutOptIntradayClient {
             let mut builder = intraday.products().typ(typ);
             if let Some(c) = ct {
                 builder = builder.contract_type(c);
+            }
+            if let Some(v) = &exchange {
+                builder = builder.exchange(v);
+            }
+            if after_hours {
+                builder = builder.after_hours();
+            }
+            if let Some(v) = &status {
+                builder = builder.status(v);
             }
             builder.send()
         });
@@ -2703,7 +2931,7 @@ impl FutOptHistoricalClient {
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles_async<'py>(
         &self,
@@ -2716,13 +2944,15 @@ impl FutOptHistoricalClient {
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
+        strike_price: Option<f64>,
+        call_put: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "futopt.historical.candles", &_extra);
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
-                let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort };
+                let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort, strike_price, call_put };
                 query.send(&client)
             })
             .await
@@ -2736,7 +2966,7 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles(
         &self,
@@ -2749,11 +2979,13 @@ impl FutOptHistoricalClient {
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
+        strike_price: Option<f64>,
+        call_put: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "futopt.historical.candles", &_extra);
         let inner = self.inner.clone();
-        let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort };
+        let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort, strike_price, call_put };
         let result = py.detach(|| query.send(&inner));
         match result {
             Ok(candles) => types::value_to_dict(py, &candles),
@@ -2833,6 +3065,8 @@ struct FutOptCandlesQuery {
     contract_month: Option<String>,
     fields: Option<String>,
     sort: Option<String>,
+    strike_price: Option<f64>,
+    call_put: Option<String>,
 }
 
 impl FutOptCandlesQuery {
@@ -2847,6 +3081,8 @@ impl FutOptCandlesQuery {
         if let Some(cm) = &self.contract_month { builder = builder.contract_month(cm); }
         if let Some(f) = &self.fields { builder = builder.fields(f); }
         if let Some(s) = &self.sort { builder = builder.sort(s); }
+        if let Some(sp) = self.strike_price { builder = builder.strike_price(sp); }
+        if let Some(cp) = &self.call_put { builder = builder.call_put(cp); }
         builder.send()
     }
 }

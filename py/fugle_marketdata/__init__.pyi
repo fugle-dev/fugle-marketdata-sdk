@@ -338,11 +338,12 @@ class StockIntradayClient:
         """
         ...
 
-    async def ticker_async(self, symbol: str) -> dict[str, Any]:
+    async def ticker_async(self, symbol: str, *, odd_lot: bool = False) -> dict[str, Any]:
         """Get ticker information for a stock symbol.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
+            odd_lot: Query odd-lot (盤中零股) data instead of board-lot
 
         Returns:
             Ticker data including name, industry, and basic info
@@ -352,12 +353,21 @@ class StockIntradayClient:
         """
         ...
 
-    async def candles_async(self, symbol: str, *, timeframe: str = "1") -> dict[str, Any]:
+    async def candles_async(
+        self,
+        symbol: str,
+        *,
+        timeframe: str = "1",
+        odd_lot: bool = False,
+        sort: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Get candlestick chart data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
             timeframe: Timeframe in minutes (default: "1")
+            odd_lot: Query odd-lot (盤中零股) data instead of board-lot
+            sort: Sort order, "asc" or "desc"
 
         Returns:
             Candlestick data with OHLCV values
@@ -367,11 +377,25 @@ class StockIntradayClient:
         """
         ...
 
-    async def trades_async(self, symbol: str) -> dict[str, Any]:
+    async def trades_async(
+        self,
+        symbol: str,
+        *,
+        odd_lot: bool = False,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        sort: Optional[str] = None,
+        is_trial: Optional[bool] = None,
+    ) -> dict[str, Any]:
         """Get trade ticks data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
+            odd_lot: Query odd-lot (盤中零股) data instead of board-lot
+            offset: Number of trades to skip
+            limit: Maximum number of trades to return
+            sort: Sort order, "asc" (oldest first) or "desc" (newest first, the server default)
+            is_trial: Only trial-matching (試撮合) trades
 
         Returns:
             Trade ticks data with price, volume, and time
@@ -381,11 +405,12 @@ class StockIntradayClient:
         """
         ...
 
-    async def volumes_async(self, symbol: str) -> dict[str, Any]:
+    async def volumes_async(self, symbol: str, *, odd_lot: bool = False) -> dict[str, Any]:
         """Get volume data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
+            odd_lot: Query odd-lot (盤中零股) data instead of board-lot
 
         Returns:
             Volume data by price level
@@ -402,6 +427,10 @@ class StockIntradayClient:
         market: str | None = None,
         industry: str | None = None,
         is_normal: bool | None = None,
+        is_attention: bool | None = None,
+        is_disposition: bool | None = None,
+        is_halted: bool | None = None,
+        symbol: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get batch ticker list for a security type.
 
@@ -411,6 +440,10 @@ class StockIntradayClient:
             market: Market filter (e.g., "TSE", "OTC")
             industry: Industry code filter
             is_normal: Filter to normal-status tickers only
+            is_attention: Only attention stocks (注意股)
+            is_disposition: Only disposition stocks (處置股)
+            is_halted: Only halted stocks
+            symbol: Comma-separated symbols to restrict the list to
 
         Returns:
             List of ticker info dicts
@@ -426,19 +459,33 @@ class StockIntradayClient:
         """Blocking version of `quote()`."""
         ...
 
-    def ticker(self, symbol: str) -> dict[str, Any]:
+    def ticker(self, symbol: str, odd_lot: bool = False) -> dict[str, Any]:
         """Blocking version of `ticker()`."""
         ...
 
-    def candles(self, symbol: str, timeframe: str = "1") -> dict[str, Any]:
+    def candles(
+        self,
+        symbol: str,
+        timeframe: str = "1",
+        odd_lot: bool = False,
+        sort: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Blocking version of `candles()`."""
         ...
 
-    def trades(self, symbol: str) -> dict[str, Any]:
+    def trades(
+        self,
+        symbol: str,
+        odd_lot: bool = False,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        sort: Optional[str] = None,
+        is_trial: Optional[bool] = None,
+    ) -> dict[str, Any]:
         """Blocking version of `trades()`."""
         ...
 
-    def volumes(self, symbol: str) -> dict[str, Any]:
+    def volumes(self, symbol: str, odd_lot: bool = False) -> dict[str, Any]:
         """Blocking version of `volumes()`."""
         ...
 
@@ -449,6 +496,10 @@ class StockIntradayClient:
         market: str | None = None,
         industry: str | None = None,
         is_normal: bool | None = None,
+        is_attention: bool | None = None,
+        is_disposition: bool | None = None,
+        is_halted: bool | None = None,
+        symbol: str | None = None,
     ) -> list[dict[str, Any]]:
         """Blocking version of `tickers()`."""
         ...
@@ -580,6 +631,12 @@ class StockSnapshotClient:
         *,
         direction: Optional[str] = None,
         change: Optional[str] = None,
+        type_filter: Optional[str] = None,
+        gt: Optional[float] = None,
+        gte: Optional[float] = None,
+        lt: Optional[float] = None,
+        lte: Optional[float] = None,
+        eq: Optional[float] = None,
     ) -> dict[str, Any]:
         """Get top movers for a market.
 
@@ -587,6 +644,12 @@ class StockSnapshotClient:
             market: Market code ("TSE", "OTC", "ESB", "TIB", "PSB")
             direction: Direction filter ("up" for gainers, "down" for losers)
             change: Change type ("percent" or "value")
+            type_filter: Stock type filter, "ALLBUT0999" or "COMMONSTOCK" (sent as `type`)
+            gt: Only changes greater than this
+            gte: Only changes greater than or equal to this
+            lt: Only changes less than this
+            lte: Only changes less than or equal to this
+            eq: Only changes equal to this
 
         Returns:
             Top movers data
@@ -606,12 +669,14 @@ class StockSnapshotClient:
         market: str,
         *,
         trade: Optional[str] = None,
+        type_filter: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get most active stocks for a market.
 
         Args:
             market: Market code ("TSE", "OTC", "ESB", "TIB", "PSB")
             trade: Trade type ("volume" or "value")
+            type_filter: Stock type filter, "ALLBUT0999" or "COMMONSTOCK" (sent as `type`)
 
         Returns:
             Most active stocks data
@@ -637,11 +702,19 @@ class StockSnapshotClient:
         market: str,
         direction: Optional[str] = None,
         change: Optional[str] = None,
+        type_filter: Optional[str] = None,
+        gt: Optional[float] = None,
+        gte: Optional[float] = None,
+        lt: Optional[float] = None,
+        lte: Optional[float] = None,
+        eq: Optional[float] = None,
     ) -> dict[str, Any]:
         """Blocking version of `movers()`."""
         ...
 
-    def actives(self, market: str, trade: Optional[str] = None) -> dict[str, Any]:
+    def actives(
+        self, market: str, trade: Optional[str] = None, type_filter: Optional[str] = None
+    ) -> dict[str, Any]:
         """Blocking version of `actives()`."""
         ...
 
@@ -1061,12 +1134,14 @@ class StockCorporateActionsClient:
         *,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get capital changes (stock splits, rights issues, etc.)
 
         Args:
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
+            sort: Sort order, "asc" or "desc"
 
         Returns:
             Capital changes data
@@ -1089,12 +1164,16 @@ class StockCorporateActionsClient:
         *,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        exchange: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get dividend announcements.
 
         Args:
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
+            exchange: Exchange filter, "TWSE" or "TPEx"
+            sort: Sort order, "asc" or "desc"
 
         Returns:
             Dividend data
@@ -1117,12 +1196,16 @@ class StockCorporateActionsClient:
         *,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        exchange: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get IPO listing applicants.
 
         Args:
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
+            exchange: Exchange filter, "TWSE" or "TPEx"
+            sort: Sort order, "asc" or "desc"
 
         Returns:
             Listing applicants data
@@ -1144,6 +1227,7 @@ class StockCorporateActionsClient:
         *,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `capital_changes()`."""
         ...
@@ -1153,6 +1237,8 @@ class StockCorporateActionsClient:
         *,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        exchange: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `dividends()`."""
         ...
@@ -1162,6 +1248,8 @@ class StockCorporateActionsClient:
         *,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        exchange: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `listing_applicants()`."""
         ...
@@ -1230,6 +1318,8 @@ class FutOptIntradayClient:
         exchange: str | None = None,
         after_hours: bool = False,
         contract_type: str | None = None,
+        is_spread: bool | None = None,
+        product: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get batch ticker list for a FutOpt contract type.
 
@@ -1238,6 +1328,8 @@ class FutOptIntradayClient:
             exchange: Exchange filter (e.g., "TAIFEX")
             after_hours: Query after-hours session data
             contract_type: Contract type code ("I", "R", "B", "C", "S", "E")
+            is_spread: Only spread (價差) contracts, or only non-spread ones
+            product: Only contracts of this product (e.g., "TXF")
 
         Returns:
             List of FutOpt ticker info dicts
@@ -1251,12 +1343,18 @@ class FutOptIntradayClient:
         self,
         type: str,
         contract_type: str | None = None,
+        exchange: str | None = None,
+        after_hours: bool = False,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get available FutOpt products list.
 
         Args:
             type: Contract type ("FUTURE" or "OPTION")
             contract_type: Contract type code ("I", "R", "B", "C", "S", "E")
+            exchange: Exchange filter (e.g., "TAIFEX")
+            after_hours: Query after-hours session data
+            status: Product status, "N", "P" or "U"
 
         Returns:
             List of product info dicts
@@ -1278,6 +1376,8 @@ class FutOptIntradayClient:
         exchange: str | None = None,
         after_hours: bool = False,
         contract_type: str | None = None,
+        is_spread: bool | None = None,
+        product: str | None = None,
     ) -> list[dict[str, Any]]:
         """Blocking version of `tickers()`."""
         ...
@@ -1286,6 +1386,9 @@ class FutOptIntradayClient:
         self,
         type: str,
         contract_type: str | None = None,
+        exchange: str | None = None,
+        after_hours: bool = False,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
         """Blocking version of `products()`."""
         ...
@@ -1309,6 +1412,8 @@ class FutOptHistoricalClient:
         contract_month: Optional[str] = None,
         fields: Optional[str] = None,
         sort: Optional[str] = None,
+        strike_price: Optional[float] = None,
+        call_put: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get historical candles for a FutOpt product.
 
@@ -1321,6 +1426,8 @@ class FutOptHistoricalClient:
             contract_month: "YYYYMM", or a continuous contract: "1!" (server default), "2!", "3!"
             fields: Comma-separated fields, e.g. "open,high,low,close,volume"
             sort: "asc" or "desc"
+            strike_price: Strike price (options only, with call_put)
+            call_put: "CALL" or "PUT" (options only, with strike_price)
 
         Returns:
             Historical candles data
@@ -1382,6 +1489,8 @@ class FutOptHistoricalClient:
         contract_month: Optional[str] = None,
         fields: Optional[str] = None,
         sort: Optional[str] = None,
+        strike_price: Optional[float] = None,
+        call_put: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `candles_async()`."""
         ...
