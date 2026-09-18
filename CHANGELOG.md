@@ -77,6 +77,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `futopt.intraday.products`: `status`
   - `futopt.historical.candles`: `strike_price`, `call_put`
 
+### Fixed
+
+- **C#, Go, Java, C++: `ReconnectConfigRecord` is validated by core** (#153).
+  `initial_delay_ms` below 100 ms (the connection-storm floor) and
+  `max_delay_ms` below `initial_delay_ms` were silently accepted, where Node
+  and Python reject the same values; the record did not go through
+  `ReconnectionConfig::new()`. Both are now a configuration error (code
+  1004), carried the same way as the health check error (#150):
+  `newWithCredentials` (used by the C#, Go and Java wrappers) raises it; the
+  constructors that cannot fail return it from `connect()`. Zero fields
+  still take the core defaults before validation, so a zero-valued record
+  stays the full default (#158, #161).
+- **Node.js: an invalid `reconnect` option threw a plain `Error`** without
+  the unified fields (#81), unlike the credential and `healthCheck` errors
+  thrown by the same constructor. It now carries `code: 1004` and
+  `sourceKind: 'client'`; it is still an `Error` (#153). Python keeps
+  raising `ValueError` for both `ReconnectConfig` and `HealthCheckConfig`;
+  #171 tracks it.
+
 ## [Bindings 3.0.0-rc.4 / core 0.9.0-rc.3 / uniffi 0.2.0-rc.3] - 2026-09-18
 
 ### Breaking

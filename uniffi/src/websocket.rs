@@ -179,19 +179,36 @@ pub struct ReconnectConfigRecord {
 }
 
 impl ReconnectConfigRecord {
-    fn to_core(&self) -> marketdata_core::ReconnectionConfig {
+    /// Core's config, validated by core (#153): an `initial_delay_ms` below
+    /// `MIN_INITIAL_DELAY_MS` or a `max_delay_ms` below `initial_delay_ms`
+    /// is a `ConfigError` (1004), as in Node and Python.
+    fn to_core(&self) -> Result<marketdata_core::ReconnectionConfig, marketdata_core::MarketDataError> {
         let default = marketdata_core::ReconnectionConfig::default();
+        // 0 means "unset" across the FFI boundary, so it takes the default
+        // *before* validation: a zero record must stay the full default
+        // (#158, #161), not fail the delay floor.
         let ms_or = |ms: u64, fallback| {
             if ms > 0 { std::time::Duration::from_millis(ms) } else { fallback }
         };
-        marketdata_core::ReconnectionConfig {
-            enabled: self.enabled.unwrap_or(default.enabled),
+        let mut config = marketdata_core::ReconnectionConfig::new(
             // 0 is both "unset" and "unlimited": the core default is unlimited.
-            max_attempts: self.max_attempts,
-            initial_delay: ms_or(self.initial_delay_ms, default.initial_delay),
-            max_delay: ms_or(self.max_delay_ms, default.max_delay),
-        }
+            self.max_attempts,
+            ms_or(self.initial_delay_ms, default.initial_delay),
+            ms_or(self.max_delay_ms, default.max_delay),
+        )?;
+        // Validated even when disabled, like the other bindings, so a bad
+        // value surfaces before auto-reconnect is switched on.
+        config.enabled = self.enabled.unwrap_or(default.enabled);
+        Ok(config)
     }
+}
+
+/// A reconnect record converted for a constructor that cannot fail: a
+/// config error is kept and returned by `connect()`.
+fn reconnect_or_deferred(
+    record: Option<ReconnectConfigRecord>,
+) -> Result<Option<marketdata_core::ReconnectionConfig>, String> {
+    record.map(|r| r.to_core()).transpose().map_err(config_error_message)
 }
 
 /// Health check configuration record for FFI
@@ -254,10 +271,16 @@ impl HealthCheckConfigRecord {
 fn health_check_or_deferred(
     record: Option<HealthCheckConfigRecord>,
 ) -> Result<Option<marketdata_core::HealthCheckConfig>, String> {
-    record.map(|r| r.to_core()).transpose().map_err(|e| match e {
+    record.map(|r| r.to_core()).transpose().map_err(config_error_message)
+}
+
+/// The message a deferred config error is re-raised with by `connect()`,
+/// without a doubled "Configuration error:" prefix.
+fn config_error_message(e: marketdata_core::MarketDataError) -> String {
+    match e {
         marketdata_core::MarketDataError::ConfigError(message) => message,
         other => other.to_string(),
-    })
+    }
 }
 
 /// What the client does with an inbound message while its queue already
@@ -376,9 +399,10 @@ pub struct WebSocketClient {
     /// `is_connected()` and `is_closed()`; outlives the core client, which
     /// `disconnect()` drops.
     state: std::sync::Mutex<Option<marketdata_core::ConnectionStateHandle>>,
-    reconnect_config: Option<marketdata_core::ReconnectionConfig>,
-    /// Health check config, or the message of the `ConfigError` its record
+    /// Reconnect config, or the message of the `ConfigError` its record
     /// raised in a constructor that cannot fail; `connect()` returns it.
+    reconnect_config: Result<Option<marketdata_core::ReconnectionConfig>, String>,
+    /// Health check config, likewise.
     health_check_config: Result<Option<marketdata_core::HealthCheckConfig>, String>,
     tls_config: Option<marketdata_core::TlsConfig>,
     message_queue: Option<MessageQueueConfigRecord>,
@@ -402,7 +426,7 @@ impl WebSocketClient {
         auth: AuthRequest,
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
-        reconnect_config: Option<marketdata_core::ReconnectionConfig>,
+        reconnect_config: Result<Option<marketdata_core::ReconnectionConfig>, String>,
         health_check_config: Result<Option<marketdata_core::HealthCheckConfig>, String>,
         base_url: Option<String>,
         tls_config: Option<marketdata_core::TlsConfig>,
@@ -439,7 +463,7 @@ impl WebSocketClient {
     /// * `listener` - Callback interface for receiving WebSocket events
     #[uniffi::constructor]
     pub fn new(api_key: String, listener: Arc<dyn WebSocketListener>) -> Arc<Self> {
-        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, None, Ok(None), None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, Ok(None), Ok(None), None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client for a specific endpoint
@@ -454,7 +478,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
     ) -> Arc<Self> {
-        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, None, Ok(None), None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, Ok(None), Ok(None), None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client with full configuration
@@ -477,7 +501,7 @@ impl WebSocketClient {
             AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
-            reconnect_config.map(|c| c.to_core()),
+            reconnect_or_deferred(reconnect_config),
             health_check_or_deferred(health_check_config),
             None,
             None,
@@ -500,7 +524,7 @@ impl WebSocketClient {
             AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
-            reconnect_config.map(|c| c.to_core()),
+            reconnect_or_deferred(reconnect_config),
             health_check_or_deferred(health_check_config),
             Some(base_url),
             None,
@@ -538,7 +562,7 @@ impl WebSocketClient {
             AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
-            reconnect_config.map(|c| c.to_core()),
+            reconnect_or_deferred(reconnect_config),
             health_check_or_deferred(health_check_config),
             base_url,
             tls.map(|t| t.to_core()),
@@ -581,7 +605,7 @@ impl WebSocketClient {
             AuthRequest::with_api_key(api_key),
             listener,
             endpoint,
-            reconnect_config.map(|c| c.to_core()),
+            reconnect_or_deferred(reconnect_config),
             health_check_or_deferred(health_check_config),
             base_url,
             tls.map(|t| t.to_core()),
@@ -616,12 +640,13 @@ impl WebSocketClient {
     ) -> Result<Arc<Self>, MarketDataError> {
         let CredentialsRecord { api_key, bearer_token, sdk_token } = credentials;
         let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)?;
+        let reconnect_config = reconnect_config.map(|c| c.to_core()).transpose()?;
         let health_check_config = health_check_config.map(|c| c.to_core()).transpose()?;
         Ok(Self::new_internal(
             AuthRequest::from(auth),
             listener,
             endpoint,
-            reconnect_config.map(|c| c.to_core()),
+            Ok(reconnect_config),
             Ok(health_check_config),
             base_url,
             tls.map(|t| t.to_core()),
@@ -789,14 +814,18 @@ impl WebSocketClient {
             message_queue.apply(&mut config);
         }
 
+        let reconnect_config = self
+            .reconnect_config
+            .clone()
+            .map_err(marketdata_core::MarketDataError::ConfigError)?;
         let health_check_config = self
             .health_check_config
             .clone()
             .map_err(marketdata_core::MarketDataError::ConfigError)?;
         // Create core WebSocket client with optional reconnection/health-check config
-        let core_ws = if let (Some(rc), Some(hc)) = (&self.reconnect_config, &health_check_config) {
+        let core_ws = if let (Some(rc), Some(hc)) = (&reconnect_config, &health_check_config) {
             CoreWebSocketClient::with_full_config(config, rc.clone(), hc.clone())
-        } else if let Some(rc) = &self.reconnect_config {
+        } else if let Some(rc) = &reconnect_config {
             CoreWebSocketClient::with_full_config(
                 config,
                 rc.clone(),
@@ -2079,7 +2108,9 @@ mod tests {
     /// auto-reconnect and health check on (#158, #161).
     #[test]
     fn zero_valued_records_are_the_core_defaults() {
-        let reconnect = ReconnectConfigRecord::default().to_core();
+        let reconnect = ReconnectConfigRecord::default()
+            .to_core()
+            .expect("defaults are valid");
         let default = marketdata_core::ReconnectionConfig::default();
         assert!(
             reconnect.enabled,
@@ -2101,6 +2132,100 @@ mod tests {
             "zero HealthCheckConfigRecord must leave probing off"
         );
         assert_eq!(health.heartbeat_timeout, std::time::Duration::from_secs(35));
+    }
+
+    /// Validation runs after the zero fields take their defaults (#153):
+    /// `initial_delay_ms: 0` is "use 1000", never "below the 100 ms floor",
+    /// so a zero record stays legal (#158, #161). Each field is checked on
+    /// its own, since either one zeroed could trip the floor or the
+    /// `max >= initial` check if it were validated before defaulting.
+    #[test]
+    fn reconnect_record_zeroes_are_defaulted_before_validation() {
+        let default = marketdata_core::ReconnectionConfig::default();
+        let cases = [
+            ("all zero", ReconnectConfigRecord::default()),
+            ("disabled", ReconnectConfigRecord { enabled: Some(false), ..Default::default() }),
+            ("initial only", ReconnectConfigRecord { initial_delay_ms: 1_000, ..Default::default() }),
+            ("max only", ReconnectConfigRecord { max_delay_ms: 60_000, ..Default::default() }),
+        ];
+        for (name, record) in cases {
+            let config = record.to_core().unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(config.enabled, record.enabled.unwrap_or(default.enabled), "{name}");
+            assert_eq!(config.max_attempts, default.max_attempts, "{name}");
+            assert_eq!(config.initial_delay, default.initial_delay, "{name}");
+            assert_eq!(config.max_delay, default.max_delay, "{name}");
+        }
+    }
+
+    /// Core validates the record (#153): a delay below `MIN_INITIAL_DELAY_MS`
+    /// or a `max_delay_ms` below `initial_delay_ms` is 1004, raised by the
+    /// fallible constructor, as Node and Python raise it.
+    #[test]
+    fn reconnect_record_invalid_delays_are_a_config_error() {
+        let cases = [
+            (
+                "initial below floor",
+                ReconnectConfigRecord { initial_delay_ms: 1, ..Default::default() },
+                "initial_delay must be >= 100ms",
+            ),
+            (
+                "max below initial",
+                ReconnectConfigRecord { initial_delay_ms: 5_000, max_delay_ms: 2_000, ..Default::default() },
+                "max_delay (2000ms) must be >= initial_delay (5000ms)",
+            ),
+            (
+                "invalid while disabled",
+                ReconnectConfigRecord { enabled: Some(false), initial_delay_ms: 1, ..Default::default() },
+                "initial_delay must be >= 100ms",
+            ),
+        ];
+        for (name, record, expected) in cases {
+            let result = WebSocketClient::new_with_credentials(
+                CredentialsRecord {
+                    api_key: Some("test-key".to_string()),
+                    bearer_token: None,
+                    sdk_token: None,
+                },
+                Arc::new(TestListener::new()),
+                WebSocketEndpoint::Stock,
+                None,
+                Some(record),
+                None,
+                None,
+                None,
+                None,
+            );
+            match result {
+                Err(MarketDataError::ConfigError { info, .. }) => {
+                    assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{name}: {info:?}");
+                    assert!(info.message.contains(expected), "{name}: {info:?}");
+                }
+                Err(other) => panic!("{name}: expected CONFIG, got {other:?}"),
+                Ok(_) => panic!("{name}: expected CONFIG, got a client"),
+            }
+        }
+    }
+
+    /// A constructor that cannot fail returns the reconnect error from
+    /// `connect()`, as it does the health check error (#153).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn deferred_reconnect_error_is_returned_by_connect() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord { initial_delay_ms: 1, ..Default::default() }),
+        );
+        match client.connect_impl().await {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{info:?}");
+                assert!(info.message.contains("initial_delay must be >= 100ms (got 1ms)"), "{info:?}");
+                assert!(!info.message.contains("Configuration error: Configuration error"), "{info:?}");
+            }
+            other => panic!("expected CONFIG, got {other:?}"),
+        }
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 0);
     }
 
     #[test]
