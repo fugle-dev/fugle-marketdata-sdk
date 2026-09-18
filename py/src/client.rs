@@ -290,7 +290,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.etf_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.etf_holdings", symbol, from_date, to_date, sort, &_extra)?;
         ownership_async(py, self.inner.clone(), query, send_etf_holdings)
     }
 
@@ -305,7 +305,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.etf_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.etf_holdings", symbol, from_date, to_date, sort, &_extra)?;
         ownership_sync(py, &self.inner, query, send_etf_holdings)
     }
 
@@ -335,7 +335,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.institutional_trades", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.institutional_trades", symbol, from_date, to_date, sort, &_extra)?;
         ownership_async(py, self.inner.clone(), query, send_institutional_trades)
     }
 
@@ -350,7 +350,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.institutional_trades", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.institutional_trades", symbol, from_date, to_date, sort, &_extra)?;
         ownership_sync(py, &self.inner, query, send_institutional_trades)
     }
 
@@ -380,7 +380,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.director_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.director_holdings", symbol, from_date, to_date, sort, &_extra)?;
         ownership_async(py, self.inner.clone(), query, send_director_holdings)
     }
 
@@ -395,7 +395,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.director_holdings", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.director_holdings", symbol, from_date, to_date, sort, &_extra)?;
         ownership_sync(py, &self.inner, query, send_director_holdings)
     }
 
@@ -425,7 +425,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.tdcc_distribution", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.tdcc_distribution", symbol, from_date, to_date, sort, &_extra)?;
         ownership_async(py, self.inner.clone(), query, send_tdcc_distribution)
     }
 
@@ -440,7 +440,7 @@ impl StockOwnershipClient {
         sort: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        let query = OwnershipQuery::resolve(py, "stock.ownership.tdcc_distribution", symbol, from_date, to_date, sort, &_extra)?;
+        let query = OwnershipQuery::resolve("stock.ownership.tdcc_distribution", symbol, from_date, to_date, sort, &_extra)?;
         ownership_sync(py, &self.inner, query, send_tdcc_distribution)
     }
 }
@@ -459,35 +459,20 @@ impl OwnershipQuery {
     /// The official fugle-marketdata forwards `**params` verbatim as query
     /// parameters, so callers write `from_=` (2.6.0+ alias for the reserved
     /// word), `**{"from": ...}` or `to=`. Those spellings land in `**_extra`
-    /// here; they are pulled out before the unknown-kwarg warning so legacy
-    /// code keeps its date range instead of silently losing it.
+    /// and are merged through the same table as every other REST method.
     fn resolve(
-        py: Python<'_>,
-        method: &str,
+        method: &'static str,
         symbol: String,
         from_date: Option<String>,
         to_date: Option<String>,
         sort: Option<String>,
         extra: &Option<Bound<'_, pyo3::types::PyDict>>,
     ) -> PyResult<Self> {
-        let mut from = from_date;
-        let mut to = to_date;
-        if let Some(extra) = extra {
-            for (alias, is_from) in [("from", true), ("from_", true), ("to", false)] {
-                let Some(value) = extra.get_item(alias)? else { continue };
-                let value: Option<String> = value.extract()?;
-                extra.del_item(alias)?;
-                let slot = if is_from { &mut from } else { &mut to };
-                if slot.is_some() {
-                    let canonical = if is_from { "from_date" } else { "to_date" };
-                    return Err(pyo3::exceptions::PyTypeError::new_err(format!(
-                        "{method}() got multiple values for {canonical} (also passed as '{alias}')"
-                    )));
-                }
-                *slot = value;
-            }
-        }
-        warn_unknown_kwargs(py, method, extra);
+        let mut kw = crate::kwargs::Kwargs::parse(method, extra)?;
+        let from = kw.take_string("from", from_date)?;
+        let to = kw.take_string("to", to_date)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         Ok(Self {
             symbol,
             from,
@@ -607,16 +592,18 @@ impl StockIntradayClient {
     ///     print(f"Last price: {quote['lastPrice']}")
     ///     print(f"Change: {quote['change']}")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.quote", &_extra);
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quote", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.quote().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 builder.send()
@@ -634,15 +621,17 @@ impl StockIntradayClient {
     ///
     /// Sync sibling of `quote()` for callers migrating from the legacy
     /// fugle-marketdata Python SDK. Releases the GIL during the network call.
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn quote(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.intraday.quote", &_extra);
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn quote(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Py<pyo3::types::PyDict>> {
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quote", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.quote().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             builder.send()
@@ -668,17 +657,19 @@ impl StockIntradayClient {
     ///     ```python
     ///     ticker = await client.stock.intraday.ticker("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.ticker", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.ticker", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.ticker().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 builder.send()
@@ -693,16 +684,18 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn ticker(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn ticker(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.intraday.ticker", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.ticker", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.ticker().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             builder.send()
@@ -729,17 +722,20 @@ impl StockIntradayClient {
     ///     ```python
     ///     candles = await client.stock.intraday.candles("2330", "5")
     ///     ```
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=false, sort=None, **_extra))]
-    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, odd_lot: bool, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=None, sort=None, **_extra))]
+    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 if let Some(v) = &sort {
@@ -757,16 +753,19 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=false, sort=None, **_extra))]
-    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, odd_lot: bool, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=None, sort=None, **_extra))]
+    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.intraday.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             if let Some(v) = &sort {
@@ -795,11 +794,17 @@ impl StockIntradayClient {
     ///     ```python
     ///     trades = await client.stock.intraday.trades("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
-    pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.trades", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.trades", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        let offset = kw.take("offset", offset)?;
+        let limit = kw.take("limit", limit)?;
+        let sort = kw.take_string("sort", sort)?;
+        let is_trial = kw.take("is_trial", is_trial)?;
+        kw.finish()?;
         // The builder has sort_asc()/sort_desc(), so the value is narrowed here;
         // any other value could not be sent at all.
         let sort_asc = match sort.as_deref() {
@@ -818,7 +823,7 @@ impl StockIntradayClient {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.trades().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 if let Some(v) = offset {
@@ -845,11 +850,17 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=false, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
-    pub fn trades(&self, py: Python<'_>, symbol: String, odd_lot: bool, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    pub fn trades(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.intraday.trades", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.trades", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        let offset = kw.take("offset", offset)?;
+        let limit = kw.take("limit", limit)?;
+        let sort = kw.take_string("sort", sort)?;
+        let is_trial = kw.take("is_trial", is_trial)?;
+        kw.finish()?;
         // The builder has sort_asc()/sort_desc(), so the value is narrowed here;
         // any other value could not be sent at all.
         let sort_asc = match sort.as_deref() {
@@ -867,7 +878,7 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.trades().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             if let Some(v) = offset {
@@ -905,17 +916,19 @@ impl StockIntradayClient {
     ///     ```python
     ///     volumes = await client.stock.intraday.volumes("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.volumes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.volumes", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.volumes().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 builder.send()
@@ -930,16 +943,18 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn volumes(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn volumes(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.intraday.volumes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.volumes", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.volumes().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             builder.send()
@@ -977,7 +992,15 @@ impl StockIntradayClient {
         industry: Option<String>,
         is_normal: Option<bool>,is_attention: Option<bool>, is_disposition: Option<bool>, is_halted: Option<bool>, symbol: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.tickers", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.tickers", &_extra)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let industry = kw.take_string("industry", industry)?;
+        let is_normal = kw.take("is_normal", is_normal)?;
+        let is_attention = kw.take("is_attention", is_attention)?;
+        let is_disposition = kw.take("is_disposition", is_disposition)?;
+        let is_halted = kw.take("is_halted", is_halted)?;
+        let symbol = kw.take_string("symbol", symbol)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1035,7 +1058,15 @@ impl StockIntradayClient {
         industry: Option<String>,
         is_normal: Option<bool>,is_attention: Option<bool>, is_disposition: Option<bool>, is_halted: Option<bool>, symbol: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
-        warn_unknown_kwargs(py, "stock.intraday.tickers", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.tickers", &_extra)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let industry = kw.take_string("industry", industry)?;
+        let is_normal = kw.take("is_normal", is_normal)?;
+        let is_attention = kw.take("is_attention", is_attention)?;
+        let is_disposition = kw.take("is_disposition", is_disposition)?;
+        let is_halted = kw.take("is_halted", is_halted)?;
+        let symbol = kw.take_string("symbol", symbol)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1123,7 +1154,14 @@ impl StockHistoricalClient {
         sort: Option<String>,
         adjusted: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.historical.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.historical.candles", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let fields = kw.take_string("fields", fields)?;
+        let sort = kw.take_string("sort", sort)?;
+        let adjusted = kw.take("adjusted", adjusted)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1173,7 +1211,14 @@ impl StockHistoricalClient {
         sort: Option<String>,
         adjusted: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.historical.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.historical.candles", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let fields = kw.take_string("fields", fields)?;
+        let sort = kw.take_string("sort", sort)?;
+        let adjusted = kw.take("adjusted", adjusted)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1221,7 +1266,8 @@ impl StockHistoricalClient {
     #[pyo3(signature = (symbol, **_extra))]
     pub fn stats_async<'py>(&self, py: Python<'py>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.historical.stats", &_extra);
+        let kw = crate::kwargs::Kwargs::parse("stock.historical.stats", &_extra)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1243,7 +1289,8 @@ impl StockHistoricalClient {
     #[pyo3(signature = (symbol, **_extra))]
     pub fn stats(&self, py: Python<'_>, symbol: String, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.historical.stats", &_extra);
+        let kw = crate::kwargs::Kwargs::parse("stock.historical.stats", &_extra)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1287,7 +1334,9 @@ impl StockSnapshotClient {
         market: String,
         type_filter: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.snapshot.quotes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.quotes", &_extra)?;
+        let type_filter = kw.take_string("type", type_filter)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1332,7 +1381,16 @@ impl StockSnapshotClient {
         direction: Option<String>,
         change: Option<String>,type_filter: Option<String>, gt: Option<f64>, gte: Option<f64>, lt: Option<f64>, lte: Option<f64>, eq: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.snapshot.movers", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.movers", &_extra)?;
+        let direction = kw.take_string("direction", direction)?;
+        let change = kw.take_string("change", change)?;
+        let type_filter = kw.take_string("type", type_filter)?;
+        let gt = kw.take("gt", gt)?;
+        let gte = kw.take("gte", gte)?;
+        let lt = kw.take("lt", lt)?;
+        let lte = kw.take("lte", lte)?;
+        let eq = kw.take("eq", eq)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1401,7 +1459,10 @@ impl StockSnapshotClient {
         market: String,
         trade: Option<String>,type_filter: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.snapshot.actives", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.actives", &_extra)?;
+        let trade = kw.take_string("trade", trade)?;
+        let type_filter = kw.take_string("type", type_filter)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1434,7 +1495,9 @@ impl StockSnapshotClient {
         market: String,
         type_filter: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.snapshot.quotes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.quotes", &_extra)?;
+        let type_filter = kw.take_string("type", type_filter)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1461,7 +1524,16 @@ impl StockSnapshotClient {
         direction: Option<String>,
         change: Option<String>,type_filter: Option<String>, gt: Option<f64>, gte: Option<f64>, lt: Option<f64>, lte: Option<f64>, eq: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.snapshot.movers", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.movers", &_extra)?;
+        let direction = kw.take_string("direction", direction)?;
+        let change = kw.take_string("change", change)?;
+        let type_filter = kw.take_string("type", type_filter)?;
+        let gt = kw.take("gt", gt)?;
+        let gte = kw.take("gte", gte)?;
+        let lt = kw.take("lt", lt)?;
+        let lte = kw.take("lte", lte)?;
+        let eq = kw.take("eq", eq)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1507,7 +1579,10 @@ impl StockSnapshotClient {
         market: String,
         trade: Option<String>,type_filter: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.snapshot.actives", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.actives", &_extra)?;
+        let trade = kw.take_string("trade", trade)?;
+        let type_filter = kw.take_string("type", type_filter)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1559,7 +1634,12 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.technical.sma", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.sma", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let period = kw.take("period", period)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1611,7 +1691,12 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.technical.rsi", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.rsi", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let period = kw.take("period", period)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1668,7 +1753,14 @@ impl StockTechnicalClient {
         d_period: Option<u32>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.technical.kdj", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.kdj", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let r_period = kw.take("r_period", r_period)?;
+        let k_period = kw.take("k_period", k_period)?;
+        let d_period = kw.take("d_period", d_period)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1730,7 +1822,14 @@ impl StockTechnicalClient {
         slow: Option<u32>,
         signal: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.technical.macd", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.macd", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let fast = kw.take("fast", fast)?;
+        let slow = kw.take("slow", slow)?;
+        let signal = kw.take("signal", signal)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1788,7 +1887,12 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.technical.bb", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.bb", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let period = kw.take("period", period)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -1830,7 +1934,12 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.technical.sma", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.sma", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let period = kw.take("period", period)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1859,7 +1968,12 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.technical.rsi", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.rsi", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let period = kw.take("period", period)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1891,7 +2005,14 @@ impl StockTechnicalClient {
         d_period: Option<u32>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.technical.kdj", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.kdj", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let r_period = kw.take("r_period", r_period)?;
+        let k_period = kw.take("k_period", k_period)?;
+        let d_period = kw.take("d_period", d_period)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1924,7 +2045,14 @@ impl StockTechnicalClient {
         slow: Option<u32>,
         signal: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.technical.macd", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.macd", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let fast = kw.take("fast", fast)?;
+        let slow = kw.take("slow", slow)?;
+        let signal = kw.take("signal", signal)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -1955,7 +2083,12 @@ impl StockTechnicalClient {
         timeframe: Option<String>,
         period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.technical.bb", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.technical.bb", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let period = kw.take("period", period)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -2007,7 +2140,11 @@ impl StockCorporateActionsClient {
         start_date: Option<String>,
         end_date: Option<String>,sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.corporate_actions.capital_changes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.corporate_actions.capital_changes", &_extra)?;
+        let start_date = kw.take_string("start_date", start_date)?;
+        let end_date = kw.take_string("end_date", end_date)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -2060,7 +2197,12 @@ impl StockCorporateActionsClient {
         start_date: Option<String>,
         end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.corporate_actions.dividends", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.corporate_actions.dividends", &_extra)?;
+        let start_date = kw.take_string("start_date", start_date)?;
+        let end_date = kw.take_string("end_date", end_date)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -2114,7 +2256,12 @@ impl StockCorporateActionsClient {
         start_date: Option<String>,
         end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "stock.corporate_actions.listing_applicants", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.corporate_actions.listing_applicants", &_extra)?;
+        let start_date = kw.take_string("start_date", start_date)?;
+        let end_date = kw.take_string("end_date", end_date)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -2153,7 +2300,11 @@ impl StockCorporateActionsClient {
         start_date: Option<String>,
         end_date: Option<String>,sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.corporate_actions.capital_changes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.corporate_actions.capital_changes", &_extra)?;
+        let start_date = kw.take_string("start_date", start_date)?;
+        let end_date = kw.take_string("end_date", end_date)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -2181,7 +2332,12 @@ impl StockCorporateActionsClient {
         start_date: Option<String>,
         end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.corporate_actions.dividends", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.corporate_actions.dividends", &_extra)?;
+        let start_date = kw.take_string("start_date", start_date)?;
+        let end_date = kw.take_string("end_date", end_date)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -2212,7 +2368,12 @@ impl StockCorporateActionsClient {
         start_date: Option<String>,
         end_date: Option<String>,exchange: Option<String>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "stock.corporate_actions.listing_applicants", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("stock.corporate_actions.listing_applicants", &_extra)?;
+        let start_date = kw.take_string("start_date", start_date)?;
+        let end_date = kw.take_string("end_date", end_date)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let sort = kw.take_string("sort", sort)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -2298,17 +2459,19 @@ impl FutOptIntradayClient {
     ///     # After-hours session
     ///     ah_quote = await client.futopt.intraday.quote("TXFC4", after_hours=True)
     ///     ```
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
-    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.quote", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.quote", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.quote().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2337,17 +2500,23 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     tickers = await client.futopt.intraday.tickers(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, product=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers_async<'py>(
         &self,
         py: Python<'py>,
         r#type: String,
         exchange: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_type: Option<String>,
         is_spread: Option<bool>,product: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.tickers", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.tickers", &_extra)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let contract_type = kw.take_string("contract_type", contract_type)?;
+        let is_spread = kw.take("is_spread", is_spread)?;
+        let product = kw.take_string("product", product)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let typ = parse_futopt_type(&r#type)?;
@@ -2362,7 +2531,7 @@ impl FutOptIntradayClient {
                 if let Some(e) = &exchange {
                     builder = builder.exchange(e);
                 }
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 if let Some(c) = ct {
@@ -2403,15 +2572,20 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     products = await client.futopt.intraday.products(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=false, status=None, **_extra))]
+    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products_async<'py>(
         &self,
         py: Python<'py>,
         r#type: String,
-        contract_type: Option<String>,exchange: Option<String>, after_hours: bool, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,exchange: Option<String>, after_hours: Option<bool>, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.products", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.products", &_extra)?;
+        let contract_type = kw.take_string("contract_type", contract_type)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let status = kw.take_string("status", status)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let typ = parse_futopt_type(&r#type)?;
@@ -2429,7 +2603,7 @@ impl FutOptIntradayClient {
                 if let Some(v) = &exchange {
                     builder = builder.exchange(v);
                 }
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 if let Some(v) = &status {
@@ -2451,16 +2625,18 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `quote()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
-    pub fn quote(&self, py: Python<'_>, symbol: String, after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    pub fn quote(&self, py: Python<'_>, symbol: String, after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "futopt.intraday.quote", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.quote", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.quote().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2472,17 +2648,23 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, product=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers(
         &self,
         py: Python<'_>,
         r#type: String,
         exchange: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_type: Option<String>,
         is_spread: Option<bool>,product: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.tickers", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.tickers", &_extra)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let contract_type = kw.take_string("contract_type", contract_type)?;
+        let is_spread = kw.take("is_spread", is_spread)?;
+        let product = kw.take_string("product", product)?;
+        kw.finish()?;
         let typ = parse_futopt_type(&r#type)?;
         let ct = match contract_type.as_deref() {
             Some(s) => Some(parse_contract_type(s)?),
@@ -2496,7 +2678,7 @@ impl FutOptIntradayClient {
             if let Some(e) = &exchange {
                 builder = builder.exchange(e);
             }
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             if let Some(c) = ct {
@@ -2521,15 +2703,20 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `products()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=false, status=None, **_extra))]
+    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products(
         &self,
         py: Python<'_>,
         r#type: String,
-        contract_type: Option<String>,exchange: Option<String>, after_hours: bool, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,exchange: Option<String>, after_hours: Option<bool>, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.products", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.products", &_extra)?;
+        let contract_type = kw.take_string("contract_type", contract_type)?;
+        let exchange = kw.take_string("exchange", exchange)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let status = kw.take_string("status", status)?;
+        kw.finish()?;
         let typ = parse_futopt_type(&r#type)?;
         let ct = match contract_type.as_deref() {
             Some(s) => Some(parse_contract_type(s)?),
@@ -2546,7 +2733,7 @@ impl FutOptIntradayClient {
             if let Some(v) = &exchange {
                 builder = builder.exchange(v);
             }
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             if let Some(v) = &status {
@@ -2573,21 +2760,23 @@ impl FutOptIntradayClient {
     // ============================================================
 
     /// Get intraday ticker for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn ticker_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.ticker", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.ticker", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.ticker().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2608,20 +2797,22 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn ticker(
         &self,
         py: Python<'_>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.ticker", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.ticker", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.ticker().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2638,15 +2829,17 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday candles for a FutOpt contract
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=None, **_extra))]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
         timeframe: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.candles", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -2656,7 +2849,7 @@ impl FutOptIntradayClient {
                     .candles()
                     .symbol(&symbol)
                     .timeframe(&timeframe);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2672,15 +2865,17 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=None, **_extra))]
     pub fn candles(
         &self,
         py: Python<'_>,
         symbol: String,
         timeframe: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "futopt.intraday.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.candles", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let futopt = inner.futopt();
@@ -2689,7 +2884,7 @@ impl FutOptIntradayClient {
                 .candles()
                 .symbol(&symbol)
                 .timeframe(&timeframe);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2701,24 +2896,29 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday trades for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=false, offset=None, limit=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
     pub fn trades_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        after_hours: bool,
+        after_hours: Option<bool>,
         offset: Option<i32>,
         limit: Option<i32>,
         is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.trades", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.trades", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let offset = kw.take("offset", offset)?;
+        let limit = kw.take("limit", limit)?;
+        let is_trial = kw.take("is_trial", is_trial)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.trades().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 if let Some(o) = offset {
@@ -2743,23 +2943,28 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, offset=None, limit=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
     pub fn trades(
         &self,
         py: Python<'_>,
         symbol: String,
-        after_hours: bool,
+        after_hours: Option<bool>,
         offset: Option<i32>,
         limit: Option<i32>,
         is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "futopt.intraday.trades", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.trades", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let offset = kw.take("offset", offset)?;
+        let limit = kw.take("limit", limit)?;
+        let is_trial = kw.take("is_trial", is_trial)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.trades().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             if let Some(o) = offset {
@@ -2780,21 +2985,23 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday volumes for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn volumes_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.intraday.volumes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.volumes", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.volumes().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2810,20 +3017,22 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn volumes(
         &self,
         py: Python<'_>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "futopt.intraday.volumes", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.volumes", &_extra)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.volumes().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2835,38 +3044,6 @@ impl FutOptIntradayClient {
     }
 }
 
-/// If the caller passed unknown keyword arguments via `**kwargs`, emit a
-/// `DeprecationWarning` (non-fatal) and drop them. Matches the 2.4.1 SDK's
-/// `**params` interface well enough for drop-in use: known kwargs go through
-/// the typed builder; unknown ones are surfaced but don't block.
-///
-/// A stricter future version could forward unknown kwargs as raw query params
-/// via a new core-side extension point.
-fn warn_unknown_kwargs(
-    py: Python<'_>,
-    method: &str,
-    extra: &Option<Bound<'_, pyo3::types::PyDict>>,
-) {
-    let Some(extra) = extra else { return };
-    if extra.len() == 0 {
-        return;
-    }
-    let keys: Vec<String> = extra
-        .keys()
-        .iter()
-        .filter_map(|k| k.extract::<String>().ok())
-        .collect();
-    if keys.is_empty() {
-        return;
-    }
-    let msg = format!(
-        "{}(): unrecognized keyword argument(s) {:?} were ignored. Known kwargs are typed; please pass them as named positionals/kwargs.",
-        method, keys
-    );
-    let _ = py
-        .import("warnings")
-        .and_then(|w| w.call_method1("warn", (msg, py.get_type::<pyo3::exceptions::PyUserWarning>())));
-}
 
 fn parse_futopt_type(s: &str) -> PyResult<marketdata_core::models::futopt::FutOptType> {
     use marketdata_core::models::futopt::FutOptType;
@@ -2931,7 +3108,7 @@ impl FutOptHistoricalClient {
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles_async<'py>(
         &self,
@@ -2940,7 +3117,7 @@ impl FutOptHistoricalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
@@ -2948,7 +3125,17 @@ impl FutOptHistoricalClient {
         call_put: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
-        warn_unknown_kwargs(py, "futopt.historical.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.candles", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let contract_month = kw.take_string("contract_month", contract_month)?;
+        let fields = kw.take_string("fields", fields)?;
+        let sort = kw.take_string("sort", sort)?;
+        let strike_price = kw.take("strike_price", strike_price)?;
+        let call_put = kw.take_string("call_put", call_put)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -2966,7 +3153,7 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles(
         &self,
@@ -2975,7 +3162,7 @@ impl FutOptHistoricalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
@@ -2983,7 +3170,17 @@ impl FutOptHistoricalClient {
         call_put: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
-        warn_unknown_kwargs(py, "futopt.historical.candles", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.candles", &_extra)?;
+        let from_date = kw.take_string("from", from_date)?;
+        let to_date = kw.take_string("to", to_date)?;
+        let timeframe = kw.take_string("timeframe", timeframe)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let contract_month = kw.take_string("contract_month", contract_month)?;
+        let fields = kw.take_string("fields", fields)?;
+        let sort = kw.take_string("sort", sort)?;
+        let strike_price = kw.take("strike_price", strike_price)?;
+        let call_put = kw.take_string("call_put", call_put)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let query = FutOptCandlesQuery { symbol, from_date, to_date, timeframe, after_hours, contract_month, fields, sort, strike_price, call_put };
         let result = py.detach(|| query.send(&inner));
@@ -3010,17 +3207,20 @@ impl FutOptHistoricalClient {
     ///     ```python
     ///     daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
     ///     ```
-    #[pyo3(signature = (symbol, date=None, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, date=None, after_hours=None, **_extra))]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
         date: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         reject_daily_range_kwargs(&_extra)?;
-        warn_unknown_kwargs(py, "futopt.historical.daily", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.daily", &_extra)?;
+        let date = kw.take_string("date", date)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || send_futopt_daily(&client, &symbol, date.as_deref(), after_hours))
@@ -3035,17 +3235,20 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, date=None, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, date=None, after_hours=None, **_extra))]
     pub fn daily(
         &self,
         py: Python<'_>,
         symbol: String,
         date: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         reject_daily_range_kwargs(&_extra)?;
-        warn_unknown_kwargs(py, "futopt.historical.daily", &_extra);
+        let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.daily", &_extra)?;
+        let date = kw.take_string("date", date)?;
+        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        kw.finish()?;
         let inner = self.inner.clone();
         let result = py.detach(|| send_futopt_daily(&inner, &symbol, date.as_deref(), after_hours));
         match result {
@@ -3061,7 +3264,7 @@ struct FutOptCandlesQuery {
     from_date: Option<String>,
     to_date: Option<String>,
     timeframe: Option<String>,
-    after_hours: bool,
+    after_hours: Option<bool>,
     contract_month: Option<String>,
     fields: Option<String>,
     sort: Option<String>,
@@ -3077,7 +3280,7 @@ impl FutOptCandlesQuery {
         if let Some(f) = &self.from_date { builder = builder.from(f); }
         if let Some(t) = &self.to_date { builder = builder.to(t); }
         if let Some(tf) = &self.timeframe { builder = builder.timeframe(tf); }
-        if self.after_hours { builder = builder.after_hours(true); }
+        if self.after_hours == Some(true) { builder = builder.after_hours(true); }
         if let Some(cm) = &self.contract_month { builder = builder.contract_month(cm); }
         if let Some(f) = &self.fields { builder = builder.fields(f); }
         if let Some(s) = &self.sort { builder = builder.sort(s); }
@@ -3091,19 +3294,20 @@ fn send_futopt_daily(
     client: &marketdata_core::RestClient,
     symbol: &str,
     date: Option<&str>,
-    after_hours: bool,
+    after_hours: Option<bool>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let futopt = client.futopt();
     let historical = futopt.historical();
     let mut builder = historical.daily().symbol(symbol);
     if let Some(d) = date { builder = builder.date(d); }
-    if after_hours { builder = builder.after_hours(true); }
+    if after_hours == Some(true) { builder = builder.after_hours(true); }
     builder.send()
 }
 
 /// `futopt.historical.daily` used to take a date range. The endpoint returns a
-/// single trading day, so a range cannot be translated; left to the generic
-/// unknown-kwarg warning it would be ignored and today's data returned instead.
+/// single trading day, so a range cannot be translated; the generic
+/// unknown-keyword error would only say the key is unknown, so this one says
+/// what to pass instead. Runs before the generic check.
 fn reject_daily_range_kwargs(extra: &Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<()> {
     let Some(extra) = extra else { return Ok(()) };
     for key in ["from_date", "to_date", "from_", "from", "to"] {

@@ -269,6 +269,29 @@ client.futopt.intraday.volumes(symbol)     # Volume by price
 client.futopt.intraday.products(type)      # Product listing ("F" or "O")
 ```
 
+#### Query parameters
+
+Every REST method takes the endpoint's query parameters as keyword arguments,
+under the 3.x snake_case names, the API's own names as documented on
+developer.fugle.tw (the spelling the 2.x SDK used), or the 2.x `from_` alias
+for the reserved word:
+
+```python
+client.stock.intraday.trades("2330", limit=5, sort="asc", is_trial=True)
+client.stock.intraday.trades("2330", limit=5, sort="asc", isTrial=True)   # same call
+client.stock.intraday.ticker("2330", odd_lot=True)
+client.stock.intraday.ticker("2330", type="oddlot")                       # same call
+client.stock.technical.sma("2330", from_date="2026-08-01", to_date="2026-09-10", period=5)
+client.stock.technical.sma("2330", from_="2026-08-01", to="2026-09-10", period=5)  # same call
+```
+
+A keyword the endpoint does not take raises `TypeError` naming the accepted
+ones, and so does one parameter given under two spellings. Values are sent as
+given and the server reports a bad value, except the two switches behind a
+boolean keyword: `type` must be `"oddlot"` and `session` `"afterhours"` /
+`"regular"`, or `ValueError`. Type checkers only know the snake_case
+keywords; the other spellings are runtime aliases.
+
 ### WebSocketClient
 
 #### Properties

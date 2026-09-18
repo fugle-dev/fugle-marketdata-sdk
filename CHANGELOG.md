@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Python: a REST keyword the endpoint does not take raises `TypeError`**
+  (#164). It used to produce one `UserWarning` and be dropped, so the call
+  succeeded with the wrong data: `trades("2330", limit=5, sort="asc")`
+  returned 50 trades and `ticker("2330", type="oddlot")` board-lot data. The
+  error names the method, the nearest accepted spelling when there is one,
+  and every accepted keyword. Every extra keyword is now resolved through
+  core's table of the server's parameters, so the spellings the 2.x SDK and
+  developer.fugle.tw use work as they did before 3.0: the API's names
+  (`isTrial`, `isNormal`, `isSpread`, `contractType`, `rPeriod`,
+  `contractMonth`, `from` / `to`, `type="oddlot"`, `session="afterhours"`,
+  `type="COMMONSTOCK"` on the snapshot endpoints) and the 2.x `from_` alias.
+  The 3.x snake_case keywords are unchanged. One parameter given under two
+  spellings (`from_date` with `from`, `is_trial` with `isTrial`,
+  `odd_lot=True` with `type="oddlot"`) raises `TypeError` instead of one
+  being dropped. The two boolean flags interpret the wire value because the
+  keyword behind them is a boolean: `type` must be `"oddlot"` exactly, as on
+  the server; `session` is case-insensitive, `"regular"` meaning the default,
+  as on the server. Any other value is sent as given. So that an explicit
+  `False` counts as a value in that check, `odd_lot` and `after_hours`
+  default to `None` instead of `False`; `True` / `False` mean what they did.
 - **Node: the object form of every REST method rejects a key the endpoint
   does not accept** (#164). Keys are checked against core's table of the
   server's DTOs before the request is sent; an unknown key rejects with

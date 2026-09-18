@@ -97,6 +97,7 @@ mod callback;
 mod client;
 mod errors;
 mod handoff;
+mod kwargs;
 pub mod iterator;
 mod tls_kwargs;
 mod types;
