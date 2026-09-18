@@ -3,8 +3,9 @@
  * 1.x SDK and of the examples on developer.fugle.tw.
  *
  * The path param (`symbol` / `market`) goes into the path and every other key
- * is forwarded verbatim as a query param. Asserted against the request a real
- * loopback server receives: no API key or network needed.
+ * is checked against core's table and sent under the API name. Asserted
+ * against the request a real loopback server receives: no API key or network
+ * needed.
  */
 const http = require('http');
 const { RestClient } = require('../');
@@ -130,7 +131,7 @@ const CASES = [
     '/futopt/historical/daily/TXF', {}],
 ];
 
-describe('object params are forwarded verbatim', () => {
+describe('object params are sent under the API names', () => {
   test.each(CASES)('%s', async (_name, call, path, query) => {
     await call(ctx.client);
     expect(ctx.lastRequest()).toEqual({ path: `/v1.0${path}`, query });
@@ -158,6 +159,118 @@ describe('object params are forwarded verbatim', () => {
 
   test('a nested object value is rejected', async () => {
     await expect(ctx.client.stock.intraday.trades({ symbol: '2330', limit: { n: 5 } })).rejects.toThrow('`limit` must be');
+  });
+});
+
+// Keys are checked against core's table (see core::rest::params, #164);
+// the server would ignore a typo or answer 400 depending on the endpoint.
+describe('unknown keys are rejected', () => {
+  // Errors come from the native module's realm, so `instanceof Error` is
+  // false under jest; check the brand instead.
+  const rejection = async (promise) => {
+    const err = await promise.then(() => undefined, (e) => e);
+    expect(Object.prototype.toString.call(err)).toBe('[object Error]');
+    return err;
+  };
+
+  test('a typo names the endpoint, the suggestion and the accepted keys', async () => {
+    const err = await rejection(ctx.client.futopt.intraday.tickers({ type: 'FUTURE', prodcut: 'TXF' }));
+    expect(err.message).toBe(
+      "Invalid parameter 'prodcut': `futopt.intraday.tickers` does not accept `prodcut`; " +
+        'accepted keys: type, exchange, session, product, contractType, isSpread'
+    );
+  });
+
+  test('a near miss in case or underscores suggests the API name', async () => {
+    const err = await rejection(ctx.client.stock.intraday.trades({ symbol: '2330', istrial: true }));
+    expect(err.message).toContain('did you mean `isTrial`?');
+    expect(err.message).toContain('accepted keys: symbol, type, offset, limit, sort, isTrial');
+  });
+
+  test('the rejection carries the unified error fields', async () => {
+    const err = await rejection(ctx.client.stock.intraday.ticker({ symbol: '2330', Type: 'oddlot' }));
+    expect(err).toMatchObject({ code: 1005, sourceKind: 'client', status: null, body: null, requestId: null });
+    expect(err.message).toContain('did you mean `type`?');
+  });
+
+  test('the path param given under two names is refused', async () => {
+    await expect(
+      ctx.client.futopt.historical.daily({ product: 'TXF', symbol: 'TXF' })
+    ).rejects.toThrow('`symbol` and `product` both name the path param; give one');
+    const err = await rejection(ctx.client.futopt.historical.daily({ product: 'TXF', dat: '2026-09-01' }));
+    expect(err.message).toContain('accepted keys: symbol, product, date, session');
+  });
+
+  test.each([
+    ['products does not take product', (c) => c.futopt.intraday.products({ type: 'FUTURE', product: 'TXF' }), '`product`'],
+    ['tickers does not take status', (c) => c.futopt.intraday.tickers({ type: 'FUTURE', status: 'N' }), '`status`'],
+    ['capital-changes does not take exchange', (c) => c.stock.corporateActions.capitalChanges({ exchange: 'TWSE' }), '`exchange`'],
+    ['dividends does not take date', (c) => c.stock.corporateActions.dividends({ date: '2026-09-01' }), '`date`'],
+    ['stats takes nothing but symbol', (c) => c.stock.historical.stats({ symbol: '2330', from: '2026-01-01' }), '`from`'],
+    ['a key valid elsewhere is still unknown here', (c) => c.stock.intraday.quote({ symbol: '2330', timeframe: '5' }), '`timeframe`'],
+  ])('%s', async (_name, call, key) => {
+    const err = await rejection(call(ctx.client));
+    expect(err.message).toContain(`does not accept ${key}`);
+    expect(err.code).toBe(1005);
+  });
+
+  test('an unknown key is refused even when its value is null', async () => {
+    await expect(ctx.client.stock.intraday.quote({ symbol: '2330', tpye: null })).rejects.toThrow('does not accept `tpye`');
+  });
+
+  test('the same parameter given under two spellings is refused', async () => {
+    await expect(
+      ctx.client.stock.intraday.trades({ symbol: '2330', isTrial: true, is_trial: false })
+    ).rejects.toThrow(/`(isTrial|is_trial)` is `isTrial`, already given as `(is_trial|isTrial)`/);
+    // Which spelling is reported first follows napi's property enumeration,
+    // not the literal's order, so only the pairing is pinned.
+  });
+
+  test('a flag form must be a boolean', async () => {
+    await expect(ctx.client.stock.intraday.quote({ symbol: '2330', oddLot: 'yes' })).rejects.toThrow('`oddLot` must be a boolean');
+  });
+
+  test('values are not checked: the server answers those', async () => {
+    await ctx.client.stock.intraday.quote({ symbol: '2330', type: 'ODDLOT' });
+    expect(ctx.lastRequest().query).toEqual({ type: 'ODDLOT' });
+    await ctx.client.stock.snapshot.movers({ market: 'TSE', direction: 'sideways', change: 'percent' });
+    expect(ctx.lastRequest().query).toEqual({ direction: 'sideways', change: 'percent' });
+  });
+});
+
+describe('snake_case and flag aliases resolve through the table', () => {
+  test.each([
+    ['is_trial → isTrial', (c) => c.stock.intraday.trades({ symbol: '2330', is_trial: true, limit: 5 }),
+      '/stock/intraday/trades/2330', { isTrial: 'true', limit: '5' }],
+    ['contract_month → contractMonth', (c) => c.futopt.historical.candles({ product: 'TXF', contract_month: '2!' }),
+      '/futopt/historical/candles/TXF', { contractMonth: '2!' }],
+    ['r_period/k_period/d_period', (c) => c.stock.technical.kdj({ symbol: '2330', r_period: 9, k_period: 3, d_period: 3 }),
+      '/stock/technical/kdj/2330', { rPeriod: '9', kPeriod: '3', dPeriod: '3' }],
+    ['odd_lot: true on ticker', (c) => c.stock.intraday.ticker({ symbol: '2330', odd_lot: true }),
+      '/stock/intraday/ticker/2330', { type: 'oddlot' }],
+    ['oddLot: true on candles (was only special-cased on quote)', (c) => c.stock.intraday.candles({ symbol: '2330', oddLot: true }),
+      '/stock/intraday/candles/2330', { type: 'oddlot' }],
+    ['odd_lot: false sends nothing', (c) => c.stock.intraday.volumes({ symbol: '2330', odd_lot: false }),
+      '/stock/intraday/volumes/2330', {}],
+    ['after_hours: true on a single contract is lower case', (c) => c.futopt.intraday.quote({ symbol: 'TXFD6', after_hours: true }),
+      '/futopt/intraday/quote/TXFD6', { session: 'afterhours' }],
+    ['after_hours: true on a list endpoint is upper case', (c) => c.futopt.intraday.products({ type: 'FUTURE', after_hours: true }),
+      '/futopt/intraday/products', { type: 'FUTURE', session: 'AFTERHOURS' }],
+    ['session given verbatim is sent as given', (c) => c.futopt.intraday.tickers({ type: 'FUTURE', session: 'afterhours' }),
+      '/futopt/intraday/tickers', { type: 'FUTURE', session: 'afterhours' }],
+    ['positional oddLot with the object form', (c) => c.stock.intraday.quote({ symbol: '2330' }, true),
+      '/stock/intraday/quote/2330', { type: 'oddlot' }],
+    ['object oddLot: false wins over positional true', (c) => c.stock.intraday.quote({ symbol: '2330', oddLot: false }, true),
+      '/stock/intraday/quote/2330', {}],
+    ['object type: oddlot with positional true is not a duplicate', (c) => c.stock.intraday.quote({ symbol: '2330', type: 'oddlot' }, true),
+      '/stock/intraday/quote/2330', { type: 'oddlot' }],
+    ['object odd_lot: true with positional true is not a duplicate', (c) => c.stock.intraday.quote({ symbol: '2330', odd_lot: true }, true),
+      '/stock/intraday/quote/2330', { type: 'oddlot' }],
+    ['object oddLot: null with positional true', (c) => c.stock.intraday.quote({ symbol: '2330', oddLot: null }, true),
+      '/stock/intraday/quote/2330', { type: 'oddlot' }],
+  ])('%s', async (_name, call, path, query) => {
+    await call(ctx.client);
+    expect(ctx.lastRequest()).toEqual({ path: `/v1.0${path}`, query });
   });
 });
 
