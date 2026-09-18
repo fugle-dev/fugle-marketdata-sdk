@@ -4,7 +4,7 @@ name = "marketdata-uniffi"
 # bindings have never been published and share no namespace with the official
 # SDK, so they start their own 0.x track rather than inheriting the 3.x that
 # py/js need in order to supersede the official packages.
-version = "0.2.0-rc.4"
+version = "0.2.0-rc.5"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
