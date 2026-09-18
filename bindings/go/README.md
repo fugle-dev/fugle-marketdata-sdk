@@ -23,11 +23,11 @@ platform and links it statically. No Rust toolchain is needed, and
 | macOS Apple Silicon | `darwin/arm64` | macOS 11 | Xcode Command Line Tools |
 | macOS Intel | `darwin/amd64` | macOS 11 | Xcode Command Line Tools |
 | Linux x86-64 (glibc) | `linux/amd64` | glibc 2.17 | gcc or clang |
+| Linux ARM64 (glibc) | `linux/arm64` | glibc 2.17 | gcc or clang |
 | Windows x86-64 | `windows/amd64` | Windows 10 | [mingw-w64](https://www.mingw-w64.org/) gcc on `PATH` |
 
 Not supported in this release:
 
-- `linux/arm64`
 - musl-based Linux such as Alpine
 - Windows builds that use MSVC instead of mingw-w64
 - `go mod vendor`, which does not copy the module's `lib/` directories

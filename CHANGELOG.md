@@ -74,6 +74,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`Cannot GET`, 2026-09-19) and is left out until it is deployed, so the
     SDK does not ship a call that can only 404. The warrant endpoints stay
     out on purpose: Fugle does not offer warrant data through the SDK.
+- **C#, Go, Java and C++: Linux arm64** (#190). The UniFFI track now builds
+  `aarch64-unknown-linux-gnu` on the native `ubuntu-24.04-arm` runner, like
+  the Python and Node.js tracks already did: the NuGet package gains
+  `runtimes/linux-arm64/native/`, the Go module `lib/linux_arm64/` with a
+  `cgo_linux_arm64.go`, the Java resources `native/linux-arm64/`, and each
+  release attaches a `fugle-marketdata-cpp-linux-arm64-<version>.tar.gz`.
+  Same glibc 2.17 baseline as x64. AWS Graviton, arm64 CI runners and
+  Linux containers on Apple Silicon no longer need the x86_64 build under
+  emulation. Android (`aarch64-linux-android`) is a different target and
+  still not built.
+- Every Linux platform the NuGet package, the Go module and the C++
+  tarballs ship is now installed, linked and run before it is pushed or
+  attached: `publish-nuget.yml` packs, installs the nupkg from a local
+  feed on `linux-x64` and `linux-arm64` and constructs a client, then
+  pushes; `publish-go.yml` runs its consumer on both; `release.yml`
+  compiles and runs against both C++ tarballs. `verify-release.yml` adds
+  `ubuntu-24.04-arm` to the NuGet, Go and C++ install matrices.
 
 ### Fixed
 

@@ -50,12 +50,14 @@ jobs:
         run: |
           echo "Creating native resource directories..."
           mkdir -p bindings/java/src/main/resources/native/linux-x64
+          mkdir -p bindings/java/src/main/resources/native/linux-arm64
           mkdir -p bindings/java/src/main/resources/native/osx-arm64
           mkdir -p bindings/java/src/main/resources/native/osx-x64
           mkdir -p bindings/java/src/main/resources/native/win-x64
 
           echo "Copying native libraries..."
           cp native-libs/linux-x64/*.so bindings/java/src/main/resources/native/linux-x64/
+          cp native-libs/linux-arm64/*.so bindings/java/src/main/resources/native/linux-arm64/
           cp native-libs/osx-arm64/*.dylib bindings/java/src/main/resources/native/osx-arm64/
           cp native-libs/osx-x64/*.dylib bindings/java/src/main/resources/native/osx-x64/
           cp native-libs/win-x64/*.dll bindings/java/src/main/resources/native/win-x64/
