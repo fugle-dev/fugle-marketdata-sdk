@@ -207,3 +207,59 @@ async fn sync_connect_while_connected_or_connecting_is_refused() {
     .await
     .expect("sync client thread");
 }
+
+/// Events up to and including the final `Disconnected { will_reconnect:
+/// false }`, and those after it.
+fn split_at_final_disconnect(events: &[ConnectionEvent]) -> (&[ConnectionEvent], &[ConnectionEvent]) {
+    let end = events
+        .iter()
+        .position(|e| matches!(e, ConnectionEvent::Disconnected { will_reconnect: false, .. }))
+        .unwrap_or_else(|| panic!("no final Disconnected in {events:?}"));
+    events.split_at(end + 1)
+}
+
+/// `force_close()` while auto-reconnecting does not join the supervisor:
+/// whatever step of the loop it lands in, nothing follows the final
+/// `Disconnected`, and `Closed { Client }` is not overwritten (#145). The
+/// window is narrow, so this guards against the loop reporting on
+/// unchecked rather than reproducing the race every run.
+#[tokio::test(flavor = "multi_thread")]
+async fn sync_force_close_while_reconnecting_is_the_last_word() {
+    for round in 0..8u64 {
+        // One connection only: every reconnect attempt is refused at once.
+        let server = common::spawn(common::AfterAuth::ServerDropAfter { delay_ms: 50 }).await;
+        let (after, states) = tokio::task::spawn_blocking(move || {
+            let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+            let reconnect = ReconnectionConfig::new(1_000, Duration::from_millis(100), Duration::from_millis(100))
+                .expect("reconnection config");
+            let client = WebSocketClient::with_reconnection_config(config, reconnect);
+            client.connect().expect("connect");
+            // Land in a different step of the loop each round.
+            std::thread::sleep(Duration::from_millis(120 + round * 37));
+            client.force_close().expect("force close");
+
+            let mut states = Vec::new();
+            for _ in 0..30 {
+                states.push(client.state());
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let rx = common::EventReceiver::of_sync(&client);
+            let events = common::drain_until_quiet(|timeout| rx.recv_timeout(timeout).ok());
+            let (_, after) = split_at_final_disconnect(&events);
+            (after.to_vec(), states)
+        })
+        .await
+        .expect("sync client thread");
+
+        assert!(after.is_empty(), "round {round}: events after the final Disconnected: {after:?}");
+        for state in states {
+            assert!(
+                matches!(
+                    state,
+                    marketdata_core::ConnectionState::Closed { intent: DisconnectIntent::Client, .. }
+                ),
+                "round {round}: state left Closed: {state:?}"
+            );
+        }
+    }
+}
