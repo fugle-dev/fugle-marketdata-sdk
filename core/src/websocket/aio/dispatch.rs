@@ -273,17 +273,17 @@ pub(crate) async fn dispatch_messages(
             Next::ReportWriteFailure(WriteFailure { error, message }) => {
                 // Mirrors the transport-error arm below and the sync
                 // client's write-error path: `Error`, then `Disconnected`,
-                // both suppressed when shutdown was caller-initiated.
+                // both suppressed when shutdown was caller-initiated, and
+                // both held back once the close was reported (#159).
                 if shutdown_requested.load(Ordering::SeqCst) {
                     return None;
                 }
-                stream.emit(ConnectionEvent::error_with_message(&error, message.clone()));
-                stream.connection_lost(
+                let will_reconnect = will_reconnect(DisconnectIntent::Network, None).await;
+                stream.connection_failed(
                     &state,
-                    None,
+                    ConnectionEvent::error_with_message(&error, message.clone()),
                     message,
-                    DisconnectIntent::Network,
-                    will_reconnect(DisconnectIntent::Network, None).await,
+                    will_reconnect,
                 );
                 return None;
             }
@@ -338,7 +338,8 @@ pub(crate) async fn dispatch_messages(
                         stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        stream.emit(ConnectionEvent::error_with_message(
+                        // Not after the client's close has been reported (#159).
+                        stream.emit_unless_closed(ConnectionEvent::error_with_message(
                             &e,
                             format!("Failed to deserialize message: {}", e),
                         ));
@@ -362,7 +363,8 @@ pub(crate) async fn dispatch_messages(
                         stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        stream.emit(ConnectionEvent::error_with_message(
+                        // Not after the client's close has been reported (#159).
+                        stream.emit_unless_closed(ConnectionEvent::error_with_message(
                             &e,
                             format!("Failed to deserialize binary message: {}", e),
                         ));
@@ -411,21 +413,21 @@ pub(crate) async fn dispatch_messages(
                 // down the socket which surfaces here as a transport
                 // error (or a peer that skips TLS close_notify, #22),
                 // and the shutdown path already emits the canonical
-                // `Disconnected { intent: Client }`.
+                // `Disconnected { intent: Client }`. Once it has, neither
+                // event follows it (#159).
                 if shutdown_requested.load(Ordering::SeqCst) {
                     return None;
                 }
                 let err_msg = format!("WebSocket error: {}", e);
-                stream.emit(ConnectionEvent::error_with_message(
-                    &crate::MarketDataError::from(e),
-                    err_msg.clone(),
-                ));
-                stream.connection_lost(
+                let will_reconnect = will_reconnect(DisconnectIntent::Network, None).await;
+                stream.connection_failed(
                     &state,
-                    None,
+                    ConnectionEvent::error_with_message(
+                        &crate::MarketDataError::from(e),
+                        err_msg.clone(),
+                    ),
                     err_msg,
-                    DisconnectIntent::Network,
-                    will_reconnect(DisconnectIntent::Network, None).await,
+                    will_reconnect,
                 );
                 return None;
             }
@@ -450,14 +452,14 @@ fn report_heartbeat_timeout(
         elapsed_ms,
         "heartbeat timeout: no inbound frame in window"
     );
-    stream.emit(ConnectionEvent::HeartbeatTimeout { elapsed });
     // Through the latch, so a racing `disconnect()` cannot report this
-    // connection's close a second time (#47).
-    stream.connection_lost(
+    // connection's close a second time (#47), and under one lock, so a
+    // `disconnect()` that reported the close first is not followed by the
+    // timeout (#159).
+    stream.connection_failed(
         state,
-        None,
+        ConnectionEvent::HeartbeatTimeout { elapsed },
         format!("Heartbeat timeout after {elapsed_ms}ms"),
-        DisconnectIntent::Network,
         will_reconnect,
     );
 }

@@ -2600,8 +2600,9 @@ mod write_failure_tests {
     }
 
     /// Server that authenticates one client, then drops the connection when
-    /// `drop_it` fires. Later connections are accepted and never answered.
-    async fn dropping_server() -> (String, tokio::sync::oneshot::Sender<()>) {
+    /// `drop_it` fires, sending `last` first if given. Later connections are
+    /// accepted and never answered.
+    async fn dropping_server(last: Option<&'static str>) -> (String, tokio::sync::oneshot::Sender<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let url = format!("ws://{}", listener.local_addr().expect("addr"));
         let (drop_it, dropped) = tokio::sync::oneshot::channel::<()>();
@@ -2613,6 +2614,9 @@ mod write_failure_tests {
                 .await
                 .expect("authenticated");
             let _ = dropped.await;
+            if let Some(last) = last {
+                ws.send(Message::Text(last.into())).await.expect("last frame");
+            }
             drop(ws);
             std::future::pending::<()>().await;
         });
@@ -2623,7 +2627,7 @@ mod write_failure_tests {
     /// close is reported, the failure is not reported as `Error` (#105).
     async fn assert_lost_connection_write_is_silent(reconnection: ReconnectionConfig) {
         let will = reconnection.enabled;
-        let (url, drop_it) = dropping_server().await;
+        let (url, drop_it) = dropping_server(None).await;
         let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
         let client = WebSocketClient::with_reconnection_config(config, reconnection);
         client.connect().await.expect("connect");
@@ -2714,6 +2718,84 @@ mod write_failure_tests {
         assert_eq!(timeout, Some(IDLE + PROBE_TIMEOUT));
         assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
         assert!(received.lock().unwrap()[0].is_empty(), "the probe got out");
+    }
+
+    /// `force_close()` sets `shutdown_requested` and then reports the
+    /// client's close; the dispatch task can read the flag before and
+    /// report after. Its report must then be held back (#159). Reporting
+    /// the close without the flag replays that interleaving: what the task
+    /// sees is exactly the flag unset and the close reported.
+    async fn assert_nothing_follows_the_client_s_close(
+        client: WebSocketClient,
+        fail: impl FnOnce(),
+    ) {
+        skip_handshake(&client);
+        client
+            .stream
+            .client_closed(&client.state, 1006, "Force closed".into());
+        let closed = client.state();
+        let (event, _) = next_event(&client).expect("the client's close");
+        assert!(
+            matches!(
+                event,
+                ConnectionEvent::Disconnected { intent: DisconnectIntent::Client, will_reconnect: false, .. }
+            ),
+            "{event:?}"
+        );
+
+        fail();
+        tokio::time::timeout(WAIT, async {
+            while client.dispatch_task_running().await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("dispatch task exits");
+
+        assert_no_event(&client);
+        assert_eq!(client.state(), closed);
+        client.force_close().await.expect("force_close");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn heartbeat_timeout_after_the_client_s_close_is_reported_is_not_reported() {
+        let url = silent_server().await;
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let health = HealthCheckConfig {
+            heartbeat_timeout: Duration::from_millis(300),
+            ..HealthCheckConfig::default()
+        };
+        let client =
+            WebSocketClient::with_full_config(config, ReconnectionConfig::disabled(), health);
+        client.connect().await.expect("connect");
+        assert_nothing_follows_the_client_s_close(client, || {}).await;
+    }
+
+    /// Report the client's close, then have the server send `last`, if
+    /// given, and drop the connection.
+    async fn assert_nothing_follows_the_client_s_close_dropped(last: Option<&'static str>) {
+        let (url, drop_it) = dropping_server(last).await;
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::with_full_config(
+            config,
+            ReconnectionConfig::disabled(),
+            HealthCheckConfig::disabled(),
+        );
+        client.connect().await.expect("connect");
+        assert_nothing_follows_the_client_s_close(client, || {
+            drop_it.send(()).expect("server drops the connection");
+        })
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn transport_error_after_the_client_s_close_is_reported_is_not_reported() {
+        assert_nothing_follows_the_client_s_close_dropped(None).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn deserialize_error_after_the_client_s_close_is_reported_is_not_reported() {
+        assert_nothing_follows_the_client_s_close_dropped(Some("not json")).await;
     }
 }
 

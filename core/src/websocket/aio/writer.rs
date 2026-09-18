@@ -116,8 +116,9 @@ async fn run_writer_task(
                 error: e.into(),
             };
             if let Err(failure) = write_failed.send(failure) {
+                // Not after the client's close has been reported (#159).
                 if generation.load(Ordering::SeqCst) == current {
-                    stream.emit(ConnectionEvent::error_with_message(
+                    stream.emit_unless_closed(ConnectionEvent::error_with_message(
                         &failure.error,
                         failure.message,
                     ));
