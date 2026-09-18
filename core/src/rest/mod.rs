@@ -84,6 +84,11 @@ pub mod stock;
 // FutOpt (Futures and Options) endpoints module
 pub mod futopt;
 
+// Which query keys each endpoint accepts — for the bindings, like
+// `RestClient::get_json`; hidden from the docs and the public-API baseline.
+#[doc(hidden)]
+pub mod params;
+
 // Re-export public types
 pub use auth::Auth;
 pub use client::{IntradayClient, RestClient, StockClient};
