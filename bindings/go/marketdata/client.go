@@ -92,17 +92,7 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		}
 	}
 
-	var reconnectRecord *ReconnectConfigRecord
-	if cfg.noReconnect {
-		reconnectRecord = &ReconnectConfigRecord{Enabled: false}
-	} else if cfg.reconnect != nil {
-		reconnectRecord = &ReconnectConfigRecord{
-			Enabled:        true,
-			MaxAttempts:    cfg.reconnect.MaxAttempts,
-			InitialDelayMs: cfg.reconnect.InitialDelayMs,
-			MaxDelayMs:     cfg.reconnect.MaxDelayMs,
-		}
-	}
+	reconnectRecord := cfg.reconnectRecord()
 	healthCheckRecord := cfg.healthCheckRecord()
 	var messageQueueRecord *MessageQueueConfigRecord
 	if cfg.messageOverflow != nil || cfg.messageBuffer != nil {
@@ -147,18 +137,36 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 	}, nil
 }
 
+// reconnectRecord is the record to hand to core: nil keeps the core
+// defaults (auto-reconnect on), WithoutReconnect turns it off, and a
+// ReconnectConfig leaves Enabled unset so core keeps it on.
+func (cfg *clientConfig) reconnectRecord() *ReconnectConfigRecord {
+	if cfg.noReconnect {
+		disabled := false
+		return &ReconnectConfigRecord{Enabled: &disabled}
+	}
+	if cfg.reconnect == nil {
+		return nil
+	}
+	return &ReconnectConfigRecord{
+		MaxAttempts:    cfg.reconnect.MaxAttempts,
+		InitialDelayMs: cfg.reconnect.InitialDelayMs,
+		MaxDelayMs:     cfg.reconnect.MaxDelayMs,
+	}
+}
+
 // healthCheckRecord is the record to hand to core: nil keeps the core
 // defaults (detection on), WithoutHealthCheck turns it off, and a
-// HealthCheckConfig always keeps it on (#152).
+// HealthCheckConfig leaves Enabled unset so core keeps it on (#152).
 func (cfg *clientConfig) healthCheckRecord() *HealthCheckConfigRecord {
 	if cfg.noHealthCheck {
-		return &HealthCheckConfigRecord{Enabled: false}
+		disabled := false
+		return &HealthCheckConfigRecord{Enabled: &disabled}
 	}
 	if cfg.healthCheck == nil {
 		return nil
 	}
 	return &HealthCheckConfigRecord{
-		Enabled:            true,
 		HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
 		ProbeEnabled:       cfg.healthCheck.ProbeEnabled,
 		IdleProbeAfterMs:   cfg.healthCheck.IdleProbeAfterMs,

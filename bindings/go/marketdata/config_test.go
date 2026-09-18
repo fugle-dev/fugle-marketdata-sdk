@@ -408,6 +408,72 @@ func TestWithoutHealthCheck_LastOptionWins(t *testing.T) {
 	}
 }
 
+// enabledIsUnset reports whether a record left Enabled for core to default.
+func enabledIsUnset(enabled *bool) bool { return enabled == nil }
+
+// enabledIs reports whether a record set Enabled to want.
+func enabledIs(enabled *bool, want bool) bool { return enabled != nil && *enabled == want }
+
+// A raw record built without Enabled keeps the feature on: the generated
+// types sit in the same package as the wrapper, so users can reach them
+// directly (#161). Zero-valued Enabled is nil, which core resolves to its
+// default (on); with a plain bool it was false and silently turned the
+// feature off. The records also cross the FFI boundary as built.
+func TestRawRecordsWithoutEnabledKeepFeaturesOn(t *testing.T) {
+	reconnect := ReconnectConfigRecord{MaxAttempts: 3}
+	if !enabledIsUnset(reconnect.Enabled) {
+		t.Errorf("ReconnectConfigRecord{MaxAttempts: 3}: want Enabled unset (core default: on), got %v", *reconnect.Enabled)
+	}
+	healthCheck := HealthCheckConfigRecord{HeartbeatTimeoutMs: 10000}
+	if !enabledIsUnset(healthCheck.Enabled) {
+		t.Errorf("HealthCheckConfigRecord{HeartbeatTimeoutMs: 10000}: want Enabled unset (core default: on), got %v", *healthCheck.Enabled)
+	}
+	if !enabledIsUnset((ReconnectConfigRecord{}).Enabled) || !enabledIsUnset((HealthCheckConfigRecord{}).Enabled) {
+		t.Error("zero-valued records must leave Enabled unset")
+	}
+
+	off := false
+	for name, records := range map[string]struct {
+		reconnect   *ReconnectConfigRecord
+		healthCheck *HealthCheckConfigRecord
+	}{
+		"unset":    {&reconnect, &healthCheck},
+		"disabled": {&ReconnectConfigRecord{Enabled: &off}, &HealthCheckConfigRecord{Enabled: &off}},
+	} {
+		client := WebSocketClientNewWithConfig("test-key", &mockListener{}, WebSocketEndpointStock, records.reconnect, records.healthCheck)
+		if client == nil {
+			t.Errorf("%s: client not constructed", name)
+			continue
+		}
+		client.Destroy()
+	}
+}
+
+// A ReconnectConfig leaves Enabled for core to default (on); only
+// WithoutReconnect turns auto-reconnect off.
+func TestReconnectRecord(t *testing.T) {
+	if rec := (&clientConfig{}).reconnectRecord(); rec != nil {
+		t.Errorf("no option: want nil record (core defaults), got %+v", *rec)
+	}
+
+	cfg := &clientConfig{}
+	if err := WithReconnect(ReconnectConfig{MaxAttempts: 3})(cfg); err != nil {
+		t.Fatalf("option: %v", err)
+	}
+	rec := cfg.reconnectRecord()
+	if rec == nil || !enabledIsUnset(rec.Enabled) || rec.MaxAttempts != 3 {
+		t.Errorf("partial ReconnectConfig: want Enabled unset MaxAttempts=3, got %+v", rec)
+	}
+
+	cfg = &clientConfig{}
+	if err := WithoutReconnect()(cfg); err != nil {
+		t.Fatalf("option: %v", err)
+	}
+	if rec := cfg.reconnectRecord(); rec == nil || !enabledIs(rec.Enabled, false) {
+		t.Errorf("WithoutReconnect: want Enabled=false, got %+v", rec)
+	}
+}
+
 // A HealthCheckConfig that sets only some fields keeps detection on; only
 // WithoutHealthCheck turns it off (#152).
 func TestHealthCheckRecord(t *testing.T) {
@@ -420,8 +486,8 @@ func TestHealthCheckRecord(t *testing.T) {
 		t.Fatalf("option: %v", err)
 	}
 	rec := cfg.healthCheckRecord()
-	if rec == nil || !rec.Enabled || rec.HeartbeatTimeoutMs != 10000 {
-		t.Errorf("partial HealthCheckConfig: want Enabled=true HeartbeatTimeoutMs=10000, got %+v", rec)
+	if rec == nil || !enabledIsUnset(rec.Enabled) || rec.HeartbeatTimeoutMs != 10000 {
+		t.Errorf("partial HealthCheckConfig: want Enabled unset HeartbeatTimeoutMs=10000, got %+v", rec)
 	}
 
 	cfg = &clientConfig{}
@@ -429,15 +495,15 @@ func TestHealthCheckRecord(t *testing.T) {
 		t.Fatalf("option: %v", err)
 	}
 	rec = cfg.healthCheckRecord()
-	if rec == nil || !rec.Enabled || !rec.ProbeEnabled || rec.IdleProbeAfterMs != 10000 || rec.ProbeTimeoutMs != 2000 {
-		t.Errorf("probe HealthCheckConfig: want Enabled and probe fields passed through, got %+v", rec)
+	if rec == nil || !enabledIsUnset(rec.Enabled) || !rec.ProbeEnabled || rec.IdleProbeAfterMs != 10000 || rec.ProbeTimeoutMs != 2000 {
+		t.Errorf("probe HealthCheckConfig: want Enabled unset and probe fields passed through, got %+v", rec)
 	}
 
 	cfg = &clientConfig{}
 	if err := WithoutHealthCheck()(cfg); err != nil {
 		t.Fatalf("option: %v", err)
 	}
-	if rec := cfg.healthCheckRecord(); rec == nil || rec.Enabled {
+	if rec := cfg.healthCheckRecord(); rec == nil || !enabledIs(rec.Enabled, false) {
 		t.Errorf("WithoutHealthCheck: want Enabled=false, got %+v", rec)
 	}
 }

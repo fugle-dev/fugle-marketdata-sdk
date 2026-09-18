@@ -2130,7 +2130,7 @@ RustBuffer FfiConverterTypeHealthCheckConfigRecord::lower(const HealthCheckConfi
 
 HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::read(RustStream &stream) {
     return {
-        FfiConverterBool::read(stream),
+        FfiConverterOptionalBool::read(stream),
         FfiConverterUInt64::read(stream),
         FfiConverterBool::read(stream),
         FfiConverterUInt64::read(stream),
@@ -2139,7 +2139,7 @@ HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::read(RustStream
 }
 
 void FfiConverterTypeHealthCheckConfigRecord::write(RustStream &stream, const HealthCheckConfigRecord &val) {
-    FfiConverterBool::write(stream, val.enabled);
+    FfiConverterOptionalBool::write(stream, val.enabled);
     FfiConverterUInt64::write(stream, val.heartbeat_timeout_ms);
     FfiConverterBool::write(stream, val.probe_enabled);
     FfiConverterUInt64::write(stream, val.idle_probe_after_ms);
@@ -2149,7 +2149,7 @@ void FfiConverterTypeHealthCheckConfigRecord::write(RustStream &stream, const He
 uint64_t FfiConverterTypeHealthCheckConfigRecord::allocation_size(const HealthCheckConfigRecord &val) {
     
     return 
-        FfiConverterBool::allocation_size(val.enabled) +
+        FfiConverterOptionalBool::allocation_size(val.enabled) +
         FfiConverterUInt64::allocation_size(val.heartbeat_timeout_ms) +
         FfiConverterBool::allocation_size(val.probe_enabled) +
         FfiConverterUInt64::allocation_size(val.idle_probe_after_ms) +
@@ -2217,7 +2217,7 @@ RustBuffer FfiConverterTypeReconnectConfigRecord::lower(const ReconnectConfigRec
 
 ReconnectConfigRecord FfiConverterTypeReconnectConfigRecord::read(RustStream &stream) {
     return {
-        FfiConverterBool::read(stream),
+        FfiConverterOptionalBool::read(stream),
         FfiConverterUInt32::read(stream),
         FfiConverterUInt64::read(stream),
         FfiConverterUInt64::read(stream)
@@ -2225,7 +2225,7 @@ ReconnectConfigRecord FfiConverterTypeReconnectConfigRecord::read(RustStream &st
 }
 
 void FfiConverterTypeReconnectConfigRecord::write(RustStream &stream, const ReconnectConfigRecord &val) {
-    FfiConverterBool::write(stream, val.enabled);
+    FfiConverterOptionalBool::write(stream, val.enabled);
     FfiConverterUInt32::write(stream, val.max_attempts);
     FfiConverterUInt64::write(stream, val.initial_delay_ms);
     FfiConverterUInt64::write(stream, val.max_delay_ms);
@@ -2234,7 +2234,7 @@ void FfiConverterTypeReconnectConfigRecord::write(RustStream &stream, const Reco
 uint64_t FfiConverterTypeReconnectConfigRecord::allocation_size(const ReconnectConfigRecord &val) {
     
     return 
-        FfiConverterBool::allocation_size(val.enabled) +
+        FfiConverterOptionalBool::allocation_size(val.enabled) +
         FfiConverterUInt32::allocation_size(val.max_attempts) +
         FfiConverterUInt64::allocation_size(val.initial_delay_ms) +
         FfiConverterUInt64::allocation_size(val.max_delay_ms);

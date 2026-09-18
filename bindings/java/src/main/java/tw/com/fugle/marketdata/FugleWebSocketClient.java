@@ -405,6 +405,42 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     /**
+     * The reconnect record for core, or null to keep the core defaults. An
+     * unset {@code enabled} stays null so core applies its default (on);
+     * unset numbers are 0, meaning "use default".
+     */
+    static ReconnectConfigRecord toReconnectRecord(ReconnectOptions options) {
+        if (options == null) {
+            return null;
+        }
+        return new ReconnectConfigRecord(
+            options.getEnabled(),
+            options.getMaxAttempts() != null ? options.getMaxAttempts() : 0,
+            options.getInitialDelayMs() != null ? options.getInitialDelayMs() : 0L,
+            options.getMaxDelayMs() != null ? options.getMaxDelayMs() : 0L
+        );
+    }
+
+    /**
+     * The health check record for core, or null to keep the core defaults.
+     * An unset {@code enabled} stays null so core applies its default (on);
+     * the heartbeat timeout, idle probe and probe timeout take 0 for "use
+     * default", and probeEnabled defaults to false.
+     */
+    static HealthCheckConfigRecord toHealthCheckRecord(HealthCheckOptions options) {
+        if (options == null) {
+            return null;
+        }
+        return new HealthCheckConfigRecord(
+            options.getEnabled(),
+            options.getHeartbeatTimeoutMs() != null ? options.getHeartbeatTimeoutMs() : 0L,
+            options.getProbeEnabled() != null ? options.getProbeEnabled() : false,
+            options.getIdleProbeAfterMs() != null ? options.getIdleProbeAfterMs() : 0L,
+            options.getProbeTimeoutMs() != null ? options.getProbeTimeoutMs() : 0L
+        );
+    }
+
+    /**
      * Create a new builder.
      */
     public static Builder builder() {
@@ -596,30 +632,8 @@ public class FugleWebSocketClient implements AutoCloseable {
             }
 
             // Convert config options to UniFFI record types
-            ReconnectConfigRecord reconnectRecord = null;
-            if (reconnectOptions != null) {
-                reconnectRecord = new ReconnectConfigRecord(
-                    reconnectOptions.getEnabled() != null ? reconnectOptions.getEnabled() : true,
-                    reconnectOptions.getMaxAttempts() != null ? reconnectOptions.getMaxAttempts() : 0,
-                    reconnectOptions.getInitialDelayMs() != null ? reconnectOptions.getInitialDelayMs() : 0L,
-                    reconnectOptions.getMaxDelayMs() != null ? reconnectOptions.getMaxDelayMs() : 0L
-                );
-            }
-
-            HealthCheckConfigRecord healthCheckRecord = null;
-            if (healthCheckOptions != null) {
-                // Unset values map to the core defaults: enabled, and a
-                // heartbeat timeout of 0 meaning "use 35000 ms". probeEnabled
-                // defaults to false; idleProbeAfterMs/probeTimeoutMs of 0
-                // mean "use default" too.
-                healthCheckRecord = new HealthCheckConfigRecord(
-                    healthCheckOptions.getEnabled() != null ? healthCheckOptions.getEnabled() : true,
-                    healthCheckOptions.getHeartbeatTimeoutMs() != null ? healthCheckOptions.getHeartbeatTimeoutMs() : 0L,
-                    healthCheckOptions.getProbeEnabled() != null ? healthCheckOptions.getProbeEnabled() : false,
-                    healthCheckOptions.getIdleProbeAfterMs() != null ? healthCheckOptions.getIdleProbeAfterMs() : 0L,
-                    healthCheckOptions.getProbeTimeoutMs() != null ? healthCheckOptions.getProbeTimeoutMs() : 0L
-                );
-            }
+            ReconnectConfigRecord reconnectRecord = toReconnectRecord(reconnectOptions);
+            HealthCheckConfigRecord healthCheckRecord = toHealthCheckRecord(healthCheckOptions);
 
             // Unset overflow/buffer both mean "use the core defaults"
             // (DropNewest, 4096), so leave the whole record null then.

@@ -160,13 +160,16 @@ impl std::fmt::Debug for CredentialsRecord {
 
 /// Reconnection configuration record for FFI
 ///
-/// Without a record the client auto-reconnects with the core defaults. In a
-/// record, `enabled` is taken as given and zero numeric fields mean "use
-/// default".
-#[derive(Debug, Clone, uniffi::Record)]
+/// Every field's zero value means "use default", so a zero-initialized
+/// record (C++ `ReconnectConfigRecord{}`, a Go `ReconnectConfigRecord{}`
+/// literal) is the full default: auto-reconnect on with the core delays
+/// (#158, #161). Omitting the record gives the same result.
+#[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct ReconnectConfigRecord {
-    /// Whether auto-reconnect is active; `false` turns it off
-    pub enabled: bool,
+    /// Whether auto-reconnect is active; `false` turns it off. Unset (the
+    /// zero value) takes the core default, which is on.
+    #[uniffi(default = None)]
+    pub enabled: Option<bool>,
     /// Maximum reconnection attempts; 0 means unlimited (the default)
     pub max_attempts: u32,
     /// Initial reconnection delay in milliseconds (default: 1000, min: 100)
@@ -182,7 +185,7 @@ impl ReconnectConfigRecord {
             if ms > 0 { std::time::Duration::from_millis(ms) } else { fallback }
         };
         marketdata_core::ReconnectionConfig {
-            enabled: self.enabled,
+            enabled: self.enabled.unwrap_or(default.enabled),
             // 0 is both "unset" and "unlimited": the core default is unlimited.
             max_attempts: self.max_attempts,
             initial_delay: ms_or(self.initial_delay_ms, default.initial_delay),
@@ -193,11 +196,16 @@ impl ReconnectConfigRecord {
 
 /// Health check configuration record for FFI
 ///
-/// The millisecond fields take 0 to mean "use default".
-#[derive(Debug, Clone, uniffi::Record)]
+/// Every field's zero value means "use default", so a zero-initialized
+/// record (C++ `HealthCheckConfigRecord{}`, a Go `HealthCheckConfigRecord{}`
+/// literal) is the full default: detection on, no probe, 35 s timeout
+/// (#158, #161).
+#[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct HealthCheckConfigRecord {
-    /// Whether liveness detection is active (default: true in 3.0)
-    pub enabled: bool,
+    /// Whether liveness detection is active; `false` turns it off. Unset
+    /// (the zero value) takes the core default, which is on.
+    #[uniffi(default = None)]
+    pub enabled: Option<bool>,
     /// Maximum allowed gap between inbound frames before declaring the
     /// connection dead, in milliseconds. Default 35000; floor 5000.
     /// Pass 0 to use the default. Does not apply when `probe_enabled` is
@@ -225,9 +233,14 @@ impl HealthCheckConfigRecord {
     fn to_core(&self) -> Result<marketdata_core::HealthCheckConfig, marketdata_core::MarketDataError> {
         // 0 means "unset" across the FFI boundary — there is no Option<u64>
         // that reads naturally in C#/Go/Java, so fall back to the default.
+        // A bool has no spare value to mean "unset", so `enabled` is an
+        // Option instead.
         let ms = |ms: u64| (ms > 0).then(|| std::time::Duration::from_millis(ms));
+        let enabled = self
+            .enabled
+            .unwrap_or_else(|| marketdata_core::HealthCheckConfig::default().enabled);
         marketdata_core::HealthCheckConfig::from_parts(
-            self.enabled,
+            enabled,
             ms(self.heartbeat_timeout_ms),
             self.probe_enabled,
             ms(self.idle_probe_after_ms),
@@ -2018,7 +2031,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 max_attempts: 3,
                 initial_delay_ms: 100,
                 max_delay_ms: 200,
@@ -2053,12 +2066,41 @@ mod tests {
 
     fn probe_record(idle_probe_after_ms: u64, probe_timeout_ms: u64) -> HealthCheckConfigRecord {
         HealthCheckConfigRecord {
-            enabled: true,
+            enabled: Some(true),
             heartbeat_timeout_ms: 0,
             probe_enabled: true,
             idle_probe_after_ms,
             probe_timeout_ms,
         }
+    }
+
+    /// A zero-valued record is the full default: every field's zero means
+    /// "use default", so C++ `Record{}` and a Go `Record{}` literal keep
+    /// auto-reconnect and health check on (#158, #161).
+    #[test]
+    fn zero_valued_records_are_the_core_defaults() {
+        let reconnect = ReconnectConfigRecord::default().to_core();
+        let default = marketdata_core::ReconnectionConfig::default();
+        assert!(
+            reconnect.enabled,
+            "zero ReconnectConfigRecord must keep auto-reconnect on"
+        );
+        assert_eq!(reconnect.max_attempts, default.max_attempts);
+        assert_eq!(reconnect.initial_delay, default.initial_delay);
+        assert_eq!(reconnect.max_delay, default.max_delay);
+
+        let health = HealthCheckConfigRecord::default()
+            .to_core()
+            .expect("defaults are valid");
+        assert!(
+            health.enabled,
+            "zero HealthCheckConfigRecord must keep health check on"
+        );
+        assert!(
+            !health.probe_enabled,
+            "zero HealthCheckConfigRecord must leave probing off"
+        );
+        assert_eq!(health.heartbeat_timeout, std::time::Duration::from_secs(35));
     }
 
     #[test]
@@ -2110,7 +2152,7 @@ mod tests {
             Some(format!("ws://{}/marketdata", server.address())),
             None,
             Some(HealthCheckConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 heartbeat_timeout_ms: 1_000,
                 probe_enabled: false,
                 idle_probe_after_ms: 0,
@@ -2235,7 +2277,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 max_attempts: 3,
                 initial_delay_ms: 1000,
                 max_delay_ms: 1000,
@@ -2299,7 +2341,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 max_attempts: 3,
                 initial_delay_ms: 500,
                 max_delay_ms: 500,
@@ -2338,7 +2380,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
-                enabled: false,
+                enabled: Some(false),
                 max_attempts: 0,
                 initial_delay_ms: 0,
                 max_delay_ms: 0,
@@ -2362,7 +2404,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 max_attempts: 3,
                 initial_delay_ms: 1000,
                 max_delay_ms: 1000,
@@ -2386,7 +2428,7 @@ mod tests {
         for reconnect in [
             None,
             Some(ReconnectConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 max_attempts: 3,
                 initial_delay_ms: 500,
                 max_delay_ms: 500,
@@ -2603,7 +2645,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
-                enabled: true,
+                enabled: Some(true),
                 max_attempts: 3,
                 initial_delay_ms: 1000,
                 max_delay_ms: 1000,

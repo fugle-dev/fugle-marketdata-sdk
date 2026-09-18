@@ -179,9 +179,11 @@ using var client = new WebSocketClient(new WebSocketClientOptions
 
 #### C++
 
-The generated `ReconnectConfigRecord` is passed as-is: pass `std::nullopt` for
-the defaults, or a record with `enabled = false` to turn auto-reconnect off.
-Zero numeric fields mean "use default".
+The generated `ReconnectConfigRecord` is passed as-is: pass `std::nullopt` or
+`ReconnectConfigRecord{}` for the defaults, or a record with `.enabled = false`
+to turn auto-reconnect off. `enabled` is a `std::optional<bool>` that is unset
+by default, meaning "use default" (on), and zero numeric fields mean "use
+default" too.
 
 ---
 

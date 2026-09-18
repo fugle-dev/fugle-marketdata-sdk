@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **C#, Go, Java, C++: `ReconnectConfigRecord.enabled` and
+  `HealthCheckConfigRecord.enabled` are optional** (#158, #161). A record
+  that did not set `enabled` got `false` and silently turned auto-reconnect
+  or health check off: C++ `ReconnectConfigRecord{}`, or a Go
+  `ReconnectConfigRecord{MaxAttempts: 3}` literal. Unset now means "use the
+  core default" (on), so a zero-valued record is the full default. The
+  wrapper options (`ReconnectOptions`, `HealthCheckOptions`, `WithReconnect`,
+  `WithoutReconnect`, `WithHealthCheck`, `WithoutHealthCheck`) are unchanged;
+  only code that builds the generated records directly is affected:
+  - **C++**: `enabled` is `std::optional<bool>`; `ReconnectConfigRecord{}`
+    now keeps auto-reconnect on. `.enabled = false` still turns it off.
+  - **Go**: `Enabled` is `*bool`; leave it nil for the default, or point it
+    at `false` to turn the feature off.
+  - **C#**: `enabled` is `bool?` and an optional constructor argument, so it
+    moves after the required ones: `ReconnectConfigRecord(maxAttempts,
+    initialDelayMs, maxDelayMs, enabled = null)` and
+    `HealthCheckConfigRecord(heartbeatTimeoutMs, enabled = null, ...)`.
+    Positional calls no longer compile; use named arguments.
+  - **Java**: the constructor is unchanged, and `null` for `enabled` now
+    means the default instead of failing.
+
 ## [Bindings 3.0.0-rc.4 / core 0.9.0-rc.3 / uniffi 0.2.0-rc.3] - 2026-09-18
 
 ### Breaking

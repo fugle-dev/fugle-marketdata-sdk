@@ -264,6 +264,42 @@ namespace FugleMarketData
         }
 
         /// <summary>
+        /// The reconnect record for core, or null to keep the core defaults.
+        /// An unset <see cref="ReconnectOptions.Enabled"/> stays unset so core
+        /// applies its default (on); unset numbers are 0, meaning "use default".
+        /// </summary>
+        internal static uniffi.marketdata_uniffi.ReconnectConfigRecord? ToReconnectRecord(ReconnectOptions? options)
+        {
+            if (options == null)
+                return null;
+            return new uniffi.marketdata_uniffi.ReconnectConfigRecord(
+                enabled: options.Enabled,
+                maxAttempts: options.MaxAttempts ?? 0,
+                initialDelayMs: options.InitialDelayMs ?? 0,
+                maxDelayMs: options.MaxDelayMs ?? 0
+            );
+        }
+
+        /// <summary>
+        /// The health check record for core, or null to keep the core defaults.
+        /// An unset <see cref="HealthCheckOptions.Enabled"/> stays unset so
+        /// core applies its default (on); unset numbers are 0, meaning "use
+        /// default".
+        /// </summary>
+        internal static uniffi.marketdata_uniffi.HealthCheckConfigRecord? ToHealthCheckRecord(HealthCheckOptions? options)
+        {
+            if (options == null)
+                return null;
+            return new uniffi.marketdata_uniffi.HealthCheckConfigRecord(
+                enabled: options.Enabled,
+                heartbeatTimeoutMs: options.HeartbeatTimeoutMs ?? 0,
+                probeEnabled: options.ProbeEnabled ?? false,
+                idleProbeAfterMs: options.IdleProbeAfterMs ?? 0,
+                probeTimeoutMs: options.ProbeTimeoutMs ?? 0
+            );
+        }
+
+        /// <summary>
         /// Create a WebSocket client with configuration options.
         /// Exactly one non-empty authentication method must be provided in the
         /// options; an empty or whitespace-only value counts as not provided.
@@ -296,28 +332,8 @@ namespace FugleMarketData
             };
 
             // Convert config options to UniFFI record types
-            uniffi.marketdata_uniffi.ReconnectConfigRecord? reconnectRecord = null;
-            if (options.Reconnect != null)
-            {
-                reconnectRecord = new uniffi.marketdata_uniffi.ReconnectConfigRecord(
-                    enabled: options.Reconnect.Enabled ?? true,
-                    maxAttempts: options.Reconnect.MaxAttempts ?? 0,
-                    initialDelayMs: options.Reconnect.InitialDelayMs ?? 0,
-                    maxDelayMs: options.Reconnect.MaxDelayMs ?? 0
-                );
-            }
-
-            uniffi.marketdata_uniffi.HealthCheckConfigRecord? healthCheckRecord = null;
-            if (options.HealthCheck != null)
-            {
-                healthCheckRecord = new uniffi.marketdata_uniffi.HealthCheckConfigRecord(
-                    enabled: options.HealthCheck.Enabled ?? true,
-                    heartbeatTimeoutMs: options.HealthCheck.HeartbeatTimeoutMs ?? 0,
-                    probeEnabled: options.HealthCheck.ProbeEnabled ?? false,
-                    idleProbeAfterMs: options.HealthCheck.IdleProbeAfterMs ?? 0,
-                    probeTimeoutMs: options.HealthCheck.ProbeTimeoutMs ?? 0
-                );
-            }
+            var reconnectRecord = ToReconnectRecord(options.Reconnect);
+            var healthCheckRecord = ToHealthCheckRecord(options.HealthCheck);
 
             uniffi.marketdata_uniffi.MessageQueueConfigRecord? messageQueueRecord = null;
             if (options.MessageOverflow != null || options.MessageBuffer != null)

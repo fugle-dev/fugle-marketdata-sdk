@@ -253,6 +253,16 @@ jobs:
             -L"$RUNNER_TEMP/cpp" -lmarketdata_uniffi \
             -o "$RUNNER_TEMP/cpp/ws-bench-cpp"
 
+      # C++ uses the generated records directly, so `Record{}` must be the
+      # full default (#158).
+      - name: C++ record defaults
+        run: |
+          c++ -std=c++20 -O2 -Ibindings/cpp \
+            tests/cpp/record_defaults.cpp bindings/cpp/marketdata_uniffi.cpp \
+            -L"$RUNNER_TEMP/cpp" -lmarketdata_uniffi \
+            -o "$RUNNER_TEMP/cpp/record-defaults"
+          LD_LIBRARY_PATH="$RUNNER_TEMP/cpp" "$RUNNER_TEMP/cpp/record-defaults"
+
       # Same for the Go and C# benchmarks: they implement the listener
       # interfaces directly. Built only; they need a mock server to run.
       - name: Go and C# benchmarks compile
