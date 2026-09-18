@@ -613,7 +613,7 @@ still gets the server's own error.
   names the method, suggests the nearest accepted spelling when one differs
   only in case or underscores, and lists every accepted keyword:
 
-  ```
+  ```text
   TypeError: stock.intraday.trades() got an unexpected keyword argument 'istrial'.
   Did you mean 'isTrial'? Accepted: odd_lot, type, oddLot, offset, limit, sort, is_trial, isTrial
   ```
@@ -678,7 +678,7 @@ Each row is a test (`py/tests/test_rest_kwargs_strict.py::TestIssue164Cases`).
   (`sourceKind: 'client'`) and a message that names the endpoint, the
   suggestion, and the accepted keys:
 
-  ```
+  ```text
   Invalid parameter 'Product': `futopt.intraday.tickers` does not accept `Product`;
   did you mean `product`? accepted keys: type, exchange, session, product, contractType, isSpread
   ```
