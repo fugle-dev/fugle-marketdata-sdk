@@ -4,7 +4,9 @@
 //! and modifier, on all four paths: auto-reconnect and manual `reconnect()`
 //! of both clients. The acks for the batched frames must refresh the server
 //! ids, so unsubscribing one symbol afterwards sends the new id. Failures to
-//! re-send are covered by the unit tests next to each replay helper.
+//! re-send are covered by the unit tests next to each replay helper. The
+//! replayed frames reach the wire, and a failure to replay one is reported,
+//! only after the reconnect's `Authenticated` on both clients (#174).
 //!
 //! Once reconnect attempts run out the client is closed: `reconnect()`
 //! returns `ClientClosed` on both clients.
@@ -17,8 +19,8 @@ mod common;
 use marketdata_core::aio::WebSocketClient as AsyncWebSocketClient;
 use marketdata_core::websocket::{ConnectionEvent, StockSubscription};
 use marketdata_core::{
-    AuthRequest, Channel, ConnectionConfig, MarketDataError, ReconnectionConfig, StreamItem,
-    StreamReceiver, WebSocketClient,
+    AuthRequest, Channel, ConnectionConfig, ConnectionState, MarketDataError, ReconnectionConfig,
+    StreamItem, StreamReceiver, WebSocketClient,
 };
 use serde_json::json;
 use std::time::Duration;
@@ -251,6 +253,72 @@ async fn sync_auto_reconnect_resends_one_frame_per_channel_and_modifier() {
         .map(|frame| serde_json::from_str::<serde_json::Value>(frame).unwrap()["data"].clone())
         .collect();
     assert_eq!(data, expected_resubscribe_data(), "one frame per channel and modifier, in order");
+
+    tokio::task::spawn_blocking(move || drop(client)).await.expect("drop client");
+}
+
+/// The events queued so far, as `Debug` labels, and whether the last one
+/// is the reconnect's `Authenticated`: a second `Authenticated` with nothing
+/// after it.
+fn ends_with_second_authenticated(events: &common::EventReceiver) -> (Vec<String>, bool) {
+    let events: Vec<ConnectionEvent> = events.try_iter().collect();
+    let authenticated = |e: &ConnectionEvent| matches!(e, ConnectionEvent::Authenticated { .. });
+    let ends = events.iter().filter(|e| authenticated(e)).count() == 2
+        && events.last().is_some_and(authenticated);
+    (events.iter().map(|e| format!("{e:?}")).collect(), ends)
+}
+
+/// The replayed frames reach the wire only after the reconnect's
+/// `Authenticated` is reported, on both clients (#174): when the first one
+/// reaches the server, the stream already ends with that `Authenticated`
+/// and the state reads `Connected`. A failure to replay one is reported
+/// after `Authenticated` too. That failure cannot be reached
+/// deterministically from here (a stored subscription always serializes,
+/// and the writer the replay queues to is alive), so these two tests pin
+/// the observable order, which held before #174 as well; the order of the
+/// `Error` itself is pinned by the unit test next to the sync replay, which
+/// injects one.
+#[tokio::test(flavor = "multi_thread")]
+async fn async_auto_reconnect_replays_after_authenticated_is_reported() {
+    let (server, mut frames_rx) = server_that_drops_then_records().await;
+    let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("test-key"));
+    let client = AsyncWebSocketClient::with_reconnection_config(config, quick_reconnect());
+    let events = common::EventReceiver::of_async(&client);
+    client.subscribe(StockSubscription::new(Channel::Trades, "2330")).await.expect("subscribe");
+    client.connect().await.expect("connect");
+
+    let seen = subscribe_frames(&mut frames_rx, 1, Duration::from_secs(5)).await;
+    assert_eq!(seen.len(), 1, "the replayed frame reaches the server: {seen:?}");
+    assert_eq!(client.state(), ConnectionState::Connected);
+    let (labels, ends) = ends_with_second_authenticated(&events);
+    assert!(ends, "the reconnect's Authenticated is reported before the replay: {labels:?}");
+}
+
+#[tokio::test]
+async fn sync_auto_reconnect_replays_after_authenticated_is_reported() {
+    let (server, mut frames_rx) = server_that_drops_then_records().await;
+    let url = server.url.clone();
+    let client = tokio::task::spawn_blocking(move || {
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let client = WebSocketClient::with_reconnection_config(config, quick_reconnect());
+        client.subscribe(StockSubscription::new(Channel::Trades, "2330")).expect("subscribe");
+        client.connect().expect("connect");
+        client
+    })
+    .await
+    .expect("sync client thread");
+    let events = common::EventReceiver::of_sync(&client);
+
+    // A stuck owner thread would make dropping the client (which joins it)
+    // hang the test instead of failing it.
+    let seen = subscribe_frames(&mut frames_rx, 1, Duration::from_secs(10)).await;
+    if seen.len() != 1 {
+        std::mem::forget(client);
+        panic!("the replayed frame reaches the server: {seen:?}");
+    }
+    assert_eq!(client.state(), ConnectionState::Connected);
+    let (labels, ends) = ends_with_second_authenticated(&events);
+    assert!(ends, "the reconnect's Authenticated is reported before the replay: {labels:?}");
 
     tokio::task::spawn_blocking(move || drop(client)).await.expect("drop client");
 }
