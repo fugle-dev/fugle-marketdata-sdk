@@ -116,6 +116,7 @@ void uniffi_marketdata_uniffi_fn_method_websocketclient_connect_sync(void * ptr,
 void uniffi_marketdata_uniffi_fn_method_websocketclient_disconnect_sync(void * ptr, RustCallStatus *out_status);
 int8_t uniffi_marketdata_uniffi_fn_method_websocketclient_is_closed(void * ptr, RustCallStatus *out_status);
 int8_t uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(void * ptr, RustCallStatus *out_status);
+double uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency_sync(void * ptr, RustBuffer timeout_ms, RustCallStatus *out_status);
 uint64_t uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_ping_sync(void * ptr, RustBuffer state, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions_sync(void * ptr, RustCallStatus *out_status);
@@ -206,6 +207,7 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_connect_sync()
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_ping_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions_sync();

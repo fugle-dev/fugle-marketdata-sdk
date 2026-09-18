@@ -35,6 +35,22 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — health check probe and `measure_latency()` (#150)
+
+- `~` `HealthCheckConfig` gains `probe_enabled: bool`,
+  `idle_probe_after: Option<Duration>` and `probe_timeout: Option<Duration>`.
+  A struct literal must now name them or end in `..HealthCheckConfig::default()`.
+- `+` `HealthCheckConfig::from_parts` (all settings, validated — what the
+  bindings convert into), `HealthCheckConfig::with_probe`,
+  `idle_probe_after_or_default`, `probe_timeout_or_default`.
+- `+` `DEFAULT_IDLE_PROBE_AFTER_MS`, `MIN_IDLE_PROBE_AFTER_MS`,
+  `DEFAULT_PROBE_TIMEOUT_MS`, `MIN_PROBE_TIMEOUT_MS` (also at the crate root)
+  and `DEFAULT_LATENCY_TIMEOUT_MS`.
+- `+` `aio::WebSocketClient::measure_latency` and
+  `WebSocketClient::measure_latency` (sync).
+- `+` `testing::MockWsServer::set_answer_pings` and `pings_received`; the mock
+  now answers `ping` with `pong` echoing `state`, like the server.
+
 ### Unreleased — reconnect defaults: on, unlimited attempts (#149)
 
 - `~` `ReconnectionManager::attempts_remaining` returns `Option<u32>` instead

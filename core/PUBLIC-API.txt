@@ -11,6 +11,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -84,6 +85,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -3496,6 +3498,8 @@ pub async fn marketdata_core::testing::MockWsServer::inject_frame(&self, marketd
 pub async fn marketdata_core::testing::MockWsServer::inject_frame_for(&self, usize, marketdata_core::models::streaming::StreamMessage)
 pub async fn marketdata_core::testing::MockWsServer::next_subscribe_id(&self, impl core::convert::Into<alloc::string::String>)
 pub async fn marketdata_core::testing::MockWsServer::next_subscribe_id_for(&self, usize, impl core::convert::Into<alloc::string::String>)
+pub fn marketdata_core::testing::MockWsServer::pings_received(&self) -> alloc::vec::Vec<serde_json::value::Value>
+pub fn marketdata_core::testing::MockWsServer::set_answer_pings(&self, bool)
 pub fn marketdata_core::testing::MockWsServer::set_auth_response(&self, serde_json::value::Value)
 pub async fn marketdata_core::testing::MockWsServer::start() -> Self
 pub async fn marketdata_core::testing::MockWsServer::start_with_capacity(usize) -> Self
@@ -3548,6 +3552,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -3621,6 +3626,7 @@ pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_closed_sync(&self) -> bool
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -3941,8 +3947,15 @@ pub mod marketdata_core::websocket::health_check
 pub struct marketdata_core::websocket::health_check::HealthCheckConfig
 pub marketdata_core::websocket::health_check::HealthCheckConfig::enabled: bool
 pub marketdata_core::websocket::health_check::HealthCheckConfig::heartbeat_timeout: core::time::Duration
+pub marketdata_core::websocket::health_check::HealthCheckConfig::idle_probe_after: core::option::Option<core::time::Duration>
+pub marketdata_core::websocket::health_check::HealthCheckConfig::probe_enabled: bool
+pub marketdata_core::websocket::health_check::HealthCheckConfig::probe_timeout: core::option::Option<core::time::Duration>
 impl marketdata_core::websocket::health_check::HealthCheckConfig
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::disabled() -> Self
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::from_parts(bool, core::option::Option<core::time::Duration>, bool, core::option::Option<core::time::Duration>, core::option::Option<core::time::Duration>) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::idle_probe_after_or_default(&self) -> core::time::Duration
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::probe_timeout_or_default(&self) -> core::time::Duration
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::with_probe(core::time::Duration, core::time::Duration) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::with_timeout(core::time::Duration) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::websocket::health_check::HealthCheckConfig
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::clone(&self) -> marketdata_core::websocket::health_check::HealthCheckConfig
@@ -3959,7 +3972,11 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::hea
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::health_check::HealthCheckConfig
 pub const marketdata_core::websocket::health_check::DEFAULT_HEALTH_CHECK_ENABLED: bool
 pub const marketdata_core::websocket::health_check::DEFAULT_HEARTBEAT_TIMEOUT_MS: u64
+pub const marketdata_core::websocket::health_check::DEFAULT_IDLE_PROBE_AFTER_MS: u64
+pub const marketdata_core::websocket::health_check::DEFAULT_PROBE_TIMEOUT_MS: u64
 pub const marketdata_core::websocket::health_check::MIN_HEARTBEAT_TIMEOUT_MS: u64
+pub const marketdata_core::websocket::health_check::MIN_IDLE_PROBE_AFTER_MS: u64
+pub const marketdata_core::websocket::health_check::MIN_PROBE_TIMEOUT_MS: u64
 pub mod marketdata_core::websocket::reconnection
 pub struct marketdata_core::websocket::reconnection::ReconnectionConfig
 pub marketdata_core::websocket::reconnection::ReconnectionConfig::enabled: bool
@@ -4135,6 +4152,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -4171,6 +4189,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -4486,8 +4505,15 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream
 pub struct marketdata_core::websocket::HealthCheckConfig
 pub marketdata_core::websocket::HealthCheckConfig::enabled: bool
 pub marketdata_core::websocket::HealthCheckConfig::heartbeat_timeout: core::time::Duration
+pub marketdata_core::websocket::HealthCheckConfig::idle_probe_after: core::option::Option<core::time::Duration>
+pub marketdata_core::websocket::HealthCheckConfig::probe_enabled: bool
+pub marketdata_core::websocket::HealthCheckConfig::probe_timeout: core::option::Option<core::time::Duration>
 impl marketdata_core::websocket::health_check::HealthCheckConfig
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::disabled() -> Self
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::from_parts(bool, core::option::Option<core::time::Duration>, bool, core::option::Option<core::time::Duration>, core::option::Option<core::time::Duration>) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::idle_probe_after_or_default(&self) -> core::time::Duration
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::probe_timeout_or_default(&self) -> core::time::Duration
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::with_probe(core::time::Duration, core::time::Duration) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::with_timeout(core::time::Duration) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::websocket::health_check::HealthCheckConfig
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::clone(&self) -> marketdata_core::websocket::health_check::HealthCheckConfig
@@ -4640,6 +4666,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -5722,8 +5749,15 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::FutOptTotalStats
 pub struct marketdata_core::HealthCheckConfig
 pub marketdata_core::HealthCheckConfig::enabled: bool
 pub marketdata_core::HealthCheckConfig::heartbeat_timeout: core::time::Duration
+pub marketdata_core::HealthCheckConfig::idle_probe_after: core::option::Option<core::time::Duration>
+pub marketdata_core::HealthCheckConfig::probe_enabled: bool
+pub marketdata_core::HealthCheckConfig::probe_timeout: core::option::Option<core::time::Duration>
 impl marketdata_core::websocket::health_check::HealthCheckConfig
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::disabled() -> Self
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::from_parts(bool, core::option::Option<core::time::Duration>, bool, core::option::Option<core::time::Duration>, core::option::Option<core::time::Duration>) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::idle_probe_after_or_default(&self) -> core::time::Duration
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::probe_timeout_or_default(&self) -> core::time::Duration
+pub fn marketdata_core::websocket::health_check::HealthCheckConfig::with_probe(core::time::Duration, core::time::Duration) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::with_timeout(core::time::Duration) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::websocket::health_check::HealthCheckConfig
 pub fn marketdata_core::websocket::health_check::HealthCheckConfig::clone(&self) -> marketdata_core::websocket::health_check::HealthCheckConfig
@@ -6616,6 +6650,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&s
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_closed(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_connected(&self) -> bool
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::is_subscribed(&self, &marketdata_core::Channel, &str) -> bool
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::measure_latency(&self, core::option::Option<core::time::Duration>) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_handle(&self) -> marketdata_core::websocket::stream::MessagesDroppedHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
@@ -6722,10 +6757,15 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::WebSocketReque
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::WebSocketRequest
 pub const marketdata_core::DEFAULT_HEALTH_CHECK_ENABLED: bool
 pub const marketdata_core::DEFAULT_HEARTBEAT_TIMEOUT_MS: u64
+pub const marketdata_core::DEFAULT_IDLE_PROBE_AFTER_MS: u64
 pub const marketdata_core::DEFAULT_INITIAL_DELAY_MS: u64
+pub const marketdata_core::DEFAULT_LATENCY_TIMEOUT_MS: u64
 pub const marketdata_core::DEFAULT_MAX_ATTEMPTS: u32
 pub const marketdata_core::DEFAULT_MAX_DELAY_MS: u64
+pub const marketdata_core::DEFAULT_PROBE_TIMEOUT_MS: u64
 pub const marketdata_core::MIN_HEARTBEAT_TIMEOUT_MS: u64
+pub const marketdata_core::MIN_IDLE_PROBE_AFTER_MS: u64
 pub const marketdata_core::MIN_INITIAL_DELAY_MS: u64
+pub const marketdata_core::MIN_PROBE_TIMEOUT_MS: u64
 pub fn marketdata_core::parse_channel_data(&str, &serde_json::value::Value, bool) -> core::result::Result<marketdata_core::ChannelData, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::parse_stream_message(&str) -> core::result::Result<marketdata_core::models::streaming::StreamMessage, marketdata_core::errors::MarketDataError>

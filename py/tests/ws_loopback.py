@@ -111,6 +111,8 @@ class _Server:
         self.auth_data = []
         # ``data`` of every ``unsubscribe`` frame received, in arrival order.
         self.unsubscribe_data = []
+        # ``data`` of every ``ping`` frame received, in arrival order.
+        self.ping_data = []
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen()
@@ -152,6 +154,8 @@ class _Server:
                         self.auth_data.append(frame.get("data"))
                     if frame.get("event") == "unsubscribe":
                         self.unsubscribe_data.append(frame.get("data"))
+                    if frame.get("event") == "ping":
+                        self.ping_data.append(frame.get("data"))
                     for reply in self._replies(frame):
                         send(OP_TEXT, json.dumps(reply).encode())
                     if self._flood and frame.get("event") == "subscribe":
@@ -205,6 +209,10 @@ class _Server:
                 },
                 {"event": "data", "data": {"symbol": symbol, "price": 100}, "id": sub_id, "channel": channel},
             ]
+        if event == "ping":
+            # Like the server: echo `state`, with the server's time.
+            state = (frame.get("data") or {}).get("state")
+            return [{"event": "pong", "data": {"time": 0, "state": state}}]
         return []
 
 
@@ -266,6 +274,11 @@ class InProcessLoopbackServer:
     def unsubscribe_data(self):
         """``data`` of every ``unsubscribe`` frame the server received."""
         return list(self._server.unsubscribe_data)
+
+    @property
+    def ping_data(self):
+        """``data`` of every ``ping`` frame the server received."""
+        return list(self._server.ping_data)
 
     def __enter__(self):
         self._server.start()

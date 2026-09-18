@@ -48,9 +48,32 @@ namespace FugleMarketData
 
         /// <summary>
         /// Maximum gap between inbound frames in milliseconds before the
-        /// connection is declared dead (default: 35000, min: 5000).
+        /// connection is declared dead (default: 35000, min: 5000). Does not
+        /// apply when <see cref="ProbeEnabled"/> is true.
         /// </summary>
         public ulong? HeartbeatTimeoutMs { get; set; }
+
+        /// <summary>
+        /// Confirm a silent connection with a ping before declaring it dead
+        /// (default: false). After <see cref="IdleProbeAfterMs"/> of silence
+        /// one ping is sent; if nothing arrives within
+        /// <see cref="ProbeTimeoutMs"/> the connection is declared dead.
+        /// </summary>
+        public bool? ProbeEnabled { get; set; }
+
+        /// <summary>
+        /// Silence before the probe, in milliseconds (default: 30000, the
+        /// server's heartbeat period; min: 5000). Only used when
+        /// <see cref="ProbeEnabled"/> is true.
+        /// </summary>
+        public ulong? IdleProbeAfterMs { get; set; }
+
+        /// <summary>
+        /// Wait for any inbound frame after the probe, in milliseconds
+        /// (default: 5000, min: 1000). Only used when
+        /// <see cref="ProbeEnabled"/> is true.
+        /// </summary>
+        public ulong? ProbeTimeoutMs { get; set; }
     }
 
     /// <summary>

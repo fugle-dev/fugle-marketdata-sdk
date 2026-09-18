@@ -188,22 +188,100 @@ Zero numeric fields mean "use default".
 ## HealthCheckConfig / HealthCheckOptions
 
 Controls WebSocket liveness detection. **Enabled by default in every language**
-(3.0): when no inbound frame (data, heartbeat or pong) arrives within
-`heartbeat_timeout_ms`, the connection is declared dead and auto-reconnect
-takes over (see [ReconnectConfig](#reconnectconfig--reconnectoptions)). The
-server sends a heartbeat every 30 seconds.
+(3.0): when the connection stays silent too long it is declared dead
+(`HeartbeatTimeout`, then `Disconnected` with intent `Network`) and
+auto-reconnect takes over (see [ReconnectConfig](#reconnectconfig--reconnectoptions)).
+The server sends a heartbeat every 30 seconds. *Any* inbound frame — data,
+heartbeat or pong — counts as a sign of life.
 
 ### Options Reference
 
-| Option | Type | Default | Min | Max | Description |
-|--------|------|---------|-----|-----|-------------|
-| `enabled` | bool | true | - | - | Whether liveness detection is active |
-| `heartbeat_timeout_ms` | u64/int/number | 35000 | 5000 | - | Maximum gap between inbound frames before the connection is declared dead |
+| Option | Type | Default | Min | Applies | Description |
+|--------|------|---------|-----|---------|-------------|
+| `enabled` | bool | true | - | both modes | Whether liveness detection is active |
+| `heartbeat_timeout_ms` | u64/int/number | 35000 | 5000 | **`probe_enabled: false` only** | Maximum gap between inbound frames before the connection is declared dead |
+| `probe_enabled` | bool | false | - | - | Confirm a silent connection with a ping instead of declaring it dead on a timeout |
+| `idle_probe_after_ms` | u64/int/number | 30000 | 5000 | `probe_enabled: true` only | Silence before the probe is sent |
+| `probe_timeout_ms` | u64/int/number | 5000 | 1000 | `probe_enabled: true` only | Wait for any inbound frame after the probe |
+
+JavaScript spells them `heartbeatTimeoutMs`, `probeEnabled`, `idleProbeAfterMs`
+and `probeTimeoutMs`; Java, Go and C# use the same names in their own casing.
 
 **Constraints:**
 
-- `heartbeat_timeout_ms` must be >= 5000ms. Values below the server's 30 s
+- A value below its minimum is a configuration error (code 1004), whether or
+  not its mode is in use.
+- In passive mode, `heartbeat_timeout_ms` values below the server's 30 s
   heartbeat period cause repeated false disconnects.
+
+### Passive and probe mode
+
+| `probe_enabled` | What happens | Detection time | Verdict |
+|---|---|---|---|
+| `false` (default) | Silent for `heartbeat_timeout_ms` → dead | `heartbeat_timeout_ms` (35 s) | a guess |
+| `true` | Silent for `idle_probe_after_ms` → one `{"event":"ping"}` is sent; nothing arrives within `probe_timeout_ms` → dead | `idle_probe_after_ms + probe_timeout_ms` (35 s) | confirmed |
+
+**With `probe_enabled: true`, `heartbeat_timeout_ms` does not apply.**
+
+In passive mode a server heartbeat that is more than 5 s late is
+indistinguishable from a dead connection, so the SDK disconnects a healthy
+connection. Probe mode asks first. Its defaults are chosen so that **turning on
+`probe_enabled` and nothing else costs nothing**:
+
+- `idle_probe_after_ms` defaults to 30000, the server's heartbeat period. While
+  heartbeats arrive on time the silence never reaches it, and **no ping is
+  sent at all**.
+- Only when a heartbeat is late — exactly the case that causes false
+  disconnects in passive mode — is one ping sent. A live server answers and the
+  connection stays up; a dead one does not, and the connection is declared
+  dead.
+- Detection stays at 30 s + 5 s = 35 s, the same as passive mode.
+
+For faster detection, lower `idle_probe_after_ms` (and, if you like,
+`probe_timeout_ms`). While market data flows the silence never builds up and no
+ping is sent, so an active subscription gets fast detection for free. Detecting
+faster than the server's own heartbeat is impossible without traffic, though:
+below 30000, **a ping is sent in every gap between heartbeats** whenever no data
+flows (after hours, quiet symbols).
+
+A probe that cannot even be written within `probe_timeout_ms` (the write path
+is stuck) counts as unanswered: the connection is declared dead on time.
+
+**Not covered: a half-open connection** where the server still sends but our
+writes no longer reach it. The server's heartbeat is a broadcast and keeps
+arriving, resetting the silence, so the probe never fires.
+
+### Server cost
+
+Every probe is a request the server handles and records. Estimated load from
+**10 000 concurrent connections** during a quiet period:
+
+| `idle_probe_after_ms` | Pings per 30 s gap, per connection | 10 000 connections |
+|---|---|---|
+| 30000 (default) | about 0 (only when a heartbeat is late) | close to 0 |
+| 15000 | about 1 | about 330 / s |
+| 10000 | about 2 | about 670 / s |
+| 5000 | about 5 | about 1700 / s |
+
+Until the server stops recording each pong as an action (fugle-realtime #731),
+5000 is **not recommended** for deployments with tens of thousands of
+connections.
+
+### Measuring latency
+
+Every client also has `measure_latency` (`measureLatency` in JavaScript,
+`MeasureLatencyAsync` in C#, `MeasureLatency` in Go, `measureLatency` in Java):
+it sends one ping, waits for its pong and returns the round trip —
+`Duration` in Rust, milliseconds elsewhere. It works whether or not
+`probe_enabled` is set and sends nothing in the background; call it when you
+want to know (before placing an order, when your own watchdog fires). The
+timeout defaults to 5000 ms. It fails with `ClientClosed` (2010) when not
+connected, `ConnectionError` (2001) when the connection closes before the pong,
+and `TimeoutError` (3001) when no pong arrives in time.
+
+The existing `ping()` is unchanged: fire and forget, as in the old SDK, with the
+pong delivered to your message handler. The pongs of the SDK's own pings (the
+probe and `measure_latency`) are not delivered.
 
 ### Language-Specific Examples
 
@@ -218,6 +296,16 @@ ws = WebSocketClient(api_key="your-api-key")
 # Longer timeout
 ws = WebSocketClient(api_key="your-api-key",
                      health_check=HealthCheckConfig(heartbeat_timeout_ms=60000))
+
+# Confirm before disconnecting: still 35s, no pings while heartbeats are on time
+ws = WebSocketClient(api_key="your-api-key",
+                     health_check=HealthCheckConfig(probe_enabled=True))
+
+# Know within 10s
+ws = WebSocketClient(api_key="your-api-key",
+                     health_check=HealthCheckConfig(probe_enabled=True,
+                                                    idle_probe_after_ms=5000,
+                                                    probe_timeout_ms=5000))
 
 # Turn it off
 ws = WebSocketClient(api_key="your-api-key", health_check=HealthCheckConfig(enabled=False))
@@ -234,6 +322,15 @@ const ws = new WebSocketClient({ apiKey: 'your-api-key' });
 // Longer timeout
 const ws = new WebSocketClient({ apiKey: 'your-api-key', healthCheck: { heartbeatTimeoutMs: 60000 } });
 
+// Confirm before disconnecting: still 35s, no pings while heartbeats are on time
+const ws = new WebSocketClient({ apiKey: 'your-api-key', healthCheck: { probeEnabled: true } });
+
+// Know within 10s
+const ws = new WebSocketClient({
+  apiKey: 'your-api-key',
+  healthCheck: { probeEnabled: true, idleProbeAfterMs: 5000, probeTimeoutMs: 5000 },
+});
+
 // Turn it off
 const ws = new WebSocketClient({ apiKey: 'your-api-key', healthCheck: { enabled: false } });
 ```
@@ -249,6 +346,7 @@ FugleWebSocketClient client = FugleWebSocketClient.builder()
     .build();
 
 // Turn it off: HealthCheckOptions.builder().enabled(false).build()
+// Probe mode: HealthCheckOptions.builder().probeEnabled(true).idleProbeAfterMs(10000L).build()
 ```
 
 #### Go
@@ -262,6 +360,7 @@ client, err := mkt.NewFugleWebSocketClient(listener,
 )
 
 // Turn it off: mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: false})
+// Probe mode: mkt.HealthCheckConfig{Enabled: true, ProbeEnabled: true, IdleProbeAfterMs: 10000}
 ```
 
 #### C\#
@@ -275,6 +374,7 @@ using var client = new WebSocketClient(new WebSocketClientOptions
 }, listener);
 
 // Turn it off: HealthCheck = new HealthCheckOptions { Enabled = false }
+// Probe mode: HealthCheck = new HealthCheckOptions { ProbeEnabled = true, IdleProbeAfterMs = 10000 }
 ```
 
 ---
@@ -467,6 +567,12 @@ const ws = new WebSocketClient({
 - **Cause:** `heartbeat_timeout_ms` less than the 5000ms floor
 - **Solution:** Use at least 5000ms; below 30000ms the server's heartbeat period causes false disconnects
 
+**"idle_probe_after must be >= 5000ms (got {value})"** /
+**"probe_timeout must be >= 1000ms (got {value})"**
+
+- **Cause:** a probe setting below its floor (checked even with `probe_enabled` off)
+- **Solution:** Use at least 5000ms / 1000ms
+
 **Example (Python):**
 
 ```python
@@ -488,7 +594,10 @@ Quick reference of all default values:
 | | `initial_delay_ms` | 1000 | 1 second |
 | | `max_delay_ms` | 60000 | 1 minute |
 | **Health Check** | `enabled` | true | On in every language (3.0) |
-| | `heartbeat_timeout_ms` | 35000 | Server heartbeat (30 s) + 5 s |
+| | `heartbeat_timeout_ms` | 35000 | Server heartbeat (30 s) + 5 s; passive mode only |
+| | `probe_enabled` | false | Opt-in |
+| | `idle_probe_after_ms` | 30000 | Server heartbeat (30 s); probe mode only |
+| | `probe_timeout_ms` | 5000 | Probe mode only |
 
 **Default values sourced from:**
 

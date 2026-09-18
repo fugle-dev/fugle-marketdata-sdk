@@ -344,14 +344,26 @@ func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
 	return sc.client.MessagesDroppedTotal()
 }
 
-// Ping sends a ping message to the server.
-// The optional state string will be echoed back in the pong response.
+// Ping sends a ping message to the server. Fire-and-forget: it returns once
+// the ping is sent, and the pong (if any) arrives later via Messages(). The
+// optional state string will be echoed back in the pong response. See
+// MeasureLatency for an awaitable round-trip measurement.
 func (sc *StreamingClient) Ping(state *string) error {
 	err := sc.client.Ping(state)
 	if err != nil {
 		return fmt.Errorf("ping failed: %w", err)
 	}
 	return nil
+}
+
+// MeasureLatency sends a ping and waits for the matching pong, returning the
+// round-trip time in milliseconds. timeoutMs is optional (default: 5000).
+func (sc *StreamingClient) MeasureLatency(timeoutMs *uint64) (float64, error) {
+	latency, err := sc.client.MeasureLatency(timeoutMs)
+	if err != nil {
+		return 0, fmt.Errorf("measure latency failed: %w", err)
+	}
+	return latency, nil
 }
 
 // QuerySubscriptions sends a query to the server for current subscriptions.

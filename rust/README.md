@@ -266,12 +266,22 @@ let reconnect = ReconnectionConfig::disabled();
 
 ### Health Check
 
-The SDK uses passive activity detection at the WebSocket read site — no
-background task, no protocol-level pings. The dispatch loop wraps each
-`ws_read.next()` in `tokio::time::timeout(heartbeat_timeout, ...)` and emits
-`ConnectionEvent::HeartbeatTimeout` followed by
-`Disconnected { intent: Network, .. }` when the timer fires, which then
-triggers the auto-reconnect path.
+Liveness is checked at the WebSocket read site — no background task. By
+default it is passive: when no inbound frame arrives within
+`heartbeat_timeout`, the client emits `ConnectionEvent::HeartbeatTimeout`
+followed by `Disconnected { intent: Network, .. }`, which then triggers the
+auto-reconnect path.
+
+With `probe_enabled`, a silent connection is asked before it is declared dead:
+after `idle_probe_after` (default 30s, the server's heartbeat period) one JSON
+`ping` is sent, and only if nothing arrives within `probe_timeout` (default 5s)
+is it declared dead. `heartbeat_timeout` does not apply then. The defaults keep
+detection at 35s and send no ping while the server's heartbeat is on time;
+lower `idle_probe_after` for faster detection at the cost of a ping in every
+quiet gap. Probing does not detect a half-open connection (the server still
+sends, our writes no longer arrive). See
+[docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the trade-offs and the server cost.
 
 ```rust,no_run
 use fugle_marketdata::websocket::HealthCheckConfig;
@@ -288,10 +298,19 @@ let health = HealthCheckConfig::with_timeout(Duration::from_secs(45))?;
 // Opt out (discouraged — stalled connections won't surface until the OS
 // times out the underlying TCP, typically hours later)
 let health = HealthCheckConfig::disabled();
+
+// Confirm with a ping before disconnecting; know within 10s
+let health = HealthCheckConfig::with_probe(Duration::from_secs(5), Duration::from_secs(5))?;
 # drop(health);
 # Ok(())
 # }
 ```
+
+`measure_latency(timeout)` on either client sends one ping and returns the
+round trip as a `Duration` (`None` waits up to 5s), whether or not probing is
+enabled. The fire-and-forget `send(WebSocketRequest::ping(state))` is
+unchanged; its pong arrives on the stream, while the pongs of the SDK's own
+pings do not.
 
 ### Full Configuration
 

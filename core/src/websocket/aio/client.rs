@@ -6,6 +6,10 @@ use crate::websocket::aio::reconnect::{replay_subscriptions, tls_connector_for, 
 use crate::websocket::aio::writer::{retire_writer, start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connect_gate::ConnectGate;
+use crate::websocket::liveness::{
+    latency_connection_lost, latency_frame, latency_timeout, latency_timeout_or_default,
+    LatencyWaiters,
+};
 use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
@@ -39,11 +43,13 @@ pub struct WebSocketClient {
     write_tx: Arc<Mutex<Option<tokio_mpsc::Sender<String>>>>,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     subscriptions: Arc<SubscriptionManager>,
-    /// Health check / liveness configuration. The dispatch loop reads
-    /// `heartbeat_timeout` from this and wraps `ws_read.next()` in
-    /// `tokio::time::timeout`; no separate runtime struct or background
-    /// polling task is needed.
+    /// Health check / liveness configuration. The dispatch loop bounds each
+    /// `ws_read.next()` by the liveness deadline it derives from this and
+    /// queues the probe itself; no background polling task is needed.
     health_check_config: HealthCheckConfig,
+    /// Pending [`measure_latency`](Self::measure_latency) calls, answered by
+    /// the dispatch loop.
+    latency: Arc<LatencyWaiters>,
     /// The client's ordered stream of messages and events. The client keeps
     /// a sender so the stream stays open until the client is dropped; the
     /// dispatch, writer and reconnect tasks report through clones. The
@@ -169,6 +175,7 @@ impl WebSocketClient {
             reconnection: Arc::new(Mutex::new(ReconnectionManager::new(reconnection_config))),
             subscriptions: Arc::new(SubscriptionManager::new()),
             health_check_config,
+            latency: Arc::default(),
             stream,
             stream_rx: Arc::new(std::sync::Mutex::new(Some(stream_rx))),
             stream_receiver: Arc::new(std::sync::Mutex::new(None)),
@@ -1074,6 +1081,52 @@ impl WebSocketClient {
         self.enqueue_write(json).await
     }
 
+    /// Measure the round trip to the server: send a `ping` and wait for its
+    /// `pong`, returning the time between the two on the local clock.
+    ///
+    /// Unlike [`send`](Self::send)ing a [`WebSocketRequest::ping`] — fire and
+    /// forget, with the pong delivered on the stream — this waits for the
+    /// answer, and its pong is not delivered on the stream. It works whether
+    /// or not the health check's probe is enabled, and costs nothing in the
+    /// background.
+    ///
+    /// `timeout` bounds the whole call, queueing the ping included; `None`
+    /// means [`DEFAULT_LATENCY_TIMEOUT_MS`](crate::DEFAULT_LATENCY_TIMEOUT_MS)
+    /// (5s).
+    ///
+    /// # Errors
+    ///
+    /// - `InvalidParameter` (1005) for a zero `timeout`.
+    /// - `ClientClosed` when not connected.
+    /// - `ConnectionError` when the connection closes before the pong.
+    /// - `TimeoutError` (3001) when no pong arrives within `timeout`.
+    pub async fn measure_latency(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<Duration, MarketDataError> {
+        let timeout = latency_timeout_or_default(timeout)?;
+        if !self.is_connected().await {
+            return Err(MarketDataError::ClientClosed);
+        }
+        let (tx, rx) = oneshot::channel();
+        let state = self.latency.register(move |arrived| {
+            let _ = tx.send(arrived);
+        });
+        let sent = std::time::Instant::now();
+        let exchange = async {
+            self.enqueue_write(latency_frame(state.clone())?).await?;
+            rx.await.map_err(|_| latency_connection_lost())
+        };
+        let result = match tokio::time::timeout(timeout, exchange).await {
+            Ok(result) => result,
+            Err(_elapsed) => Err(latency_timeout()),
+        };
+        if result.is_err() {
+            self.latency.cancel(&state);
+        }
+        result.map(|arrived| arrived.saturating_duration_since(sent))
+    }
+
     /// Send raw text message to WebSocket
     ///
     /// Used internally for sending subscription requests
@@ -1098,13 +1151,8 @@ impl WebSocketClient {
         write_failed: oneshot::Receiver<WriteFailure>,
     ) {
         let stream = self.stream.clone();
-
-        // Resolve heartbeat_timeout once: None means liveness disabled.
-        let heartbeat_timeout = if self.health_check_config.enabled {
-            Some(self.health_check_config.heartbeat_timeout)
-        } else {
-            None
-        };
+        let health = self.health_check_config.clone();
+        let latency = Arc::clone(&self.latency);
 
         // Clone Arcs needed for auto-reconnect inside spawned task
         let reconnection = Arc::clone(&self.reconnection);
@@ -1126,7 +1174,8 @@ impl WebSocketClient {
                 let close_code = dispatch_messages(
                     current_ws_read,
                     stream.clone(),
-                    heartbeat_timeout,
+                    &health,
+                    &latency,
                     Arc::clone(&subscriptions),
                     Arc::clone(&write_tx_slot),
                     Arc::clone(&shutdown_requested),
@@ -2622,6 +2671,49 @@ mod write_failure_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn failed_write_after_the_connection_closed_is_not_reported() {
         assert_lost_connection_write_is_silent(ReconnectionConfig::disabled()).await;
+    }
+
+    /// A probe that cannot be queued — the write path is stuck — still
+    /// gets its verdict on time: the connection is declared dead at
+    /// `idle_probe_after + probe_timeout` (#150).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stuck_write_path_does_not_hold_the_probe_verdict_back() {
+        const IDLE: Duration = Duration::from_millis(200);
+        const PROBE_TIMEOUT: Duration = Duration::from_millis(200);
+        let (url, received) = recording_server().await;
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        let health = HealthCheckConfig {
+            probe_enabled: true,
+            idle_probe_after: Some(IDLE),
+            probe_timeout: Some(PROBE_TIMEOUT),
+            ..HealthCheckConfig::default()
+        };
+        let client =
+            WebSocketClient::with_full_config(config, ReconnectionConfig::disabled(), health);
+        client.connect().await.expect("connect");
+
+        // A full queue nobody drains stands in for a writer stuck on the sink.
+        let (stuck_tx, _stuck_rx) = tokio_mpsc::channel(1);
+        stuck_tx.try_send("filler".to_string()).expect("fill");
+        *client.write_tx.lock().await = Some(stuck_tx);
+        let started = std::time::Instant::now();
+
+        let receiver = client.stream_receiver();
+        let timeout = tokio::task::spawn_blocking(move || loop {
+            match receiver.receive_timeout(Duration::from_secs(5)) {
+                Ok(Some(StreamItem::Event(ConnectionEvent::HeartbeatTimeout { elapsed }))) => {
+                    return Some(elapsed);
+                }
+                Ok(Some(_)) => continue,
+                _ => return None,
+            }
+        })
+        .await
+        .expect("reader");
+
+        assert_eq!(timeout, Some(IDLE + PROBE_TIMEOUT));
+        assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
+        assert!(received.lock().unwrap()[0].is_empty(), "the probe got out");
     }
 }
 

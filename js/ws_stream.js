@@ -124,8 +124,9 @@ async function main() {
   };
   const healthCheckCfg = {
     enabled: true,
-    pingInterval: 15_000,
-    maxMissedPongs: 3,
+    probeEnabled: true,
+    idleProbeAfterMs: 15_000,
+    probeTimeoutMs: 5_000,
   };
 
   const ws = new WebSocketClient({
@@ -204,8 +205,8 @@ async function main() {
   }
   console.log(`  reconnect: maxAttempts=${reconnectCfg.maxAttempts}, ` +
               `delay=${reconnectCfg.initialDelayMs}-${reconnectCfg.maxDelayMs}ms`);
-  console.log(`  healthCheck: pingInterval=${healthCheckCfg.pingInterval}ms, ` +
-              `maxMissedPongs=${healthCheckCfg.maxMissedPongs}`);
+  console.log(`  healthCheck: probe after ${healthCheckCfg.idleProbeAfterMs}ms of silence, ` +
+              `timeout ${healthCheckCfg.probeTimeoutMs}ms`);
 
   stock.connect();
   console.log(`\nStreaming ${subs.length} subscription(s). Press Enter to exit.\n`);

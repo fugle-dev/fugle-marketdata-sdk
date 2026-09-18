@@ -45,8 +45,11 @@ pub use websocket::{
 // window — bindings that previously exposed both fields now expose
 // just `heartbeat_timeout_ms`.
 pub use websocket::health_check::{
-    DEFAULT_HEALTH_CHECK_ENABLED, DEFAULT_HEARTBEAT_TIMEOUT_MS, MIN_HEARTBEAT_TIMEOUT_MS,
+    DEFAULT_HEALTH_CHECK_ENABLED, DEFAULT_HEARTBEAT_TIMEOUT_MS, DEFAULT_IDLE_PROBE_AFTER_MS,
+    DEFAULT_PROBE_TIMEOUT_MS, MIN_HEARTBEAT_TIMEOUT_MS, MIN_IDLE_PROBE_AFTER_MS,
+    MIN_PROBE_TIMEOUT_MS,
 };
+pub use websocket::liveness::DEFAULT_LATENCY_TIMEOUT_MS;
 pub use websocket::reconnection::{
     DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_ATTEMPTS, DEFAULT_MAX_DELAY_MS, MIN_INITIAL_DELAY_MS,
 };

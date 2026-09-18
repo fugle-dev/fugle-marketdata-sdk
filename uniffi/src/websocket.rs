@@ -193,31 +193,58 @@ impl ReconnectConfigRecord {
 
 /// Health check configuration record for FFI
 ///
-/// All fields are optional — zero/false values mean "use default".
+/// The millisecond fields take 0 to mean "use default".
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct HealthCheckConfigRecord {
     /// Whether liveness detection is active (default: true in 3.0)
     pub enabled: bool,
     /// Maximum allowed gap between inbound frames before declaring the
     /// connection dead, in milliseconds. Default 35000; floor 5000.
-    /// Pass 0 to use the default.
+    /// Pass 0 to use the default. Does not apply when `probe_enabled` is
+    /// true.
     pub heartbeat_timeout_ms: u64,
+    /// Confirm a silent connection with a ping before declaring it dead
+    /// (default: false). After `idle_probe_after_ms` of silence one ping is
+    /// sent; if nothing arrives within `probe_timeout_ms` the connection is
+    /// declared dead.
+    #[uniffi(default = false)]
+    pub probe_enabled: bool,
+    /// Silence before the probe, in milliseconds. Default 30000 (the
+    /// server's heartbeat period); floor 5000. Pass 0 to use the default.
+    #[uniffi(default = 0)]
+    pub idle_probe_after_ms: u64,
+    /// Wait for any inbound frame after the probe, in milliseconds.
+    /// Default 5000; floor 1000. Pass 0 to use the default.
+    #[uniffi(default = 0)]
+    pub probe_timeout_ms: u64,
 }
 
 impl HealthCheckConfigRecord {
-    fn to_core(&self) -> marketdata_core::HealthCheckConfig {
-        let default = marketdata_core::HealthCheckConfig::default();
-        marketdata_core::HealthCheckConfig {
-            enabled: self.enabled,
-            // 0 means "unset" across the FFI boundary — there is no Option<u64>
-            // that reads naturally in C#/Go/Java, so fall back to the default.
-            heartbeat_timeout: if self.heartbeat_timeout_ms > 0 {
-                std::time::Duration::from_millis(self.heartbeat_timeout_ms)
-            } else {
-                default.heartbeat_timeout
-            },
-        }
+    /// Core's config, validated by core: a value below its floor is a
+    /// `ConfigError` (1004).
+    fn to_core(&self) -> Result<marketdata_core::HealthCheckConfig, marketdata_core::MarketDataError> {
+        // 0 means "unset" across the FFI boundary — there is no Option<u64>
+        // that reads naturally in C#/Go/Java, so fall back to the default.
+        let ms = |ms: u64| (ms > 0).then(|| std::time::Duration::from_millis(ms));
+        marketdata_core::HealthCheckConfig::from_parts(
+            self.enabled,
+            ms(self.heartbeat_timeout_ms),
+            self.probe_enabled,
+            ms(self.idle_probe_after_ms),
+            ms(self.probe_timeout_ms),
+        )
     }
+}
+
+/// A health check record converted for a constructor that cannot fail: a
+/// config error is kept and returned by `connect()`.
+fn health_check_or_deferred(
+    record: Option<HealthCheckConfigRecord>,
+) -> Result<Option<marketdata_core::HealthCheckConfig>, String> {
+    record.map(|r| r.to_core()).transpose().map_err(|e| match e {
+        marketdata_core::MarketDataError::ConfigError(message) => message,
+        other => other.to_string(),
+    })
 }
 
 /// What the client does with an inbound message while its queue already
@@ -337,7 +364,9 @@ pub struct WebSocketClient {
     /// `disconnect()` drops.
     state: std::sync::Mutex<Option<marketdata_core::ConnectionStateHandle>>,
     reconnect_config: Option<marketdata_core::ReconnectionConfig>,
-    health_check_config: Option<marketdata_core::HealthCheckConfig>,
+    /// Health check config, or the message of the `ConfigError` its record
+    /// raised in a constructor that cannot fail; `connect()` returns it.
+    health_check_config: Result<Option<marketdata_core::HealthCheckConfig>, String>,
     tls_config: Option<marketdata_core::TlsConfig>,
     message_queue: Option<MessageQueueConfigRecord>,
     /// Dropped-message count of the current or last connection; outlives the
@@ -361,7 +390,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
         reconnect_config: Option<marketdata_core::ReconnectionConfig>,
-        health_check_config: Option<marketdata_core::HealthCheckConfig>,
+        health_check_config: Result<Option<marketdata_core::HealthCheckConfig>, String>,
         base_url: Option<String>,
         tls_config: Option<marketdata_core::TlsConfig>,
         version: StreamingVersionRecord,
@@ -397,7 +426,7 @@ impl WebSocketClient {
     /// * `listener` - Callback interface for receiving WebSocket events
     #[uniffi::constructor]
     pub fn new(api_key: String, listener: Arc<dyn WebSocketListener>) -> Arc<Self> {
-        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, None, None, None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, None, Ok(None), None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client for a specific endpoint
@@ -412,7 +441,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
     ) -> Arc<Self> {
-        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, None, None, None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, None, Ok(None), None, None, Default::default(), None)
     }
 
     /// Create a new WebSocket client with full configuration
@@ -436,7 +465,7 @@ impl WebSocketClient {
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
-            health_check_config.map(|c| c.to_core()),
+            health_check_or_deferred(health_check_config),
             None,
             None,
             Default::default(),
@@ -459,7 +488,7 @@ impl WebSocketClient {
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
-            health_check_config.map(|c| c.to_core()),
+            health_check_or_deferred(health_check_config),
             Some(base_url),
             None,
             Default::default(),
@@ -497,7 +526,7 @@ impl WebSocketClient {
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
-            health_check_config.map(|c| c.to_core()),
+            health_check_or_deferred(health_check_config),
             base_url,
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
@@ -540,7 +569,7 @@ impl WebSocketClient {
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
-            health_check_config.map(|c| c.to_core()),
+            health_check_or_deferred(health_check_config),
             base_url,
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
@@ -574,12 +603,13 @@ impl WebSocketClient {
     ) -> Result<Arc<Self>, MarketDataError> {
         let CredentialsRecord { api_key, bearer_token, sdk_token } = credentials;
         let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)?;
+        let health_check_config = health_check_config.map(|c| c.to_core()).transpose()?;
         Ok(Self::new_internal(
             AuthRequest::from(auth),
             listener,
             endpoint,
             reconnect_config.map(|c| c.to_core()),
-            health_check_config.map(|c| c.to_core()),
+            Ok(health_check_config),
             base_url,
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
@@ -670,6 +700,22 @@ impl WebSocketClient {
         self.ping_impl(state).await
     }
 
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and return the time between the two in milliseconds.
+    ///
+    /// Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+    /// this waits for the answer, and its pong is not delivered. Works
+    /// whether or not `probe_enabled` is set, and sends nothing in the
+    /// background. `timeout_ms` defaults to 5000 when `None`.
+    ///
+    /// Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+    /// (2001) when the connection closes before the pong, `TimeoutError`
+    /// (3001) when no pong arrives within `timeout_ms`, and
+    /// `InvalidParameter` (1005) for a `timeout_ms` of 0.
+    pub async fn measure_latency(&self, timeout_ms: Option<u64>) -> Result<f64, MarketDataError> {
+        self.measure_latency_impl(timeout_ms).await
+    }
+
     pub async fn query_subscriptions(&self) -> Result<(), MarketDataError> {
         self.query_subscriptions_impl().await
     }
@@ -730,8 +776,12 @@ impl WebSocketClient {
             message_queue.apply(&mut config);
         }
 
+        let health_check_config = self
+            .health_check_config
+            .clone()
+            .map_err(marketdata_core::MarketDataError::ConfigError)?;
         // Create core WebSocket client with optional reconnection/health-check config
-        let core_ws = if let (Some(rc), Some(hc)) = (&self.reconnect_config, &self.health_check_config) {
+        let core_ws = if let (Some(rc), Some(hc)) = (&self.reconnect_config, &health_check_config) {
             CoreWebSocketClient::with_full_config(config, rc.clone(), hc.clone())
         } else if let Some(rc) = &self.reconnect_config {
             CoreWebSocketClient::with_full_config(
@@ -739,7 +789,7 @@ impl WebSocketClient {
                 rc.clone(),
                 marketdata_core::HealthCheckConfig::default(),
             )
-        } else if let Some(hc) = &self.health_check_config {
+        } else if let Some(hc) = &health_check_config {
             CoreWebSocketClient::with_full_config(
                 config,
                 marketdata_core::ReconnectionConfig::default(),
@@ -917,6 +967,14 @@ impl WebSocketClient {
     ///
     /// # Arguments
     /// * `state` - Optional state string echoed back in the pong response
+    async fn measure_latency_impl(&self, timeout_ms: Option<u64>) -> Result<f64, MarketDataError> {
+        let ws = self.client().ok_or(marketdata_core::MarketDataError::ClientClosed)?;
+        let rtt = ws
+            .measure_latency(timeout_ms.map(std::time::Duration::from_millis))
+            .await?;
+        Ok(rtt.as_secs_f64() * 1000.0)
+    }
+
     async fn ping_impl(&self, state: Option<String>) -> Result<(), MarketDataError> {
         if let Some(ws) = self.client() {
             let request = marketdata_core::WebSocketRequest::ping(state);
@@ -1085,6 +1143,16 @@ impl WebSocketClient {
             rt.block_on(self.ping_impl(state))
         } else {
             Err(crate::errors::not_connected_error("Not connected"))
+        }
+    }
+
+    /// Measure the round trip to the server in milliseconds (blocking).
+    pub fn measure_latency_sync(&self, timeout_ms: Option<u64>) -> Result<f64, MarketDataError> {
+        let guard = self.sync_runtime.lock().unwrap();
+        if let Some(ref rt) = *guard {
+            rt.block_on(self.measure_latency_impl(timeout_ms))
+        } else {
+            Err(marketdata_core::MarketDataError::ClientClosed.into())
         }
     }
 
@@ -1981,6 +2049,110 @@ mod tests {
                 "disconnected(false)".to_string(),
             ]
         );
+    }
+
+    fn probe_record(idle_probe_after_ms: u64, probe_timeout_ms: u64) -> HealthCheckConfigRecord {
+        HealthCheckConfigRecord {
+            enabled: true,
+            heartbeat_timeout_ms: 0,
+            probe_enabled: true,
+            idle_probe_after_ms,
+            probe_timeout_ms,
+        }
+    }
+
+    #[test]
+    fn health_check_record_zeroes_take_the_core_defaults() {
+        let config = probe_record(0, 0).to_core().expect("defaults are valid");
+        assert!(config.probe_enabled);
+        assert_eq!(config.heartbeat_timeout, std::time::Duration::from_secs(35));
+        assert_eq!(config.idle_probe_after_or_default(), std::time::Duration::from_secs(30));
+        assert_eq!(config.probe_timeout_or_default(), std::time::Duration::from_secs(5));
+    }
+
+    /// Core validates the record: a value below its floor is 1004, raised
+    /// by the fallible constructor (#150).
+    #[test]
+    fn health_check_below_its_floor_is_a_config_error() {
+        let listener = Arc::new(TestListener::new());
+        let result = WebSocketClient::new_with_credentials(
+            CredentialsRecord {
+                api_key: Some("test-key".to_string()),
+                bearer_token: None,
+                sdk_token: None,
+            },
+            listener,
+            WebSocketEndpoint::Stock,
+            None,
+            None,
+            Some(probe_record(1_000, 0)),
+            None,
+            None,
+            None,
+        );
+        match result {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{info:?}");
+            }
+            Err(other) => panic!("expected CONFIG, got {other:?}"),
+            Ok(_) => panic!("expected CONFIG, got a client"),
+        }
+    }
+
+    /// A constructor that cannot fail returns the error from `connect()`.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn deferred_health_check_error_is_returned_by_connect() {
+        let server = MockWsServer::start().await;
+        let client = WebSocketClient::new_with_full_config(
+            "test-key".to_string(),
+            Arc::new(TestListener::new()),
+            WebSocketEndpoint::Stock,
+            Some(format!("ws://{}/marketdata", server.address())),
+            None,
+            Some(HealthCheckConfigRecord {
+                enabled: true,
+                heartbeat_timeout_ms: 1_000,
+                probe_enabled: false,
+                idle_probe_after_ms: 0,
+                probe_timeout_ms: 0,
+            }),
+            None,
+            None,
+        );
+        match client.connect_impl().await {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{info:?}");
+                assert!(!info.message.contains("Configuration error: Configuration error"), "{info:?}");
+            }
+            other => panic!("expected CONFIG, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn measure_latency_returns_milliseconds_and_keeps_its_pong() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::recording_messages());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_impl().await.expect("connect");
+        let latency = client.measure_latency_impl(None).await.expect("latency");
+        client.disconnect_impl().await;
+        listener.wait_for("disconnected(false)").await;
+
+        assert!((0.0..5_000.0).contains(&latency), "{latency}");
+        assert!(!listener.events().iter().any(|e| e == "message(pong)"), "{:?}", listener.events());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn measure_latency_needs_a_connection() {
+        let server = MockWsServer::start().await;
+        let client = mock_client(&server, Arc::new(TestListener::new()), None);
+        match client.measure_latency_impl(None).await {
+            Err(MarketDataError::ClientClosed { info }) => {
+                assert_eq!(info.code, marketdata_core::error_code::CLIENT_CLOSED, "{info:?}");
+            }
+            other => panic!("expected CLIENT_CLOSED, got {other:?}"),
+        }
     }
 
     /// Assert `error` is the 2010 `connect()` gave up on a `disconnect()`

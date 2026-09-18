@@ -2127,15 +2127,29 @@ export declare class FutOptWebSocketClient {
   /**
    * Send a `ping` frame to the server.
    *
-   * Mirrors the old `@fugle/marketdata` Node SDK. The server's `pong` reply
-   * is delivered via the `message` callback (or processed internally by the
-   * health check, if enabled).
+   * Mirrors the old `@fugle/marketdata` Node SDK: fire and forget. The
+   * server's `pong` reply is delivered via the `message` callback. To wait
+   * for the pong and get the round trip, use `measureLatency()`.
    *
    * @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
    *                 `state` the server echoes back in its pong. A string is
    *                 accepted for compatibility and sent as `{ state }`.
    */
   ping(params?: string | WebSocketPingParams): void
+  /**
+   * Measure the round trip to the server: send a ping, wait for its pong,
+   * and resolve with the time between the two in milliseconds.
+   *
+   * Works whether or not `healthCheck.probeEnabled` is set, and sends
+   * nothing in the background. Its pong is not delivered to `message`.
+   *
+   * Rejects with `ClientClosed` (2010) when not connected,
+   * `ConnectionError` (2001) when the connection closes before the pong,
+   * and `TimeoutError` (3001) when no pong arrives within `timeoutMs`.
+   *
+   * @param timeoutMs - How long to wait for the pong (default: 5000).
+   */
+  measureLatency(timeoutMs?: number | undefined | null): Promise<number>
   /**
    * Ask the server for its current subscription list.
    *
@@ -2596,15 +2610,29 @@ export declare class StockWebSocketClient {
   /**
    * Send a `ping` frame to the server.
    *
-   * Mirrors the old `@fugle/marketdata` Node SDK. The server's `pong` reply
-   * is delivered via the `message` callback (or processed internally by the
-   * health check, if enabled).
+   * Mirrors the old `@fugle/marketdata` Node SDK: fire and forget. The
+   * server's `pong` reply is delivered via the `message` callback. To wait
+   * for the pong and get the round trip, use `measureLatency()`.
    *
    * @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
    *                 `state` the server echoes back in its pong. A string is
    *                 accepted for compatibility and sent as `{ state }`.
    */
   ping(params?: string | WebSocketPingParams): void
+  /**
+   * Measure the round trip to the server: send a ping, wait for its pong,
+   * and resolve with the time between the two in milliseconds.
+   *
+   * Works whether or not `healthCheck.probeEnabled` is set, and sends
+   * nothing in the background. Its pong is not delivered to `message`.
+   *
+   * Rejects with `ClientClosed` (2010) when not connected,
+   * `ConnectionError` (2001) when the connection closes before the pong,
+   * and `TimeoutError` (3001) when no pong arrives within `timeoutMs`.
+   *
+   * @param timeoutMs - How long to wait for the pong (default: 5000).
+   */
+  measureLatency(timeoutMs?: number | undefined | null): Promise<number>
   /**
    * Ask the server for its current subscription list.
    *
@@ -2686,7 +2714,7 @@ export declare class WebSocketClient {
    * // Enable health check
    * const ws = new WebSocketClient({
    *   apiKey: 'your-key',
-   *   healthCheck: { enabled: true, pingInterval: 20000 }
+   *   healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 }
    * });
    * ```
    */
@@ -2726,7 +2754,8 @@ export interface EtfHoldingsParams {
 /**
  * Health check options for WebSocket connections
  *
- * All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000.
+ * All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000,
+ * probeEnabled=false, idleProbeAfterMs=30000, probeTimeoutMs=5000.
  */
 export interface HealthCheckOptions {
   /** Whether liveness detection is active (default: true in 3.0) */
@@ -2735,8 +2764,32 @@ export interface HealthCheckOptions {
    * Maximum allowed gap between inbound frames before declaring the
    * connection dead, in milliseconds. Default 35000 (Fugle server's
    * 30s heartbeat + 5s buffer); floor 5000.
+   *
+   * **Does not apply when `probeEnabled` is true**: detection is then
+   * `idleProbeAfterMs + probeTimeoutMs`.
    */
   heartbeatTimeoutMs?: number
+  /**
+   * Confirm a silent connection with a ping before declaring it dead
+   * (default: false). After `idleProbeAfterMs` without any inbound frame
+   * one `{"event":"ping"}` is sent; if nothing arrives within
+   * `probeTimeoutMs` the connection is declared dead. Turning this on
+   * alone keeps detection at 35s and sends a ping only when the server's
+   * 30s heartbeat is late. Does not detect a connection whose writes no
+   * longer reach the server while the server still sends.
+   */
+  probeEnabled?: boolean
+  /**
+   * Silence before the probe, in milliseconds (default: 30000, the
+   * server's heartbeat period; floor 5000). Probe mode only. Below 30000
+   * a ping is sent in every gap between heartbeats while no data flows.
+   */
+  idleProbeAfterMs?: number
+  /**
+   * Wait for any inbound frame after the probe, in milliseconds
+   * (default: 5000; floor 1000). Probe mode only.
+   */
+  probeTimeoutMs?: number
 }
 
 /** `stock.ownership.institutionalTrades` params (object form, matching the official SDK) */

@@ -237,6 +237,9 @@ public class ConfigOptionsTests
 
         Assert.IsNull(options.Enabled);
         Assert.IsNull(options.HeartbeatTimeoutMs);
+        Assert.IsNull(options.ProbeEnabled);
+        Assert.IsNull(options.IdleProbeAfterMs);
+        Assert.IsNull(options.ProbeTimeoutMs);
     }
 
     [TestMethod]
@@ -245,11 +248,17 @@ public class ConfigOptionsTests
         var options = new FugleMarketData.HealthCheckOptions
         {
             Enabled = true,
-            HeartbeatTimeoutMs = 20000
+            HeartbeatTimeoutMs = 20000,
+            ProbeEnabled = true,
+            IdleProbeAfterMs = 30000,
+            ProbeTimeoutMs = 5000
         };
 
         Assert.AreEqual(true, options.Enabled);
         Assert.AreEqual(20000ul, options.HeartbeatTimeoutMs);
+        Assert.AreEqual(true, options.ProbeEnabled);
+        Assert.AreEqual(30000ul, options.IdleProbeAfterMs);
+        Assert.AreEqual(5000ul, options.ProbeTimeoutMs);
     }
 
     // ========== WebSocketClientOptions with nested config Tests ==========
@@ -317,6 +326,79 @@ public class ConfigOptionsTests
         {
             // Other exceptions (UniFFI errors) are acceptable
         }
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_AcceptsProbeOptions()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            HealthCheck = new FugleMarketData.HealthCheckOptions
+            {
+                ProbeEnabled = true,
+                IdleProbeAfterMs = 30000,
+                ProbeTimeoutMs = 5000
+            }
+        };
+        var listener = new TestWebSocketListener();
+
+        try
+        {
+            using var client = new FugleMarketData.WebSocketClient(options, listener);
+            Assert.IsNotNull(client);
+            // Probe options stored for future use
+        }
+        catch (uniffi.marketdata_uniffi.MarketDataException ex) when (FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code == 1004)
+        {
+            Assert.Fail("Should not reject valid auth and probe config");
+        }
+        catch
+        {
+            // Other exceptions (UniFFI errors) are acceptable
+        }
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_HealthCheck_BelowFloor_ThrowsConfigError()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var listener = new TestWebSocketListener();
+
+        AssertConfigErrorBelowFloor(() => new FugleMarketData.WebSocketClient(
+            new FugleMarketData.WebSocketClientOptions
+            {
+                ApiKey = "test-api-key",
+                HealthCheck = new FugleMarketData.HealthCheckOptions { HeartbeatTimeoutMs = 1000 }
+            },
+            listener));
+
+        AssertConfigErrorBelowFloor(() => new FugleMarketData.WebSocketClient(
+            new FugleMarketData.WebSocketClientOptions
+            {
+                ApiKey = "test-api-key",
+                HealthCheck = new FugleMarketData.HealthCheckOptions { ProbeEnabled = true, IdleProbeAfterMs = 1000 }
+            },
+            listener));
+
+        AssertConfigErrorBelowFloor(() => new FugleMarketData.WebSocketClient(
+            new FugleMarketData.WebSocketClientOptions
+            {
+                ApiKey = "test-api-key",
+                HealthCheck = new FugleMarketData.HealthCheckOptions { ProbeEnabled = true, ProbeTimeoutMs = 500 }
+            },
+            listener));
+    }
+
+    private static void AssertConfigErrorBelowFloor(Action create)
+    {
+        var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException.ConfigException>(create);
+        var info = FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex);
+        Assert.AreEqual(1004, info.code); // marketdata_core::error_code::CONFIG
+        StringAssert.Contains(info.message, "must be >=");
     }
 
     // ========== Message queue (MessageOverflow / MessageBuffer) Tests ==========

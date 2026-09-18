@@ -257,6 +257,7 @@ FugleWebSocketClient.builder()
     .messageOverflow(MessageOverflow overflow)  // DROP_NEWEST (default) or UNBOUNDED
     .messageBuffer(int buffer)       // Unread messages before overflow applies (default: 4096)
     .reconnect(ReconnectOptions options)  // Auto-reconnect tuning (default: on, unlimited attempts)
+    .healthCheck(HealthCheckOptions options)  // Liveness detection tuning (default: on, 35s timeout)
     .build()
 ```
 
@@ -275,6 +276,38 @@ auth failure) never triggers a reconnect. Configure it with `reconnect(...)`:
 
 `maxAttempts` 0 means unlimited (the default); `initialDelayMs` (default 1000,
 min 100) and `maxDelayMs` (default 60000) tune the backoff.
+
+Liveness detection is on by default: when the connection stays silent too
+long it is declared dead and auto-reconnect takes over. Configure it with
+`healthCheck(...)`:
+
+```java
+// Default: heartbeatTimeoutMs 35000
+.healthCheck(HealthCheckOptions.builder().heartbeatTimeoutMs(60000L).build())
+
+// Probe mode: confirm a silent connection with a ping before declaring it
+// dead, instead of guessing off a timeout
+.healthCheck(HealthCheckOptions.builder().probeEnabled(true).idleProbeAfterMs(10000L).build())
+
+// Turn it off
+.healthCheck(HealthCheckOptions.builder().enabled(false).build())
+```
+
+`heartbeatTimeoutMs` (default 35000, min 5000) does not apply when
+`probeEnabled` is true. With `probeEnabled`, `idleProbeAfterMs` (default
+30000, min 5000) and `probeTimeoutMs` (default 5000, min 1000) control when a
+ping is sent and how long to wait for a reply. With the defaults, detection
+stays at 35 s and no ping is sent while the server's heartbeat is on time;
+lowering `idleProbeAfterMs` detects faster at the cost of pinging the server
+more often. Probing does not detect a half-open connection (the server still
+sends, but our writes no longer reach it). See
+[HealthCheckConfig / HealthCheckOptions](../../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the full trade-offs and estimated server cost.
+
+`ping(state)` is fire-and-forget, as in the old SDK, with the pong delivered
+to `onMessage`/the pull queue. `measureLatency()` sends one ping, awaits its
+pong and returns the round-trip time in milliseconds; it works regardless of
+`probeEnabled` and sends nothing in the background otherwise.
 
 `messageOverflow`/`messageBuffer` configure the client's internal message
 queue (shared by both callback and pull mode): with the default
@@ -324,6 +357,12 @@ StreamMessage tryPoll()                          // Non-blocking poll (may retur
 // Error handling
 boolean hasErrors()                           // Check if errors exist
 String pollError()                            // Get next error message
+
+// Ping is fire-and-forget; the pong (if any) arrives via onMessage/the pull queue
+CompletableFuture<Void> ping(String state)
+// measureLatency sends a ping and awaits the matching pong; returns the round-trip time in ms (see Health Check above)
+CompletableFuture<Double> measureLatency(Long timeoutMs)
+CompletableFuture<Double> measureLatency()    // Same, with the default 5000ms timeout
 ```
 
 #### StreamMessage Properties

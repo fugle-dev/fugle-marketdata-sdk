@@ -312,7 +312,10 @@ namespace FugleMarketData
             {
                 healthCheckRecord = new uniffi.marketdata_uniffi.HealthCheckConfigRecord(
                     enabled: options.HealthCheck.Enabled ?? true,
-                    heartbeatTimeoutMs: options.HealthCheck.HeartbeatTimeoutMs ?? 0
+                    heartbeatTimeoutMs: options.HealthCheck.HeartbeatTimeoutMs ?? 0,
+                    probeEnabled: options.HealthCheck.ProbeEnabled ?? false,
+                    idleProbeAfterMs: options.HealthCheck.IdleProbeAfterMs ?? 0,
+                    probeTimeoutMs: options.HealthCheck.ProbeTimeoutMs ?? 0
                 );
             }
 
@@ -428,11 +431,22 @@ namespace FugleMarketData
         public ulong MessagesDroppedTotal => _inner.MessagesDroppedTotal();
 
         /// <summary>
-        /// Send a ping message to the server.
+        /// Send a ping message to the server. Fire-and-forget: the task
+        /// completes once the ping is sent, and the pong (if any) arrives
+        /// later via the message callback. See <see cref="MeasureLatencyAsync"/>
+        /// for an awaitable round-trip measurement.
         /// </summary>
         /// <param name="state">Optional state string echoed back in the pong response</param>
         /// <returns>Task that completes when the ping is sent</returns>
         public Task PingAsync(string? state = null) => _inner.Ping(state);
+
+        /// <summary>
+        /// Send a ping and await the matching pong, returning the round-trip
+        /// time in milliseconds.
+        /// </summary>
+        /// <param name="timeoutMs">Timeout in milliseconds (default: 5000)</param>
+        /// <returns>Task that completes with the round-trip time in milliseconds</returns>
+        public Task<double> MeasureLatencyAsync(ulong? timeoutMs = null) => _inner.MeasureLatency(timeoutMs);
 
         /// <summary>
         /// Query the server for current subscriptions.

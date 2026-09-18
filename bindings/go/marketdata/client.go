@@ -108,6 +108,9 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		healthCheckRecord = &HealthCheckConfigRecord{
 			Enabled:            cfg.healthCheck.Enabled,
 			HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
+			ProbeEnabled:       cfg.healthCheck.ProbeEnabled,
+			IdleProbeAfterMs:   cfg.healthCheck.IdleProbeAfterMs,
+			ProbeTimeoutMs:     cfg.healthCheck.ProbeTimeoutMs,
 		}
 	}
 	var messageQueueRecord *MessageQueueConfigRecord

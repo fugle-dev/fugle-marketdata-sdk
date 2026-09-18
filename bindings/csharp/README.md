@@ -278,6 +278,9 @@ Task SubscribeAsync(string channel, string symbol, bool? afterHours = null)    /
 Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null)  // Unsubscribe (same afterHours as subscribe)
 Task UnsubscribeAsync(IEnumerable<string> ids)                                // Unsubscribe by server ids (empty: 1005)
 List<Subscription> GetSubscriptions()               // List active subscriptions
+
+Task PingAsync(string? state = null)                // Fire-and-forget ping; pong (if any) arrives via OnMessage
+Task<double> MeasureLatencyAsync(ulong? timeoutMs = null)  // Ping and await the pong; returns round-trip time in ms (see Health Check below)
 ```
 
 #### IWebSocketListener Interface
@@ -324,6 +327,40 @@ Reconnect = new ReconnectOptions { Enabled = false },
 
 `MaxAttempts` 0 means unlimited (the default); `InitialDelayMs` (default 1000,
 min 100) and `MaxDelayMs` (default 60000) tune the backoff.
+
+#### Health Check
+
+Liveness detection is on by default: when the connection stays silent too
+long it is declared dead and auto-reconnect takes over. Configure it with
+`WebSocketClientOptions.HealthCheck`:
+
+```csharp
+// Default: HeartbeatTimeoutMs 35000
+HealthCheck = new HealthCheckOptions { HeartbeatTimeoutMs = 60000 },
+
+// Probe mode: confirm a silent connection with a ping before declaring it
+// dead, instead of guessing off a timeout
+HealthCheck = new HealthCheckOptions { ProbeEnabled = true, IdleProbeAfterMs = 10000 },
+
+// Turn it off
+HealthCheck = new HealthCheckOptions { Enabled = false },
+```
+
+`HeartbeatTimeoutMs` (default 35000, min 5000) does not apply when
+`ProbeEnabled` is true. With `ProbeEnabled`, `IdleProbeAfterMs` (default
+30000, min 5000) and `ProbeTimeoutMs` (default 5000, min 1000) control when a
+ping is sent and how long to wait for a reply. With the defaults, detection
+stays at 35 s and no ping is sent while the server's heartbeat is on time;
+lowering `IdleProbeAfterMs` detects faster at the cost of pinging the server
+more often. Probing does not detect a half-open connection (the server still
+sends, but our writes no longer reach it). See
+[HealthCheckConfig / HealthCheckOptions](../../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the full trade-offs and estimated server cost.
+
+`PingAsync` is fire-and-forget, as in the old SDK, with the pong delivered to
+`OnMessage`. `MeasureLatencyAsync` sends one ping, awaits its pong and returns
+the round-trip time in milliseconds; it works regardless of `ProbeEnabled` and
+sends nothing in the background otherwise.
 
 #### Message queue overflow
 

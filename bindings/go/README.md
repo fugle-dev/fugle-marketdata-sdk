@@ -414,6 +414,11 @@ Errors() <-chan error              // Receive errors
 
 // Message queue
 MessagesDroppedTotal() uint64      // Messages dropped this connection (see below)
+
+// Ping is fire-and-forget; the pong (if any) arrives via Messages()
+Ping(state *string) error
+// MeasureLatency sends a ping and waits for the matching pong; returns the round-trip time in ms (see Health Check below)
+MeasureLatency(timeoutMs *uint64) (float64, error)
 ```
 
 #### Reconnection
@@ -436,6 +441,41 @@ mkt.WithoutReconnect()
 `InitialDelayMs` 1000 (min 100), `MaxDelayMs` 60000. It has no on/off field, so
 passing it never turns reconnect off. Between `WithReconnect` and
 `WithoutReconnect`, the last option given wins.
+
+#### Health Check
+
+Liveness detection is on by default: when the connection stays silent too
+long it is declared dead and auto-reconnect takes over.
+`HealthCheckConfig`'s zero value turns detection off (see #152), so pass
+`Enabled: true` explicitly when setting other fields.
+
+```go
+// Default: HeartbeatTimeoutMs 35000
+mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: true, HeartbeatTimeoutMs: 60000})
+
+// Probe mode: confirm a silent connection with a ping before declaring it
+// dead, instead of guessing off a timeout
+mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: true, ProbeEnabled: true, IdleProbeAfterMs: 10000})
+
+// Turn it off
+mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: false})
+```
+
+`HeartbeatTimeoutMs` (default 35000, min 5000) does not apply when
+`ProbeEnabled` is true. With `ProbeEnabled`, `IdleProbeAfterMs` (default
+30000, min 5000) and `ProbeTimeoutMs` (default 5000, min 1000) control when a
+ping is sent and how long to wait for a reply. With the defaults, detection
+stays at 35 s and no ping is sent while the server's heartbeat is on time;
+lowering `IdleProbeAfterMs` detects faster at the cost of pinging the server
+more often. Probing does not detect a half-open connection (the server still
+sends, but our writes no longer reach it). See
+[HealthCheckConfig / HealthCheckOptions](../../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the full trade-offs and estimated server cost.
+
+`Ping` is fire-and-forget, as in the old SDK, with the pong delivered via
+`Messages()`. `MeasureLatency` sends one ping, waits for its pong and returns
+the round-trip time in milliseconds; it works regardless of `ProbeEnabled` and
+sends nothing in the background otherwise.
 
 #### Message Queue Options
 

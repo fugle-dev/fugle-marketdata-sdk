@@ -1183,6 +1183,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency()
+		})
+		if checksum != 53522 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total()
 		})
 		if checksum != 28793 {
@@ -4498,6 +4507,19 @@ type WebSocketClientInterface interface {
 	// Reads core's connection state, so it is false while reconnecting and
 	// right after the connection drops, without waiting for the event thread.
 	IsConnected() bool
+	// Measure the round trip to the server: send a ping, wait for its pong,
+	// and return the time between the two in milliseconds.
+	//
+	// Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+	// this waits for the answer, and its pong is not delivered. Works
+	// whether or not `probe_enabled` is set, and sends nothing in the
+	// background. `timeout_ms` defaults to 5000 when `None`.
+	//
+	// Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+	// (2001) when the connection closes before the pong, `TimeoutError`
+	// (3001) when no pong arrives within `timeout_ms`, and
+	// `InvalidParameter` (1005) for a `timeout_ms` of 0.
+	MeasureLatency(timeoutMs *uint64) (float64, error)
 	// Messages dropped because they arrived while the message queue held
 	// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
 	//
@@ -4734,6 +4756,51 @@ func (_self *WebSocketClient) IsConnected() bool {
 		return C.uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(
 			_pointer, _uniffiStatus)
 	}))
+}
+
+// Measure the round trip to the server: send a ping, wait for its pong,
+// and return the time between the two in milliseconds.
+//
+// Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+// this waits for the answer, and its pong is not delivered. Works
+// whether or not `probe_enabled` is set, and sends nothing in the
+// background. `timeout_ms` defaults to 5000 when `None`.
+//
+// Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+// (2001) when the connection closes before the pong, `TimeoutError`
+// (3001) when no pong arrives within `timeout_ms`, and
+// `InvalidParameter` (1005) for a `timeout_ms` of 0.
+func (_self *WebSocketClient) MeasureLatency(timeoutMs *uint64) (float64, error) {
+	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
+	defer _self.ffiObject.decrementPointer()
+	res, err := uniffiRustCallAsync[MarketDataError](
+		FfiConverterMarketDataErrorINSTANCE,
+		// completeFn
+		func(handle C.uint64_t, status *C.RustCallStatus) C.double {
+			res := C.ffi_marketdata_uniffi_rust_future_complete_f64(handle, status)
+			return res
+		},
+		// liftFn
+		func(ffi C.double) float64 {
+			return FfiConverterFloat64INSTANCE.Lift(ffi)
+		},
+		C.uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency(
+			_pointer, FfiConverterOptionalUint64INSTANCE.Lower(timeoutMs)),
+		// pollFn
+		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_poll_f64(handle, continuation, data)
+		},
+		// freeFn
+		func(handle C.uint64_t) {
+			C.ffi_marketdata_uniffi_rust_future_free_f64(handle)
+		},
+	)
+
+	if err == nil {
+		return res, nil
+	}
+
+	return res, err
 }
 
 // Messages dropped because they arrived while the message queue held
@@ -5586,19 +5653,34 @@ func (_ FfiDestroyerErrorInfo) Destroy(value ErrorInfo) {
 
 // Health check configuration record for FFI
 //
-// All fields are optional — zero/false values mean "use default".
+// The millisecond fields take 0 to mean "use default".
 type HealthCheckConfigRecord struct {
 	// Whether liveness detection is active (default: true in 3.0)
 	Enabled bool
 	// Maximum allowed gap between inbound frames before declaring the
 	// connection dead, in milliseconds. Default 35000; floor 5000.
-	// Pass 0 to use the default.
+	// Pass 0 to use the default. Does not apply when `probe_enabled` is
+	// true.
 	HeartbeatTimeoutMs uint64
+	// Confirm a silent connection with a ping before declaring it dead
+	// (default: false). After `idle_probe_after_ms` of silence one ping is
+	// sent; if nothing arrives within `probe_timeout_ms` the connection is
+	// declared dead.
+	ProbeEnabled bool
+	// Silence before the probe, in milliseconds. Default 30000 (the
+	// server's heartbeat period); floor 5000. Pass 0 to use the default.
+	IdleProbeAfterMs uint64
+	// Wait for any inbound frame after the probe, in milliseconds.
+	// Default 5000; floor 1000. Pass 0 to use the default.
+	ProbeTimeoutMs uint64
 }
 
 func (r *HealthCheckConfigRecord) Destroy() {
 	FfiDestroyerBool{}.Destroy(r.Enabled)
 	FfiDestroyerUint64{}.Destroy(r.HeartbeatTimeoutMs)
+	FfiDestroyerBool{}.Destroy(r.ProbeEnabled)
+	FfiDestroyerUint64{}.Destroy(r.IdleProbeAfterMs)
+	FfiDestroyerUint64{}.Destroy(r.ProbeTimeoutMs)
 }
 
 type FfiConverterHealthCheckConfigRecord struct{}
@@ -5612,6 +5694,9 @@ func (c FfiConverterHealthCheckConfigRecord) Lift(rb RustBufferI) HealthCheckCon
 func (c FfiConverterHealthCheckConfigRecord) Read(reader io.Reader) HealthCheckConfigRecord {
 	return HealthCheckConfigRecord{
 		FfiConverterBoolINSTANCE.Read(reader),
+		FfiConverterUint64INSTANCE.Read(reader),
+		FfiConverterBoolINSTANCE.Read(reader),
+		FfiConverterUint64INSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
 	}
 }
@@ -5627,6 +5712,9 @@ func (c FfiConverterHealthCheckConfigRecord) LowerExternal(value HealthCheckConf
 func (c FfiConverterHealthCheckConfigRecord) Write(writer io.Writer, value HealthCheckConfigRecord) {
 	FfiConverterBoolINSTANCE.Write(writer, value.Enabled)
 	FfiConverterUint64INSTANCE.Write(writer, value.HeartbeatTimeoutMs)
+	FfiConverterBoolINSTANCE.Write(writer, value.ProbeEnabled)
+	FfiConverterUint64INSTANCE.Write(writer, value.IdleProbeAfterMs)
+	FfiConverterUint64INSTANCE.Write(writer, value.ProbeTimeoutMs)
 }
 
 type FfiDestroyerHealthCheckConfigRecord struct{}
@@ -6816,6 +6904,47 @@ type FfiDestroyerOptionalInt32 struct{}
 func (_ FfiDestroyerOptionalInt32) Destroy(value *int32) {
 	if value != nil {
 		FfiDestroyerInt32{}.Destroy(*value)
+	}
+}
+
+type FfiConverterOptionalUint64 struct{}
+
+var FfiConverterOptionalUint64INSTANCE = FfiConverterOptionalUint64{}
+
+func (c FfiConverterOptionalUint64) Lift(rb RustBufferI) *uint64 {
+	return LiftFromRustBuffer[*uint64](c, rb)
+}
+
+func (_ FfiConverterOptionalUint64) Read(reader io.Reader) *uint64 {
+	if readInt8(reader) == 0 {
+		return nil
+	}
+	temp := FfiConverterUint64INSTANCE.Read(reader)
+	return &temp
+}
+
+func (c FfiConverterOptionalUint64) Lower(value *uint64) C.RustBuffer {
+	return LowerIntoRustBuffer[*uint64](c, value)
+}
+
+func (c FfiConverterOptionalUint64) LowerExternal(value *uint64) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*uint64](c, value))
+}
+
+func (_ FfiConverterOptionalUint64) Write(writer io.Writer, value *uint64) {
+	if value == nil {
+		writeInt8(writer, 0)
+	} else {
+		writeInt8(writer, 1)
+		FfiConverterUint64INSTANCE.Write(writer, *value)
+	}
+}
+
+type FfiDestroyerOptionalUint64 struct{}
+
+func (_ FfiDestroyerOptionalUint64) Destroy(value *uint64) {
+	if value != nil {
+		FfiDestroyerUint64{}.Destroy(*value)
 	}
 }
 

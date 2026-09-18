@@ -13,6 +13,7 @@ use napi::bindgen_prelude::{Function, FunctionRef, JsValuesTupleIntoVec, Promise
 use marketdata_core::{error_code, ErrorInfo, ErrorKind};
 use napi::JsValue;
 use napi::Env;
+use crate::errors::Settled;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{sys, Status};
 
@@ -597,7 +598,8 @@ pub struct ReconnectOptions {
 
 /// Health check options for WebSocket connections
 ///
-/// All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000.
+/// All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000,
+/// probeEnabled=false, idleProbeAfterMs=30000, probeTimeoutMs=5000.
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct HealthCheckOptions {
@@ -606,7 +608,39 @@ pub struct HealthCheckOptions {
     /// Maximum allowed gap between inbound frames before declaring the
     /// connection dead, in milliseconds. Default 35000 (Fugle server's
     /// 30s heartbeat + 5s buffer); floor 5000.
+    ///
+    /// **Does not apply when `probeEnabled` is true**: detection is then
+    /// `idleProbeAfterMs + probeTimeoutMs`.
     pub heartbeat_timeout_ms: Option<f64>,
+    /// Confirm a silent connection with a ping before declaring it dead
+    /// (default: false). After `idleProbeAfterMs` without any inbound frame
+    /// one `{"event":"ping"}` is sent; if nothing arrives within
+    /// `probeTimeoutMs` the connection is declared dead. Turning this on
+    /// alone keeps detection at 35s and sends a ping only when the server's
+    /// 30s heartbeat is late. Does not detect a connection whose writes no
+    /// longer reach the server while the server still sends.
+    pub probe_enabled: Option<bool>,
+    /// Silence before the probe, in milliseconds (default: 30000, the
+    /// server's heartbeat period; floor 5000). Probe mode only. Below 30000
+    /// a ping is sent in every gap between heartbeats while no data flows.
+    pub idle_probe_after_ms: Option<f64>,
+    /// Wait for any inbound frame after the probe, in milliseconds
+    /// (default: 5000; floor 1000). Probe mode only.
+    pub probe_timeout_ms: Option<f64>,
+}
+
+impl HealthCheckOptions {
+    /// Core's config; an omitted option takes the core default.
+    fn to_core(&self) -> Result<marketdata_core::HealthCheckConfig, marketdata_core::MarketDataError> {
+        let ms = |v: Option<f64>| v.map(|v| Duration::from_millis(v as u64));
+        marketdata_core::HealthCheckConfig::from_parts(
+            self.enabled.unwrap_or(marketdata_core::DEFAULT_HEALTH_CHECK_ENABLED),
+            ms(self.heartbeat_timeout_ms),
+            self.probe_enabled.unwrap_or(false),
+            ms(self.idle_probe_after_ms),
+            ms(self.probe_timeout_ms),
+        )
+    }
 }
 
 /// REST client options
@@ -841,6 +875,11 @@ enum WsCommand {
     Ping { data: Option<serde_json::Value> },
     /// Ask the server for its current subscription list (response arrives via `message`)
     QuerySubscriptions,
+    /// Measure the round trip to the server (`measureLatency()`)
+    MeasureLatency {
+        timeout: Option<Duration>,
+        reply: tokio::sync::oneshot::Sender<Result<Duration, marketdata_core::MarketDataError>>,
+    },
     Disconnect,
 }
 
@@ -1017,6 +1056,28 @@ fn send_command(slot: &WorkerSlot, command: WsCommand, name: &str) -> napi::Resu
         .map_err(|_| napi::Error::from_reason(format!("Failed to send {} command", name)))
 }
 
+/// `measureLatency()`: ask the worker's core client for the round trip,
+/// in milliseconds.
+async fn measure_latency(slot: &WorkerSlot, timeout_ms: Option<f64>) -> napi::Result<Settled> {
+    let timeout = match timeout_ms {
+        None => None,
+        Some(ms) if ms.is_finite() && ms >= 0.0 => Some(Duration::from_millis(ms as u64)),
+        Some(_) => {
+            return Ok(Settled(Err(marketdata_core::MarketDataError::InvalidParameter {
+                name: "timeoutMs".to_string(),
+                reason: "must be a positive number".to_string(),
+            })));
+        }
+    };
+    let (reply, rx) = tokio::sync::oneshot::channel();
+    if send_command(slot, WsCommand::MeasureLatency { timeout, reply }, "measureLatency").is_err() {
+        return Ok(Settled(Err(marketdata_core::MarketDataError::ClientClosed)));
+    }
+    // The worker ended without answering: its connection is gone.
+    let result = rx.await.unwrap_or(Err(marketdata_core::MarketDataError::ClientClosed));
+    Ok(Settled(result.map(|rtt| serde_json::Value::from(rtt.as_secs_f64() * 1000.0))))
+}
+
 /// Mark the worker as ending and ask it to disconnect; no-op without one.
 fn request_disconnect(slot: &WorkerSlot) -> napi::Result<()> {
     let guard = slot
@@ -1173,15 +1234,12 @@ impl WebSocketClient {
     /// // Enable health check
     /// const ws = new WebSocketClient({
     ///   apiKey: 'your-key',
-    ///   healthCheck: { enabled: true, pingInterval: 20000 }
+    ///   healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 }
     /// });
     /// ```
     #[napi(constructor)]
     pub fn new(env: Env, options: WebSocketClientOptions) -> napi::Result<Self> {
-        use marketdata_core::{
-            DEFAULT_MAX_ATTEMPTS, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_DELAY_MS,
-            DEFAULT_HEALTH_CHECK_ENABLED, DEFAULT_HEARTBEAT_TIMEOUT_MS,
-        };
+        use marketdata_core::{DEFAULT_MAX_ATTEMPTS, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_DELAY_MS};
         use std::time::Duration;
 
         // Core requires exactly one non-blank credential (ConfigError, 1004)
@@ -1238,18 +1296,11 @@ impl WebSocketClient {
         };
 
         // Build health check config with validation via core
-        let health_check_cfg = if let Some(hc) = &options.health_check {
-            let enabled = hc.enabled.unwrap_or(DEFAULT_HEALTH_CHECK_ENABLED);
-            let timeout = Duration::from_millis(
-                hc.heartbeat_timeout_ms.map(|v| v as u64).unwrap_or(DEFAULT_HEARTBEAT_TIMEOUT_MS)
-            );
-            let mut cfg = marketdata_core::HealthCheckConfig::with_timeout(timeout)
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            cfg.enabled = enabled;
-            cfg
-        } else {
-            marketdata_core::HealthCheckConfig::default()
-        };
+        let health_check_cfg = options
+            .health_check
+            .unwrap_or_default()
+            .to_core()
+            .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
         // Build TLS config from options. Default config matches previous
         // behaviour (OS trust store, no overrides); custom CA / accept_invalid
@@ -1542,7 +1593,7 @@ impl StockWebSocketClient {
                 });
                 config.tls = tls_config;
                 message_queue.apply(&mut config);
-                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+                let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
                 let state = client.state_handle();
@@ -1634,6 +1685,14 @@ impl StockWebSocketClient {
                                 let request = marketdata_core::WebSocketRequest::subscriptions();
                                 let _ = rt.block_on(client.send(request));
                             }
+                            Ok(WsCommand::MeasureLatency { timeout, reply }) => {
+                                // Spawned: waiting for the pong must not hold
+                                // up the commands behind it.
+                                let client = Arc::clone(&client);
+                                rt.spawn(async move {
+                                    let _ = reply.send(client.measure_latency(timeout).await);
+                                });
+                            }
                             Ok(WsCommand::Disconnect) => {
                                 let _ = rt.block_on(client.disconnect());
                                 // Core's disconnect() emits `Disconnected` on its
@@ -1724,9 +1783,9 @@ impl StockWebSocketClient {
 
     /// Send a `ping` frame to the server.
     ///
-    /// Mirrors the old `@fugle/marketdata` Node SDK. The server's `pong` reply
-    /// is delivered via the `message` callback (or processed internally by the
-    /// health check, if enabled).
+    /// Mirrors the old `@fugle/marketdata` Node SDK: fire and forget. The
+    /// server's `pong` reply is delivered via the `message` callback. To wait
+    /// for the pong and get the round trip, use `measureLatency()`.
     ///
     /// @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
     ///                 `state` the server echoes back in its pong. A string is
@@ -1734,6 +1793,22 @@ impl StockWebSocketClient {
     #[napi(ts_args_type = "params?: string | WebSocketPingParams")]
     pub fn ping(&self, params: Option<serde_json::Value>) -> napi::Result<()> {
         send_command(&self.worker, WsCommand::Ping { data: ping_data(params) }, "ping")
+    }
+
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and resolve with the time between the two in milliseconds.
+    ///
+    /// Works whether or not `healthCheck.probeEnabled` is set, and sends
+    /// nothing in the background. Its pong is not delivered to `message`.
+    ///
+    /// Rejects with `ClientClosed` (2010) when not connected,
+    /// `ConnectionError` (2001) when the connection closes before the pong,
+    /// and `TimeoutError` (3001) when no pong arrives within `timeoutMs`.
+    ///
+    /// @param timeoutMs - How long to wait for the pong (default: 5000).
+    #[napi(ts_return_type = "Promise<number>")]
+    pub async fn measure_latency(&self, timeout_ms: Option<f64>) -> napi::Result<Settled> {
+        measure_latency(&self.worker, timeout_ms).await
     }
 
     /// Ask the server for its current subscription list.
@@ -1962,7 +2037,7 @@ impl FutOptWebSocketClient {
                 });
                 config.tls = tls_config;
                 message_queue.apply(&mut config);
-                let client = CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config);
+                let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
                 let state = client.state_handle();
@@ -2054,6 +2129,14 @@ impl FutOptWebSocketClient {
                                 let request = marketdata_core::WebSocketRequest::subscriptions();
                                 let _ = rt.block_on(client.send(request));
                             }
+                            Ok(WsCommand::MeasureLatency { timeout, reply }) => {
+                                // Spawned: waiting for the pong must not hold
+                                // up the commands behind it.
+                                let client = Arc::clone(&client);
+                                rt.spawn(async move {
+                                    let _ = reply.send(client.measure_latency(timeout).await);
+                                });
+                            }
                             Ok(WsCommand::Disconnect) => {
                                 let _ = rt.block_on(client.disconnect());
                                 // Core's disconnect() emits `Disconnected` on its
@@ -2141,9 +2224,9 @@ impl FutOptWebSocketClient {
 
     /// Send a `ping` frame to the server.
     ///
-    /// Mirrors the old `@fugle/marketdata` Node SDK. The server's `pong` reply
-    /// is delivered via the `message` callback (or processed internally by the
-    /// health check, if enabled).
+    /// Mirrors the old `@fugle/marketdata` Node SDK: fire and forget. The
+    /// server's `pong` reply is delivered via the `message` callback. To wait
+    /// for the pong and get the round trip, use `measureLatency()`.
     ///
     /// @param params - Sent as the frame's `data`, e.g. `{ state: 'x' }`, whose
     ///                 `state` the server echoes back in its pong. A string is
@@ -2151,6 +2234,22 @@ impl FutOptWebSocketClient {
     #[napi(ts_args_type = "params?: string | WebSocketPingParams")]
     pub fn ping(&self, params: Option<serde_json::Value>) -> napi::Result<()> {
         send_command(&self.worker, WsCommand::Ping { data: ping_data(params) }, "ping")
+    }
+
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and resolve with the time between the two in milliseconds.
+    ///
+    /// Works whether or not `healthCheck.probeEnabled` is set, and sends
+    /// nothing in the background. Its pong is not delivered to `message`.
+    ///
+    /// Rejects with `ClientClosed` (2010) when not connected,
+    /// `ConnectionError` (2001) when the connection closes before the pong,
+    /// and `TimeoutError` (3001) when no pong arrives within `timeoutMs`.
+    ///
+    /// @param timeoutMs - How long to wait for the pong (default: 5000).
+    #[napi(ts_return_type = "Promise<number>")]
+    pub async fn measure_latency(&self, timeout_ms: Option<f64>) -> napi::Result<Settled> {
+        measure_latency(&self.worker, timeout_ms).await
     }
 
     /// Ask the server for its current subscription list.

@@ -36,6 +36,15 @@ func TestHealthCheckConfigDefaults(t *testing.T) {
 	if cfg.HeartbeatTimeoutMs != 0 {
 		t.Errorf("expected HeartbeatTimeoutMs default 0 (use core default), got %d", cfg.HeartbeatTimeoutMs)
 	}
+	if cfg.ProbeEnabled != false {
+		t.Errorf("expected ProbeEnabled default false, got %v", cfg.ProbeEnabled)
+	}
+	if cfg.IdleProbeAfterMs != 0 {
+		t.Errorf("expected IdleProbeAfterMs default 0 (use core default), got %d", cfg.IdleProbeAfterMs)
+	}
+	if cfg.ProbeTimeoutMs != 0 {
+		t.Errorf("expected ProbeTimeoutMs default 0 (use core default), got %d", cfg.ProbeTimeoutMs)
+	}
 }
 
 // Test 3: ReconnectConfig custom values
@@ -62,6 +71,9 @@ func TestHealthCheckConfigCustomValues(t *testing.T) {
 	cfg := HealthCheckConfig{
 		Enabled:            true,
 		HeartbeatTimeoutMs: 10000,
+		ProbeEnabled:       true,
+		IdleProbeAfterMs:   30000,
+		ProbeTimeoutMs:     5000,
 	}
 
 	if cfg.Enabled != true {
@@ -69,6 +81,48 @@ func TestHealthCheckConfigCustomValues(t *testing.T) {
 	}
 	if cfg.HeartbeatTimeoutMs != 10000 {
 		t.Errorf("expected HeartbeatTimeoutMs 10000, got %d", cfg.HeartbeatTimeoutMs)
+	}
+	if cfg.ProbeEnabled != true {
+		t.Errorf("expected ProbeEnabled true, got %v", cfg.ProbeEnabled)
+	}
+	if cfg.IdleProbeAfterMs != 30000 {
+		t.Errorf("expected IdleProbeAfterMs 30000, got %d", cfg.IdleProbeAfterMs)
+	}
+	if cfg.ProbeTimeoutMs != 5000 {
+		t.Errorf("expected ProbeTimeoutMs 5000, got %d", cfg.ProbeTimeoutMs)
+	}
+}
+
+// Test 4b: WebSocket construction rejects HealthCheckConfig values below the
+// core's floors with a ConfigError (code 1004).
+func TestWebSocketHealthCheckBelowFloor(t *testing.T) {
+	cases := map[string]HealthCheckConfig{
+		"heartbeat timeout below floor": {HeartbeatTimeoutMs: 1000},
+		"idle probe after below floor":  {ProbeEnabled: true, IdleProbeAfterMs: 1000},
+		"probe timeout below floor":     {ProbeEnabled: true, ProbeTimeoutMs: 500},
+	}
+	for name, healthCheck := range cases {
+		t.Run(name, func(t *testing.T) {
+			listener := &mockListener{}
+			_, err := NewFugleWebSocketClient(
+				listener,
+				WithApiKey("test-api-key"),
+				WithHealthCheck(healthCheck),
+			)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			info, ok := ErrorInfoOf(err)
+			if !ok {
+				t.Fatalf("expected an SDK error, got: %v", err)
+			}
+			if info.Code != 1004 {
+				t.Errorf("expected code 1004, got %d", info.Code)
+			}
+			if !strings.Contains(info.Message, "must be >=") {
+				t.Errorf("unexpected message: %s", info.Message)
+			}
+		})
 	}
 }
 

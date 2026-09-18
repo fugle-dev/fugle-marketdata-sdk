@@ -105,22 +105,6 @@ enum class WebSocketEndpoint;
 
 
 /**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
- */
-enum class MessageOverflowRecord: int32_t {
-    /**
-     * Drop new messages and report them through `on_messages_dropped`.
-     */
-    kDropNewest = 1,
-    /**
-     * Never drop: the queue grows while `on_message` lags.
-     */
-    kUnbounded = 2
-};
-
-
-/**
  * Coarse-grained classification of the source of a [`MarketDataError`].
  *
  * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -155,6 +139,22 @@ enum class ErrorSourceKind: int32_t {
      * already closed, serialization failure, non-auth/non-throttle 4xx.
      */
     kClient = 5
+};
+
+
+/**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
 };
 
 
@@ -1150,6 +1150,10 @@ struct WebSocketClient
      */
     bool is_connected();
     /**
+     * Measure the round trip to the server in milliseconds (blocking).
+     */
+    double measure_latency_sync(std::optional<uint64_t> timeout_ms);
+    /**
      * Messages dropped because they arrived while the message queue held
      * `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
      *
@@ -1477,7 +1481,7 @@ struct CredentialsRecord {
 /**
  * Health check configuration record for FFI
  *
- * All fields are optional — zero/false values mean "use default".
+ * The millisecond fields take 0 to mean "use default".
  */
 struct HealthCheckConfigRecord {
     /**
@@ -1487,9 +1491,27 @@ struct HealthCheckConfigRecord {
     /**
      * Maximum allowed gap between inbound frames before declaring the
      * connection dead, in milliseconds. Default 35000; floor 5000.
-     * Pass 0 to use the default.
+     * Pass 0 to use the default. Does not apply when `probe_enabled` is
+     * true.
      */
     uint64_t heartbeat_timeout_ms;
+    /**
+     * Confirm a silent connection with a ping before declaring it dead
+     * (default: false). After `idle_probe_after_ms` of silence one ping is
+     * sent; if nothing arrives within `probe_timeout_ms` the connection is
+     * declared dead.
+     */
+    bool probe_enabled = false;
+    /**
+     * Silence before the probe, in milliseconds. Default 30000 (the
+     * server's heartbeat period); floor 5000. Pass 0 to use the default.
+     */
+    uint64_t idle_probe_after_ms = 0U;
+    /**
+     * Wait for any inbound frame after the probe, in milliseconds.
+     * Default 5000; floor 1000. Pass 0 to use the default.
+     */
+    uint64_t probe_timeout_ms = 0U;
 };
 
 
@@ -2002,6 +2024,13 @@ struct FfiConverterOptionalInt32 {
     static std::optional<int32_t> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<int32_t>& value);
     static uint64_t allocation_size(const std::optional<int32_t> &val);
+};
+struct FfiConverterOptionalUInt64 {
+    static std::optional<uint64_t> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<uint64_t>& val);
+    static std::optional<uint64_t> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<uint64_t>& value);
+    static uint64_t allocation_size(const std::optional<uint64_t> &val);
 };
 struct FfiConverterOptionalDouble {
     static std::optional<double> lift(RustBuffer buf);

@@ -88,6 +88,32 @@ class TestHealthCheckConfig:
         assert config.enabled is True
         assert config.heartbeat_timeout_ms == 10000
 
+    def test_probe_defaults(self):
+        """Probe mode is opt-in; its defaults keep detection at 35s."""
+        config = HealthCheckConfig()
+        assert config.probe_enabled is False
+        # Matches the server's 30s heartbeat: no ping while it is on time.
+        assert config.idle_probe_after_ms == 30000
+        assert config.probe_timeout_ms == 5000
+        assert config.idle_probe_after_ms + config.probe_timeout_ms == config.heartbeat_timeout_ms
+
+    def test_probe_values(self):
+        config = HealthCheckConfig(probe_enabled=True, idle_probe_after_ms=5000, probe_timeout_ms=1000)
+        assert config.probe_enabled is True
+        assert config.idle_probe_after_ms == 5000
+        assert config.probe_timeout_ms == 1000
+
+    def test_probe_floors(self):
+        with pytest.raises(ValueError, match="5000"):
+            HealthCheckConfig(probe_enabled=True, idle_probe_after_ms=4999)
+        with pytest.raises(ValueError, match="1000"):
+            HealthCheckConfig(probe_enabled=True, probe_timeout_ms=999)
+
+    def test_probe_floors_checked_with_probe_off(self):
+        """A bad probe setting is rejected before it is switched on."""
+        with pytest.raises(ValueError):
+            HealthCheckConfig(probe_timeout_ms=10)
+
 
 class TestReconnectConfig:
     """Tests for ReconnectConfig class (updated field names)."""

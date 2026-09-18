@@ -50,11 +50,17 @@ public class ConfigOptionsTest {
         HealthCheckOptions options = HealthCheckOptions.builder()
             .enabled(true)
             .heartbeatTimeoutMs(60000L)
+            .probeEnabled(true)
+            .idleProbeAfterMs(30000L)
+            .probeTimeoutMs(5000L)
             .build();
 
         assertNotNull(options);
         assertEquals(Boolean.TRUE, options.getEnabled());
         assertEquals(Long.valueOf(60000L), options.getHeartbeatTimeoutMs());
+        assertEquals(Boolean.TRUE, options.getProbeEnabled());
+        assertEquals(Long.valueOf(30000L), options.getIdleProbeAfterMs());
+        assertEquals(Long.valueOf(5000L), options.getProbeTimeoutMs());
     }
 
     @Test
@@ -65,6 +71,9 @@ public class ConfigOptionsTest {
         assertNotNull(options);
         assertNull(options.getEnabled());
         assertNull(options.getHeartbeatTimeoutMs());
+        assertNull(options.getProbeEnabled());
+        assertNull(options.getIdleProbeAfterMs());
+        assertNull(options.getProbeTimeoutMs());
     }
 
     // ========== RestClient Exactly-One-Auth Tests ==========
@@ -255,6 +264,63 @@ public class ConfigOptionsTest {
             assertFalse(e.getMessage().contains("health"),
                 "Should not reject HealthCheckOptions");
         }
+    }
+
+    @Test
+    @DisplayName("WebSocketClient builder accepts probe HealthCheckOptions without error")
+    void testWebSocketWithProbeHealthCheckOptions() {
+        NativeLibrary.assumeAvailable();
+
+        HealthCheckOptions healthCheck = HealthCheckOptions.builder()
+            .probeEnabled(true)
+            .idleProbeAfterMs(30000L)
+            .probeTimeoutMs(5000L)
+            .build();
+
+        try {
+            FugleWebSocketClient client = FugleWebSocketClient.builder()
+                .apiKey("test-api-key")
+                .stock()
+                .healthCheck(healthCheck)
+                .build();
+
+            // If we get here, builder accepted the probe HealthCheckOptions
+            client.close();
+        } catch (FugleException e) {
+            // Verify this is NOT from config acceptance
+            assertFalse(e.getMessage().contains("health"),
+                "Should not reject probe HealthCheckOptions");
+        }
+    }
+
+    @Test
+    @DisplayName("WebSocketClient rejects HealthCheckOptions below the core floors with code 1004")
+    void testWebSocketHealthCheckBelowFloor() {
+        NativeLibrary.assumeAvailable();
+
+        assertHealthCheckRejected(HealthCheckOptions.builder()
+            .heartbeatTimeoutMs(1000L)
+            .build());
+        assertHealthCheckRejected(HealthCheckOptions.builder()
+            .probeEnabled(true)
+            .idleProbeAfterMs(1000L)
+            .build());
+        assertHealthCheckRejected(HealthCheckOptions.builder()
+            .probeEnabled(true)
+            .probeTimeoutMs(500L)
+            .build());
+    }
+
+    /** Below-floor health check values come from core as a ConfigError (code 1004). */
+    private static void assertHealthCheckRejected(HealthCheckOptions healthCheck) {
+        FugleException exception = assertThrows(FugleException.class, () -> FugleWebSocketClient.builder()
+            .apiKey("test-api-key")
+            .stock()
+            .healthCheck(healthCheck)
+            .build());
+        assertEquals(Integer.valueOf(1004), exception.getCode());
+        assertTrue(exception.getMessage().contains("must be >="),
+            "Error message should indicate the floor was not met: " + exception.getMessage());
     }
 
     // ========== WebSocketClient Message Queue Options Tests ==========

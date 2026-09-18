@@ -39,6 +39,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field, so C++ code that builds the record must set it (#149). C#
   `ReconnectOptions.Enabled` and Java `ReconnectOptions.enabled(Boolean)`
   default to `true`.
+- **Rust**: `HealthCheckConfig` gains `probe_enabled`, `idle_probe_after` and
+  `probe_timeout` (#150). A struct literal must name them or end in
+  `..HealthCheckConfig::default()`.
+- **UniFFI**: `HealthCheckConfigRecord` gains `probe_enabled`,
+  `idle_probe_after_ms` and `probe_timeout_ms` (defaults `false` / `0` / `0`),
+  so C++ code that builds the record with every field must add them (#150).
+- **Behaviour change — C#, Go, Java, C++: health check values are validated**
+  (#150). The UniFFI record now goes through the same core validation as
+  Node, Python and Rust: a `heartbeat_timeout_ms` below 5000 used to be
+  accepted as is and is now a configuration error (code 1004), like a probe
+  setting below its floor. `newWithCredentials` (used by the C#, Go and Java
+  wrappers) raises it; the constructors that cannot fail return it from
+  `connect()`.
+- **Node**: a health check value below its floor throws an error carrying
+  `code` 1004 (it used to have only a message) (#150).
+
+### Added
+
+- **Health check probe, every language** (#150). `probeEnabled` /
+  `probe_enabled` (default off) makes the health check ask before it gives up:
+  after `idleProbeAfterMs` (default 30000) without any inbound frame the SDK
+  sends one `{"event":"ping"}`, and it declares the connection dead only if
+  nothing arrives within `probeTimeoutMs` (default 5000). With probing on,
+  `heartbeatTimeoutMs` does not apply. The defaults match the server's 30 s
+  heartbeat, so turning on `probeEnabled` alone keeps detection at 35 s and
+  sends no ping while heartbeats are on time — it only stops a late
+  heartbeat from dropping a healthy connection. Lower `idleProbeAfterMs` for
+  faster detection; below 30000 a ping goes out in every quiet gap between
+  heartbeats. A probe that cannot even be written in time counts as
+  unanswered. Probing does not detect a half-open connection (the server
+  still sends, our writes no longer arrive). Floors: 5000 for
+  `idleProbeAfterMs`, 1000 for `probeTimeoutMs`. See
+  `docs/configuration.md` for the trade-offs and the server cost.
+- **`measureLatency()` / `measure_latency()`, every language** (#150): sends
+  one ping, waits for its pong and returns the round trip (`Duration` in
+  Rust, milliseconds elsewhere; C# `MeasureLatencyAsync`, Go
+  `MeasureLatency`, Python also `measure_latency_async` on `ws.stock`). The
+  timeout defaults to 5000 ms. It fails with `ClientClosed` (2010) when not
+  connected, `ConnectionError` (2001) when the connection closes first and
+  `TimeoutError` (3001) on timeout. The existing `ping()` is unchanged: fire
+  and forget, pong delivered to the message handler. The pongs of the SDK's
+  own pings are not delivered.
+
+### Removed
+
+- **Rust (internal)**: the unused control-frame `send_pings()` in
+  `aio::dispatch`; the probe is an application-level JSON `ping` (#150).
 
 ### Fixed
 
@@ -52,6 +99,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_missed_pongs` and `enabled=False`), the Node `HealthCheckOptions` doc
   and the Node and Python READMEs, whose examples also used the removed
   ping/pong fields instead of `heartbeatTimeoutMs` / `heartbeat_timeout_ms`.
+- **Docs**: the Node `WebSocketClient` constructor doc, the Node README's
+  combined-configuration example and `ws_stream.js` passed
+  `healthCheck: { pingInterval }`, an option that does not exist (it was
+  silently ignored), the UniFFI README documented `intervalMs` /
+  `maxMissedPongs` for C#, Go and Java, and `MIGRATION.md` listed
+  `ping_interval` / `pingInterval` as a kept legacy field. They now use the
+  probe options that do exist (#150).
 
 ## [Bindings 3.0.0-rc.3 / core 0.9.0-rc.2 / uniffi 0.2.0-rc.2] - 2026-09-18
 

@@ -116,9 +116,8 @@ ReconnectOptions reconnect = ReconnectOptions.builder()
     .build();
 
 HealthCheckOptions healthCheck = HealthCheckOptions.builder()
-    .enabled(true)
-    .intervalMs(15000L)
-    .maxMissedPongs(3)
+    .probeEnabled(true)
+    .idleProbeAfterMs(15000L)
     .build();
 
 FugleWebSocketClient ws = FugleWebSocketClient.builder()
@@ -139,9 +138,11 @@ FugleWebSocketClient ws = FugleWebSocketClient.builder()
 
 `HealthCheckOptions.builder()`:
 
-- `enabled(Boolean)` - Whether health check is enabled (default: false)
-- `intervalMs(Long)` - Ping interval in milliseconds (default: 30000ms, min: 5000ms)
-- `maxMissedPongs(Integer)` - Maximum missed pongs (default: 2, min: 1)
+- `enabled(Boolean)` - Whether health check is enabled (default: true)
+- `heartbeatTimeoutMs(Long)` - Maximum gap between inbound frames before the connection is declared dead (default: 35000ms, min: 5000ms); does not apply with `probeEnabled`
+- `probeEnabled(Boolean)` - Confirm with a ping before declaring the connection dead (default: false)
+- `idleProbeAfterMs(Long)` - Silence before the ping (default: 30000ms, min: 5000ms)
+- `probeTimeoutMs(Long)` - Wait for any inbound frame after the ping (default: 5000ms, min: 1000ms)
 
 ### Go (Functional Options)
 
@@ -181,10 +182,10 @@ reconnect := marketdata.ReconnectConfig{
     MaxDelayMs:       120000,
 }
 
-healthCheck := &marketdata.HealthCheckOptions{
-    Enabled:         true,
-    IntervalMs:      15000,
-    MaxMissedPongs:  3,
+healthCheck := marketdata.HealthCheckConfig{
+    Enabled:          true,
+    ProbeEnabled:     true,
+    IdleProbeAfterMs: 15000,
 }
 
 ws, err := marketdata.NewFugleWebSocketClient(
@@ -203,11 +204,13 @@ ws, err := marketdata.NewFugleWebSocketClient(
 - `InitialDelayMs uint64` - Initial delay for exponential backoff (zero = use default 1000ms)
 - `MaxDelayMs uint64` - Maximum delay cap (zero = use default 60000ms)
 
-`HealthCheckOptions` struct:
+`HealthCheckConfig` struct (set `Enabled` explicitly: its zero value turns detection off):
 
 - `Enabled bool` - Whether health check is enabled
-- `IntervalMs uint64` - Ping interval in milliseconds (zero = use default 30000ms)
-- `MaxMissedPongs int` - Maximum missed pongs (zero = use default 2)
+- `HeartbeatTimeoutMs uint64` - Maximum gap between inbound frames (zero = use default 35000ms); does not apply with `ProbeEnabled`
+- `ProbeEnabled bool` - Confirm with a ping before declaring the connection dead
+- `IdleProbeAfterMs uint64` - Silence before the ping (zero = use default 30000ms)
+- `ProbeTimeoutMs uint64` - Wait for any inbound frame after the ping (zero = use default 5000ms)
 
 ### C# (Options Pattern)
 
@@ -254,16 +257,15 @@ var reconnect = new ReconnectOptions
 
 var healthCheck = new HealthCheckOptions
 {
-    Enabled = true,
-    IntervalMs = 15000,
-    MaxMissedPongs = 3
+    ProbeEnabled = true,
+    IdleProbeAfterMs = 15000
 };
 
 var ws = new WebSocketClient(new WebSocketClientOptions
 {
     ApiKey = "your-key",
     ReconnectOptions = reconnect,
-    HealthCheckOptions = healthCheck
+    HealthCheck = healthCheck
 });
 ```
 
@@ -278,9 +280,14 @@ var ws = new WebSocketClient(new WebSocketClientOptions
 
 `HealthCheckOptions` class:
 
-- `Enabled bool?` - Whether health check is enabled (null = use default false)
-- `IntervalMs ulong?` - Ping interval in milliseconds (null = use default 30000ms)
-- `MaxMissedPongs int?` - Maximum missed pongs (null = use default 2)
+- `Enabled bool?` - Whether health check is enabled (null = use default true)
+- `HeartbeatTimeoutMs ulong?` - Maximum gap between inbound frames (null = use default 35000ms); does not apply with `ProbeEnabled`
+- `ProbeEnabled bool?` - Confirm with a ping before declaring the connection dead (null = false)
+- `IdleProbeAfterMs ulong?` - Silence before the ping (null = use default 30000ms)
+- `ProbeTimeoutMs ulong?` - Wait for any inbound frame after the ping (null = use default 5000ms)
+
+The probe options and their trade-offs are described in
+[docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions).
 
 ## API Reference
 
