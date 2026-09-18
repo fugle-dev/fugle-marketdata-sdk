@@ -36,15 +36,6 @@ public interface StockIntradayClientInterface {
     public CompletableFuture<String> getQuote(String symbol) ;
     
     /**
-     * Get quotes for several symbols in one request (async)
-     *
-     * The batch form of `get_quote`: `symbol` is comma-separated
-     * ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
-     * queries odd-lot data instead of board-lot.
-     */
-    public CompletableFuture<String> getQuotes(String symbol, Boolean oddLot) ;
-    
-    /**
      * Get ticker info for a symbol (async)
      *
      * Returns typed Ticker model with stock metadata.
@@ -76,14 +67,6 @@ public interface StockIntradayClientInterface {
      * Get quote for a symbol (sync/blocking)
      */
     public String quoteSync(String symbol) throws MarketDataException;
-    
-    /**
-     * Get quotes for several symbols in one request (sync/blocking)
-     *
-     * `symbol` is comma-separated ("2330,2317"); the JSON is an array of
-     * quote objects.
-     */
-    public String quotesSync(String symbol, Boolean oddLot) throws MarketDataException;
     
     /**
      * Get ticker info for a symbol (sync/blocking)

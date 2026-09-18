@@ -850,15 +850,6 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
-			return C.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_quotes()
-		})
-		if checksum != 44101 {
-			// If this happens try cleaning and rebuilding your project
-			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_quotes: UniFFI API checksum mismatch")
-		}
-	}
-	{
-		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_ticker()
 		})
 		if checksum != 19948 {
@@ -900,15 +891,6 @@ func uniffiCheckChecksums() {
 		if checksum != 62355 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync: UniFFI API checksum mismatch")
-		}
-	}
-	{
-		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
-			return C.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync()
-		})
-		if checksum != 36565 {
-			// If this happens try cleaning and rebuilding your project
-			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync: UniFFI API checksum mismatch")
 		}
 	}
 	{
@@ -1039,15 +1021,6 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
-			return C.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_heatmap()
-		})
-		if checksum != 5251 {
-			// If this happens try cleaning and rebuilding your project
-			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_heatmap: UniFFI API checksum mismatch")
-		}
-	}
-	{
-		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_movers()
 		})
 		if checksum != 51611 {
@@ -1062,15 +1035,6 @@ func uniffiCheckChecksums() {
 		if checksum != 51655 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_quotes: UniFFI API checksum mismatch")
-		}
-	}
-	{
-		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
-			return C.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync()
-		})
-		if checksum != 2092 {
-			// If this happens try cleaning and rebuilding your project
-			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync: UniFFI API checksum mismatch")
 		}
 	}
 	{
@@ -3186,12 +3150,6 @@ type StockIntradayClientInterface interface {
 	//
 	// Returns typed Quote model with all fields directly accessible.
 	GetQuote(symbol string) (string, error)
-	// Get quotes for several symbols in one request (async)
-	//
-	// The batch form of `get_quote`: `symbol` is comma-separated
-	// ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
-	// queries odd-lot data instead of board-lot.
-	GetQuotes(symbol string, oddLot bool) (string, error)
 	// Get ticker info for a symbol (async)
 	//
 	// Returns typed Ticker model with stock metadata.
@@ -3210,11 +3168,6 @@ type StockIntradayClientInterface interface {
 	GetVolumes(symbol string) (string, error)
 	// Get quote for a symbol (sync/blocking)
 	QuoteSync(symbol string) (string, error)
-	// Get quotes for several symbols in one request (sync/blocking)
-	//
-	// `symbol` is comma-separated ("2330,2317"); the JSON is an array of
-	// quote objects.
-	QuotesSync(symbol string, oddLot bool) (string, error)
 	// Get ticker info for a symbol (sync/blocking)
 	TickerSync(symbol string) (string, error)
 	// Get batch tickers for a security type (sync/blocking)
@@ -3314,46 +3267,6 @@ func (_self *StockIntradayClient) GetQuote(symbol string) (string, error) {
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quote(
 			_pointer, FfiConverterStringINSTANCE.Lower(symbol)),
-		// pollFn
-		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
-			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
-		},
-		// freeFn
-		func(handle C.uint64_t) {
-			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
-		},
-	)
-
-	if err == nil {
-		return res, nil
-	}
-
-	return res, err
-}
-
-// Get quotes for several symbols in one request (async)
-//
-// The batch form of `get_quote`: `symbol` is comma-separated
-// ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
-// queries odd-lot data instead of board-lot.
-func (_self *StockIntradayClient) GetQuotes(symbol string, oddLot bool) (string, error) {
-	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
-	defer _self.ffiObject.decrementPointer()
-	res, err := uniffiRustCallAsync[MarketDataError](
-		FfiConverterMarketDataErrorINSTANCE,
-		// completeFn
-		func(handle C.uint64_t, status *C.RustCallStatus) RustBufferI {
-			res := C.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(handle, status)
-			return GoRustBuffer{
-				inner: res,
-			}
-		},
-		// liftFn
-		func(ffi RustBufferI) string {
-			return FfiConverterStringINSTANCE.Lift(ffi)
-		},
-		C.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quotes(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterBoolINSTANCE.Lower(oddLot)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -3531,27 +3444,6 @@ func (_self *StockIntradayClient) QuoteSync(symbol string) (string, error) {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync(
 				_pointer, FfiConverterStringINSTANCE.Lower(symbol), _uniffiStatus),
-		}
-	})
-	if _uniffiErr != nil {
-		var _uniffiDefaultValue string
-		return _uniffiDefaultValue, _uniffiErr
-	} else {
-		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
-	}
-}
-
-// Get quotes for several symbols in one request (sync/blocking)
-//
-// `symbol` is comma-separated ("2330,2317"); the JSON is an array of
-// quote objects.
-func (_self *StockIntradayClient) QuotesSync(symbol string, oddLot bool) (string, error) {
-	_pointer := _self.ffiObject.incrementPointer("*StockIntradayClient")
-	defer _self.ffiObject.decrementPointer()
-	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
-		return GoRustBuffer{
-			inner: C.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quotes_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterBoolINSTANCE.Lower(oddLot), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -3986,15 +3878,6 @@ type StockSnapshotClientInterface interface {
 	// - market: Market code (TSE, OTC)
 	// - trade: "volume" or "value" (optional)
 	GetActives(market string, trade *string) (string, error)
-	// Get the heatmap of an index: its constituents with their change (async)
-	//
-	// Parameters:
-	// - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
-	// index). Not a stock symbol or a market: "2330" and "TSE" are 404.
-	// - time: Intraday snapshot time, HHmmss (optional; latest by default)
-	// - period: Change period instead of the day's change: "1w", "1m", "3m",
-	// "6m", "1y", "ytd" (optional)
-	GetHeatmap(symbol string, time *string, period *string) (string, error)
 	// Get top movers (gainers/losers) in a market (async)
 	//
 	// Parameters:
@@ -4008,10 +3891,6 @@ type StockSnapshotClientInterface interface {
 	// - market: Market code (TSE, OTC, ESB, TIB, PSB)
 	// - type_filter: Optional filter (ALL, ALLBUT0999, COMMONSTOCK)
 	GetQuotes(market string, typeFilter *string) (string, error)
-	// Get the heatmap of an index (sync/blocking)
-	//
-	// `symbol` is an index code ("IX0001"), not a stock symbol or a market.
-	HeatmapSync(symbol string, time *string, period *string) (string, error)
 	// Get top movers (sync/blocking)
 	MoversSync(market string, direction *string, change *string) (string, error)
 	// Get market-wide snapshot quotes (sync/blocking)
@@ -4067,49 +3946,6 @@ func (_self *StockSnapshotClient) GetActives(market string, trade *string) (stri
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_actives(
 			_pointer, FfiConverterStringINSTANCE.Lower(market), FfiConverterOptionalStringINSTANCE.Lower(trade)),
-		// pollFn
-		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
-			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
-		},
-		// freeFn
-		func(handle C.uint64_t) {
-			C.ffi_marketdata_uniffi_rust_future_free_rust_buffer(handle)
-		},
-	)
-
-	if err == nil {
-		return res, nil
-	}
-
-	return res, err
-}
-
-// Get the heatmap of an index: its constituents with their change (async)
-//
-// Parameters:
-// - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
-// index). Not a stock symbol or a market: "2330" and "TSE" are 404.
-// - time: Intraday snapshot time, HHmmss (optional; latest by default)
-// - period: Change period instead of the day's change: "1w", "1m", "3m",
-// "6m", "1y", "ytd" (optional)
-func (_self *StockSnapshotClient) GetHeatmap(symbol string, time *string, period *string) (string, error) {
-	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
-	defer _self.ffiObject.decrementPointer()
-	res, err := uniffiRustCallAsync[MarketDataError](
-		FfiConverterMarketDataErrorINSTANCE,
-		// completeFn
-		func(handle C.uint64_t, status *C.RustCallStatus) RustBufferI {
-			res := C.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(handle, status)
-			return GoRustBuffer{
-				inner: res,
-			}
-		},
-		// liftFn
-		func(ffi RustBufferI) string {
-			return FfiConverterStringINSTANCE.Lift(ffi)
-		},
-		C.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_heatmap(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(time), FfiConverterOptionalStringINSTANCE.Lower(period)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -4206,26 +4042,6 @@ func (_self *StockSnapshotClient) GetQuotes(market string, typeFilter *string) (
 	}
 
 	return res, err
-}
-
-// Get the heatmap of an index (sync/blocking)
-//
-// `symbol` is an index code ("IX0001"), not a stock symbol or a market.
-func (_self *StockSnapshotClient) HeatmapSync(symbol string, time *string, period *string) (string, error) {
-	_pointer := _self.ffiObject.incrementPointer("*StockSnapshotClient")
-	defer _self.ffiObject.decrementPointer()
-	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
-		return GoRustBuffer{
-			inner: C.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_heatmap_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(time), FfiConverterOptionalStringINSTANCE.Lower(period), _uniffiStatus),
-		}
-	})
-	if _uniffiErr != nil {
-		var _uniffiDefaultValue string
-		return _uniffiDefaultValue, _uniffiErr
-	} else {
-		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
-	}
 }
 
 // Get top movers (sync/blocking)

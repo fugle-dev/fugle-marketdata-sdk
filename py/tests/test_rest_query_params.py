@@ -85,54 +85,6 @@ def test_volumes_odd_lot(client, server):
     assert last_request(server[1]) == ("/v1.0/stock/intraday/volumes/2330", {"type": "oddlot"})
 
 
-# ----- stock.intraday.quotes: the batch quote, no path param (#176) -----
-
-
-def test_quotes_sends_symbols_as_a_query_key(client, server):
-    client.stock.intraday.quotes("2330,2317")
-    assert last_request(server[1]) == ("/v1.0/stock/intraday/quotes", {"symbol": "2330,2317"})
-
-
-def test_quotes_odd_lot_sends_type_oddlot(client, server):
-    client.stock.intraday.quotes("2330,2317", odd_lot=True)
-    assert last_request(server[1]) == (
-        "/v1.0/stock/intraday/quotes",
-        {"symbol": "2330,2317", "type": "oddlot"},
-    )
-
-
-@pytest.mark.asyncio
-async def test_quotes_async_matches_sync(client, server):
-    await client.stock.intraday.quotes_async("2330", odd_lot=True)
-    assert last_request(server[1]) == ("/v1.0/stock/intraday/quotes", {"symbol": "2330", "type": "oddlot"})
-
-
-def test_quotes_returns_the_list_the_server_sends():
-    """The endpoint answers a JSON array, one quote per symbol, not an object."""
-    payload = b'[{"symbol": "2330", "lastPrice": 2460}, {"symbol": "2317", "lastPrice": 250}]'
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-
-        def log_message(self, *args):
-            pass
-
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    try:
-        client = RestClient(api_key="test-key", base_url=f"http://127.0.0.1:{httpd.server_address[1]}")
-        quotes = client.stock.intraday.quotes("2330,2317")
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
-    assert quotes == [{"symbol": "2330", "lastPrice": 2460}, {"symbol": "2317", "lastPrice": 250}]
-
-
 def test_candles_odd_lot_and_sort(client, server):
     client.stock.intraday.candles("2330", timeframe="5", odd_lot=True, sort="desc")
     assert last_request(server[1]) == (
@@ -225,28 +177,6 @@ def test_actives_type_filter(client, server):
         "/v1.0/stock/snapshot/actives/OTC",
         {"trade": "value", "type": "ALLBUT0999"},
     )
-
-
-# ----- stock.snapshot.heatmap: an index code in the path (#176) -----
-
-
-def test_heatmap_sends_time_and_period(client, server):
-    client.stock.snapshot.heatmap("IX0001", time="100000", period="1m")
-    assert last_request(server[1]) == (
-        "/v1.0/stock/snapshot/heatmap/IX0001",
-        {"time": "100000", "period": "1m"},
-    )
-
-
-def test_heatmap_without_query(client, server):
-    client.stock.snapshot.heatmap("IX0027")
-    assert last_request(server[1]) == ("/v1.0/stock/snapshot/heatmap/IX0027", {})
-
-
-@pytest.mark.asyncio
-async def test_heatmap_async_matches_sync(client, server):
-    await client.stock.snapshot.heatmap_async("IX0001", period="ytd")
-    assert last_request(server[1]) == ("/v1.0/stock/snapshot/heatmap/IX0001", {"period": "ytd"})
 
 
 # ----- stock.corporate_actions: exchange and sort -----

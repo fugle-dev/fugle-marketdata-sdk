@@ -251,21 +251,6 @@ impl StockIntradayClient {
         .map_err(|e| crate::errors::other_error(e.to_string()))??;
         to_json(&result)
     }
-
-    /// Get quotes for several symbols in one request (async)
-    ///
-    /// The batch form of `get_quote`: `symbol` is comma-separated
-    /// ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
-    /// queries odd-lot data instead of board-lot.
-    pub async fn get_quotes(&self, symbol: String, odd_lot: bool) -> Result<String, MarketDataError> {
-        let inner = self.inner.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            build_stock_quotes_request(&inner, &symbol, odd_lot)
-        })
-        .await
-        .map_err(|e| crate::errors::other_error(e.to_string()))??;
-        to_json(&result)
-    }
 }
 
 #[uniffi::export]
@@ -310,15 +295,6 @@ impl StockIntradayClient {
         let result = self.inner.stock().intraday().tickers()
             .typ(&typ)
             .send()?;
-        to_json(&result)
-    }
-
-    /// Get quotes for several symbols in one request (sync/blocking)
-    ///
-    /// `symbol` is comma-separated ("2330,2317"); the JSON is an array of
-    /// quote objects.
-    pub fn quotes_sync(&self, symbol: String, odd_lot: bool) -> Result<String, MarketDataError> {
-        let result = build_stock_quotes_request(&self.inner, &symbol, odd_lot)?;
         to_json(&result)
     }
 }
@@ -493,30 +469,6 @@ impl StockSnapshotClient {
 
         to_json(&result)
     }
-
-    /// Get the heatmap of an index: its constituents with their change (async)
-    ///
-    /// Parameters:
-    /// - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
-    ///   index). Not a stock symbol or a market: "2330" and "TSE" are 404.
-    /// - time: Intraday snapshot time, HHmmss (optional; latest by default)
-    /// - period: Change period instead of the day's change: "1w", "1m", "3m",
-    ///   "6m", "1y", "ytd" (optional)
-    pub async fn get_heatmap(
-        &self,
-        symbol: String,
-        time: Option<String>,
-        period: Option<String>,
-    ) -> Result<String, MarketDataError> {
-        let inner = self.inner.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            build_snapshot_heatmap_request(&inner, &symbol, time.as_deref(), period.as_deref())
-        })
-        .await
-        .map_err(|e| crate::errors::other_error(e.to_string()))??;
-
-        to_json(&result)
-    }
 }
 
 #[uniffi::export]
@@ -549,19 +501,6 @@ impl StockSnapshotClient {
         trade: Option<String>,
     ) -> Result<String, MarketDataError> {
         let result = build_snapshot_actives_request(&self.inner, &market, trade.as_deref())?;
-        to_json(&result)
-    }
-
-    /// Get the heatmap of an index (sync/blocking)
-    ///
-    /// `symbol` is an index code ("IX0001"), not a stock symbol or a market.
-    pub fn heatmap_sync(
-        &self,
-        symbol: String,
-        time: Option<String>,
-        period: Option<String>,
-    ) -> Result<String, MarketDataError> {
-        let result = build_snapshot_heatmap_request(&self.inner, &symbol, time.as_deref(), period.as_deref())?;
         to_json(&result)
     }
 }
@@ -1219,32 +1158,6 @@ fn build_historical_candles_request(
     if let Some(f) = from { builder = builder.from(f); }
     if let Some(t) = to { builder = builder.to(t); }
     if let Some(tf) = timeframe { builder = builder.timeframe(tf); }
-    builder.send()
-}
-
-/// Build stock intraday quotes (batch) request
-fn build_stock_quotes_request(
-    client: &CoreRestClient,
-    symbol: &str,
-    odd_lot: bool,
-) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
-    let intraday = client.stock().intraday();
-    let mut builder = intraday.quotes().symbol(symbol);
-    if odd_lot { builder = builder.odd_lot(true); }
-    builder.send()
-}
-
-/// Build snapshot heatmap request
-fn build_snapshot_heatmap_request(
-    client: &CoreRestClient,
-    symbol: &str,
-    time: Option<&str>,
-    period: Option<&str>,
-) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
-    let snapshot = client.stock().snapshot();
-    let mut builder = snapshot.heatmap().symbol(symbol);
-    if let Some(t) = time { builder = builder.time(t); }
-    if let Some(p) = period { builder = builder.period(p); }
     builder.send()
 }
 
