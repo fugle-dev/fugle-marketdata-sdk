@@ -45,8 +45,12 @@
 //!    [`Reconnecting { attempt }`](ConnectionEvent::Reconnecting) follows,
 //!    then either sequence 2 or
 //!    [`ReconnectFailed { attempts >= 1 }`](ConnectionEvent::ReconnectFailed).
-//!    If `disconnect()` is called in the meantime no further events are
-//!    emitted and the state becomes `Closed { intent: Client, .. }`.
+//!    If `disconnect()` or `force_close()` is called in the meantime, the
+//!    reconnect stops: the state becomes `Closed { intent: Client, .. }`,
+//!    then a final `Disconnected { intent: Client, will_reconnect: false }`
+//!    is emitted and nothing after it (#98). Either way each disconnect ends
+//!    in exactly one final event: a `Disconnected` with
+//!    `will_reconnect == false`, or `ReconnectFailed`.
 //!    By the time a consumer receives a lost connection's `Disconnected`,
 //!    the state already reflects it (#86): `Closed` with the event's `code`,
 //!    `reason` and `intent` when `will_reconnect == false`, otherwise
@@ -231,11 +235,15 @@ pub enum ConnectionEvent {
     /// peer Close frame, [`Network`](DisconnectIntent::Network) for
     /// transport errors / EOF / heartbeat timeout.
     ///
-    /// Emitted **at most once per connection**: whichever side observes the
-    /// close first reports it. A server Close racing `disconnect()` yields a
-    /// single event, and calling `disconnect()` / `force_close()` after the
-    /// connection was already reported lost (or calling them twice) emits no
-    /// further `Disconnected`. A successful reconnect starts a new connection.
+    /// Emitted **at most once per connection**, except that stopping a
+    /// reconnect adds the final one: whichever side observes the close first
+    /// reports it. A server Close racing `disconnect()` yields a single
+    /// event, and calling `disconnect()` / `force_close()` after a
+    /// `will_reconnect: false` close or a `ReconnectFailed` (or calling them
+    /// twice) emits no further `Disconnected`. Calling them after a
+    /// `will_reconnect: true` close, while the client reconnects, emits
+    /// `Disconnected { intent: Client, will_reconnect: false }` (#98). A
+    /// successful reconnect starts a new connection.
     Disconnected {
         /// WebSocket close code, if the peer supplied one.
         code: Option<u16>,
@@ -245,7 +253,8 @@ pub enum ConnectionEvent {
         intent: DisconnectIntent,
         /// Whether the client will try to reconnect. `true` means at least
         /// one [`Reconnecting`](Self::Reconnecting) follows (unless
-        /// `disconnect()` is called first); `false` means this connection's
+        /// `disconnect()` is called first, which emits a final
+        /// `will_reconnect: false` instead); `false` means this connection's
         /// lifecycle has ended.
         will_reconnect: bool,
     },
