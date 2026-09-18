@@ -74,7 +74,7 @@ console.log(await client.stock.intraday.quote({ symbol: '2330' }));
 ## C\#
 
 The package targets `netstandard2.0`, `net8.0` and `net10.0`, and bundles native
-libraries for `linux-x64`, `osx-arm64`, `osx-x64` and `win-x64`.
+libraries for `linux-x64`, `linux-arm64`, `osx-arm64`, `osx-x64` and `win-x64`.
 
 ```bash
 dotnet add package Fugle.MarketData --prerelease
@@ -95,10 +95,8 @@ shared library or `LD_LIBRARY_PATH` is needed at runtime.
 | GOOS/GOARCH | Toolchain |
 |---|---|
 | `darwin/arm64`, `darwin/amd64` | Xcode command line tools |
-| `linux/amd64` | gcc or clang |
+| `linux/amd64`, `linux/arm64` | gcc or clang |
 | `windows/amd64` | MinGW-w64 gcc |
-
-`linux/arm64` is not supported yet.
 
 ```bash
 CGO_ENABLED=1 go get github.com/fugle-dev/fugle-marketdata-go@v0.2.0-rc.4
@@ -117,7 +115,7 @@ containing the headers and the UniFFI shared library.
 
 ```bash
 VERSION=0.2.0-rc.4
-PLATFORM=osx-arm64  # or linux-x64, osx-x64, win-x64
+PLATFORM=osx-arm64  # or linux-x64, linux-arm64, osx-x64, win-x64
 TAG=v3.0.0-rc.5     # the bindings release that shipped this UniFFI version
 
 curl -LO "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/${TAG}/fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"

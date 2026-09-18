@@ -54,10 +54,50 @@ jobs:
     if: contains(github.workflow_ref, '/publish-go.yml@')
     uses: ./.github/workflows/build-uniffi.yml
 
-  publish:
-    name: Publish Go module
+  # linux/arm64 has no other pre-push check: the static library is built on
+  # the arm64 runner, but only a consumer that links and runs it proves the
+  # archive is usable. Assembles the module the same way `publish` does (the
+  # script is deterministic) and runs the same consumer; `publish` waits for it.
+  smoke-linux-arm64:
+    name: Smoke test (linux/arm64 consumer)
     needs: build
     if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          if [[ -z "$VERSION" ]]; then
+            VERSION=$(grep -m1 '^version' uniffi/Cargo.toml | cut -d'"' -f2)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download static libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-go-static
+          path: go-static/
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Assemble module
+        run: scripts/assemble-go-module.sh go-static go-module "${{ steps.version.outputs.version }}"
+
+      - name: Smoke test
+        run: scripts/smoke-go-module.sh go-module "${{ steps.version.outputs.version }}"
+
+  publish:
+    name: Publish Go module
+    needs: [build, smoke-linux-arm64]
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') && needs.smoke-linux-arm64.result == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -102,56 +142,11 @@ jobs:
       - name: Assemble module
         run: scripts/assemble-go-module.sh go-static go-module "${{ steps.version.outputs.version }}"
 
-      # Builds and runs a throwaway consumer against the assembled module on
-      # linux/amd64. Running it (not just building) matters: the generated
-      # bindings verify UniFFI API checksums at init and panic if
-      # bindings/go/marketdata/marketdata_uniffi.go is stale.
+      # The same consumer smoke-linux-arm64 runs on the arm64 runner; the
+      # module assembled here is what gets pushed, so it is checked on this
+      # host too.
       - name: Smoke test (linux/amd64 consumer)
-        run: |
-          mkdir -p /tmp/go-consumer
-          cd /tmp/go-consumer
-          cat > go.mod <<EOF
-          module example.com/consumer
-
-          go 1.23
-
-          require github.com/fugle-dev/fugle-marketdata-go v${{ steps.version.outputs.version }}
-
-          replace github.com/fugle-dev/fugle-marketdata-go => $GITHUB_WORKSPACE/go-module
-          EOF
-          cat > main.go <<'EOF'
-          package main
-
-          import (
-          	"fmt"
-          	"os"
-
-          	mkt "github.com/fugle-dev/fugle-marketdata-go"
-          )
-
-          func main() {
-          	// The hand-written constructor, not the generated one: it is what
-          	// users call, and it once returned a typed-nil error on success.
-          	client, err := mkt.NewFugleRestClient(mkt.WithApiKey("smoke-test-key"))
-          	if err != nil {
-          		fmt.Println("constructor error:", err)
-          		os.Exit(1)
-          	}
-          	defer client.Destroy()
-          	fmt.Printf("ok: %T\n", client.Stock().Intraday())
-          }
-          EOF
-          # The module's go.mod may require a newer patch release than the
-          # consumer declares; let the go command reconcile it.
-          go mod tidy
-          CGO_ENABLED=1 go build -o consumer .
-          echo "Dynamic dependencies:"
-          ldd consumer
-          if ldd consumer | grep -q marketdata_uniffi; then
-            echo "::error::Consumer is dynamically linked to marketdata_uniffi; expected static linking"
-            exit 1
-          fi
-          env -u LD_LIBRARY_PATH ./consumer
+        run: scripts/smoke-go-module.sh go-module "${{ steps.version.outputs.version }}"
 
       - name: Upload assembled module
         uses: actions/upload-artifact@v4

@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       dry-run:
-        description: 'Pack only; do not push'
+        description: 'Pack and smoke-test only; do not push'
         required: false
         type: boolean
         default: false
@@ -31,8 +31,11 @@ on:
         type: boolean
 
 jobs:
-  publish:
-    name: Publish to NuGet
+  # Copies the consolidated native libraries into runtimes/<rid>/native/ and
+  # packs. The nupkg is handed to `smoke` (both Linux platforms install and
+  # load it before anything is pushed) and to `push`.
+  pack:
+    name: Pack NuGet package
     runs-on: ubuntu-latest
 
     steps:
@@ -56,12 +59,14 @@ jobs:
         run: |
           echo "Creating runtimes directories..."
           mkdir -p bindings/csharp/MarketdataUniffi/runtimes/linux-x64/native
+          mkdir -p bindings/csharp/MarketdataUniffi/runtimes/linux-arm64/native
           mkdir -p bindings/csharp/MarketdataUniffi/runtimes/osx-arm64/native
           mkdir -p bindings/csharp/MarketdataUniffi/runtimes/osx-x64/native
           mkdir -p bindings/csharp/MarketdataUniffi/runtimes/win-x64/native
 
           echo "Copying native libraries..."
           cp native-libs/linux-x64/*.so bindings/csharp/MarketdataUniffi/runtimes/linux-x64/native/
+          cp native-libs/linux-arm64/*.so bindings/csharp/MarketdataUniffi/runtimes/linux-arm64/native/
           cp native-libs/osx-arm64/*.dylib bindings/csharp/MarketdataUniffi/runtimes/osx-arm64/native/
           cp native-libs/osx-x64/*.dylib bindings/csharp/MarketdataUniffi/runtimes/osx-x64/native/
           cp native-libs/win-x64/*.dll bindings/csharp/MarketdataUniffi/runtimes/win-x64/native/
@@ -90,10 +95,96 @@ jobs:
             echo "| $name | $size |" >> $GITHUB_STEP_SUMMARY
           done
 
-      - name: Push to NuGet
-        if: ${{ !inputs.dry-run }}
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: bindings/csharp/MarketdataUniffi/nupkg/*.nupkg
+          if-no-files-found: error
+          retention-days: 5
+
+  # Installs the packed nupkg from a local feed the way a user would from
+  # nuget.org, constructs a client, and runs it, on each Linux platform the
+  # package ships a native library for. Same check as Verify Release's, but
+  # before the push, so a package whose runtimes/<rid>/native/ is missing or
+  # does not load never reaches the registry.
+  smoke:
+    name: Smoke test (${{ matrix.rid }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: nupkg/
+
+      - name: Install from the local feed and construct client
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          dotnet nuget push bindings/csharp/MarketdataUniffi/nupkg/*.nupkg \
+          dotnet --info | grep -E 'RID|Architecture' || true
+          dotnet new console --framework net8.0 -o smoke
+          cd smoke
+          # Only the local folder: a re-run of a version that is already on
+          # nuget.org must still test the nupkg packed here, not the published
+          # one. The package has no NuGet dependencies and the net8.0
+          # targeting pack comes with the SDK, so nothing else is needed.
+          cat > nuget.config <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$GITHUB_WORKSPACE/nupkg" />
+            </packageSources>
+          </configuration>
+          XML
+          dotnet add package Fugle.MarketData --version "$VERSION"
+          cat > Program.cs <<'CS'
+          using FugleMarketData;
+          using var client = new RestClient(new RestClientOptions { ApiKey = "smoke-test-token" });
+          if (client.Stock == null || client.FutOpt == null) throw new System.Exception("missing REST accessors");
+          System.Console.WriteLine($"OK: Fugle.MarketData loads its native library and constructs clients on {System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier}");
+          CS
+          dotnet run
+
+  push:
+    name: Push to NuGet
+    needs: [pack, smoke]
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: nupkg/
+
+      - name: Push to NuGet
+        run: |
+          dotnet nuget push nupkg/*.nupkg \
             --api-key ${{ secrets.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate

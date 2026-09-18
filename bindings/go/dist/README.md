@@ -25,14 +25,15 @@ must be enabled and a C toolchain must be available for the final link.
 | macOS Apple Silicon | `darwin/arm64` | macOS 11 | Xcode Command Line Tools |
 | macOS Intel | `darwin/amd64` | macOS 11 | Xcode Command Line Tools |
 | Linux x86-64 (glibc) | `linux/amd64` | glibc 2.17 | gcc or clang |
+| Linux ARM64 (glibc) | `linux/arm64` | glibc 2.17 | gcc or clang |
 | Windows x86-64 | `windows/amd64` | Windows 10 | [mingw-w64](https://www.mingw-w64.org/) gcc on `PATH` |
 
 ```bash
 export CGO_ENABLED=1
 ```
 
-Not supported in this release: `linux/arm64`, musl-based Linux (Alpine), and
-Windows builds using MSVC. `go mod vendor` is not supported because it does not
+Not supported in this release: musl-based Linux (Alpine) and Windows builds
+using MSVC. `go mod vendor` is not supported because it does not
 copy the `lib/` directories.
 
 ## Quick start

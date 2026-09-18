@@ -47,7 +47,7 @@ export CARGO_PROFILE_RELEASE_LTO="${CARGO_PROFILE_RELEASE_LTO:-fat}"
 export CARGO_PROFILE_RELEASE_CODEGEN_UNITS="${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-1}"
 
 case "$PLATFORM" in
-  darwin_arm64|darwin_amd64|linux_amd64|windows_amd64) ;;
+  darwin_arm64|darwin_amd64|linux_amd64|linux_arm64|windows_amd64) ;;
   *) echo "error: unsupported platform '$PLATFORM'" >&2; exit 2 ;;
 esac
 

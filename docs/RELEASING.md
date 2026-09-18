@@ -103,7 +103,9 @@ gh workflow run release.yml --ref main
 
 A manual run builds every platform and runs each publish job up to the
 upload: wheel checks for PyPI, `npm publish --dry-run` for every npm package,
-`dotnet pack` for NuGet, and Go module assembly plus a static-link smoke test.
+`dotnet pack` for NuGet plus an install-and-run smoke test of the package on
+`linux-x64` and `linux-arm64`, Go module assembly plus a static-link smoke test
+on both, and a compile-link-run smoke test of both Linux C++ tarballs.
 Nothing is published, no tag is needed, and no GitHub Release is created. The
 **Rehearsal summary** job fails if any step would have failed. Registry
 credentials are not needed for a rehearsal.
