@@ -35,7 +35,7 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
-### Unreleased — REST query params checked against the server (#164, #166)
+### Unreleased — REST query params checked against the server (#164, #166, #168)
 
 The server's DTOs (fugle-realtime `apps/api-gateway`, `apps/service-stock`)
 are the source of truth, not developer.fugle.tw. Builders only set keys; values
@@ -60,6 +60,10 @@ are left for the server to reject.
 - `-` `stock::technical::KdjRequestBuilder::period` — the server takes
   `rPeriod`/`kPeriod`/`dPeriod` and computes the window itself; a lone
   `period` got HTTP 400 in prod (#166).
+- `-` `stock::corporate_actions::CapitalChangesRequestBuilder::date`,
+  `DividendsRequestBuilder::date`, `ListingApplicantsRequestBuilder::date` —
+  prod answers `?date=` with 400 `property date should not exist` on
+  capital-changes and listing-applicants, and ignores it on dividends (#168).
 
 ### Unreleased — health check probe and `measure_latency()` (#150)
 

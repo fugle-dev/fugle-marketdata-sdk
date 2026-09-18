@@ -55,12 +55,12 @@ interface UniffiLib extends Library {
     Pointer uniffi_marketdata_uniffi_fn_method_stockclient_technical(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_clone_stockcorporateactionsclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_stockcorporateactionsclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
-    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(Pointer ptr, RustBuffer.ByValue date, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate, UniffiRustCallStatus uniffi_out_errmk);
-    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(Pointer ptr, RustBuffer.ByValue date, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate, UniffiRustCallStatus uniffi_out_errmk);
-    Long uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(Pointer ptr, RustBuffer.ByValue date, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate);
-    Long uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(Pointer ptr, RustBuffer.ByValue date, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate);
-    Long uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(Pointer ptr, RustBuffer.ByValue date, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate);
-    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(Pointer ptr, RustBuffer.ByValue date, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate, UniffiRustCallStatus uniffi_out_errmk);
+    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(Pointer ptr, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate, UniffiRustCallStatus uniffi_out_errmk);
+    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(Pointer ptr, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate, UniffiRustCallStatus uniffi_out_errmk);
+    Long uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(Pointer ptr, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate);
+    Long uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(Pointer ptr, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate);
+    Long uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(Pointer ptr, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate);
+    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(Pointer ptr, RustBuffer.ByValue startDate, RustBuffer.ByValue endDate, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_clone_stockhistoricalclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_stockhistoricalclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_candles_sync(Pointer ptr, RustBuffer.ByValue symbol, RustBuffer.ByValue from, RustBuffer.ByValue to, RustBuffer.ByValue timeframe, UniffiRustCallStatus uniffi_out_errmk);

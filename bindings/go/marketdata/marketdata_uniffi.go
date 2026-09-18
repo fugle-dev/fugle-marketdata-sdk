@@ -735,7 +735,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync()
 		})
-		if checksum != 4386 {
+		if checksum != 44530 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync: UniFFI API checksum mismatch")
 		}
@@ -744,7 +744,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync()
 		})
-		if checksum != 46802 {
+		if checksum != 35826 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync: UniFFI API checksum mismatch")
 		}
@@ -753,7 +753,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_capital_changes()
 		})
-		if checksum != 53382 {
+		if checksum != 41161 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_capital_changes: UniFFI API checksum mismatch")
 		}
@@ -762,7 +762,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_dividends()
 		})
-		if checksum != 30058 {
+		if checksum != 53857 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_dividends: UniFFI API checksum mismatch")
 		}
@@ -771,7 +771,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_listing_applicants()
 		})
-		if checksum != 2474 {
+		if checksum != 18770 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_listing_applicants: UniFFI API checksum mismatch")
 		}
@@ -780,7 +780,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync()
 		})
-		if checksum != 14714 {
+		if checksum != 37063 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync: UniFFI API checksum mismatch")
 		}
@@ -2706,17 +2706,17 @@ func (_ FfiDestroyerStockClient) Destroy(value *StockClient) {
 // Provides access to capital changes, dividends, and listing applicants (IPO).
 type StockCorporateActionsClientInterface interface {
 	// Get capital structure changes (sync/blocking)
-	CapitalChangesSync(date *string, startDate *string, endDate *string) (string, error)
+	CapitalChangesSync(startDate *string, endDate *string) (string, error)
 	// Get dividend announcements (sync/blocking)
-	DividendsSync(date *string, startDate *string, endDate *string) (string, error)
+	DividendsSync(startDate *string, endDate *string) (string, error)
 	// Get capital structure changes (async)
-	GetCapitalChanges(date *string, startDate *string, endDate *string) (string, error)
+	GetCapitalChanges(startDate *string, endDate *string) (string, error)
 	// Get dividend announcements (async)
-	GetDividends(date *string, startDate *string, endDate *string) (string, error)
+	GetDividends(startDate *string, endDate *string) (string, error)
 	// Get IPO listing applicants (async)
-	GetListingApplicants(date *string, startDate *string, endDate *string) (string, error)
+	GetListingApplicants(startDate *string, endDate *string) (string, error)
 	// Get IPO listing applicants (sync/blocking)
-	ListingApplicantsSync(date *string, startDate *string, endDate *string) (string, error)
+	ListingApplicantsSync(startDate *string, endDate *string) (string, error)
 }
 
 // Stock corporate actions endpoints
@@ -2727,13 +2727,13 @@ type StockCorporateActionsClient struct {
 }
 
 // Get capital structure changes (sync/blocking)
-func (_self *StockCorporateActionsClient) CapitalChangesSync(date *string, startDate *string, endDate *string) (string, error) {
+func (_self *StockCorporateActionsClient) CapitalChangesSync(startDate *string, endDate *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(
-				_pointer, FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate), _uniffiStatus),
+				_pointer, FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -2745,13 +2745,13 @@ func (_self *StockCorporateActionsClient) CapitalChangesSync(date *string, start
 }
 
 // Get dividend announcements (sync/blocking)
-func (_self *StockCorporateActionsClient) DividendsSync(date *string, startDate *string, endDate *string) (string, error) {
+func (_self *StockCorporateActionsClient) DividendsSync(startDate *string, endDate *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(
-				_pointer, FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate), _uniffiStatus),
+				_pointer, FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -2763,7 +2763,7 @@ func (_self *StockCorporateActionsClient) DividendsSync(date *string, startDate 
 }
 
 // Get capital structure changes (async)
-func (_self *StockCorporateActionsClient) GetCapitalChanges(date *string, startDate *string, endDate *string) (string, error) {
+func (_self *StockCorporateActionsClient) GetCapitalChanges(startDate *string, endDate *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2780,7 +2780,7 @@ func (_self *StockCorporateActionsClient) GetCapitalChanges(date *string, startD
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(
-			_pointer, FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate)),
+			_pointer, FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -2799,7 +2799,7 @@ func (_self *StockCorporateActionsClient) GetCapitalChanges(date *string, startD
 }
 
 // Get dividend announcements (async)
-func (_self *StockCorporateActionsClient) GetDividends(date *string, startDate *string, endDate *string) (string, error) {
+func (_self *StockCorporateActionsClient) GetDividends(startDate *string, endDate *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2816,7 +2816,7 @@ func (_self *StockCorporateActionsClient) GetDividends(date *string, startDate *
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(
-			_pointer, FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate)),
+			_pointer, FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -2835,7 +2835,7 @@ func (_self *StockCorporateActionsClient) GetDividends(date *string, startDate *
 }
 
 // Get IPO listing applicants (async)
-func (_self *StockCorporateActionsClient) GetListingApplicants(date *string, startDate *string, endDate *string) (string, error) {
+func (_self *StockCorporateActionsClient) GetListingApplicants(startDate *string, endDate *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -2852,7 +2852,7 @@ func (_self *StockCorporateActionsClient) GetListingApplicants(date *string, sta
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(
-			_pointer, FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate)),
+			_pointer, FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -2871,13 +2871,13 @@ func (_self *StockCorporateActionsClient) GetListingApplicants(date *string, sta
 }
 
 // Get IPO listing applicants (sync/blocking)
-func (_self *StockCorporateActionsClient) ListingApplicantsSync(date *string, startDate *string, endDate *string) (string, error) {
+func (_self *StockCorporateActionsClient) ListingApplicantsSync(startDate *string, endDate *string) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockCorporateActionsClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(
-				_pointer, FfiConverterOptionalStringINSTANCE.Lower(date), FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate), _uniffiStatus),
+				_pointer, FfiConverterOptionalStringINSTANCE.Lower(startDate), FfiConverterOptionalStringINSTANCE.Lower(endDate), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {

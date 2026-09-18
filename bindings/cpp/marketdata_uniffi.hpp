@@ -727,15 +727,15 @@ struct StockCorporateActionsClient
     /**
      * Get capital structure changes (sync/blocking)
      */
-    std::string capital_changes_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string capital_changes_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
     /**
      * Get dividend announcements (sync/blocking)
      */
-    std::string dividends_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string dividends_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
     /**
      * Get IPO listing applicants (sync/blocking)
      */
-    std::string listing_applicants_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string listing_applicants_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
 
     private:
     StockCorporateActionsClient(const StockCorporateActionsClient &);

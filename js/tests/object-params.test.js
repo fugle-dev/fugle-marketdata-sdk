@@ -170,8 +170,12 @@ describe('positional calls are unchanged', () => {
     ['kdj', (c) => c.stock.technical.kdj('2330', undefined, undefined, 'D', 9, 3, 3),
       '/stock/technical/kdj/2330', { timeframe: 'D', rPeriod: '9', kPeriod: '3', dPeriod: '3' }],
     ['dividends without args', (c) => c.stock.corporateActions.dividends(), '/stock/corporate-actions/dividends', {}],
-    ['dividends with range', (c) => c.stock.corporateActions.dividends(undefined, '2026-08-01', '2026-09-30'),
+    ['dividends with range', (c) => c.stock.corporateActions.dividends('2026-08-01', '2026-09-30'),
       '/stock/corporate-actions/dividends', { start_date: '2026-08-01', end_date: '2026-09-30' }],
+    ['capital changes with start only', (c) => c.stock.corporateActions.capitalChanges('2026-08-01'),
+      '/stock/corporate-actions/capital-changes', { start_date: '2026-08-01' }],
+    ['listing applicants with end only', (c) => c.stock.corporateActions.listingApplicants(undefined, '2026-09-30'),
+      '/stock/corporate-actions/listing-applicants', { end_date: '2026-09-30' }],
     ['futopt tickers', (c) => c.futopt.intraday.tickers('FUTURE'), '/futopt/intraday/tickers', { type: 'FUTURE' }],
     ['futopt historical candles', (c) => c.futopt.historical.candles('TXF', '2026-09-01', '2026-09-15', '5', true, '2!', 'close', 'asc'),
       '/futopt/historical/candles/TXF',
@@ -187,5 +191,28 @@ describe('positional calls are unchanged', () => {
 
   test('a missing first argument is rejected', async () => {
     await expect(ctx.client.stock.intraday.ticker()).rejects.toThrow('`symbol` is required');
+  });
+});
+
+// `date` was the first positional argument of the corporate-actions methods
+// until the server turned out never to accept it (#168). `startDate` now sits
+// in that slot, so the old `(date, startDate, endDate)` call would silently run
+// with a shifted range; a third argument is refused with directions instead.
+describe('corporate-actions legacy date argument', () => {
+  test.each([
+    ['capitalChanges', (c) => c.stock.corporateActions.capitalChanges(undefined, '2026-08-01', '2026-09-30')],
+    ['dividends', (c) => c.stock.corporateActions.dividends('2026-08-15', '2026-08-01', '2026-09-30')],
+    ['listingApplicants', (c) => c.stock.corporateActions.listingApplicants(null, '2026-08-01', '2026-09-30')],
+  ])('%s(date, startDate, endDate) is rejected with directions', async (name, call) => {
+    await expect(call(ctx.client)).rejects.toThrow(`\`${name}\` no longer takes \`date\``);
+    await expect(call(ctx.client)).rejects.toThrow(`${name}(startDate, endDate)`);
+  });
+
+  test('an explicit undefined third argument is not a legacy call', async () => {
+    await ctx.client.stock.corporateActions.dividends('2026-08-01', '2026-09-30', undefined);
+    expect(ctx.lastRequest()).toEqual({
+      path: '/v1.0/stock/corporate-actions/dividends',
+      query: { start_date: '2026-08-01', end_date: '2026-09-30' },
+    });
   });
 });

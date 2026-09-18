@@ -1059,14 +1059,12 @@ class StockCorporateActionsClient:
     async def capital_changes_async(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get capital changes (stock splits, rights issues, etc.)
 
         Args:
-            date: Specific date (YYYY-MM-DD)
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
 
@@ -1089,14 +1087,12 @@ class StockCorporateActionsClient:
     async def dividends_async(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get dividend announcements.
 
         Args:
-            date: Specific date (YYYY-MM-DD)
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
 
@@ -1119,14 +1115,12 @@ class StockCorporateActionsClient:
     async def listing_applicants_async(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get IPO listing applicants.
 
         Args:
-            date: Specific date (YYYY-MM-DD)
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
 
@@ -1148,7 +1142,6 @@ class StockCorporateActionsClient:
     def capital_changes(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1158,7 +1151,6 @@ class StockCorporateActionsClient:
     def dividends(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1168,7 +1160,6 @@ class StockCorporateActionsClient:
     def listing_applicants(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:

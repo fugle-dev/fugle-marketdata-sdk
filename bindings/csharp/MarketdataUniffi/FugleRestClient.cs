@@ -536,26 +536,25 @@ namespace FugleMarketData
         /// <summary>
         /// Get capital structure changes (async).
         /// </summary>
-        /// <param name="date">Specific date in YYYY-MM-DD (optional)</param>
         /// <param name="startDate">Range start date (optional)</param>
         /// <param name="endDate">Range end date (optional)</param>
         public Task<string> GetCapitalChangesAsync(
-            string? date = null, string? startDate = null, string? endDate = null)
-            => _inner.GetCapitalChanges(date, startDate, endDate);
+            string? startDate = null, string? endDate = null)
+            => _inner.GetCapitalChanges(startDate, endDate);
 
         /// <summary>
         /// Get dividend announcements (async).
         /// </summary>
         public Task<string> GetDividendsAsync(
-            string? date = null, string? startDate = null, string? endDate = null)
-            => _inner.GetDividends(date, startDate, endDate);
+            string? startDate = null, string? endDate = null)
+            => _inner.GetDividends(startDate, endDate);
 
         /// <summary>
         /// Get IPO listing applicants (async).
         /// </summary>
         public Task<string> GetListingApplicantsAsync(
-            string? date = null, string? startDate = null, string? endDate = null)
-            => _inner.GetListingApplicants(date, startDate, endDate);
+            string? startDate = null, string? endDate = null)
+            => _inner.GetListingApplicants(startDate, endDate);
 
         // ========== Sync Methods ==========
 
@@ -563,22 +562,22 @@ namespace FugleMarketData
         /// Get capital structure changes (blocking).
         /// </summary>
         public string GetCapitalChanges(
-            string? date = null, string? startDate = null, string? endDate = null)
-            => _inner.CapitalChangesSync(date, startDate, endDate);
+            string? startDate = null, string? endDate = null)
+            => _inner.CapitalChangesSync(startDate, endDate);
 
         /// <summary>
         /// Get dividend announcements (blocking).
         /// </summary>
         public string GetDividends(
-            string? date = null, string? startDate = null, string? endDate = null)
-            => _inner.DividendsSync(date, startDate, endDate);
+            string? startDate = null, string? endDate = null)
+            => _inner.DividendsSync(startDate, endDate);
 
         /// <summary>
         /// Get IPO listing applicants (blocking).
         /// </summary>
         public string GetListingApplicants(
-            string? date = null, string? startDate = null, string? endDate = null)
-            => _inner.ListingApplicantsSync(date, startDate, endDate);
+            string? startDate = null, string? endDate = null)
+            => _inner.ListingApplicantsSync(startDate, endDate);
     }
 
     /// <summary>

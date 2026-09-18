@@ -40,6 +40,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Node**: `bb()` drops the trailing `stddev` argument.
   - **C#, Go, Java, C++**: `GetBb` / `BbSync` / `bb_sync` drop the trailing
     `stddev` argument.
+- **All languages: the corporate-actions methods no longer take `date`**
+  (#168). Measured against prod: `capital-changes` and `listing-applicants`
+  answer `?date=` with 400 `property date should not exist`, and `dividends`
+  ignores it and returns the default range. Use `start_date` / `end_date`.
+  - **Rust**: `CapitalChangesRequestBuilder::date`, `DividendsRequestBuilder::date`
+    and `ListingApplicantsRequestBuilder::date` are removed.
+  - **Python**: `capital_changes()` / `dividends()` / `listing_applicants()`
+    and their `_async` forms drop the `date` keyword.
+  - **Node**: `startDate` moves into the first slot:
+    `capitalChanges(startDate?, endDate?)`, and likewise `dividends` and
+    `listingApplicants`. The old three-argument call
+    `dividends(undefined, start, end)` would otherwise run with a shifted
+    range, so a third positional argument is rejected with a message that
+    says how to rewrite the call. The object form is unchanged.
+  - **C#, Go, Java, C++**: `GetCapitalChanges` / `CapitalChangesSync` /
+    `capital_changes_sync` and the dividends / listing-applicants
+    counterparts drop the leading `date` argument.
 
 ### Added
 

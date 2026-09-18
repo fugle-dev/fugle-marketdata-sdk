@@ -1952,11 +1952,11 @@ export interface StockTechnicalClient {
 /** Stock corporate actions client interface */
 export interface StockCorporateActionsClient {
   /** Get capital changes */
-  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string): Promise<CapitalChangesResponse>;
+  capitalChanges(startDate?: string | RestStockCorporateActionsCapitalChangesParams, endDate?: string): Promise<CapitalChangesResponse>;
   /** Get dividends */
-  dividends(date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string): Promise<DividendsResponse>;
+  dividends(startDate?: string | RestStockCorporateActionsDividendsParams, endDate?: string): Promise<DividendsResponse>;
   /** Get listing applicants */
-  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string): Promise<ListingApplicantsResponse>;
+  listingApplicants(startDate?: string | RestStockCorporateActionsListingApplicantsParams, endDate?: string): Promise<ListingApplicantsResponse>;
 }
 
 /** FutOpt historical client interface */

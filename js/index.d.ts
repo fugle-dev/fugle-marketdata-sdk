@@ -1952,11 +1952,11 @@ export interface StockTechnicalClient {
 /** Stock corporate actions client interface */
 export interface StockCorporateActionsClient {
   /** Get capital changes */
-  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string): Promise<CapitalChangesResponse>;
+  capitalChanges(startDate?: string | RestStockCorporateActionsCapitalChangesParams, endDate?: string): Promise<CapitalChangesResponse>;
   /** Get dividends */
-  dividends(date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string): Promise<DividendsResponse>;
+  dividends(startDate?: string | RestStockCorporateActionsDividendsParams, endDate?: string): Promise<DividendsResponse>;
   /** Get listing applicants */
-  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string): Promise<ListingApplicantsResponse>;
+  listingApplicants(startDate?: string | RestStockCorporateActionsListingApplicantsParams, endDate?: string): Promise<ListingApplicantsResponse>;
 }
 
 /** FutOpt historical client interface */
@@ -2266,30 +2266,27 @@ export declare class StockCorporateActionsClient {
   /**
    * Get capital changes (capital structure changes)
    *
-   * @param date - Specific date (YYYY-MM-DD)
    * @param startDate - Start date for range query (YYYY-MM-DD)
    * @param endDate - End date for range query (YYYY-MM-DD)
    * @returns Promise resolving to capital changes data
    */
-  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null): Promise<CapitalChangesResponse>
+  capitalChanges(startDate?: string | RestStockCorporateActionsCapitalChangesParams | undefined | null, endDate?: string | undefined | null): Promise<CapitalChangesResponse>
   /**
    * Get dividend announcements
    *
-   * @param date - Specific date (YYYY-MM-DD)
    * @param startDate - Start date for range query (YYYY-MM-DD)
    * @param endDate - End date for range query (YYYY-MM-DD)
    * @returns Promise resolving to dividends data
    */
-  dividends(date?: string | RestStockCorporateActionsDividendsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null): Promise<DividendsResponse>
+  dividends(startDate?: string | RestStockCorporateActionsDividendsParams | undefined | null, endDate?: string | undefined | null): Promise<DividendsResponse>
   /**
    * Get IPO listing applicants
    *
-   * @param date - Specific date (YYYY-MM-DD)
    * @param startDate - Start date for range query (YYYY-MM-DD)
    * @param endDate - End date for range query (YYYY-MM-DD)
    * @returns Promise resolving to listing applicants data
    */
-  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null): Promise<ListingApplicantsResponse>
+  listingApplicants(startDate?: string | RestStockCorporateActionsListingApplicantsParams | undefined | null, endDate?: string | undefined | null): Promise<ListingApplicantsResponse>
 }
 
 /** Stock historical data client */

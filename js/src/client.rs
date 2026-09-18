@@ -1190,26 +1190,45 @@ pub struct StockCorporateActionsClient {
     inner: marketdata_core::RestClient,
 }
 
+/// `date` used to be the first positional argument of the corporate-actions
+/// methods. The server never accepted it (`capital-changes` and
+/// `listing-applicants` answer 400, `dividends` ignores it), so it is gone and
+/// `startDate` moved into its slot. The old three-argument call would now run
+/// with a shifted date range and no complaint; a third positional argument is
+/// therefore refused with directions instead of being dropped.
+fn reject_legacy_date_arg(method: &str, third: &Option<Value>) -> napi::Result<()> {
+    match third {
+        None | Some(Value::Null) => Ok(()),
+        Some(_) => Err(napi::Error::from_reason(format!(
+            "`{method}` no longer takes `date` as its first argument: the server rejects it \
+             (capital-changes and listing-applicants respond 400, dividends ignores it). \
+             The first argument is now `startDate`, so a third argument means the old \
+             `(date, startDate, endDate)` form: call `{method}(startDate, endDate)` or \
+             `{method}({{ start_date, end_date }})` instead."
+        ))),
+    }
+}
+
 #[napi]
 impl StockCorporateActionsClient {
     /// Get capital changes (capital structure changes)
     ///
-    /// @param date - Specific date (YYYY-MM-DD)
     /// @param startDate - Start date for range query (YYYY-MM-DD)
     /// @param endDate - End date for range query (YYYY-MM-DD)
     /// @returns Promise resolving to capital changes data
     #[napi(
         ts_return_type = "Promise<CapitalChangesResponse>",
-        ts_args_type = "date?: string | RestStockCorporateActionsCapitalChangesParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null"
+        ts_args_type = "startDate?: string | RestStockCorporateActionsCapitalChangesParams | undefined | null, endDate?: string | undefined | null"
     )]
     pub async fn capital_changes(
         &self,
-        date: Option<RestArg>,
-        start_date: Option<String>,
+        start_date: Option<RestArg>,
         end_date: Option<String>,
+        legacy_third_arg: Option<Value>,
     ) -> napi::Result<Settled> {
-        let date = match date {
-            Some(RestArg::Positional(date)) => Some(date),
+        reject_legacy_date_arg("capitalChanges", &legacy_third_arg)?;
+        let start_date = match start_date {
+            Some(RestArg::Positional(start_date)) => Some(start_date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], None, params).await,
             None => None,
         };
@@ -1220,9 +1239,6 @@ impl StockCorporateActionsClient {
             let stock = inner.stock();
             let ca = stock.corporate_actions();
             let mut builder = ca.capital_changes();
-            if let Some(d) = date {
-                builder = builder.date(&d);
-            }
             if let Some(sd) = start_date {
                 builder = builder.start_date(&sd);
             }
@@ -1239,22 +1255,22 @@ impl StockCorporateActionsClient {
 
     /// Get dividend announcements
     ///
-    /// @param date - Specific date (YYYY-MM-DD)
     /// @param startDate - Start date for range query (YYYY-MM-DD)
     /// @param endDate - End date for range query (YYYY-MM-DD)
     /// @returns Promise resolving to dividends data
     #[napi(
         ts_return_type = "Promise<DividendsResponse>",
-        ts_args_type = "date?: string | RestStockCorporateActionsDividendsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null"
+        ts_args_type = "startDate?: string | RestStockCorporateActionsDividendsParams | undefined | null, endDate?: string | undefined | null"
     )]
     pub async fn dividends(
         &self,
-        date: Option<RestArg>,
-        start_date: Option<String>,
+        start_date: Option<RestArg>,
         end_date: Option<String>,
+        legacy_third_arg: Option<Value>,
     ) -> napi::Result<Settled> {
-        let date = match date {
-            Some(RestArg::Positional(date)) => Some(date),
+        reject_legacy_date_arg("dividends", &legacy_third_arg)?;
+        let start_date = match start_date {
+            Some(RestArg::Positional(start_date)) => Some(start_date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], None, params).await,
             None => None,
         };
@@ -1265,9 +1281,6 @@ impl StockCorporateActionsClient {
             let stock = inner.stock();
             let ca = stock.corporate_actions();
             let mut builder = ca.dividends();
-            if let Some(d) = date {
-                builder = builder.date(&d);
-            }
             if let Some(sd) = start_date {
                 builder = builder.start_date(&sd);
             }
@@ -1284,22 +1297,22 @@ impl StockCorporateActionsClient {
 
     /// Get IPO listing applicants
     ///
-    /// @param date - Specific date (YYYY-MM-DD)
     /// @param startDate - Start date for range query (YYYY-MM-DD)
     /// @param endDate - End date for range query (YYYY-MM-DD)
     /// @returns Promise resolving to listing applicants data
     #[napi(
         ts_return_type = "Promise<ListingApplicantsResponse>",
-        ts_args_type = "date?: string | RestStockCorporateActionsListingApplicantsParams | undefined | null, startDate?: string | undefined | null, endDate?: string | undefined | null"
+        ts_args_type = "startDate?: string | RestStockCorporateActionsListingApplicantsParams | undefined | null, endDate?: string | undefined | null"
     )]
     pub async fn listing_applicants(
         &self,
-        date: Option<RestArg>,
-        start_date: Option<String>,
+        start_date: Option<RestArg>,
         end_date: Option<String>,
+        legacy_third_arg: Option<Value>,
     ) -> napi::Result<Settled> {
-        let date = match date {
-            Some(RestArg::Positional(date)) => Some(date),
+        reject_legacy_date_arg("listingApplicants", &legacy_third_arg)?;
+        let start_date = match start_date {
+            Some(RestArg::Positional(start_date)) => Some(start_date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], None, params).await,
             None => None,
         };
@@ -1310,9 +1323,6 @@ impl StockCorporateActionsClient {
             let stock = inner.stock();
             let ca = stock.corporate_actions();
             let mut builder = ca.listing_applicants();
-            if let Some(d) = date {
-                builder = builder.date(&d);
-            }
             if let Some(sd) = start_date {
                 builder = builder.start_date(&sd);
             }

@@ -108,13 +108,13 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_technical() != 10974) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync() != 4386) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync() != 44530) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync() != 46802) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync() != 35826) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync() != 14714) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync() != 37063) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_candles_sync() != 61155) {
@@ -918,26 +918,26 @@ StockCorporateActionsClient::StockCorporateActionsClient(const StockCorporateAct
 
 
 
-std::string StockCorporateActionsClient::capital_changes_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::capital_changes_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
 }
-std::string StockCorporateActionsClient::dividends_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::dividends_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
 }
-std::string StockCorporateActionsClient::listing_applicants_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::listing_applicants_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
 }
 
 StockCorporateActionsClient::~StockCorporateActionsClient() {

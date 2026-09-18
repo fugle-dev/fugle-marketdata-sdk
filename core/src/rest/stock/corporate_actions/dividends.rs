@@ -8,7 +8,6 @@ use crate::{
 /// Request builder for dividends endpoint
 pub struct DividendsRequestBuilder<'a> {
     client: &'a RestClient,
-    date: Option<String>,
     start_date: Option<String>,
     end_date: Option<String>,
     exchange: Option<String>,
@@ -20,18 +19,11 @@ impl<'a> DividendsRequestBuilder<'a> {
     pub(crate) fn new(client: &'a RestClient) -> Self {
         Self {
             client,
-            date: None,
             start_date: None,
             end_date: None,
             exchange: None,
             sort: None,
         }
-    }
-
-    /// Set a specific date filter (format: YYYY-MM-DD)
-    pub fn date(mut self, date: &str) -> Self {
-        self.date = Some(date.to_string());
-        self
     }
 
     /// Set the start date for range filter (format: YYYY-MM-DD)
@@ -79,9 +71,6 @@ impl<'a> DividendsRequestBuilder<'a> {
 
         // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(date) = &self.date {
-            query_params.push(crate::rest::query_pair("date", date));
-        }
         if let Some(start_date) = &self.start_date {
             query_params.push(crate::rest::query_pair("start_date", start_date));
         }
@@ -114,19 +103,10 @@ mod tests {
         let client = RestClient::new(Auth::SdkToken("test".to_string()));
         let builder = DividendsRequestBuilder::new(&client);
 
-        assert!(builder.date.is_none());
         assert!(builder.start_date.is_none());
         assert!(builder.end_date.is_none());
     }
 
-    #[test]
-    fn test_dividends_builder_with_date() {
-        let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = DividendsRequestBuilder::new(&client)
-            .date("2024-01-15");
-
-        assert_eq!(builder.date, Some("2024-01-15".to_string()));
-    }
 
     #[test]
     fn test_dividends_builder_with_date_range() {

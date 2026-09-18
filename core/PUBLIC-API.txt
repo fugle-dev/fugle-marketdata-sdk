@@ -2988,7 +2988,6 @@ pub mod marketdata_core::rest::stock
 pub mod marketdata_core::rest::stock::corporate_actions
 pub struct marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>
-pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::end_date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::sort(self, &str) -> Self
@@ -3002,7 +3001,6 @@ impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::sto
 impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>
 pub struct marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>
-pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::end_date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
@@ -3017,7 +3015,6 @@ impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::sto
 impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>
 pub struct marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>
-pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::end_date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
