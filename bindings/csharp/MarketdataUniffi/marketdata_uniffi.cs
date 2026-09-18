@@ -1226,7 +1226,6 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(
         IntPtr @ptr,
-        RustBuffer @date,
         RustBuffer @startDate,
         RustBuffer @endDate,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -1235,7 +1234,6 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(
         IntPtr @ptr,
-        RustBuffer @date,
         RustBuffer @startDate,
         RustBuffer @endDate,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -1244,7 +1242,6 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(
         IntPtr @ptr,
-        RustBuffer @date,
         RustBuffer @startDate,
         RustBuffer @endDate
     );
@@ -1252,7 +1249,6 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(
         IntPtr @ptr,
-        RustBuffer @date,
         RustBuffer @startDate,
         RustBuffer @endDate
     );
@@ -1260,7 +1256,6 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(
         IntPtr @ptr,
-        RustBuffer @date,
         RustBuffer @startDate,
         RustBuffer @endDate
     );
@@ -1268,7 +1263,6 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(
         IntPtr @ptr,
-        RustBuffer @date,
         RustBuffer @startDate,
         RustBuffer @endDate,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -1577,7 +1571,6 @@ static class _UniFFILib
         RustBuffer @to,
         RustBuffer @timeframe,
         RustBuffer @period,
-        RustBuffer @stddev,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -1588,8 +1581,7 @@ static class _UniFFILib
         RustBuffer @from,
         RustBuffer @to,
         RustBuffer @timeframe,
-        RustBuffer @period,
-        RustBuffer @stddev
+        RustBuffer @period
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -3021,60 +3013,60 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync();
-            if (checksum != 4386)
+            if (checksum != 44530)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync` checksum `4386`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync` checksum `44530`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync();
-            if (checksum != 46802)
+            if (checksum != 35826)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync` checksum `46802`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync` checksum `35826`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_capital_changes();
-            if (checksum != 53382)
+            if (checksum != 41161)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_capital_changes` checksum `53382`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_capital_changes` checksum `41161`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_dividends();
-            if (checksum != 30058)
+            if (checksum != 53857)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_dividends` checksum `30058`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_dividends` checksum `53857`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_listing_applicants();
-            if (checksum != 2474)
+            if (checksum != 18770)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_listing_applicants` checksum `2474`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_get_listing_applicants` checksum `18770`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync();
-            if (checksum != 14714)
+            if (checksum != 37063)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync` checksum `14714`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync` checksum `37063`, library returned `{checksum}`"
                 );
             }
         }
@@ -3381,20 +3373,20 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync();
-            if (checksum != 52716)
+            if (checksum != 23057)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync` checksum `52716`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync` checksum `23057`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb();
-            if (checksum != 20760)
+            if (checksum != 542)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb` checksum `20760`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb` checksum `542`, library returned `{checksum}`"
                 );
             }
         }
@@ -5825,37 +5817,37 @@ public interface IStockCorporateActionsClient
     /// Get capital structure changes (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string CapitalChangesSync(string? @date, string? @startDate, string? @endDate);
+    string CapitalChangesSync(string? @startDate, string? @endDate);
 
     /// <summary>
     /// Get dividend announcements (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string DividendsSync(string? @date, string? @startDate, string? @endDate);
+    string DividendsSync(string? @startDate, string? @endDate);
 
     /// <summary>
     /// Get capital structure changes (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task<string> GetCapitalChanges(string? @date, string? @startDate, string? @endDate);
+    Task<string> GetCapitalChanges(string? @startDate, string? @endDate);
 
     /// <summary>
     /// Get dividend announcements (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task<string> GetDividends(string? @date, string? @startDate, string? @endDate);
+    Task<string> GetDividends(string? @startDate, string? @endDate);
 
     /// <summary>
     /// Get IPO listing applicants (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task<string> GetListingApplicants(string? @date, string? @startDate, string? @endDate);
+    Task<string> GetListingApplicants(string? @startDate, string? @endDate);
 
     /// <summary>
     /// Get IPO listing applicants (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string ListingApplicantsSync(string? @date, string? @startDate, string? @endDate);
+    string ListingApplicantsSync(string? @startDate, string? @endDate);
 }
 
 /// <summary>
@@ -5982,7 +5974,7 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
     /// Get capital structure changes (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public string CapitalChangesSync(string? @date, string? @startDate, string? @endDate)
+    public string CapitalChangesSync(string? @startDate, string? @endDate)
     {
         return CallWithPointer(thisPtr =>
             FfiConverterString.INSTANCE.Lift(
@@ -5991,7 +5983,6 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
                     (ref UniffiRustCallStatus _status) =>
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(
                             thisPtr,
-                            FfiConverterOptionalString.INSTANCE.Lower(@date),
                             FfiConverterOptionalString.INSTANCE.Lower(@startDate),
                             FfiConverterOptionalString.INSTANCE.Lower(@endDate),
                             ref _status
@@ -6005,7 +5996,7 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
     /// Get dividend announcements (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public string DividendsSync(string? @date, string? @startDate, string? @endDate)
+    public string DividendsSync(string? @startDate, string? @endDate)
     {
         return CallWithPointer(thisPtr =>
             FfiConverterString.INSTANCE.Lift(
@@ -6014,7 +6005,6 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
                     (ref UniffiRustCallStatus _status) =>
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(
                             thisPtr,
-                            FfiConverterOptionalString.INSTANCE.Lower(@date),
                             FfiConverterOptionalString.INSTANCE.Lower(@startDate),
                             FfiConverterOptionalString.INSTANCE.Lower(@endDate),
                             ref _status
@@ -6028,7 +6018,7 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
     /// Get capital structure changes (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task<string> GetCapitalChanges(string? @date, string? @startDate, string? @endDate)
+    public async Task<string> GetCapitalChanges(string? @startDate, string? @endDate)
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -6036,7 +6026,6 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
             {
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(
                     thisPtr,
-                    FfiConverterOptionalString.INSTANCE.Lower(@date),
                     FfiConverterOptionalString.INSTANCE.Lower(@startDate),
                     FfiConverterOptionalString.INSTANCE.Lower(@endDate)
                 );
@@ -6070,7 +6059,7 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
     /// Get dividend announcements (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task<string> GetDividends(string? @date, string? @startDate, string? @endDate)
+    public async Task<string> GetDividends(string? @startDate, string? @endDate)
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -6078,7 +6067,6 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
             {
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(
                     thisPtr,
-                    FfiConverterOptionalString.INSTANCE.Lower(@date),
                     FfiConverterOptionalString.INSTANCE.Lower(@startDate),
                     FfiConverterOptionalString.INSTANCE.Lower(@endDate)
                 );
@@ -6112,11 +6100,7 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
     /// Get IPO listing applicants (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task<string> GetListingApplicants(
-        string? @date,
-        string? @startDate,
-        string? @endDate
-    )
+    public async Task<string> GetListingApplicants(string? @startDate, string? @endDate)
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -6124,7 +6108,6 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
             {
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(
                     thisPtr,
-                    FfiConverterOptionalString.INSTANCE.Lower(@date),
                     FfiConverterOptionalString.INSTANCE.Lower(@startDate),
                     FfiConverterOptionalString.INSTANCE.Lower(@endDate)
                 );
@@ -6158,7 +6141,7 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
     /// Get IPO listing applicants (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public string ListingApplicantsSync(string? @date, string? @startDate, string? @endDate)
+    public string ListingApplicantsSync(string? @startDate, string? @endDate)
     {
         return CallWithPointer(thisPtr =>
             FfiConverterString.INSTANCE.Lift(
@@ -6167,7 +6150,6 @@ public class StockCorporateActionsClient : IStockCorporateActionsClient, IDispos
                     (ref UniffiRustCallStatus _status) =>
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(
                             thisPtr,
-                            FfiConverterOptionalString.INSTANCE.Lower(@date),
                             FfiConverterOptionalString.INSTANCE.Lower(@startDate),
                             FfiConverterOptionalString.INSTANCE.Lower(@endDate),
                             ref _status
@@ -8099,14 +8081,7 @@ public interface IStockTechnicalClient
     /// Get Bollinger Bands (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string BbSync(
-        string @symbol,
-        string? @from,
-        string? @to,
-        string? @timeframe,
-        uint? @period,
-        double? @stddev
-    );
+    string BbSync(string @symbol, string? @from, string? @to, string? @timeframe, uint? @period);
 
     /// <summary>
     /// Get Bollinger Bands (async)
@@ -8117,8 +8092,7 @@ public interface IStockTechnicalClient
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period,
-        double? @stddev
+        uint? @period
     );
 
     /// <summary>
@@ -8343,8 +8317,7 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period,
-        double? @stddev
+        uint? @period
     )
     {
         return CallWithPointer(thisPtr =>
@@ -8359,7 +8332,6 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
                             FfiConverterOptionalString.INSTANCE.Lower(@to),
                             FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
                             FfiConverterOptionalUInt32.INSTANCE.Lower(@period),
-                            FfiConverterOptionalDouble.INSTANCE.Lower(@stddev),
                             ref _status
                         )
                 )
@@ -8376,8 +8348,7 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period,
-        double? @stddev
+        uint? @period
     )
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
@@ -8390,8 +8361,7 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
                     FfiConverterOptionalString.INSTANCE.Lower(@from),
                     FfiConverterOptionalString.INSTANCE.Lower(@to),
                     FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
-                    FfiConverterOptionalUInt32.INSTANCE.Lower(@period),
-                    FfiConverterOptionalDouble.INSTANCE.Lower(@stddev)
+                    FfiConverterOptionalUInt32.INSTANCE.Lower(@period)
                 );
             }),
             // Poll
@@ -11846,45 +11816,6 @@ class FfiConverterOptionalUInt64 : FfiConverterRustBuffer<ulong?>
         {
             stream.WriteByte(1);
             FfiConverterUInt64.INSTANCE.Write((ulong)value, stream);
-        }
-    }
-}
-
-class FfiConverterOptionalDouble : FfiConverterRustBuffer<double?>
-{
-    public static FfiConverterOptionalDouble INSTANCE = new FfiConverterOptionalDouble();
-
-    public override double? Read(BigEndianStream stream)
-    {
-        if (stream.ReadByte() == 0)
-        {
-            return null;
-        }
-        return FfiConverterDouble.INSTANCE.Read(stream);
-    }
-
-    public override int AllocationSize(double? value)
-    {
-        if (value == null)
-        {
-            return 1;
-        }
-        else
-        {
-            return 1 + FfiConverterDouble.INSTANCE.AllocationSize((double)value);
-        }
-    }
-
-    public override void Write(double? value, BigEndianStream stream)
-    {
-        if (value == null)
-        {
-            stream.WriteByte(0);
-        }
-        else
-        {
-            stream.WriteByte(1);
-            FfiConverterDouble.INSTANCE.Write((double)value, stream);
         }
     }
 }

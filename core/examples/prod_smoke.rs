@@ -371,7 +371,7 @@ async fn main() {
     rest_probe!("rest stock/technical/macd 2330", |c: &RestClient| c
         .stock().technical().macd().symbol("2330").fast(12).slow(26).signal(9).send());
     rest_probe!("rest stock/technical/bb 2330", |c: &RestClient| c
-        .stock().technical().bb().symbol("2330").period(20).stddev(2.0).send());
+        .stock().technical().bb().symbol("2330").period(20).send());
 
     // FutOpt intraday (7) — products is the known-broken endSession landmine
     rest_probe!("rest futopt/intraday/products FUTURE", |c: &RestClient| c

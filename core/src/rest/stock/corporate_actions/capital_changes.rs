@@ -8,9 +8,9 @@ use crate::{
 /// Request builder for capital changes endpoint
 pub struct CapitalChangesRequestBuilder<'a> {
     client: &'a RestClient,
-    date: Option<String>,
     start_date: Option<String>,
     end_date: Option<String>,
+    sort: Option<String>,
 }
 
 impl<'a> CapitalChangesRequestBuilder<'a> {
@@ -18,16 +18,10 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
     pub(crate) fn new(client: &'a RestClient) -> Self {
         Self {
             client,
-            date: None,
             start_date: None,
             end_date: None,
+            sort: None,
         }
-    }
-
-    /// Set a specific date filter (format: YYYY-MM-DD)
-    pub fn date(mut self, date: &str) -> Self {
-        self.date = Some(date.to_string());
-        self
     }
 
     /// Set the start date for range filter (format: YYYY-MM-DD)
@@ -39,6 +33,12 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
     /// Set the end date for range filter (format: YYYY-MM-DD)
     pub fn end_date(mut self, end_date: &str) -> Self {
         self.end_date = Some(end_date.to_string());
+        self
+    }
+
+    /// Set the sort order: `"asc"` or `"desc"`.
+    pub fn sort(mut self, sort: &str) -> Self {
+        self.sort = Some(sort.to_string());
         self
     }
 
@@ -63,14 +63,14 @@ impl<'a> CapitalChangesRequestBuilder<'a> {
 
         // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(date) = &self.date {
-            query_params.push(crate::rest::query_pair("date", date));
-        }
         if let Some(start_date) = &self.start_date {
             query_params.push(crate::rest::query_pair("start_date", start_date));
         }
         if let Some(end_date) = &self.end_date {
             query_params.push(crate::rest::query_pair("end_date", end_date));
+        }
+        if let Some(sort) = &self.sort {
+            query_params.push(crate::rest::query_pair("sort", sort));
         }
 
         if !query_params.is_empty() {
@@ -93,19 +93,10 @@ mod tests {
         let builder = CapitalChangesRequestBuilder::new(&client);
 
         // All params should be None by default
-        assert!(builder.date.is_none());
         assert!(builder.start_date.is_none());
         assert!(builder.end_date.is_none());
     }
 
-    #[test]
-    fn test_capital_changes_builder_with_date() {
-        let client = RestClient::new(Auth::SdkToken("test".to_string()));
-        let builder = CapitalChangesRequestBuilder::new(&client)
-            .date("2024-01-15");
-
-        assert_eq!(builder.date, Some("2024-01-15".to_string()));
-    }
 
     #[test]
     fn test_capital_changes_builder_with_date_range() {
@@ -130,6 +121,24 @@ mod tests {
             url,
             format!(
                 "{}/stock/corporate-actions/capital-changes?start_date=2026-08-01&end_date=2026-09-30",
+                client.get_base_url()
+            )
+        );
+    }
+
+    #[test]
+    fn test_capital_changes_url_includes_sort() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = CapitalChangesRequestBuilder::new(&client)
+            .start_date("2026-01-01")
+            .end_date("2026-06-30")
+            .sort("asc")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/corporate-actions/capital-changes?start_date=2026-01-01&end_date=2026-06-30&sort=asc",
                 client.get_base_url()
             )
         );

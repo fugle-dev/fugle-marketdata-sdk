@@ -108,13 +108,13 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_technical() != 10974) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync() != 4386) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync() != 44530) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync() != 46802) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync() != 35826) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync() != 14714) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync() != 37063) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_candles_sync() != 61155) {
@@ -162,7 +162,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_quotes_sync() != 31044) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync() != 52716) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync() != 23057) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync() != 57078) {
@@ -918,26 +918,26 @@ StockCorporateActionsClient::StockCorporateActionsClient(const StockCorporateAct
 
 
 
-std::string StockCorporateActionsClient::capital_changes_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::capital_changes_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
 }
-std::string StockCorporateActionsClient::dividends_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::dividends_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
 }
-std::string StockCorporateActionsClient::listing_applicants_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::listing_applicants_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
 }
 
 StockCorporateActionsClient::~StockCorporateActionsClient() {
@@ -1199,12 +1199,12 @@ StockTechnicalClient::StockTechnicalClient(const StockTechnicalClient &other) : 
 
 
 
-std::string StockTechnicalClient::bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period, std::optional<double> stddev) {
+std::string StockTechnicalClient::bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(period), uniffi::FfiConverterOptionalDouble::lower(stddev)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(period)));
 }
 std::string StockTechnicalClient::kdj_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> r_period, std::optional<uint32_t> k_period, std::optional<uint32_t> d_period) {
     auto ptr = this->_uniffi_internal_clone_pointer();
@@ -1649,7 +1649,6 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
         this->instance
     );
 }
-
 
 
 
@@ -3081,53 +3080,6 @@ uint64_t FfiConverterOptionalUInt64::allocation_size(const std::optional<uint64_
 
     if (val) {
         ret += FfiConverterUInt64::allocation_size(val.value());
-    }
-
-    return ret;
-}
-
-std::optional<double> FfiConverterOptionalDouble::lift(RustBuffer buf) {
-    auto stream = RustStream(&buf);
-    auto ret = FfiConverterOptionalDouble::read(stream);
-
-    rustbuffer_free(buf);
-
-    return ret;
-}
-
-RustBuffer FfiConverterOptionalDouble::lower(const std::optional<double>& val) {
-    auto buf = rustbuffer_alloc(FfiConverterOptionalDouble::allocation_size(val));
-    auto stream = RustStream(&buf);
-
-    FfiConverterOptionalDouble::write(stream, val);
-
-    return buf;
-}
-
-std::optional<double> FfiConverterOptionalDouble::read(RustStream &stream) {
-    char has_value;
-
-    stream.get(has_value);
-    if (has_value) {
-        return std::make_optional(FfiConverterDouble::read(stream));
-    } else {
-        return std::nullopt;
-    }
-}
-
-void FfiConverterOptionalDouble::write(RustStream &stream, const std::optional<double>& value) {
-    stream.put(static_cast<uint8_t>(!!value));
-
-    if (value) {
-        FfiConverterDouble::write(stream, value.value());
-    }
-}
-
-uint64_t FfiConverterOptionalDouble::allocation_size(const std::optional<double> &val) {
-    uint64_t ret = 1;
-
-    if (val) {
-        ret += FfiConverterDouble::allocation_size(val.value());
     }
 
     return ret;

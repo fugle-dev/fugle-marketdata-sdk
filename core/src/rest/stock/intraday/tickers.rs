@@ -13,6 +13,10 @@ pub struct TickersRequestBuilder<'a> {
     market: Option<String>,
     industry: Option<String>,
     is_normal: Option<bool>,
+    is_attention: Option<bool>,
+    is_disposition: Option<bool>,
+    is_halted: Option<bool>,
+    symbol: Option<String>,
 }
 
 impl<'a> TickersRequestBuilder<'a> {
@@ -24,6 +28,10 @@ impl<'a> TickersRequestBuilder<'a> {
             market: None,
             industry: None,
             is_normal: None,
+            is_attention: None,
+            is_disposition: None,
+            is_halted: None,
+            symbol: None,
         }
     }
 
@@ -57,13 +65,44 @@ impl<'a> TickersRequestBuilder<'a> {
         self
     }
 
+    /// Filter to attention-stock (注意股) tickers
+    pub fn is_attention(mut self, is_attention: bool) -> Self {
+        self.is_attention = Some(is_attention);
+        self
+    }
+
+    /// Filter to disposition-stock (處置股) tickers
+    pub fn is_disposition(mut self, is_disposition: bool) -> Self {
+        self.is_disposition = Some(is_disposition);
+        self
+    }
+
+    /// Filter to halted (暫停交易) tickers
+    pub fn is_halted(mut self, is_halted: bool) -> Self {
+        self.is_halted = Some(is_halted);
+        self
+    }
+
+    /// Restrict to the given symbols (comma-separated, e.g. "2330,2317")
+    pub fn symbol(mut self, symbol: &str) -> Self {
+        self.symbol = Some(symbol.to_string());
+        self
+    }
+
     /// Execute the request and return the tickers
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let typ = self.typ.as_deref().ok_or_else(|| MarketDataError::ConfigError(
             "type parameter is required for tickers endpoint".to_string(),
         ))?;
 
@@ -82,15 +121,24 @@ impl<'a> TickersRequestBuilder<'a> {
         if let Some(is_normal) = self.is_normal {
             query_params.push(crate::rest::query_pair("isNormal", is_normal));
         }
+        if let Some(is_attention) = self.is_attention {
+            query_params.push(crate::rest::query_pair("isAttention", is_attention));
+        }
+        if let Some(is_disposition) = self.is_disposition {
+            query_params.push(crate::rest::query_pair("isDisposition", is_disposition));
+        }
+        if let Some(is_halted) = self.is_halted {
+            query_params.push(crate::rest::query_pair("isHalted", is_halted));
+        }
+        if let Some(symbol) = &self.symbol {
+            query_params.push(crate::rest::query_pair("symbol", symbol));
+        }
 
-        let url = format!(
+        Ok(format!(
             "{}/stock/intraday/tickers?{}",
             self.client.get_base_url(),
             query_params.join("&")
-        );
-
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        ))
     }
 }
 
@@ -148,5 +196,26 @@ mod tests {
         assert_eq!(builder.market, Some("TSE".to_string()));
         assert_eq!(builder.industry, Some("24".to_string()));
         assert_eq!(builder.is_normal, Some(true));
+    }
+
+    #[test]
+    fn test_tickers_url_includes_status_filters_and_symbol() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = TickersRequestBuilder::new(&client)
+            .typ("EQUITY")
+            .is_attention(true)
+            .is_disposition(false)
+            .is_halted(true)
+            .symbol("2330,2317")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/intraday/tickers?type=EQUITY&isAttention=true&isDisposition=false\
+                 &isHalted=true&symbol=2330%2C2317",
+                client.get_base_url()
+            )
+        );
     }
 }

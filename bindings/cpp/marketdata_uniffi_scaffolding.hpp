@@ -70,9 +70,9 @@ void * uniffi_marketdata_uniffi_fn_method_stockclient_snapshot(void * ptr, RustC
 void * uniffi_marketdata_uniffi_fn_method_stockclient_technical(void * ptr, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_clone_stockcorporateactionsclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_stockcorporateactionsclient(void * ptr, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(void * ptr, RustBuffer date, RustBuffer start_date, RustBuffer end_date, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(void * ptr, RustBuffer date, RustBuffer start_date, RustBuffer end_date, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(void * ptr, RustBuffer date, RustBuffer start_date, RustBuffer end_date, RustCallStatus *out_status);
+RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(void * ptr, RustBuffer start_date, RustBuffer end_date, RustCallStatus *out_status);
+RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(void * ptr, RustBuffer start_date, RustBuffer end_date, RustCallStatus *out_status);
+RustBuffer uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(void * ptr, RustBuffer start_date, RustBuffer end_date, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_clone_stockhistoricalclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_stockhistoricalclient(void * ptr, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_candles_sync(void * ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustCallStatus *out_status);
@@ -98,7 +98,7 @@ RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_movers_sync(vo
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_quotes_sync(void * ptr, RustBuffer market, RustBuffer type_filter, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_clone_stocktechnicalclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_stocktechnicalclient(void * ptr, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(void * ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period, RustBuffer stddev, RustCallStatus *out_status);
+RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(void * ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_kdj_sync(void * ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer r_period, RustBuffer k_period, RustBuffer d_period, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_macd_sync(void * ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer fast, RustBuffer slow, RustBuffer signal, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_rsi_sync(void * ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period, RustCallStatus *out_status);

@@ -727,15 +727,15 @@ struct StockCorporateActionsClient
     /**
      * Get capital structure changes (sync/blocking)
      */
-    std::string capital_changes_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string capital_changes_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
     /**
      * Get dividend announcements (sync/blocking)
      */
-    std::string dividends_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string dividends_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
     /**
      * Get IPO listing applicants (sync/blocking)
      */
-    std::string listing_applicants_sync(std::optional<std::string> date, std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string listing_applicants_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
 
     private:
     StockCorporateActionsClient(const StockCorporateActionsClient &);
@@ -984,7 +984,7 @@ struct StockTechnicalClient
     /**
      * Get Bollinger Bands (sync/blocking)
      */
-    std::string bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period, std::optional<double> stddev);
+    std::string bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
     /**
      * Get KDJ (sync/blocking)
      */
@@ -2037,13 +2037,6 @@ struct FfiConverterOptionalUInt64 {
     static std::optional<uint64_t> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<uint64_t>& value);
     static uint64_t allocation_size(const std::optional<uint64_t> &val);
-};
-struct FfiConverterOptionalDouble {
-    static std::optional<double> lift(RustBuffer buf);
-    static RustBuffer lower(const std::optional<double>& val);
-    static std::optional<double> read(RustStream &stream);
-    static void write(RustStream &stream, const std::optional<double>& value);
-    static uint64_t allocation_size(const std::optional<double> &val);
 };
 struct FfiConverterOptionalBool {
     static std::optional<bool> lift(RustBuffer buf);

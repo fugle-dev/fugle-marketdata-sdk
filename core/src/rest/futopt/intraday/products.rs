@@ -15,6 +15,7 @@ pub struct ProductsRequestBuilder<'a> {
     exchange: Option<String>,
     session: Option<String>,
     contract_type: Option<ContractType>,
+    status: Option<String>,
 }
 
 impl<'a> ProductsRequestBuilder<'a> {
@@ -26,6 +27,7 @@ impl<'a> ProductsRequestBuilder<'a> {
             exchange: None,
             session: None,
             contract_type: None,
+            status: None,
         }
     }
 
@@ -58,12 +60,25 @@ impl<'a> ProductsRequestBuilder<'a> {
         self
     }
 
+    /// Set the product status filter ("N", "P", "U")
+    pub fn status(mut self, status: &str) -> Self {
+        self.status = Some(status.to_string());
+        self
+    }
+
     /// Execute the request and return the products response
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
         // type is required for products endpoint
         let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(
             "type parameter is required for products endpoint".to_string(),
@@ -82,16 +97,15 @@ impl<'a> ProductsRequestBuilder<'a> {
         if let Some(contract_type) = &self.contract_type {
             query_params.push(crate::rest::query_pair("contractType", contract_type.as_code()));
         }
+        if let Some(status) = &self.status {
+            query_params.push(crate::rest::query_pair("status", status));
+        }
 
-        let url = format!(
+        Ok(format!(
             "{}/futopt/intraday/products?{}",
             self.client.get_base_url(),
             query_params.join("&")
-        );
-
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        ))
     }
 }
 
@@ -178,5 +192,23 @@ mod tests {
                 .contract_type(ct);
             assert_eq!(builder.contract_type, Some(ct));
         }
+    }
+
+    #[test]
+    fn test_products_url_includes_status() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = ProductsRequestBuilder::new(&client)
+            .typ(FutOptType::Option)
+            .contract_type(ContractType::Index)
+            .status("N")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/intraday/products?type=OPTION&contractType=I&status=N",
+                client.get_base_url()
+            )
+        );
     }
 }

@@ -11,6 +11,7 @@ pub struct CandlesRequestBuilder<'a> {
     symbol: Option<String>,
     timeframe: Option<String>,
     odd_lot: Option<bool>,
+    sort: Option<String>,
 }
 
 impl<'a> CandlesRequestBuilder<'a> {
@@ -21,6 +22,7 @@ impl<'a> CandlesRequestBuilder<'a> {
             symbol: None,
             timeframe: None,
             odd_lot: None,
+            sort: None,
         }
     }
 
@@ -39,6 +41,12 @@ impl<'a> CandlesRequestBuilder<'a> {
     /// Set whether to query odd lot data
     pub fn odd_lot(mut self, odd_lot: bool) -> Self {
         self.odd_lot = Some(odd_lot);
+        self
+    }
+
+    /// Set the sort order: `"asc"` or `"desc"`.
+    pub fn sort(mut self, sort: &str) -> Self {
+        self.sort = Some(sort.to_string());
         self
     }
 
@@ -69,6 +77,9 @@ impl<'a> CandlesRequestBuilder<'a> {
         }
         if self.odd_lot == Some(true) {
             query_params.push("type=oddlot".to_string());
+        }
+        if let Some(sort) = &self.sort {
+            query_params.push(crate::rest::query_pair("sort", sort));
         }
 
         if !query_params.is_empty() {
@@ -118,5 +129,20 @@ mod tests {
 
         let url = CandlesRequestBuilder::new(&client).symbol("2330").odd_lot(false).url().unwrap();
         assert_eq!(url, format!("{}/stock/intraday/candles/2330", base));
+    }
+
+    #[test]
+    fn test_candles_url_includes_sort() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = CandlesRequestBuilder::new(&client)
+            .symbol("2330")
+            .timeframe("5")
+            .sort("desc")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!("{}/stock/intraday/candles/2330?timeframe=5&sort=desc", client.get_base_url())
+        );
     }
 }

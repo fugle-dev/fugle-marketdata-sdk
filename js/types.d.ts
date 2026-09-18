@@ -1946,17 +1946,17 @@ export interface StockTechnicalClient {
   /** Get MACD for a stock */
   macd(symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
   /** Get Bollinger Bands for a stock */
-  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number): Promise<BbResponse>;
+  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<BbResponse>;
 }
 
 /** Stock corporate actions client interface */
 export interface StockCorporateActionsClient {
   /** Get capital changes */
-  capitalChanges(date?: string | RestStockCorporateActionsCapitalChangesParams, startDate?: string, endDate?: string): Promise<CapitalChangesResponse>;
+  capitalChanges(startDate?: string | RestStockCorporateActionsCapitalChangesParams, endDate?: string): Promise<CapitalChangesResponse>;
   /** Get dividends */
-  dividends(date?: string | RestStockCorporateActionsDividendsParams, startDate?: string, endDate?: string): Promise<DividendsResponse>;
+  dividends(startDate?: string | RestStockCorporateActionsDividendsParams, endDate?: string): Promise<DividendsResponse>;
   /** Get listing applicants */
-  listingApplicants(date?: string | RestStockCorporateActionsListingApplicantsParams, startDate?: string, endDate?: string): Promise<ListingApplicantsResponse>;
+  listingApplicants(startDate?: string | RestStockCorporateActionsListingApplicantsParams, endDate?: string): Promise<ListingApplicantsResponse>;
 }
 
 /** FutOpt historical client interface */

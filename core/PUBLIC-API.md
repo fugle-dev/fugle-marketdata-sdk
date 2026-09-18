@@ -35,6 +35,36 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — REST query params checked against the server (#164, #166, #168)
+
+The server's DTOs (fugle-realtime `apps/api-gateway`, `apps/service-stock`)
+are the source of truth, not developer.fugle.tw. Builders only set keys; values
+are left for the server to reject.
+
+- `+` `stock::intraday::CandlesRequestBuilder::sort`
+- `+` `stock::intraday::TickersRequestBuilder::is_attention`, `is_disposition`,
+  `is_halted`, `symbol`
+- `+` `stock::snapshot::MoversRequestBuilder::type_filter` (sent as `type`),
+  `gt`, `gte`, `lt`, `lte`, `eq`
+- `+` `stock::snapshot::ActivesRequestBuilder::type_filter` (sent as `type`)
+- `+` `stock::corporate_actions::CapitalChangesRequestBuilder::sort`
+- `+` `stock::corporate_actions::ListingApplicantsRequestBuilder::exchange`,
+  `sort`
+- `+` `stock::corporate_actions::DividendsRequestBuilder::exchange`, `sort`
+- `+` `futopt::intraday::TickersRequestBuilder::product`
+- `+` `futopt::intraday::ProductsRequestBuilder::status`
+- `+` `futopt::historical::FutOptHistoricalCandlesRequestBuilder::strike_price`
+  (sent as `strikePrice`), `call_put` (sent as `callPut`)
+- `-` `stock::technical::BbRequestBuilder::stddev` — the server does not read
+  `stddev`; setting it changed nothing (#166).
+- `-` `stock::technical::KdjRequestBuilder::period` — the server takes
+  `rPeriod`/`kPeriod`/`dPeriod` and computes the window itself; a lone
+  `period` got HTTP 400 in prod (#166).
+- `-` `stock::corporate_actions::CapitalChangesRequestBuilder::date`,
+  `DividendsRequestBuilder::date`, `ListingApplicantsRequestBuilder::date` —
+  prod answers `?date=` with 400 `property date should not exist` on
+  capital-changes and listing-applicants, and ignores it on dividends (#168).
+
 ### Unreleased — health check probe and `measure_latency()` (#150)
 
 - `~` `HealthCheckConfig` gains `probe_enabled: bool`,

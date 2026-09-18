@@ -773,7 +773,6 @@ class StockTechnicalClient:
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
         period: Optional[int] = None,
-        stddev: Optional[float] = None,
     ) -> dict[str, Any]:
         """Get Bollinger Bands (BB) data.
 
@@ -783,7 +782,6 @@ class StockTechnicalClient:
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
             period: Moving average period (default 20)
-            stddev: Standard deviation multiplier (default 2.0)
 
         Returns:
             Bollinger Bands data with upper, middle, lower bands
@@ -855,7 +853,6 @@ class StockTechnicalClient:
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
         period: Optional[int] = None,
-        stddev: Optional[float] = None,
     ) -> dict[str, Any]:
         """Blocking version of `bb()`."""
         ...
@@ -1062,14 +1059,12 @@ class StockCorporateActionsClient:
     async def capital_changes_async(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get capital changes (stock splits, rights issues, etc.)
 
         Args:
-            date: Specific date (YYYY-MM-DD)
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
 
@@ -1092,14 +1087,12 @@ class StockCorporateActionsClient:
     async def dividends_async(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get dividend announcements.
 
         Args:
-            date: Specific date (YYYY-MM-DD)
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
 
@@ -1122,14 +1115,12 @@ class StockCorporateActionsClient:
     async def listing_applicants_async(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get IPO listing applicants.
 
         Args:
-            date: Specific date (YYYY-MM-DD)
             start_date: Start date for range query (YYYY-MM-DD)
             end_date: End date for range query (YYYY-MM-DD)
 
@@ -1151,7 +1142,6 @@ class StockCorporateActionsClient:
     def capital_changes(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1161,7 +1151,6 @@ class StockCorporateActionsClient:
     def dividends(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1171,7 +1160,6 @@ class StockCorporateActionsClient:
     def listing_applicants(
         self,
         *,
-        date: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:

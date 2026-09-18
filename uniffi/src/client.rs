@@ -612,11 +612,10 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-        stddev: Option<f64>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_bb_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)
+            build_bb_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
         .map_err(|e| crate::errors::other_error(e.to_string()))??;
@@ -690,9 +689,8 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-        stddev: Option<f64>,
     ) -> Result<String, MarketDataError> {
-        let result = build_bb_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)?;
+        let result = build_bb_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)?;
         to_json(&result)
     }
 }
@@ -723,13 +721,12 @@ impl StockCorporateActionsClient {
     /// Get capital structure changes (async)
     pub async fn get_capital_changes(
         &self,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_capital_changes_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
+            build_capital_changes_request(&inner, start_date.as_deref(), end_date.as_deref())
         })
         .await
         .map_err(|e| crate::errors::other_error(e.to_string()))??;
@@ -739,13 +736,12 @@ impl StockCorporateActionsClient {
     /// Get dividend announcements (async)
     pub async fn get_dividends(
         &self,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_dividends_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
+            build_dividends_request(&inner, start_date.as_deref(), end_date.as_deref())
         })
         .await
         .map_err(|e| crate::errors::other_error(e.to_string()))??;
@@ -755,13 +751,12 @@ impl StockCorporateActionsClient {
     /// Get IPO listing applicants (async)
     pub async fn get_listing_applicants(
         &self,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_listing_applicants_request(&inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())
+            build_listing_applicants_request(&inner, start_date.as_deref(), end_date.as_deref())
         })
         .await
         .map_err(|e| crate::errors::other_error(e.to_string()))??;
@@ -774,33 +769,30 @@ impl StockCorporateActionsClient {
     /// Get capital structure changes (sync/blocking)
     pub fn capital_changes_sync(
         &self,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Result<String, MarketDataError> {
-        let result = build_capital_changes_request(&self.inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())?;
+        let result = build_capital_changes_request(&self.inner, start_date.as_deref(), end_date.as_deref())?;
         to_json(&result)
     }
 
     /// Get dividend announcements (sync/blocking)
     pub fn dividends_sync(
         &self,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Result<String, MarketDataError> {
-        let result = build_dividends_request(&self.inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())?;
+        let result = build_dividends_request(&self.inner, start_date.as_deref(), end_date.as_deref())?;
         to_json(&result)
     }
 
     /// Get IPO listing applicants (sync/blocking)
     pub fn listing_applicants_sync(
         &self,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>,
     ) -> Result<String, MarketDataError> {
-        let result = build_listing_applicants_request(&self.inner, date.as_deref(), start_date.as_deref(), end_date.as_deref())?;
+        let result = build_listing_applicants_request(&self.inner, start_date.as_deref(), end_date.as_deref())?;
         to_json(&result)
     }
 }
@@ -1295,7 +1287,6 @@ fn build_bb_request(
     to: Option<&str>,
     timeframe: Option<&str>,
     period: Option<u32>,
-    stddev: Option<f64>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.bb().symbol(symbol);
@@ -1303,20 +1294,17 @@ fn build_bb_request(
     if let Some(t) = to { builder = builder.to(t); }
     if let Some(tf) = timeframe { builder = builder.timeframe(tf); }
     if let Some(p) = period { builder = builder.period(p); }
-    if let Some(s) = stddev { builder = builder.stddev(s); }
     builder.send()
 }
 
 /// Build capital changes request
 fn build_capital_changes_request(
     client: &CoreRestClient,
-    date: Option<&str>,
     start_date: Option<&str>,
     end_date: Option<&str>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let corporate = client.stock().corporate_actions();
     let mut builder = corporate.capital_changes();
-    if let Some(d) = date { builder = builder.date(d); }
     if let Some(sd) = start_date { builder = builder.start_date(sd); }
     if let Some(ed) = end_date { builder = builder.end_date(ed); }
     builder.send()
@@ -1325,13 +1313,11 @@ fn build_capital_changes_request(
 /// Build dividends request
 fn build_dividends_request(
     client: &CoreRestClient,
-    date: Option<&str>,
     start_date: Option<&str>,
     end_date: Option<&str>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let corporate = client.stock().corporate_actions();
     let mut builder = corporate.dividends();
-    if let Some(d) = date { builder = builder.date(d); }
     if let Some(sd) = start_date { builder = builder.start_date(sd); }
     if let Some(ed) = end_date { builder = builder.end_date(ed); }
     builder.send()
@@ -1340,13 +1326,11 @@ fn build_dividends_request(
 /// Build listing applicants request
 fn build_listing_applicants_request(
     client: &CoreRestClient,
-    date: Option<&str>,
     start_date: Option<&str>,
     end_date: Option<&str>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let corporate = client.stock().corporate_actions();
     let mut builder = corporate.listing_applicants();
-    if let Some(d) = date { builder = builder.date(d); }
     if let Some(sd) = start_date { builder = builder.start_date(sd); }
     if let Some(ed) = end_date { builder = builder.end_date(ed); }
     builder.send()

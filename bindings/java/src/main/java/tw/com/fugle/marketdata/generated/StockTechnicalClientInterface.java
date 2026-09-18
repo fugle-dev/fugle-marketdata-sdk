@@ -16,12 +16,12 @@ public interface StockTechnicalClientInterface {
     /**
      * Get Bollinger Bands (sync/blocking)
      */
-    public String bbSync(String symbol, String from, String to, String timeframe, Integer period, Double stddev) throws MarketDataException;
+    public String bbSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException;
     
     /**
      * Get Bollinger Bands (async)
      */
-    public CompletableFuture<String> getBb(String symbol, String from, String to, String timeframe, Integer period, Double stddev) ;
+    public CompletableFuture<String> getBb(String symbol, String from, String to, String timeframe, Integer period) ;
     
     /**
      * Get KDJ (Stochastic Oscillator) (async)

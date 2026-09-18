@@ -1611,11 +1611,10 @@ impl StockTechnicalClient {
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
     ///     period: Moving average period (default 20)
-    ///     stddev: Standard deviation multiplier (default 2.0)
     ///
     /// Returns:
     ///     Awaitable[dict]: Bollinger Bands data with upper, middle, lower bands
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, stddev=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
     pub fn bb_async<'py>(
         &self,
         py: Python<'py>,
@@ -1623,8 +1622,7 @@ impl StockTechnicalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
-        stddev: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.technical.bb", &_extra);
         let client = self.inner.clone();
@@ -1644,9 +1642,6 @@ impl StockTechnicalClient {
                 }
                 if let Some(p) = period {
                     builder = builder.period(p);
-                }
-                if let Some(sd) = stddev {
-                    builder = builder.stddev(sd);
                 }
                 builder.send()
             })
@@ -1786,7 +1781,7 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `bb()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, stddev=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
     pub fn bb(
         &self,
         py: Python<'_>,
@@ -1794,8 +1789,7 @@ impl StockTechnicalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
-        stddev: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.technical.bb", &_extra);
         let inner = self.inner.clone();
@@ -1807,7 +1801,6 @@ impl StockTechnicalClient {
             if let Some(t) = to_date { builder = builder.to(&t); }
             if let Some(tf) = timeframe { builder = builder.timeframe(&tf); }
             if let Some(p) = period { builder = builder.period(p); }
-            if let Some(sd) = stddev { builder = builder.stddev(sd); }
             builder.send()
         });
         match result {
@@ -1830,7 +1823,6 @@ impl StockCorporateActionsClient {
     /// Get capital changes (stock splits, rights issues, etc.)
     ///
     /// Args:
-    ///     date: Specific date (YYYY-MM-DD)
     ///     start_date: Start date for range query (YYYY-MM-DD)
     ///     end_date: End date for range query (YYYY-MM-DD)
     ///
@@ -1844,11 +1836,10 @@ impl StockCorporateActionsClient {
     ///         end_date="2024-01-31"
     ///     )
     ///     ```
-    #[pyo3(signature = (date=None, start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
     pub fn capital_changes_async<'py>(
         &self,
         py: Python<'py>,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -1859,9 +1850,6 @@ impl StockCorporateActionsClient {
                 let stock = client.stock();
                 let corp = stock.corporate_actions();
                 let mut builder = corp.capital_changes();
-                if let Some(d) = date {
-                    builder = builder.date(&d);
-                }
                 if let Some(sd) = start_date {
                     builder = builder.start_date(&sd);
                 }
@@ -1883,7 +1871,6 @@ impl StockCorporateActionsClient {
     /// Get dividend announcements
     ///
     /// Args:
-    ///     date: Specific date (YYYY-MM-DD)
     ///     start_date: Start date for range query (YYYY-MM-DD)
     ///     end_date: End date for range query (YYYY-MM-DD)
     ///
@@ -1897,11 +1884,10 @@ impl StockCorporateActionsClient {
     ///         end_date="2024-12-31"
     ///     )
     ///     ```
-    #[pyo3(signature = (date=None, start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
     pub fn dividends_async<'py>(
         &self,
         py: Python<'py>,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -1912,9 +1898,6 @@ impl StockCorporateActionsClient {
                 let stock = client.stock();
                 let corp = stock.corporate_actions();
                 let mut builder = corp.dividends();
-                if let Some(d) = date {
-                    builder = builder.date(&d);
-                }
                 if let Some(sd) = start_date {
                     builder = builder.start_date(&sd);
                 }
@@ -1936,7 +1919,6 @@ impl StockCorporateActionsClient {
     /// Get IPO listing applicants
     ///
     /// Args:
-    ///     date: Specific date (YYYY-MM-DD)
     ///     start_date: Start date for range query (YYYY-MM-DD)
     ///     end_date: End date for range query (YYYY-MM-DD)
     ///
@@ -1947,11 +1929,10 @@ impl StockCorporateActionsClient {
     ///     ```python
     ///     applicants = await client.stock.corporate_actions.listing_applicants()
     ///     ```
-    #[pyo3(signature = (date=None, start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
     pub fn listing_applicants_async<'py>(
         &self,
         py: Python<'py>,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -1962,9 +1943,6 @@ impl StockCorporateActionsClient {
                 let stock = client.stock();
                 let corp = stock.corporate_actions();
                 let mut builder = corp.listing_applicants();
-                if let Some(d) = date {
-                    builder = builder.date(&d);
-                }
                 if let Some(sd) = start_date {
                     builder = builder.start_date(&sd);
                 }
@@ -1984,11 +1962,10 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `capital_changes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (date=None, start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
     pub fn capital_changes(
         &self,
         py: Python<'_>,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -1998,7 +1975,6 @@ impl StockCorporateActionsClient {
             let stock = inner.stock();
             let corp = stock.corporate_actions();
             let mut builder = corp.capital_changes();
-            if let Some(d) = date { builder = builder.date(&d); }
             if let Some(sd) = start_date { builder = builder.start_date(&sd); }
             if let Some(ed) = end_date { builder = builder.end_date(&ed); }
             builder.send()
@@ -2010,11 +1986,10 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `dividends()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (date=None, start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
     pub fn dividends(
         &self,
         py: Python<'_>,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -2024,7 +1999,6 @@ impl StockCorporateActionsClient {
             let stock = inner.stock();
             let corp = stock.corporate_actions();
             let mut builder = corp.dividends();
-            if let Some(d) = date { builder = builder.date(&d); }
             if let Some(sd) = start_date { builder = builder.start_date(&sd); }
             if let Some(ed) = end_date { builder = builder.end_date(&ed); }
             builder.send()
@@ -2036,11 +2010,10 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `listing_applicants()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (date=None, start_date=None, end_date=None, **_extra))]
+    #[pyo3(signature = (start_date=None, end_date=None, **_extra))]
     pub fn listing_applicants(
         &self,
         py: Python<'_>,
-        date: Option<String>,
         start_date: Option<String>,
         end_date: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -2050,7 +2023,6 @@ impl StockCorporateActionsClient {
             let stock = inner.stock();
             let corp = stock.corporate_actions();
             let mut builder = corp.listing_applicants();
-            if let Some(d) = date { builder = builder.date(&d); }
             if let Some(sd) = start_date { builder = builder.start_date(&sd); }
             if let Some(ed) = end_date { builder = builder.end_date(&ed); }
             builder.send()
