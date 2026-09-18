@@ -1470,7 +1470,7 @@ class ReconnectConfig:
 
         config = ReconnectConfig(
             enabled=True,
-            max_attempts=5,
+            max_attempts=10,
             initial_delay_ms=1000,
             max_delay_ms=60000
         )
@@ -1482,7 +1482,7 @@ class ReconnectConfig:
     """Whether auto-reconnect is enabled."""
 
     max_attempts: int
-    """Maximum number of reconnection attempts."""
+    """Maximum number of reconnection attempts; 0 means unlimited."""
 
     initial_delay_ms: int
     """Initial delay in milliseconds for exponential backoff."""
@@ -1494,7 +1494,7 @@ class ReconnectConfig:
         self,
         *,
         enabled: bool = True,
-        max_attempts: int = 5,
+        max_attempts: int = 0,
         initial_delay_ms: int = 1000,
         max_delay_ms: int = 60000,
     ) -> None:
@@ -1502,18 +1502,19 @@ class ReconnectConfig:
 
         Args:
             enabled: Whether auto-reconnect is enabled (default: True)
-            max_attempts: Maximum reconnection attempts (default: 5, min: 1)
+            max_attempts: Maximum reconnection attempts; 0 means unlimited
+                (default: 0, so the client keeps retrying at most max_delay_ms apart)
             initial_delay_ms: Initial delay for exponential backoff (default: 1000ms, min: 100ms)
             max_delay_ms: Maximum delay cap (default: 60000ms = 60s)
 
         Raises:
-            ValueError: If max_attempts < 1, initial_delay_ms < 100, or max_delay_ms < initial_delay_ms
+            ValueError: If initial_delay_ms < 100 or max_delay_ms < initial_delay_ms
         """
         ...
 
     @staticmethod
     def default_config() -> "ReconnectConfig":
-        """Create a default reconnect configuration (enabled with 5 attempts)."""
+        """Create a default reconnect configuration (enabled, unlimited attempts)."""
         ...
 
     @staticmethod
@@ -1591,7 +1592,8 @@ class WebSocketClient:
                 books — branch on the frame's isTrial before acting on a price.
                 Asking for a version a product does not serve raises TypeError
                 rather than silently falling back.
-            reconnect: Optional reconnect configuration (default: enabled with 5 attempts)
+            reconnect: Optional reconnect configuration (default: enabled, unlimited
+                attempts; pass ReconnectConfig.disabled() to turn it off)
             health_check: Optional health check configuration (default: disabled)
             tls_ca_file: Path to a PEM-encoded root CA to trust (in addition to
                 the system trust store). Mutually exclusive with tls_root_cert_pem.

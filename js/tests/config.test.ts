@@ -129,13 +129,20 @@ describe('WebSocketClient constructor', () => {
       expect(ws).toBeDefined();
     });
 
-    it('throws error for invalid maxAttempts', () => {
-      expect(() => {
-        new WebSocketClient({
-          apiKey: 'test-key',
-          reconnect: { maxAttempts: 0 }
-        });
-      }).toThrow();
+    it('accepts maxAttempts 0 as unlimited', () => {
+      const ws = new WebSocketClient({
+        apiKey: 'test-key',
+        reconnect: { maxAttempts: 0 }
+      });
+      expect(ws).toBeDefined();
+    });
+
+    it('accepts reconnect disabled', () => {
+      const ws = new WebSocketClient({
+        apiKey: 'test-key',
+        reconnect: { enabled: false }
+      });
+      expect(ws).toBeDefined();
     });
 
     it('throws error for invalid initialDelayMs', () => {

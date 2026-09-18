@@ -118,7 +118,9 @@ const client = new RestClient({ sdkToken: 'your-sdk-token' });
 
 ### Reconnection Options
 
-Control WebSocket automatic reconnection behavior:
+Auto-reconnect is on by default: after an unexpected drop the client
+reconnects with exponential backoff, without an attempt limit (waits capped
+at `maxDelayMs`), and subscribes again. Pass `reconnect` to tune it:
 
 ```javascript
 const { WebSocketClient } = require('@fugle/marketdata');
@@ -133,9 +135,14 @@ const ws = new WebSocketClient({
 });
 ```
 
+To turn it off: `new WebSocketClient({ apiKey: 'your-key', reconnect: { enabled: false } })`.
+
 **ReconnectOptions:**
 
-- `maxAttempts` (number): Maximum reconnection attempts (default: 5, min: 1)
+- `enabled` (boolean): Whether auto-reconnect is enabled (default: true)
+- `maxAttempts` (number): Maximum reconnection attempts; 0 means unlimited
+  (default: 0). With a limit, the `error` event reports code 3005 once the
+  last attempt fails
 - `initialDelayMs` (number): Initial delay for exponential backoff (default: 1000, min: 100)
 - `maxDelayMs` (number): Maximum delay cap (default: 60000)
 

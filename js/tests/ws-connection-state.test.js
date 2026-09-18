@@ -63,6 +63,22 @@ describe.each(['stock', 'futopt'])('%s isConnected / isClosed follow core connec
     expect(ws.isClosed).toBe(false);
   });
 
+  test('without a reconnect option the client reconnects after a drop (#149)', async () => {
+    await setup();
+    let authenticated = 0;
+    ws.on('authenticated', () => {
+      authenticated += 1;
+    });
+    const reconnects = [];
+    ws.on('reconnect', (event) => reconnects.push(event));
+    await ws.connect();
+
+    for (const socket of wss.clients) socket.terminate();
+    await waitFor(() => authenticated === 2, 'reauthentication');
+    expect(reconnects[0]).toEqual({ attempt: 1 });
+    expect(ws.isConnected).toBe(true);
+  });
+
   test('isConnected is false while auto-reconnecting and true once reconnected', async () => {
     await setup({ reconnect: { enabled: true, maxAttempts: 3, initialDelayMs: 300, maxDelayMs: 300 } });
     const duringReconnect = [];
@@ -84,7 +100,7 @@ describe.each(['stock', 'futopt'])('%s isConnected / isClosed follow core connec
   });
 
   test('a server close with no reconnect left marks the client closed by its disconnect listener (#86)', async () => {
-    await setup();
+    await setup({ reconnect: { enabled: false } });
     const inListener = [];
     ws.on('disconnect', () => inListener.push({ isConnected: ws.isConnected, isClosed: ws.isClosed }));
     await ws.connect();

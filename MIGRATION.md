@@ -196,26 +196,35 @@ distinguishes in practice:
 - Query params keep the order they appear in the object. The legacy SDK sorted
   them alphabetically.
 
-#### 5. Auto-reconnect is opt-in (matches the legacy SDKs)
+#### 5. Auto-reconnect is on by default
 
 The legacy SDKs do not have any auto-reconnect — when the WebSocket drops you
-get a `disconnect` event and that is it. This SDK ships an auto-reconnect
-machinery but **defaults to disabled** so behaviour matches the legacy SDKs.
-Enable it explicitly if you want it:
+get a `disconnect` event and that is it. This SDK **reconnects by default**:
+after an unexpected drop it retries with exponential backoff (1 s doubling up
+to 60 s) **without an attempt limit**, and subscribes again once it is back.
+The server closing with code 1000 or a 4xxx code (e.g. an auth failure) never
+triggers a reconnect.
+
+If your code reconnects on its own from a `disconnect` handler, remove that
+code or turn auto-reconnect off; otherwise both try to reconnect. Each
+attempt emits a `reconnect` event with its number, and `connect()` while one
+is in progress fails with code 2011.
 
 ```python
-ws = WebSocketClient(api_key="...", reconnect=ReconnectConfig(max_attempts=5))
+# Turn auto-reconnect off (legacy behaviour)
+ws = WebSocketClient(api_key="...", reconnect=ReconnectConfig.disabled())
+
+# Or keep it and give up after 10 attempts (error code 3005 once the last fails)
+ws = WebSocketClient(api_key="...", reconnect=ReconnectConfig(max_attempts=10))
 ```
 
 ```javascript
-const ws = new WebSocketClient({
-  apiKey: '...',
-  reconnect: { maxAttempts: 5, initialDelayMs: 1000, maxDelayMs: 60000 },
-});
-```
+// Turn auto-reconnect off (legacy behaviour)
+const ws = new WebSocketClient({ apiKey: '...', reconnect: { enabled: false } });
 
-When `reconnect` is omitted the client behaves exactly like the legacy SDKs:
-on `disconnect` you call `connect()` again yourself.
+// Or keep it and give up after 10 attempts (error code 3005 once the last fails)
+const ws = new WebSocketClient({ apiKey: '...', reconnect: { maxAttempts: 10 } });
+```
 
 #### 6. Python exception hierarchy is finer-grained
 
@@ -342,9 +351,11 @@ This SDK rejects that call with an error whose `code` is `2011`
 (`Already connected; call disconnect() first`) and keeps the
 existing connection. To reconnect, `disconnect()` first — calling `connect()`
 straight after `disconnect()`, or from a `disconnect` handler when
-auto-reconnect is off, is fine.
+auto-reconnect is off (`reconnect: { enabled: false }`; it is on by default,
+see §5), is fine.
 
 ```javascript
+// with reconnect: { enabled: false }
 ws.stock.on('disconnect', () => {
   ws.stock.connect().catch(console.error);
 });
@@ -747,13 +758,13 @@ client = RestClient(api_key="key", bearer_token="token")
 
 ---
 
-### "ConfigError: max_attempts must be >= 1"
+### "ConfigError: initial_delay must be >= 100ms"
 
 **Cause:** Invalid configuration value provided.
 
 **Solution:** Check configuration constraints in [docs/configuration.md](docs/configuration.md). For `ReconnectConfig`:
 
-- `max_attempts`: Must be >= 1
+- `max_attempts`: any value; 0 means unlimited (the default)
 - `initial_delay_ms`: Must be >= 100ms
 - `max_delay_ms`: Must be >= `initial_delay_ms`
 

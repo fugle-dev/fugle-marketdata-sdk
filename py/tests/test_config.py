@@ -96,7 +96,7 @@ class TestReconnectConfig:
         """Default construction uses core-aligned defaults."""
         config = ReconnectConfig()
         assert config.enabled == True
-        assert config.max_attempts == 5  # Was max_retries
+        assert config.max_attempts == 0  # unlimited (#149)
         assert config.initial_delay_ms == 1000  # Was base_delay_ms
         assert config.max_delay_ms == 60000
 
@@ -113,11 +113,10 @@ class TestReconnectConfig:
         assert config.initial_delay_ms == 2000
         assert config.max_delay_ms == 120000
 
-    def test_validation_max_attempts_zero(self):
-        """max_attempts must be >= 1."""
-        with pytest.raises(ValueError) as exc_info:
-            ReconnectConfig(max_attempts=0)
-        assert "max_attempts" in str(exc_info.value).lower() or "1" in str(exc_info.value)
+    def test_max_attempts_zero_is_unlimited(self):
+        """max_attempts=0 means unlimited attempts, not a validation error."""
+        config = ReconnectConfig(max_attempts=0)
+        assert config.max_attempts == 0
 
     def test_validation_initial_delay_too_small(self):
         """initial_delay_ms must be >= 100."""
@@ -135,7 +134,7 @@ class TestReconnectConfig:
         """ReconnectConfig.default_config() creates enabled config."""
         config = ReconnectConfig.default_config()
         assert config.enabled == True
-        assert config.max_attempts == 5
+        assert config.max_attempts == 0
 
     def test_static_disabled(self):
         """ReconnectConfig.disabled() creates disabled config."""

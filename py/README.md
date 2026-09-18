@@ -149,26 +149,32 @@ client = RestClient(sdk_token="your-sdk-token")
 
 ### Reconnection Config
 
-Control WebSocket automatic reconnection behavior:
+Auto-reconnect is on by default: after an unexpected drop the client
+reconnects with exponential backoff, without an attempt limit (waits capped
+at `max_delay_ms`), and subscribes again. Pass `reconnect` to tune it:
 
 ```python
 from fugle_marketdata import WebSocketClient, ReconnectConfig
 
 # Create custom reconnect configuration
 reconnect = ReconnectConfig(
-    enabled=True,
     max_attempts=10,
     initial_delay_ms=2000,
     max_delay_ms=120000
 )
 
 ws = WebSocketClient(api_key="your-key", reconnect=reconnect)
+
+# Turn auto-reconnect off
+ws = WebSocketClient(api_key="your-key", reconnect=ReconnectConfig.disabled())
 ```
 
 **ReconnectConfig Options:**
 
 - `enabled` (bool): Whether auto-reconnect is enabled (default: True)
-- `max_attempts` (int): Maximum reconnection attempts (default: 5, min: 1)
+- `max_attempts` (int): Maximum reconnection attempts; 0 means unlimited
+  (default: 0). With a limit, the `error` callback reports code 3005 once the
+  last attempt fails
 - `initial_delay_ms` (int): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `max_delay_ms` (int): Maximum delay cap (default: 60000ms)
 
