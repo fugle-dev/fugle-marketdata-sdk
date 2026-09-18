@@ -8,7 +8,7 @@ use crate::websocket::protocol::{
     ResubscribeFrame,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
+    ConnectionConfig, ConnectionEvent, ConnectionState, ReconnectionManager,
     SubscriptionManager,
 };
 use crate::MarketDataError;
@@ -131,7 +131,8 @@ pub(crate) async fn await_auth_response(
 /// on successful reconnect, `None` if reconnect is not configured, all
 /// attempts are exhausted, or `shutdown_requested` was set.
 ///
-/// Once `disconnect()` sets `shutdown_requested` this emits nothing further:
+/// Once `disconnect()` sets `shutdown_requested` this emits nothing further
+/// (`disconnect()` queues the final `Disconnected` itself, #98):
 /// the flag is checked before each attempt, after its backoff sleep, and
 /// inside [`try_connect`] before each lifecycle event. `shutdown_notify`
 /// ends a backoff sleep or connection attempt in progress, and a connection
@@ -218,8 +219,8 @@ pub(crate) async fn try_reconnect(
                 }
 
                 // Try to connect and authenticate. A shutdown drops the
-                // attempt where it stands and nothing further is reported
-                // (whether to report the stopped reconnect: #98).
+                // attempt where it stands; `disconnect()` reports the
+                // stopped reconnect itself (#98).
                 let connected = tokio::select! {
                     result = try_connect(
                         config.clone(),
@@ -274,23 +275,13 @@ pub(crate) async fn try_reconnect(
             }
             None => {
                 // Max attempts reached
-                {
-                    let mut st = write_state(&state);
-                    *st = ConnectionState::Closed {
-                        code: close_code,
-                        reason: "Max reconnection attempts reached".to_string(),
-                        intent: DisconnectIntent::Network,
-                    };
-                }
-
                 let attempts = {
                     let reconnection = reconnection.lock().await;
                     reconnection.current_attempt()
                 };
 
-                stream.emit(ConnectionEvent::ReconnectFailed {
-                    attempts,
-                });
+                // Unless a racing `disconnect()` reported the close first.
+                stream.reconnect_failed(&state, close_code, attempts);
 
                 return None;
             }

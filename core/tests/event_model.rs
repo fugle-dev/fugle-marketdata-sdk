@@ -12,8 +12,9 @@
 //!   `will_reconnect: false` and emits no `ReconnectFailed`;
 //! - (e) a retried close carries `will_reconnect: true`, followed by
 //!   `Reconnecting { 1 }` and `ReconnectFailed { 1 }`;
-//! - (f) `disconnect()` during a reconnect backoff emits nothing further and
-//!   leaves the state `Closed { Client }`.
+//! - (f) `disconnect()` during a reconnect backoff emits exactly one final
+//!   `Disconnected { Client, will_reconnect: false }` and nothing else, and
+//!   leaves the state `Closed { Client }` (#98).
 
 #![cfg(all(feature = "test-utils", feature = "tokio-comp"))]
 
@@ -56,10 +57,20 @@ fn is_reconnecting(event: &ConnectionEvent) -> bool {
     matches!(event, ConnectionEvent::Reconnecting { .. })
 }
 
-/// Nothing after `disconnect()` interrupted the reconnect, and the
-/// connection's close was not reported a second time.
-fn assert_silent_after_disconnect(after: &[ConnectionEvent], state: &ConnectionState) {
-    assert!(after.is_empty(), "events after disconnect(): {after:?}");
+/// `disconnect()` interrupted the reconnect with one final
+/// `Disconnected { Client, will_reconnect: false }` and nothing else (#98).
+fn assert_reconnect_stopped(after: &[ConnectionEvent], state: &ConnectionState) {
+    assert!(
+        matches!(
+            after,
+            [ConnectionEvent::Disconnected {
+                intent: DisconnectIntent::Client,
+                will_reconnect: false,
+                ..
+            }]
+        ),
+        "events after disconnect(): {after:?}"
+    );
     assert!(
         matches!(state, ConnectionState::Closed { intent: DisconnectIntent::Client, .. }),
         "{state:?}"
@@ -300,7 +311,7 @@ mod aio {
     }
 
     #[tokio::test]
-    async fn disconnect_during_reconnect_backoff_is_silent() {
+    async fn disconnect_during_reconnect_backoff_reports_the_final_disconnect() {
         // Capacity 2 so a reconnect that slipped through would succeed.
         let server = MockWsServer::start_with_capacity(2).await;
         let client = WebSocketClient::with_reconnection_config(config(&server), slow_retry());
@@ -313,7 +324,7 @@ mod aio {
         client.disconnect().await.ok();
 
         let after = with_events(&client, drain).await;
-        assert_silent_after_disconnect(&after, &client.state_async().await);
+        assert_reconnect_stopped(&after, &client.state_async().await);
     }
 }
 
@@ -432,7 +443,7 @@ mod sync {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn disconnect_during_reconnect_backoff_is_silent() {
+    async fn disconnect_during_reconnect_backoff_reports_the_final_disconnect() {
         let server = MockWsServer::start_with_capacity(2).await;
         let config = config(&server);
         let client = blocking(move || {
@@ -452,6 +463,6 @@ mod sync {
         })
         .await;
         assert!(before.last().is_some_and(is_reconnecting), "{before:?}");
-        assert_silent_after_disconnect(&after, &state);
+        assert_reconnect_stopped(&after, &state);
     }
 }
