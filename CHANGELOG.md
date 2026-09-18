@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.5 / core 0.9.0-rc.4 / uniffi 0.2.0-rc.4] - 2026-09-18
+
 ### Breaking
 
 - **Python: a REST keyword the endpoint does not take raises `TypeError`**
@@ -147,6 +149,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `futopt.historical.candles`: `strike_price`, `call_put`
 
 ### Fixed
+
+- **All languages: nothing follows the terminal disconnect any more** (#159).
+  `close_reported` gated the reconnect loop (#145) but not the live
+  connection's own reporting: reading the stop flag and queueing the event
+  were two separate lock acquisitions, so a `disconnect()` or `force_close()`
+  landing in between let an `Error` or `HeartbeatTimeout` queue *after* the
+  final `Disconnected { intent: Client, will_reconnect: false }`. The
+  deserialization-failure paths were wider still — they checked no flag at
+  all, so any malformed frame arriving in the poll window after
+  `force_close()` returned was reported after the close. Both the event and
+  the disconnect are now queued under one lock, and every current-connection
+  report goes through the same gate the reconnect loop already used.
 
 - **C#, Go, Java, C++: `ReconnectConfigRecord` is validated by core** (#153).
   `initial_delay_ms` below 100 ms (the connection-storm floor) and
