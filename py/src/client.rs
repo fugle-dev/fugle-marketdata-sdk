@@ -592,8 +592,8 @@ impl StockIntradayClient {
     ///     print(f"Last price: {quote['lastPrice']}")
     ///     print(f"Change: {quote['change']}")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quote", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
         kw.finish()?;
@@ -603,7 +603,7 @@ impl StockIntradayClient {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.quote().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 builder.send()
@@ -621,8 +621,8 @@ impl StockIntradayClient {
     ///
     /// Sync sibling of `quote()` for callers migrating from the legacy
     /// fugle-marketdata Python SDK. Releases the GIL during the network call.
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn quote(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Py<pyo3::types::PyDict>> {
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn quote(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quote", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
         kw.finish()?;
@@ -631,7 +631,7 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.quote().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             builder.send()
@@ -657,8 +657,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     ticker = await client.stock.intraday.ticker("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.ticker", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -669,7 +669,7 @@ impl StockIntradayClient {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.ticker().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 builder.send()
@@ -684,8 +684,8 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn ticker(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn ticker(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.ticker", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -695,7 +695,7 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.ticker().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             builder.send()
@@ -722,8 +722,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     candles = await client.stock.intraday.candles("2330", "5")
     ///     ```
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=false, sort=None, **_extra))]
-    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, odd_lot: bool, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=None, sort=None, **_extra))]
+    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -735,7 +735,7 @@ impl StockIntradayClient {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 if let Some(v) = &sort {
@@ -753,8 +753,8 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=false, sort=None, **_extra))]
-    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, odd_lot: bool, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=None, sort=None, **_extra))]
+    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -765,7 +765,7 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             if let Some(v) = &sort {
@@ -794,9 +794,9 @@ impl StockIntradayClient {
     ///     ```python
     ///     trades = await client.stock.intraday.trades("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
-    pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.trades", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -823,7 +823,7 @@ impl StockIntradayClient {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.trades().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 if let Some(v) = offset {
@@ -850,9 +850,9 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=false, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
-    pub fn trades(&self, py: Python<'_>, symbol: String, odd_lot: bool, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    pub fn trades(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.trades", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -878,7 +878,7 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.trades().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             if let Some(v) = offset {
@@ -916,8 +916,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     volumes = await client.stock.intraday.volumes("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.volumes", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -928,7 +928,7 @@ impl StockIntradayClient {
                 let stock = client.stock();
                 let intraday = stock.intraday();
                 let mut builder = intraday.volumes().symbol(&symbol);
-                if odd_lot {
+                if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
                 builder.send()
@@ -943,8 +943,8 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=false, **_extra))]
-    pub fn volumes(&self, py: Python<'_>, symbol: String, odd_lot: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn volumes(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.volumes", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -954,7 +954,7 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.volumes().symbol(&symbol);
-            if odd_lot {
+            if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
             builder.send()
@@ -2459,8 +2459,8 @@ impl FutOptIntradayClient {
     ///     # After-hours session
     ///     ah_quote = await client.futopt.intraday.quote("TXFC4", after_hours=True)
     ///     ```
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
-    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.quote", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -2471,7 +2471,7 @@ impl FutOptIntradayClient {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.quote().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2500,13 +2500,13 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     tickers = await client.futopt.intraday.tickers(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, product=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers_async<'py>(
         &self,
         py: Python<'py>,
         r#type: String,
         exchange: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_type: Option<String>,
         is_spread: Option<bool>,product: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -2531,7 +2531,7 @@ impl FutOptIntradayClient {
                 if let Some(e) = &exchange {
                     builder = builder.exchange(e);
                 }
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 if let Some(c) = ct {
@@ -2572,13 +2572,13 @@ impl FutOptIntradayClient {
     ///     ```python
     ///     products = await client.futopt.intraday.products(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=false, status=None, **_extra))]
+    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products_async<'py>(
         &self,
         py: Python<'py>,
         r#type: String,
-        contract_type: Option<String>,exchange: Option<String>, after_hours: bool, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,exchange: Option<String>, after_hours: Option<bool>, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.products", &_extra)?;
         let contract_type = kw.take_string("contract_type", contract_type)?;
@@ -2603,7 +2603,7 @@ impl FutOptIntradayClient {
                 if let Some(v) = &exchange {
                     builder = builder.exchange(v);
                 }
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 if let Some(v) = &status {
@@ -2625,8 +2625,8 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `quote()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
-    pub fn quote(&self, py: Python<'_>, symbol: String, after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    pub fn quote(&self, py: Python<'_>, symbol: String, after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.quote", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -2636,7 +2636,7 @@ impl FutOptIntradayClient {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.quote().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2648,13 +2648,13 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, after_hours=false, contract_type=None, is_spread=None, product=None, **_extra))]
+    #[pyo3(signature = (r#type, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers(
         &self,
         py: Python<'_>,
         r#type: String,
         exchange: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_type: Option<String>,
         is_spread: Option<bool>,product: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
@@ -2678,7 +2678,7 @@ impl FutOptIntradayClient {
             if let Some(e) = &exchange {
                 builder = builder.exchange(e);
             }
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             if let Some(c) = ct {
@@ -2703,13 +2703,13 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `products()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=false, status=None, **_extra))]
+    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products(
         &self,
         py: Python<'_>,
         r#type: String,
-        contract_type: Option<String>,exchange: Option<String>, after_hours: bool, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        contract_type: Option<String>,exchange: Option<String>, after_hours: Option<bool>, status: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.products", &_extra)?;
         let contract_type = kw.take_string("contract_type", contract_type)?;
@@ -2733,7 +2733,7 @@ impl FutOptIntradayClient {
             if let Some(v) = &exchange {
                 builder = builder.exchange(v);
             }
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             if let Some(v) = &status {
@@ -2760,12 +2760,12 @@ impl FutOptIntradayClient {
     // ============================================================
 
     /// Get intraday ticker for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn ticker_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.ticker", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -2776,7 +2776,7 @@ impl FutOptIntradayClient {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.ticker().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2797,12 +2797,12 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn ticker(
         &self,
         py: Python<'_>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.ticker", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -2812,7 +2812,7 @@ impl FutOptIntradayClient {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.ticker().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2829,13 +2829,13 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday candles for a FutOpt contract
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=None, **_extra))]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
         timeframe: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.candles", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -2849,7 +2849,7 @@ impl FutOptIntradayClient {
                     .candles()
                     .symbol(&symbol)
                     .timeframe(&timeframe);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -2865,13 +2865,13 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=None, **_extra))]
     pub fn candles(
         &self,
         py: Python<'_>,
         symbol: String,
         timeframe: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.candles", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -2884,7 +2884,7 @@ impl FutOptIntradayClient {
                 .candles()
                 .symbol(&symbol)
                 .timeframe(&timeframe);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -2896,12 +2896,12 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday trades for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=false, offset=None, limit=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
     pub fn trades_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        after_hours: bool,
+        after_hours: Option<bool>,
         offset: Option<i32>,
         limit: Option<i32>,
         is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
@@ -2918,7 +2918,7 @@ impl FutOptIntradayClient {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.trades().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 if let Some(o) = offset {
@@ -2943,12 +2943,12 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, offset=None, limit=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
     pub fn trades(
         &self,
         py: Python<'_>,
         symbol: String,
-        after_hours: bool,
+        after_hours: Option<bool>,
         offset: Option<i32>,
         limit: Option<i32>,
         is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
@@ -2964,7 +2964,7 @@ impl FutOptIntradayClient {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.trades().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             if let Some(o) = offset {
@@ -2985,12 +2985,12 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday volumes for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn volumes_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.volumes", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -3001,7 +3001,7 @@ impl FutOptIntradayClient {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
                 let mut builder = intraday.volumes().symbol(&symbol);
-                if after_hours {
+                if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
                 builder.send()
@@ -3017,12 +3017,12 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
     pub fn volumes(
         &self,
         py: Python<'_>,
         symbol: String,
-        after_hours: bool, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.volumes", &_extra)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
@@ -3032,7 +3032,7 @@ impl FutOptIntradayClient {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
             let mut builder = intraday.volumes().symbol(&symbol);
-            if after_hours {
+            if after_hours == Some(true) {
                 builder = builder.after_hours();
             }
             builder.send()
@@ -3108,7 +3108,7 @@ impl FutOptHistoricalClient {
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles_async<'py>(
         &self,
@@ -3117,7 +3117,7 @@ impl FutOptHistoricalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
@@ -3153,7 +3153,7 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=false, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles(
         &self,
@@ -3162,7 +3162,7 @@ impl FutOptHistoricalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         contract_month: Option<String>,
         fields: Option<String>,
         sort: Option<String>,
@@ -3207,13 +3207,13 @@ impl FutOptHistoricalClient {
     ///     ```python
     ///     daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
     ///     ```
-    #[pyo3(signature = (symbol, date=None, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, date=None, after_hours=None, **_extra))]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
         date: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         reject_daily_range_kwargs(&_extra)?;
@@ -3235,13 +3235,13 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, date=None, after_hours=false, **_extra))]
+    #[pyo3(signature = (symbol, date=None, after_hours=None, **_extra))]
     pub fn daily(
         &self,
         py: Python<'_>,
         symbol: String,
         date: Option<String>,
-        after_hours: bool,
+        after_hours: Option<bool>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         reject_daily_range_kwargs(&_extra)?;
@@ -3264,7 +3264,7 @@ struct FutOptCandlesQuery {
     from_date: Option<String>,
     to_date: Option<String>,
     timeframe: Option<String>,
-    after_hours: bool,
+    after_hours: Option<bool>,
     contract_month: Option<String>,
     fields: Option<String>,
     sort: Option<String>,
@@ -3280,7 +3280,7 @@ impl FutOptCandlesQuery {
         if let Some(f) = &self.from_date { builder = builder.from(f); }
         if let Some(t) = &self.to_date { builder = builder.to(t); }
         if let Some(tf) = &self.timeframe { builder = builder.timeframe(tf); }
-        if self.after_hours { builder = builder.after_hours(true); }
+        if self.after_hours == Some(true) { builder = builder.after_hours(true); }
         if let Some(cm) = &self.contract_month { builder = builder.contract_month(cm); }
         if let Some(f) = &self.fields { builder = builder.fields(f); }
         if let Some(s) = &self.sort { builder = builder.sort(s); }
@@ -3294,13 +3294,13 @@ fn send_futopt_daily(
     client: &marketdata_core::RestClient,
     symbol: &str,
     date: Option<&str>,
-    after_hours: bool,
+    after_hours: Option<bool>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let futopt = client.futopt();
     let historical = futopt.historical();
     let mut builder = historical.daily().symbol(symbol);
     if let Some(d) = date { builder = builder.date(d); }
-    if after_hours { builder = builder.after_hours(true); }
+    if after_hours == Some(true) { builder = builder.after_hours(true); }
     builder.send()
 }
 

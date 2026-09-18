@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   being dropped. The two boolean flags interpret the wire value because the
   keyword behind them is a boolean: `type` must be `"oddlot"` exactly, as on
   the server; `session` is case-insensitive, `"regular"` meaning the default,
-  as on the server. Any other value is sent as given.
+  as on the server. Any other value is sent as given. So that an explicit
+  `False` counts as a value in that check, `odd_lot` and `after_hours`
+  default to `None` instead of `False`; `True` / `False` mean what they did.
 - **Node: the object form of every REST method rejects a key the endpoint
   does not accept** (#164). Keys are checked against core's table of the
   server's DTOs before the request is sent; an unknown key rejects with

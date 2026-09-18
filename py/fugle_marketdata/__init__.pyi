@@ -316,7 +316,7 @@ class StockIntradayClient:
     fugle-marketdata SDK.
     """
 
-    async def quote_async(self, symbol: str, *, odd_lot: bool = False) -> dict[str, Any]:
+    async def quote_async(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Get intraday quote for a stock symbol.
 
         Args:
@@ -338,7 +338,7 @@ class StockIntradayClient:
         """
         ...
 
-    async def ticker_async(self, symbol: str, *, odd_lot: bool = False) -> dict[str, Any]:
+    async def ticker_async(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Get ticker information for a stock symbol.
 
         Args:
@@ -358,7 +358,7 @@ class StockIntradayClient:
         symbol: str,
         *,
         timeframe: str = "1",
-        odd_lot: bool = False,
+        odd_lot: Optional[bool] = None,
         sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get candlestick chart data.
@@ -381,7 +381,7 @@ class StockIntradayClient:
         self,
         symbol: str,
         *,
-        odd_lot: bool = False,
+        odd_lot: Optional[bool] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
         sort: Optional[str] = None,
@@ -405,7 +405,7 @@ class StockIntradayClient:
         """
         ...
 
-    async def volumes_async(self, symbol: str, *, odd_lot: bool = False) -> dict[str, Any]:
+    async def volumes_async(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Get volume data.
 
         Args:
@@ -455,11 +455,11 @@ class StockIntradayClient:
 
     # ----- Sync siblings (legacy fugle-marketdata compatibility) -----
 
-    def quote(self, symbol: str, *, odd_lot: bool = False) -> dict[str, Any]:
+    def quote(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `quote()`."""
         ...
 
-    def ticker(self, symbol: str, odd_lot: bool = False) -> dict[str, Any]:
+    def ticker(self, symbol: str, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `ticker()`."""
         ...
 
@@ -467,7 +467,7 @@ class StockIntradayClient:
         self,
         symbol: str,
         timeframe: str = "1",
-        odd_lot: bool = False,
+        odd_lot: Optional[bool] = None,
         sort: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `candles()`."""
@@ -476,7 +476,7 @@ class StockIntradayClient:
     def trades(
         self,
         symbol: str,
-        odd_lot: bool = False,
+        odd_lot: Optional[bool] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
         sort: Optional[str] = None,
@@ -485,7 +485,7 @@ class StockIntradayClient:
         """Blocking version of `trades()`."""
         ...
 
-    def volumes(self, symbol: str, odd_lot: bool = False) -> dict[str, Any]:
+    def volumes(self, symbol: str, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `volumes()`."""
         ...
 
@@ -1288,12 +1288,12 @@ class FutOptIntradayClient:
     return coroutines that resolve to dict objects.
     """
 
-    async def quote_async(self, symbol: str, *, after_hours: bool = False) -> dict[str, Any]:
+    async def quote_async(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
         """Get intraday quote for a futures/options contract.
 
         Args:
             symbol: Contract symbol (e.g., "TXFC4" for TAIEX futures)
-            after_hours: Whether to query after-hours session data (default: False)
+            after_hours: Whether to query after-hours session data
 
         Returns:
             Quote data including prices, order book, and trading info
@@ -1312,11 +1312,89 @@ class FutOptIntradayClient:
         """
         ...
 
+    async def ticker_async(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
+        """Get ticker information for a futures/options contract.
+
+        Args:
+            symbol: Contract symbol (e.g., "TXFC4")
+            after_hours: Whether to query after-hours session data
+
+        Returns:
+            Contract information
+
+        Raises:
+            MarketDataError: If the request fails
+        """
+        ...
+
+    async def candles_async(
+        self,
+        symbol: str,
+        *,
+        timeframe: str = "1",
+        after_hours: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Get candlestick chart data for a futures/options contract.
+
+        Args:
+            symbol: Contract symbol (e.g., "TXFC4")
+            timeframe: Timeframe in minutes (default: "1")
+            after_hours: Whether to query after-hours session data
+
+        Returns:
+            Candlestick data with OHLCV values
+
+        Raises:
+            MarketDataError: If the request fails
+        """
+        ...
+
+    async def trades_async(
+        self,
+        symbol: str,
+        *,
+        after_hours: Optional[bool] = None,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        is_trial: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Get trade ticks for a futures/options contract.
+
+        Args:
+            symbol: Contract symbol (e.g., "TXFC4")
+            after_hours: Whether to query after-hours session data
+            offset: Number of trades to skip
+            limit: Maximum number of trades to return
+            is_trial: Only trial-matching (試撮合) trades
+
+        Returns:
+            Trade ticks data with price, volume, and time
+
+        Raises:
+            MarketDataError: If the request fails
+        """
+        ...
+
+    async def volumes_async(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
+        """Get volume by price level for a futures/options contract.
+
+        Args:
+            symbol: Contract symbol (e.g., "TXFC4")
+            after_hours: Whether to query after-hours session data
+
+        Returns:
+            Volume data by price level
+
+        Raises:
+            MarketDataError: If the request fails
+        """
+        ...
+
     async def tickers_async(
         self,
         type: str,
         exchange: str | None = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
         contract_type: str | None = None,
         is_spread: bool | None = None,
         product: str | None = None,
@@ -1344,7 +1422,7 @@ class FutOptIntradayClient:
         type: str,
         contract_type: str | None = None,
         exchange: str | None = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
         status: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get available FutOpt products list.
@@ -1366,15 +1444,43 @@ class FutOptIntradayClient:
 
     # ----- Sync siblings (legacy fugle-marketdata compatibility) -----
 
-    def quote(self, symbol: str, *, after_hours: bool = False) -> dict[str, Any]:
+    def quote(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `quote()`."""
+        ...
+
+    def ticker(self, symbol: str, after_hours: Optional[bool] = None) -> dict[str, Any]:
+        """Blocking version of `ticker()`."""
+        ...
+
+    def candles(
+        self,
+        symbol: str,
+        timeframe: str = "1",
+        after_hours: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Blocking version of `candles()`."""
+        ...
+
+    def trades(
+        self,
+        symbol: str,
+        after_hours: Optional[bool] = None,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        is_trial: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Blocking version of `trades()`."""
+        ...
+
+    def volumes(self, symbol: str, after_hours: Optional[bool] = None) -> dict[str, Any]:
+        """Blocking version of `volumes()`."""
         ...
 
     def tickers(
         self,
         type: str,
         exchange: str | None = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
         contract_type: str | None = None,
         is_spread: bool | None = None,
         product: str | None = None,
@@ -1387,7 +1493,7 @@ class FutOptIntradayClient:
         type: str,
         contract_type: str | None = None,
         exchange: str | None = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
         status: str | None = None,
     ) -> list[dict[str, Any]]:
         """Blocking version of `products()`."""
@@ -1408,7 +1514,7 @@ class FutOptHistoricalClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
         contract_month: Optional[str] = None,
         fields: Optional[str] = None,
         sort: Optional[str] = None,
@@ -1422,7 +1528,7 @@ class FutOptHistoricalClient:
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
-            after_hours: Query the after-hours session (default: False)
+            after_hours: Query the after-hours session
             contract_month: "YYYYMM", or a continuous contract: "1!" (server default), "2!", "3!"
             fields: Comma-separated fields, e.g. "open,high,low,close,volume"
             sort: "asc" or "desc"
@@ -1453,14 +1559,14 @@ class FutOptHistoricalClient:
         symbol: str,
         *,
         date: Optional[str] = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Get one trading day's daily quotes for every contract month of a FutOpt product.
 
         Args:
             symbol: Product code (e.g., "TXF")
             date: Trading date (YYYY-MM-DD); the server defaults to today
-            after_hours: Query the after-hours session (default: False)
+            after_hours: Query the after-hours session
 
         Returns:
             Daily quotes, one row per contract month
@@ -1485,7 +1591,7 @@ class FutOptHistoricalClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
         contract_month: Optional[str] = None,
         fields: Optional[str] = None,
         sort: Optional[str] = None,
@@ -1500,7 +1606,7 @@ class FutOptHistoricalClient:
         symbol: str,
         *,
         date: Optional[str] = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Blocking version of `daily_async()`."""
         ...
@@ -1878,7 +1984,7 @@ class StockWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        odd_lot: bool = False,
+        odd_lot: Optional[bool] = None,
     ) -> None:
         """Subscribe to a channel for one or more symbols (blocking).
 
@@ -1909,7 +2015,7 @@ class StockWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        odd_lot: bool = False,
+        odd_lot: Optional[bool] = None,
     ) -> None:
         """Subscribe to a channel for one or more symbols (async).
 
@@ -2114,7 +2220,7 @@ class FutOptWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        after_hours: bool = False,
+        after_hours: Optional[bool] = None,
     ) -> None:
         """Subscribe to a channel for one or more FutOpt symbols (blocking).
 

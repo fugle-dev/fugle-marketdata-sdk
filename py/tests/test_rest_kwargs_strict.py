@@ -255,9 +255,29 @@ def test_same_parameter_twice_raises(client, server, kwargs, message):
     assert server[1] == []
 
 
-def test_odd_lot_true_with_type_oddlot_raises(client, server):
+@pytest.mark.parametrize("odd_lot", [True, False])
+def test_odd_lot_with_type_oddlot_raises(client, server, odd_lot):
+    # `odd_lot` defaults to None, so an explicit False is a value too and
+    # clashes with `type` like `from_date` clashes with `from`.
     with pytest.raises(TypeError, match="got multiple values for odd_lot \\(also passed as 'type'\\)"):
-        client.stock.intraday.ticker("2330", odd_lot=True, type="oddlot")
+        client.stock.intraday.ticker("2330", odd_lot=odd_lot, type="oddlot")
+    assert server[1] == []
+
+
+@pytest.mark.parametrize("after_hours", [True, False])
+def test_after_hours_with_session_raises(client, server, after_hours):
+    with pytest.raises(TypeError, match="got multiple values for after_hours \\(also passed as 'session'\\)"):
+        client.futopt.intraday.tickers("FUTURE", after_hours=after_hours, session="REGULAR")
+    assert server[1] == []
+
+
+def test_flag_none_means_not_given(client, server):
+    client.stock.intraday.ticker("2330", odd_lot=None, type="oddlot")
+    assert last_request(server[1])[1] == {"type": "oddlot"}
+    client.stock.intraday.ticker("2330", odd_lot=False)
+    assert last_request(server[1])[1] == {}
+    client.futopt.intraday.quote("TXFD6", after_hours=False)
+    assert last_request(server[1])[1] == {}
 
 
 def test_typed_and_camel_case_together_raises(client, server):

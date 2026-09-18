@@ -16,7 +16,9 @@
 //! methods, which raise `TypeError` when the same parameter arrived under two
 //! spellings. Values are passed through as given; only the two boolean flags
 //! (`type="oddlot"`, `session="afterhours"`) are interpreted, because the
-//! typed arguments behind them are booleans.
+//! typed arguments behind them are booleans. Those are `Option<bool>` so that
+//! "not given" is distinct from `False` and the conflict check covers them
+//! like every other parameter.
 
 use std::collections::HashMap;
 
@@ -109,34 +111,40 @@ impl<'py> Kwargs<'py> {
             .map_err(|err| self.bad_value(&given.key, &given.value, err))
     }
 
-    /// Merge into a typed boolean flag (`odd_lot`, `after_hours`).
+    /// Merge into a typed boolean flag (`odd_lot`, `after_hours`), `None`
+    /// when the keyword was not given.
     ///
     /// The flag spelling takes a boolean. The wire spelling takes the literal
     /// the API documents: `type="oddlot"` exactly, since the server is
     /// case-sensitive there; `session` case-insensitively, since the server
     /// is, with `"regular"` meaning off.
-    pub fn take_flag(&mut self, canonical: &str, typed: bool) -> PyResult<bool> {
+    pub fn take_flag(&mut self, canonical: &str, typed: Option<bool>) -> PyResult<Option<bool>> {
         let Some(given) = self.given.remove(canonical) else { return Ok(typed) };
-        // A typed `False` may be the default, so only an explicit `True`
-        // can be known to clash.
-        self.no_conflict(canonical, typed, &given.key)?;
+        self.no_conflict(canonical, typed.is_some(), &given.key)?;
+        if given.value.is_none() {
+            return Ok(None);
+        }
         let spec = self.param(canonical);
         let literal = spec.flag.expect("take_flag is called for a flag parameter");
         if given.as_flag {
-            return given.value.extract::<bool>().map_err(|err| self.bad_value(&given.key, &given.value, err));
+            return given
+                .value
+                .extract::<bool>()
+                .map(Some)
+                .map_err(|err| self.bad_value(&given.key, &given.value, err));
         }
         let value: String = given.value.extract().map_err(|err| self.bad_value(&given.key, &given.value, err))?;
         let on = match spec.name {
             "session" => {
                 if value.eq_ignore_ascii_case("regular") {
-                    return Ok(false);
+                    return Ok(Some(false));
                 }
                 value.eq_ignore_ascii_case(literal)
             }
             _ => value == literal,
         };
         if on {
-            Ok(true)
+            Ok(Some(true))
         } else {
             Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "{}() argument '{}' must be '{literal}' (got '{value}'); the typed keyword is {}=True",
