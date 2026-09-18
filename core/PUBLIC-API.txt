@@ -2833,11 +2833,13 @@ impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::futopt
 pub struct marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>
 impl<'a> marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::after_hours(self, bool) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::call_put(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::contract_month(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::fields(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::sort(self, &str) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::strike_price(self, f64) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::timeframe(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptHistoricalCandlesRequestBuilder<'a>::to(self, &str) -> Self
@@ -2868,6 +2870,7 @@ pub fn marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>::afte
 pub fn marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>::contract_type(self, marketdata_core::ContractType) -> Self
 pub fn marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>::status(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>::typ(self, marketdata_core::FutOptType) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::futopt::intraday::ProductsRequestBuilder<'a>
@@ -2906,6 +2909,7 @@ pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::after
 pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::contract_type(self, marketdata_core::ContractType) -> Self
 pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::is_spread(self, bool) -> Self
+pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::product(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>::typ(self, marketdata_core::FutOptType) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::futopt::intraday::TickersRequestBuilder<'a>
@@ -2987,6 +2991,7 @@ impl<'a> marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestB
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::end_date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>::start_date(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::corporate_actions::CapitalChangesRequestBuilder<'a>
@@ -2999,7 +3004,9 @@ pub struct marketdata_core::rest::stock::corporate_actions::DividendsRequestBuil
 impl<'a> marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::end_date(self, &str) -> Self
+pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>::start_date(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::corporate_actions::DividendsRequestBuilder<'a>
@@ -3012,7 +3019,9 @@ pub struct marketdata_core::rest::stock::corporate_actions::ListingApplicantsReq
 impl<'a> marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::date(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::end_date(self, &str) -> Self
+pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>::start_date(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::corporate_actions::ListingApplicantsRequestBuilder<'a>
@@ -3055,6 +3064,7 @@ pub struct marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>::odd_lot(self, bool) -> Self
 pub fn marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>::timeframe(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'a>
@@ -3092,9 +3102,13 @@ pub struct marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::exchange(self, &str) -> Self
 pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::industry(self, &str) -> Self
+pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::is_attention(self, bool) -> Self
+pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::is_disposition(self, bool) -> Self
+pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::is_halted(self, bool) -> Self
 pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::is_normal(self, bool) -> Self
 pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::market(self, &str) -> Self
 pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>::typ(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::intraday::TickersRequestBuilder<'a>
@@ -3214,6 +3228,7 @@ impl<'a> marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>::market(self, &str) -> Self
 pub fn marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>::trade(self, &str) -> Self
+pub fn marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>::type_filter(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
 impl<'a> core::marker::Sync for marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
@@ -3225,8 +3240,14 @@ pub struct marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::change(self, &str) -> Self
 pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::direction(self, &str) -> Self
+pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::eq(self, f64) -> Self
+pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::gt(self, f64) -> Self
+pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::gte(self, f64) -> Self
+pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::lt(self, f64) -> Self
+pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::lte(self, f64) -> Self
 pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::market(self, &str) -> Self
 pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::type_filter(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
 impl<'a> core::marker::Sync for marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
@@ -3264,7 +3285,6 @@ impl<'a> marketdata_core::rest::stock::technical::BbRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::period(self, u32) -> Self
 pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::stddev(self, f64) -> Self
 pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::timeframe(self, &str) -> Self
 pub fn marketdata_core::rest::stock::technical::BbRequestBuilder<'a>::to(self, &str) -> Self
@@ -3280,7 +3300,6 @@ impl<'a> marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::d_period(self, u32) -> Self
 pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::k_period(self, u32) -> Self
-pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::period(self, u32) -> Self
 pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::r_period(self, u32) -> Self
 pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::stock::technical::KdjRequestBuilder<'a>::symbol(self, &str) -> Self

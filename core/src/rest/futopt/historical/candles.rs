@@ -12,6 +12,8 @@ pub struct FutOptHistoricalCandlesRequestBuilder<'a> {
     fields: Option<String>,
     timeframe: Option<String>,
     sort: Option<String>,
+    strike_price: Option<f64>,
+    call_put: Option<String>,
     after_hours: Option<bool>,
 }
 
@@ -27,6 +29,8 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
             fields: None,
             timeframe: None,
             sort: None,
+            strike_price: None,
+            call_put: None,
             after_hours: None,
         }
     }
@@ -81,6 +85,18 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
         self
     }
 
+    /// Set the strike price (options only; pair with [`call_put`](Self::call_put)).
+    pub fn strike_price(mut self, strike_price: f64) -> Self {
+        self.strike_price = Some(strike_price);
+        self
+    }
+
+    /// Set the option side: `"CALL"` or `"PUT"` (options only).
+    pub fn call_put(mut self, call_put: &str) -> Self {
+        self.call_put = Some(call_put.to_string());
+        self
+    }
+
     /// Query the after-hours session (`session=afterhours`) instead of the
     /// regular session.
     pub fn after_hours(mut self, after_hours: bool) -> Self {
@@ -129,6 +145,12 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
         }
         if let Some(sort) = &self.sort {
             query_params.push(crate::rest::query_pair("sort", sort));
+        }
+        if let Some(strike_price) = self.strike_price {
+            query_params.push(crate::rest::query_pair("strikePrice", strike_price));
+        }
+        if let Some(call_put) = &self.call_put {
+            query_params.push(crate::rest::query_pair("callPut", call_put));
         }
         if self.after_hours == Some(true) {
             query_params.push("session=afterhours".to_string());
@@ -223,6 +245,39 @@ mod tests {
             url,
             format!(
                 "{}/futopt/historical/candles/TXF?fields=open%26session%3Dafterhours",
+                client.get_base_url()
+            )
+        );
+    }
+
+    #[test]
+    fn test_url_includes_strike_price_and_call_put() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = FutOptHistoricalCandlesRequestBuilder::new(&client)
+            .symbol("TXO")
+            .contract_month("202610")
+            .strike_price(23000.0)
+            .call_put("CALL")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/historical/candles/TXO?contractMonth=202610&strikePrice=23000&callPut=CALL",
+                client.get_base_url()
+            )
+        );
+
+        let url = FutOptHistoricalCandlesRequestBuilder::new(&client)
+            .symbol("TXO")
+            .strike_price(22950.5)
+            .call_put("PUT")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/historical/candles/TXO?strikePrice=22950.5&callPut=PUT",
                 client.get_base_url()
             )
         );

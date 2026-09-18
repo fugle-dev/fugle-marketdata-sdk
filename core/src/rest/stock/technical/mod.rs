@@ -64,7 +64,9 @@ impl<'a> TechnicalClient<'a> {
     /// ```ignore
     /// let response = client.stock().technical().kdj()
     ///     .symbol("2330")
-    ///     .period(9)
+    ///     .r_period(9)
+    ///     .k_period(3)
+    ///     .d_period(3)
     ///     .send()?;
     /// ```
     pub fn kdj(&self) -> KdjRequestBuilder<'_> {
@@ -93,7 +95,6 @@ impl<'a> TechnicalClient<'a> {
     /// let response = client.stock().technical().bb()
     ///     .symbol("2330")
     ///     .period(20)
-    ///     .stddev(2.0)
     ///     .send()?;
     /// ```
     pub fn bb(&self) -> BbRequestBuilder<'_> {

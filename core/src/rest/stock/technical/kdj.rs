@@ -10,7 +10,6 @@ pub struct KdjRequestBuilder<'a> {
     from: Option<String>,
     to: Option<String>,
     timeframe: Option<String>,
-    period: Option<u32>,
     r_period: Option<u32>,
     k_period: Option<u32>,
     d_period: Option<u32>,
@@ -24,7 +23,6 @@ impl<'a> KdjRequestBuilder<'a> {
             from: None,
             to: None,
             timeframe: None,
-            period: None,
             r_period: None,
             k_period: None,
             d_period: None,
@@ -55,18 +53,8 @@ impl<'a> KdjRequestBuilder<'a> {
         self
     }
 
-    /// Set the `period` query param.
-    ///
-    /// Prod does not accept `period` for KDJ (HTTP 400); use
-    /// [`r_period`](Self::r_period), [`k_period`](Self::k_period) and
-    /// [`d_period`](Self::d_period) instead.
-    pub fn period(mut self, period: u32) -> Self {
-        self.period = Some(period);
-        self
-    }
-
-    /// Set the RSV period (`rPeriod`). Prod requires this — the single
-    /// `period` param is rejected with HTTP 400 on its own.
+    /// Set the RSV period (`rPeriod`). Prod requires `rPeriod`, `kPeriod`
+    /// and `dPeriod` together.
     pub fn r_period(mut self, r_period: u32) -> Self {
         self.r_period = Some(r_period);
         self
@@ -119,9 +107,6 @@ impl<'a> KdjRequestBuilder<'a> {
         }
         if let Some(timeframe) = &self.timeframe {
             query_params.push(crate::rest::query_pair("timeframe", timeframe));
-        }
-        if let Some(period) = &self.period {
-            query_params.push(crate::rest::query_pair("period", period));
         }
         if let Some(r_period) = &self.r_period {
             query_params.push(crate::rest::query_pair("rPeriod", r_period));

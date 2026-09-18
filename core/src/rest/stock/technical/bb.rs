@@ -11,7 +11,6 @@ pub struct BbRequestBuilder<'a> {
     to: Option<String>,
     timeframe: Option<String>,
     period: Option<u32>,
-    stddev: Option<f64>,
 }
 
 impl<'a> BbRequestBuilder<'a> {
@@ -23,7 +22,6 @@ impl<'a> BbRequestBuilder<'a> {
             to: None,
             timeframe: None,
             period: None,
-            stddev: None,
         }
     }
 
@@ -54,12 +52,6 @@ impl<'a> BbRequestBuilder<'a> {
     /// Set the indicator period (default per Fugle docs).
     pub fn period(mut self, period: u32) -> Self {
         self.period = Some(period);
-        self
-    }
-
-    /// Set the standard deviation multiplier (typically 2.0)
-    pub fn stddev(mut self, stddev: f64) -> Self {
-        self.stddev = Some(stddev);
         self
     }
 
@@ -94,9 +86,6 @@ impl<'a> BbRequestBuilder<'a> {
         }
         if let Some(period) = self.period {
             query_params.push(crate::rest::query_pair("period", period));
-        }
-        if let Some(stddev) = self.stddev {
-            query_params.push(crate::rest::query_pair("stddev", stddev));
         }
 
         if !query_params.is_empty() {

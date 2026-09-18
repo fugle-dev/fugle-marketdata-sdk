@@ -29,6 +29,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Positional calls no longer compile; use named arguments.
   - **Java**: the constructor is unchanged, and `null` for `enabled` now
     means the default instead of failing.
+- **All languages: Bollinger Bands no longer takes `stddev`, and the Rust
+  KDJ builder no longer has `period()`** (#166). The server reads neither:
+  `stddev` was sent and ignored, so every result used the server's own
+  multiplier, and a lone KDJ `period` got HTTP 400. Nothing you get back
+  changes; only calls that pass them stop compiling.
+  - **Rust**: `BbRequestBuilder::stddev` and `KdjRequestBuilder::period` are
+    removed; use `r_period` / `k_period` / `d_period` for KDJ.
+  - **Python**: `bb()` / `bb_async()` drop the `stddev` keyword.
+  - **Node**: `bb()` drops the trailing `stddev` argument.
+  - **C#, Go, Java, C++**: `GetBb` / `BbSync` / `bb_sync` drop the trailing
+    `stddev` argument.
+
+### Added
+
+- **Rust**: REST builders gain the query parameters the server accepts but
+  core could not send (#164). Node could already pass them in its object
+  form; the other bindings will pick them up in follow-up PRs.
+  - `stock.intraday.candles`: `sort`
+  - `stock.intraday.tickers`: `is_attention`, `is_disposition`, `is_halted`,
+    `symbol`
+  - `stock.snapshot.movers`: `type_filter` (sent as `type`), `gt`, `gte`,
+    `lt`, `lte`, `eq`
+  - `stock.snapshot.actives`: `type_filter` (sent as `type`)
+  - `stock.corporate_actions`: `sort` on all three; `exchange` on
+    `dividends` and `listing_applicants`
+  - `futopt.intraday.tickers`: `product`
+  - `futopt.intraday.products`: `status`
+  - `futopt.historical.candles`: `strike_price`, `call_put`
 
 ## [Bindings 3.0.0-rc.4 / core 0.9.0-rc.3 / uniffi 0.2.0-rc.3] - 2026-09-18
 

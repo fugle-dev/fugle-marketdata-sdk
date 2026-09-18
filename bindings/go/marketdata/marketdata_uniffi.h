@@ -962,12 +962,12 @@ void uniffi_marketdata_uniffi_fn_free_stocktechnicalclient(void* ptr, RustCallSt
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_STOCKTECHNICALCLIENT_BB_SYNC
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_STOCKTECHNICALCLIENT_BB_SYNC
-RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period, RustBuffer stddev, RustCallStatus *out_status
+RustBuffer uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_STOCKTECHNICALCLIENT_GET_BB
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_STOCKTECHNICALCLIENT_GET_BB
-uint64_t uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_bb(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period, RustBuffer stddev
+uint64_t uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_bb(void* ptr, RustBuffer symbol, RustBuffer from, RustBuffer to, RustBuffer timeframe, RustBuffer period
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_STOCKTECHNICALCLIENT_GET_KDJ

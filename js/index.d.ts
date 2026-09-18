@@ -1946,7 +1946,7 @@ export interface StockTechnicalClient {
   /** Get MACD for a stock */
   macd(symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
   /** Get Bollinger Bands for a stock */
-  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number): Promise<BbResponse>;
+  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<BbResponse>;
 }
 
 /** Stock corporate actions client interface */
@@ -2508,10 +2508,9 @@ export declare class StockTechnicalClient {
    * @param to - End date (YYYY-MM-DD)
    * @param timeframe - Timeframe ("D", "W", "M")
    * @param period - SMA period (default: 20)
-   * @param stddev - Standard deviation multiplier (default: 2.0)
    * @returns Promise resolving to Bollinger Bands data
    */
-  bb(symbol: string | RestStockTechnicalBbParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null, stddev?: number | undefined | null): Promise<BbResponse>
+  bb(symbol: string | RestStockTechnicalBbParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null): Promise<BbResponse>
 }
 
 /**

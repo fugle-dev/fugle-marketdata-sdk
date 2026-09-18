@@ -36,7 +36,7 @@ mod query_pair_tests {
         assert_eq!(query_pair("timeframe", "D"), "timeframe=D");
         assert_eq!(query_pair("limit", 50u32), "limit=50");
         assert_eq!(query_pair("isTrial", true), "isTrial=true");
-        assert_eq!(query_pair("stddev", 2.5f64), "stddev=2.5");
+        assert_eq!(query_pair("gte", 2.5f64), "gte=2.5");
         assert_eq!(query_pair("contractMonth", "202609"), "contractMonth=202609");
     }
 

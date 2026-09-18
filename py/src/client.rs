@@ -1611,11 +1611,10 @@ impl StockTechnicalClient {
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
     ///     period: Moving average period (default 20)
-    ///     stddev: Standard deviation multiplier (default 2.0)
     ///
     /// Returns:
     ///     Awaitable[dict]: Bollinger Bands data with upper, middle, lower bands
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, stddev=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
     pub fn bb_async<'py>(
         &self,
         py: Python<'py>,
@@ -1623,8 +1622,7 @@ impl StockTechnicalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
-        stddev: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         warn_unknown_kwargs(py, "stock.technical.bb", &_extra);
         let client = self.inner.clone();
@@ -1644,9 +1642,6 @@ impl StockTechnicalClient {
                 }
                 if let Some(p) = period {
                     builder = builder.period(p);
-                }
-                if let Some(sd) = stddev {
-                    builder = builder.stddev(sd);
                 }
                 builder.send()
             })
@@ -1786,7 +1781,7 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `bb()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, stddev=None, **_extra))]
+    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
     pub fn bb(
         &self,
         py: Python<'_>,
@@ -1794,8 +1789,7 @@ impl StockTechnicalClient {
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>,
-        stddev: Option<f64>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         warn_unknown_kwargs(py, "stock.technical.bb", &_extra);
         let inner = self.inner.clone();
@@ -1807,7 +1801,6 @@ impl StockTechnicalClient {
             if let Some(t) = to_date { builder = builder.to(&t); }
             if let Some(tf) = timeframe { builder = builder.timeframe(&tf); }
             if let Some(p) = period { builder = builder.period(p); }
-            if let Some(sd) = stddev { builder = builder.stddev(sd); }
             builder.send()
         });
         match result {

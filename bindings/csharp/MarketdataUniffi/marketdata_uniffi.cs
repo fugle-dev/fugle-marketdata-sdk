@@ -1577,7 +1577,6 @@ static class _UniFFILib
         RustBuffer @to,
         RustBuffer @timeframe,
         RustBuffer @period,
-        RustBuffer @stddev,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -1588,8 +1587,7 @@ static class _UniFFILib
         RustBuffer @from,
         RustBuffer @to,
         RustBuffer @timeframe,
-        RustBuffer @period,
-        RustBuffer @stddev
+        RustBuffer @period
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -3381,20 +3379,20 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync();
-            if (checksum != 52716)
+            if (checksum != 23057)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync` checksum `52716`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync` checksum `23057`, library returned `{checksum}`"
                 );
             }
         }
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb();
-            if (checksum != 20760)
+            if (checksum != 542)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb` checksum `20760`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb` checksum `542`, library returned `{checksum}`"
                 );
             }
         }
@@ -8099,14 +8097,7 @@ public interface IStockTechnicalClient
     /// Get Bollinger Bands (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string BbSync(
-        string @symbol,
-        string? @from,
-        string? @to,
-        string? @timeframe,
-        uint? @period,
-        double? @stddev
-    );
+    string BbSync(string @symbol, string? @from, string? @to, string? @timeframe, uint? @period);
 
     /// <summary>
     /// Get Bollinger Bands (async)
@@ -8117,8 +8108,7 @@ public interface IStockTechnicalClient
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period,
-        double? @stddev
+        uint? @period
     );
 
     /// <summary>
@@ -8343,8 +8333,7 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period,
-        double? @stddev
+        uint? @period
     )
     {
         return CallWithPointer(thisPtr =>
@@ -8359,7 +8348,6 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
                             FfiConverterOptionalString.INSTANCE.Lower(@to),
                             FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
                             FfiConverterOptionalUInt32.INSTANCE.Lower(@period),
-                            FfiConverterOptionalDouble.INSTANCE.Lower(@stddev),
                             ref _status
                         )
                 )
@@ -8376,8 +8364,7 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
         string? @from,
         string? @to,
         string? @timeframe,
-        uint? @period,
-        double? @stddev
+        uint? @period
     )
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
@@ -8390,8 +8377,7 @@ public class StockTechnicalClient : IStockTechnicalClient, IDisposable
                     FfiConverterOptionalString.INSTANCE.Lower(@from),
                     FfiConverterOptionalString.INSTANCE.Lower(@to),
                     FfiConverterOptionalString.INSTANCE.Lower(@timeframe),
-                    FfiConverterOptionalUInt32.INSTANCE.Lower(@period),
-                    FfiConverterOptionalDouble.INSTANCE.Lower(@stddev)
+                    FfiConverterOptionalUInt32.INSTANCE.Lower(@period)
                 );
             }),
             // Poll
@@ -11846,45 +11832,6 @@ class FfiConverterOptionalUInt64 : FfiConverterRustBuffer<ulong?>
         {
             stream.WriteByte(1);
             FfiConverterUInt64.INSTANCE.Write((ulong)value, stream);
-        }
-    }
-}
-
-class FfiConverterOptionalDouble : FfiConverterRustBuffer<double?>
-{
-    public static FfiConverterOptionalDouble INSTANCE = new FfiConverterOptionalDouble();
-
-    public override double? Read(BigEndianStream stream)
-    {
-        if (stream.ReadByte() == 0)
-        {
-            return null;
-        }
-        return FfiConverterDouble.INSTANCE.Read(stream);
-    }
-
-    public override int AllocationSize(double? value)
-    {
-        if (value == null)
-        {
-            return 1;
-        }
-        else
-        {
-            return 1 + FfiConverterDouble.INSTANCE.AllocationSize((double)value);
-        }
-    }
-
-    public override void Write(double? value, BigEndianStream stream)
-    {
-        if (value == null)
-        {
-            stream.WriteByte(0);
-        }
-        else
-        {
-            stream.WriteByte(1);
-            FfiConverterDouble.INSTANCE.Write((double)value, stream);
         }
     }
 }

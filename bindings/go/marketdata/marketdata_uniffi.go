@@ -1059,7 +1059,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync()
 		})
-		if checksum != 52716 {
+		if checksum != 23057 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync: UniFFI API checksum mismatch")
 		}
@@ -1068,7 +1068,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb()
 		})
-		if checksum != 20760 {
+		if checksum != 542 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb: UniFFI API checksum mismatch")
 		}
@@ -4133,9 +4133,9 @@ func (_ FfiDestroyerStockSnapshotClient) Destroy(value *StockSnapshotClient) {
 // Provides access to SMA, RSI, KDJ, MACD, and Bollinger Bands indicators.
 type StockTechnicalClientInterface interface {
 	// Get Bollinger Bands (sync/blocking)
-	BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (string, error)
+	BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error)
 	// Get Bollinger Bands (async)
-	GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (string, error)
+	GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error)
 	// Get KDJ (Stochastic Oscillator) (async)
 	GetKdj(symbol string, from *string, to *string, timeframe *string, rPeriod *uint32, kPeriod *uint32, dPeriod *uint32) (string, error)
 	// Get MACD indicator (async)
@@ -4162,13 +4162,13 @@ type StockTechnicalClient struct {
 }
 
 // Get Bollinger Bands (sync/blocking)
-func (_self *StockTechnicalClient) BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (string, error) {
+func (_self *StockTechnicalClient) BbSync(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(period), FfiConverterOptionalFloat64INSTANCE.Lower(stddev), _uniffiStatus),
+				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(period), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -4180,7 +4180,7 @@ func (_self *StockTechnicalClient) BbSync(symbol string, from *string, to *strin
 }
 
 // Get Bollinger Bands (async)
-func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32, stddev *float64) (string, error) {
+func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string, timeframe *string, period *uint32) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*StockTechnicalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -4197,7 +4197,7 @@ func (_self *StockTechnicalClient) GetBb(symbol string, from *string, to *string
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_bb(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(period), FfiConverterOptionalFloat64INSTANCE.Lower(stddev)),
+			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalStringINSTANCE.Lower(from), FfiConverterOptionalStringINSTANCE.Lower(to), FfiConverterOptionalStringINSTANCE.Lower(timeframe), FfiConverterOptionalUint32INSTANCE.Lower(period)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -6951,47 +6951,6 @@ type FfiDestroyerOptionalUint64 struct{}
 func (_ FfiDestroyerOptionalUint64) Destroy(value *uint64) {
 	if value != nil {
 		FfiDestroyerUint64{}.Destroy(*value)
-	}
-}
-
-type FfiConverterOptionalFloat64 struct{}
-
-var FfiConverterOptionalFloat64INSTANCE = FfiConverterOptionalFloat64{}
-
-func (c FfiConverterOptionalFloat64) Lift(rb RustBufferI) *float64 {
-	return LiftFromRustBuffer[*float64](c, rb)
-}
-
-func (_ FfiConverterOptionalFloat64) Read(reader io.Reader) *float64 {
-	if readInt8(reader) == 0 {
-		return nil
-	}
-	temp := FfiConverterFloat64INSTANCE.Read(reader)
-	return &temp
-}
-
-func (c FfiConverterOptionalFloat64) Lower(value *float64) C.RustBuffer {
-	return LowerIntoRustBuffer[*float64](c, value)
-}
-
-func (c FfiConverterOptionalFloat64) LowerExternal(value *float64) ExternalCRustBuffer {
-	return RustBufferFromC(LowerIntoRustBuffer[*float64](c, value))
-}
-
-func (_ FfiConverterOptionalFloat64) Write(writer io.Writer, value *float64) {
-	if value == nil {
-		writeInt8(writer, 0)
-	} else {
-		writeInt8(writer, 1)
-		FfiConverterFloat64INSTANCE.Write(writer, *value)
-	}
-}
-
-type FfiDestroyerOptionalFloat64 struct{}
-
-func (_ FfiDestroyerOptionalFloat64) Destroy(value *float64) {
-	if value != nil {
-		FfiDestroyerFloat64{}.Destroy(*value)
 	}
 }
 

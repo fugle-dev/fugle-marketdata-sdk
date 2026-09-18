@@ -256,10 +256,10 @@ final class NamespaceLibrary {
     if (lib.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_quotes_sync() != ((short) 31044)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (lib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync() != ((short) 52716)) {
+    if (lib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync() != ((short) 23057)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (lib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb() != ((short) 20760)) {
+    if (lib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_bb() != ((short) 542)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (lib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_get_kdj() != ((short) 42166)) {

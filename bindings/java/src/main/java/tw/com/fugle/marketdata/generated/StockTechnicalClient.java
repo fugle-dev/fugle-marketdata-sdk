@@ -113,7 +113,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Bollinger Bands (sync/blocking)
      */
     @Override
-    public String bbSync(String symbol, String from, String to, String timeframe, Integer period, Double stddev) throws MarketDataException {
+    public String bbSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -122,7 +122,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), FfiConverterOptionalDouble.INSTANCE.lower(stddev), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), _status);
     });
     
         } catch (Exception e) {
@@ -150,12 +150,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getBb(String symbol, String from, String to, String timeframe, Integer period, Double stddev){
+    public CompletableFuture<String> getBb(String symbol, String from, String to, String timeframe, Integer period){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_bb(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), FfiConverterOptionalDouble.INSTANCE.lower(stddev)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),

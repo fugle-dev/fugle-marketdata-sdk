@@ -773,7 +773,6 @@ class StockTechnicalClient:
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
         period: Optional[int] = None,
-        stddev: Optional[float] = None,
     ) -> dict[str, Any]:
         """Get Bollinger Bands (BB) data.
 
@@ -783,7 +782,6 @@ class StockTechnicalClient:
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
             period: Moving average period (default 20)
-            stddev: Standard deviation multiplier (default 2.0)
 
         Returns:
             Bollinger Bands data with upper, middle, lower bands
@@ -855,7 +853,6 @@ class StockTechnicalClient:
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
         period: Optional[int] = None,
-        stddev: Optional[float] = None,
     ) -> dict[str, Any]:
         """Blocking version of `bb()`."""
         ...

@@ -475,8 +475,8 @@ namespace FugleMarketData
         /// </summary>
         public Task<string> GetBbAsync(
             string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? period = null, double? stddev = null)
-            => _inner.GetBb(symbol, from, to, timeframe, period, stddev);
+            uint? period = null)
+            => _inner.GetBb(symbol, from, to, timeframe, period);
 
         // ========== Sync Methods ==========
 
@@ -515,8 +515,8 @@ namespace FugleMarketData
         /// </summary>
         public string GetBb(
             string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? period = null, double? stddev = null)
-            => _inner.BbSync(symbol, from, to, timeframe, period, stddev);
+            uint? period = null)
+            => _inner.BbSync(symbol, from, to, timeframe, period);
     }
 
     /// <summary>

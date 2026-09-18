@@ -612,11 +612,10 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-        stddev: Option<f64>,
     ) -> Result<String, MarketDataError> {
         let inner = self.inner.clone();
         let result = tokio::task::spawn_blocking(move || {
-            build_bb_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)
+            build_bb_request(&inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)
         })
         .await
         .map_err(|e| crate::errors::other_error(e.to_string()))??;
@@ -690,9 +689,8 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-        stddev: Option<f64>,
     ) -> Result<String, MarketDataError> {
-        let result = build_bb_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period, stddev)?;
+        let result = build_bb_request(&self.inner, &symbol, from.as_deref(), to.as_deref(), timeframe.as_deref(), period)?;
         to_json(&result)
     }
 }
@@ -1295,7 +1293,6 @@ fn build_bb_request(
     to: Option<&str>,
     timeframe: Option<&str>,
     period: Option<u32>,
-    stddev: Option<f64>,
 ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
     let technical = client.stock().technical();
     let mut builder = technical.bb().symbol(symbol);
@@ -1303,7 +1300,6 @@ fn build_bb_request(
     if let Some(t) = to { builder = builder.to(t); }
     if let Some(tf) = timeframe { builder = builder.timeframe(tf); }
     if let Some(p) = period { builder = builder.period(p); }
-    if let Some(s) = stddev { builder = builder.stddev(s); }
     builder.send()
 }
 

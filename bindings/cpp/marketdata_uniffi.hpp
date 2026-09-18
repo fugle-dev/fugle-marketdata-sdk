@@ -984,7 +984,7 @@ struct StockTechnicalClient
     /**
      * Get Bollinger Bands (sync/blocking)
      */
-    std::string bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period, std::optional<double> stddev);
+    std::string bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
     /**
      * Get KDJ (sync/blocking)
      */
@@ -2037,13 +2037,6 @@ struct FfiConverterOptionalUInt64 {
     static std::optional<uint64_t> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<uint64_t>& value);
     static uint64_t allocation_size(const std::optional<uint64_t> &val);
-};
-struct FfiConverterOptionalDouble {
-    static std::optional<double> lift(RustBuffer buf);
-    static RustBuffer lower(const std::optional<double>& val);
-    static std::optional<double> read(RustStream &stream);
-    static void write(RustStream &stream, const std::optional<double>& value);
-    static uint64_t allocation_size(const std::optional<double> &val);
 };
 struct FfiConverterOptionalBool {
     static std::optional<bool> lift(RustBuffer buf);

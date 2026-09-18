@@ -1139,11 +1139,10 @@ impl StockTechnicalClient {
     /// @param to - End date (YYYY-MM-DD)
     /// @param timeframe - Timeframe ("D", "W", "M")
     /// @param period - SMA period (default: 20)
-    /// @param stddev - Standard deviation multiplier (default: 2.0)
     /// @returns Promise resolving to Bollinger Bands data
     #[napi(
         ts_return_type = "Promise<BbResponse>",
-        ts_args_type = "symbol: string | RestStockTechnicalBbParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null, stddev?: number | undefined | null"
+        ts_args_type = "symbol: string | RestStockTechnicalBbParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, period?: number | undefined | null"
     )]
     pub async fn bb(
         &self,
@@ -1152,7 +1151,6 @@ impl StockTechnicalClient {
         to: Option<String>,
         timeframe: Option<String>,
         period: Option<u32>,
-        stddev: Option<f64>,
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
@@ -1176,9 +1174,6 @@ impl StockTechnicalClient {
             }
             if let Some(p) = period {
                 builder = builder.period(p);
-            }
-            if let Some(s) = stddev {
-                builder = builder.stddev(s);
             }
             builder.send()
         })

@@ -12,6 +12,7 @@ pub struct TickersRequestBuilder<'a> {
     typ: Option<FutOptType>,
     exchange: Option<String>,
     session: Option<String>,
+    product: Option<String>,
     contract_type: Option<ContractType>,
     is_spread: Option<bool>,
 }
@@ -24,6 +25,7 @@ impl<'a> TickersRequestBuilder<'a> {
             typ: None,
             exchange: None,
             session: None,
+            product: None,
             contract_type: None,
             is_spread: None,
         }
@@ -52,6 +54,12 @@ impl<'a> TickersRequestBuilder<'a> {
         self
     }
 
+    /// Filter to contracts of one product (e.g. "TXF", "TXO")
+    pub fn product(mut self, product: &str) -> Self {
+        self.product = Some(product.to_string());
+        self
+    }
+
     /// Set the contract type filter (I, R, B, C, S, E)
     pub fn contract_type(mut self, contract_type: ContractType) -> Self {
         self.contract_type = Some(contract_type);
@@ -73,6 +81,13 @@ impl<'a> TickersRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
         // type is required for tickers endpoint
         let typ = self.typ.ok_or_else(|| MarketDataError::ConfigError(
             "type parameter is required for tickers endpoint".to_string(),
@@ -88,6 +103,9 @@ impl<'a> TickersRequestBuilder<'a> {
         if let Some(session) = &self.session {
             query_params.push(crate::rest::query_pair("session", session));
         }
+        if let Some(product) = &self.product {
+            query_params.push(crate::rest::query_pair("product", product));
+        }
         if let Some(contract_type) = &self.contract_type {
             query_params.push(crate::rest::query_pair("contractType", contract_type.as_code()));
         }
@@ -95,15 +113,11 @@ impl<'a> TickersRequestBuilder<'a> {
             query_params.push(crate::rest::query_pair("isSpread", is_spread));
         }
 
-        let url = format!(
+        Ok(format!(
             "{}/futopt/intraday/tickers?{}",
             self.client.get_base_url(),
             query_params.join("&")
-        );
-
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        ))
     }
 }
 
@@ -192,5 +206,23 @@ mod tests {
         assert!(builder.typ.is_some());
         assert!(builder.exchange.is_some());
         assert!(builder.contract_type.is_some());
+    }
+
+    #[test]
+    fn test_tickers_url_includes_product() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = TickersRequestBuilder::new(&client)
+            .typ(FutOptType::Future)
+            .after_hours()
+            .product("TXF")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/futopt/intraday/tickers?type=FUTURE&session=AFTERHOURS&product=TXF",
+                client.get_base_url()
+            )
+        );
     }
 }

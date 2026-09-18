@@ -1946,7 +1946,7 @@ export interface StockTechnicalClient {
   /** Get MACD for a stock */
   macd(symbol: string | RestStockTechnicalMacdParams, from?: string, to?: string, timeframe?: string, fast?: number, slow?: number, signal?: number): Promise<MacdResponse>;
   /** Get Bollinger Bands for a stock */
-  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number, stddev?: number): Promise<BbResponse>;
+  bb(symbol: string | RestStockTechnicalBbParams, from?: string, to?: string, timeframe?: string, period?: number): Promise<BbResponse>;
 }
 
 /** Stock corporate actions client interface */

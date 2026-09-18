@@ -12,6 +12,7 @@ pub struct ActivesRequestBuilder<'a> {
     client: &'a RestClient,
     market: Option<String>,
     trade: Option<String>,
+    type_filter: Option<String>,
 }
 
 impl<'a> ActivesRequestBuilder<'a> {
@@ -21,6 +22,7 @@ impl<'a> ActivesRequestBuilder<'a> {
             client,
             market: None,
             trade: None,
+            type_filter: None,
         }
     }
 
@@ -40,13 +42,28 @@ impl<'a> ActivesRequestBuilder<'a> {
         self
     }
 
+    /// Set the type filter for stock filtering (sent as `type`)
+    ///
+    /// Valid values: "ALLBUT0999", "COMMONSTOCK"
+    pub fn type_filter(mut self, type_filter: &str) -> Self {
+        self.type_filter = Some(type_filter.to_string());
+        self
+    }
+
     /// Execute the request and return the actives response
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        let market = self.market.ok_or_else(|| MarketDataError::InvalidParameter {
+        let url = self.url()?;
+        let response = self.client.get(&url)?;
+        crate::rest::read_json(response)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        let market = self.market.as_deref().ok_or_else(|| MarketDataError::InvalidParameter {
             name: "market".to_string(),
             reason: "market is required".to_string(),
         })?;
@@ -55,13 +72,16 @@ impl<'a> ActivesRequestBuilder<'a> {
         let mut url = format!(
             "{}/stock/snapshot/actives/{}",
             self.client.get_base_url(),
-            crate::rest::encode_symbol(&market)
+            crate::rest::encode_symbol(market)
         );
 
         // Add query parameters
         let mut query_params = Vec::new();
-        if let Some(trade) = self.trade {
+        if let Some(trade) = &self.trade {
             query_params.push(crate::rest::query_pair("trade", trade));
+        }
+        if let Some(type_filter) = &self.type_filter {
+            query_params.push(crate::rest::query_pair("type", type_filter));
         }
 
         if !query_params.is_empty() {
@@ -69,9 +89,7 @@ impl<'a> ActivesRequestBuilder<'a> {
             url.push_str(&query_params.join("&"));
         }
 
-        // Make request
-        let response = self.client.get(&url)?;
-        crate::rest::read_json(response)
+        Ok(url)
     }
 }
 
@@ -110,5 +128,23 @@ mod tests {
 
         assert_eq!(builder.market, Some("TSE".to_string()));
         assert_eq!(builder.trade, Some("volume".to_string()));
+    }
+
+    #[test]
+    fn test_actives_url_includes_type() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let url = ActivesRequestBuilder::new(&client)
+            .market("OTC")
+            .trade("value")
+            .type_filter("ALLBUT0999")
+            .url()
+            .unwrap();
+        assert_eq!(
+            url,
+            format!(
+                "{}/stock/snapshot/actives/OTC?trade=value&type=ALLBUT0999",
+                client.get_base_url()
+            )
+        );
     }
 }
