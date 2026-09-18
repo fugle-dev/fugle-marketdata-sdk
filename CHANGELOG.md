@@ -142,6 +142,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **All languages**: `disconnect()` / `force_close()` while the WebSocket
+  client is auto-reconnecting now emits a final `Disconnected` with intent
+  `Client` and `will_reconnect: false` (#98). It used to emit nothing, so the
+  last event read `will_reconnect: true` and only the state or the end of
+  the stream told that the reconnect had stopped. Node's `disconnect` event,
+  Python's disconnect callback and UniFFI's `on_disconnected(false)` fire
+  once more. Every disconnect still ends in exactly one final event: a
+  `Disconnected` with `will_reconnect: false`, or `ReconnectFailed`.
 - **All languages**: WebSocket unsubscribe sends the id the server issued and
   keeps the local subscriptions in step with it (#136). Unsubscribing by the
   server id now also removes the local subscription, so a reconnect no longer

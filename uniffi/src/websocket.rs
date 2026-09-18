@@ -2405,7 +2405,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn disconnect_while_reconnecting_emits_nothing_and_stops_forwarder() {
+    async fn disconnect_while_reconnecting_reports_final_disconnect_and_stops_forwarder() {
         let server = MockWsServer::start_with_capacity(2).await;
         let listener = Arc::new(TestListener::new());
         let client = mock_client(
@@ -2424,11 +2424,25 @@ mod tests {
         client.disconnect_impl().await;
         let before = listener.events();
 
+        // `disconnect()` returns once `on_disconnected(false)`, the final
+        // event core queues for the stopped reconnect, was delivered (#98).
+        let lifecycle: Vec<_> = before.iter().filter(|e| !e.starts_with("error(")).collect();
+        assert_eq!(
+            lifecycle,
+            [
+                "connected",
+                "authenticated(None)",
+                "disconnected(true)",
+                "reconnecting(1)",
+                "disconnected(false)",
+            ],
+            "{before:?}"
+        );
+
         // Outlast the backoff: a reconnect that was not cancelled would have
         // reported `connected` by now.
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
         assert_eq!(listener.events(), before, "events after disconnect()");
-        assert_eq!(before.last().map(String::as_str), Some("reconnecting(1)"));
 
         // The stream reader holds a listener clone; once it exits only this
         // test and `client` remain.

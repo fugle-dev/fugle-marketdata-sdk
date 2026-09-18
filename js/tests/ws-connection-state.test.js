@@ -104,4 +104,26 @@ describe.each(['stock', 'futopt'])('%s isConnected / isClosed follow core connec
     await waitFor(() => inListener.length > 0, 'disconnect event');
     expect(inListener[0]).toEqual({ isConnected: false, isClosed: false });
   });
+
+  test('disconnect() during the reconnect backoff fires a final disconnect event (#98)', async () => {
+    await setup({ reconnect: { enabled: true, maxAttempts: 3, initialDelayMs: 500, maxDelayMs: 500 } });
+    const disconnects = [];
+    const reconnects = [];
+    ws.on('disconnect', (event) => disconnects.push({ ...event, isClosed: ws.isClosed }));
+    ws.on('reconnect', (event) => reconnects.push(event));
+    await ws.connect();
+
+    for (const socket of wss.clients) socket.terminate();
+    await waitFor(() => reconnects.length > 0, 'reconnect event');
+    ws.disconnect();
+    await waitFor(() => disconnects.length === 2, 'final disconnect event');
+    // Past the backoff: nothing follows the final event.
+    await sleep(700);
+
+    expect(disconnects[0].isClosed).toBe(false);
+    expect(disconnects[1]).toEqual({ code: 1000, reason: 'Normal closure', isClosed: true });
+    expect(disconnects).toHaveLength(2);
+    expect(reconnects).toEqual([{ attempt: 1 }]);
+    expect(ws.isClosed).toBe(true);
+  });
 });
