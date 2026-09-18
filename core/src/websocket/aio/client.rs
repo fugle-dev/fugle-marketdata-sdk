@@ -83,7 +83,19 @@ pub struct WebSocketClient {
     /// Held for the duration of each `connect()`, so a concurrent one is
     /// refused rather than opening a second connection (#119).
     connect_gate: ConnectGate,
+    /// Held by `connect()` from its first shutdown check until it has either
+    /// installed the connection or given it up. `disconnect()` and
+    /// `force_close()` wait for it after setting `shutdown_requested`, so an
+    /// aborted `connect()` never writes state or events after their
+    /// `Disconnected` (#121). Never held across network I/O once shutdown is
+    /// requested: `connect()` releases it before closing a given-up socket,
+    /// so the wait stays within a small `shutdown_with_timeout()` budget.
+    connecting: Mutex<()>,
 }
+
+/// How long a `connect()` aborted by `disconnect()` waits for the Close frame
+/// of the connection it gives up to be sent (#121).
+const ABORTED_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Default drain timeout for [`WebSocketClient::disconnect`] when no
 /// explicit value is supplied.
@@ -168,6 +180,7 @@ impl WebSocketClient {
             writer_handle: Arc::new(Mutex::new(None)),
             writer_generation: Arc::default(),
             connect_gate: ConnectGate::default(),
+            connecting: Mutex::new(()),
         }
     }
 
@@ -391,6 +404,9 @@ impl WebSocketClient {
     ///
     /// Returns error if:
     /// - Client has been closed (ClientClosed)
+    /// - `disconnect()` or `force_close()` was called before the connection
+    ///   was established (ConnectionAborted, code 2010); a socket already
+    ///   opened is closed and the client stays `Closed`
     /// - Already connected, connecting or reconnecting (code 2011)
     /// - The credential is missing, blank or ambiguous (ConfigError)
     /// - Connection fails
@@ -422,6 +438,19 @@ impl WebSocketClient {
         // does not leave the client `Connecting`.
         let tls_connector = tls_connector_for(&self.config)?;
 
+        // A `disconnect()` from here on waits for this call to finish, and
+        // wakes it: the connection is given up at the next step instead of
+        // installed (#121).
+        let connecting = self.connecting.lock().await;
+        // Registered before the flag is first read: shutdown sets the flag
+        // before notifying, so it is either seen or wakes this.
+        let shutdown = self.shutdown_notify.notified();
+        tokio::pin!(shutdown);
+        shutdown.as_mut().enable();
+        if self.stopping() {
+            return Err(MarketDataError::ConnectionAborted);
+        }
+
         // Update state to Connecting
         {
             let mut state = write_state(&self.state);
@@ -431,11 +460,22 @@ impl WebSocketClient {
         });
 
         // Connect to WebSocket (with optional TLS customization).
-        let connect_result = timeout(
-            self.config.connect_timeout,
-            connect_async_tls_with_config(&self.config.url, None, false, Some(tls_connector)),
-        )
-        .await;
+        let connect_result = tokio::select! {
+            result = timeout(
+                self.config.connect_timeout,
+                connect_async_tls_with_config(&self.config.url, None, false, Some(tls_connector)),
+            ) => result,
+            () = shutdown.as_mut() => return Err(MarketDataError::ConnectionAborted),
+        };
+        if self.stopping() {
+            // Released first: closing is this call's own business, not
+            // something `disconnect()` has to wait for.
+            drop(connecting);
+            if let Ok(Ok((mut ws_stream, _))) = connect_result {
+                let _ = timeout(ABORTED_CLOSE_TIMEOUT, ws_stream.close(None)).await;
+            }
+            return Err(MarketDataError::ConnectionAborted);
+        }
 
         let (ws_stream, _response) = match connect_result {
             Ok(Ok((stream, response))) => (stream, response),
@@ -477,19 +517,31 @@ impl WebSocketClient {
         // Send the auth frame and wait for the verdict. The frames read on the
         // way are queued after the verdict's event (shared helper with
         // try_connect; see aio/reconnect.rs).
-        let handshake = crate::websocket::aio::reconnect::authenticate(
-            &mut ws_sink,
-            &mut ws_read,
-            &self.config,
-            &self.stream,
-            Duration::from_secs(10),
-        )
-        .await;
+        let handshake = tokio::select! {
+            handshake = crate::websocket::aio::reconnect::authenticate(
+                &mut ws_sink,
+                &mut ws_read,
+                &self.config,
+                &self.stream,
+                Duration::from_secs(10),
+            ) => Some(handshake),
+            () = shutdown.as_mut() => None,
+        };
+        // Whatever the verdict, a connection `disconnect()` asked to stop is
+        // closed rather than installed; the state stays as `disconnect()`
+        // leaves it, and its `Disconnected` is the only close reported.
+        let Some(handshake) = handshake.filter(|_| !self.stopping()) else {
+            drop(connecting);
+            let _ = timeout(ABORTED_CLOSE_TIMEOUT, ws_sink.close()).await;
+            return Err(MarketDataError::ConnectionAborted);
+        };
 
         match handshake {
             AuthHandshake::Authenticated { data, frames } => {
                 // Install the write half and spawn its writer. All
-                // subsequent outbound messages flow through its channel.
+                // subsequent outbound messages flow through its channel. A
+                // `disconnect()` from here on waits for `connecting`, then
+                // closes this connection as usual.
                 let write_failed = self.start_writer_task(ws_sink).await;
 
                 {
@@ -543,6 +595,10 @@ impl WebSocketClient {
     /// timeout the dispatch and writer tasks are forcibly aborted and
     /// the connection is force-closed.
     ///
+    /// A `connect()` in progress is stopped: it closes the socket it opened,
+    /// if any, and returns [`MarketDataError::ConnectionAborted`] (code
+    /// 2010), and the client ends `Closed` as usual (#121).
+    ///
     /// The emitted [`ConnectionEvent::Disconnected`] carries
     /// [`DisconnectIntent::Client`](crate::websocket::DisconnectIntent::Client)
     /// regardless of whether the drain completed in time. It is emitted at
@@ -586,11 +642,9 @@ impl WebSocketClient {
         timeout_dur: Duration,
     ) -> Result<(), MarketDataError> {
         // 1. Signal the dispatch loop to exit instead of reconnecting
-        //    after the next dispatch return, and stop a reconnect in
-        //    progress (#110).
-        self.shutdown_requested
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        self.shutdown_notify.notify_waiters();
+        //    after the next dispatch return, and stop a reconnect (#110) or
+        //    `connect()` (#121) in progress.
+        self.request_shutdown().await;
 
         // 2. Drop the writer-task sender so the writer drains its queue
         //    and exits naturally on the next `rx.recv()` returning `None`.
@@ -639,6 +693,24 @@ impl WebSocketClient {
             .client_closed(&self.state, 1000, "Normal closure".to_string());
 
         close_result
+    }
+
+    /// Set `shutdown_requested` and wake whatever waits on it, then wait for
+    /// a `connect()` in progress to give its connection up, or to finish
+    /// installing it, before the caller closes the client (#121). No network
+    /// I/O happens under that wait: a given-up socket is closed after
+    /// `connect()` releases the lock.
+    async fn request_shutdown(&self) {
+        self.shutdown_requested
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
+        drop(self.connecting.lock().await);
+    }
+
+    /// True once `disconnect()` or `force_close()` has been called.
+    fn stopping(&self) -> bool {
+        self.shutdown_requested
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Send the WebSocket Close frame, bounded by `budget`.
@@ -722,6 +794,10 @@ impl WebSocketClient {
     ///
     /// Use when graceful close is not possible or times out.
     ///
+    /// A `connect()` in progress is stopped first and returns
+    /// [`MarketDataError::ConnectionAborted`]; this waits for it to close the
+    /// socket it opened, if any.
+    ///
     /// Like [`disconnect`](Self::disconnect), emits
     /// [`ConnectionEvent::Disconnected`] only if this connection has not
     /// already reported one, and keeps a `Closed` state recorded with that
@@ -732,6 +808,10 @@ impl WebSocketClient {
     /// validation, or peer-initiated failures.
     pub async fn force_close(&self) -> Result<(), MarketDataError> {
         // Messages already queued stay readable until the client is dropped.
+
+        // A closed client stays closed: a `connect()` in progress gives up
+        // its connection instead of installing it (#121).
+        self.request_shutdown().await;
 
         // Abort dispatch task without waiting (read-site liveness timeout
         // tears down with it; no separate health-check task to abort).
@@ -918,6 +998,8 @@ impl WebSocketClient {
     ///
     /// Returns `ClientClosed` if the client has been closed.
     /// A closed client cannot be reconnected - create a new instance.
+    /// Returns `ConnectionAborted` if `disconnect()` or `force_close()` is
+    /// called before the new connection is established (#121).
     ///
     /// From CONTEXT.md: "支援 reconnect() 方法讓使用者手動觸發重連"
     /// Resets reconnection manager and attempts fresh connection.
@@ -1088,6 +1170,12 @@ impl WebSocketClient {
                 .await
                 {
                     Some((ws_read, write_failed)) => {
+                        // `disconnect()` may have set the flag after the new
+                        // writer was installed; it closes that connection, so
+                        // do not wait on it for the peer's Close ack.
+                        if shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                            break;
+                        }
                         current_ws_read = ws_read;
                         current_write_failed = write_failed;
                         // Loop back to dispatch with the new connection
@@ -2710,5 +2798,280 @@ mod disconnect_during_reconnect_tests {
 
             assert_disconnect_stops_reconnecting(&client, &accepted).await;
         }
+    }
+}
+
+/// `disconnect()` / `force_close()` while `connect()` is still establishing
+/// the connection (#121).
+#[cfg(test)]
+mod connect_abort_tests {
+    use super::*;
+    use crate::websocket::{DisconnectIntent, StreamItem};
+    use crate::AuthRequest;
+    use futures_util::StreamExt;
+    use std::sync::atomic::Ordering;
+    use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
+    use tokio_tungstenite::tungstenite::Message;
+
+    /// Far below the 10s auth timeout, so a pass means `connect()` was woken.
+    const PROMPT: Duration = Duration::from_secs(3);
+
+    /// What the server saw after the client's auth frame.
+    #[derive(Debug, PartialEq)]
+    enum Seen {
+        CloseFrame,
+        Eof,
+    }
+
+    /// Server that reads the auth frame, reports it on `authing`, answers
+    /// with `verdict` once `answer` fires (never if it is dropped), then
+    /// reports how the client ended the connection.
+    async fn auth_server(
+        verdict: &'static str,
+    ) -> (String, oneshot::Receiver<()>, oneshot::Sender<()>, oneshot::Receiver<Seen>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (authing_tx, authing) = oneshot::channel();
+        let (answer, answer_rx) = oneshot::channel::<()>();
+        let (seen_tx, seen) = oneshot::channel();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+            ws.next().await; // auth
+            let _ = authing_tx.send(());
+            let frame = tokio::select! {
+                Ok(()) = answer_rx => {
+                    let _ = ws.send(Message::Text(verdict.into())).await;
+                    ws.next().await
+                }
+                frame = ws.next() => frame,
+            };
+            let _ = seen_tx.send(match frame {
+                Some(Ok(Message::Close(_))) => Seen::CloseFrame,
+                Some(Ok(other)) => panic!("unexpected frame {other:?}"),
+                _ => Seen::Eof,
+            });
+        });
+        (url, authing, answer, seen)
+    }
+
+    fn client(url: String) -> Arc<WebSocketClient> {
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("test-key"));
+        Arc::new(WebSocketClient::with_reconnection_config(
+            config,
+            ReconnectionConfig::disabled(),
+        ))
+    }
+
+    fn spawn_connect(
+        client: &Arc<WebSocketClient>,
+    ) -> JoinHandle<Result<(), MarketDataError>> {
+        let client = Arc::clone(client);
+        tokio::spawn(async move { client.connect().await })
+    }
+
+    async fn aborted(connect: JoinHandle<Result<(), MarketDataError>>) {
+        let result = timeout(PROMPT, connect).await.expect("connect returns promptly");
+        let err = result.expect("join").expect_err("connect is aborted");
+        assert!(matches!(err, MarketDataError::ConnectionAborted), "{err:?}");
+        assert_eq!(err.to_error_code(), 2010);
+    }
+
+    /// Every queued event, in order.
+    fn events(client: &WebSocketClient) -> Vec<ConnectionEvent> {
+        let rx = client.stream_receiver();
+        let mut events = Vec::new();
+        while let Some(item) = rx.try_receive() {
+            if let StreamItem::Event(event) = item {
+                events.push(event);
+            }
+        }
+        events
+    }
+
+    fn assert_client_closed(client: &WebSocketClient, code: u16) {
+        assert!(
+            matches!(
+                client.state(),
+                ConnectionState::Closed { code: Some(c), intent: DisconnectIntent::Client, .. }
+                    if c == code
+            ),
+            "{:?}",
+            client.state()
+        );
+    }
+
+    /// Nothing of the given-up connection is left installed.
+    async fn assert_nothing_installed(client: &WebSocketClient) {
+        assert!(client.write_tx.lock().await.is_none());
+        assert!(client.ws_sink.lock().await.is_none());
+        assert!(client.dispatch_handle.lock().await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_while_authenticating_aborts_connect_and_closes_the_socket() {
+        let (url, authing, _answer, seen) = auth_server(r#"{"event":"authenticated"}"#).await;
+        let client = client(url);
+        let connect = spawn_connect(&client);
+        authing.await.expect("auth frame sent");
+
+        client.disconnect().await.expect("disconnect");
+
+        aborted(connect).await;
+        assert_eq!(timeout(PROMPT, seen).await.expect("seen").expect("seen"), Seen::CloseFrame);
+        assert_client_closed(&client, 1000);
+        assert_nothing_installed(&client).await;
+        let events = events(&client);
+        assert!(
+            matches!(
+                events.as_slice(),
+                [
+                    ConnectionEvent::Connecting,
+                    ConnectionEvent::Connected,
+                    ConnectionEvent::Disconnected { intent: DisconnectIntent::Client, .. },
+                ]
+            ),
+            "{events:?}"
+        );
+        assert!(!client.is_connected().await);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn force_close_while_authenticating_aborts_connect() {
+        let (url, authing, _answer, seen) = auth_server(r#"{"event":"authenticated"}"#).await;
+        let client = client(url);
+        let connect = spawn_connect(&client);
+        authing.await.expect("auth frame sent");
+
+        client.force_close().await.expect("force_close");
+
+        aborted(connect).await;
+        assert_eq!(timeout(PROMPT, seen).await.expect("seen").expect("seen"), Seen::CloseFrame);
+        assert_client_closed(&client, 1006);
+        assert_nothing_installed(&client).await;
+    }
+
+    /// The verdict arrives after shutdown was requested but before
+    /// `connect()` was woken: authenticated or not, the connection is given
+    /// up and closed, and reported neither as authenticated nor rejected.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn verdict_after_shutdown_request_is_not_installed() {
+        for verdict in [
+            r#"{"event":"authenticated"}"#,
+            r#"{"event":"error","data":{"message":"Invalid authentication credentials"}}"#,
+        ] {
+            let (url, authing, answer, seen) = auth_server(verdict).await;
+            let client = client(url);
+            let connect = spawn_connect(&client);
+            authing.await.expect("auth frame sent");
+
+            // The flag alone, without the wake-up `disconnect()` sends.
+            client.shutdown_requested.store(true, Ordering::SeqCst);
+            answer.send(()).expect("answer");
+
+            aborted(connect).await;
+            assert_eq!(
+                timeout(PROMPT, seen).await.expect("seen").expect("seen"),
+                Seen::CloseFrame,
+                "{verdict}"
+            );
+            assert_nothing_installed(&client).await;
+            let events = events(&client);
+            assert!(
+                matches!(events.as_slice(), [ConnectionEvent::Connecting, ConnectionEvent::Connected]),
+                "{verdict}: {events:?}"
+            );
+
+            client.disconnect().await.expect("disconnect");
+            assert_client_closed(&client, 1000);
+        }
+    }
+
+    /// The server accepts TCP but never completes the WebSocket upgrade.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_while_opening_the_socket_aborts_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (accepted_tx, accepted) = oneshot::channel();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let _ = accepted_tx.send(());
+            let _held_open = tcp;
+            std::future::pending::<()>().await;
+        });
+        let client = client(url);
+        let connect = spawn_connect(&client);
+        accepted.await.expect("accepted");
+
+        client.disconnect().await.expect("disconnect");
+
+        aborted(connect).await;
+        assert_client_closed(&client, 1000);
+        let events = events(&client);
+        assert!(
+            matches!(
+                events.as_slice(),
+                [
+                    ConnectionEvent::Connecting,
+                    ConnectionEvent::Disconnected { intent: DisconnectIntent::Client, .. },
+                ]
+            ),
+            "{events:?}"
+        );
+    }
+
+    /// Shutdown already requested once `connect()` is past its closed check
+    /// (`disconnect()` completing in between): nothing is written. The flag
+    /// is set before the call, which that check does not read, so no timing
+    /// is involved.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_requested_before_connect_starts_leaves_the_state_alone() {
+        let (url, _authing, _answer, _seen) = auth_server(r#"{"event":"authenticated"}"#).await;
+        let client = client(url);
+        client.shutdown_requested.store(true, Ordering::SeqCst);
+
+        aborted(spawn_connect(&client)).await;
+        assert_eq!(client.state(), ConnectionState::Disconnected);
+        assert!(events(&client).is_empty());
+    }
+
+    /// Closing the given-up socket can take `connect()` up to
+    /// `ABORTED_CLOSE_TIMEOUT`; `disconnect()` does not wait for that, so a
+    /// short budget is kept. The server reads one byte of the auth frame (so
+    /// the client has built it and is writing) and no more: the frame, far
+    /// larger than the socket buffers, is still being written when
+    /// `connect()` is woken, and the Close frame queued behind it cannot be
+    /// sent.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn short_shutdown_budget_is_kept_while_connect_closes_its_socket() {
+        const BUDGET: Duration = Duration::from_millis(100);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (writing_tx, writing) = oneshot::channel();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+            ws.get_mut().read_exact(&mut [0u8; 1]).await.expect("auth frame starts");
+            let _ = writing_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        let key = "k".repeat(32 * 1024 * 1024);
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key(key));
+        let client = Arc::new(WebSocketClient::with_reconnection_config(
+            config,
+            ReconnectionConfig::disabled(),
+        ));
+        let connect = spawn_connect(&client);
+        writing.await.expect("auth frame being written");
+
+        let started = std::time::Instant::now();
+        client.shutdown_with_timeout(BUDGET).await.expect("shutdown");
+        let elapsed = started.elapsed();
+
+        assert!(elapsed < ABORTED_CLOSE_TIMEOUT - BUDGET, "took {elapsed:?}");
+        assert_client_closed(&client, 1000);
+        aborted(connect).await;
     }
 }

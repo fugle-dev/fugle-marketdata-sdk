@@ -134,6 +134,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `unsubscribe(channel=..., symbol=... | symbols=[...], odd_lot=...)`
   (FutOpt `after_hours=`). A channel together with an id is 1005
   `INVALID_PARAMETER`.
+- **Rust**: `MarketDataError::ConnectionAborted`, code 2010 `CLIENT_CLOSED`
+  (the same code as `ClientClosed`, `source_kind` `client`), with the message
+  `Connection aborted: disconnect() called before the connection was
+  established` (#121). Node's aborted `connect()` and the UniFFI bindings'
+  (the `ClientClosed` variant) now carry this message.
 
 ### Changed
 
@@ -476,6 +481,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout on the dead socket; that case is resent too. It is verified only
   by a manual stress run, not end to end in CI. Refused connections,
   timeouts and HTTP error statuses are not resent.
+- **Rust**: `aio::WebSocketClient::disconnect()` or `force_close()` called
+  while `connect()` was still opening the socket or authenticating left the
+  client connected: `connect()` went on to install the connection, return
+  `Ok(())` and set the state back to `Connected` after the client had been
+  marked `Closed` and `Disconnected` reported (#121). `connect()` now stops
+  at once and returns `ConnectionAborted` (2010); a socket it had opened is
+  closed with a Close frame, and the state stays `Closed { intent: Client }`.
+  `disconnect()` / `force_close()` do not wait for that Close frame, which
+  `connect()` gives at most 500 ms, so a short `shutdown_with_timeout()`
+  budget is kept.
 - **C#, Go, C++, Java**: WebSocket `connect()` while connected, connecting or
   auto-reconnecting opened a second connection and switched event delivery
   and `is_connected()` to it; if that connection failed, `is_connected()`
