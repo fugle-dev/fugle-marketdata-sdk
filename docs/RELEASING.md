@@ -14,6 +14,20 @@ below; CI runs it on every pull request.
 python3 scripts/release-versions.py check
 ```
 
+`check` also covers the places that *derive* their version from those
+manifests and drift silently when a bump is done by hand:
+
+| Derived location | Follows | How it is fixed |
+|---|---|---|
+| `js/index.js` (napi embeds the bindings version in every platform check) | bindings | `npm run build:debug` in `js/` |
+| `js/package-lock.json` | bindings | `npm install --package-lock-only` in `js/` |
+| `Cargo.lock` (the five workspace crates) | all three | `cargo update --workspace` |
+| `docs/INSTALL.md` (track table, `pip install`, `go get`, `VERSION=`, `TAG=`) | all three | `bump` rewrites it; otherwise by hand |
+| `MIGRATION-0.9.md` title, line 1 only | bindings, uniffi | `bump` rewrites it; otherwise by hand |
+
+Each error names the command or file that fixes it. Generated files are never
+edited by the script; it only tells you which generator to run.
+
 ## Rules
 
 - **Only release candidates (`X.Y.Z-rc.N`) may be published, on every
@@ -70,6 +84,7 @@ trusted publishing; no token is stored. Rehearse it first with
 publisher configuration) but publishes nothing. Then tag the core version:
 
 ```bash
+python3 scripts/release-versions.py bump --rust rc   # then `cargo update --workspace`, CHANGELOG.md, commit
 python3 scripts/release-versions.py check
 git tag rust-v0.9.0-rc.1
 git push origin rust-v0.9.0-rc.1
@@ -95,23 +110,48 @@ credentials are not needed for a rehearsal.
 
 ## Releasing the bindings
 
-1. Update `CHANGELOG.md` with the release date and make sure CI is green on
-   `main`. CI checks that the committed UniFFI bindings match the Rust
+1. Bump the versions with the script instead of editing manifests by hand.
+   Each flag takes an explicit version or `rc` (current rc number + 1); tracks
+   you leave out are untouched. Bump UniFFI whenever C#, Go or C++ users would
+   see a change; bump the Rust crates only if you are releasing them too.
+
+   ```bash
+   python3 scripts/release-versions.py bump --bindings rc --uniffi rc --dry-run  # preview
+   python3 scripts/release-versions.py bump --bindings rc --uniffi rc
+   ```
+
+   This rewrites the nine manifests plus `docs/INSTALL.md` and the title line
+   of `MIGRATION-0.9.md`, verifies them the way `check` does, and restores
+   every file if anything disagrees. Only release-candidate versions are
+   accepted. A full `check` fails until step 2 is done; that is expected.
+2. Regenerate the files the script deliberately does not touch, in the order
+   it prints at the end:
+
+   ```bash
+   (cd js && npm run build:debug)             # js/index.js embeds the bindings version 54 times
+   (cd js && npm install --package-lock-only) # js/package-lock.json
+   cargo update --workspace                   # Cargo.lock
+   ```
+
+3. Update `CHANGELOG.md` with the release date, then run
+   `python3 scripts/release-versions.py check`; it must pass before you
+   commit. Open the version PR and make sure CI is green on `main` after it
+   merges. CI checks that the committed UniFFI bindings match the Rust
    interface. Rehearse the release first if the release workflow or build
    configuration changed since the last release.
-2. Tag the bindings version and push the tag:
+4. Tag the bindings version and push the tag:
 
    ```bash
    git tag v3.0.0-rc.2
    git push origin v3.0.0-rc.2
    ```
 
-3. Watch the **Release** workflow. It builds every platform, publishes to
+5. Watch the **Release** workflow. It builds every platform, publishes to
    PyPI, npm, NuGet and the Go module repository, then creates the GitHub
    Release with the C++ tarballs. The GitHub Release is only created when
    every publish job succeeded.
-4. If a publish job fails, fix the cause and re-run the failed jobs. Every
+6. If a publish job fails, fix the cause and re-run the failed jobs. Every
    publish step skips versions that already exist.
-5. **Verify Release** starts automatically afterwards. It installs each
+7. **Verify Release** starts automatically afterwards. It installs each
    package from its registry on Linux, macOS and Windows and constructs a
    client. It also checks that the npm pre-release did not land on `latest`.
