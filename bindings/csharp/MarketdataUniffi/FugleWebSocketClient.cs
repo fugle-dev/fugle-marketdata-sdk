@@ -300,6 +300,7 @@ namespace FugleMarketData
             if (options.Reconnect != null)
             {
                 reconnectRecord = new uniffi.marketdata_uniffi.ReconnectConfigRecord(
+                    enabled: options.Reconnect.Enabled ?? true,
                     maxAttempts: options.Reconnect.MaxAttempts ?? 0,
                     initialDelayMs: options.Reconnect.InitialDelayMs ?? 0,
                     maxDelayMs: options.Reconnect.MaxDelayMs ?? 0

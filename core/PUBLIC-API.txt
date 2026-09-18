@@ -4004,7 +4004,7 @@ impl<S> core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::
 impl<S> core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::reconnection::ReconnectionConfigBuilder<S>
 pub struct marketdata_core::websocket::reconnection::ReconnectionManager
 impl marketdata_core::websocket::reconnection::ReconnectionManager
-pub fn marketdata_core::websocket::reconnection::ReconnectionManager::attempts_remaining(&self) -> u32
+pub fn marketdata_core::websocket::reconnection::ReconnectionManager::attempts_remaining(&self) -> core::option::Option<u32>
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::current_attempt(&self) -> u32
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::new(marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::next_delay(&mut self) -> core::option::Option<core::time::Duration>
@@ -4541,7 +4541,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::rec
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::reconnection::ReconnectionConfig
 pub struct marketdata_core::websocket::ReconnectionManager
 impl marketdata_core::websocket::reconnection::ReconnectionManager
-pub fn marketdata_core::websocket::reconnection::ReconnectionManager::attempts_remaining(&self) -> u32
+pub fn marketdata_core::websocket::reconnection::ReconnectionManager::attempts_remaining(&self) -> core::option::Option<u32>
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::current_attempt(&self) -> u32
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::new(marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::next_delay(&mut self) -> core::option::Option<core::time::Duration>

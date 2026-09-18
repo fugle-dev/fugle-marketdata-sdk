@@ -1579,7 +1579,7 @@ mod tests {
         // Verify reconnection config is used
         {
             let reconnection = client.reconnection.lock().await;
-            assert_eq!(reconnection.attempts_remaining(), 10);
+            assert_eq!(reconnection.attempts_remaining(), Some(10));
         }
     }
 

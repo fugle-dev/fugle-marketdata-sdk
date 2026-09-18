@@ -8,11 +8,17 @@ import java.util.Objects;
 /**
  * Reconnection configuration record for FFI
  *
- * All fields are optional — zero/false values mean "use default".
+ * Without a record the client auto-reconnects with the core defaults. In a
+ * record, `enabled` is taken as given and zero numeric fields mean "use
+ * default".
  */
 public class ReconnectConfigRecord {
     /**
-     * Maximum reconnection attempts (default: 5, min: 1)
+     * Whether auto-reconnect is active; `false` turns it off
+     */
+    private Boolean enabled;
+    /**
+     * Maximum reconnection attempts; 0 means unlimited (the default)
      */
     private Integer maxAttempts;
     /**
@@ -25,16 +31,23 @@ public class ReconnectConfigRecord {
     private Long maxDelayMs;
 
     public ReconnectConfigRecord(
+        Boolean enabled, 
         Integer maxAttempts, 
         Long initialDelayMs, 
         Long maxDelayMs
     ) {
+        
+        this.enabled = enabled;
         
         this.maxAttempts = maxAttempts;
         
         this.initialDelayMs = initialDelayMs;
         
         this.maxDelayMs = maxDelayMs;
+    }
+    
+    public Boolean enabled() {
+        return this.enabled;
     }
     
     public Integer maxAttempts() {
@@ -47,6 +60,9 @@ public class ReconnectConfigRecord {
     
     public Long maxDelayMs() {
         return this.maxDelayMs;
+    }
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
     }
     public void setMaxAttempts(Integer maxAttempts) {
         this.maxAttempts = maxAttempts;
@@ -65,6 +81,8 @@ public class ReconnectConfigRecord {
         if (other instanceof ReconnectConfigRecord) {
             ReconnectConfigRecord t = (ReconnectConfigRecord) other;
             return (
+              Objects.equals(enabled, t.enabled) && 
+              
               Objects.equals(maxAttempts, t.maxAttempts) && 
               
               Objects.equals(initialDelayMs, t.initialDelayMs) && 
@@ -78,7 +96,7 @@ public class ReconnectConfigRecord {
 
     @Override
     public int hashCode() {
-        return Objects.hash(maxAttempts, initialDelayMs, maxDelayMs);
+        return Objects.hash(enabled, maxAttempts, initialDelayMs, maxDelayMs);
     }
 }
 

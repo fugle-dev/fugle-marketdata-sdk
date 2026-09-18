@@ -207,6 +207,7 @@ public class ConfigOptionsTests
     {
         var options = new FugleMarketData.ReconnectOptions();
 
+        Assert.IsNull(options.Enabled);
         Assert.IsNull(options.MaxAttempts);
         Assert.IsNull(options.InitialDelayMs);
         Assert.IsNull(options.MaxDelayMs);

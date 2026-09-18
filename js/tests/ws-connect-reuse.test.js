@@ -115,10 +115,10 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
   let wss;
   let ws;
 
-  async function setup(serverOptions) {
+  async function setup(serverOptions, clientOptions = {}) {
     wss = await startServer(serverOptions);
     const { port } = wss.address();
-    const client = new WebSocketClient({ apiKey: 'test-key', baseUrl: `ws://127.0.0.1:${port}` });
+    const client = new WebSocketClient({ apiKey: 'test-key', baseUrl: `ws://127.0.0.1:${port}`, ...clientOptions });
     ws = client[product];
   }
 
@@ -185,7 +185,8 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
   });
 
   test('connect() from a disconnect handler after a server close reconnects', async () => {
-    await setup();
+    // Reconnecting by hand needs auto-reconnect off (it is on by default, #149).
+    await setup(undefined, { reconnect: { enabled: false } });
     let reconnect;
     ws.on('disconnect', () => {
       // Reconnect once: tearing the test down fires this handler again, and a
