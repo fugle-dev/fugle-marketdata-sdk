@@ -183,7 +183,6 @@ reconnect := marketdata.ReconnectConfig{
 }
 
 healthCheck := marketdata.HealthCheckConfig{
-    Enabled:          true,
     ProbeEnabled:     true,
     IdleProbeAfterMs: 15000,
 }
@@ -204,9 +203,9 @@ ws, err := marketdata.NewFugleWebSocketClient(
 - `InitialDelayMs uint64` - Initial delay for exponential backoff (zero = use default 1000ms)
 - `MaxDelayMs uint64` - Maximum delay cap (zero = use default 60000ms)
 
-`HealthCheckConfig` struct (set `Enabled` explicitly: its zero value turns detection off):
+`HealthCheckConfig` struct (detection is on without it; pass
+`marketdata.WithoutHealthCheck()` instead of `WithHealthCheck` to turn it off):
 
-- `Enabled bool` - Whether health check is enabled
 - `HeartbeatTimeoutMs uint64` - Maximum gap between inbound frames (zero = use default 35000ms); does not apply with `ProbeEnabled`
 - `ProbeEnabled bool` - Confirm with a ping before declaring the connection dead
 - `IdleProbeAfterMs uint64` - Silence before the ping (zero = use default 30000ms)

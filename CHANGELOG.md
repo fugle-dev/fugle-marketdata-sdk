@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Go**: the new `WithoutReconnect()` option. `ReconnectConfig` has no
     on/off field, so `WithReconnect(...)` keeps reconnect on.
   - **C++**: a `ReconnectConfigRecord` with `enabled = false`
+- **Go**: `HealthCheckConfig.Enabled` is removed; turn liveness detection
+  off with the new `WithoutHealthCheck()` option (#152). Passing a
+  `HealthCheckConfig` used to send its `Enabled` as given, so one that set
+  only `HeartbeatTimeoutMs` or the probe fields silently turned detection
+  off; `WithHealthCheck(...)` now always keeps it on, like `WithReconnect`.
+  Between `WithHealthCheck` and `WithoutHealthCheck`, the last option given
+  wins. Replace `HealthCheckConfig{Enabled: false}` with
+  `WithoutHealthCheck()` and drop `Enabled: true`.
 - **Behaviour change — all languages: reconnect attempts are unlimited by
   default** (#149). `max_attempts` defaults to `0`, which now means
   unlimited, instead of `5`; each wait is capped at `max_delay` (60 s), so an

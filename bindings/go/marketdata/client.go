@@ -103,16 +103,7 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 			MaxDelayMs:     cfg.reconnect.MaxDelayMs,
 		}
 	}
-	var healthCheckRecord *HealthCheckConfigRecord
-	if cfg.healthCheck != nil {
-		healthCheckRecord = &HealthCheckConfigRecord{
-			Enabled:            cfg.healthCheck.Enabled,
-			HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
-			ProbeEnabled:       cfg.healthCheck.ProbeEnabled,
-			IdleProbeAfterMs:   cfg.healthCheck.IdleProbeAfterMs,
-			ProbeTimeoutMs:     cfg.healthCheck.ProbeTimeoutMs,
-		}
-	}
+	healthCheckRecord := cfg.healthCheckRecord()
 	var messageQueueRecord *MessageQueueConfigRecord
 	if cfg.messageOverflow != nil || cfg.messageBuffer != nil {
 		overflow := MessageOverflowRecordDropNewest
@@ -154,4 +145,23 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		channel:  ch,
 		listener: channelListener,
 	}, nil
+}
+
+// healthCheckRecord is the record to hand to core: nil keeps the core
+// defaults (detection on), WithoutHealthCheck turns it off, and a
+// HealthCheckConfig always keeps it on (#152).
+func (cfg *clientConfig) healthCheckRecord() *HealthCheckConfigRecord {
+	if cfg.noHealthCheck {
+		return &HealthCheckConfigRecord{Enabled: false}
+	}
+	if cfg.healthCheck == nil {
+		return nil
+	}
+	return &HealthCheckConfigRecord{
+		Enabled:            true,
+		HeartbeatTimeoutMs: cfg.healthCheck.HeartbeatTimeoutMs,
+		ProbeEnabled:       cfg.healthCheck.ProbeEnabled,
+		IdleProbeAfterMs:   cfg.healthCheck.IdleProbeAfterMs,
+		ProbeTimeoutMs:     cfg.healthCheck.ProbeTimeoutMs,
+	}
 }

@@ -29,10 +29,6 @@ func TestReconnectConfigDefaults(t *testing.T) {
 func TestHealthCheckConfigDefaults(t *testing.T) {
 	cfg := HealthCheckConfig{}
 
-	// Enabled defaults to false (Go zero value matches DEFAULT_HEALTH_CHECK_ENABLED)
-	if cfg.Enabled != false {
-		t.Errorf("expected Enabled default false, got %v", cfg.Enabled)
-	}
 	if cfg.HeartbeatTimeoutMs != 0 {
 		t.Errorf("expected HeartbeatTimeoutMs default 0 (use core default), got %d", cfg.HeartbeatTimeoutMs)
 	}
@@ -69,16 +65,12 @@ func TestReconnectConfigCustomValues(t *testing.T) {
 // Test 4: HealthCheckConfig custom values
 func TestHealthCheckConfigCustomValues(t *testing.T) {
 	cfg := HealthCheckConfig{
-		Enabled:            true,
 		HeartbeatTimeoutMs: 10000,
 		ProbeEnabled:       true,
 		IdleProbeAfterMs:   30000,
 		ProbeTimeoutMs:     5000,
 	}
 
-	if cfg.Enabled != true {
-		t.Errorf("expected Enabled true, got %v", cfg.Enabled)
-	}
 	if cfg.HeartbeatTimeoutMs != 10000 {
 		t.Errorf("expected HeartbeatTimeoutMs 10000, got %d", cfg.HeartbeatTimeoutMs)
 	}
@@ -271,7 +263,8 @@ func TestOptionFunctions(t *testing.T) {
 		{"WithEndpoint", WithEndpoint(WebSocketEndpointStock)},
 		{"WithReconnect", WithReconnect(ReconnectConfig{MaxAttempts: 3})},
 		{"WithoutReconnect", WithoutReconnect()},
-		{"WithHealthCheck", WithHealthCheck(HealthCheckConfig{Enabled: true})},
+		{"WithHealthCheck", WithHealthCheck(HealthCheckConfig{HeartbeatTimeoutMs: 10000})},
+		{"WithoutHealthCheck", WithoutHealthCheck()},
 		{"WithMessageOverflow", WithMessageOverflow(MessageOverflowUnbounded)},
 		{"WithMessageBuffer", WithMessageBuffer(8192)},
 	}
@@ -385,5 +378,66 @@ func TestWithoutReconnect_LastOptionWins(t *testing.T) {
 
 	if cfg := apply(); cfg.noReconnect || cfg.reconnect != nil {
 		t.Error("no option must leave the core default (auto-reconnect on)")
+	}
+}
+
+// Between WithHealthCheck and WithoutHealthCheck, the last option given wins (#152).
+func TestWithoutHealthCheck_LastOptionWins(t *testing.T) {
+	apply := func(opts ...Option) *clientConfig {
+		cfg := &clientConfig{}
+		for _, opt := range opts {
+			if err := opt(cfg); err != nil {
+				t.Fatalf("option: %v", err)
+			}
+		}
+		return cfg
+	}
+
+	cfg := apply(WithHealthCheck(HealthCheckConfig{HeartbeatTimeoutMs: 10000}), WithoutHealthCheck())
+	if !cfg.noHealthCheck || cfg.healthCheck != nil {
+		t.Errorf("WithoutHealthCheck after WithHealthCheck: noHealthCheck=%v healthCheck=%v", cfg.noHealthCheck, cfg.healthCheck)
+	}
+
+	cfg = apply(WithoutHealthCheck(), WithHealthCheck(HealthCheckConfig{HeartbeatTimeoutMs: 10000}))
+	if cfg.noHealthCheck || cfg.healthCheck == nil {
+		t.Errorf("WithHealthCheck after WithoutHealthCheck: noHealthCheck=%v healthCheck=%v", cfg.noHealthCheck, cfg.healthCheck)
+	}
+
+	if cfg := apply(); cfg.noHealthCheck || cfg.healthCheck != nil {
+		t.Error("no option must leave the core default (health check on)")
+	}
+}
+
+// A HealthCheckConfig that sets only some fields keeps detection on; only
+// WithoutHealthCheck turns it off (#152).
+func TestHealthCheckRecord(t *testing.T) {
+	if rec := (&clientConfig{}).healthCheckRecord(); rec != nil {
+		t.Errorf("no option: want nil record (core defaults), got %+v", *rec)
+	}
+
+	cfg := &clientConfig{}
+	if err := WithHealthCheck(HealthCheckConfig{HeartbeatTimeoutMs: 10000})(cfg); err != nil {
+		t.Fatalf("option: %v", err)
+	}
+	rec := cfg.healthCheckRecord()
+	if rec == nil || !rec.Enabled || rec.HeartbeatTimeoutMs != 10000 {
+		t.Errorf("partial HealthCheckConfig: want Enabled=true HeartbeatTimeoutMs=10000, got %+v", rec)
+	}
+
+	cfg = &clientConfig{}
+	if err := WithHealthCheck(HealthCheckConfig{ProbeEnabled: true, IdleProbeAfterMs: 10000, ProbeTimeoutMs: 2000})(cfg); err != nil {
+		t.Fatalf("option: %v", err)
+	}
+	rec = cfg.healthCheckRecord()
+	if rec == nil || !rec.Enabled || !rec.ProbeEnabled || rec.IdleProbeAfterMs != 10000 || rec.ProbeTimeoutMs != 2000 {
+		t.Errorf("probe HealthCheckConfig: want Enabled and probe fields passed through, got %+v", rec)
+	}
+
+	cfg = &clientConfig{}
+	if err := WithoutHealthCheck()(cfg); err != nil {
+		t.Fatalf("option: %v", err)
+	}
+	if rec := cfg.healthCheckRecord(); rec == nil || rec.Enabled {
+		t.Errorf("WithoutHealthCheck: want Enabled=false, got %+v", rec)
 	}
 }
