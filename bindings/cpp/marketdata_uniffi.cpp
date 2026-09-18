@@ -129,6 +129,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync() != 62355) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync() != 36565) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_ticker_sync() != 37699) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -154,6 +157,9 @@ void ensure_initialized() {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync() != 40591) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync() != 2092) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_movers_sync() != 41234) {
@@ -1029,6 +1035,13 @@ std::string StockIntradayClient::quote_sync(const std::string &symbol) {
         uniffi::FfiConverterMarketDataError::lift,
         ptr, uniffi::FfiConverterString::lower(symbol)));
 }
+std::string StockIntradayClient::quotes_sync(const std::string &symbol, bool odd_lot) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterString::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stockintradayclient_quotes_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterBool::lower(odd_lot)));
+}
 std::string StockIntradayClient::ticker_sync(const std::string &symbol) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
@@ -1153,6 +1166,13 @@ std::string StockSnapshotClient::actives_sync(const std::string &market, std::op
         uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_actives_sync,
         uniffi::FfiConverterMarketDataError::lift,
         ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterOptionalString::lower(trade)));
+}
+std::string StockSnapshotClient::heatmap_sync(const std::string &symbol, std::optional<std::string> time, std::optional<std::string> period) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterString::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_heatmap_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(time), uniffi::FfiConverterOptionalString::lower(period)));
 }
 std::string StockSnapshotClient::movers_sync(const std::string &market, std::optional<std::string> direction, std::optional<std::string> change) {
     auto ptr = this->_uniffi_internal_clone_pointer();

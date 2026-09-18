@@ -78,6 +78,22 @@ impl FromNapiValue for RestArg {
     }
 }
 
+/// `quote(params, true)` / `quotes(params, true)`: the positional odd-lot
+/// flag still applies to the object form unless the object already sets
+/// `type` under any spelling (`type`, `oddLot`, `odd_lot`, also as `false`);
+/// the table turns `oddLot` into `type=oddlot`.
+fn with_positional_odd_lot(path: &[&str], mut params: Map<String, Value>, odd_lot: Option<bool>) -> Map<String, Value> {
+    let spec = EndpointSpec::for_path(path)
+        .unwrap_or_else(|| panic!("{} has no entry in core::rest::params", path.join("/")));
+    let sets_type = params
+        .iter()
+        .any(|(k, v)| !v.is_null() && spec.resolve(k).is_some_and(|r| r.spec.name == "type"));
+    if odd_lot == Some(true) && !sets_type {
+        params.insert("oddLot".to_string(), Value::Bool(true));
+    }
+    params
+}
+
 /// Send the object form: the path param (`symbol` / `market`, or `product`
 /// where the table allows it) becomes the last path segment and every other
 /// key is checked against `core::rest::params` before it is sent.
@@ -562,19 +578,9 @@ impl StockIntradayClient {
     pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Settled> {
         let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(symbol) => (symbol, odd_lot),
-            RestArg::Params(mut params) => {
-                // The positional flag still applies to the object form unless
-                // the object already sets `type` under any spelling; the
-                // table turns `oddLot` into `type=oddlot`.
+            RestArg::Params(params) => {
                 let path = ["stock", "intraday", "quote"];
-                let spec = EndpointSpec::for_path(&path).expect("quote is in the table");
-                let sets_type = params
-                    .iter()
-                    .any(|(k, v)| !v.is_null() && spec.resolve(k).is_some_and(|r| r.spec.name == "type"));
-                if odd_lot == Some(true) && !sets_type {
-                    params.insert("oddLot".to_string(), Value::Bool(true));
-                }
-                return get_with_params(&self.inner, &path, params).await;
+                return get_with_params(&self.inner, &path, with_positional_odd_lot(&path, params, odd_lot)).await;
             }
         };
 
@@ -585,6 +591,50 @@ impl StockIntradayClient {
             let stock = inner.stock();
             let intraday = stock.intraday();
             let mut builder = intraday.quote().symbol(&symbol);
+            if let Some(ol) = effective_odd_lot {
+                builder = builder.odd_lot(ol);
+            }
+            builder.send()
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
+
+        Ok(Settled(result))
+    }
+
+    /// Get intraday quotes for several stock symbols in one request
+    ///
+    /// The batch form of `quote()`: the symbols go in the `symbol` query key,
+    /// comma-separated, and the response is an array of quote objects.
+    ///
+    /// @param symbol - Stock symbols, comma-separated (e.g., "2330,2317")
+    /// @param oddLot - Whether to query odd lot data (default: false)
+    /// @returns Promise resolving to an array of quote objects, one per symbol
+    ///
+    /// @example
+    /// ```javascript
+    /// await client.stock.intraday.quotes('2330,2317');
+    /// await client.stock.intraday.quotes({ symbol: '2330,2317', type: 'oddlot' });
+    /// ```
+    #[napi(
+        ts_return_type = "Promise<QuoteResponse[]>",
+        ts_args_type = "symbol: string | RestStockIntradayQuotesParams, oddLot?: boolean | undefined | null"
+    )]
+    pub async fn quotes(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Settled> {
+        let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(symbol) => (symbol, odd_lot),
+            RestArg::Params(params) => {
+                let path = ["stock", "intraday", "quotes"];
+                return get_with_params(&self.inner, &path, with_positional_odd_lot(&path, params, odd_lot)).await;
+            }
+        };
+
+        let inner = self.inner.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let stock = inner.stock();
+            let intraday = stock.intraday();
+            let mut builder = intraday.quotes().symbol(&symbol);
             if let Some(ol) = effective_odd_lot {
                 builder = builder.odd_lot(ol);
             }
@@ -939,6 +989,51 @@ impl StockSnapshotClient {
             let mut builder = snap.actives().market(&market);
             if let Some(t) = trade {
                 builder = builder.trade(&t);
+            }
+            builder.send()
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
+
+        Ok(Settled(result))
+    }
+
+    /// Get the heatmap of an index: its constituents with their change
+    ///
+    /// @param symbol - Index code (e.g., "IX0001" for the TAIEX, "IX0027" for
+    ///   the TPEx index). Not a stock symbol or a market: "2330" and "TSE"
+    ///   both return 404.
+    /// @param time - Intraday snapshot time (HHmmss, e.g., "100000"); the
+    ///   server defaults to the latest snapshot
+    /// @param period - Change period instead of the day's change ("1w", "1m",
+    ///   "3m", "6m", "1y", "ytd")
+    /// @returns Promise resolving to the index, its sub-indices and its constituent stocks
+    #[napi(
+        ts_return_type = "Promise<SnapshotHeatmapResponse>",
+        ts_args_type = "symbol: string | RestStockSnapshotHeatmapParams, time?: string | undefined | null, period?: string | undefined | null"
+    )]
+    pub async fn heatmap(
+        &self,
+        symbol: Option<RestArg>,
+        time: Option<String>,
+        period: Option<String>,
+    ) -> napi::Result<Settled> {
+        let symbol = match RestArg::required(symbol, "symbol")? {
+            RestArg::Positional(value) => value,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "heatmap"], params).await,
+        };
+
+        let inner = self.inner.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let stock = inner.stock();
+            let snap = stock.snapshot();
+            let mut builder = snap.heatmap().symbol(&symbol);
+            if let Some(t) = time {
+                builder = builder.time(&t);
+            }
+            if let Some(p) = period {
+                builder = builder.period(&p);
             }
             builder.send()
         })

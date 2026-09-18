@@ -1346,6 +1346,13 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quotes(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        sbyte @oddLot
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_ticker(
         IntPtr @ptr,
         RustBuffer @symbol
@@ -1373,6 +1380,14 @@ static class _UniFFILib
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync(
         IntPtr @ptr,
         RustBuffer @symbol,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_quotes_sync(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        sbyte @oddLot,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -1520,6 +1535,14 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_heatmap(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @time,
+        RustBuffer @period
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_movers(
         IntPtr @ptr,
         RustBuffer @market,
@@ -1532,6 +1555,15 @@ static class _UniFFILib
         IntPtr @ptr,
         RustBuffer @market,
         RustBuffer @typeFilter
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_heatmap_sync(
+        IntPtr @ptr,
+        RustBuffer @symbol,
+        RustBuffer @time,
+        RustBuffer @period,
+        ref UniffiRustCallStatus _uniffi_out_err
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2418,6 +2450,9 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_quote();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_quotes();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_ticker();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2431,6 +2466,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stockintradayclient_ticker_sync();
@@ -2475,10 +2513,16 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_actives();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_heatmap();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_movers();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_quotes();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_movers_sync();
@@ -3142,6 +3186,16 @@ static class _UniFFILib
         }
         {
             var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_quotes();
+            if (checksum != 44101)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_quotes` checksum `44101`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_get_ticker();
             if (checksum != 19948)
             {
@@ -3187,6 +3241,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync` checksum `62355`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync();
+            if (checksum != 36565)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync` checksum `36565`, library returned `{checksum}`"
                 );
             }
         }
@@ -3332,6 +3396,16 @@ static class _UniFFILib
         }
         {
             var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_heatmap();
+            if (checksum != 5251)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_heatmap` checksum `5251`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_movers();
             if (checksum != 51611)
             {
@@ -3347,6 +3421,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_get_quotes` checksum `51655`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync();
+            if (checksum != 2092)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync` checksum `2092`, library returned `{checksum}`"
                 );
             }
         }
@@ -6562,6 +6646,16 @@ public interface IStockIntradayClient
     Task<string> GetQuote(string @symbol);
 
     /// <summary>
+    /// Get quotes for several symbols in one request (async)
+    ///
+    /// The batch form of `get_quote`: `symbol` is comma-separated
+    /// ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
+    /// queries odd-lot data instead of board-lot.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<string> GetQuotes(string @symbol, bool @oddLot);
+
+    /// <summary>
     /// Get ticker info for a symbol (async)
     ///
     /// Returns typed Ticker model with stock metadata.
@@ -6598,6 +6692,15 @@ public interface IStockIntradayClient
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     string QuoteSync(string @symbol);
+
+    /// <summary>
+    /// Get quotes for several symbols in one request (sync/blocking)
+    ///
+    /// `symbol` is comma-separated ("2330,2317"); the JSON is an array of
+    /// quote objects.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string QuotesSync(string @symbol, bool @oddLot);
 
     /// <summary>
     /// Get ticker info for a symbol (sync/blocking)
@@ -6857,6 +6960,51 @@ public class StockIntradayClient : IStockIntradayClient, IDisposable
     }
 
     /// <summary>
+    /// Get quotes for several symbols in one request (async)
+    ///
+    /// The batch form of `get_quote`: `symbol` is comma-separated
+    /// ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
+    /// queries odd-lot data instead of board-lot.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<string> GetQuotes(string @symbol, bool @oddLot)
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quotes(
+                    thisPtr,
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterBoolean.INSTANCE.Lower(@oddLot)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(
+                    future,
+                    continuation,
+                    data
+                ),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+            // Lift
+            (result) => FfiConverterString.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
     /// Get ticker info for a symbol (async)
     ///
     /// Returns typed Ticker model with stock metadata.
@@ -7038,6 +7186,31 @@ public class StockIntradayClient : IStockIntradayClient, IDisposable
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync(
                             thisPtr,
                             FfiConverterString.INSTANCE.Lower(@symbol),
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Get quotes for several symbols in one request (sync/blocking)
+    ///
+    /// `symbol` is comma-separated ("2330,2317"); the JSON is an array of
+    /// quote objects.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string QuotesSync(string @symbol, bool @oddLot)
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quotes_sync(
+                            thisPtr,
+                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterBoolean.INSTANCE.Lower(@oddLot),
                             ref _status
                         )
                 )
@@ -7680,6 +7853,19 @@ public interface IStockSnapshotClient
     Task<string> GetActives(string @market, string? @trade);
 
     /// <summary>
+    /// Get the heatmap of an index: its constituents with their change (async)
+    ///
+    /// Parameters:
+    /// - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
+    /// index). Not a stock symbol or a market: "2330" and "TSE" are 404.
+    /// - time: Intraday snapshot time, HHmmss (optional; latest by default)
+    /// - period: Change period instead of the day's change: "1w", "1m", "3m",
+    /// "6m", "1y", "ytd" (optional)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<string> GetHeatmap(string @symbol, string? @time, string? @period);
+
+    /// <summary>
     /// Get top movers (gainers/losers) in a market (async)
     ///
     /// Parameters:
@@ -7699,6 +7885,14 @@ public interface IStockSnapshotClient
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     Task<string> GetQuotes(string @market, string? @typeFilter);
+
+    /// <summary>
+    /// Get the heatmap of an index (sync/blocking)
+    ///
+    /// `symbol` is an index code ("IX0001"), not a stock symbol or a market.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string HeatmapSync(string @symbol, string? @time, string? @period);
 
     /// <summary>
     /// Get top movers (sync/blocking)
@@ -7902,6 +8096,55 @@ public class StockSnapshotClient : IStockSnapshotClient, IDisposable
     }
 
     /// <summary>
+    /// Get the heatmap of an index: its constituents with their change (async)
+    ///
+    /// Parameters:
+    /// - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
+    /// index). Not a stock symbol or a market: "2330" and "TSE" are 404.
+    /// - time: Intraday snapshot time, HHmmss (optional; latest by default)
+    /// - period: Change period instead of the day's change: "1w", "1m", "3m",
+    /// "6m", "1y", "ytd" (optional)
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<string> GetHeatmap(string @symbol, string? @time, string? @period)
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_heatmap(
+                    thisPtr,
+                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterOptionalString.INSTANCE.Lower(@time),
+                    FfiConverterOptionalString.INSTANCE.Lower(@period)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(
+                    future,
+                    continuation,
+                    data
+                ),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+            // Lift
+            (result) => FfiConverterString.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
     /// Get top movers (gainers/losers) in a market (async)
     ///
     /// Parameters:
@@ -7990,6 +8233,31 @@ public class StockSnapshotClient : IStockSnapshotClient, IDisposable
             (result) => FfiConverterString.INSTANCE.Lift(result),
             // Error
             FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Get the heatmap of an index (sync/blocking)
+    ///
+    /// `symbol` is an index code ("IX0001"), not a stock symbol or a market.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string HeatmapSync(string @symbol, string? @time, string? @period)
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_heatmap_sync(
+                            thisPtr,
+                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterOptionalString.INSTANCE.Lower(@time),
+                            FfiConverterOptionalString.INSTANCE.Lower(@period),
+                            ref _status
+                        )
+                )
+            )
         );
     }
 

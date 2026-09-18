@@ -1116,6 +1116,68 @@ export interface ActivesResponse {
   data: Active[];
 }
 
+/**
+ * One index or stock in a heatmap response
+ */
+export interface SnapshotHeatmapData {
+  /** Trading date (YYYY-MM-DD); absent in a period snapshot */
+  date?: string;
+  /** Security type ("INDEX" or "EQUITY") */
+  type?: string;
+  /** Exchange code (e.g., "TWSE") */
+  exchange?: string;
+  /** Index code or stock symbol */
+  symbol: string;
+  /** Name */
+  name?: string;
+  /** Opening price */
+  openPrice?: number;
+  /** Highest price */
+  highPrice?: number;
+  /** Lowest price */
+  lowPrice?: number;
+  /** Closing/last price */
+  closePrice?: number;
+  /** Price change over the day or the period */
+  change?: number;
+  /** Percentage change over the day or the period */
+  changePercent?: number;
+  /** Previous close */
+  previousClose?: number;
+  /** Trading volume (number of shares) */
+  tradeVolume?: number;
+  /** Trading value */
+  tradeValue?: number;
+  /** Share of the index's trading value, in percent (stocks only) */
+  tradeValueWeight?: number;
+  /** Share of the index's market value, in percent (stocks only) */
+  marketValueWeight?: number;
+  /** Industry code (stocks only) */
+  industry?: string;
+  /** Last updated timestamp (Unix microseconds) */
+  lastUpdated?: number;
+}
+
+/**
+ * Heatmap response from snapshot/heatmap/{symbol}
+ *
+ * The constituents of an index (`symbol` is an index code such as `IX0001`)
+ * with their change. `time` is set for an intraday snapshot, `period` when
+ * the change is over a period instead of the day.
+ */
+export interface SnapshotHeatmapResponse {
+  /** Trading date (YYYY-MM-DD) */
+  date: string;
+  /** Snapshot time (HHmmss); absent for a period snapshot */
+  time?: string;
+  /** Change period ("1w", "1m", "3m", "6m", "1y", "ytd"); absent for an intraday snapshot */
+  period?: string;
+  /** Index code the heatmap is of (e.g., "IX0001") */
+  symbol: string;
+  /** The index itself, its sub-indices and its constituent stocks */
+  data: SnapshotHeatmapData[];
+}
+
 // ============================================================================
 // REST Response Types - Technical Indicators
 // ============================================================================
@@ -1715,6 +1777,12 @@ export interface RestStockIntradayQuoteParams extends RestStockIntradayOddLot {
 /** @deprecated Use `RestStockIntradayQuoteParams`. */
 export type StockIntradayQuoteParams = RestStockIntradayQuoteParams;
 
+/** Params for `stock.intraday.quotes` (the batch quote; no path param) */
+export interface RestStockIntradayQuotesParams extends RestStockIntradayOddLot {
+  /** Comma-separated symbols, e.g. "2330,2317" */
+  symbol: string;
+}
+
 /** Params for `stock.intraday.candles` */
 export interface RestStockIntradayCandlesParams extends RestStockIntradayOddLot {
   symbol: string;
@@ -1776,6 +1844,16 @@ export interface RestStockSnapshotActivesParams {
   market: SnapshotMarket;
   trade: 'volume' | 'value';
   type?: SnapshotType;
+}
+
+/** Params for `stock.snapshot.heatmap` */
+export interface RestStockSnapshotHeatmapParams {
+  /** Index code (e.g. "IX0001"); a stock symbol or a market is 404 */
+  symbol: string;
+  /** Intraday snapshot time, HHmmss; the server defaults to the latest snapshot */
+  time?: string;
+  /** Change period instead of the day's change */
+  period?: '1w' | '1m' | '3m' | '6m' | '1y' | 'ytd';
 }
 
 interface RestStockTechnicalBaseParams {
@@ -1929,6 +2007,8 @@ export interface StockSnapshotClient {
   movers(market: string | RestStockSnapshotMoversParams, direction?: string, change?: string): Promise<MoversResponse>;
   /** Get most actively traded stocks for a market */
   actives(market: string | RestStockSnapshotActivesParams, trade?: string): Promise<ActivesResponse>;
+  /** Get the heatmap of an index (`symbol` is an index code such as "IX0001") */
+  heatmap(symbol: string | RestStockSnapshotHeatmapParams, time?: string, period?: string): Promise<SnapshotHeatmapResponse>;
 }
 
 /** Stock technical client interface */

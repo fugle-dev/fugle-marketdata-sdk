@@ -56,7 +56,8 @@ pub use technical::{
     RsiResponse, SmaDataPoint, SmaResponse,
 };
 pub use snapshot::{
-    Active, ActivesResponse, Mover, MoversResponse, SnapshotQuote, SnapshotQuotesResponse,
+    Active, ActivesResponse, Mover, MoversResponse, SnapshotHeatmapData, SnapshotHeatmapResponse,
+    SnapshotQuote, SnapshotQuotesResponse,
 };
 pub use corporate::{
     CapitalChange, CapitalChangesResponse, Dividend, DividendsResponse, ListingApplicant,

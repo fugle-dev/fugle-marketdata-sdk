@@ -201,6 +201,34 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
 
   
     /**
+     * Get quotes for several symbols in one request (async)
+     *
+     * The batch form of `get_quote`: `symbol` is comma-separated
+     * ("2330,2317") and the JSON is an array of quote objects. `odd_lot`
+     * queries odd-lot data instead of board-lot.
+     */
+    @Override
+    
+    public CompletableFuture<String> getQuotes(String symbol, Boolean oddLot){
+        return UniffiAsyncHelpers.uniffiRustCallAsync(
+        callWithPointer(thisPtr -> {
+            return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quotes(
+                thisPtr,
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterBoolean.INSTANCE.lower(oddLot)
+            );
+        }),
+        (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
+        (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
+        (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+        // lift function
+        (it) -> FfiConverterString.INSTANCE.lift(it),
+        // Error FFI converter
+        new MarketDataExceptionErrorHandler()
+    );
+    }
+
+  
+    /**
      * Get ticker info for a symbol (async)
      *
      * Returns typed Ticker model with stock metadata.
@@ -318,6 +346,45 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync(
             it, FfiConverterString.INSTANCE.lower(symbol), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
+     * Get quotes for several symbols in one request (sync/blocking)
+     *
+     * `symbol` is comma-separated ("2330,2317"); the JSON is an array of
+     * quote objects.
+     */
+    @Override
+    public String quotesSync(String symbol, Boolean oddLot) throws MarketDataException {
+            try {
+                return FfiConverterString.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quotes_sync(
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterBoolean.INSTANCE.lower(oddLot), _status);
     });
     
         } catch (Exception e) {

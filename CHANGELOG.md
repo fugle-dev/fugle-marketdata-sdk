@@ -45,6 +45,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Two REST endpoints the server had and the SDK did not** (#176), in every
+  language. Parameters follow the server's DTOs; as everywhere since #164,
+  keys are checked and values are sent as given.
+  - `stock.intraday.quotes` — `GET /stock/intraday/quotes`, the batch form
+    of `quote`: one request for several symbols (comma-separated, e.g.
+    `"2330,2317"`; a query key, there is no path parameter) and an **array**
+    of quote objects back. Takes the same odd-lot switch as `quote`. Python
+    `quotes(symbol, odd_lot=None)` / `quotes_async`; Node
+    `quotes(symbol, oddLot?)` or `quotes({ symbol, type: 'oddlot' })`; C#
+    `GetQuotes` / `GetQuotesAsync`; Go `GetQuotes` / `QuotesSync`; Java
+    `getQuotes` / `quotesSync`; C++ `quotes_sync`. The UniFFI languages take
+    the odd-lot flag here although their single-symbol `quote` does not have
+    one yet.
+  - `stock.snapshot.heatmap` — `GET /stock/snapshot/heatmap/{symbol}`, the
+    constituents of an **index** with their change. `symbol` is an index
+    code (`IX0001` for the TAIEX, `IX0027` for the TPEx index), not a stock
+    symbol or a market: `2330` and `TSE` return 404. `time` (`HHmmss`) picks
+    an intraday snapshot; `period` (`1w`, `1m`, `3m`, `6m`, `1y`, `ytd`)
+    reports the change over that period instead of the day. Python
+    `heatmap(symbol, time=None, period=None)` / `heatmap_async`; Node
+    `heatmap(symbol, time?, period?)` or `heatmap({ symbol, time, period })`;
+    C# `GetHeatmap` / `GetHeatmapAsync`; Go `GetHeatmap` / `HeatmapSync`;
+    Java `getHeatmap` / `heatmapSync`; C++ `heatmap_sync`. Rust adds
+    `models::SnapshotHeatmapResponse` / `SnapshotHeatmapData`; Node adds
+    the matching `SnapshotHeatmapResponse` / `SnapshotHeatmapData` types.
+  - `futopt/historical/contracts` is in the gateway's source but not on prod
+    (`Cannot GET`, 2026-09-19) and is left out until it is deployed, so the
+    SDK does not ship a call that can only 404. The warrant endpoints stay
+    out on purpose: Fugle does not offer warrant data through the SDK.
 - **C#, Go, Java and C++: Linux arm64** (#190). The UniFFI track now builds
   `aarch64-unknown-linux-gnu` on the native `ubuntu-24.04-arm` runner, like
   the Python and Node.js tracks already did: the NuGet package gains

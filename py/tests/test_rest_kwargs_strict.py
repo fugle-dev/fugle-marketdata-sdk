@@ -351,7 +351,7 @@ class TestIssue164Cases:
 
 # `Kwargs::parse` looks the method up by a name string on every call, even
 # one without extra keywords, and panics when the name is not in the table.
-# The names are typed by hand in 56 places; a call per method proves them.
+# The names are typed by hand in 60 places; a call per method proves them.
 ALL_METHODS = [
     ("stock.intraday", "quote", ("2330",)),
     ("stock.intraday", "ticker", ("2330",)),
@@ -359,11 +359,13 @@ ALL_METHODS = [
     ("stock.intraday", "trades", ("2330",)),
     ("stock.intraday", "volumes", ("2330",)),
     ("stock.intraday", "tickers", ("EQUITY",)),
+    ("stock.intraday", "quotes", ("2330,2317",)),
     ("stock.historical", "candles", ("2330",)),
     ("stock.historical", "stats", ("2330",)),
     ("stock.snapshot", "quotes", ("TSE",)),
     ("stock.snapshot", "movers", ("TSE",)),
     ("stock.snapshot", "actives", ("TSE",)),
+    ("stock.snapshot", "heatmap", ("IX0001",)),
     ("stock.technical", "sma", ("2330",)),
     ("stock.technical", "rsi", ("2330",)),
     ("stock.technical", "kdj", ("2330",)),

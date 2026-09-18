@@ -105,6 +105,22 @@ enum class WebSocketEndpoint;
 
 
 /**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
+};
+
+
+/**
  * Coarse-grained classification of the source of a [`MarketDataError`].
  *
  * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -143,18 +159,19 @@ enum class ErrorSourceKind: int32_t {
 
 
 /**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
  */
-enum class MessageOverflowRecord: int32_t {
+struct MessageQueueConfigRecord {
     /**
-     * Drop new messages and report them through `on_messages_dropped`.
+     * What happens to new messages while `buffer` are unread
      */
-    kDropNewest = 1,
+    MessageOverflowRecord overflow;
     /**
-     * Never drop: the queue grows while `on_message` lags.
+     * Unread messages held (default 4096; 0 means default)
      */
-    kUnbounded = 2
+    uint32_t buffer;
 };
 
 
@@ -193,23 +210,6 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -829,6 +829,13 @@ struct StockIntradayClient
      */
     std::string quote_sync(const std::string &symbol);
     /**
+     * Get quotes for several symbols in one request (sync/blocking)
+     *
+     * `symbol` is comma-separated ("2330,2317"); the JSON is an array of
+     * quote objects.
+     */
+    std::string quotes_sync(const std::string &symbol, bool odd_lot);
+    /**
      * Get ticker info for a symbol (sync/blocking)
      */
     std::string ticker_sync(const std::string &symbol);
@@ -937,6 +944,12 @@ struct StockSnapshotClient
      * Get most actively traded stocks (sync/blocking)
      */
     std::string actives_sync(const std::string &market, std::optional<std::string> trade);
+    /**
+     * Get the heatmap of an index (sync/blocking)
+     *
+     * `symbol` is an index code ("IX0001"), not a stock symbol or a market.
+     */
+    std::string heatmap_sync(const std::string &symbol, std::optional<std::string> time, std::optional<std::string> period);
     /**
      * Get top movers (sync/blocking)
      */

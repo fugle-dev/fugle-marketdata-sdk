@@ -175,6 +175,37 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
 
   
     /**
+     * Get the heatmap of an index: its constituents with their change (async)
+     *
+     * Parameters:
+     * - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
+     * index). Not a stock symbol or a market: "2330" and "TSE" are 404.
+     * - time: Intraday snapshot time, HHmmss (optional; latest by default)
+     * - period: Change period instead of the day's change: "1w", "1m", "3m",
+     * "6m", "1y", "ytd" (optional)
+     */
+    @Override
+    
+    public CompletableFuture<String> getHeatmap(String symbol, String time, String period){
+        return UniffiAsyncHelpers.uniffiRustCallAsync(
+        callWithPointer(thisPtr -> {
+            return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_heatmap(
+                thisPtr,
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(time), FfiConverterOptionalString.INSTANCE.lower(period)
+            );
+        }),
+        (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
+        (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_rust_buffer(future, continuation),
+        (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_rust_buffer(future),
+        // lift function
+        (it) -> FfiConverterString.INSTANCE.lift(it),
+        // Error FFI converter
+        new MarketDataExceptionErrorHandler()
+    );
+    }
+
+  
+    /**
      * Get top movers (gainers/losers) in a market (async)
      *
      * Parameters:
@@ -229,6 +260,44 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
         new MarketDataExceptionErrorHandler()
     );
     }
+
+  
+    /**
+     * Get the heatmap of an index (sync/blocking)
+     *
+     * `symbol` is an index code ("IX0001"), not a stock symbol or a market.
+     */
+    @Override
+    public String heatmapSync(String symbol, String time, String period) throws MarketDataException {
+            try {
+                return FfiConverterString.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_heatmap_sync(
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(time), FfiConverterOptionalString.INSTANCE.lower(period), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
 
   
     /**
