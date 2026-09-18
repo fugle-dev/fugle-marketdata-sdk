@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.3 / core 0.9.0-rc.2 / uniffi 0.2.0-rc.2] - 2026-09-18
+
 ### Added
 
 - **Rust**: `Auth::from_credentials(api_key, bearer_token, sdk_token)`,
