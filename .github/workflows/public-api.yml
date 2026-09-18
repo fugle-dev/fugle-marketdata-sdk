@@ -2,9 +2,14 @@ name: public-api
 
 on:
   pull_request:
+    # `core/src/**`, not a hand-picked list. The public API is defined all
+    # over the crate — `errors.rs`, `websocket/**`, `rest/**`, `models/**` —
+    # so listing only `lib.rs` meant this check sat out the PRs that actually
+    # changed the surface. #142 added `MarketDataError::ConnectionAborted`
+    # without touching any listed path, so the snapshot drifted into main and
+    # the release PR was the first thing to notice (#148).
     paths:
-      - core/src/lib.rs
-      - core/src/tracing_compat.rs
+      - core/src/**
       - core/Cargo.toml
       - core/PUBLIC-API.txt
       - core/PUBLIC-API.md
