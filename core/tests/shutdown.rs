@@ -387,3 +387,48 @@ async fn connect_while_reconnecting_is_refused() {
     assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
     client.shutdown_with_timeout(Duration::from_millis(500)).await.expect("shutdown");
 }
+
+/// `force_close()` while auto-reconnecting aborts the reconnect task
+/// without waiting for it: whatever step it lands in, nothing follows the
+/// final `Disconnected`, and `Closed { Client }` is not overwritten (#145).
+/// The window is narrow, so this guards against the loop reporting on
+/// unchecked rather than reproducing the race every run.
+#[tokio::test(flavor = "multi_thread")]
+async fn force_close_while_reconnecting_is_the_last_word() {
+    for round in 0..8u64 {
+        // One connection only: every reconnect attempt is refused at once.
+        let server = common::spawn(common::AfterAuth::ServerDropAfter { delay_ms: 50 }).await;
+        let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
+        let reconnect = ReconnectionConfig::new(1_000, Duration::from_millis(100), Duration::from_millis(100))
+            .expect("reconnection config");
+        let client = WebSocketClient::with_reconnection_config(config, reconnect);
+        client.connect().await.expect("connect");
+        // Land in a different step of the loop each round.
+        tokio::time::sleep(Duration::from_millis(120 + round * 37)).await;
+        client.force_close().await.expect("force close");
+
+        for _ in 0..30 {
+            let state = client.state();
+            assert!(
+                matches!(
+                    state,
+                    marketdata_core::ConnectionState::Closed { intent: DisconnectIntent::Client, .. }
+                ),
+                "round {round}: state left Closed: {state:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let rx = common::EventReceiver::of_async(&client);
+        let events = tokio::task::spawn_blocking(move || {
+            common::drain_until_quiet(|timeout| rx.recv_timeout(timeout).ok())
+        })
+        .await
+        .expect("drain");
+        let end = events
+            .iter()
+            .position(|e| matches!(e, ConnectionEvent::Disconnected { will_reconnect: false, .. }))
+            .unwrap_or_else(|| panic!("round {round}: no final Disconnected in {events:?}"));
+        let after = &events[end + 1..];
+        assert!(after.is_empty(), "round {round}: events after the final Disconnected: {after:?}");
+    }
+}

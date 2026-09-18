@@ -18,7 +18,12 @@ public class WebSocketIsClosedTests
     {
         using var server = new WebSocketLoopbackServer();
         using var client = new FugleMarketData.WebSocketClient(
-            new FugleMarketData.WebSocketClientOptions { ApiKey = "the-key", BaseUrl = server.Url },
+            new FugleMarketData.WebSocketClientOptions
+            {
+                ApiKey = "the-key",
+                BaseUrl = server.Url,
+                Reconnect = new FugleMarketData.ReconnectOptions { Enabled = false },
+            },
             new TestWebSocketListener());
 
         await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
@@ -49,6 +54,23 @@ public class WebSocketIsClosedTests
 
         await client.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
         Assert.IsTrue(client.IsClosed, "true once DisconnectAsync completes");
+    }
+
+    [TestMethod]
+    public async Task WithoutReconnectOptions_ReconnectsByDefault()
+    {
+        // No binding-side override: omitting Reconnect keeps the core
+        // default, auto-reconnect on (#149).
+        using var server = new WebSocketLoopbackServer();
+        using var client = new FugleMarketData.WebSocketClient(
+            new FugleMarketData.WebSocketClientOptions { ApiKey = "the-key", BaseUrl = server.Url },
+            new TestWebSocketListener());
+
+        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        server.DropConnections();
+        await WaitUntil(() => !client.IsConnected, "IsConnected never became false");
+        Assert.IsFalse(client.IsClosed, "false while reconnecting");
+        await WaitUntil(() => client.IsConnected, "never reconnected");
     }
 
     private static async Task WaitUntil(Func<bool> condition, string message)

@@ -235,28 +235,29 @@ let _ = AuthRequest::with_sdk_token("your-sdk-token");
 
 ### Reconnection
 
-`ReconnectionConfig::default().enabled` is **`true`** as of 0.4. Rust
-callers on the `WebSocketClient::new(config)` happy path get
-auto-reconnect with no opt-in; bindings (Python / Node / UniFFI / Go /
-Java / C++ / C#) call `ReconnectionConfig::disabled()` at the FFI
-boundary so end-user behaviour is preserved.
+`ReconnectionConfig::default()` has auto-reconnect **on** with **unlimited
+attempts** (`max_attempts == 0`), each wait capped at `max_delay` (60 s).
+`WebSocketClient::new(config)` uses it, and so does every binding (Python /
+Node / Go / Java / C++ / C#) when the caller configures nothing (#149).
+`ConnectionEvent::ReconnectFailed` is only emitted when you set a non-zero
+`max_attempts`.
 
 ```rust,no_run
 use fugle_marketdata::websocket::ReconnectionConfig;
 use std::time::Duration;
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-// Default — auto-reconnect enabled (5 attempts, 1 s → 60 s exponential).
+// Default — auto-reconnect enabled (unlimited attempts, 1 s → 60 s exponential).
 let reconnect = ReconnectionConfig::default();
 
 // Custom — explicit `new()` also enables auto-reconnect.
 let reconnect = ReconnectionConfig::new(
-    10,                              // max_attempts
+    10,                              // max_attempts (0 = unlimited)
     Duration::from_millis(2_000),    // initial_delay (min 100ms)
     Duration::from_millis(120_000),  // max_delay
 )?;
 
-// Opt out — matches old `fugle-marketdata-{python,node}` semantics.
+// Opt out — no reconnect after a drop.
 let reconnect = ReconnectionConfig::disabled();
 # drop(reconnect);
 # Ok(())

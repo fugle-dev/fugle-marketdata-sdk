@@ -577,18 +577,17 @@ fn loop_keep_alive(env: &Env) -> napi::Result<KeepAlive> {
 /// Reconnection options for WebSocket clients
 ///
 /// All fields are optional - defaults are applied when not specified:
-/// - maxAttempts: 5
+/// - maxAttempts: 0 (unlimited)
 /// - initialDelayMs: 1000
 /// - maxDelayMs: 60000
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct ReconnectOptions {
-    /// Whether auto-reconnect is enabled (default: true when this object is
-    /// supplied; when the entire `reconnect` option is omitted the binding
-    /// preserves the historical Node SDK default of `false` — set this
-    /// explicitly to opt in or out)
+    /// Whether auto-reconnect is enabled (default: true, also when the
+    /// `reconnect` option is omitted; set `false` to turn it off)
     pub enabled: Option<bool>,
-    /// Maximum reconnection attempts (default: 5, min: 1)
+    /// Maximum reconnection attempts; 0 means unlimited (default: 0, so the
+    /// client keeps retrying at most `maxDelayMs` apart)
     pub max_attempts: Option<u32>,
     /// Initial reconnection delay in milliseconds (default: 1000, min: 100)
     pub initial_delay_ms: Option<f64>,
@@ -598,12 +597,7 @@ pub struct ReconnectOptions {
 
 /// Health check options for WebSocket connections
 ///
-/// All fields are optional - defaults are applied when not specified:
-/// - enabled: false
-/// - pingInterval: 30000
-/// - maxMissedPongs: 2
-///
-/// Defaults: enabled=true, heartbeatTimeoutMs=35000.
+/// All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000.
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct HealthCheckOptions {
@@ -1221,15 +1215,9 @@ impl WebSocketClient {
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
         }
 
-        // Build reconnection config with validation via core.
-        //
-        // Binding-side default: omitting `options.reconnect` preserves the
-        // historical Node SDK semantic of "no auto-reconnect" by routing
-        // through `ReconnectionConfig::disabled()`. Core 0.4.0 flipped its
-        // own `default()` to `enabled: true`; this branch compensates so the
-        // JS API surface is unchanged. Pass `{ reconnect: { enabled: true } }`
-        // (or any populated reconnect object — `enabled` defaults to true
-        // when the object itself is provided) to opt in.
+        // Build reconnection config with validation via core. Omitting
+        // `options.reconnect` uses the core default (auto-reconnect on,
+        // unlimited attempts); `{ reconnect: { enabled: false } }` turns it off.
         let reconnect_cfg = if let Some(r) = &options.reconnect {
             let max = r.max_attempts.unwrap_or(DEFAULT_MAX_ATTEMPTS);
             let initial = Duration::from_millis(
@@ -1246,7 +1234,7 @@ impl WebSocketClient {
             }
             cfg
         } else {
-            marketdata_core::ReconnectionConfig::disabled()
+            marketdata_core::ReconnectionConfig::default()
         };
 
         // Build health check config with validation via core

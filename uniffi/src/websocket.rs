@@ -160,10 +160,14 @@ impl std::fmt::Debug for CredentialsRecord {
 
 /// Reconnection configuration record for FFI
 ///
-/// All fields are optional — zero/false values mean "use default".
+/// Without a record the client auto-reconnects with the core defaults. In a
+/// record, `enabled` is taken as given and zero numeric fields mean "use
+/// default".
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct ReconnectConfigRecord {
-    /// Maximum reconnection attempts (default: 5, min: 1)
+    /// Whether auto-reconnect is active; `false` turns it off
+    pub enabled: bool,
+    /// Maximum reconnection attempts; 0 means unlimited (the default)
     pub max_attempts: u32,
     /// Initial reconnection delay in milliseconds (default: 1000, min: 100)
     pub initial_delay_ms: u64,
@@ -173,20 +177,17 @@ pub struct ReconnectConfigRecord {
 
 impl ReconnectConfigRecord {
     fn to_core(&self) -> marketdata_core::ReconnectionConfig {
-        // Explicit opt-in path: the user passed a ReconnectConfigRecord, so
-        // they want auto-reconnect. `default()` returns `enabled = true` in
-        // core 0.4.0 — same intent, no override needed here.
-        let mut cfg = marketdata_core::ReconnectionConfig::default();
-        if self.max_attempts > 0 {
-            cfg.max_attempts = self.max_attempts;
+        let default = marketdata_core::ReconnectionConfig::default();
+        let ms_or = |ms: u64, fallback| {
+            if ms > 0 { std::time::Duration::from_millis(ms) } else { fallback }
+        };
+        marketdata_core::ReconnectionConfig {
+            enabled: self.enabled,
+            // 0 is both "unset" and "unlimited": the core default is unlimited.
+            max_attempts: self.max_attempts,
+            initial_delay: ms_or(self.initial_delay_ms, default.initial_delay),
+            max_delay: ms_or(self.max_delay_ms, default.max_delay),
         }
-        if self.initial_delay_ms > 0 {
-            cfg.initial_delay = std::time::Duration::from_millis(self.initial_delay_ms);
-        }
-        if self.max_delay_ms > 0 {
-            cfg.max_delay = std::time::Duration::from_millis(self.max_delay_ms);
-        }
-        cfg
     }
 }
 
@@ -739,26 +740,13 @@ impl WebSocketClient {
                 marketdata_core::HealthCheckConfig::default(),
             )
         } else if let Some(hc) = &self.health_check_config {
-            // Binding-side compensation for the core 0.4.0 default flip:
-            // when the caller did NOT supply a `ReconnectConfigRecord`,
-            // preserve the historical FFI semantics (no auto-reconnect)
-            // by explicitly disabling reconnect. Bypasses
-            // `ReconnectionConfig::default()` which now returns
-            // `enabled = true`.
             CoreWebSocketClient::with_full_config(
                 config,
-                marketdata_core::ReconnectionConfig::disabled(),
+                marketdata_core::ReconnectionConfig::default(),
                 hc.clone(),
             )
         } else {
-            // Same compensation as above: when the caller passed neither
-            // a reconnect record nor a health-check record, route through
-            // `with_reconnection_config(_, disabled())` instead of `new()`
-            // so the binding default stays "no auto-reconnect".
-            CoreWebSocketClient::with_reconnection_config(
-                config,
-                marketdata_core::ReconnectionConfig::disabled(),
-            )
+            CoreWebSocketClient::new(config)
         };
 
         *self
@@ -1962,6 +1950,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
+                enabled: true,
                 max_attempts: 3,
                 initial_delay_ms: 100,
                 max_delay_ms: 200,
@@ -2074,6 +2063,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
+                enabled: true,
                 max_attempts: 3,
                 initial_delay_ms: 1000,
                 max_delay_ms: 1000,
@@ -2113,6 +2103,23 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn reconnects_by_default_without_a_record() {
+        // No binding-side override: omitting the record keeps the core
+        // default, auto-reconnect on (#149).
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_impl().await.expect("connect");
+        server.drop_transport_for(0).await;
+        wait_connected(&client, false).await;
+
+        wait_connected(&client, true).await;
+        listener.wait_authenticated(2).await;
+        client.disconnect_impl().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn is_connected_follows_core_state_across_reconnect() {
         let server = MockWsServer::start_with_capacity(2).await;
         let listener = Arc::new(TestListener::new());
@@ -2120,6 +2127,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
+                enabled: true,
                 max_attempts: 3,
                 initial_delay_ms: 500,
                 max_delay_ms: 500,
@@ -2154,7 +2162,16 @@ mod tests {
         // Used to read a flag only `disconnect()` set (#95).
         let server = MockWsServer::start().await;
         let listener = Arc::new(TestListener::new());
-        let client = mock_client(&server, Arc::clone(&listener), None);
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord {
+                enabled: false,
+                max_attempts: 0,
+                initial_delay_ms: 0,
+                max_delay_ms: 0,
+            }),
+        );
         assert!(!client.is_closed(), "not closed before connect()");
 
         client.connect_impl().await.expect("connect");
@@ -2173,6 +2190,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
+                enabled: true,
                 max_attempts: 3,
                 initial_delay_ms: 1000,
                 max_delay_ms: 1000,
@@ -2196,6 +2214,7 @@ mod tests {
         for reconnect in [
             None,
             Some(ReconnectConfigRecord {
+                enabled: true,
                 max_attempts: 3,
                 initial_delay_ms: 500,
                 max_delay_ms: 500,
@@ -2412,6 +2431,7 @@ mod tests {
             &server,
             Arc::clone(&listener),
             Some(ReconnectConfigRecord {
+                enabled: true,
                 max_attempts: 3,
                 initial_delay_ms: 1000,
                 max_delay_ms: 1000,

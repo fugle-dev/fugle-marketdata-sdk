@@ -5686,9 +5686,13 @@ func (_ FfiDestroyerMessageQueueConfigRecord) Destroy(value MessageQueueConfigRe
 
 // Reconnection configuration record for FFI
 //
-// All fields are optional — zero/false values mean "use default".
+// Without a record the client auto-reconnects with the core defaults. In a
+// record, `enabled` is taken as given and zero numeric fields mean "use
+// default".
 type ReconnectConfigRecord struct {
-	// Maximum reconnection attempts (default: 5, min: 1)
+	// Whether auto-reconnect is active; `false` turns it off
+	Enabled bool
+	// Maximum reconnection attempts; 0 means unlimited (the default)
 	MaxAttempts uint32
 	// Initial reconnection delay in milliseconds (default: 1000, min: 100)
 	InitialDelayMs uint64
@@ -5697,6 +5701,7 @@ type ReconnectConfigRecord struct {
 }
 
 func (r *ReconnectConfigRecord) Destroy() {
+	FfiDestroyerBool{}.Destroy(r.Enabled)
 	FfiDestroyerUint32{}.Destroy(r.MaxAttempts)
 	FfiDestroyerUint64{}.Destroy(r.InitialDelayMs)
 	FfiDestroyerUint64{}.Destroy(r.MaxDelayMs)
@@ -5712,6 +5717,7 @@ func (c FfiConverterReconnectConfigRecord) Lift(rb RustBufferI) ReconnectConfigR
 
 func (c FfiConverterReconnectConfigRecord) Read(reader io.Reader) ReconnectConfigRecord {
 	return ReconnectConfigRecord{
+		FfiConverterBoolINSTANCE.Read(reader),
 		FfiConverterUint32INSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
@@ -5727,6 +5733,7 @@ func (c FfiConverterReconnectConfigRecord) LowerExternal(value ReconnectConfigRe
 }
 
 func (c FfiConverterReconnectConfigRecord) Write(writer io.Writer, value ReconnectConfigRecord) {
+	FfiConverterBoolINSTANCE.Write(writer, value.Enabled)
 	FfiConverterUint32INSTANCE.Write(writer, value.MaxAttempts)
 	FfiConverterUint64INSTANCE.Write(writer, value.InitialDelayMs)
 	FfiConverterUint64INSTANCE.Write(writer, value.MaxDelayMs)

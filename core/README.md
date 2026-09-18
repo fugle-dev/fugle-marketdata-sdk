@@ -163,14 +163,17 @@ let auth = AuthRequest::with_sdk_token("your-sdk-token");
 
 ### ReconnectionConfig
 
-Control WebSocket automatic reconnection behavior with exponential backoff:
+Control WebSocket automatic reconnection behavior with exponential backoff.
+`ReconnectionConfig::default()` (what `WebSocketClient::new` uses, and what
+every binding uses when the caller configures nothing) has auto-reconnect on
+with unlimited attempts; `ReconnectionConfig::disabled()` turns it off.
 
 ```rust,ignore
 use marketdata_core::websocket::ReconnectionConfig;
 use std::time::Duration;
 
 let reconnect = ReconnectionConfig::new(
-    10,                              // max_attempts (min: 1)
+    10,                              // max_attempts (0 = unlimited)
     Duration::from_millis(2_000),    // initial_delay (min: 100ms)
     Duration::from_millis(120_000),  // max_delay
 )?;
@@ -178,13 +181,13 @@ let reconnect = ReconnectionConfig::new(
 
 **Parameters:**
 
-- `max_attempts` (u32): Maximum reconnection attempts (default: 5, range: 1+)
+- `max_attempts` (u32): Maximum reconnection attempts; 0 means unlimited (default: 0).
+  `ConnectionEvent::ReconnectFailed` is only emitted with a non-zero limit
 - `initial_delay` (Duration): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `max_delay` (Duration): Maximum delay cap (default: 60000ms)
 
 **Validation:**
 
-- `max_attempts` must be >= 1
 - `initial_delay` must be >= 100ms (prevents connection storms)
 - `max_delay` must be >= `initial_delay` (logical constraint)
 
@@ -233,7 +236,7 @@ All configuration constants are exported from `lib.rs` for use in binding layers
 
 ```rust,ignore
 // Reconnection defaults
-pub const DEFAULT_MAX_ATTEMPTS: u32 = 5;
+pub const DEFAULT_MAX_ATTEMPTS: u32 = 0; // unlimited
 pub const DEFAULT_INITIAL_DELAY_MS: u64 = 1000;
 pub const DEFAULT_MAX_DELAY_MS: u64 = 60000;
 pub const MIN_INITIAL_DELAY_MS: u64 = 100;

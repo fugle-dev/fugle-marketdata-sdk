@@ -1,7 +1,7 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
 use crate::websocket::aio::writer::{start_writer, WriteFailure, WriterGeneration};
-use crate::websocket::aio::{write_state, SharedState, WsSink, WsStream};
+use crate::websocket::aio::{SharedState, WsSink, WsStream};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_resubscribe, AuthHandshake, AuthOutcome,
@@ -49,7 +49,8 @@ pub(crate) async fn replay_subscriptions(
             Err(e) => Err(e),
         };
         if let Err(e) = sent {
-            stream.emit(ConnectionEvent::resubscribe_failed(&label, &e));
+            // Not after the client's close has been reported (#145).
+            stream.emit_unless_closed(ConnectionEvent::resubscribe_failed(&label, &e));
             first_err.get_or_insert(e);
         }
     }
@@ -194,10 +195,14 @@ pub(crate) async fn try_reconnect(
                     reconnection.current_attempt()
                 };
 
-                // Update state to Reconnecting
-                {
-                    let mut st = write_state(&state);
-                    *st = ConnectionState::Reconnecting { attempt };
+                // A close reported since the check above ends the loop
+                // here, so nothing follows the final event (#145).
+                if !stream.reconnect_step(
+                    &state,
+                    ConnectionState::Reconnecting { attempt },
+                    Some(ConnectionEvent::Reconnecting { attempt }),
+                ) {
+                    return None;
                 }
                 crate::tracing_compat::warn!(
                     target: "fugle_marketdata::ws",
@@ -205,9 +210,6 @@ pub(crate) async fn try_reconnect(
                     delay_ms = d.as_millis() as u64,
                     "ws reconnect attempt"
                 );
-                stream.emit(ConnectionEvent::Reconnecting {
-                    attempt,
-                });
 
                 // Wait before reconnecting
                 tokio::select! {
@@ -267,6 +269,8 @@ pub(crate) async fn try_reconnect(
                         // iteration.
                         return Some((ws_read, write_failed_rx));
                     }
+                    // The close was reported meanwhile (#145).
+                    Err(MarketDataError::ClientClosed) => return None,
                     Err(_) => {
                         // Continue loop to next attempt
                         continue;
@@ -294,8 +298,10 @@ pub(crate) async fn try_reconnect(
 /// On success, returns the write sink and read stream. The caller is responsible
 /// for storing the sink and setting up dispatch. Takes owned values for Send safety.
 ///
-/// If `shutdown_requested` is set while connecting, the new connection is
-/// dropped without emitting further events and `ClientClosed` is returned.
+/// Only the reconnect loop calls this. If `shutdown_requested` is set while
+/// connecting, or the client's close has been reported (#145), the new
+/// connection is dropped without emitting further events or changing the
+/// state, and `ClientClosed` is returned.
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: SharedState,
@@ -304,13 +310,10 @@ pub(crate) async fn try_connect(
 ) -> Result<(WsSink, WsStream), MarketDataError> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
 
-    // Update state to Connecting
-    {
-        let mut st = write_state(&state);
-        *st = ConnectionState::Connecting;
+    // Each step is reported only if the client's close has not been (#145).
+    if !stream.reconnect_step(&state, ConnectionState::Connecting, Some(ConnectionEvent::Connecting {})) {
+        return Err(MarketDataError::ClientClosed);
     }
-    stream.emit(ConnectionEvent::Connecting {
-    });
 
     // Connect to WebSocket
     let tls_connector = tls_connector_for(&config)?;
@@ -324,16 +327,14 @@ pub(crate) async fn try_connect(
         Ok(Ok(connected)) => connected,
         Ok(Err(e)) => {
             let err: MarketDataError = e.into();
-            {
-                let mut st = write_state(&state);
-                *st = ConnectionState::Disconnected;
+            if !stream.reconnect_step(&state, ConnectionState::Disconnected, None) {
+                return Err(MarketDataError::ClientClosed);
             }
             return Err(err);
         }
         Err(_) => {
-            {
-                let mut st = write_state(&state);
-                *st = ConnectionState::Disconnected;
+            if !stream.reconnect_step(&state, ConnectionState::Disconnected, None) {
+                return Err(MarketDataError::ClientClosed);
             }
             return Err(MarketDataError::TimeoutError {
                 operation: "WebSocket connect".to_string(),
@@ -348,13 +349,12 @@ pub(crate) async fn try_connect(
         return Err(MarketDataError::ClientClosed);
     }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws connected");
-    stream.emit(ConnectionEvent::Connected {
-    });
-
-    // Authenticate
-    {
-        let mut st = write_state(&state);
-        *st = ConnectionState::Authenticating;
+    if !stream.reconnect_step(
+        &state,
+        ConnectionState::Authenticating,
+        Some(ConnectionEvent::Connected {}),
+    ) {
+        return Err(MarketDataError::ClientClosed);
     }
 
     // Shared with WebSocketClient::connect
@@ -372,29 +372,26 @@ pub(crate) async fn try_connect(
 
     match handshake {
         AuthHandshake::Authenticated { data, frames } => {
-            {
-                let mut st = write_state(&state);
-                *st = ConnectionState::Connected;
-            }
-            crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
             // Queued before this function returns, so ahead of anything the
             // dispatch loop reads next. A new connection: it may report its
-            // own close.
-            stream.authenticated(data, frames);
+            // own close. A close reported meanwhile keeps it from reopening.
+            if !stream.reconnect_authenticated(&state, data, frames) {
+                return Err(MarketDataError::ClientClosed);
+            }
+            crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws authenticated");
             Ok((new_ws_sink, ws_read))
         }
         AuthHandshake::Rejected { message, data, frames } => {
+            if !stream.reconnect_step(&state, ConnectionState::Disconnected, None)
+                || !stream.reconnect_rejected(message.clone(), data, frames)
             {
-                let mut st = write_state(&state);
-                *st = ConnectionState::Disconnected;
+                return Err(MarketDataError::ClientClosed);
             }
-            stream.unauthenticated(message.clone(), data, frames);
             Err(MarketDataError::AuthError { msg: message, http: None })
         }
         AuthHandshake::Failed(e) => {
-            {
-                let mut st = write_state(&state);
-                *st = ConnectionState::Disconnected;
+            if !stream.reconnect_step(&state, ConnectionState::Disconnected, None) {
+                return Err(MarketDataError::ClientClosed);
             }
             Err(e)
         }

@@ -256,8 +256,25 @@ FugleWebSocketClient.builder()
     .queueCapacity(int capacity)     // Pull-mode BlockingQueue size (default: 10000)
     .messageOverflow(MessageOverflow overflow)  // DROP_NEWEST (default) or UNBOUNDED
     .messageBuffer(int buffer)       // Unread messages before overflow applies (default: 4096)
+    .reconnect(ReconnectOptions options)  // Auto-reconnect tuning (default: on, unlimited attempts)
     .build()
 ```
+
+After an unexpected drop the client reconnects on its own with exponential
+backoff (1 s doubling up to 60 s), without an attempt limit, and subscribes
+again once it is back. The server closing with 1000 or a 4xxx code (e.g. an
+auth failure) never triggers a reconnect. Configure it with `reconnect(...)`:
+
+```java
+// Stop after 10 attempts; onReconnectFailed fires once the last one fails
+.reconnect(ReconnectOptions.builder().maxAttempts(10).build())
+
+// Turn auto-reconnect off
+.reconnect(ReconnectOptions.builder().enabled(false).build())
+```
+
+`maxAttempts` 0 means unlimited (the default); `initialDelayMs` (default 1000,
+min 100) and `maxDelayMs` (default 60000) tune the backoff.
 
 `messageOverflow`/`messageBuffer` configure the client's internal message
 queue (shared by both callback and pull mode): with the default

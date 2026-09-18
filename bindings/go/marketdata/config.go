@@ -1,9 +1,11 @@
 package marketdata_uniffi
 
-// ReconnectConfig configures WebSocket reconnection behavior.
-// Zero values for fields mean "use default".
+// ReconnectConfig tunes WebSocket auto-reconnect, which is on by default;
+// pass it with WithReconnect. Zero values for fields mean "use default". To
+// turn auto-reconnect off use WithoutReconnect.
 type ReconnectConfig struct {
-	// MaxAttempts is the maximum number of reconnection attempts (default: 5, min: 1)
+	// MaxAttempts is the maximum number of reconnection attempts; zero means
+	// unlimited (the default), retrying at most MaxDelayMs apart
 	MaxAttempts uint32
 	// InitialDelayMs is the initial reconnection delay in milliseconds (default: 1000, min: 100)
 	InitialDelayMs uint64
