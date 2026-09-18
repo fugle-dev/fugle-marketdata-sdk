@@ -575,6 +575,7 @@ public class FugleWebSocketClient implements AutoCloseable {
             ReconnectConfigRecord reconnectRecord = null;
             if (reconnectOptions != null) {
                 reconnectRecord = new ReconnectConfigRecord(
+                    reconnectOptions.getEnabled() != null ? reconnectOptions.getEnabled() : true,
                     reconnectOptions.getMaxAttempts() != null ? reconnectOptions.getMaxAttempts() : 0,
                     reconnectOptions.getInitialDelayMs() != null ? reconnectOptions.getInitialDelayMs() : 0L,
                     reconnectOptions.getMaxDelayMs() != null ? reconnectOptions.getMaxDelayMs() : 0L

@@ -130,9 +130,10 @@ FugleWebSocketClient ws = FugleWebSocketClient.builder()
 
 **Configuration Options:**
 
-`ReconnectOptions.builder()`:
+`ReconnectOptions.builder()` (auto-reconnect is on without it):
 
-- `maxAttempts(Integer)` - Maximum reconnection attempts (default: 5, min: 1)
+- `enabled(Boolean)` - Whether auto-reconnect is enabled (default: true; `false` turns it off)
+- `maxAttempts(Integer)` - Maximum reconnection attempts; 0 means unlimited (default: 0)
 - `initialDelayMs(Long)` - Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `maxDelayMs(Long)` - Maximum delay cap (default: 60000ms)
 
@@ -174,7 +175,7 @@ client, err := marketdata.NewFugleRestClient(
 quoteJson, err := client.GetStockQuote("2330")
 
 // WebSocket with configuration
-reconnect := &marketdata.ReconnectOptions{
+reconnect := marketdata.ReconnectConfig{
     MaxAttempts:      10,
     InitialDelayMs:   2000,
     MaxDelayMs:       120000,
@@ -195,9 +196,10 @@ ws, err := marketdata.NewFugleWebSocketClient(
 
 **Configuration Options:**
 
-`ReconnectOptions` struct:
+`ReconnectConfig` struct (auto-reconnect is on without it; pass
+`marketdata.WithoutReconnect()` instead of `WithReconnect` to turn it off):
 
-- `MaxAttempts int` - Maximum reconnection attempts (zero = use default 5)
+- `MaxAttempts uint32` - Maximum reconnection attempts (zero = use default: unlimited)
 - `InitialDelayMs uint64` - Initial delay for exponential backoff (zero = use default 1000ms)
 - `MaxDelayMs uint64` - Maximum delay cap (zero = use default 60000ms)
 
@@ -267,9 +269,10 @@ var ws = new WebSocketClient(new WebSocketClientOptions
 
 **Configuration Options:**
 
-`ReconnectOptions` class:
+`ReconnectOptions` class (auto-reconnect is on without it):
 
-- `MaxAttempts int?` - Maximum reconnection attempts (null = use default 5)
+- `Enabled bool?` - Whether auto-reconnect is enabled (null = use default true; `false` turns it off)
+- `MaxAttempts uint?` - Maximum reconnection attempts; 0 means unlimited (null = use default: unlimited)
 - `InitialDelayMs ulong?` - Initial delay for exponential backoff (null = use default 1000ms)
 - `MaxDelayMs ulong?` - Maximum delay cap (null = use default 60000ms)
 

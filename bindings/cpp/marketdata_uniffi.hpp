@@ -1496,11 +1496,17 @@ struct HealthCheckConfigRecord {
 /**
  * Reconnection configuration record for FFI
  *
- * All fields are optional — zero/false values mean "use default".
+ * Without a record the client auto-reconnects with the core defaults. In a
+ * record, `enabled` is taken as given and zero numeric fields mean "use
+ * default".
  */
 struct ReconnectConfigRecord {
     /**
-     * Maximum reconnection attempts (default: 5, min: 1)
+     * Whether auto-reconnect is active; `false` turns it off
+     */
+    bool enabled;
+    /**
+     * Maximum reconnection attempts; 0 means unlimited (the default)
      */
     uint32_t max_attempts;
     /**

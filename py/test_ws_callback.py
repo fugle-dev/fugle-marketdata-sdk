@@ -214,7 +214,7 @@ def test_config_validation():
     # Default config
     rc_default = ReconnectConfig()
     assert rc_default.enabled is True
-    assert rc_default.max_attempts == 5
+    assert rc_default.max_attempts == 0
     assert rc_default.initial_delay_ms == 1000
     assert rc_default.max_delay_ms == 60000
     print(f"  ReconnectConfig default OK: enabled={rc_default.enabled}, max_attempts={rc_default.max_attempts}")
@@ -227,7 +227,6 @@ def test_config_validation():
 
     # 無效參數應該拋錯
     invalid_cases = [
-        ("max_attempts=0", lambda: ReconnectConfig(max_attempts=0)),
         ("initial_delay_ms=0", lambda: ReconnectConfig(initial_delay_ms=0)),
         ("ping_interval=100 (too low)", lambda: HealthCheckConfig(enabled=True, ping_interval=100)),
         ("max_missed_pongs=0", lambda: HealthCheckConfig(enabled=True, max_missed_pongs=0)),

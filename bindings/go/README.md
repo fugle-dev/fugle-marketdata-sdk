@@ -416,6 +416,27 @@ Errors() <-chan error              // Receive errors
 MessagesDroppedTotal() uint64      // Messages dropped this connection (see below)
 ```
 
+#### Reconnection
+
+After an unexpected drop the client reconnects on its own with exponential
+backoff (1 s doubling up to 60 s), without an attempt limit, and subscribes
+again once it is back. The server closing with 1000 or a 4xxx code (e.g. an
+auth failure) never triggers a reconnect.
+
+```go
+// Stop after 10 attempts; once the last one fails, Errors() reports it
+// (a listener gets OnReconnectFailed) and the channels close
+mkt.WithReconnect(mkt.ReconnectConfig{MaxAttempts: 10})
+
+// Turn auto-reconnect off
+mkt.WithoutReconnect()
+```
+
+`ReconnectConfig` fields left at zero use the defaults: `MaxAttempts` unlimited,
+`InitialDelayMs` 1000 (min 100), `MaxDelayMs` 60000. It has no on/off field, so
+passing it never turns reconnect off. Between `WithReconnect` and
+`WithoutReconnect`, the last option given wins.
+
 #### Message Queue Options
 
 `NewFugleWebSocketClient` accepts options to tune the inbound message queue:

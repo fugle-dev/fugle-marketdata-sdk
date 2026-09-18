@@ -216,6 +216,7 @@ func TestOptionFunctions(t *testing.T) {
 		{"WithBaseUrl", WithBaseUrl("https://test.example.com")},
 		{"WithEndpoint", WithEndpoint(WebSocketEndpointStock)},
 		{"WithReconnect", WithReconnect(ReconnectConfig{MaxAttempts: 3})},
+		{"WithoutReconnect", WithoutReconnect()},
 		{"WithHealthCheck", WithHealthCheck(HealthCheckConfig{Enabled: true})},
 		{"WithMessageOverflow", WithMessageOverflow(MessageOverflowUnbounded)},
 		{"WithMessageBuffer", WithMessageBuffer(8192)},
@@ -305,3 +306,30 @@ func (m *mockListener) OnError(info ErrorInfo)             {}
 func (m *mockListener) OnReconnecting(attempt uint32)      {}
 func (m *mockListener) OnReconnectFailed(attempts uint32)  {}
 func (m *mockListener) OnMessagesDropped(count uint64)     {}
+
+// Between WithReconnect and WithoutReconnect, the last option given wins (#149).
+func TestWithoutReconnect_LastOptionWins(t *testing.T) {
+	apply := func(opts ...Option) *clientConfig {
+		cfg := &clientConfig{}
+		for _, opt := range opts {
+			if err := opt(cfg); err != nil {
+				t.Fatalf("option: %v", err)
+			}
+		}
+		return cfg
+	}
+
+	cfg := apply(WithReconnect(ReconnectConfig{MaxAttempts: 3}), WithoutReconnect())
+	if !cfg.noReconnect || cfg.reconnect != nil {
+		t.Errorf("WithoutReconnect after WithReconnect: noReconnect=%v reconnect=%v", cfg.noReconnect, cfg.reconnect)
+	}
+
+	cfg = apply(WithoutReconnect(), WithReconnect(ReconnectConfig{MaxAttempts: 3}))
+	if cfg.noReconnect || cfg.reconnect == nil {
+		t.Errorf("WithReconnect after WithoutReconnect: noReconnect=%v reconnect=%v", cfg.noReconnect, cfg.reconnect)
+	}
+
+	if cfg := apply(); cfg.noReconnect || cfg.reconnect != nil {
+		t.Error("no option must leave the core default (auto-reconnect on)")
+	}
+}
