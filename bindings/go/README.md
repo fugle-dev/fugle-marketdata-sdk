@@ -446,20 +446,22 @@ passing it never turns reconnect off. Between `WithReconnect` and
 
 Liveness detection is on by default: when the connection stays silent too
 long it is declared dead and auto-reconnect takes over.
-`HealthCheckConfig`'s zero value turns detection off (see #152), so pass
-`Enabled: true` explicitly when setting other fields.
 
 ```go
 // Default: HeartbeatTimeoutMs 35000
-mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: true, HeartbeatTimeoutMs: 60000})
+mkt.WithHealthCheck(mkt.HealthCheckConfig{HeartbeatTimeoutMs: 60000})
 
 // Probe mode: confirm a silent connection with a ping before declaring it
 // dead, instead of guessing off a timeout
-mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: true, ProbeEnabled: true, IdleProbeAfterMs: 10000})
+mkt.WithHealthCheck(mkt.HealthCheckConfig{ProbeEnabled: true, IdleProbeAfterMs: 10000})
 
 // Turn it off
-mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: false})
+mkt.WithoutHealthCheck()
 ```
+
+`HealthCheckConfig` fields left at zero use the defaults. It has no on/off
+field, so passing it never turns detection off. Between `WithHealthCheck` and
+`WithoutHealthCheck`, the last option given wins.
 
 `HeartbeatTimeoutMs` (default 35000, min 5000) does not apply when
 `ProbeEnabled` is true. With `ProbeEnabled`, `IdleProbeAfterMs` (default

@@ -198,7 +198,7 @@ heartbeat or pong — counts as a sign of life.
 
 | Option | Type | Default | Min | Applies | Description |
 |--------|------|---------|-----|---------|-------------|
-| `enabled` | bool | true | - | both modes | Whether liveness detection is active |
+| `enabled` | bool | true | - | both modes | Whether liveness detection is active (Go: use `WithoutHealthCheck()`) |
 | `heartbeat_timeout_ms` | u64/int/number | 35000 | 5000 | **`probe_enabled: false` only** | Maximum gap between inbound frames before the connection is declared dead |
 | `probe_enabled` | bool | false | - | - | Confirm a silent connection with a ping instead of declaring it dead on a timeout |
 | `idle_probe_after_ms` | u64/int/number | 30000 | 5000 | `probe_enabled: true` only | Silence before the probe is sent |
@@ -352,15 +352,14 @@ FugleWebSocketClient client = FugleWebSocketClient.builder()
 #### Go
 
 ```go
-// Longer timeout (default: enabled, 35s). Set Enabled explicitly: a
-// HealthCheckConfig's zero value turns detection off (see #152).
+// Longer timeout (default: enabled, 35s)
 client, err := mkt.NewFugleWebSocketClient(listener,
     mkt.WithApiKey("your-api-key"),
-    mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: true, HeartbeatTimeoutMs: 60000}),
+    mkt.WithHealthCheck(mkt.HealthCheckConfig{HeartbeatTimeoutMs: 60000}),
 )
 
-// Turn it off: mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: false})
-// Probe mode: mkt.HealthCheckConfig{Enabled: true, ProbeEnabled: true, IdleProbeAfterMs: 10000}
+// Turn it off: mkt.WithoutHealthCheck()
+// Probe mode: mkt.HealthCheckConfig{ProbeEnabled: true, IdleProbeAfterMs: 10000}
 ```
 
 #### C\#

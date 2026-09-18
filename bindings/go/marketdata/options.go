@@ -17,6 +17,7 @@ type clientConfig struct {
 	reconnect       *ReconnectConfig
 	noReconnect     bool
 	healthCheck     *HealthCheckConfig
+	noHealthCheck   bool
 	messageOverflow *MessageOverflow
 	messageBuffer   *uint32
 }
@@ -104,10 +105,24 @@ func WithoutReconnect() Option {
 	}
 }
 
-// WithHealthCheck sets health check configuration for WebSocket client
+// WithHealthCheck tunes liveness detection for the WebSocket client. The
+// client detects a dead connection without it too; see WithoutHealthCheck to
+// turn detection off. Between WithHealthCheck and WithoutHealthCheck, the
+// last one given wins.
 func WithHealthCheck(healthCheck HealthCheckConfig) Option {
 	return func(cfg *clientConfig) error {
 		cfg.healthCheck = &healthCheck
+		cfg.noHealthCheck = false
+		return nil
+	}
+}
+
+// WithoutHealthCheck turns liveness detection off: a connection that goes
+// silent without closing is not declared dead, so it is not reconnected.
+func WithoutHealthCheck() Option {
+	return func(cfg *clientConfig) error {
+		cfg.healthCheck = nil
+		cfg.noHealthCheck = true
 		return nil
 	}
 }
