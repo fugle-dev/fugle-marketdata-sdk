@@ -51,10 +51,6 @@ describe('API Compatibility', () => {
         expect(typeof intraday.quote).toBe('function');
       });
 
-      test('quotes (batch) method exists and is a function', () => {
-        expect(typeof intraday.quotes).toBe('function');
-      });
-
       test('ticker method exists and is a function', () => {
         expect(typeof intraday.ticker).toBe('function');
       });
@@ -196,16 +192,6 @@ describe('API Compatibility', () => {
 
       test('quotes returns a Promise-like object', async () => {
         const result = snapshot.quotes('TSE');
-        expect(isPromiseLike(result)).toBe(true);
-        await expect(result).rejects.toThrow();
-      });
-
-      test('heatmap method exists and is a function', () => {
-        expect(typeof snapshot.heatmap).toBe('function');
-      });
-
-      test('heatmap returns a Promise-like object', async () => {
-        const result = snapshot.heatmap('IX0001');
         expect(isPromiseLike(result)).toBe(true);
         await expect(result).rejects.toThrow();
       });

@@ -702,24 +702,6 @@ impl<'a> IntradayClient<'a> {
         crate::rest::stock::intraday::QuoteRequestBuilder::new(self.client)
     }
 
-    /// Get intraday quotes for several symbols in one request
-    ///
-    /// The batch form of [`quote`](Self::quote): the symbols go in the
-    /// `symbol` query key, comma-separated, and the response is an array of
-    /// quote objects.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use marketdata_core::{RestClient, Auth};
-    ///
-    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
-    /// let quotes = client.stock().intraday().quotes().symbol("2330,2317").send()?;
-    /// # Ok::<(), marketdata_core::MarketDataError>(())
-    /// ```
-    pub fn quotes(&self) -> crate::rest::stock::intraday::QuotesRequestBuilder<'_> {
-        crate::rest::stock::intraday::QuotesRequestBuilder::new(self.client)
-    }
-
     /// Get intraday ticker info for a symbol
     ///
     /// # Example

@@ -316,11 +316,9 @@ async fn main() {
         };
     }
 
-    // Stock intraday (7)
+    // Stock intraday (6)
     rest_probe!("rest stock/intraday/quote 2330", |c: &RestClient| c
         .stock().intraday().quote().symbol("2330").send());
-    rest_probe!("rest stock/intraday/quotes 2330,2317", |c: &RestClient| c
-        .stock().intraday().quotes().symbol("2330,2317").send());
     rest_probe!("rest stock/intraday/ticker 2330", |c: &RestClient| c
         .stock().intraday().ticker().symbol("2330").send());
     rest_probe!("rest stock/intraday/tickers EQUITY", |c: &RestClient| c
@@ -332,15 +330,13 @@ async fn main() {
     rest_probe!("rest stock/intraday/candles 2330", |c: &RestClient| c
         .stock().intraday().candles().symbol("2330").send());
 
-    // Stock snapshot (4) — heatmap takes an index code, not a market.
+    // Stock snapshot (3)
     rest_probe!("rest stock/snapshot/quotes TSE", |c: &RestClient| c
         .stock().snapshot().quotes().market("TSE").send());
     rest_probe!("rest stock/snapshot/movers TSE", |c: &RestClient| c
         .stock().snapshot().movers().market("TSE").direction("up").change("percent").send());
     rest_probe!("rest stock/snapshot/actives TSE", |c: &RestClient| c
         .stock().snapshot().actives().market("TSE").trade("volume").send());
-    rest_probe!("rest stock/snapshot/heatmap IX0001", |c: &RestClient| c
-        .stock().snapshot().heatmap().symbol("IX0001").send());
 
     // Stock ownership (4) — new in 0.8.0. 0050 is the largest, longest-lived
     // ETF, so it always has a holdings series to decode; 2330 has director,

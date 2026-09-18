@@ -349,31 +349,6 @@ class StockIntradayClient:
         """
         ...
 
-    async def quotes_async(self, symbol: str, *, odd_lot: Optional[bool] = None) -> list[dict[str, Any]]:
-        """Get intraday quotes for several stock symbols in one request.
-
-        The batch form of `quote_async()`: one request, one quote dict per
-        symbol, in a list.
-
-        Args:
-            symbol: Stock symbols, comma-separated (e.g., "2330,2317")
-            odd_lot: Whether to query odd lot data (default: False)
-
-        Returns:
-            One quote dict per symbol
-
-        Raises:
-            MarketDataError: If the request fails
-
-        Example:
-            ```python
-            quotes = await client.stock.intraday.quotes_async("2330,2317")
-            for quote in quotes:
-                print(quote["symbol"], quote["lastPrice"])
-            ```
-        """
-        ...
-
     async def ticker_async(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Get ticker information for a stock symbol.
 
@@ -493,10 +468,6 @@ class StockIntradayClient:
 
     def quote(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `quote()`."""
-        ...
-
-    def quotes(self, symbol: str, *, odd_lot: Optional[bool] = None) -> list[dict[str, Any]]:
-        """Blocking version of `quotes_async()`."""
         ...
 
     def ticker(self, symbol: str, odd_lot: Optional[bool] = None) -> dict[str, Any]:
@@ -731,37 +702,6 @@ class StockSnapshotClient:
         """
         ...
 
-    async def heatmap_async(
-        self,
-        symbol: str,
-        *,
-        time: Optional[str] = None,
-        period: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Get the heatmap of an index: its constituents with their change.
-
-        Args:
-            symbol: Index code (e.g., "IX0001" for the TAIEX, "IX0027" for the
-                TPEx index). Not a stock symbol or a market: "2330" and "TSE"
-                both return 404.
-            time: Intraday snapshot time (HHmmss, e.g., "100000"); the server
-                defaults to the latest snapshot
-            period: Change period instead of the day's change ("1w", "1m",
-                "3m", "6m", "1y", "ytd")
-
-        Returns:
-            The index, its sub-indices and its constituent stocks
-
-        Raises:
-            MarketDataError: If the request fails
-
-        Example:
-            ```python
-            heatmap = await client.stock.snapshot.heatmap_async("IX0001", period="1m")
-            ```
-        """
-        ...
-
     # ----- Sync siblings (legacy fugle-marketdata compatibility) -----
 
     def quotes(self, market: str, type_filter: Optional[str] = None) -> dict[str, Any]:
@@ -787,12 +727,6 @@ class StockSnapshotClient:
         self, market: str, trade: Optional[str] = None, type_filter: Optional[str] = None
     ) -> dict[str, Any]:
         """Blocking version of `actives()`."""
-        ...
-
-    def heatmap(
-        self, symbol: str, *, time: Optional[str] = None, period: Optional[str] = None
-    ) -> dict[str, Any]:
-        """Blocking version of `heatmap_async()`."""
         ...
 
 

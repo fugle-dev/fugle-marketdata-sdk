@@ -1116,68 +1116,6 @@ export interface ActivesResponse {
   data: Active[];
 }
 
-/**
- * One index or stock in a heatmap response
- */
-export interface SnapshotHeatmapData {
-  /** Trading date (YYYY-MM-DD); absent in a period snapshot */
-  date?: string;
-  /** Security type ("INDEX" or "EQUITY") */
-  type?: string;
-  /** Exchange code (e.g., "TWSE") */
-  exchange?: string;
-  /** Index code or stock symbol */
-  symbol: string;
-  /** Name */
-  name?: string;
-  /** Opening price */
-  openPrice?: number;
-  /** Highest price */
-  highPrice?: number;
-  /** Lowest price */
-  lowPrice?: number;
-  /** Closing/last price */
-  closePrice?: number;
-  /** Price change over the day or the period */
-  change?: number;
-  /** Percentage change over the day or the period */
-  changePercent?: number;
-  /** Previous close */
-  previousClose?: number;
-  /** Trading volume (number of shares) */
-  tradeVolume?: number;
-  /** Trading value */
-  tradeValue?: number;
-  /** Share of the index's trading value, in percent (stocks only) */
-  tradeValueWeight?: number;
-  /** Share of the index's market value, in percent (stocks only) */
-  marketValueWeight?: number;
-  /** Industry code (stocks only) */
-  industry?: string;
-  /** Last updated timestamp (Unix microseconds) */
-  lastUpdated?: number;
-}
-
-/**
- * Heatmap response from snapshot/heatmap/{symbol}
- *
- * The constituents of an index (`symbol` is an index code such as `IX0001`)
- * with their change. `time` is set for an intraday snapshot, `period` when
- * the change is over a period instead of the day.
- */
-export interface SnapshotHeatmapResponse {
-  /** Trading date (YYYY-MM-DD) */
-  date: string;
-  /** Snapshot time (HHmmss); absent for a period snapshot */
-  time?: string;
-  /** Change period ("1w", "1m", "3m", "6m", "1y", "ytd"); absent for an intraday snapshot */
-  period?: string;
-  /** Index code the heatmap is of (e.g., "IX0001") */
-  symbol: string;
-  /** The index itself, its sub-indices and its constituent stocks */
-  data: SnapshotHeatmapData[];
-}
-
 // ============================================================================
 // REST Response Types - Technical Indicators
 // ============================================================================
@@ -1777,12 +1715,6 @@ export interface RestStockIntradayQuoteParams extends RestStockIntradayOddLot {
 /** @deprecated Use `RestStockIntradayQuoteParams`. */
 export type StockIntradayQuoteParams = RestStockIntradayQuoteParams;
 
-/** Params for `stock.intraday.quotes` (the batch quote; no path param) */
-export interface RestStockIntradayQuotesParams extends RestStockIntradayOddLot {
-  /** Comma-separated symbols, e.g. "2330,2317" */
-  symbol: string;
-}
-
 /** Params for `stock.intraday.candles` */
 export interface RestStockIntradayCandlesParams extends RestStockIntradayOddLot {
   symbol: string;
@@ -1844,16 +1776,6 @@ export interface RestStockSnapshotActivesParams {
   market: SnapshotMarket;
   trade: 'volume' | 'value';
   type?: SnapshotType;
-}
-
-/** Params for `stock.snapshot.heatmap` */
-export interface RestStockSnapshotHeatmapParams {
-  /** Index code (e.g. "IX0001"); a stock symbol or a market is 404 */
-  symbol: string;
-  /** Intraday snapshot time, HHmmss; the server defaults to the latest snapshot */
-  time?: string;
-  /** Change period instead of the day's change */
-  period?: '1w' | '1m' | '3m' | '6m' | '1y' | 'ytd';
 }
 
 interface RestStockTechnicalBaseParams {
@@ -2007,8 +1929,6 @@ export interface StockSnapshotClient {
   movers(market: string | RestStockSnapshotMoversParams, direction?: string, change?: string): Promise<MoversResponse>;
   /** Get most actively traded stocks for a market */
   actives(market: string | RestStockSnapshotActivesParams, trade?: string): Promise<ActivesResponse>;
-  /** Get the heatmap of an index (`symbol` is an index code such as "IX0001") */
-  heatmap(symbol: string | RestStockSnapshotHeatmapParams, time?: string, period?: string): Promise<SnapshotHeatmapResponse>;
 }
 
 /** Stock technical client interface */
@@ -2405,23 +2325,6 @@ export declare class StockIntradayClient {
    */
   quote(symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean | undefined | null): Promise<QuoteResponse>
   /**
-   * Get intraday quotes for several stock symbols in one request
-   *
-   * The batch form of `quote()`: the symbols go in the `symbol` query key,
-   * comma-separated, and the response is an array of quote objects.
-   *
-   * @param symbol - Stock symbols, comma-separated (e.g., "2330,2317")
-   * @param oddLot - Whether to query odd lot data (default: false)
-   * @returns Promise resolving to an array of quote objects, one per symbol
-   *
-   * @example
-   * ```javascript
-   * await client.stock.intraday.quotes('2330,2317');
-   * await client.stock.intraday.quotes({ symbol: '2330,2317', type: 'oddlot' });
-   * ```
-   */
-  quotes(symbol: string | RestStockIntradayQuotesParams, oddLot?: boolean | undefined | null): Promise<QuoteResponse[]>
-  /**
    * Get intraday ticker for a stock symbol
    *
    * @param symbol - Stock symbol (e.g., "2330" for TSMC)
@@ -2530,19 +2433,6 @@ export declare class StockSnapshotClient {
    * @returns Promise resolving to actives data
    */
   actives(market: string | RestStockSnapshotActivesParams, trade?: string | undefined | null): Promise<ActivesResponse>
-  /**
-   * Get the heatmap of an index: its constituents with their change
-   *
-   * @param symbol - Index code (e.g., "IX0001" for the TAIEX, "IX0027" for
-   *   the TPEx index). Not a stock symbol or a market: "2330" and "TSE"
-   *   both return 404.
-   * @param time - Intraday snapshot time (HHmmss, e.g., "100000"); the
-   *   server defaults to the latest snapshot
-   * @param period - Change period instead of the day's change ("1w", "1m",
-   *   "3m", "6m", "1y", "ytd")
-   * @returns Promise resolving to the index, its sub-indices and its constituent stocks
-   */
-  heatmap(symbol: string | RestStockSnapshotHeatmapParams, time?: string | undefined | null, period?: string | undefined | null): Promise<SnapshotHeatmapResponse>
 }
 
 /** Stock technical indicators client */

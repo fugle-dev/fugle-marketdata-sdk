@@ -29,18 +29,6 @@ public interface StockSnapshotClientInterface {
     public CompletableFuture<String> getActives(String market, String trade) ;
     
     /**
-     * Get the heatmap of an index: its constituents with their change (async)
-     *
-     * Parameters:
-     * - symbol: Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx
-     * index). Not a stock symbol or a market: "2330" and "TSE" are 404.
-     * - time: Intraday snapshot time, HHmmss (optional; latest by default)
-     * - period: Change period instead of the day's change: "1w", "1m", "3m",
-     * "6m", "1y", "ytd" (optional)
-     */
-    public CompletableFuture<String> getHeatmap(String symbol, String time, String period) ;
-    
-    /**
      * Get top movers (gainers/losers) in a market (async)
      *
      * Parameters:
@@ -58,13 +46,6 @@ public interface StockSnapshotClientInterface {
      * - type_filter: Optional filter (ALL, ALLBUT0999, COMMONSTOCK)
      */
     public CompletableFuture<String> getQuotes(String market, String typeFilter) ;
-    
-    /**
-     * Get the heatmap of an index (sync/blocking)
-     *
-     * `symbol` is an index code ("IX0001"), not a stock symbol or a market.
-     */
-    public String heatmapSync(String symbol, String time, String period) throws MarketDataException;
     
     /**
      * Get top movers (sync/blocking)

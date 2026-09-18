@@ -218,8 +218,6 @@ const INTERFACE_TO_STRUCT = {
   MoversResponse: 'MoversResponse',
   Active: 'Active',
   ActivesResponse: 'ActivesResponse',
-  SnapshotHeatmapData: 'SnapshotHeatmapData',
-  SnapshotHeatmapResponse: 'SnapshotHeatmapResponse',
   SmaDataPoint: 'SmaDataPoint',
   SmaResponse: 'SmaResponse',
   RsiDataPoint: 'RsiDataPoint',

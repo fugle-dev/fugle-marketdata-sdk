@@ -81,7 +81,6 @@ void * uniffi_marketdata_uniffi_fn_clone_stockintradayclient(void * ptr, RustCal
 void uniffi_marketdata_uniffi_fn_free_stockintradayclient(void * ptr, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_candles_sync(void * ptr, RustBuffer symbol, RustBuffer timeframe, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync(void * ptr, RustBuffer symbol, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_quotes_sync(void * ptr, RustBuffer symbol, int8_t odd_lot, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_ticker_sync(void * ptr, RustBuffer symbol, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_tickers_sync(void * ptr, RustBuffer typ, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stockintradayclient_trades_sync(void * ptr, RustBuffer symbol, RustCallStatus *out_status);
@@ -95,7 +94,6 @@ RustBuffer uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribu
 void * uniffi_marketdata_uniffi_fn_clone_stocksnapshotclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_stocksnapshotclient(void * ptr, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_actives_sync(void * ptr, RustBuffer market, RustBuffer trade, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_heatmap_sync(void * ptr, RustBuffer symbol, RustBuffer time, RustBuffer period, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_movers_sync(void * ptr, RustBuffer market, RustBuffer direction, RustBuffer change, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_quotes_sync(void * ptr, RustBuffer market, RustBuffer type_filter, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_clone_stocktechnicalclient(void * ptr, RustCallStatus *out_status);
@@ -189,7 +187,6 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_candles_
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_stats_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockintradayclient_candles_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync();
-uint16_t uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quotes_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockintradayclient_ticker_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockintradayclient_tickers_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockintradayclient_trades_sync();
@@ -199,7 +196,6 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdi
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync();
-uint16_t uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_heatmap_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_movers_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_quotes_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync();
