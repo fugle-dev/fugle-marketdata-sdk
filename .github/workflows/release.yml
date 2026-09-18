@@ -13,9 +13,9 @@ name: Release
 #
 # Running this workflow manually is a rehearsal: it builds every platform and
 # runs each publish job up to, but not including, the upload (npm
-# --dry-run, NuGet pack, Go module assembly and smoke test, PyPI wheel
-# checks). Nothing is published and no GitHub Release is created. Only a tag
-# push releases.
+# --dry-run, NuGet pack and install smoke test, Go module assembly and smoke
+# test, C++ tarball smoke test, PyPI wheel checks). Nothing is published and
+# no GitHub Release is created. Only a tag push releases.
 #
 # Each registry is opt-in through a repository variable, so registries can be
 # brought online one at a time as their credentials are configured:
@@ -301,6 +301,7 @@ jobs:
           # Map rid → source artifact dir + lib filename pattern
           for entry in \
               "linux-x64:uniffi-cpp-x86_64-unknown-linux-gnu:libmarketdata_uniffi.so" \
+              "linux-arm64:uniffi-cpp-aarch64-unknown-linux-gnu:libmarketdata_uniffi.so" \
               "osx-arm64:uniffi-cpp-aarch64-apple-darwin:libmarketdata_uniffi.dylib" \
               "osx-x64:uniffi-cpp-x86_64-apple-darwin:libmarketdata_uniffi.dylib" \
               "win-x64:uniffi-cpp-x86_64-pc-windows-msvc:marketdata_uniffi.dll"; do
@@ -334,16 +335,45 @@ jobs:
           done
           ls -la cpp-dist/
 
-      # Compile, link and run against the packaged linux-x64 tarball, the same
-      # way Verify Release and users do, before it can be attached anywhere.
-      - name: Smoke-test linux-x64 tarball
+      - name: Upload as internal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cpp
+          path: cpp-dist/*.tar.gz
+          retention-days: 5
+
+  # Compile, link and run against each packaged Linux tarball, the same way
+  # Verify Release and users do, before it can be attached anywhere. One job
+  # per platform because the arm64 tarball can only be run on the arm64 runner.
+  smoke-cpp:
+    name: Smoke-test C++ tarball (${{ matrix.rid }})
+    needs: [resolve, pack-cpp]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Download tarballs
+        uses: actions/download-artifact@v4
+        with:
+          name: release-cpp
+          path: cpp-dist/
+
+      - name: Compile, link and run
         env:
           VERSION: ${{ needs.resolve.outputs.uniffi_version }}
+          RID: ${{ matrix.rid }}
         run: |
           work=$(mktemp -d)
-          tar -xzf "cpp-dist/fugle-marketdata-cpp-linux-x64-${VERSION}.tar.gz" -C "$work"
-          sdk="$work/fugle-marketdata-cpp-linux-x64-${VERSION}"
+          tar -xzf "cpp-dist/fugle-marketdata-cpp-${RID}-${VERSION}.tar.gz" -C "$work"
+          sdk="$work/fugle-marketdata-cpp-${RID}-${VERSION}"
           ls -la "$sdk/include" "$sdk/lib"
+          file "$sdk/lib/libmarketdata_uniffi.so"
           cat > "$work/smoke.cpp" <<'CPP'
           #include <cstdio>
           #include "marketdata_uniffi.hpp"
@@ -356,13 +386,6 @@ jobs:
               -L"$sdk/lib" -lmarketdata_uniffi -o "$work/smoke"
           LD_LIBRARY_PATH="$sdk/lib" "$work/smoke"
 
-      - name: Upload as internal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-cpp
-          path: cpp-dist/*.tar.gz
-          retention-days: 5
-
 
   # ==============================================================
   # Wave 3: GitHub Release
@@ -372,7 +395,7 @@ jobs:
   # steps are idempotent; re-run failed jobs to finish a partial release.
   create-release:
     name: Create GitHub Release
-    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, publish-java, pack-cpp]
+    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, publish-java, pack-cpp, smoke-cpp]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.resolve.outputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -440,7 +463,7 @@ jobs:
 
   rehearsal-summary:
     name: Rehearsal summary
-    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, pack-cpp]
+    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, pack-cpp, smoke-cpp]
     if: ${{ always() && needs.resolve.outputs.dry_run == 'true' }}
     runs-on: ubuntu-latest
     steps:

@@ -17,8 +17,8 @@
 #
 # Environment:
 #   GO_PLATFORMS  Space-separated platforms that must be present.
-#                 Default: "darwin_arm64 darwin_amd64 linux_amd64 windows_amd64".
-#                 Narrow it only for local experiments; releases need all four.
+#                 Default: "darwin_arm64 darwin_amd64 linux_amd64 linux_arm64 windows_amd64".
+#                 Narrow it only for local experiments; releases need all five.
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
@@ -32,7 +32,7 @@ VERSION="${3#v}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/bindings/go/marketdata"
 DIST="$ROOT/bindings/go/dist"
-PLATFORMS="${GO_PLATFORMS:-darwin_arm64 darwin_amd64 linux_amd64 windows_amd64}"
+PLATFORMS="${GO_PLATFORMS:-darwin_arm64 darwin_amd64 linux_amd64 linux_arm64 windows_amd64}"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
   echo "error: version '$VERSION' is not semver (expected e.g. 0.1.0-rc.1)" >&2

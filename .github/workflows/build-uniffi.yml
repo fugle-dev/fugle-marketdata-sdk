@@ -36,6 +36,11 @@ jobs:
             target: x86_64-unknown-linux-gnu
             lib: libmarketdata_uniffi.so
             rid: linux-x64
+          # Native arm64 runner, the same one build-python.yml uses.
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            lib: libmarketdata_uniffi.so
+            rid: linux-arm64
           - os: macos-latest
             target: aarch64-apple-darwin
             lib: libmarketdata_uniffi.dylib
@@ -115,6 +120,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
             lib: libmarketdata_uniffi.so
             rid: linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            lib: libmarketdata_uniffi.so
+            rid: linux-arm64
           - os: macos-latest
             target: aarch64-apple-darwin
             lib: libmarketdata_uniffi.dylib
@@ -218,6 +227,9 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             platform: linux_amd64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux_arm64
           # Go on Windows links cgo with mingw-w64 gcc, which cannot consume
           # MSVC archives, so this target is cross-compiled with mingw.
           - os: ubuntu-latest
@@ -277,7 +289,7 @@ jobs:
       - name: Arrange as <goos>_<goarch>/ and verify
         run: |
           mkdir -p uniffi-go-static
-          for platform in darwin_arm64 darwin_amd64 linux_amd64 windows_amd64; do
+          for platform in darwin_arm64 darwin_amd64 linux_amd64 linux_arm64 windows_amd64; do
             src="downloads/uniffi-go-static-${platform}"
             if [[ ! -f "$src/libmarketdata_uniffi.a" || ! -s "$src/native-static-libs.txt" ]]; then
               echo "::error::Missing static library or native-static-libs.txt for ${platform}"
@@ -334,6 +346,12 @@ jobs:
           name: uniffi-default-x86_64-unknown-linux-gnu
           path: uniffi-all/linux-x64/
 
+      - name: Download Linux ARM64 artifact (default)
+        uses: actions/download-artifact@v4
+        with:
+          name: uniffi-default-aarch64-unknown-linux-gnu
+          path: uniffi-all/linux-arm64/
+
       - name: Download macOS ARM64 artifact (default)
         uses: actions/download-artifact@v4
         with:
@@ -360,6 +378,7 @@ jobs:
           echo ""
           echo "Verifying required libraries exist..."
           test -f uniffi-all/linux-x64/libmarketdata_uniffi.so || exit 1
+          test -f uniffi-all/linux-arm64/libmarketdata_uniffi.so || exit 1
           test -f uniffi-all/osx-arm64/libmarketdata_uniffi.dylib || exit 1
           test -f uniffi-all/osx-x64/libmarketdata_uniffi.dylib || exit 1
           test -f uniffi-all/win-x64/marketdata_uniffi.dll || exit 1
