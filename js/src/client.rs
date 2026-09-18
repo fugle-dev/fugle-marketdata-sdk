@@ -1193,20 +1193,39 @@ pub struct StockCorporateActionsClient {
 /// `date` used to be the first positional argument of the corporate-actions
 /// methods. The server never accepted it (`capital-changes` and
 /// `listing-applicants` answer 400, `dividends` ignores it), so it is gone and
-/// `startDate` moved into its slot. The old three-argument call would now run
-/// with a shifted date range and no complaint; a third positional argument is
-/// therefore refused with directions instead of being dropped.
-fn reject_legacy_date_arg(method: &str, third: &Option<Value>) -> napi::Result<()> {
-    match third {
-        None | Some(Value::Null) => Ok(()),
-        Some(_) => Err(napi::Error::from_reason(format!(
+/// `startDate` moved into its slot. Two old call shapes would now run with a
+/// shifted date range and no complaint, so both are refused with directions
+/// instead of being dropped:
+/// - a third positional argument: the old `(date, startDate, endDate)`;
+/// - an `undefined` / `null` first argument with a second one given: the old
+///   `(date, startDate)`, indistinguishable from a new call that only wants
+///   `endDate`, which the object form covers.
+fn reject_legacy_date_args(
+    method: &str,
+    first: &Option<RestArg>,
+    second: &Option<String>,
+    third: &Option<Value>,
+) -> napi::Result<()> {
+    let is_set = |value: &Option<Value>| !matches!(value, None | Some(Value::Null));
+    if is_set(third) {
+        return Err(napi::Error::from_reason(format!(
             "`{method}` no longer takes `date` as its first argument: the server rejects it \
              (capital-changes and listing-applicants respond 400, dividends ignores it). \
              The first argument is now `startDate`, so a third argument means the old \
              `(date, startDate, endDate)` form: call `{method}(startDate, endDate)` or \
              `{method}({{ start_date, end_date }})` instead."
-        ))),
+        )));
     }
+    if first.is_none() && second.is_some() {
+        return Err(napi::Error::from_reason(format!(
+            "`{method}` got an undefined first argument with a second one: this is either \
+             the old `(date, startDate)` form (`date` was removed; the server rejects it) or \
+             a call that only wants `endDate`. Both read the same, so use the object form: \
+             `{method}({{ start_date, end_date }})`, or `{method}({{ end_date }})` for an end \
+             date alone."
+        )));
+    }
+    Ok(())
 }
 
 #[napi]
@@ -1226,7 +1245,7 @@ impl StockCorporateActionsClient {
         end_date: Option<String>,
         legacy_third_arg: Option<Value>,
     ) -> napi::Result<Settled> {
-        reject_legacy_date_arg("capitalChanges", &legacy_third_arg)?;
+        reject_legacy_date_args("capitalChanges", &start_date, &end_date, &legacy_third_arg)?;
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], None, params).await,
@@ -1268,7 +1287,7 @@ impl StockCorporateActionsClient {
         end_date: Option<String>,
         legacy_third_arg: Option<Value>,
     ) -> napi::Result<Settled> {
-        reject_legacy_date_arg("dividends", &legacy_third_arg)?;
+        reject_legacy_date_args("dividends", &start_date, &end_date, &legacy_third_arg)?;
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], None, params).await,
@@ -1310,7 +1329,7 @@ impl StockCorporateActionsClient {
         end_date: Option<String>,
         legacy_third_arg: Option<Value>,
     ) -> napi::Result<Settled> {
-        reject_legacy_date_arg("listingApplicants", &legacy_third_arg)?;
+        reject_legacy_date_args("listingApplicants", &start_date, &end_date, &legacy_third_arg)?;
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], None, params).await,

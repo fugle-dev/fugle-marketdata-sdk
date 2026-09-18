@@ -174,7 +174,7 @@ describe('positional calls are unchanged', () => {
       '/stock/corporate-actions/dividends', { start_date: '2026-08-01', end_date: '2026-09-30' }],
     ['capital changes with start only', (c) => c.stock.corporateActions.capitalChanges('2026-08-01'),
       '/stock/corporate-actions/capital-changes', { start_date: '2026-08-01' }],
-    ['listing applicants with end only', (c) => c.stock.corporateActions.listingApplicants(undefined, '2026-09-30'),
+    ['listing applicants with end only (object form)', (c) => c.stock.corporateActions.listingApplicants({ end_date: '2026-09-30' }),
       '/stock/corporate-actions/listing-applicants', { end_date: '2026-09-30' }],
     ['futopt tickers', (c) => c.futopt.intraday.tickers('FUTURE'), '/futopt/intraday/tickers', { type: 'FUTURE' }],
     ['futopt historical candles', (c) => c.futopt.historical.candles('TXF', '2026-09-01', '2026-09-15', '5', true, '2!', 'close', 'asc'),
@@ -196,8 +196,10 @@ describe('positional calls are unchanged', () => {
 
 // `date` was the first positional argument of the corporate-actions methods
 // until the server turned out never to accept it (#168). `startDate` now sits
-// in that slot, so the old `(date, startDate, endDate)` call would silently run
-// with a shifted range; a third argument is refused with directions instead.
+// in that slot, so the old `(date, startDate, endDate)` and `(date, startDate)`
+// calls would silently run with a shifted range; both are refused with
+// directions instead. The second one also covers a new call that only wants
+// `endDate`, which the object form handles.
 describe('corporate-actions legacy date argument', () => {
   test.each([
     ['capitalChanges', (c) => c.stock.corporateActions.capitalChanges(undefined, '2026-08-01', '2026-09-30')],
@@ -206,6 +208,15 @@ describe('corporate-actions legacy date argument', () => {
   ])('%s(date, startDate, endDate) is rejected with directions', async (name, call) => {
     await expect(call(ctx.client)).rejects.toThrow(`\`${name}\` no longer takes \`date\``);
     await expect(call(ctx.client)).rejects.toThrow(`${name}(startDate, endDate)`);
+  });
+
+  test.each([
+    ['capitalChanges', (c) => c.stock.corporateActions.capitalChanges(undefined, '2026-08-01')],
+    ['dividends', (c) => c.stock.corporateActions.dividends(null, '2026-08-01')],
+    ['listingApplicants', (c) => c.stock.corporateActions.listingApplicants(undefined, '2026-08-01')],
+  ])('%s(undefined, startDate) is rejected and pointed at the object form', async (name, call) => {
+    await expect(call(ctx.client)).rejects.toThrow(`\`${name}\` got an undefined first argument`);
+    await expect(call(ctx.client)).rejects.toThrow(`${name}({ end_date })`);
   });
 
   test('an explicit undefined third argument is not a legacy call', async () => {

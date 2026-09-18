@@ -50,10 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and their `_async` forms drop the `date` keyword.
   - **Node**: `startDate` moves into the first slot:
     `capitalChanges(startDate?, endDate?)`, and likewise `dividends` and
-    `listingApplicants`. The old three-argument call
-    `dividends(undefined, start, end)` would otherwise run with a shifted
-    range, so a third positional argument is rejected with a message that
-    says how to rewrite the call. The object form is unchanged.
+    `listingApplicants`. The old calls `dividends(undefined, start, end)`
+    and `dividends(undefined, start)` would otherwise run with a shifted
+    range, so a third positional argument, or an `undefined` first argument
+    with a second one, is rejected with a message that says how to rewrite
+    the call. That second shape also covers a call that only wants
+    `endDate`: use `dividends({ end_date })`. The object form is unchanged.
   - **C#, Go, Java, C++**: `GetCapitalChanges` / `CapitalChangesSync` /
     `capital_changes_sync` and the dividends / listing-applicants
     counterparts drop the leading `date` argument.
