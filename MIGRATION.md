@@ -55,7 +55,8 @@ to rewrite call sites:
 | `stock.intraday.tickers(type=...)` | ✅ restored — was missing in early Rust SDK |
 | `futopt.intraday.tickers(type=...)` | ✅ restored |
 | `futopt.intraday.products(type=...)` | ✅ restored on Python (Node already had it) |
-| Node REST object params, e.g. `quote({ symbol: '2330', type: 'oddlot' })` | ✅ every REST method; keys other than `symbol` / `market` are sent verbatim as query params |
+| Node REST object params, e.g. `quote({ symbol: '2330', type: 'oddlot' })` | ✅ every REST method; keys other than `symbol` / `market` are checked against the endpoint's parameter list and sent under the API's names — an unknown key rejects (see [§4](#4-node-rest-methods-also-take-positional-args)) |
+| Python REST kwargs in the API's spelling, e.g. `trades(symbol="2330", limit=5, isTrial=True)`, `ticker(symbol="2330", type="oddlot")`, `sma(..., from_="2024-01-01", to="2024-02-01")` | ✅ every REST method; an unknown keyword raises `TypeError` (see [§2](#2-python-rest-keywords-are-checked-and-the-legacy-spellings-work)) |
 | `quote(..., oddLot=true)` (Node REST) | ✅ second positional arg `quote(symbol, oddLot?)` |
 | WebSocket `subscribe({ channel, symbol })` | ✅ |
 | WebSocket `subscribe({ channel, symbols: [...] })` | ✅ batch supported |
@@ -100,23 +101,40 @@ The async sibling exists for every REST method:
 `macd_async`, `bb_async`, `capital_changes_async`, `dividends_async`,
 `listing_applicants_async`, `products_async`, `daily_async`.
 
-#### 2. Python REST: positional symbol + explicit named params
+#### 2. Python REST: keywords are checked, and the legacy spellings work
 
 Legacy Python passes everything as kwargs and forwards extra `**params` to
-the query string. This SDK expects the path symbol as the first positional
-argument and names every supported query parameter explicitly.
+the query string verbatim. This SDK names every query parameter of every
+endpoint (the list comes from the server's request definitions) and accepts
+each one under three spellings: the API's own name as the legacy SDK and
+developer.fugle.tw use it (`isTrial`, `contractType`, `from` / `to`,
+`type="oddlot"`, `session="afterhours"`), the legacy `from_` alias for the
+reserved word, and this SDK's snake_case keyword (`is_trial`, `from_date`,
+`odd_lot=True`). The path symbol may be positional or `symbol=`.
 
 ```python
-# Legacy
+# Legacy — still works
 client.stock.historical.candles(symbol="2330", from_="2024-01-01", to="2024-02-01")
+client.stock.intraday.trades(symbol="2330", limit=5, isTrial=True)
+client.stock.intraday.ticker(symbol="2330", type="oddlot")
 
-# This SDK
+# This SDK's spelling
 await client.stock.historical.candles("2330", from_date="2024-01-01", to_date="2024-02-01")
+await client.stock.intraday.trades("2330", limit=5, is_trial=True)
+await client.stock.intraday.ticker("2330", odd_lot=True)
 ```
 
-Note that `from_` / `to` were renamed to `from_date` / `to_date`. The legacy
-`**params` opaque pass-through is gone — if the API gains a new query
-parameter, the binding has to be updated.
+Two differences from the legacy pass-through, both on purpose:
+
+- A keyword the endpoint does not take raises `TypeError` naming the
+  accepted ones, instead of being sent (and, on most endpoints, ignored by
+  the server). A typo in a legacy call site that used to return unfiltered
+  data now fails at the call.
+- One parameter given under two spellings (`from_` and `from_date`) raises
+  `TypeError` rather than one being picked.
+
+Type checkers (mypy, pyright) only know the snake_case keywords; the other
+spellings are a runtime compatibility layer.
 
 #### 2a. Python WebSocket `subscribe` / `unsubscribe` accept dict OR positional
 
@@ -170,9 +188,9 @@ the language.
 #### 4. Node REST methods also take positional args
 
 The legacy `@fugle/marketdata` Node SDK takes a single object param for every
-REST method, and that shape still works unchanged: the path param (`symbol`,
-or `market` for `stock.snapshot.*`) goes into the path and every other key is
-forwarded verbatim as a query param, so any param in the API docs is
+REST method, and that shape still works: the path param (`symbol`, or
+`market` for `stock.snapshot.*`) goes into the path and every other key is
+sent as a query param under the API's name, so any param in the API docs is
 reachable. This SDK additionally accepts positional arguments.
 
 ```javascript
@@ -188,9 +206,17 @@ const candles = await rest.stock.intraday.candles('2330', '5');
 The positional form only covers the most common params (for example,
 `trades` has no positional `limit`); use the object form for the rest.
 
-Two small differences from the legacy object form, neither of which the API
-distinguishes in practice:
+Differences from the legacy object form:
 
+- **A key the endpoint does not take rejects** (`code: 1005`) with the
+  accepted keys in the message, instead of being forwarded. The legacy SDK
+  forwarded everything; on most endpoints the server ignored an unknown key,
+  so a typo returned unfiltered data. (On `capitalChanges` /
+  `listingApplicants` the server already answered 400.) The `Rest*Params`
+  TypeScript types list exactly the accepted keys, so a typo is also a
+  compile error.
+- The snake_case spellings (`is_trial`, `odd_lot`) are accepted as aliases of
+  the API names; one parameter under two spellings rejects.
 - A key set to `null` is dropped, like `undefined`. The legacy SDK sent it as
   a bare key with no value (`?offset`).
 - Query params keep the order they appear in the object. The legacy SDK sorted

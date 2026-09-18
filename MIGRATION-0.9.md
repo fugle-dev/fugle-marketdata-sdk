@@ -580,6 +580,171 @@ first to open a new one, or `reconnect()` (Rust) to replace it.
 - **Python**: catch `WebSocketError` (or `MarketDataError`) and check
   `e.code == 2011`.
 
+## 17. REST query parameters: checked against the server's table
+
+Every REST endpoint's query parameters are now listed once, in core, from the
+server's own request definitions (#164). Node's object form and Python's
+keywords are checked against that list before the request is sent, and every
+parameter the server takes is reachable from every binding's typed API.
+
+Before, a key or keyword the binding did not know went one of two ways, and
+both were silent: Node forwarded it and the server ignored it; Python warned
+once (`UserWarning`, which Python prints a single time per call site) and
+dropped it. Either way the call succeeded and returned the wrong data:
+`trades("2330", limit=5, sort="asc")` came back with 50 trades,
+`ticker("2330", type="oddlot")` with board-lot data, and
+`futopt.intraday.tickers(type="FUTURE", product="TXF")` with 1793 contracts
+instead of 6.
+
+Two of the 28 endpoints are different: `stock/corporate-actions/capital-changes`
+and `listing-applicants` are served by a backend that already answered 400 to
+any unknown key, so for those two only the error moves from the server to the
+call site. For the other 26 this is a real change of behaviour: a typo that
+used to return unfiltered data now fails.
+
+Values are not checked. The server's rules for values are not consistent
+(`type=oddlot` is case-sensitive, the single-contract `session` is not, the
+list endpoints want `REGULAR` / `AFTERHOURS` in upper case), so a bad value
+still gets the server's own error.
+
+### Python
+
+- **A keyword the endpoint does not take raises `TypeError`.** The message
+  names the method, suggests the nearest accepted spelling when one differs
+  only in case or underscores, and lists every accepted keyword:
+
+  ```text
+  TypeError: stock.intraday.trades() got an unexpected keyword argument 'istrial'.
+  Did you mean 'isTrial'? Accepted: odd_lot, type, oddLot, offset, limit, sort, is_trial, isTrial
+  ```
+
+- **The spellings the 2.x SDK used work again.** The 2.x `fugle-marketdata`
+  forwarded `**params` verbatim, so its callers wrote the API's own names —
+  `isTrial`, `isNormal`, `isSpread`, `contractType`, `rPeriod`, `contractMonth`,
+  `from` / `to`, `type="oddlot"`, `session="afterhours"` — plus `from_` for the
+  reserved word. 3.0.0-rc.1 to rc.4 dropped all of these with a warning. They
+  are accepted now, alongside the 3.x snake_case keywords, which are unchanged.
+
+- **One parameter under two spellings is a `TypeError`**, never a silent
+  choice: `from_date` with `from`, `is_trial` with `isTrial`, `odd_lot=True`
+  (or `False`) with `type="oddlot"`. The message is the one the ownership
+  methods have used since rc.1: `got multiple values for from_date (also
+  passed as 'from')`.
+
+- **Every parameter has a keyword now** (#165). `odd_lot` on `ticker` /
+  `candles` / `trades` / `volumes`; `offset`, `limit`, `sort`, `is_trial` on
+  `trades`; `is_attention`, `is_disposition`, `is_halted`, `symbol` on
+  `tickers`; `type_filter`, `gt`, `gte`, `lt`, `lte`, `eq` on `movers`;
+  `type_filter` on `actives`; `exchange`, `sort` on the corporate-actions
+  methods; `exchange`, `after_hours`, `status` on `products`; `product` on
+  the futopt `tickers`; `strike_price`, `call_put` on the futopt historical
+  `candles`. New keywords come after the existing ones, so positional calls
+  keep their meaning.
+
+- `odd_lot` and `after_hours` default to `None` instead of `False`, so that
+  an explicit `False` counts as given in the conflict check. `True` and
+  `False` mean what they did.
+
+- **Type checkers only know the snake_case keywords.** The `.pyi` stubs list
+  the typed keywords and no `**kwargs`, so mypy / pyright flag `isTrial=` or
+  `from_=` even though they work at runtime. Write `is_trial=` / `from_date=`
+  in code you type-check; the other spellings are a runtime compatibility
+  layer for 2.x call sites.
+
+The table below is the one from #164: every call from the developer.fugle.tw
+examples that rc.4 silently mishandled, and what it does now.
+
+| Call (2.x / documentation spelling) | rc.4 | Now |
+|---|---|---|
+| `stock.technical.sma(**{"symbol": "2330", "from": "2026-08-01", "to": "2026-09-10", "timeframe": "D", "period": 5})` | `from` / `to` dropped: default range (24 rows instead of 29) | sends `from` / `to` |
+| `stock.intraday.trades(symbol="2330", limit=5, sort="asc")` | 50 trades | sends `limit=5&sort=asc` |
+| `futopt.intraday.tickers(type="FUTURE", exchange="TAIFEX", session="REGULAR", product="TXF")` | 1793 contracts | sends `product=TXF`; `REGULAR` is the server default and is expressed by sending no `session` |
+| `stock.intraday.ticker(symbol="2330", type="oddlot")` | board-lot data | sends `type=oddlot` |
+| `stock.historical.candles(**{"symbol": "0050", "from": ..., "to": ..., "fields": ...})` | `from` / `to` dropped | sends them |
+| `stock.technical.rsi` / `macd` / `bb` with `from` / `to` | dropped | sends them |
+| `stock.intraday.tickers(type="EQUITY", isNormal=True)` | dropped | sends `isNormal=true` |
+| `stock.intraday.quote(symbol="2330", type="oddlot")` | dropped | sends `type=oddlot` |
+| `futopt.intraday.products(type="FUTURE", exchange="TAIFEX", session="AFTERHOURS", contractType="I")` | all three dropped | sends all three |
+| `futopt.intraday.tickers(type="FUTURE", isSpread=True)` | dropped | sends `isSpread=true` |
+| `futopt.intraday.quote(symbol="TXFD6", session="afterhours")` | dropped | sends `session=afterhours` |
+| `stock.technical.sma("2330", from_="2026-08-01", to="2026-09-10", ...)` | `from_` / `to` dropped | sends `from` / `to` |
+| `stock.intraday.quote(symbol="2330", totally_bogus=1)` | warning, request sent | `TypeError`, no request |
+
+Each row is a test (`py/tests/test_rest_kwargs_strict.py::TestIssue164Cases`).
+
+### Node
+
+- **An unknown key in the object form rejects** with `code: 1005`
+  (`sourceKind: 'client'`) and a message that names the endpoint, the
+  suggestion, and the accepted keys:
+
+  ```text
+  Invalid parameter 'Product': `futopt.intraday.tickers` does not accept `Product`;
+  did you mean `product`? accepted keys: type, exchange, session, product, contractType, isSpread
+  ```
+
+  The suggestion appears when the key differs only in case or underscores.
+  For `capitalChanges` / `listingApplicants` an unknown key rejected already,
+  with the server's error (`code: 2003`, `status: 400`, `property xxx should
+  not exist`); it is now the client's (`code: 1005`, `status: null`).
+
+- **TypeScript flags the typo at compile time.** The `Rest*Params` types no
+  longer have an `[key: string]: unknown` index signature, and they list every
+  key the endpoint takes. A project that relied on the index signature to pass
+  an undeclared key no longer compiles; if the key is one the server takes, it
+  is in the type now.
+
+- The snake_case spellings (`is_trial`, `contract_month`, `odd_lot`,
+  `after_hours`) are accepted at runtime as aliases of the API names, and
+  `oddLot: true` works on `ticker` / `candles` / `trades` / `volumes` as it
+  did on `quote`. One parameter under two spellings (`type: 'oddlot'` with
+  `oddLot: true`, `symbol` with `product`) rejects.
+
+- A missing path param and a nested object value, which threw plain `Error`s,
+  now carry the same fields (`code: 1005`).
+
+### Rust
+
+Additive: the builders gain `sort` (intraday candles), `is_attention` /
+`is_disposition` / `is_halted` / `symbol` (tickers), `type_filter` and the
+`gt` / `gte` / `lt` / `lte` / `eq` thresholds (movers), `type_filter`
+(actives), `sort` and `exchange` (corporate actions), `product` (futopt
+tickers), `status` (futopt products), `strike_price` / `call_put` (futopt
+historical candles). `core::rest::params` holds the table, hidden from the
+docs like `RestClient::get_json`.
+
+### C#, Go, Java, C++
+
+No change here; these bindings keep the parameter set they had.
+
+## 18. Parameters the server never read
+
+Measured against the server (#166, #168): three parameters every language
+offered had no effect, or broke the call. They are removed. Nothing you get
+back changes; calls that passed them stop compiling (or raise, in Python).
+
+| Parameter | What it did | Replace with |
+|---|---|---|
+| `stddev` on Bollinger Bands (`bb`) | Sent and ignored; every result used the server's own multiplier | Drop it |
+| `period()` on the Rust KDJ builder | A lone `period` got HTTP 400 | `r_period` / `k_period` / `d_period` |
+| `date` on `capital_changes` / `dividends` / `listing_applicants` | `capital-changes` and `listing-applicants` answered 400 `property date should not exist`; `dividends` ignored it and returned the default range | `start_date` / `end_date` |
+
+- **Rust**: `BbRequestBuilder::stddev`, `KdjRequestBuilder::period` and the
+  three `date()` builders are gone.
+- **Python**: `bb()` / `bb_async()` lose `stddev`; the corporate-actions
+  methods lose `date`.
+- **Node**: `bb()` loses its trailing `stddev` argument. `startDate` moves
+  into the corporate-actions methods' first slot — `dividends(startDate?,
+  endDate?)`. The old three-argument call `dividends(undefined, start, end)`
+  and the old two-argument `dividends(undefined, start)` would run with a
+  shifted range, so both reject with a message that says how to rewrite the
+  call; use `dividends({ end_date })` for an end date alone. The object form
+  is unchanged.
+- **C#, Go, Java, C++**: `GetBb` / `BbSync` / `bb_sync` lose the trailing
+  `stddev`; `GetCapitalChanges` / `CapitalChangesSync` /
+  `capital_changes_sync` and the dividends / listing-applicants
+  counterparts lose the leading `date`.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

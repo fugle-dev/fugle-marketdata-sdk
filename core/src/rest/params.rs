@@ -254,6 +254,13 @@ macro_rules! endpoint {
 }
 
 /// Every endpoint the typed builders cover, in `core/src/rest` order.
+///
+/// The server also serves `warrant/intraday/*` (six endpoints). They are left
+/// out on purpose: Fugle does not offer warrant data through the SDK (#176),
+/// so `core/src/rest` has no `warrant/` module and the table has no row for
+/// it. `stock/intraday/quotes`, `stock/snapshot/heatmap` and
+/// `futopt/historical/contracts` exist on the server too and are tracked by
+/// #176 as builders still to write.
 pub static ENDPOINTS: &[EndpointSpec] = &[
     // stock / intraday — src/stock/intraday/dto/*.dto.ts
     endpoint!(

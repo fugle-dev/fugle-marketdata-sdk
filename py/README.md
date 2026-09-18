@@ -289,8 +289,12 @@ A keyword the endpoint does not take raises `TypeError` naming the accepted
 ones, and so does one parameter given under two spellings. Values are sent as
 given and the server reports a bad value, except the two switches behind a
 boolean keyword: `type` must be `"oddlot"` and `session` `"afterhours"` /
-`"regular"`, or `ValueError`. Type checkers only know the snake_case
-keywords; the other spellings are runtime aliases.
+`"regular"`, or `ValueError`.
+
+Type checkers (mypy, pyright) only know the snake_case keywords: the stubs
+list them and no `**kwargs`, so `isTrial=` or `from_=` is flagged even though
+it works at runtime. Use the snake_case names in code you type-check; the
+other spellings are a runtime compatibility layer for 2.x call sites.
 
 ### WebSocketClient
 
