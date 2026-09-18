@@ -117,6 +117,12 @@ async fn run_writer_task(
             };
             if let Err(failure) = write_failed.send(failure) {
                 // Not after the client's close has been reported (#159).
+                // `force_close()` retires the writer before it reports the
+                // close, so the generation check catches nearly all of it;
+                // what is left is the few instructions between that load
+                // and the emit. No seam reproduces that deterministically,
+                // so this gate has no test of its own: it is covered by
+                // the `emit_unless_closed` tests only.
                 if generation.load(Ordering::SeqCst) == current {
                     stream.emit_unless_closed(ConnectionEvent::error_with_message(
                         &failure.error,
