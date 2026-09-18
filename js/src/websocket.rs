@@ -965,13 +965,10 @@ fn already_connected() -> ErrorInfo {
 }
 
 /// Rejection for a `connect()` whose connection was given up because
-/// `disconnect()` was called before authentication completed (#44).
+/// `disconnect()` was called before the connection was established (#44):
+/// core's `ConnectionAborted` (#121).
 fn connect_aborted() -> Failure {
-    Failure::Coded(ErrorInfo::new(
-        error_code::CLIENT_CLOSED,
-        ErrorKind::Client,
-        "Connection aborted: disconnect() called before authentication completed",
-    ))
+    Failure::Coded(marketdata_core::MarketDataError::ConnectionAborted.info())
 }
 
 /// The worker thread that owns a client's connection (#44).

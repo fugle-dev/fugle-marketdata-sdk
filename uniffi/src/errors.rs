@@ -210,7 +210,10 @@ impl From<CoreError> for MarketDataError {
                 msg: format!("[{kind:?}] {msg}"),
                 info,
             },
-            CoreError::ClientClosed => MarketDataError::ClientClosed { info },
+            // Same code (2010), its own message (#121).
+            CoreError::ClientClosed | CoreError::ConnectionAborted => {
+                MarketDataError::ClientClosed { info }
+            }
             // A dedicated exception would change every generated binding;
             // `info.code` (2011) identifies it (#119).
             CoreError::AlreadyConnected => MarketDataError::WebSocketError {

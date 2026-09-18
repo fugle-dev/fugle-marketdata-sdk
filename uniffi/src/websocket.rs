@@ -815,7 +815,7 @@ impl WebSocketClient {
             // The same close as `disconnect()`, so `on_disconnected` is
             // delivered and the reader ends.
             self.close(connection, caller).await;
-            return Err(marketdata_core::MarketDataError::ClientClosed.into());
+            return Err(marketdata_core::MarketDataError::ConnectionAborted.into());
         }
 
         Ok(())
@@ -2000,6 +2000,7 @@ mod tests {
         match error {
             MarketDataError::ClientClosed { info } => {
                 assert_eq!(info.code, marketdata_core::error_code::CLIENT_CLOSED, "{info:?}");
+                assert!(info.message.starts_with("Connection aborted"), "{info:?}");
             }
             other => panic!("expected CLIENT_CLOSED, got {other:?}"),
         }
