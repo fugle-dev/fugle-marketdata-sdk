@@ -37,6 +37,41 @@ pub(crate) fn transport_error(url: &str, error: ureq::Error) -> MarketDataError 
     }
 }
 
+/// Whether the peer closed the connection before a full response header
+/// arrived, so an idempotent request can safely be sent once more.
+///
+/// This is how a pooled keep-alive connection fails when the server (or a
+/// load balancer with a shorter idle timeout) closed it just after ureq's
+/// liveness probe: the request goes out and the reply is an EOF or reset.
+/// ureq does not say whether the connection came from the pool, nor whether
+/// part of the header had arrived, so the check is on the failure alone.
+/// `ConnectionAborted` is how Windows reports the same close.
+///
+/// `InvalidInput` is on the list for macOS. ureq sets the read and write
+/// timeouts on the socket before each request (`maybe_update_timeout` in
+/// ureq's `unversioned/transport/tcp.rs`), and macOS answers that
+/// `setsockopt` with `EINVAL` when the peer has already reset the socket.
+/// The request has not been written at that point, so sending it again is
+/// safer still than after the other kinds. The kind is broad, but in a
+/// loopback stress run it only appeared on reused connections, never when
+/// the server closed each connection itself.
+///
+/// `ConnectionFailed` and `ConnectionRefused` mean no connection was made at
+/// all; sending again would not help, so they are excluded.
+pub(crate) fn dropped_before_response(error: &ureq::Error) -> bool {
+    match error {
+        ureq::Error::Io(io) => matches!(
+            io.kind(),
+            std::io::ErrorKind::UnexpectedEof
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::InvalidInput
+        ),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +225,25 @@ mod tests {
             MarketDataError::ConnectionError { msg } => assert!(msg.starts_with("http://h/p: ")),
             other => panic!("expected ConnectionError, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn dropped_before_response_covers_peer_closes_only() {
+        use std::io::ErrorKind;
+        let io = |kind| ureq::Error::Io(std::io::Error::from(kind));
+        for kind in [
+            ErrorKind::UnexpectedEof,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+            ErrorKind::BrokenPipe,
+            ErrorKind::InvalidInput,
+        ] {
+            assert!(dropped_before_response(&io(kind)), "{kind:?}");
+        }
+        for kind in [ErrorKind::ConnectionRefused, ErrorKind::TimedOut, ErrorKind::Other] {
+            assert!(!dropped_before_response(&io(kind)), "{kind:?}");
+        }
+        assert!(!dropped_before_response(&ureq::Error::ConnectionFailed));
+        assert!(!dropped_before_response(&ureq::Error::Timeout(ureq::Timeout::RecvResponse)));
     }
 }

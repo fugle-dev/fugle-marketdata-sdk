@@ -456,6 +456,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **All languages**: a REST GET whose connection the server closed before a
+  full response header arrived failed with `ConnectionError`
+  (`io: Peer disconnected`) unless a `RetryPolicy` was installed (#106). This
+  is how a reused keep-alive connection fails when the server or a load
+  balancer closed it on idle timeout just before reuse. The SDK now sends
+  such a GET once more on its own, with or without a policy and without
+  counting against `max_attempts`; if the second send fails too, its error is
+  returned. On macOS the same close can also surface as
+  `io: Invalid argument (os error 22)`, which ureq gets when it sets the
+  timeouts on the dead socket before writing the request; that case is
+  resent too. Refused connections, timeouts and HTTP error statuses are not
+  resent.
 - **C#, Go, C++, Java**: WebSocket `connect()` while connected, connecting or
   auto-reconnecting opened a second connection and switched event delivery
   and `is_connected()` to it; if that connection failed, `is_connected()`

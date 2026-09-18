@@ -411,6 +411,14 @@ Retries only errors classified by `MarketDataError::is_retryable()`
 (HTTP 429, HTTP 5xx, transport timeouts, connection errors). Exhausted
 retries return the last error verbatim.
 
+Separately from `RetryPolicy`, a GET whose connection the server closes
+before a full response header arrives — typically a pooled keep-alive
+connection that hit the server's idle timeout — is sent once more
+automatically. This applies with or without a policy and does not count
+toward `max_attempts`. Nothing else is resent unless you install a policy.
+See the [error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for the I/O errors that count as
+such a close, including the macOS `EINVAL` case.
+
 ### Graceful shutdown
 
 `WebSocketClient::disconnect()` (both sync and async) defaults to a

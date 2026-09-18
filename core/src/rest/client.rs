@@ -3,7 +3,7 @@
 use super::auth::Auth;
 use super::retry::{self, RetryPolicy};
 use crate::errors::{HttpErrorContext, MarketDataError};
-use super::error::{status_error, transport_error};
+use super::error::{dropped_before_response, status_error, transport_error};
 use crate::tls::{build_ureq_tls_config, TlsConfig};
 
 /// Idle connections kept per host.
@@ -33,6 +33,12 @@ pub(crate) type HttpResponse = ureq::http::Response<ureq::Body>;
 /// - Reuses TCP and TLS connections across requests
 /// - Keeps up to 16 idle connections per host for concurrent callers
 /// - Drops idle connections after 15 seconds
+///
+/// A GET whose connection the server closes before a full response header
+/// arrives — typically a pooled connection that timed out on the server side
+/// — is sent once more automatically. This happens with or without a
+/// [`RetryPolicy`] and does not count toward its `max_attempts`; if the
+/// second send fails too, that error is returned.
 pub struct RestClient {
     agent: ureq::Agent,
     /// Credential header, validated once at construction. `Err` holds the
@@ -42,7 +48,8 @@ pub struct RestClient {
     auth_header: Result<(&'static str, ureq::http::HeaderValue), String>,
     base_url: String,
     /// Optional retry policy. `None` (default) means each request is
-    /// attempted exactly once and any error propagates to the caller.
+    /// attempted once and its error propagates to the caller, apart from
+    /// the resend in `send_get` after an early connection close.
     retry_policy: Option<RetryPolicy>,
     /// Rejection message from [`RestClient::base_url`], held until the first
     /// request so the builder chain stays infallible.
@@ -131,12 +138,16 @@ impl RestClient {
 
     /// Enable transparent retry of failed requests.
     ///
-    /// By default the client does not retry — observability use cases
-    /// need real failures visible. With a [`RetryPolicy`] installed,
+    /// By default the client does not retry failed requests — observability
+    /// use cases need real failures visible. With a [`RetryPolicy`] installed,
     /// errors for which [`MarketDataError::is_retryable`] returns `true`
     /// (HTTP 429, HTTP 5xx, transport timeouts and connection errors)
     /// are retried with exponential backoff plus jitter, up to
     /// `max_attempts` total attempts. Other errors propagate immediately.
+    ///
+    /// Independent of any policy, a request whose connection the server
+    /// closes before a full response header arrives is resent once inside
+    /// each attempt (see [`RestClient`]); that resend is not an attempt.
     ///
     /// # Example
     /// ```
@@ -176,12 +187,16 @@ impl RestClient {
             .auth_header
             .as_ref()
             .map_err(|message| MarketDataError::ConfigError(message.clone()))?;
-        let mut response = self
-            .agent
-            .get(url)
-            .header(*name, value)
-            .call()
-            .map_err(|e| transport_error(url, e))?;
+        let call = || self.agent.get(url).header(*name, value).call();
+        // A pooled connection the server has just closed fails before a full
+        // response header arrives. GET is idempotent, so send it once more
+        // on its own, whether or not a retry policy is installed and without
+        // counting against it. See `dropped_before_response` for the scope.
+        let mut response = match call() {
+            Err(e) if dropped_before_response(&e) => call(),
+            result => result,
+        }
+        .map_err(|e| transport_error(url, e))?;
 
         let status = response.status().as_u16();
         if status >= 400 {
