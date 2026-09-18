@@ -33,6 +33,22 @@ server as-is: filter them before writing an error to logs.
 The SDK does not tell you whether to retry. Decide from `source_kind`,
 `status` and `headers` (for example `retry-after`).
 
+One case is handled before you see it: when the server closes the
+connection of a REST GET before a full response header arrives — typically
+a reused keep-alive connection that hit the server's idle timeout — the SDK
+sends the GET once more. If that fails too, you get its `ConnectionError`.
+This resend is not configurable and is separate from the Rust
+`RetryPolicy`; no other error is resent.
+
+The SDK recognises that close by the I/O error it produces: unexpected EOF,
+connection reset, connection aborted (how Windows reports it), broken pipe,
+and invalid input. The last one is macOS: ureq sets the socket's write
+timeout before sending the request and its read timeout before reading the
+response (`maybe_update_timeout` in ureq's `transport/tcp.rs`), and macOS
+returns `EINVAL` for that call on a socket the peer has already reset. The
+request may or may not have been sent by then; resending is safe either way
+because GET is idempotent and is resent only once.
+
 For a REST HTTP error the message is `API error (status <status>): <body>`,
 or `Authentication error: <body>` for 401 / 403.
 

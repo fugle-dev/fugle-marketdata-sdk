@@ -37,8 +37,16 @@ fn gzip_raw(body: &str) -> Vec<u8> {
     out
 }
 
+/// Scripted reply that closes the connection as soon as the request head
+/// has been read, the way a server drops an idle keep-alive connection that
+/// the client has just reused.
+fn hang_up() -> Option<Vec<u8>> {
+    Some(Vec::new())
+}
+
 /// A scripted server: the n-th request gets `responses[n]` (the last one
-/// repeats). `None` means accept the request and never answer.
+/// repeats). `None` means accept the request and never answer;
+/// [`hang_up`] means close without answering.
 struct Server {
     base: String,
     heads: Arc<Mutex<Vec<String>>>,
@@ -77,6 +85,7 @@ fn handle(mut stream: TcpStream, responses: &[Option<Vec<u8>>], seen: &Mutex<Vec
                 seen.len() - 1
             };
             match &responses[index.min(responses.len() - 1)] {
+                Some(bytes) if bytes.is_empty() => return,
                 Some(bytes) => {
                     if stream.write_all(bytes).is_err() {
                         return;
@@ -239,6 +248,40 @@ fn retry_policy_resends_after_server_error() {
     let q = quote(&c).expect("second attempt should succeed");
     assert_eq!(q["symbol"], "2330");
     assert_eq!(srv.heads.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn connection_closed_before_response_is_resent_once() {
+    let srv = server(vec![hang_up(), Some(raw("200 OK", QUOTE))]);
+    let q = quote(&client(&srv.base)).expect("resend should succeed");
+    assert_eq!(q["symbol"], "2330");
+    assert_eq!(srv.heads.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn resend_after_early_close_does_not_count_toward_retry_policy() {
+    let srv = server(vec![hang_up(), Some(raw("200 OK", QUOTE))]);
+    let policy = RetryPolicy::new(1, Duration::from_millis(1), Duration::from_millis(5));
+    let q = quote(&client(&srv.base).with_retry(policy)).expect("resend should succeed");
+    assert_eq!(q["symbol"], "2330");
+    assert_eq!(srv.heads.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn connection_closed_again_after_resend_is_connection_error() {
+    let srv = server(vec![hang_up()]);
+    match quote(&client(&srv.base)) {
+        Err(MarketDataError::ConnectionError { .. }) => {}
+        other => panic!("expected ConnectionError, got {other:?}"),
+    }
+    assert_eq!(srv.heads.lock().unwrap().len(), 2, "resent more than once");
+}
+
+#[test]
+fn server_error_is_not_resent_without_retry_policy() {
+    let srv = server(vec![Some(raw("503 Service Unavailable", "busy")), Some(raw("200 OK", QUOTE))]);
+    assert!(matches!(quote(&client(&srv.base)), Err(MarketDataError::ApiError { status: 503, .. })));
+    assert_eq!(srv.heads.lock().unwrap().len(), 1);
 }
 
 #[test]
