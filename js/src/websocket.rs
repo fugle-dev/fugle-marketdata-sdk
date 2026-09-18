@@ -1285,7 +1285,7 @@ impl WebSocketClient {
                 r.max_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_MAX_DELAY_MS)
             );
             let mut cfg = marketdata_core::ReconnectionConfig::new(max, initial, max_delay)
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+                .map_err(|e| crate::errors::to_napi_error(&env, e))?;
             // Honor explicit opt-out: `{ reconnect: { enabled: false } }`.
             if let Some(enabled) = r.enabled {
                 cfg.enabled = enabled;

@@ -1,10 +1,11 @@
 /**
  * REST errors carry the unified error fields (#81): code, sourceKind,
- * message, status, body, requestId and headers.
+ * message, status, body, requestId and headers. So does a config error
+ * thrown by the WebSocket constructor.
  */
 
 const http = require('http');
-const { RestClient } = require('../');
+const { RestClient, WebSocketClient } = require('../');
 
 // Errors come from the native module's realm, so `instanceof Error` is false
 // under jest; check the brand instead.
@@ -93,5 +94,26 @@ describe('REST errors', () => {
     }
     expect(isError(err)).toBe(true);
     expect(err).toMatchObject({ code: 1004, sourceKind: 'client' });
+  });
+});
+
+describe('WebSocket constructor errors', () => {
+  // Core's ConfigError for `reconnect` carries the unified fields, like the
+  // credential and `healthCheck` errors from the same constructor (#153).
+  test.each([
+    [{ initialDelayMs: 50 }, 'initial_delay must be >= 100ms (got 50ms)'],
+    [{ initialDelayMs: 5000, maxDelayMs: 2000 }, 'max_delay (2000ms) must be >= initial_delay (5000ms)'],
+    [{ enabled: false, initialDelayMs: 50 }, 'initial_delay must be >= 100ms (got 50ms)'],
+  ])('an invalid reconnect option %p throws with a code', (reconnect, message) => {
+    let err;
+    try {
+      new WebSocketClient({ apiKey: 'test-key', reconnect });
+    } catch (e) {
+      err = e;
+    }
+    expect(isError(err)).toBe(true);
+    expect(err).toMatchObject({ code: 1004, sourceKind: 'client' });
+    expect(err.message).toContain(message);
+    expect(err.message).not.toMatch(/Configuration error: Configuration error/);
   });
 });

@@ -5,7 +5,11 @@ This document provides comprehensive reference for all WebSocket configuration o
 **Key Principles:**
 
 - All configuration validation happens at construction time (fail-fast)
-- Invalid configurations throw errors immediately, not at connection time
+- Invalid configurations throw errors immediately, not at connection time.
+  The one exception is a generated UniFFI constructor that cannot fail
+  (`new_with_config`, `new_with_options`, ...; C++ has no other): it keeps
+  the error and `connect()` returns it. The C#, Go and Java wrappers use the
+  fallible `new_with_credentials`, so they fail at construction.
 - All config options have sensible defaults
 
 ---
@@ -32,6 +36,14 @@ a reconnect config only to tune it or to turn it off.
 
 - `initial_delay_ms` must be >= 100ms (prevent connection storms)
 - `max_delay_ms` must be >= `initial_delay_ms` (logical constraint)
+- Both are validated by core in every language, whether or not `enabled` is
+  false: a configuration error (code 1004) in Node.js, C#, Go, Java and C++;
+  a `ValueError` in Python (#171 tracks aligning it). Node.js, Python and
+  the C#, Go and Java wrappers raise it from the constructor, as does the
+  generated `new_with_credentials`; the generated constructors that cannot
+  fail (`new_with_config`, `new_with_options`, ...) return it from
+  `connect()`. Zero (or omitted) values take the defaults before
+  validation, so a zero-valued record is legal.
 
 **Backoff Strategy:** Exponential backoff with jitter (0-15%). Delay doubles on
 each attempt until hitting the `max_delay_ms` cap. With the defaults the waits
