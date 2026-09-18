@@ -404,7 +404,7 @@ callback receives a `WebSocketError` with these fields, whose `args` stay
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
-| 2010 | ClientClosed | Client has been closed |
+| 2010 | ClientClosed, ConnectionAborted | Client has been closed, or `connect()` / `connect_async()` was given up because `disconnect()` was called before the connection was established (raised as `WebSocketError`, message `Connection aborted: …`) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |

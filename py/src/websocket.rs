@@ -1202,14 +1202,25 @@ fn join_stored_reader_thread(py: Python<'_>, slot: &Mutex<Option<std::thread::Jo
     join_reader_thread(py, handle);
 }
 
-/// [`join_reader_thread`] on the reader of a connect `disconnect()` aborted
-/// (#143). A callback of that connection which disconnects runs on the reader
-/// and cannot wait for itself; the reader then ends on its own once the
-/// connect lets go of its client.
-fn join_aborted_reader_thread(py: Python<'_>, handle: Option<std::thread::JoinHandle<()>>) {
-    let Some(handle) = handle else { return };
-    if handle.thread().id() != std::thread::current().id() {
-        join_reader_thread(py, handle);
+/// Where a `disconnect()` leaves the reader of a connect it aborts (#143).
+///
+/// As in [`join_stored_reader_thread`], a callback of that connection which
+/// disconnects — `connect` fires during the handshake — runs on the reader and
+/// cannot wait for itself, so the handle goes to `slot` for a later
+/// `disconnect()` to wait on. Call before the close wakes the connect, so the
+/// handle is there once `connect()` raises.
+///
+/// Returns the handle to join after the close: the aborted reader, or the one
+/// it displaced from `slot`.
+fn park_own_reader_thread(
+    handle: Option<std::thread::JoinHandle<()>>,
+    slot: &Mutex<Option<std::thread::JoinHandle<()>>>,
+) -> Option<std::thread::JoinHandle<()>> {
+    match handle {
+        Some(handle) if handle.thread().id() == std::thread::current().id() => {
+            slot.lock().ok().and_then(|mut guard| guard.replace(handle))
+        }
+        other => other,
     }
 }
 
@@ -1450,6 +1461,7 @@ impl StockWebSocketClient {
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
         let (target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
+        let aborted_reader = park_own_reader_thread(aborted_reader, &self.reader_thread_handle);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -1465,19 +1477,21 @@ impl StockWebSocketClient {
             // those tasks keep their Arc<WebSocketClient> clones alive, the
             // stream never closes, and the stream reader blocks forever on
             // receive() — preventing Python from shutting down. A connect in
-            // progress holds its own clone, so it keeps running until core
-            // aborts it (#143).
+            // progress holds its own clone, so the runtime outlives this call
+            // until core aborts that connect (#143).
             let runtime = self.runtime.lock().map_err(lock_err)?.take();
 
             if let Some(rt) = runtime {
                 // The close handshake waits on the server, so release the GIL (#39).
                 py.detach(move || {
                     rt.block_on(target.disconnect());
-                    // `rt` drops first → all spawned tasks aborted and futures
-                    // dropped, releasing every Arc<WebSocketClient> clone they
-                    // held. `target` drops next → core's WebSocketClient drops →
-                    // its stream closes → the stream reader drains it and
-                    // exits cleanly.
+                    // `rt` drops first. The runtime shuts down once every
+                    // clone is gone — a connect racing this call holds its
+                    // own until it returns — which aborts all spawned tasks
+                    // and drops their futures, releasing every
+                    // Arc<WebSocketClient> clone they held. `target` drops
+                    // next → core's WebSocketClient drops → its stream
+                    // closes → the stream reader drains it and exits cleanly.
                     drop(rt);
                     drop(target);
                 });
@@ -1494,8 +1508,10 @@ impl StockWebSocketClient {
         // `disconnect` callback has fired by the time this returns (#54).
         // An aborted connect's reader ends once that connect drops its
         // client too.
-        join_aborted_reader_thread(py, aborted_reader);
         join_stored_reader_thread(py, &self.reader_thread_handle);
+        if let Some(handle) = aborted_reader {
+            join_reader_thread(py, handle);
+        }
 
         Ok(())
     }
@@ -1514,9 +1530,9 @@ impl StockWebSocketClient {
     /// Check if client has been closed
     ///
     /// Returns True once disconnect() has closed a live connection or aborted
-    /// a connect() in progress, and False again after a later connect(). This
-    /// client builds a fresh core client per connect(), so it *can* be
-    /// reused — see
+    /// a connect() in progress, and False again once a later connect()
+    /// succeeds. This client builds a fresh core client per connect(), so it
+    /// *can* be reused — see
     /// `test_connect_after_disconnect_succeeds`. Calling disconnect() on a
     /// client that was never connected closes nothing and leaves this False.
     #[pyo3(signature = ())]
@@ -2193,6 +2209,7 @@ impl FutOptWebSocketClient {
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
         let (target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
+        let aborted_reader = park_own_reader_thread(aborted_reader, &self.reader_thread_handle);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -2212,11 +2229,13 @@ impl FutOptWebSocketClient {
                 // The close handshake waits on the server, so release the GIL (#39).
                 py.detach(move || {
                     rt.block_on(target.disconnect());
-                    // `rt` drops first → all spawned tasks aborted and futures
-                    // dropped, releasing every Arc<WebSocketClient> clone they
-                    // held. `target` drops next → core's WebSocketClient drops →
-                    // its stream closes → the stream reader drains it and
-                    // exits cleanly.
+                    // `rt` drops first. The runtime shuts down once every
+                    // clone is gone — a connect racing this call holds its
+                    // own until it returns — which aborts all spawned tasks
+                    // and drops their futures, releasing every
+                    // Arc<WebSocketClient> clone they held. `target` drops
+                    // next → core's WebSocketClient drops → its stream
+                    // closes → the stream reader drains it and exits cleanly.
                     drop(rt);
                     drop(target);
                 });
@@ -2233,8 +2252,10 @@ impl FutOptWebSocketClient {
         // `disconnect` callback has fired by the time this returns (#54).
         // An aborted connect's reader ends once that connect drops its
         // client too.
-        join_aborted_reader_thread(py, aborted_reader);
         join_stored_reader_thread(py, &self.reader_thread_handle);
+        if let Some(handle) = aborted_reader {
+            join_reader_thread(py, handle);
+        }
 
         Ok(())
     }
@@ -2253,9 +2274,9 @@ impl FutOptWebSocketClient {
     /// Check if client has been closed
     ///
     /// Returns True once disconnect() has closed a live connection or aborted
-    /// a connect() in progress, and False again after a later connect(). This
-    /// client builds a fresh core client per connect(), so it *can* be
-    /// reused — see
+    /// a connect() in progress, and False again once a later connect()
+    /// succeeds. This client builds a fresh core client per connect(), so it
+    /// *can* be reused — see
     /// `test_connect_after_disconnect_succeeds`. Calling disconnect() on a
     /// client that was never connected closes nothing and leaves this False.
     #[pyo3(signature = ())]

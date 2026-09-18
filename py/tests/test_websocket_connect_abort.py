@@ -193,3 +193,26 @@ def test_cancelled_connect_async_leaves_nothing_to_abort(server):
     ws.disconnect()
     assert ws.is_closed() is False
     assert ws.is_connected() is False
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_disconnect_from_connect_callback_aborts_connect(server, product):
+    """`connect` fires on the stream reader during the handshake; a
+    `disconnect()` there cannot wait for its own thread, and must not hang."""
+    ws = product_ws(server.url, product, api_key=SILENT_API_KEY)
+    rec = Recorder(ws)
+    ws.on("connect", lambda *_: ws.disconnect())
+    thread, outcome = connect_in_thread(ws)
+    try:
+        thread.join(ABORT_WITHIN_S + 1)
+        assert not thread.is_alive(), "connect() was not aborted"
+        assert_aborted(outcome["error"])
+        # The reader the callback could not wait for is left for this one.
+        ws.disconnect()
+        assert rec.names().count("disconnect") == 1, rec.calls
+        assert ws.is_connected() is False
+        assert ws.is_closed() is True
+    finally:
+        disconnect_quietly(ws)
+        thread.join(TIMEOUT_S)
