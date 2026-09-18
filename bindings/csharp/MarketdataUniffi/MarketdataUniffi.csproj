@@ -9,7 +9,7 @@
          (`FugleMarketData` wrapper, `MarketdataUniffi` raw bindings), so existing
          `using` directives keep compiling. -->
     <PackageId>Fugle.MarketData</PackageId>
-    <Version>0.2.0-rc.3</Version>
+    <Version>0.2.0-rc.4</Version>
     <Authors>Fugle Team</Authors>
     <Title>Fugle Market Data SDK</Title>
     <Description>Fugle market data REST and WebSocket client for .NET, backed by the Rust core via UniFFI.</Description>
