@@ -66,7 +66,7 @@ to rewrite call sites:
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
 | Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working |
-| `HealthCheckConfig.ping_interval` (Py) / `pingInterval` (JS) | ✅ kept the old field name |
+| `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (Python raises `TypeError`, Node ignores them). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
 
 ### Breaking changes you need to adapt
 
@@ -621,7 +621,7 @@ const client = new RestClient({ apiKey: 'your-api-key' });
 const ws = new WebSocketClient({
   apiKey: 'your-api-key',
   reconnect: { maxAttempts: 10, initialDelayMs: 2000 },
-  healthCheck: { enabled: true, pingInterval: 15000 },
+  healthCheck: { probeEnabled: true, idleProbeAfterMs: 15000 },
 });
 ```
 

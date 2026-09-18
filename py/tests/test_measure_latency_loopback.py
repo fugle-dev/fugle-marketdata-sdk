@@ -6,12 +6,14 @@ milliseconds; the old fire-and-forget ``ping()`` still delivers its pong to
 the ``message`` callback.
 """
 import json
+import time
 
 import pytest
 
 from fugle_marketdata import HealthCheckConfig, WebSocketError
 from tests.ws_loopback import (
     TIMEOUT_S,
+    InProcessLoopbackServer,
     LoopbackServer,
     Recorder,
     disconnect_quietly,
@@ -87,12 +89,22 @@ async def test_measure_latency_async(server):
 
 
 @hard_timeout
-@pytest.mark.parametrize("product", PRODUCTS)
-def test_probe_mode_connects(server, product):
+def test_probe_settings_reach_core():
+    # The loopback server sends no heartbeat, so the connection goes silent
+    # right after connecting: with probing configured, core sends its probe
+    # after `idle_probe_after_ms` and, answered, keeps the connection. With
+    # the settings dropped on the way, no ping would be sent (passive mode).
+    # The behaviour itself is covered by core/tests/health_probe.rs.
     health = HealthCheckConfig(probe_enabled=True, idle_probe_after_ms=5000, probe_timeout_ms=1000)
-    ws = product_ws(server.url, product, health_check=health)
-    try:
-        ws.connect()
-        assert ws.is_connected()
-    finally:
-        disconnect_quietly(ws)
+    with InProcessLoopbackServer() as srv:
+        ws = product_ws(srv.url, "stock", health_check=health)
+        try:
+            ws.connect()
+            deadline = time.monotonic() + TIMEOUT_S + 2
+            while not srv.ping_data and time.monotonic() < deadline:
+                time.sleep(0.1)
+            assert [data.get("state") for data in srv.ping_data] == ["fugle-sdk:probe"]
+            time.sleep(1.5)  # past probe_timeout_ms: the answered probe kept it up
+            assert ws.is_connected()
+        finally:
+            disconnect_quietly(ws)

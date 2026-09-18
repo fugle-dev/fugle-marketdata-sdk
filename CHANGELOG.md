@@ -102,9 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docs**: the Node `WebSocketClient` constructor doc, the Node README's
   combined-configuration example and `ws_stream.js` passed
   `healthCheck: { pingInterval }`, an option that does not exist (it was
-  silently ignored), and the UniFFI README documented `intervalMs` /
-  `maxMissedPongs` for C#, Go and Java. They now use the probe options that
-  do exist (#150).
+  silently ignored), the UniFFI README documented `intervalMs` /
+  `maxMissedPongs` for C#, Go and Java, and `MIGRATION.md` listed
+  `ping_interval` / `pingInterval` as a kept legacy field. They now use the
+  probe options that do exist (#150).
 
 ## [Bindings 3.0.0-rc.3 / core 0.9.0-rc.2 / uniffi 0.2.0-rc.2] - 2026-09-18
 

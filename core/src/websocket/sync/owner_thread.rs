@@ -904,4 +904,104 @@ mod tests {
         assert!(errors[0].message.contains("trades (2 symbols)"), "{}", errors[0].message);
         assert!(errors[1].message.contains("books:2317"), "{}", errors[1].message);
     }
+
+    /// A plain WebSocket to a peer that completes the handshake and then
+    /// never reads, its send buffers filled so the next write blocks. The
+    /// returned sender releases the peer.
+    fn stuck_socket() -> (SyncWs, mpsc::Sender<()>) {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let (release, released) = mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().expect("accept");
+            let _peer = tungstenite::accept(tcp).expect("handshake");
+            let _ = released.recv();
+        });
+        let tcp = TcpStream::connect(addr).expect("connect");
+        let (mut ws, _) = tungstenite::client(
+            format!("ws://{addr}/"),
+            MaybeTlsStream::Plain(tcp),
+        )
+        .expect("client handshake");
+        let tcp = tcp_stream(&mut ws).expect("plain tcp");
+        tcp.set_nonblocking(true).expect("nonblocking");
+        // Fill until not even one byte has fit for a while: the kernel can
+        // free a little room after the first `WouldBlock`.
+        let chunk = [0u8; 64 * 1024];
+        let mut full_since: Option<Instant> = None;
+        while full_since.is_none_or(|since| since.elapsed() < Duration::from_millis(300)) {
+            match tcp.write(&chunk) {
+                Ok(_) => full_since = None,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    full_since.get_or_insert_with(Instant::now);
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("filling the socket: {e}"),
+            }
+        }
+        tcp.set_nonblocking(false).expect("blocking");
+        (ws, release)
+    }
+
+    /// A probe that cannot be written gets its verdict at its own deadline,
+    /// not after the fixed write timeout of probe mode (#150).
+    #[test]
+    fn stuck_socket_does_not_hold_the_probe_verdict_back() {
+        const IDLE: Duration = Duration::from_millis(200);
+        const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
+        let (stream, rx) = event_stream();
+        let config = ConnectionConfig::new("ws://127.0.0.1", AuthRequest::with_api_key("k"));
+        let counter = || DropCounter::new("test", "localhost", "test");
+        let shared = OwnerShared {
+            tls_config: crate::tls::build_rustls_config(&config.tls).expect("tls"),
+            config,
+            health: HealthCheckConfig {
+                probe_enabled: true,
+                idle_probe_after: Some(IDLE),
+                probe_timeout: Some(PROBE_TIMEOUT),
+                ..HealthCheckConfig::default()
+            },
+            latency: LatencyWaiters::default(),
+            reconnection: Mutex::new(ReconnectionManager::new(
+                crate::websocket::ReconnectionConfig::disabled(),
+            )),
+            state: Arc::new(RwLock::new(ConnectionState::Connected)),
+            subscriptions: Arc::new(SubscriptionManager::new()),
+            stream,
+            write_tx_slot: Mutex::new(None),
+            should_stop: Arc::new(AtomicBool::new(false)),
+            abort: AtomicBool::new(false),
+            messages_dropped: counter(),
+            events_dropped: counter(),
+        };
+        let (ws, _release) = stuck_socket();
+        let (_write_tx, write_rx) = mpsc::sync_channel(1);
+
+        let started = Instant::now();
+        let code = owner_loop(ws, write_rx, &shared);
+        let elapsed = started.elapsed();
+
+        assert_eq!(code, None);
+        // Well short of the fixed write timeout of probe mode (5s).
+        assert!(
+            elapsed < IDLE + PROBE_TIMEOUT + Duration::from_secs(1),
+            "the verdict waited for the write timeout: {elapsed:?}"
+        );
+        assert!(elapsed >= IDLE + PROBE_TIMEOUT, "{elapsed:?}");
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            matches!(
+                events.as_slice(),
+                [
+                    StreamItem::Event(ConnectionEvent::HeartbeatTimeout { elapsed }),
+                    StreamItem::Event(ConnectionEvent::Disconnected {
+                        intent: DisconnectIntent::Network,
+                        ..
+                    }),
+                ] if *elapsed == IDLE + PROBE_TIMEOUT
+            ),
+            "{events:?}"
+        );
+    }
 }

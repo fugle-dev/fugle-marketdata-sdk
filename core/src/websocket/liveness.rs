@@ -12,16 +12,22 @@ use crate::websocket::protocol::frame_request;
 use crate::websocket::HealthCheckConfig;
 use crate::MarketDataError;
 use std::ops::{Add, Sub};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Prefix of the `state` of every ping the SDK sends on its own. The pongs
-/// that echo it are the SDK's and are not delivered to the caller.
-const SDK_STATE_PREFIX: &str = "fugle-sdk:";
-
-/// `state` of the health check's probe.
+/// `state` of the health check's probe. Its pongs are the SDK's and are not
+/// delivered to the caller.
 const PROBE_STATE: &str = "fugle-sdk:probe";
+
+/// Prefix of the `state` of each `measure_latency()` ping, followed by a
+/// per-client counter.
+const LATENCY_STATE_PREFIX: &str = "fugle-sdk:latency:";
+
+/// Most `measure_latency()` states remembered after their call gave up, so
+/// a pong arriving late is still recognised as the SDK's.
+const EXPIRED_STATES_KEPT: usize = 64;
 
 /// Default wait for `measure_latency()`'s pong, in milliseconds.
 pub const DEFAULT_LATENCY_TIMEOUT_MS: u64 = 5_000;
@@ -147,10 +153,22 @@ where
 type Respond = Box<dyn FnOnce(Instant) + Send>;
 
 /// Pending `measure_latency()` calls, keyed by the `state` of their ping.
+///
+/// A pong is the SDK's only when its `state` is exactly one the SDK sent —
+/// the probe's, a waiting call's, or a recently expired call's — so a
+/// caller's own `ping()` is never mistaken for it unless it reuses one of
+/// those exact strings.
 #[derive(Default)]
 pub(crate) struct LatencyWaiters {
     next_id: AtomicU64,
-    waiting: Mutex<Vec<(String, Respond)>>,
+    states: Mutex<States>,
+}
+
+#[derive(Default)]
+struct States {
+    waiting: Vec<(String, Respond)>,
+    /// Calls that gave up (timed out) on this connection, oldest first.
+    expired: VecDeque<String>,
 }
 
 impl LatencyWaiters {
@@ -158,20 +176,29 @@ impl LatencyWaiters {
     /// Returns the `state` to send in the ping.
     pub(crate) fn register(&self, respond: impl FnOnce(Instant) + Send + 'static) -> String {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let state = format!("{SDK_STATE_PREFIX}latency:{id}");
-        self.lock().push((state.clone(), Box::new(respond)));
+        let state = format!("{LATENCY_STATE_PREFIX}{id}");
+        self.lock().waiting.push((state.clone(), Box::new(respond)));
         state
     }
 
-    /// Forget a waiter that gave up.
+    /// Forget a waiter that gave up. Its state is remembered for a while, as
+    /// its pong may still arrive.
     pub(crate) fn cancel(&self, state: &str) {
-        self.lock().retain(|(s, _)| s != state);
+        let mut states = self.lock();
+        states.waiting.retain(|(s, _)| s != state);
+        if states.expired.len() == EXPIRED_STATES_KEPT {
+            states.expired.pop_front();
+        }
+        states.expired.push_back(state.to_string());
     }
 
     /// Drop every waiter: the connection they were sent on is gone, so each
-    /// sees its channel closed.
+    /// sees its channel closed. No pong of theirs can arrive on the next
+    /// connection, so the expired states go too.
     pub(crate) fn fail_all(&self) {
-        self.lock().clear();
+        let mut states = self.lock();
+        states.waiting.clear();
+        states.expired.clear();
     }
 
     /// Take `msg` if it is the pong of a ping the SDK sent — a probe or a
@@ -190,24 +217,26 @@ impl LatencyWaiters {
         else {
             return false;
         };
-        if !state.starts_with(SDK_STATE_PREFIX) {
-            return false;
+        if state == PROBE_STATE {
+            return true;
         }
         let respond = {
-            let mut waiting = self.lock();
-            waiting
-                .iter()
-                .position(|(s, _)| s == state)
-                .map(|i| waiting.swap_remove(i).1)
+            let mut states = self.lock();
+            if let Some(i) = states.waiting.iter().position(|(s, _)| s == state) {
+                states.waiting.swap_remove(i).1
+            } else if let Some(i) = states.expired.iter().position(|s| s == state) {
+                states.expired.remove(i);
+                return true;
+            } else {
+                return false;
+            }
         };
-        if let Some(respond) = respond {
-            respond(arrived);
-        }
+        respond(arrived);
         true
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(String, Respond)>> {
-        self.waiting.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, States> {
+        self.states.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -332,6 +361,40 @@ mod tests {
         let waiters = LatencyWaiters::default();
         assert!(!waiters.intercept_pong(&pong("mine".into()), Instant::now()));
         assert!(!waiters.intercept_pong(&pong(serde_json::json!({"a": 1})), Instant::now()));
+    }
+
+    #[test]
+    fn caller_state_with_the_sdk_prefix_is_still_the_callers() {
+        // Only the exact states the SDK sent are its own.
+        let waiters = LatencyWaiters::default();
+        let state = waiters.register(|_| {});
+        for theirs in ["fugle-sdk:my-id", "fugle-sdk:latency:999", "fugle-sdk:probe-2"] {
+            assert!(!waiters.intercept_pong(&pong(theirs.into()), Instant::now()), "{theirs}");
+        }
+        assert!(waiters.intercept_pong(&pong(state.into()), Instant::now()));
+    }
+
+    #[test]
+    fn late_pong_of_a_timed_out_call_is_still_intercepted() {
+        let waiters = LatencyWaiters::default();
+        let state = waiters.register(|_| panic!("answered after giving up"));
+        waiters.cancel(&state);
+        assert!(waiters.intercept_pong(&pong(state.clone().into()), Instant::now()));
+        // Once: a second pong with that state is not the SDK's.
+        assert!(!waiters.intercept_pong(&pong(state.into()), Instant::now()));
+    }
+
+    #[test]
+    fn expired_states_are_bounded() {
+        let waiters = LatencyWaiters::default();
+        let first = waiters.register(|_| {});
+        waiters.cancel(&first);
+        for _ in 0..EXPIRED_STATES_KEPT {
+            let state = waiters.register(|_| {});
+            waiters.cancel(&state);
+        }
+        assert_eq!(waiters.lock().expired.len(), EXPIRED_STATES_KEPT);
+        assert!(!waiters.intercept_pong(&pong(first.into()), Instant::now()));
     }
 
     #[test]
