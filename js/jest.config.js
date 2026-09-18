@@ -6,7 +6,14 @@
  */
 module.exports = {
   testEnvironment: 'node',
-  testMatch: ['**/tests/**/*.test.js'],
+  // Both extensions. config.test.ts is TypeScript so ts-jest type-checks it
+  // against index.d.ts and a type error fails the suite; it had never run
+  // while this pattern took `.test.js` only (#170). scripts/check-ci-coverage.py
+  // verifies every tests/**/*.test.* file matches this pattern.
+  testMatch: ['**/tests/**/*.test.[jt]s'],
+  transform: {
+    '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
+  },
   testTimeout: 30000,  // 30s for integration tests with network calls
   verbose: true,
   // Collect coverage from source files

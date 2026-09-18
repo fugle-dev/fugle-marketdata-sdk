@@ -35,6 +35,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-rust
+      # Before clippy, so pyo3's build script is configured once, for the
+      # interpreter the binding-crate tests link against below.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Clippy
         run: >
@@ -50,10 +55,45 @@ jobs:
       - name: Test UniFFI crate
         run: cargo test --locked -p marketdata-uniffi
 
+      # The binding crates' own #[test]s (GIL handoff, callback registry,
+      # option parsing) are not reachable from pytest or jest, and until #181
+      # no job ran them. marketdata-py links libpython for its tests, so the
+      # pyo3 `extension-module` feature has to be off (see py/Cargo.toml) and
+      # the interpreter's shared library has to be on the loader path.
+      # PYO3_PYTHON is an absolute path so pyo3's build script reruns when
+      # the cached target/ was configured against a different interpreter.
+      - name: Test Python and Node.js binding crates
+        run: |
+          PYO3_PYTHON="$(command -v python3)"
+          LD_LIBRARY_PATH="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export PYO3_PYTHON LD_LIBRARY_PATH
+          cargo test --locked -p marketdata-py --no-default-features
+          cargo test --locked -p marketdata-js
+
       # Packages and verifies both crates together, so the facade resolves
       # the unpublished core version from the local package.
       - name: cargo publish --dry-run
         run: cargo publish --dry-run --locked -p fugle-marketdata-core -p fugle-marketdata
+
+  # A check only helps if it runs when it should. Four times one did not:
+  # a `paths` filter, jest's `testMatch` and the `cargo test -p` list each
+  # fell behind what they were meant to cover (#148, #170, #181, #184).
+  # This derives the expected coverage from the workspace, the test
+  # directories and the workflows themselves; see the script's docstring.
+  coverage:
+    name: Checks cover their inputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install pyyaml==6.0.3
+      - run: python3 scripts/test_check_ci_coverage.py
+      - run: python3 scripts/check-ci-coverage.py
 
   # Release artifacts (wheels, npm addons, NuGet, Go static libraries) are
   # built from Cargo.lock, so a vulnerable locked dependency ships to users.

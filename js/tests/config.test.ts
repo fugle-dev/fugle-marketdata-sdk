@@ -12,7 +12,11 @@
 // Run: npm run build && npm test
 
 import { RestClient, WebSocketClient } from '../index';
-import type { RestClientOptions, WebSocketClientOptions, ReconnectOptions, HealthCheckOptions } from '../index';
+import type { RestClientOptions, WebSocketClientOptions } from '../index';
+
+// Errors come from the native module's realm, so `instanceof Error` is false
+// under jest; check the brand instead (same as errors.test.js).
+const isError = (value: unknown): boolean => Object.prototype.toString.call(value) === '[object Error]';
 
 describe('RestClient constructor', () => {
   describe('authentication', () => {
@@ -41,15 +45,15 @@ describe('RestClient constructor', () => {
     });
 
     it('throws error when no auth provided', () => {
+      // Every credential field is optional in RestClientOptions, so this
+      // compiles; the exactly-one rule is enforced at runtime by core.
       expect(() => {
-        // @ts-expect-error - Testing runtime validation for JS users
         new RestClient({});
       }).toThrow('exactly one non-empty credential');
     });
 
     it('throws error when multiple auth provided', () => {
       expect(() => {
-        // @ts-expect-error - Testing runtime validation for JS users
         new RestClient({ apiKey: 'key', bearerToken: 'token' });
       }).toThrow('exactly one non-empty credential');
     });
@@ -63,7 +67,7 @@ describe('RestClient constructor', () => {
         } catch (err) {
           caught = err;
         }
-        expect(caught).toBeInstanceOf(Error);
+        expect(isError(caught)).toBe(true);
         expect(caught.code).toBe(1004);
         expect(caught.sourceKind).toBe('client');
       },
@@ -90,8 +94,8 @@ describe('WebSocketClient constructor', () => {
     });
 
     it('throws error when no auth provided', () => {
+      // See the RestClient case: optional fields, runtime enforcement.
       expect(() => {
-        // @ts-expect-error - Testing runtime validation for JS users
         new WebSocketClient({});
       }).toThrow('exactly one non-empty credential');
     });
@@ -103,7 +107,7 @@ describe('WebSocketClient constructor', () => {
       } catch (err) {
         caught = err;
       }
-      expect(caught).toBeInstanceOf(Error);
+      expect(isError(caught)).toBe(true);
       expect(caught.code).toBe(1004);
     });
   });

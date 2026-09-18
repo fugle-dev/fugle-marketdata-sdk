@@ -43,6 +43,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Argument validation (`ValueError` for a bad `type` or `session` value,
   `TypeError` for an unknown keyword) is unchanged.
 
+### Fixed
+
+- Three checks existed but did not run when they should, the same failure
+  mode as #148: jest's `testMatch` took `.test.js` only, so the 25 tests in
+  `js/tests/config.test.ts` had never executed (#170); CI ran `cargo test`
+  for three of the five workspace crates, leaving the 34 `#[test]`s in
+  `marketdata-py` and `marketdata-js` unrun (#181); and `version-check.yml`
+  filtered on a hand-written list of nine manifests while the script read
+  fourteen files (#184). All three now run — jest through `ts-jest`, the
+  binding crates in the Rust job (`marketdata-py` with pyo3's
+  `extension-module` off), the version check unconditionally through
+  `ci.yml`. `scripts/test_release_versions.py` turned out to be a fourth:
+  no workflow ran it either; `version-check.yml` does now.
+- New `scripts/check-ci-coverage.py`, run on every pull request, derives
+  what each check should cover from the workspace manifest, the test
+  directories, the runners' own configuration and the workflow files, and
+  fails when a `cargo test -p` list, a jest `testMatch`, a pytest
+  `python_files`, or a workflow `paths` filter falls behind. A script run
+  from a path-filtered workflow must print what it reads
+  (`release-versions.py inputs`), so its inputs are checked too. It found
+  one more gap on the way in: `docs-validation.yml` did not trigger on its
+  own lint configuration.
+
 ## [Bindings 3.0.0-rc.5 / core 0.9.0-rc.4 / uniffi 0.2.0-rc.4] - 2026-09-18
 
 ### Breaking
