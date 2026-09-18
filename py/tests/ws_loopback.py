@@ -30,6 +30,9 @@ _GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 # ``auth`` with this API key is rejected the way the Fugle server does it.
 REJECTED_API_KEY = "rejected-key"
+# ``auth`` with this API key is never answered, so a ``connect()`` stays in
+# the handshake until the client gives up.
+SILENT_API_KEY = "silent-key"
 
 OP_TEXT = 0x1
 OP_CLOSE = 0x8
@@ -183,6 +186,8 @@ class _Server:
     def _replies(frame):
         event = frame.get("event")
         if event == "auth":
+            if (frame.get("data") or {}).get("apikey") == SILENT_API_KEY:
+                return []
             if (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
                 return [{"event": "error", "data": {"message": "Invalid authentication credentials"}}]
             return [{"event": "authenticated", "data": {"message": "Authenticated successfully"}}]
