@@ -298,7 +298,8 @@ impl ReconnectConfig {
     ///     max_delay_ms: Maximum delay cap (default: 60000ms = 60s)
     ///
     /// Raises:
-    ///     ValueError: If validation fails
+    ///     ConfigError: code 1004 if initial_delay_ms < 100 or
+    ///         max_delay_ms < initial_delay_ms
     #[new]
     #[pyo3(signature = (
         *,
@@ -319,7 +320,7 @@ impl ReconnectConfig {
             Duration::from_millis(initial_delay_ms),
             Duration::from_millis(max_delay_ms),
         )
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        .map_err(errors::to_py_err)?;
 
         Ok(Self {
             enabled,
@@ -448,7 +449,7 @@ impl HealthCheckConfig {
     ///         Default 5 000 ms; floor 1 000 ms.
     ///
     /// Raises:
-    ///     ValueError: If `heartbeat_timeout_ms` < 5 000,
+    ///     ConfigError: code 1004 if `heartbeat_timeout_ms` < 5 000,
     ///         `idle_probe_after_ms` < 5 000 or `probe_timeout_ms` < 1 000.
     ///
     /// Example:
@@ -494,7 +495,7 @@ impl HealthCheckConfig {
         // Validate via core even when disabled, for early feedback on bad input.
         config
             .try_to_core()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(errors::to_py_err)?;
         Ok(config)
     }
 }
@@ -584,7 +585,7 @@ impl WebSocketClient {
     ///     A new WebSocketClient instance
     ///
     /// Raises:
-    ///     MarketDataError: code 1004 if zero or multiple auth methods provided
+    ///     ConfigError: code 1004 if zero or multiple auth methods provided
     ///
     /// Example:
     ///     ```python

@@ -56,6 +56,17 @@ class AuthError(MarketDataError):
     """
     ...
 
+class ConfigError(MarketDataError):
+    """Invalid configuration (code 1004, ``source_kind == "client"``).
+
+    Raised by ``ReconnectConfig`` and ``HealthCheckConfig`` for a value
+    below its floor, and by the client constructors when not exactly one
+    non-empty credential is given. Not a ``ValueError``: catch
+    ``ConfigError`` (or ``MarketDataError``), as the other languages'
+    ``ConfigError`` (#171).
+    """
+    ...
+
 class RateLimitError(ApiError):
     """Rate limit exceeded.
 
@@ -143,7 +154,7 @@ class RestClient:
                 tls_ca_file for production. Emits UserWarning when set.
 
         Raises:
-            MarketDataError: code 1004 if zero or multiple non-empty auth
+            ConfigError: code 1004 if zero or multiple non-empty auth
                 methods are given (empty or whitespace-only values count as
                 not given)
             TypeError: both TLS cert options set, or a base_url carrying a
@@ -194,7 +205,7 @@ class RestClient:
             A new RestClient instance
 
         Raises:
-            MarketDataError: code 1004 if the token is empty or whitespace
+            ConfigError: code 1004 if the token is empty or whitespace
 
         Note:
             This is a convenience method for backwards compatibility.
@@ -213,7 +224,7 @@ class RestClient:
             A new RestClient instance
 
         Raises:
-            MarketDataError: code 1004 if the token is empty or whitespace
+            ConfigError: code 1004 if the token is empty or whitespace
 
         Note:
             This is a convenience method for backwards compatibility.
@@ -1686,8 +1697,8 @@ class HealthCheckConfig:
                 (default: 5000ms, min: 1000ms)
 
         Raises:
-            ValueError: If heartbeat_timeout_ms < 5000, idle_probe_after_ms <
-                5000 or probe_timeout_ms < 1000
+            ConfigError: code 1004 if heartbeat_timeout_ms < 5000,
+                idle_probe_after_ms < 5000 or probe_timeout_ms < 1000
         """
         ...
 
@@ -1742,7 +1753,8 @@ class ReconnectConfig:
             max_delay_ms: Maximum delay cap (default: 60000ms = 60s)
 
         Raises:
-            ValueError: If initial_delay_ms < 100 or max_delay_ms < initial_delay_ms
+            ConfigError: code 1004 if initial_delay_ms < 100 or
+                max_delay_ms < initial_delay_ms
         """
         ...
 
@@ -1845,7 +1857,7 @@ class WebSocketClient:
                 applies (default 4096; must be positive).
 
         Raises:
-            MarketDataError: code 1004 if zero or multiple non-empty auth
+            ConfigError: code 1004 if zero or multiple non-empty auth
                 methods are given (empty or whitespace-only values count as
                 not given)
             TypeError: both TLS cert options set, or a base_url carrying a

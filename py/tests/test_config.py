@@ -14,14 +14,33 @@ from fugle_marketdata import (
     ReconnectConfig,
     HealthCheckConfig,
     MarketDataError,
+    ConfigError,
 )
 
 
 def assert_credentials_rejected(exc_info):
     """Credential errors come from core as ConfigError (code 1004)."""
+    assert_config_error(exc_info)
+    assert "exactly one non-empty credential" in str(exc_info.value)
+
+
+def assert_config_error(exc_info):
+    """A configuration error is a ``ConfigError`` carrying the unified
+    fields (#171): code 1004 and ``source_kind == "client"``, as the other
+    four languages report it."""
+    assert isinstance(exc_info.value, ConfigError)
     assert exc_info.value.code == 1004
     assert exc_info.value.source_kind == "client"
-    assert "exactly one non-empty credential" in str(exc_info.value)
+    assert exc_info.value.args == (exc_info.value.message, 1004)
+
+
+def test_config_error_is_a_market_data_error():
+    """``ConfigError`` hangs under ``MarketDataError`` like every other SDK
+    exception, so ``except MarketDataError`` still catches it. It is not a
+    ``ValueError``: that was the pre-3.0.0 behaviour of ``ReconnectConfig``
+    and ``HealthCheckConfig`` (#171)."""
+    assert issubclass(ConfigError, MarketDataError)
+    assert not issubclass(ConfigError, ValueError)
 
 
 class TestHealthCheckConfig:
@@ -56,10 +75,17 @@ class TestHealthCheckConfig:
         assert config.heartbeat_timeout_ms == 35000  # Default
 
     def test_validation_timeout_too_small(self):
-        """heartbeat_timeout_ms must be >= 5000."""
-        with pytest.raises(ValueError) as exc_info:
+        """heartbeat_timeout_ms must be >= 5000; a ConfigError, code 1004."""
+        with pytest.raises(ConfigError) as exc_info:
             HealthCheckConfig(heartbeat_timeout_ms=1000)
+        assert_config_error(exc_info)
         assert "5000" in str(exc_info.value)  # Should mention minimum
+
+    def test_validation_error_is_not_a_value_error(self):
+        """``except ValueError`` no longer catches it (#171)."""
+        with pytest.raises(MarketDataError) as exc_info:
+            HealthCheckConfig(heartbeat_timeout_ms=1000)
+        assert not isinstance(exc_info.value, ValueError)
 
     def test_validation_floor_is_accepted(self):
         """5000 is at the floor and must be accepted."""
@@ -67,8 +93,9 @@ class TestHealthCheckConfig:
 
     def test_validation_runs_even_when_disabled(self):
         """Bad input is rejected up front, not silently kept for later."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigError) as exc_info:
             HealthCheckConfig(enabled=False, heartbeat_timeout_ms=100)
+        assert_config_error(exc_info)
 
     def test_rejects_official_sdk_field_names(self):
         """`ping_interval` / `max_missed_pongs` have no counterpart here.
@@ -104,15 +131,18 @@ class TestHealthCheckConfig:
         assert config.probe_timeout_ms == 1000
 
     def test_probe_floors(self):
-        with pytest.raises(ValueError, match="5000"):
+        with pytest.raises(ConfigError, match="5000") as exc_info:
             HealthCheckConfig(probe_enabled=True, idle_probe_after_ms=4999)
-        with pytest.raises(ValueError, match="1000"):
+        assert_config_error(exc_info)
+        with pytest.raises(ConfigError, match="1000") as exc_info:
             HealthCheckConfig(probe_enabled=True, probe_timeout_ms=999)
+        assert_config_error(exc_info)
 
     def test_probe_floors_checked_with_probe_off(self):
         """A bad probe setting is rejected before it is switched on."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigError) as exc_info:
             HealthCheckConfig(probe_timeout_ms=10)
+        assert_config_error(exc_info)
 
 
 class TestReconnectConfig:
@@ -144,17 +174,26 @@ class TestReconnectConfig:
         config = ReconnectConfig(max_attempts=0)
         assert config.max_attempts == 0
 
-    def test_validation_initial_delay_too_small(self):
-        """initial_delay_ms must be >= 100."""
-        with pytest.raises(ValueError) as exc_info:
-            ReconnectConfig(initial_delay_ms=50)
+    @pytest.mark.parametrize("initial_delay_ms", [1, 50])
+    def test_validation_initial_delay_too_small(self, initial_delay_ms):
+        """initial_delay_ms must be >= 100; a ConfigError, code 1004."""
+        with pytest.raises(ConfigError) as exc_info:
+            ReconnectConfig(initial_delay_ms=initial_delay_ms)
+        assert_config_error(exc_info)
         assert "100" in str(exc_info.value)  # Should mention minimum
 
     def test_validation_max_delay_less_than_initial(self):
-        """max_delay_ms must be >= initial_delay_ms."""
-        with pytest.raises(ValueError) as exc_info:
+        """max_delay_ms must be >= initial_delay_ms; a ConfigError, code 1004."""
+        with pytest.raises(ConfigError) as exc_info:
             ReconnectConfig(initial_delay_ms=10000, max_delay_ms=5000)
+        assert_config_error(exc_info)
         assert "max_delay" in str(exc_info.value).lower() or "initial" in str(exc_info.value).lower()
+
+    def test_validation_error_is_not_a_value_error(self):
+        """``except ValueError`` no longer catches it (#171)."""
+        with pytest.raises(MarketDataError) as exc_info:
+            ReconnectConfig(initial_delay_ms=1)
+        assert not isinstance(exc_info.value, ValueError)
 
     def test_static_default_config(self):
         """ReconnectConfig.default_config() creates enabled config."""

@@ -18,6 +18,10 @@ create_exception!(fugle_marketdata, RateLimitError, ApiError, "Rate limit exceed
 // Authentication errors
 create_exception!(fugle_marketdata, AuthError, MarketDataError, "Authentication failed");
 
+// Configuration errors (core `ConfigError`, code 1004): credentials,
+// `ReconnectConfig`, `HealthCheckConfig`. Not a `ValueError` (#171).
+create_exception!(fugle_marketdata, ConfigError, MarketDataError, "Invalid configuration");
+
 // Connection errors
 create_exception!(fugle_marketdata, ConnectionError, MarketDataError, "Connection failed");
 create_exception!(fugle_marketdata, TimeoutError, MarketDataError, "Operation timed out");
@@ -29,6 +33,7 @@ create_exception!(fugle_marketdata, WebSocketError, MarketDataError, "WebSocket 
 ///
 /// Maps MarketDataError variants to specific Python exception types:
 /// - AuthError → AuthError
+/// - ConfigError → ConfigError
 /// - ApiError → ApiError (or RateLimitError for 429 status)
 /// - TimeoutError → TimeoutError
 /// - Connection/WebSocket errors → WebSocketError
@@ -64,6 +69,7 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
     // Map to specific exception types based on error variant
     let pyerr = match err {
         CoreError::AuthError { .. } => AuthError::new_err((message.clone(), error_code)),
+        CoreError::ConfigError(_) => ConfigError::new_err((message.clone(), error_code)),
         CoreError::ApiError { status, .. } => {
             if status == 429 {
                 RateLimitError::new_err((message.clone(), error_code))

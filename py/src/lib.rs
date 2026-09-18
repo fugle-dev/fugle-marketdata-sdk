@@ -72,6 +72,7 @@
 //!     ApiError,         # API request failed
 //!     RateLimitError,   # Rate limit exceeded (extends ApiError)
 //!     AuthError,        # Authentication failed
+//!     ConfigError,      # Invalid configuration (code 1004)
 //!     ConnectionError,  # Connection failed
 //!     TimeoutError,     # Operation timed out
 //!     WebSocketError,   # WebSocket operation failed
@@ -142,6 +143,7 @@ fn fugle_marketdata(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ApiError", m.py().get_type::<errors::ApiError>())?;
     m.add("RateLimitError", m.py().get_type::<errors::RateLimitError>())?;
     m.add("AuthError", m.py().get_type::<errors::AuthError>())?;
+    m.add("ConfigError", m.py().get_type::<errors::ConfigError>())?;
     m.add("ConnectionError", m.py().get_type::<errors::ConnectionError>())?;
     m.add("TimeoutError", m.py().get_type::<errors::TimeoutError>())?;
     m.add("WebSocketError", m.py().get_type::<errors::WebSocketError>())?;

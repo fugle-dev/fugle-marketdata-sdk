@@ -453,6 +453,14 @@ callback receives a `WebSocketError` with these fields, whose `args` stay
 `(message, code)`. See the
 [error reference](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/errors.md) for all languages.
 
+Every exception class is a `MarketDataError`: `ApiError` (with
+`RateLimitError` under it), `AuthError`, `ConfigError`, `ConnectionError`,
+`TimeoutError` and `WebSocketError`. None of them is a built-in `ValueError`.
+An invalid `ReconnectConfig` or `HealthCheckConfig` value and the credential
+rule raise `ConfigError` (code 1004); the other constructor keyword checks
+(`base_url`, TLS options, `message_buffer`, ...) and the REST argument checks
+keep their built-in `TypeError` / `ValueError`.
+
 ### Error Codes
 
 | Code | Error Type | Description |
@@ -460,7 +468,7 @@ callback receives a `WebSocketError` with these fields, whose `args` stay
 | 1001 | InvalidSymbol | Invalid or unsupported symbol |
 | 1002 | DeserializationError | JSON parsing failed |
 | 1003 | RuntimeError | Internal runtime error |
-| 1004 | ConfigError | Configuration error |
+| 1004 | ConfigError | Invalid configuration: not exactly one credential, or a `ReconnectConfig` / `HealthCheckConfig` value below its floor |
 | 1005 | InvalidParameter | Invalid or missing parameter (including an unknown WebSocket channel) |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
