@@ -35,6 +35,13 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — `connect()` aborted by a concurrent `disconnect()` (#121)
+
+- `+` `MarketDataError::ConnectionAborted` (code 2010, the same code as
+  `ClientClosed`) — returned by `aio::WebSocketClient::connect()` when
+  `disconnect()` / `force_close()` aborts the handshake. `MarketDataError` is
+  already `#[non_exhaustive]` (#119), so this is an addition, not a break.
+
 ### Unreleased — credentials checked in core (#69)
 
 - `+` `Auth::from_credentials` — the one-credential, non-blank rule every

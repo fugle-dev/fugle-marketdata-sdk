@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fugle-marketdata"
-version = "3.0.0rc2"
+version = "3.0.0rc3"
 description = "Fugle market data REST and WebSocket client, powered by a Rust core"
 readme = "README.md"
 license = "MIT OR Apache-2.0"

@@ -188,6 +188,7 @@ pub marketdata_core::errors::MarketDataError::AuthError::http: core::option::Opt
 pub marketdata_core::errors::MarketDataError::AuthError::msg: alloc::string::String
 pub marketdata_core::errors::MarketDataError::ClientClosed
 pub marketdata_core::errors::MarketDataError::ConfigError(alloc::string::String)
+pub marketdata_core::errors::MarketDataError::ConnectionAborted
 pub marketdata_core::errors::MarketDataError::ConnectionError
 pub marketdata_core::errors::MarketDataError::ConnectionError::msg: alloc::string::String
 pub marketdata_core::errors::MarketDataError::DeserializationError
@@ -5018,6 +5019,7 @@ pub marketdata_core::MarketDataError::AuthError::http: core::option::Option<allo
 pub marketdata_core::MarketDataError::AuthError::msg: alloc::string::String
 pub marketdata_core::MarketDataError::ClientClosed
 pub marketdata_core::MarketDataError::ConfigError(alloc::string::String)
+pub marketdata_core::MarketDataError::ConnectionAborted
 pub marketdata_core::MarketDataError::ConnectionError
 pub marketdata_core::MarketDataError::ConnectionError::msg: alloc::string::String
 pub marketdata_core::MarketDataError::DeserializationError
