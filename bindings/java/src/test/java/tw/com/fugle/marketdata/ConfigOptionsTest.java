@@ -1,6 +1,13 @@
 package tw.com.fugle.marketdata;
 
+import tw.com.fugle.marketdata.generated.ErrorInfo;
 import tw.com.fugle.marketdata.generated.ErrorSourceKind;
+import tw.com.fugle.marketdata.generated.HealthCheckConfigRecord;
+import tw.com.fugle.marketdata.generated.ReconnectConfigRecord;
+import tw.com.fugle.marketdata.generated.StreamMessage;
+import tw.com.fugle.marketdata.generated.WebSocketClient;
+import tw.com.fugle.marketdata.generated.WebSocketEndpoint;
+import tw.com.fugle.marketdata.generated.WebSocketListener;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,6 +81,57 @@ public class ConfigOptionsTest {
         assertNull(options.getProbeEnabled());
         assertNull(options.getIdleProbeAfterMs());
         assertNull(options.getProbeTimeoutMs());
+    }
+
+    // ========== Config records (#158, #161) ==========
+
+    @Test
+    @DisplayName("Options without enabled give records that leave it unset (core default: on)")
+    void testRecordsLeaveUnsetEnabledForCore() {
+        assertNull(FugleWebSocketClient.toReconnectRecord(null));
+        assertNull(FugleWebSocketClient.toHealthCheckRecord(null));
+
+        ReconnectConfigRecord reconnect = FugleWebSocketClient.toReconnectRecord(
+            ReconnectOptions.builder().maxAttempts(3).build());
+        assertNull(reconnect.enabled(), "unset enabled must stay unset");
+        assertEquals(Integer.valueOf(3), reconnect.maxAttempts());
+
+        HealthCheckConfigRecord healthCheck = FugleWebSocketClient.toHealthCheckRecord(
+            HealthCheckOptions.builder().heartbeatTimeoutMs(10000L).build());
+        assertNull(healthCheck.enabled(), "unset enabled must stay unset");
+        assertEquals(Boolean.FALSE, healthCheck.probeEnabled());
+
+        assertEquals(Boolean.FALSE, FugleWebSocketClient.toReconnectRecord(
+            ReconnectOptions.builder().enabled(false).build()).enabled());
+        assertEquals(Boolean.FALSE, FugleWebSocketClient.toHealthCheckRecord(
+            HealthCheckOptions.builder().enabled(false).build()).enabled());
+    }
+
+    @Test
+    @DisplayName("Records with enabled unset cross the FFI boundary")
+    void testRecordsWithUnsetEnabledCrossFfi() {
+        NativeLibrary.assumeAvailable();
+
+        // A null enabled used to fail lowering a plain bool; now it is the
+        // unset value that core resolves to its default (on).
+        try (WebSocketClient client = WebSocketClient.newWithConfig(
+                "test-api-key", new NoopListener(), WebSocketEndpoint.STOCK,
+                new ReconnectConfigRecord(null, 3, 0L, 0L),
+                new HealthCheckConfigRecord(null, 10000L, false, 0L, 0L))) {
+            assertNotNull(client);
+        }
+    }
+
+    private static final class NoopListener implements WebSocketListener {
+        @Override public void onConnected() {}
+        @Override public void onAuthenticated(String dataJson) {}
+        @Override public void onUnauthenticated(String dataJson) {}
+        @Override public void onDisconnected(Boolean willReconnect) {}
+        @Override public void onMessage(StreamMessage message) {}
+        @Override public void onError(ErrorInfo error) {}
+        @Override public void onReconnecting(Integer attempt) {}
+        @Override public void onReconnectFailed(Integer attempts) {}
+        @Override public void onMessagesDropped(Long count) {}
     }
 
     // ========== RestClient Exactly-One-Auth Tests ==========

@@ -9,7 +9,7 @@ public enum FfiConverterTypeHealthCheckConfigRecord implements FfiConverterRustB
   @Override
   public HealthCheckConfigRecord read(ByteBuffer buf) {
     return new HealthCheckConfigRecord(
-      FfiConverterBoolean.INSTANCE.read(buf),
+      FfiConverterOptionalBoolean.INSTANCE.read(buf),
       FfiConverterLong.INSTANCE.read(buf),
       FfiConverterBoolean.INSTANCE.read(buf),
       FfiConverterLong.INSTANCE.read(buf),
@@ -20,7 +20,7 @@ public enum FfiConverterTypeHealthCheckConfigRecord implements FfiConverterRustB
   @Override
   public long allocationSize(HealthCheckConfigRecord value) {
       return (
-            FfiConverterBoolean.INSTANCE.allocationSize(value.enabled()) +
+            FfiConverterOptionalBoolean.INSTANCE.allocationSize(value.enabled()) +
             FfiConverterLong.INSTANCE.allocationSize(value.heartbeatTimeoutMs()) +
             FfiConverterBoolean.INSTANCE.allocationSize(value.probeEnabled()) +
             FfiConverterLong.INSTANCE.allocationSize(value.idleProbeAfterMs()) +
@@ -30,7 +30,7 @@ public enum FfiConverterTypeHealthCheckConfigRecord implements FfiConverterRustB
 
   @Override
   public void write(HealthCheckConfigRecord value, ByteBuffer buf) {
-      FfiConverterBoolean.INSTANCE.write(value.enabled(), buf);
+      FfiConverterOptionalBoolean.INSTANCE.write(value.enabled(), buf);
       FfiConverterLong.INSTANCE.write(value.heartbeatTimeoutMs(), buf);
       FfiConverterBoolean.INSTANCE.write(value.probeEnabled(), buf);
       FfiConverterLong.INSTANCE.write(value.idleProbeAfterMs(), buf);

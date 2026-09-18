@@ -1481,13 +1481,17 @@ struct CredentialsRecord {
 /**
  * Health check configuration record for FFI
  *
- * The millisecond fields take 0 to mean "use default".
+ * Every field's zero value means "use default", so a zero-initialized
+ * record (C++ `HealthCheckConfigRecord{}`, a Go `HealthCheckConfigRecord{}`
+ * literal) is the full default: detection on, no probe, 35 s timeout
+ * (#158, #161).
  */
 struct HealthCheckConfigRecord {
     /**
-     * Whether liveness detection is active (default: true in 3.0)
+     * Whether liveness detection is active; `false` turns it off. Unset
+     * (the zero value) takes the core default, which is on.
      */
-    bool enabled;
+    std::optional<bool> enabled = std::nullopt;
     /**
      * Maximum allowed gap between inbound frames before declaring the
      * connection dead, in milliseconds. Default 35000; floor 5000.
@@ -1518,15 +1522,17 @@ struct HealthCheckConfigRecord {
 /**
  * Reconnection configuration record for FFI
  *
- * Without a record the client auto-reconnects with the core defaults. In a
- * record, `enabled` is taken as given and zero numeric fields mean "use
- * default".
+ * Every field's zero value means "use default", so a zero-initialized
+ * record (C++ `ReconnectConfigRecord{}`, a Go `ReconnectConfigRecord{}`
+ * literal) is the full default: auto-reconnect on with the core delays
+ * (#158, #161). Omitting the record gives the same result.
  */
 struct ReconnectConfigRecord {
     /**
-     * Whether auto-reconnect is active; `false` turns it off
+     * Whether auto-reconnect is active; `false` turns it off. Unset (the
+     * zero value) takes the core default, which is on.
      */
-    bool enabled;
+    std::optional<bool> enabled = std::nullopt;
     /**
      * Maximum reconnection attempts; 0 means unlimited (the default)
      */

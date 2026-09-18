@@ -261,6 +261,57 @@ public class ConfigOptionsTests
         Assert.AreEqual(5000ul, options.ProbeTimeoutMs);
     }
 
+    // ========== Config records (#158, #161) ==========
+
+    [TestMethod]
+    public void ConfigRecords_WithoutEnabled_LeaveItUnset()
+    {
+        // The generated records take enabled as an optional argument: left
+        // out, it is unset and core applies its default (on).
+        var reconnect = new uniffi.marketdata_uniffi.ReconnectConfigRecord(maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0);
+        Assert.IsNull(reconnect.enabled);
+
+        var healthCheck = new uniffi.marketdata_uniffi.HealthCheckConfigRecord(heartbeatTimeoutMs: 10000);
+        Assert.IsNull(healthCheck.enabled);
+        Assert.IsFalse(healthCheck.probeEnabled);
+    }
+
+    [TestMethod]
+    public void ToRecords_OptionsWithoutEnabled_LeaveItUnset()
+    {
+        Assert.IsNull(FugleMarketData.WebSocketClient.ToReconnectRecord(null));
+        Assert.IsNull(FugleMarketData.WebSocketClient.ToHealthCheckRecord(null));
+
+        var reconnect = FugleMarketData.WebSocketClient.ToReconnectRecord(new FugleMarketData.ReconnectOptions { MaxAttempts = 3 });
+        Assert.IsNotNull(reconnect);
+        Assert.IsNull(reconnect.enabled, "unset Enabled must stay unset");
+        Assert.AreEqual(3u, reconnect.maxAttempts);
+
+        var healthCheck = FugleMarketData.WebSocketClient.ToHealthCheckRecord(new FugleMarketData.HealthCheckOptions { HeartbeatTimeoutMs = 10000 });
+        Assert.IsNotNull(healthCheck);
+        Assert.IsNull(healthCheck.enabled, "unset Enabled must stay unset");
+        Assert.IsFalse(healthCheck.probeEnabled);
+
+        Assert.AreEqual(false, FugleMarketData.WebSocketClient.ToReconnectRecord(new FugleMarketData.ReconnectOptions { Enabled = false })!.enabled);
+        Assert.AreEqual(false, FugleMarketData.WebSocketClient.ToHealthCheckRecord(new FugleMarketData.HealthCheckOptions { Enabled = false })!.enabled);
+    }
+
+    [TestMethod]
+    public void WebSocketClient_OptionsWithoutEnabled_CrossFfi()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            Reconnect = new FugleMarketData.ReconnectOptions { MaxAttempts = 3 },
+            HealthCheck = new FugleMarketData.HealthCheckOptions { HeartbeatTimeoutMs = 10000 },
+        };
+
+        using var client = new FugleMarketData.WebSocketClient(options, new TestWebSocketListener());
+        Assert.IsNotNull(client);
+    }
+
     // ========== WebSocketClientOptions with nested config Tests ==========
 
     [TestMethod]

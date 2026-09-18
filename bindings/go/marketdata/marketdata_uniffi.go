@@ -5653,10 +5653,14 @@ func (_ FfiDestroyerErrorInfo) Destroy(value ErrorInfo) {
 
 // Health check configuration record for FFI
 //
-// The millisecond fields take 0 to mean "use default".
+// Every field's zero value means "use default", so a zero-initialized
+// record (C++ `HealthCheckConfigRecord{}`, a Go `HealthCheckConfigRecord{}`
+// literal) is the full default: detection on, no probe, 35 s timeout
+// (#158, #161).
 type HealthCheckConfigRecord struct {
-	// Whether liveness detection is active (default: true in 3.0)
-	Enabled bool
+	// Whether liveness detection is active; `false` turns it off. Unset
+	// (the zero value) takes the core default, which is on.
+	Enabled *bool
 	// Maximum allowed gap between inbound frames before declaring the
 	// connection dead, in milliseconds. Default 35000; floor 5000.
 	// Pass 0 to use the default. Does not apply when `probe_enabled` is
@@ -5676,7 +5680,7 @@ type HealthCheckConfigRecord struct {
 }
 
 func (r *HealthCheckConfigRecord) Destroy() {
-	FfiDestroyerBool{}.Destroy(r.Enabled)
+	FfiDestroyerOptionalBool{}.Destroy(r.Enabled)
 	FfiDestroyerUint64{}.Destroy(r.HeartbeatTimeoutMs)
 	FfiDestroyerBool{}.Destroy(r.ProbeEnabled)
 	FfiDestroyerUint64{}.Destroy(r.IdleProbeAfterMs)
@@ -5693,7 +5697,7 @@ func (c FfiConverterHealthCheckConfigRecord) Lift(rb RustBufferI) HealthCheckCon
 
 func (c FfiConverterHealthCheckConfigRecord) Read(reader io.Reader) HealthCheckConfigRecord {
 	return HealthCheckConfigRecord{
-		FfiConverterBoolINSTANCE.Read(reader),
+		FfiConverterOptionalBoolINSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
 		FfiConverterBoolINSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
@@ -5710,7 +5714,7 @@ func (c FfiConverterHealthCheckConfigRecord) LowerExternal(value HealthCheckConf
 }
 
 func (c FfiConverterHealthCheckConfigRecord) Write(writer io.Writer, value HealthCheckConfigRecord) {
-	FfiConverterBoolINSTANCE.Write(writer, value.Enabled)
+	FfiConverterOptionalBoolINSTANCE.Write(writer, value.Enabled)
 	FfiConverterUint64INSTANCE.Write(writer, value.HeartbeatTimeoutMs)
 	FfiConverterBoolINSTANCE.Write(writer, value.ProbeEnabled)
 	FfiConverterUint64INSTANCE.Write(writer, value.IdleProbeAfterMs)
@@ -5774,12 +5778,14 @@ func (_ FfiDestroyerMessageQueueConfigRecord) Destroy(value MessageQueueConfigRe
 
 // Reconnection configuration record for FFI
 //
-// Without a record the client auto-reconnects with the core defaults. In a
-// record, `enabled` is taken as given and zero numeric fields mean "use
-// default".
+// Every field's zero value means "use default", so a zero-initialized
+// record (C++ `ReconnectConfigRecord{}`, a Go `ReconnectConfigRecord{}`
+// literal) is the full default: auto-reconnect on with the core delays
+// (#158, #161). Omitting the record gives the same result.
 type ReconnectConfigRecord struct {
-	// Whether auto-reconnect is active; `false` turns it off
-	Enabled bool
+	// Whether auto-reconnect is active; `false` turns it off. Unset (the
+	// zero value) takes the core default, which is on.
+	Enabled *bool
 	// Maximum reconnection attempts; 0 means unlimited (the default)
 	MaxAttempts uint32
 	// Initial reconnection delay in milliseconds (default: 1000, min: 100)
@@ -5789,7 +5795,7 @@ type ReconnectConfigRecord struct {
 }
 
 func (r *ReconnectConfigRecord) Destroy() {
-	FfiDestroyerBool{}.Destroy(r.Enabled)
+	FfiDestroyerOptionalBool{}.Destroy(r.Enabled)
 	FfiDestroyerUint32{}.Destroy(r.MaxAttempts)
 	FfiDestroyerUint64{}.Destroy(r.InitialDelayMs)
 	FfiDestroyerUint64{}.Destroy(r.MaxDelayMs)
@@ -5805,7 +5811,7 @@ func (c FfiConverterReconnectConfigRecord) Lift(rb RustBufferI) ReconnectConfigR
 
 func (c FfiConverterReconnectConfigRecord) Read(reader io.Reader) ReconnectConfigRecord {
 	return ReconnectConfigRecord{
-		FfiConverterBoolINSTANCE.Read(reader),
+		FfiConverterOptionalBoolINSTANCE.Read(reader),
 		FfiConverterUint32INSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
 		FfiConverterUint64INSTANCE.Read(reader),
@@ -5821,7 +5827,7 @@ func (c FfiConverterReconnectConfigRecord) LowerExternal(value ReconnectConfigRe
 }
 
 func (c FfiConverterReconnectConfigRecord) Write(writer io.Writer, value ReconnectConfigRecord) {
-	FfiConverterBoolINSTANCE.Write(writer, value.Enabled)
+	FfiConverterOptionalBoolINSTANCE.Write(writer, value.Enabled)
 	FfiConverterUint32INSTANCE.Write(writer, value.MaxAttempts)
 	FfiConverterUint64INSTANCE.Write(writer, value.InitialDelayMs)
 	FfiConverterUint64INSTANCE.Write(writer, value.MaxDelayMs)

@@ -8,11 +8,15 @@ import java.util.Objects;
 /**
  * Health check configuration record for FFI
  *
- * The millisecond fields take 0 to mean "use default".
+ * Every field's zero value means "use default", so a zero-initialized
+ * record (C++ `HealthCheckConfigRecord{}`, a Go `HealthCheckConfigRecord{}`
+ * literal) is the full default: detection on, no probe, 35 s timeout
+ * (#158, #161).
  */
 public class HealthCheckConfigRecord {
     /**
-     * Whether liveness detection is active (default: true in 3.0)
+     * Whether liveness detection is active; `false` turns it off. Unset
+     * (the zero value) takes the core default, which is on.
      */
     private Boolean enabled;
     /**

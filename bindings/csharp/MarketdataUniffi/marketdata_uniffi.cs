@@ -10604,16 +10604,20 @@ class FfiConverterTypeErrorInfo : FfiConverterRustBuffer<ErrorInfo>
 /// <summary>
 /// Health check configuration record for FFI
 ///
-/// The millisecond fields take 0 to mean "use default".
+/// Every field's zero value means "use default", so a zero-initialized
+/// record (C++ `HealthCheckConfigRecord{}`, a Go `HealthCheckConfigRecord{}`
+/// literal) is the full default: detection on, no probe, 35 s timeout
+/// (#158, #161).
 /// </summary>
-/// <param name="enabled">
-/// Whether liveness detection is active (default: true in 3.0)
-/// </param>
 /// <param name="heartbeat_timeout_ms">
 /// Maximum allowed gap between inbound frames before declaring the
 /// connection dead, in milliseconds. Default 35000; floor 5000.
 /// Pass 0 to use the default. Does not apply when `probe_enabled` is
 /// true.
+/// </param>
+/// <param name="enabled">
+/// Whether liveness detection is active; `false` turns it off. Unset
+/// (the zero value) takes the core default, which is on.
 /// </param>
 /// <param name="probe_enabled">
 /// Confirm a silent connection with a ping before declaring it dead
@@ -10629,11 +10633,12 @@ class FfiConverterTypeErrorInfo : FfiConverterRustBuffer<ErrorInfo>
 /// Wait for any inbound frame after the probe, in milliseconds.
 /// Default 5000; floor 1000. Pass 0 to use the default.
 /// </param>
+/// <remarks>
+/// <b>UniFFI Warning:</b> Optional parameters have been reordered because
+/// of a C# syntax limitation. Use named parameters for compatibility with
+/// future ordering changes.
+/// </remarks>
 public record HealthCheckConfigRecord(
-    /// <summary>
-    /// Whether liveness detection is active (default: true in 3.0)
-    /// </summary>
-    bool @enabled,
     /// <summary>
     /// Maximum allowed gap between inbound frames before declaring the
     /// connection dead, in milliseconds. Default 35000; floor 5000.
@@ -10641,6 +10646,11 @@ public record HealthCheckConfigRecord(
     /// true.
     /// </summary>
     ulong @heartbeatTimeoutMs,
+    /// <summary>
+    /// Whether liveness detection is active; `false` turns it off. Unset
+    /// (the zero value) takes the core default, which is on.
+    /// </summary>
+    bool? @enabled = null,
     /// <summary>
     /// Confirm a silent connection with a ping before declaring it dead
     /// (default: false). After `idle_probe_after_ms` of silence one ping is
@@ -10668,7 +10678,7 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     public override HealthCheckConfigRecord Read(BigEndianStream stream)
     {
         return new HealthCheckConfigRecord(
-            @enabled: FfiConverterBoolean.INSTANCE.Read(stream),
+            @enabled: FfiConverterOptionalBoolean.INSTANCE.Read(stream),
             @heartbeatTimeoutMs: FfiConverterUInt64.INSTANCE.Read(stream),
             @probeEnabled: FfiConverterBoolean.INSTANCE.Read(stream),
             @idleProbeAfterMs: FfiConverterUInt64.INSTANCE.Read(stream),
@@ -10679,7 +10689,7 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     public override int AllocationSize(HealthCheckConfigRecord value)
     {
         return 0
-            + FfiConverterBoolean.INSTANCE.AllocationSize(value.@enabled)
+            + FfiConverterOptionalBoolean.INSTANCE.AllocationSize(value.@enabled)
             + FfiConverterUInt64.INSTANCE.AllocationSize(value.@heartbeatTimeoutMs)
             + FfiConverterBoolean.INSTANCE.AllocationSize(value.@probeEnabled)
             + FfiConverterUInt64.INSTANCE.AllocationSize(value.@idleProbeAfterMs)
@@ -10688,7 +10698,7 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
 
     public override void Write(HealthCheckConfigRecord value, BigEndianStream stream)
     {
-        FfiConverterBoolean.INSTANCE.Write(value.@enabled, stream);
+        FfiConverterOptionalBoolean.INSTANCE.Write(value.@enabled, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@heartbeatTimeoutMs, stream);
         FfiConverterBoolean.INSTANCE.Write(value.@probeEnabled, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@idleProbeAfterMs, stream);
@@ -10748,13 +10758,11 @@ class FfiConverterTypeMessageQueueConfigRecord : FfiConverterRustBuffer<MessageQ
 /// <summary>
 /// Reconnection configuration record for FFI
 ///
-/// Without a record the client auto-reconnects with the core defaults. In a
-/// record, `enabled` is taken as given and zero numeric fields mean "use
-/// default".
+/// Every field's zero value means "use default", so a zero-initialized
+/// record (C++ `ReconnectConfigRecord{}`, a Go `ReconnectConfigRecord{}`
+/// literal) is the full default: auto-reconnect on with the core delays
+/// (#158, #161). Omitting the record gives the same result.
 /// </summary>
-/// <param name="enabled">
-/// Whether auto-reconnect is active; `false` turns it off
-/// </param>
 /// <param name="max_attempts">
 /// Maximum reconnection attempts; 0 means unlimited (the default)
 /// </param>
@@ -10764,11 +10772,16 @@ class FfiConverterTypeMessageQueueConfigRecord : FfiConverterRustBuffer<MessageQ
 /// <param name="max_delay_ms">
 /// Maximum reconnection delay in milliseconds (default: 60000)
 /// </param>
+/// <param name="enabled">
+/// Whether auto-reconnect is active; `false` turns it off. Unset (the
+/// zero value) takes the core default, which is on.
+/// </param>
+/// <remarks>
+/// <b>UniFFI Warning:</b> Optional parameters have been reordered because
+/// of a C# syntax limitation. Use named parameters for compatibility with
+/// future ordering changes.
+/// </remarks>
 public record ReconnectConfigRecord(
-    /// <summary>
-    /// Whether auto-reconnect is active; `false` turns it off
-    /// </summary>
-    bool @enabled,
     /// <summary>
     /// Maximum reconnection attempts; 0 means unlimited (the default)
     /// </summary>
@@ -10780,7 +10793,12 @@ public record ReconnectConfigRecord(
     /// <summary>
     /// Maximum reconnection delay in milliseconds (default: 60000)
     /// </summary>
-    ulong @maxDelayMs
+    ulong @maxDelayMs,
+    /// <summary>
+    /// Whether auto-reconnect is active; `false` turns it off. Unset (the
+    /// zero value) takes the core default, which is on.
+    /// </summary>
+    bool? @enabled = null
 ) { }
 
 class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectConfigRecord>
@@ -10791,7 +10809,7 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
     public override ReconnectConfigRecord Read(BigEndianStream stream)
     {
         return new ReconnectConfigRecord(
-            @enabled: FfiConverterBoolean.INSTANCE.Read(stream),
+            @enabled: FfiConverterOptionalBoolean.INSTANCE.Read(stream),
             @maxAttempts: FfiConverterUInt32.INSTANCE.Read(stream),
             @initialDelayMs: FfiConverterUInt64.INSTANCE.Read(stream),
             @maxDelayMs: FfiConverterUInt64.INSTANCE.Read(stream)
@@ -10801,7 +10819,7 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
     public override int AllocationSize(ReconnectConfigRecord value)
     {
         return 0
-            + FfiConverterBoolean.INSTANCE.AllocationSize(value.@enabled)
+            + FfiConverterOptionalBoolean.INSTANCE.AllocationSize(value.@enabled)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@maxAttempts)
             + FfiConverterUInt64.INSTANCE.AllocationSize(value.@initialDelayMs)
             + FfiConverterUInt64.INSTANCE.AllocationSize(value.@maxDelayMs);
@@ -10809,7 +10827,7 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
 
     public override void Write(ReconnectConfigRecord value, BigEndianStream stream)
     {
-        FfiConverterBoolean.INSTANCE.Write(value.@enabled, stream);
+        FfiConverterOptionalBoolean.INSTANCE.Write(value.@enabled, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@maxAttempts, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@initialDelayMs, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@maxDelayMs, stream);
