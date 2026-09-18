@@ -37,7 +37,12 @@
 //!    [`Unauthenticated { message, data }`](ConnectionEvent::Unauthenticated) or
 //!    [`Error`](ConnectionEvent::Error). If the transport cannot be
 //!    established the sequence is `Connecting` → `Error`. A successful
-//!    reconnect goes through the same sequence.
+//!    reconnect goes through the same sequence, and replays the stored
+//!    subscriptions only after its `Authenticated`: an `Error` for one that
+//!    could not be replayed (`Failed to resubscribe …`) follows that
+//!    `Authenticated` and is read in the state `Connected` (#174). It is a
+//!    failure of the replay, never of the handshake, which ends in exactly
+//!    one of the three events above.
 //! 3. Each authenticated connection yields at most one
 //!    [`Disconnected`](ConnectionEvent::Disconnected); a
 //!    [`HeartbeatTimeout`](ConnectionEvent::HeartbeatTimeout) precedes it.

@@ -18,6 +18,7 @@ use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
     ReconnectionManager, SubscriptionManager,
 };
+use crate::models::WebSocketMessage;
 use crate::MarketDataError;
 use crate::tracing_compat::{debug, warn};
 use std::collections::VecDeque;
@@ -621,7 +622,21 @@ pub(crate) fn replay_subscriptions(
     stream: &StreamSender,
     write_tx: &mpsc::SyncSender<String>,
 ) -> Result<(), MarketDataError> {
-    let mut first_err = None;
+    report_resubscribe_failures(stream, queue_subscriptions(frames, write_tx))
+}
+
+/// A resubscribe frame that could not be built or queued: its label and
+/// why, for [`report_resubscribe_failures`].
+type ResubscribeFailure = (String, MarketDataError);
+
+/// The queueing half of [`replay_subscriptions`]: queue each of `frames`,
+/// in order, skipping the ones that cannot be, and return those failures
+/// unreported.
+fn queue_subscriptions(
+    frames: Vec<ResubscribeFrame>,
+    write_tx: &mpsc::SyncSender<String>,
+) -> Vec<ResubscribeFailure> {
+    let mut failures = Vec::new();
     for ResubscribeFrame { label, frame } in frames {
         let sent = frame.and_then(|json| {
             write_tx.send(json).map_err(|_| MarketDataError::ConnectionError {
@@ -629,10 +644,23 @@ pub(crate) fn replay_subscriptions(
             })
         });
         if let Err(e) = sent {
-            // Not after the client's close has been reported (#145).
-            stream.emit_unless_closed(ConnectionEvent::resubscribe_failed(&label, &e));
-            first_err.get_or_insert(e);
+            failures.push((label, e));
         }
+    }
+    failures
+}
+
+/// The reporting half of [`replay_subscriptions`]: an `Error` per failure,
+/// in order, unless the client's close has been reported (#145). Returns
+/// the first failure.
+fn report_resubscribe_failures(
+    stream: &StreamSender,
+    failures: Vec<ResubscribeFailure>,
+) -> Result<(), MarketDataError> {
+    let mut first_err = None;
+    for (label, e) in failures {
+        stream.emit_unless_closed(ConnectionEvent::resubscribe_failed(&label, &e));
+        first_err.get_or_insert(e);
     }
     first_err.map_or(Ok(()), Err)
 }
@@ -683,13 +711,49 @@ fn reconnect_and_authenticate(
         AuthHandshake::Failed(e) => return Err(e),
     };
 
-    // Build fresh write channel + install into shared slot. The replay below
-    // queues every resubscribe frame before this thread starts draining, so
-    // the channel must hold them all or `send` would block forever.
     // Before the replay is read: the old ids are stale, and a cancel whose
     // key this leaves unsubscribed can be dropped with them (#136).
     shared.subscriptions.clear_server_ids();
     let resubscribe = frame_resubscribe(shared.subscriptions.get_all());
+    let write_rx = open_reconnected(shared, data, frames, resubscribe)?;
+    crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
+    Ok((ws, write_rx))
+}
+
+/// Install the write channel of a connection whose auth handshake just
+/// succeeded, report it `Authenticated` and replay `resubscribe` on it.
+/// Returns the channel's receiver for the owner loop to drain, or
+/// `ClientClosed` if the client's close was reported meanwhile (#145).
+///
+/// Event order (#174, the `connection_event` module's guarantee 2): the
+/// `Error` for a frame that could not be replayed follows this connection's
+/// `Authenticated` and reads the state `Connected`, as on the async client
+/// and on this client's own `reconnect()` (which replays after `connect()`
+/// returns), so it is not mistaken for a failure of the handshake.
+///
+/// The frames are still *queued* before `Authenticated` is reported; only
+/// their failures are reported after it. Moving the whole replay after
+/// `reconnect_authenticated` would look simpler but can deadlock: the write
+/// slot is installed before `Authenticated` (a consumer must be able to
+/// `subscribe()` as soon as it sees the event), `enqueue_write` blocks on a
+/// full channel, and this thread — the only one draining it — does not start
+/// until this function returns. A consumer filling the channel between the
+/// event and the replay would block the replay's `send` here, forever.
+/// Queueing first keeps the existing guarantee that the channel holds every
+/// replay frame (`WRITE_QUEUE_CAPACITY + resubscribe.len()`) before any
+/// consumer can see the connection. Installing the slot after the replay
+/// instead would make a `subscribe()` right after `Authenticated` fail with
+/// "Not connected" in the state `Connected`: a regression of what the event
+/// promises.
+fn open_reconnected(
+    shared: &OwnerShared,
+    data: serde_json::Value,
+    frames: Vec<WebSocketMessage>,
+    resubscribe: Vec<ResubscribeFrame>,
+) -> Result<mpsc::Receiver<String>, MarketDataError> {
+    // Build fresh write channel + install into shared slot. The replay
+    // queues every resubscribe frame before this thread starts draining, so
+    // the channel must hold them all or `send` would block forever.
     let (write_tx, write_rx) = mpsc::sync_channel::<String>(WRITE_QUEUE_CAPACITY + resubscribe.len());
     *shared.write_tx_slot.lock().expect("write_tx_slot lock poisoned") = Some(write_tx.clone());
 
@@ -699,16 +763,15 @@ fn reconnect_and_authenticate(
         mgr.reset();
     }
 
-    // Replay subscriptions
-    let _ = replay_subscriptions(resubscribe, &shared.stream, &write_tx);
+    let failures = queue_subscriptions(resubscribe, &write_tx);
 
     // Before this thread reads the new connection; it may report its own
     // close. A close reported meanwhile keeps it from reopening (#145).
     if !shared.stream.reconnect_authenticated(&shared.state, data, frames) {
         return Err(MarketDataError::ClientClosed);
     }
-    crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
-    Ok((ws, write_rx))
+    let _ = report_resubscribe_failures(&shared.stream, failures);
+    Ok(write_rx)
 }
 
 /// Queue the unsubscribe frame for `cancels`, the ids of subscriptions
@@ -897,6 +960,85 @@ mod tests {
         assert!(errors.iter().all(|info| info.code == error_code::CONNECTION));
         assert!(errors[0].message.contains("trades (2 symbols)"), "{}", errors[0].message);
         assert!(errors[1].message.contains("books:2317"), "{}", errors[1].message);
+    }
+
+    /// [`frames`] with the books frame unbuildable. The real replay failures
+    /// cannot be reached deterministically: a stored subscription always
+    /// serializes, and the write channel's receiver is created inside
+    /// `open_reconnected` and not dropped before the owner loop drains it.
+    /// So the order tests below inject the failure; the report path is the
+    /// one `replay_subscriptions` takes.
+    fn frames_with_books_unbuildable() -> Vec<ResubscribeFrame> {
+        let mut frames = frames();
+        frames[1].frame = Err(MarketDataError::ConnectionError { msg: "injected".to_string() });
+        frames
+    }
+
+    /// The `Error` for a subscription that could not be replayed follows
+    /// the connection's `Authenticated` and is read in the state
+    /// `Connected`, as on the async client (#174) — not in `Authenticating`,
+    /// where it reads as a failure of the handshake. The frames that could
+    /// be built are still queued ahead of anything else.
+    #[test]
+    fn resubscribe_failure_is_reported_after_authenticated_in_state_connected() {
+        let (stream, rx) = event_stream();
+        let shared = owner_shared(stream, HealthCheckConfig::disabled());
+        *shared.state.write().unwrap() = ConnectionState::Authenticating;
+
+        let write_rx = open_reconnected(
+            &shared,
+            serde_json::json!({"k": 1}),
+            Vec::new(),
+            frames_with_books_unbuildable(),
+        )
+        .expect("the connection opens");
+
+        assert_eq!(*shared.state.read().unwrap(), ConnectionState::Connected);
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        match events.as_slice() {
+            [
+                StreamItem::Event(ConnectionEvent::Authenticated { data }),
+                StreamItem::Event(ConnectionEvent::Error(info)),
+            ] => {
+                assert_eq!(*data, serde_json::json!({"k": 1}));
+                assert!(info.message.contains("Failed to resubscribe books:2317"), "{}", info.message);
+                assert!(info.message.contains("injected"), "{}", info.message);
+            }
+            other => panic!("expected Authenticated then Error, got {other:?}"),
+        }
+        let queued: Vec<String> = write_rx.try_iter().collect();
+        assert_eq!(queued.len(), 1, "the buildable frame is queued: {queued:?}");
+        assert!(queued[0].contains(r#""symbols":["2330","2454"]"#), "{}", queued[0]);
+        assert!(
+            shared.write_tx_slot.lock().unwrap().is_some(),
+            "the write slot is installed for the consumer of Authenticated"
+        );
+    }
+
+    /// A close reported before the handshake's result is installed drops
+    /// the connection: neither `Authenticated` nor the replay's `Error`
+    /// follows the client's `Disconnected` (#145).
+    #[test]
+    fn resubscribe_failure_after_the_client_s_close_is_reported_is_not_reported() {
+        let (stream, rx) = event_stream();
+        let shared = owner_shared(stream, HealthCheckConfig::disabled());
+        shared.stream.client_closed(&shared.state, 1006, "Force closed".into());
+        let closed = shared.state.read().unwrap().clone();
+
+        let result = open_reconnected(
+            &shared,
+            serde_json::Value::Null,
+            Vec::new(),
+            frames_with_books_unbuildable(),
+        );
+
+        assert!(matches!(result, Err(MarketDataError::ClientClosed)), "{result:?}");
+        let events: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|item| format!("{item:?}"))
+            .collect();
+        assert_eq!(events.len(), 1, "nothing follows the client's close: {events:?}");
+        assert!(events[0].contains("Disconnected") && events[0].contains("Client"), "{events:?}");
+        assert_eq!(*shared.state.read().unwrap(), closed);
     }
 
     /// The owner loop's shared state for a connected client with `health`

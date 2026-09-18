@@ -65,6 +65,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`release-versions.py inputs`), so its inputs are checked too. It found
   one more gap on the way in: `docs-validation.yml` did not trigger on its
   own lint configuration.
+- **Rust sync client: a resubscribe failure after a reconnect is reported
+  after `Authenticated`, not before** (#174). When a stored subscription
+  could not be replayed on the reconnected connection, the sync client
+  queued its `Error` (`Failed to resubscribe …`) *before* that connection's
+  `Authenticated`, in the state `Authenticating`, where it reads as a
+  failure of the handshake; the async client reported it after
+  `Authenticated`, in `Connected`. Both now use the async order, which the
+  `websocket::connection_event` module's delivery guarantees now state.
+  The frames themselves are still queued before `Authenticated`, so what
+  goes on the wire, and when, is unchanged. The failure is all but
+  unreachable in practice (a stored subscription always serializes and the
+  channel it is queued to is never full there); the fix is for the two
+  clients to agree on the order.
 
 ## [Bindings 3.0.0-rc.5 / core 0.9.0-rc.4 / uniffi 0.2.0-rc.4] - 2026-09-18
 
