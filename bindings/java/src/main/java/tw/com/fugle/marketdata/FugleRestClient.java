@@ -408,7 +408,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol ETF symbol (e.g., "0050")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return CompletableFuture containing the response body as JSON
          */
         public CompletableFuture<String> getEtfHoldingsAsync(String symbol, String from, String to, String sort) {
@@ -422,7 +422,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol Stock symbol (e.g., "2330")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return CompletableFuture containing the response body as JSON
          */
         public CompletableFuture<String> getInstitutionalTradesAsync(String symbol, String from, String to, String sort) {
@@ -436,7 +436,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol Stock symbol (e.g., "2330")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return CompletableFuture containing the response body as JSON
          */
         public CompletableFuture<String> getDirectorHoldingsAsync(String symbol, String from, String to, String sort) {
@@ -450,7 +450,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol Stock symbol (e.g., "2330")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return CompletableFuture containing the response body as JSON
          */
         public CompletableFuture<String> getTdccDistributionAsync(String symbol, String from, String to, String sort) {
@@ -466,7 +466,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol ETF symbol (e.g., "0050")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return the response body as JSON
          * @throws FugleException if the request fails
          */
@@ -484,7 +484,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol Stock symbol (e.g., "2330")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return the response body as JSON
          * @throws FugleException if the request fails
          */
@@ -502,7 +502,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol Stock symbol (e.g., "2330")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return the response body as JSON
          * @throws FugleException if the request fails
          */
@@ -520,7 +520,7 @@ public class FugleRestClient implements AutoCloseable {
          * @param symbol Stock symbol (e.g., "2330")
          * @param from Range start date in YYYY-MM-DD, or null
          * @param to Range end date in YYYY-MM-DD, or null
-         * @param sort "asc" (oldest first) or "desc" (newest first), or null; anything else fails
+         * @param sort "asc" (oldest first) or "desc" (newest first), or null; sent as given
          * @return the response body as JSON
          * @throws FugleException if the request fails
          */

@@ -430,11 +430,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.etfHoldings({ symbol: '0050' });
     /// await client.stock.ownership.etfHoldings({ symbol: '0050', from: '2026-01-01', sort: 'desc' });
     /// ```
-    ///
-    /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<EtfHoldingsResponse>")]
     pub async fn etf_holdings(&self, params: EtfHoldingsParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
         run_ownership(self.inner.clone(), query, send_etf_holdings).await
     }
 
@@ -444,11 +442,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.institutionalTrades({ symbol: '2330' });
     /// await client.stock.ownership.institutionalTrades({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
     /// ```
-    ///
-    /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<InstitutionalTradesResponse>")]
     pub async fn institutional_trades(&self, params: InstitutionalTradesParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
         run_ownership(self.inner.clone(), query, send_institutional_trades).await
     }
 
@@ -458,11 +454,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.directorHoldings({ symbol: '2330' });
     /// await client.stock.ownership.directorHoldings({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
     /// ```
-    ///
-    /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<DirectorHoldingsResponse>")]
     pub async fn director_holdings(&self, params: DirectorHoldingsParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
         run_ownership(self.inner.clone(), query, send_director_holdings).await
     }
 
@@ -472,11 +466,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.tdccDistribution({ symbol: '2330' });
     /// await client.stock.ownership.tdccDistribution({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
     /// ```
-    ///
-    /// @throws {Error} If `sort` is neither "asc" nor "desc"
     #[napi(ts_return_type = "Promise<TdccDistributionResponse>")]
     pub async fn tdcc_distribution(&self, params: TdccDistributionParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort)?;
+        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
         run_ownership(self.inner.clone(), query, send_tdcc_distribution).await
     }
 }
@@ -486,31 +478,19 @@ struct OwnershipQuery {
     symbol: String,
     from: Option<String>,
     to: Option<String>,
-    sort: Option<marketdata_core::rest::stock::ownership::HoldingsSort>,
+    sort: Option<String>,
 }
 
 impl OwnershipQuery {
+    /// `sort` is sent as given: keys are checked, values are not (#164), so
+    /// a bad sort gets the server's own error like every other endpoint.
     fn new(
         symbol: String,
         from: Option<String>,
         to: Option<String>,
         sort: Option<String>,
-    ) -> napi::Result<Self> {
-        use marketdata_core::rest::stock::ownership::HoldingsSort;
-
-        // Reject an unrecognised sort rather than dropping it: a typo would
-        // otherwise return the opposite series without complaint.
-        let sort = match sort.as_deref() {
-            None => None,
-            Some("asc") => Some(HoldingsSort::Asc),
-            Some("desc") => Some(HoldingsSort::Desc),
-            Some(other) => {
-                return Err(napi::Error::from_reason(format!(
-                    "sort must be 'asc' or 'desc' (got '{other}')"
-                )))
-            }
-        };
-        Ok(Self { symbol, from, to, sort })
+    ) -> Self {
+        Self { symbol, from, to, sort }
     }
 }
 
@@ -529,7 +509,7 @@ macro_rules! ownership_sender {
             if let Some(t) = q.to.as_deref() {
                 builder = builder.to(t);
             }
-            if let Some(s) = q.sort {
+            if let Some(s) = q.sort.as_deref() {
                 builder = builder.sort(s);
             }
             builder.send()

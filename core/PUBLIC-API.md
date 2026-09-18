@@ -35,6 +35,23 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — one shape for `sort`: `sort(&str)` everywhere (#179)
+
+`sort` had three shapes in core (`sort(&str)`, `sort_asc()` / `sort_desc()`,
+`sort(HoldingsSort)`) for one server contract (`asc|desc`). It is `sort(&str)`
+on every builder now, in line with #164: keys are checked, values are sent as
+given and rejected by the server. A sort value the server adds later needs no
+SDK change.
+
+- `-` `stock::intraday::TradesRequestBuilder::sort_asc`, `::sort_desc` —
+  replaced by `+` `TradesRequestBuilder::sort(&str)`.
+- `-` `stock::ownership::HoldingsSort` (the enum, its variants and derived
+  impls).
+- `~` `stock::ownership::{EtfHoldingsRequestBuilder,
+  InstitutionalTradesRequestBuilder, DirectorHoldingsRequestBuilder,
+  TdccDistributionRequestBuilder}::sort` — takes `&str` instead of
+  `HoldingsSort`.
+
 ### Unreleased — REST query params checked against the server (#164, #166, #168)
 
 The server's DTOs (fugle-realtime `apps/api-gateway`, `apps/service-stock`)

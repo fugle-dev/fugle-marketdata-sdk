@@ -3,29 +3,12 @@
 //! Every `stock/ownership/*/{symbol}` endpoint takes the same query contract:
 //! a required symbol path segment plus optional `from` / `to` / `sort`. The
 //! per-endpoint builders keep their own typed fields and delegate the URL
-//! assembly and dispatch here.
+//! assembly and dispatch here. `sort` is sent as given: keys are checked,
+//! values are not (#164).
 
 use serde::de::DeserializeOwned;
 
 use crate::{errors::MarketDataError, rest::client::RestClient};
-
-/// Sort order for an ownership date series.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HoldingsSort {
-    /// Oldest disclosure date first
-    Asc,
-    /// Newest disclosure date first
-    Desc,
-}
-
-impl HoldingsSort {
-    pub(super) fn as_str(&self) -> &'static str {
-        match self {
-            Self::Asc => "asc",
-            Self::Desc => "desc",
-        }
-    }
-}
 
 /// Build `{base}/stock/ownership/{endpoint}/{symbol}?from&to&sort`.
 pub(super) fn build_url(
@@ -34,7 +17,7 @@ pub(super) fn build_url(
     symbol: &str,
     from: Option<&str>,
     to: Option<&str>,
-    sort: Option<HoldingsSort>,
+    sort: Option<&str>,
 ) -> String {
     let mut url = format!(
         "{}/stock/ownership/{}/{}",
@@ -51,7 +34,7 @@ pub(super) fn build_url(
         query_params.push(crate::rest::query_pair("to", to));
     }
     if let Some(sort) = sort {
-        query_params.push(crate::rest::query_pair("sort", sort.as_str()));
+        query_params.push(crate::rest::query_pair("sort", sort));
     }
 
     if !query_params.is_empty() {
@@ -61,29 +44,27 @@ pub(super) fn build_url(
     url
 }
 
-/// Validate the symbol, send the request and decode the JSON body.
-pub(super) fn send<T: DeserializeOwned>(
-    client: &RestClient,
+/// Validate the symbol and build the request URL.
+pub(super) fn url(
+    base_url: &str,
     endpoint: &str,
-    symbol: Option<String>,
-    from: Option<String>,
-    to: Option<String>,
-    sort: Option<HoldingsSort>,
-) -> Result<T, MarketDataError> {
+    symbol: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    sort: Option<&str>,
+) -> Result<String, MarketDataError> {
     let symbol = symbol.ok_or_else(|| MarketDataError::InvalidSymbol {
         symbol: "(not provided)".to_string(),
     })?;
+    Ok(build_url(base_url, endpoint, symbol, from, to, sort))
+}
 
-    let url = build_url(
-        client.get_base_url(),
-        endpoint,
-        &symbol,
-        from.as_deref(),
-        to.as_deref(),
-        sort,
-    );
-
-    let response = client.get(&url)?;
+/// Send the request and decode the JSON body.
+pub(super) fn send<T: DeserializeOwned>(
+    client: &RestClient,
+    url: &str,
+) -> Result<T, MarketDataError> {
+    let response = client.get(url)?;
     crate::rest::read_json(response)
 }
 
@@ -92,9 +73,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sort_serializes_to_api_values() {
-        assert_eq!(HoldingsSort::Asc.as_str(), "asc");
-        assert_eq!(HoldingsSort::Desc.as_str(), "desc");
+    fn test_build_url_sort_is_sent_as_given() {
+        for sort in ["asc", "desc", "newest"] {
+            assert_eq!(
+                build_url("https://h/v1.0", "etf-holdings", "0050", None, None, Some(sort)),
+                format!("https://h/v1.0/stock/ownership/etf-holdings/0050?sort={sort}"),
+                "keys are checked, values are not (#164)"
+            );
+        }
     }
 
     #[test]
@@ -121,7 +107,7 @@ mod tests {
                 "2330",
                 Some("2026-06-01"),
                 Some("2026-07-03"),
-                Some(HoldingsSort::Desc),
+                Some("desc"),
             ),
             "https://h/v1.0/stock/ownership/tdcc-distribution/2330?from=2026-06-01&to=2026-07-03&sort=desc"
         );

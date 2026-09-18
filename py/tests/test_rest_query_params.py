@@ -106,19 +106,18 @@ def test_trades_sort_desc(client, server):
     assert last_request(server[1]) == ("/v1.0/stock/intraday/trades/2330", {"sort": "desc"})
 
 
-def test_trades_sort_rejects_other_values(client, server):
-    # core only has sort_asc()/sort_desc(), so another value could not be
-    # sent at all; it is refused rather than dropped.
-    with pytest.raises(ValueError, match="sort must be 'asc' or 'desc' \\(got 'newest'\\)"):
-        client.stock.intraday.trades("2330", sort="newest")
-    assert server[1] == []
+def test_trades_sort_is_sent_as_given(client, server):
+    # Keys are checked, values are not (#164): a sort the server does not
+    # know gets the server's own error, like every other endpoint (#179).
+    client.stock.intraday.trades("2330", sort="newest")
+    assert last_request(server[1]) == ("/v1.0/stock/intraday/trades/2330", {"sort": "newest"})
 
 
 @pytest.mark.asyncio
-async def test_trades_async_sort_rejects_other_values(client, server):
-    with pytest.raises(ValueError, match="got 'newest'"):
-        await client.stock.intraday.trades_async("2330", sort="newest")
-    assert server[1] == []
+async def test_trades_async_sort_asc_and_desc(client, server):
+    for sort in ("asc", "desc"):
+        await client.stock.intraday.trades_async("2330", sort=sort)
+        assert last_request(server[1]) == ("/v1.0/stock/intraday/trades/2330", {"sort": sort})
 
 
 def test_positional_order_is_unchanged(client, server):

@@ -31,8 +31,8 @@ pub struct ParamSpec {
     /// method has this name unless [`methods`](Self::methods) says otherwise.
     pub canonical: &'static str,
     /// Builder methods that set this parameter when they are not named
-    /// `canonical` (`type` is a Rust keyword, so `typ` / `type_filter`; the
-    /// trades sort is `sort_asc` / `sort_desc`). Empty means `[canonical]`.
+    /// `canonical` (`type` is a Rust keyword, so `typ` / `type_filter`).
+    /// Empty means `[canonical]`.
     pub methods: &'static [&'static str],
     /// Other spellings already in circulation that bindings accept
     /// (`oddLot`, this SDK's own camelCase for the odd-lot flag).
@@ -310,10 +310,7 @@ pub static ENDPOINTS: &[EndpointSpec] = &[
             ODD_LOT,
             OFFSET,
             LIMIT,
-            ParamSpec {
-                methods: &["sort_asc", "sort_desc"],
-                ..SORT
-            },
+            SORT,
             IS_TRIAL,
         ]
     ),
@@ -591,7 +588,6 @@ pub static ENDPOINTS: &[EndpointSpec] = &[
 mod tests {
     use super::*;
     use crate::models::futopt::{ContractType, FutOptType};
-    use crate::rest::stock::ownership::HoldingsSort;
     use crate::rest::{Auth, RestClient};
     use std::collections::{BTreeMap, BTreeSet};
     use std::io::{Read, Write};
@@ -715,7 +711,8 @@ mod tests {
         assert_eq!(trades.suggest("Is_Trial"), Some("is_trial"), "case alone: the snake_case spelling");
         assert_eq!(trades.suggest("IsTrial"), Some("isTrial"));
         assert_eq!(trades.suggest("limits"), None);
-        assert_eq!(trades.suggest("sortAsc"), None, "the trades sort has no such spelling");
+        assert_eq!(trades.suggest("Sort"), Some("sort"));
+        assert_eq!(trades.suggest("sortAsc"), None, "sort is one key; its order is the value (#179)");
 
         // A flag's spelling, never the wire name it sets: `type: true` would
         // be wrong, `oddLot: true` and `odd_lot: true` are right.
@@ -897,7 +894,7 @@ mod tests {
                     .odd_lot(true)
                     .offset(10)
                     .limit(5)
-                    .sort_asc()
+                    .sort("asc")
                     .is_trial(true)
                     .send()
             }),
@@ -1052,7 +1049,7 @@ mod tests {
                     .symbol("2330")
                     .from("2026-01-01")
                     .to("2026-02-01")
-                    .sort(HoldingsSort::Asc)
+                    .sort("asc")
                     .send()
             }),
             (&["stock", "ownership", "institutional-trades"], |c| {
@@ -1062,7 +1059,7 @@ mod tests {
                     .symbol("2330")
                     .from("2026-01-01")
                     .to("2026-02-01")
-                    .sort(HoldingsSort::Asc)
+                    .sort("asc")
                     .send()
             }),
             (&["stock", "ownership", "director-holdings"], |c| {
@@ -1072,7 +1069,7 @@ mod tests {
                     .symbol("2330")
                     .from("2026-01")
                     .to("2026-02")
-                    .sort(HoldingsSort::Asc)
+                    .sort("asc")
                     .send()
             }),
             (&["stock", "ownership", "tdcc-distribution"], |c| {
@@ -1082,7 +1079,7 @@ mod tests {
                     .symbol("2330")
                     .from("2026-01-01")
                     .to("2026-02-01")
-                    .sort(HoldingsSort::Asc)
+                    .sort("asc")
                     .send()
             }),
             (&["futopt", "intraday", "products"], |c| {

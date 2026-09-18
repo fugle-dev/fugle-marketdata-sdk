@@ -450,7 +450,7 @@ struct OwnershipQuery {
     symbol: String,
     from: Option<String>,
     to: Option<String>,
-    sort: Option<marketdata_core::rest::stock::ownership::HoldingsSort>,
+    sort: Option<String>,
 }
 
 impl OwnershipQuery {
@@ -473,12 +473,7 @@ impl OwnershipQuery {
         let to = kw.take_string("to", to_date)?;
         let sort = kw.take_string("sort", sort)?;
         kw.finish()?;
-        Ok(Self {
-            symbol,
-            from,
-            to,
-            sort: parse_holdings_sort(sort)?,
-        })
+        Ok(Self { symbol, from, to, sort })
     }
 }
 
@@ -497,7 +492,7 @@ macro_rules! ownership_sender {
             if let Some(t) = q.to.as_deref() {
                 builder = builder.to(t);
             }
-            if let Some(s) = q.sort {
+            if let Some(s) = q.sort.as_deref() {
                 builder = builder.sort(s);
             }
             builder.send()
@@ -542,25 +537,6 @@ fn ownership_sync(
     match py.detach(move || send(&client, query)) {
         Ok(data) => types::value_to_dict(py, &data),
         Err(e) => Err(errors::to_py_err(e)),
-    }
-}
-
-/// Map the `sort` kwarg onto core's enum.
-///
-/// Rejects anything else with a `ValueError` rather than silently dropping it —
-/// a typo'd sort order would otherwise return the opposite series without
-/// complaint.
-fn parse_holdings_sort(
-    sort: Option<String>,
-) -> PyResult<Option<marketdata_core::rest::stock::ownership::HoldingsSort>> {
-    use marketdata_core::rest::stock::ownership::HoldingsSort;
-    match sort.as_deref() {
-        None => Ok(None),
-        Some("asc") => Ok(Some(HoldingsSort::Asc)),
-        Some("desc") => Ok(Some(HoldingsSort::Desc)),
-        Some(other) => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "sort must be 'asc' or 'desc' (got '{other}')"
-        ))),
     }
 }
 
@@ -805,18 +781,6 @@ impl StockIntradayClient {
         let sort = kw.take_string("sort", sort)?;
         let is_trial = kw.take("is_trial", is_trial)?;
         kw.finish()?;
-        // The builder has sort_asc()/sort_desc(), so the value is narrowed here;
-        // any other value could not be sent at all.
-        let sort_asc = match sort.as_deref() {
-            None => None,
-            Some("asc") => Some(true),
-            Some("desc") => Some(false),
-            Some(other) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "sort must be 'asc' or 'desc' (got '{other}')"
-                )))
-            }
-        };
         let client = self.inner.clone();
         future_into_py(py, async move {
             let result = tokio::task::spawn_blocking(move || {
@@ -832,8 +796,8 @@ impl StockIntradayClient {
                 if let Some(v) = limit {
                     builder = builder.limit(v);
                 }
-                if let Some(asc) = sort_asc {
-                    builder = if asc { builder.sort_asc() } else { builder.sort_desc() };
+                if let Some(v) = sort.as_deref() {
+                    builder = builder.sort(v);
                 }
                 if let Some(v) = is_trial {
                     builder = builder.is_trial(v);
@@ -861,18 +825,6 @@ impl StockIntradayClient {
         let sort = kw.take_string("sort", sort)?;
         let is_trial = kw.take("is_trial", is_trial)?;
         kw.finish()?;
-        // The builder has sort_asc()/sort_desc(), so the value is narrowed here;
-        // any other value could not be sent at all.
-        let sort_asc = match sort.as_deref() {
-            None => None,
-            Some("asc") => Some(true),
-            Some("desc") => Some(false),
-            Some(other) => {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "sort must be 'asc' or 'desc' (got '{other}')"
-                )))
-            }
-        };
         let inner = self.inner.clone();
         let result = py.detach(|| {
             let stock = inner.stock();
@@ -887,8 +839,8 @@ impl StockIntradayClient {
             if let Some(v) = limit {
                 builder = builder.limit(v);
             }
-            if let Some(asc) = sort_asc {
-                builder = if asc { builder.sort_asc() } else { builder.sort_desc() };
+            if let Some(v) = sort.as_deref() {
+                builder = builder.sort(v);
             }
             if let Some(v) = is_trial {
                 builder = builder.is_trial(v);

@@ -949,7 +949,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -962,7 +962,6 @@ class StockOwnershipClient:
             sort: "asc" (oldest first) or "desc" (newest first)
 
         Raises:
-            ValueError: sort is neither "asc" nor "desc"
             TypeError: a date is passed under both its name and its alias
 
         Example:
@@ -980,7 +979,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -993,7 +992,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1006,7 +1005,6 @@ class StockOwnershipClient:
             sort: "asc" (oldest first) or "desc" (newest first)
 
         Raises:
-            ValueError: sort is neither "asc" nor "desc"
             TypeError: a date is passed under both its name and its alias
 
         Example:
@@ -1024,7 +1022,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1037,7 +1035,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1050,7 +1048,6 @@ class StockOwnershipClient:
             sort: "asc" (oldest first) or "desc" (newest first)
 
         Raises:
-            ValueError: sort is neither "asc" nor "desc"
             TypeError: a date is passed under both its name and its alias
 
         Example:
@@ -1069,7 +1066,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1082,7 +1079,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1095,7 +1092,6 @@ class StockOwnershipClient:
             sort: "asc" (oldest first) or "desc" (newest first)
 
         Raises:
-            ValueError: sort is neither "asc" nor "desc"
             TypeError: a date is passed under both its name and its alias
 
         Example:
@@ -1114,7 +1110,7 @@ class StockOwnershipClient:
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
-        sort: Optional[Literal["asc", "desc"]] = None,
+        sort: Optional[str] = None,
         from_: Optional[str] = None,
         to: Optional[str] = None,
     ) -> dict[str, Any]:

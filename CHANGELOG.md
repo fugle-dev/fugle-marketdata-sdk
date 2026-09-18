@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Rust: `sort` is `sort(&str)` on every builder** (#179;
+  [migration guide §19](MIGRATION-0.9.md#19-sort-one-shape-on-every-builder)).
+  `stock.intraday.trades` loses `sort_asc()` / `sort_desc()` and gains
+  `sort("asc" | "desc")`; the four `stock.ownership` builders take `&str`
+  instead of the `HoldingsSort` enum, which is removed. Same server contract
+  (`asc|desc`), one shape, and — as for every other parameter since #164 —
+  the value is sent as given and a bad one gets the server's error.
+- **Python / Node / C# / Go / Java / C++: `sort` is no longer checked
+  client-side.** `stock.intraday.trades(sort=...)` (Python) and the four
+  `stock.ownership.*` methods (every binding) raised / rejected / threw on a
+  `sort` other than `"asc"` / `"desc"`; they now send it and return the
+  server's error, like every other parameter. Signatures are unchanged; the
+  Python stub widens the ownership methods' `sort` from
+  `Literal["asc", "desc"]` to `str`.
+
 ## [Bindings 3.0.0-rc.5 / core 0.9.0-rc.4 / uniffi 0.2.0-rc.4] - 2026-09-18
 
 ### Breaking

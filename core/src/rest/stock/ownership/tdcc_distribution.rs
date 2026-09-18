@@ -2,7 +2,7 @@
 //!
 //! Returns the weekly TDCC (Taiwan Depository & Clearing Corporation) shareholder distribution by holding-size bracket.
 
-use super::range::{self, HoldingsSort};
+use super::range;
 use crate::{errors::MarketDataError, rest::client::RestClient};
 
 /// Request builder for the TDCC shareholder distribution endpoint
@@ -11,7 +11,7 @@ pub struct TdccDistributionRequestBuilder<'a> {
     symbol: Option<String>,
     from: Option<String>,
     to: Option<String>,
-    sort: Option<HoldingsSort>,
+    sort: Option<String>,
 }
 
 impl<'a> TdccDistributionRequestBuilder<'a> {
@@ -44,9 +44,11 @@ impl<'a> TdccDistributionRequestBuilder<'a> {
         self
     }
 
-    /// Set the sort order of the returned series
-    pub fn sort(mut self, sort: HoldingsSort) -> Self {
-        self.sort = Some(sort);
+    /// Set the sort order of the returned series: `"asc"` (oldest first) or
+    /// `"desc"` (newest first). Sent as given; the server rejects anything
+    /// else.
+    pub fn sort(mut self, sort: &str) -> Self {
+        self.sort = Some(sort.to_string());
         self
     }
 
@@ -56,13 +58,19 @@ impl<'a> TdccDistributionRequestBuilder<'a> {
     /// Returns [`MarketDataError`] on transport, deserialization, validation,
     /// or non-2xx API failures.
     pub fn send(self) -> Result<serde_json::Value, MarketDataError> {
-        range::send(
-            self.client,
+        let url = self.url()?;
+        range::send(self.client, &url)
+    }
+
+    /// Build the request URL, including query parameters.
+    fn url(&self) -> Result<String, MarketDataError> {
+        range::url(
+            self.client.get_base_url(),
             "tdcc-distribution",
-            self.symbol,
-            self.from,
-            self.to,
-            self.sort,
+            self.symbol.as_deref(),
+            self.from.as_deref(),
+            self.to.as_deref(),
+            self.sort.as_deref(),
         )
     }
 }
@@ -100,11 +108,21 @@ mod tests {
             .symbol("2330")
             .from("2026-01-01")
             .to("2026-07-31")
-            .sort(HoldingsSort::Desc);
+            .sort("desc");
 
         assert_eq!(builder.symbol, Some("2330".to_string()));
         assert_eq!(builder.from, Some("2026-01-01".to_string()));
         assert_eq!(builder.to, Some("2026-07-31".to_string()));
-        assert_eq!(builder.sort, Some(HoldingsSort::Desc));
+        assert_eq!(builder.sort, Some("desc".to_string()));
+    }
+
+    #[test]
+    fn test_tdcc_distribution_url_sends_sort() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let base = client.get_base_url().to_string();
+        for sort in ["asc", "desc"] {
+            let url = TdccDistributionRequestBuilder::new(&client).symbol("2330").sort(sort).url().unwrap();
+            assert_eq!(url, format!("{base}/stock/ownership/tdcc-distribution/2330?sort={sort}"));
+        }
     }
 }
