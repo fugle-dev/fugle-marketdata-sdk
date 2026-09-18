@@ -20,9 +20,9 @@ the numbers that belong together.
 
 | Track | Languages | Example |
 |---|---|---|
-| Bindings | Python, Node.js | `3.0.0-rc.3` (PyPI spells it `3.0.0rc3`) |
-| UniFFI | C#, Go, C++ | `0.2.0-rc.2` |
-| Rust crates | Rust | `0.9.0-rc.2` |
+| Bindings | Python, Node.js | `3.0.0-rc.4` (PyPI spells it `3.0.0rc4`) |
+| UniFFI | C#, Go, C++ | `0.2.0-rc.3` |
+| Rust crates | Rust | `0.9.0-rc.3` |
 
 Java bindings exist in the repository but are not published yet.
 
@@ -39,7 +39,7 @@ Wheels are built for CPython 3.8+ using the stable ABI (abi3):
 | Windows | x64 |
 
 ```bash
-pip install --pre "fugle-marketdata==3.0.0rc3"
+pip install --pre "fugle-marketdata==3.0.0rc4"
 ```
 
 ```python
@@ -101,7 +101,7 @@ shared library or `LD_LIBRARY_PATH` is needed at runtime.
 `linux/arm64` is not supported yet.
 
 ```bash
-CGO_ENABLED=1 go get github.com/fugle-dev/fugle-marketdata-go@v0.2.0-rc.2
+CGO_ENABLED=1 go get github.com/fugle-dev/fugle-marketdata-go@v0.2.0-rc.3
 ```
 
 ```go
@@ -116,9 +116,9 @@ C++ has no package registry. Each release attaches one tarball per platform
 containing the headers and the UniFFI shared library.
 
 ```bash
-VERSION=0.2.0-rc.2
+VERSION=0.2.0-rc.3
 PLATFORM=osx-arm64  # or linux-x64, osx-x64, win-x64
-TAG=v3.0.0-rc.3     # the bindings release that shipped this UniFFI version
+TAG=v3.0.0-rc.4     # the bindings release that shipped this UniFFI version
 
 curl -LO "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/${TAG}/fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
 tar -xzf "fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
@@ -146,7 +146,7 @@ because `uniffi-bindgen-cpp` does not support them. See
 ### pip installs 2.x instead of 3.x
 
 Pre-releases need `--pre` or an explicit version such as
-`fugle-marketdata==3.0.0rc3`.
+`fugle-marketdata==3.0.0rc4`.
 
 ### npm installs 1.x instead of 3.x
 

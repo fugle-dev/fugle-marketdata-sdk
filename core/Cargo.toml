@@ -1,6 +1,6 @@
 [package]
 name = "fugle-marketdata-core"
-version = "0.9.0-rc.2"
+version = "0.9.0-rc.3"
 edition.workspace = true
 rust-version = "1.88"
 license.workspace = true
