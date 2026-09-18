@@ -2,33 +2,15 @@ name: Version Check
 
 # The SDK ships three independent version tracks (bindings / rust / uniffi).
 # scripts/release-versions.py owns the rules; this workflow only runs it.
+#
+# Called from ci.yml on every pull request and push to main, so there is no
+# `paths` filter here to keep in sync with what the script reads. It used to
+# have its own push/pull_request triggers behind a hand-written list of nine
+# manifests; the list fell behind when `check` grew to read docs and lock
+# files (#184), and the standalone run only duplicated the ci.yml one.
 on:
   workflow_call:
-  push:
-    branches: [main]
-    paths:
-      - 'Cargo.toml'
-      - 'core/Cargo.toml'
-      - 'rust/Cargo.toml'
-      - 'uniffi/Cargo.toml'
-      - 'py/pyproject.toml'
-      - 'js/package.json'
-      - 'bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj'
-      - 'bindings/java/build.gradle.kts'
-      - 'scripts/release-versions.py'
-      - '.github/workflows/version-check.yml'
-  pull_request:
-    paths:
-      - 'Cargo.toml'
-      - 'core/Cargo.toml'
-      - 'rust/Cargo.toml'
-      - 'uniffi/Cargo.toml'
-      - 'py/pyproject.toml'
-      - 'js/package.json'
-      - 'bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj'
-      - 'bindings/java/build.gradle.kts'
-      - 'scripts/release-versions.py'
-      - '.github/workflows/version-check.yml'
+  workflow_dispatch:
 
 jobs:
   check:
@@ -40,6 +22,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # The script's own tests, so a rule change is tested where it runs.
+      - name: Test release-versions.py
+        run: python3 scripts/test_release_versions.py
 
       - name: Check bindings / rust / uniffi tracks
         run: python3 scripts/release-versions.py check | tee -a "$GITHUB_STEP_SUMMARY"

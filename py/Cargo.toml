@@ -11,6 +11,10 @@ name = "fugle_marketdata"
 # `rlib` alongside `cdylib` so `cargo test` can link the crate at all — a
 # pure-cdylib target produces no testable artifact.
 crate-type = ["cdylib", "rlib"]
+# The `///` comments become Python `__doc__` strings via pyo3, so their
+# `Example:` blocks are Python. rustdoc would collect the indented ones as
+# Rust doctests and fail to compile them.
+doctest = false
 
 [features]
 default = ["extension-module"]

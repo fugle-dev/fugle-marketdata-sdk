@@ -17,8 +17,10 @@
   "license": "MIT",
   "devDependencies": {
     "@napi-rs/cli": "^3.9.1",
+    "@types/jest": "^29.5.14",
     "jest": "^29.7.0",
     "nock": "^13.5.0",
+    "ts-jest": "^29.4.12",
     "typed-emitter": "^2.1.0",
     "typescript": "^5.9.3",
     "ws": "^8.21.3"

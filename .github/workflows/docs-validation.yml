@@ -6,6 +6,9 @@ on:
       - '**/*.md'
       - 'migration/**'
       - 'examples/**'
+      - '.markdownlint.json'
+      - '.markdown-link-check.json'
+      - '.github/workflows/docs-validation.yml'
   push:
     branches:
       - main
@@ -13,6 +16,9 @@ on:
       - '**/*.md'
       - 'migration/**'
       - 'examples/**'
+      - '.markdownlint.json'
+      - '.markdown-link-check.json'
+      - '.github/workflows/docs-validation.yml'
 
 jobs:
   validate-docs:

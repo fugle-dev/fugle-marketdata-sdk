@@ -519,6 +519,34 @@ class TestBump(Case):
         self.assertIn("Nothing to bump", out)
 
 
+class TestInputs(Case):
+    """`inputs` is what the paths meta-check trusts (#184), so it must list
+    every file `check` actually opens."""
+
+    def test_every_file_check_reads_is_declared(self):
+        write_repo(self.root)
+        opened: set[str] = set()
+        real_read = rv.read
+
+        def recording_read(path: str) -> str:
+            opened.add(path)
+            return real_read(path)
+
+        with unittest.mock.patch.object(rv, "read", recording_read), contextlib.redirect_stdout(io.StringIO()):
+            _, errors = rv.full_check()
+        self.assertEqual(errors, [])
+        declared = set(rv.inputs())
+        self.assertTrue(opened, "check opened nothing")
+        self.assertEqual(opened - declared, set(), "check reads files that `inputs` does not declare")
+        self.assertIn("scripts/release-versions.py", declared)
+
+    def test_inputs_are_files_of_the_skeleton(self):
+        write_repo(self.root)
+        for f in rv.inputs():
+            if f != "scripts/release-versions.py":
+                self.assertTrue((self.root / f).is_file(), f)
+
+
 class TestAgainstRealRepo(unittest.TestCase):
     """The write side (MANIFEST_SLOTS) must address exactly what collect() reads, in the real tree.
 

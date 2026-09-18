@@ -37,6 +37,11 @@ Usage
     scripts/release-versions.py require-rc --track rust
         Fail unless the given track's version is a release candidate.
 
+    scripts/release-versions.py inputs
+        Print every repo file `check` reads, one per line. A workflow that
+        runs this script behind a `paths` filter must list all of them;
+        scripts/check-ci-coverage.py verifies that (#184).
+
 The tag names a *bindings* release. Rust crates are tagged `rust-vX.Y.Z` and
 released by .github/workflows/release-rust.yml; see docs/RELEASING.md.
 
@@ -303,13 +308,27 @@ def derived_docs(tracks: dict[str, str]) -> list[Derived]:
     ]
 
 
+# Generated files that embed a version, and the workspace crates whose
+# Cargo.lock entry is checked (crate directory -> track).
+INDEX_JS, PACKAGE_LOCK, CARGO_LOCK = GENERATED = ("js/index.js", "js/package-lock.json", "Cargo.lock")
+CRATE_TRACKS = {"core": "rust", "rust": "rust", "uniffi": "uniffi", "py": "bindings", "js": "bindings"}
+
+
+def inputs() -> list[str]:
+    """Every repo file `check` reads, this script included."""
+    files = {s.path for s in MANIFEST_SLOTS} | {s.path for s in DOC_SLOTS} | set(GENERATED)
+    files |= {f"{d}/Cargo.toml" for d in CRATE_TRACKS}
+    files.add(f"scripts/{Path(__file__).name}")
+    return sorted(files)
+
+
 def derived_generated(tracks: dict[str, str]) -> list[Derived]:
     """Generated files. Checked only; the fix is always to re-run the generator."""
     out = []
 
     # js/index.js: napi emits a `bindingPackageVersion !== '<version>'` check and
     # an `expected <version> but got` message for every platform package.
-    index_js = read("js/index.js")
+    index_js = read(INDEX_JS)
     found = re.findall(r"bindingPackageVersion !== '([^']+)'", index_js)
     found += re.findall(r"expected (\S+) but got ", index_js)
     out.append(
@@ -323,7 +342,7 @@ def derived_generated(tracks: dict[str, str]) -> list[Derived]:
     )
 
     # js/package-lock.json: root package version, twice.
-    lock = json.loads(read("js/package-lock.json"))
+    lock = json.loads(read(PACKAGE_LOCK))
     found = [lock.get("version", "<missing>"), lock.get("packages", {}).get("", {}).get("version", "<missing>")]
     out.append(
         Derived(
@@ -336,9 +355,8 @@ def derived_generated(tracks: dict[str, str]) -> list[Derived]:
     )
 
     # Cargo.lock: one [[package]] entry per workspace crate.
-    lock_pkgs = {p["name"]: p["version"] for p in toml("Cargo.lock").get("package", [])}
-    crate_tracks = {"core": "rust", "rust": "rust", "uniffi": "uniffi", "py": "bindings", "js": "bindings"}
-    for crate_dir, track in crate_tracks.items():
+    lock_pkgs = {p["name"]: p["version"] for p in toml(CARGO_LOCK).get("package", [])}
+    for crate_dir, track in CRATE_TRACKS.items():
         name = toml(f"{crate_dir}/Cargo.toml")["package"]["name"]
         out.append(
             Derived(
@@ -548,10 +566,14 @@ def main() -> int:
     r.add_argument("--github-output")
     rc = sub.add_parser("require-rc")
     rc.add_argument("--track", required=True, choices=list(TRACKS), action="append")
+    sub.add_parser("inputs")
     args = ap.parse_args()
 
     if args.cmd == "bump":
         return bump(args)
+    if args.cmd == "inputs":
+        print("\n".join(inputs()))
+        return 0
 
     versions, errors = full_check()
     for e in errors:
