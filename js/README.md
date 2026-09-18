@@ -271,6 +271,31 @@ class RestClient {
 }
 ```
 
+**Object form and query parameters.** Every REST method also takes a single
+object, the call shape of the 1.x SDK: the path param (`symbol`, or `market`
+for `stock.snapshot.*`) goes into the path and every other key is a query
+parameter, under the API's own name (`isTrial`, `contractMonth`,
+`type: 'oddlot'`). The keys are checked against the endpoint's parameter
+list (core's `rest::params`, built from the server's request definitions)
+before the request is sent:
+
+```javascript
+await client.stock.intraday.trades({ symbol: '2330', limit: 5, isTrial: true });
+await client.stock.intraday.ticker({ symbol: '2330', type: 'oddlot' });     // or oddLot: true
+await client.futopt.intraday.tickers({ type: 'FUTURE', product: 'TXF' });
+
+await client.stock.intraday.trades({ symbol: '2330', istrial: true });
+// rejects: Invalid parameter 'istrial': `stock.intraday.trades` does not accept `istrial`;
+//          did you mean `isTrial`? accepted keys: symbol, type, offset, limit, sort, isTrial
+//          (err.code === 1005, err.sourceKind === 'client'; the suggestion appears when
+//          the key differs only in case or underscores)
+```
+
+The `Rest*Params` types list exactly the accepted keys — there is no
+`[key: string]: unknown` — so in TypeScript a typo is a compile error too.
+The snake_case spellings (`is_trial`, `odd_lot`) are accepted at runtime as
+aliases. Values are sent as given; the server reports a bad value.
+
 **RestClientOptions:**
 
 ```typescript
@@ -399,7 +424,7 @@ client uses the OS trust store (rustls loads it via
 | 1002 | DeserializationError | Failed to parse a response or WebSocket frame |
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Invalid configuration |
-| 1005 | InvalidParameter | Invalid or missing parameter (including an unknown WebSocket channel) |
+| 1005 | InvalidParameter | Invalid or missing parameter (an unknown WebSocket channel, or a key the REST endpoint does not take in the object form) |
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned an error |

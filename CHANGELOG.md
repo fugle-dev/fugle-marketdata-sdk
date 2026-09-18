@@ -10,11 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - **Python: a REST keyword the endpoint does not take raises `TypeError`**
-  (#164). It used to produce one `UserWarning` and be dropped, so the call
+  (#164; [migration guide §17](MIGRATION-0.9.md#17-rest-query-parameters-checked-against-the-servers-table)).
+  It used to produce one `UserWarning` and be dropped, so the call
   succeeded with the wrong data: `trades("2330", limit=5, sort="asc")`
   returned 50 trades and `ticker("2330", type="oddlot")` board-lot data. The
   error names the method, the nearest accepted spelling when there is one,
-  and every accepted keyword. Every extra keyword is now resolved through
+  and every accepted keyword. As for Node below, only
+  `stock.corporate_actions.capital_changes` / `listing_applicants` already
+  failed on an unknown keyword (their backend answers 400); every other
+  method used to succeed with the wrong data. Every extra keyword is now resolved through
   core's table of the server's parameters, so the spellings the 2.x SDK and
   developer.fugle.tw use work as they did before 3.0: the API's names
   (`isTrial`, `isNormal`, `isSpread`, `contractType`, `rPeriod`,
@@ -30,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `False` counts as a value in that check, `odd_lot` and `after_hours`
   default to `None` instead of `False`; `True` / `False` mean what they did.
 - **Node: the object form of every REST method rejects a key the endpoint
-  does not accept** (#164). Keys are checked against core's table of the
+  does not accept** (#164; [migration guide §17](MIGRATION-0.9.md#17-rest-query-parameters-checked-against-the-servers-table)).
+  Keys are checked against core's table of the
   server's DTOs before the request is sent; an unknown key rejects with
   `code` 1005 (`sourceKind: 'client'`) and a message that names the
   endpoint, a "did you mean" when the key differs only in case or
@@ -45,10 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Error`s carry the same fields now: a missing path param and a nested
   object value. Giving one parameter under two spellings (`type: 'oddlot'`
   with `oddLot: true`, `symbol` with `product`) is rejected instead of one
-  of them being dropped. The `Rest*Params`
-  types lose their `[key: string]: unknown` index signature for the same
-  reason, so TypeScript flags the typo at compile time; they list every key
-  the endpoint takes, including the ones added in #169. The snake_case
+  of them being dropped. The `Rest*Params` types lose their
+  `[key: string]: unknown` index signature for the same reason, so
+  TypeScript flags the typo at compile time; they list every key the
+  endpoint takes, including the ones added in #169. The snake_case
   spellings (`is_trial`, `contract_month`, `odd_lot`, `after_hours`) are
   accepted at runtime as aliases of the API names, and `oddLot` now works on
   `ticker` / `candles` / `trades` / `volumes` as it did on `quote`.
@@ -73,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Java**: the constructor is unchanged, and `null` for `enabled` now
     means the default instead of failing.
 - **All languages: Bollinger Bands no longer takes `stddev`, and the Rust
-  KDJ builder no longer has `period()`** (#166). The server reads neither:
+  KDJ builder no longer has `period()`** (#166; [migration guide §18](MIGRATION-0.9.md#18-parameters-the-server-never-read)). The server reads neither:
   `stddev` was sent and ignored, so every result used the server's own
   multiplier, and a lone KDJ `period` got HTTP 400. Nothing you get back
   changes; only calls that pass them stop compiling.
@@ -84,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **C#, Go, Java, C++**: `GetBb` / `BbSync` / `bb_sync` drop the trailing
     `stddev` argument.
 - **All languages: the corporate-actions methods no longer take `date`**
-  (#168). Measured against prod: `capital-changes` and `listing-applicants`
+  (#168; [migration guide §18](MIGRATION-0.9.md#18-parameters-the-server-never-read)). Measured against prod: `capital-changes` and `listing-applicants`
   answer `?date=` with 400 `property date should not exist`, and `dividends`
   ignores it and returns the default range. Use `start_date` / `end_date`.
   - **Rust**: `CapitalChangesRequestBuilder::date`, `DividendsRequestBuilder::date`
@@ -126,8 +131,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `futopt.intraday.tickers`: `product`
   - `futopt.historical.candles`: `strike_price`, `call_put`
 - **Rust**: REST builders gain the query parameters the server accepts but
-  core could not send (#164). Node could already pass them in its object
-  form; the other bindings will pick them up in follow-up PRs.
+  core could not send (#164). Node's object form and, with the entry above,
+  Python's keywords cover them; the C#, Go, Java and C++ methods still
+  expose the narrower set they had.
   - `stock.intraday.candles`: `sort`
   - `stock.intraday.tickers`: `is_attention`, `is_disposition`, `is_halted`,
     `symbol`
