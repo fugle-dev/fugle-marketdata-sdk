@@ -264,7 +264,7 @@ fn resolve_unsubscribe_target(
 ///
 /// config = ReconnectConfig(
 ///     enabled=True,
-///     max_attempts=5,
+///     max_attempts=10,
 ///     initial_delay_ms=1000,
 ///     max_delay_ms=30000
 /// )
@@ -275,7 +275,7 @@ pub struct ReconnectConfig {
     /// Whether auto-reconnect is enabled
     #[pyo3(get)]
     pub enabled: bool,
-    /// Maximum number of reconnection attempts
+    /// Maximum number of reconnection attempts; 0 means unlimited
     #[pyo3(get)]
     pub max_attempts: u32,
     /// Initial delay in milliseconds for exponential backoff
@@ -292,14 +292,21 @@ impl ReconnectConfig {
     ///
     /// Args:
     ///     enabled: Whether auto-reconnect is enabled (default: True)
-    ///     max_attempts: Maximum reconnection attempts (default: 5, min: 1)
+    ///     max_attempts: Maximum reconnection attempts; 0 means unlimited
+    ///         (default: 0, so the client keeps retrying at most max_delay_ms apart)
     ///     initial_delay_ms: Initial delay for exponential backoff (default: 1000ms, min: 100ms)
     ///     max_delay_ms: Maximum delay cap (default: 60000ms = 60s)
     ///
     /// Raises:
     ///     ValueError: If validation fails
     #[new]
-    #[pyo3(signature = (*, enabled=true, max_attempts=5, initial_delay_ms=1000, max_delay_ms=60000))]
+    #[pyo3(signature = (
+        *,
+        enabled=true,
+        max_attempts=marketdata_core::DEFAULT_MAX_ATTEMPTS,
+        initial_delay_ms=marketdata_core::DEFAULT_INITIAL_DELAY_MS,
+        max_delay_ms=marketdata_core::DEFAULT_MAX_DELAY_MS
+    ))]
     pub fn new(
         enabled: bool,
         max_attempts: u32,
@@ -322,15 +329,10 @@ impl ReconnectConfig {
         })
     }
 
-    /// Create a default reconnect configuration (enabled with 5 attempts)
+    /// Create a default reconnect configuration (enabled, unlimited attempts)
     #[staticmethod]
     pub fn default_config() -> Self {
-        Self {
-            enabled: true,
-            max_attempts: 5,
-            initial_delay_ms: 1000,
-            max_delay_ms: 60000,
-        }
+        Self::default()
     }
 
     /// Create a disabled reconnect configuration
@@ -338,9 +340,7 @@ impl ReconnectConfig {
     pub fn disabled() -> Self {
         Self {
             enabled: false,
-            max_attempts: 5,
-            initial_delay_ms: 1000,
-            max_delay_ms: 60000,
+            ..Self::default()
         }
     }
 }
@@ -369,28 +369,25 @@ impl Default for ReconnectConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_attempts: 5,
-            initial_delay_ms: 1000,
-            max_delay_ms: 60000,
+            max_attempts: marketdata_core::DEFAULT_MAX_ATTEMPTS,
+            initial_delay_ms: marketdata_core::DEFAULT_INITIAL_DELAY_MS,
+            max_delay_ms: marketdata_core::DEFAULT_MAX_DELAY_MS,
         }
     }
 }
 
 /// Health check configuration for WebSocket connections
 ///
-/// Configures ping/pong based connection monitoring.
+/// Configures liveness detection: the connection is declared dead when no
+/// inbound frame arrives within `heartbeat_timeout_ms`. Enabled by default.
 ///
 /// # Example (Python)
 ///
 /// ```python
 /// from fugle_marketdata import HealthCheckConfig, WebSocketClient
 ///
-/// # Custom health check
-/// health_check = HealthCheckConfig(
-///     enabled=True,
-///     ping_interval=15000,  # 15 seconds
-///     max_missed_pongs=3
-/// )
+/// # Longer timeout
+/// health_check = HealthCheckConfig(heartbeat_timeout_ms=60000)
 ///
 /// ws = WebSocketClient(
 ///     api_key="your-key",
@@ -539,8 +536,8 @@ impl WebSocketClient {
     ///     rc = ReconnectConfig(max_attempts=10)
     ///     ws = WebSocketClient(api_key="key", reconnect=rc)
     ///
-    ///     # With health check
-    ///     hc = HealthCheckConfig(enabled=True, interval_ms=15000)
+    ///     # With a longer health check timeout
+    ///     hc = HealthCheckConfig(heartbeat_timeout_ms=60000)
     ///     ws = WebSocketClient(api_key="key", health_check=hc)
     ///     ```
     #[new]

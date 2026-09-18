@@ -10624,10 +10624,15 @@ class FfiConverterTypeMessageQueueConfigRecord : FfiConverterRustBuffer<MessageQ
 /// <summary>
 /// Reconnection configuration record for FFI
 ///
-/// All fields are optional — zero/false values mean "use default".
+/// Without a record the client auto-reconnects with the core defaults. In a
+/// record, `enabled` is taken as given and zero numeric fields mean "use
+/// default".
 /// </summary>
+/// <param name="enabled">
+/// Whether auto-reconnect is active; `false` turns it off
+/// </param>
 /// <param name="max_attempts">
-/// Maximum reconnection attempts (default: 5, min: 1)
+/// Maximum reconnection attempts; 0 means unlimited (the default)
 /// </param>
 /// <param name="initial_delay_ms">
 /// Initial reconnection delay in milliseconds (default: 1000, min: 100)
@@ -10637,7 +10642,11 @@ class FfiConverterTypeMessageQueueConfigRecord : FfiConverterRustBuffer<MessageQ
 /// </param>
 public record ReconnectConfigRecord(
     /// <summary>
-    /// Maximum reconnection attempts (default: 5, min: 1)
+    /// Whether auto-reconnect is active; `false` turns it off
+    /// </summary>
+    bool @enabled,
+    /// <summary>
+    /// Maximum reconnection attempts; 0 means unlimited (the default)
     /// </summary>
     uint @maxAttempts,
     /// <summary>
@@ -10658,6 +10667,7 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
     public override ReconnectConfigRecord Read(BigEndianStream stream)
     {
         return new ReconnectConfigRecord(
+            @enabled: FfiConverterBoolean.INSTANCE.Read(stream),
             @maxAttempts: FfiConverterUInt32.INSTANCE.Read(stream),
             @initialDelayMs: FfiConverterUInt64.INSTANCE.Read(stream),
             @maxDelayMs: FfiConverterUInt64.INSTANCE.Read(stream)
@@ -10667,6 +10677,7 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
     public override int AllocationSize(ReconnectConfigRecord value)
     {
         return 0
+            + FfiConverterBoolean.INSTANCE.AllocationSize(value.@enabled)
             + FfiConverterUInt32.INSTANCE.AllocationSize(value.@maxAttempts)
             + FfiConverterUInt64.INSTANCE.AllocationSize(value.@initialDelayMs)
             + FfiConverterUInt64.INSTANCE.AllocationSize(value.@maxDelayMs);
@@ -10674,6 +10685,7 @@ class FfiConverterTypeReconnectConfigRecord : FfiConverterRustBuffer<ReconnectCo
 
     public override void Write(ReconnectConfigRecord value, BigEndianStream stream)
     {
+        FfiConverterBoolean.INSTANCE.Write(value.@enabled, stream);
         FfiConverterUInt32.INSTANCE.Write(value.@maxAttempts, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@initialDelayMs, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@maxDelayMs, stream);

@@ -2726,12 +2726,7 @@ export interface EtfHoldingsParams {
 /**
  * Health check options for WebSocket connections
  *
- * All fields are optional - defaults are applied when not specified:
- * - enabled: false
- * - pingInterval: 30000
- * - maxMissedPongs: 2
- *
- * Defaults: enabled=true, heartbeatTimeoutMs=35000.
+ * All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000.
  */
 export interface HealthCheckOptions {
   /** Whether liveness detection is active (default: true in 3.0) */
@@ -2756,19 +2751,20 @@ export interface InstitutionalTradesParams {
  * Reconnection options for WebSocket clients
  *
  * All fields are optional - defaults are applied when not specified:
- * - maxAttempts: 5
+ * - maxAttempts: 0 (unlimited)
  * - initialDelayMs: 1000
  * - maxDelayMs: 60000
  */
 export interface ReconnectOptions {
   /**
-   * Whether auto-reconnect is enabled (default: true when this object is
-   * supplied; when the entire `reconnect` option is omitted the binding
-   * preserves the historical Node SDK default of `false` — set this
-   * explicitly to opt in or out)
+   * Whether auto-reconnect is enabled (default: true, also when the
+   * `reconnect` option is omitted; set `false` to turn it off)
    */
   enabled?: boolean
-  /** Maximum reconnection attempts (default: 5, min: 1) */
+  /**
+   * Maximum reconnection attempts; 0 means unlimited (default: 0, so the
+   * client keeps retrying at most `maxDelayMs` apart)
+   */
   maxAttempts?: number
   /** Initial reconnection delay in milliseconds (default: 1000, min: 100) */
   initialDelayMs?: number

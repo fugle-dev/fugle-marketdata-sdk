@@ -35,6 +35,16 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — reconnect defaults: on, unlimited attempts (#149)
+
+- `~` `ReconnectionManager::attempts_remaining` returns `Option<u32>` instead
+  of `u32`; `None` when attempts are unlimited (`max_attempts == 0`), which
+  used to read as `0`, i.e. "exhausted".
+- Not visible in the snapshot (values, not signatures): `DEFAULT_MAX_ATTEMPTS`
+  is `0` (unlimited) instead of `5`, so `ReconnectionConfig::default()` and
+  the builder default never give up; `ReconnectionConfig::new` accepts
+  `max_attempts == 0` instead of returning `ConfigError`.
+
 ### Unreleased — `connect()` aborted by a concurrent `disconnect()` (#121)
 
 - `+` `MarketDataError::ConnectionAborted` (code 2010, the same code as

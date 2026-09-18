@@ -36,6 +36,7 @@ public class ConfigOptionsTest {
         ReconnectOptions options = ReconnectOptions.builder().build();
 
         assertNotNull(options);
+        assertNull(options.getEnabled());
         assertNull(options.getMaxAttempts());
         assertNull(options.getInitialDelayMs());
         assertNull(options.getMaxDelayMs());

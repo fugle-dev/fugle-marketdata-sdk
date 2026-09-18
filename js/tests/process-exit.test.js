@@ -200,10 +200,12 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
   });
 
   test('a server-initiated close lets the process exit', async () => {
+    // With auto-reconnect on (the default, #149) the client is still
+    // reconnecting, which keeps the process alive; turn it off to end it here.
     const result = await runChild(
       `
       const { WebSocketClient } = require('./');
-      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, reconnect: { enabled: false } })[${JSON.stringify(product)}];
       ws.on('disconnect', (event) => console.log('DISCONNECT ' + JSON.stringify(event)));
       ws.connect().then(() => console.log('CONNECTED'));
     `,
@@ -369,10 +371,13 @@ describe.each(PRODUCTS)('%s process lifetime under message backpressure (#46)', 
     await closeServer(wss);
   });
 
-  /** Child-side client: prints FULL once the listener has fallen behind. */
+  /**
+   * Child-side client: prints FULL once the listener has fallen behind.
+   * Auto-reconnect is off so a server close ends the connection (#149).
+   */
   const slowClient = `
     const { WebSocketClient } = require('./');
-    const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, messageBuffer: 4 })[${JSON.stringify(product)}];
+    const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, messageBuffer: 4, reconnect: { enabled: false } })[${JSON.stringify(product)}];
     let seen = 0;
     ws.on('message', () => {
       const until = Date.now() + 20;

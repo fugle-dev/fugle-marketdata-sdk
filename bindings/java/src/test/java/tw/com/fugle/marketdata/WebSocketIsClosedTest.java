@@ -29,6 +29,7 @@ public class WebSocketIsClosedTest {
                      .apiKey("the-key")
                      .stock()
                      .baseUrl(server.url())
+                     .reconnect(ReconnectOptions.builder().enabled(false).build())
                      .build()) {
             client.connect().get(10, TimeUnit.SECONDS);
             assertFalse(client.isClosed());
@@ -62,6 +63,27 @@ public class WebSocketIsClosedTest {
 
             client.disconnect().get(10, TimeUnit.SECONDS);
             assertTrue(client.isClosed(), "true once disconnect() completes");
+        }
+    }
+
+    @Test
+    void withoutReconnectOptionsReconnectsByDefault() throws Exception {
+        // No binding-side override: omitting reconnect(...) keeps the core
+        // default, auto-reconnect on (#149).
+        NativeLibrary.assumeAvailable();
+
+        try (LoopbackWsServer server = authAckingServer();
+             FugleWebSocketClient client = FugleWebSocketClient.builder()
+                     .apiKey("the-key")
+                     .stock()
+                     .baseUrl(server.url())
+                     .build()) {
+            client.connect().get(10, TimeUnit.SECONDS);
+
+            server.dropConnections();
+            waitUntil(() -> !client.isConnected(), "isConnected() never became false");
+            assertFalse(client.isClosed(), "false while reconnecting");
+            waitUntil(client::isConnected, "never reconnected");
         }
     }
 

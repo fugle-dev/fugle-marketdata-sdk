@@ -149,51 +149,57 @@ client = RestClient(sdk_token="your-sdk-token")
 
 ### Reconnection Config
 
-Control WebSocket automatic reconnection behavior:
+Auto-reconnect is on by default: after an unexpected drop the client
+reconnects with exponential backoff, without an attempt limit (waits capped
+at `max_delay_ms`), and subscribes again. Pass `reconnect` to tune it:
 
 ```python
 from fugle_marketdata import WebSocketClient, ReconnectConfig
 
 # Create custom reconnect configuration
 reconnect = ReconnectConfig(
-    enabled=True,
     max_attempts=10,
     initial_delay_ms=2000,
     max_delay_ms=120000
 )
 
 ws = WebSocketClient(api_key="your-key", reconnect=reconnect)
+
+# Turn auto-reconnect off
+ws = WebSocketClient(api_key="your-key", reconnect=ReconnectConfig.disabled())
 ```
 
 **ReconnectConfig Options:**
 
 - `enabled` (bool): Whether auto-reconnect is enabled (default: True)
-- `max_attempts` (int): Maximum reconnection attempts (default: 5, min: 1)
+- `max_attempts` (int): Maximum reconnection attempts; 0 means unlimited
+  (default: 0). With a limit, the `error` callback reports code 3005 once the
+  last attempt fails
 - `initial_delay_ms` (int): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `max_delay_ms` (int): Maximum delay cap (default: 60000ms)
 
 ### Health Check Config
 
-Control WebSocket health check (ping-pong) behavior:
+Liveness detection is on by default: when no inbound frame (data, heartbeat or
+pong) arrives within `heartbeat_timeout_ms`, the connection is declared dead
+and auto-reconnect takes over. The server sends a heartbeat every 30 seconds.
 
 ```python
 from fugle_marketdata import WebSocketClient, HealthCheckConfig
 
-# Create custom health check configuration
-health_check = HealthCheckConfig(
-    enabled=True,
-    interval_ms=15000,
-    max_missed_pongs=3
-)
-
+# Longer timeout
+health_check = HealthCheckConfig(heartbeat_timeout_ms=60000)
 ws = WebSocketClient(api_key="your-key", health_check=health_check)
+
+# Turn liveness detection off
+ws = WebSocketClient(api_key="your-key", health_check=HealthCheckConfig(enabled=False))
 ```
 
 **HealthCheckConfig Options:**
 
-- `enabled` (bool): Whether health check is enabled (default: False)
-- `interval_ms` (int): Ping interval in milliseconds (default: 30000ms, min: 5000ms)
-- `max_missed_pongs` (int): Maximum missed pongs before considering connection stale (default: 2, min: 1)
+- `enabled` (bool): Whether health check is enabled (default: True)
+- `heartbeat_timeout_ms` (int): Maximum gap between inbound frames before the
+  connection is declared dead (default: 35000ms, min: 5000ms)
 
 ### Combined Configuration
 
@@ -201,7 +207,7 @@ ws = WebSocketClient(api_key="your-key", health_check=health_check)
 from fugle_marketdata import WebSocketClient, ReconnectConfig, HealthCheckConfig
 
 reconnect = ReconnectConfig(max_attempts=10, initial_delay_ms=2000)
-health_check = HealthCheckConfig(enabled=True, interval_ms=15000)
+health_check = HealthCheckConfig(heartbeat_timeout_ms=60000)
 
 ws = WebSocketClient(
     api_key="your-key",

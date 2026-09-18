@@ -10,8 +10,13 @@ namespace FugleMarketData
     public class ReconnectOptions
     {
         /// <summary>
-        /// Maximum reconnection attempts (default: 5, min: 1).
-        /// After reaching this limit, the client stops attempting to reconnect.
+        /// Whether auto-reconnect is enabled (default: true). Set false to turn it off.
+        /// </summary>
+        public bool? Enabled { get; set; }
+
+        /// <summary>
+        /// Maximum reconnection attempts; 0 means unlimited (default: 0).
+        /// With a limit set, the client stops attempting to reconnect after reaching it.
         /// </summary>
         public uint? MaxAttempts { get; set; }
 
@@ -101,13 +106,15 @@ namespace FugleMarketData
 
         /// <summary>
         /// Reconnection configuration (optional).
-        /// If not provided, uses default reconnection settings (max 5 attempts, 1s initial delay).
+        /// If not provided, the client auto-reconnects with the defaults (unlimited
+        /// attempts, 1s initial delay, 60s maximum delay). Set
+        /// <see cref="ReconnectOptions.Enabled"/> to false to turn it off.
         /// </summary>
         public ReconnectOptions? Reconnect { get; set; }
 
         /// <summary>
         /// Health check configuration (optional).
-        /// If not provided, health checks are disabled by default.
+        /// If not provided, health checks are enabled with the defaults.
         /// </summary>
         public HealthCheckOptions? HealthCheck { get; set; }
 

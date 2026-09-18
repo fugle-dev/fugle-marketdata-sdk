@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Behaviour change — Node, C#, Go, Java, C++: WebSocket auto-reconnect is
+  on by default** (#149). A client created without a reconnect config used to
+  stay closed after the connection dropped; it now reconnects with
+  exponential backoff and subscribes again, like Rust and Python already did.
+  The bindings no longer override the core default with
+  `ReconnectionConfig::disabled()`. If you reconnect yourself from a
+  disconnect handler, remove that or turn auto-reconnect off:
+  - **Node**: `reconnect: { enabled: false }`
+  - **Python**: `reconnect=ReconnectConfig.disabled()`
+  - **C#**: `Reconnect = new ReconnectOptions { Enabled = false }`
+  - **Java**: `.reconnect(ReconnectOptions.builder().enabled(false).build())`
+  - **Go**: the new `WithoutReconnect()` option. `ReconnectConfig` has no
+    on/off field, so `WithReconnect(...)` keeps reconnect on.
+  - **C++**: a `ReconnectConfigRecord` with `enabled = false`
+- **Behaviour change — all languages: reconnect attempts are unlimited by
+  default** (#149). `max_attempts` defaults to `0`, which now means
+  unlimited, instead of `5`; each wait is capped at `max_delay` (60 s), so an
+  outage is retried about once a minute instead of being given up on after
+  about 35 seconds. `ReconnectFailed` (Node/Python `error` code 3005,
+  `OnReconnectFailed` / `onReconnectFailed`) is only emitted when you set a
+  non-zero `max_attempts`. `max_attempts: 0` used to be rejected as a
+  configuration error in Node and Python and meant "default (5)" in
+  C#/Go/Java/C++; it is now valid and means unlimited everywhere.
+- **Rust**: `DEFAULT_MAX_ATTEMPTS` is `0`; `ReconnectionConfig::new` accepts
+  `max_attempts == 0`; `ReconnectionManager::attempts_remaining()` returns
+  `Option<u32>`, `None` when attempts are unlimited (#149).
+- **UniFFI**: `ReconnectConfigRecord` gains `enabled: bool` as its first
+  field, so C++ code that builds the record must set it (#149). C#
+  `ReconnectOptions.Enabled` and Java `ReconnectOptions.enabled(Boolean)`
+  default to `true`.
+
+### Fixed
+
+- **Docs**: several places said health check is off by default; it has been
+  on since 3.0 (`DEFAULT_HEALTH_CHECK_ENABLED = true`, 35 s timeout) in every
+  language, and it is what hands a dead connection to auto-reconnect.
+  Corrected in the C# `WebSocketClientOptions.Reconnect` / `HealthCheck` docs
+  (which also claimed omitting `Reconnect` meant 5 attempts),
+  `docs/configuration.md`, the Python type stubs (`__init__.pyi`, where
+  `HealthCheckConfig` still listed the removed `ping_interval` /
+  `max_missed_pongs` and `enabled=False`), the Node `HealthCheckOptions` doc
+  and the Node and Python READMEs, whose examples also used the removed
+  ping/pong fields instead of `heartbeatTimeoutMs` / `heartbeat_timeout_ms`.
+
 ## [Bindings 3.0.0-rc.3 / core 0.9.0-rc.2 / uniffi 0.2.0-rc.2] - 2026-09-18
 
 ### Added

@@ -2197,6 +2197,7 @@ RustBuffer FfiConverterTypeReconnectConfigRecord::lower(const ReconnectConfigRec
 
 ReconnectConfigRecord FfiConverterTypeReconnectConfigRecord::read(RustStream &stream) {
     return {
+        FfiConverterBool::read(stream),
         FfiConverterUInt32::read(stream),
         FfiConverterUInt64::read(stream),
         FfiConverterUInt64::read(stream)
@@ -2204,6 +2205,7 @@ ReconnectConfigRecord FfiConverterTypeReconnectConfigRecord::read(RustStream &st
 }
 
 void FfiConverterTypeReconnectConfigRecord::write(RustStream &stream, const ReconnectConfigRecord &val) {
+    FfiConverterBool::write(stream, val.enabled);
     FfiConverterUInt32::write(stream, val.max_attempts);
     FfiConverterUInt64::write(stream, val.initial_delay_ms);
     FfiConverterUInt64::write(stream, val.max_delay_ms);
@@ -2212,6 +2214,7 @@ void FfiConverterTypeReconnectConfigRecord::write(RustStream &stream, const Reco
 uint64_t FfiConverterTypeReconnectConfigRecord::allocation_size(const ReconnectConfigRecord &val) {
     
     return 
+        FfiConverterBool::allocation_size(val.enabled) +
         FfiConverterUInt32::allocation_size(val.max_attempts) +
         FfiConverterUInt64::allocation_size(val.initial_delay_ms) +
         FfiConverterUInt64::allocation_size(val.max_delay_ms);

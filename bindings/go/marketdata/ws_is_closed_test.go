@@ -14,7 +14,11 @@ import (
 
 func TestWebSocketIsClosed_AfterServerCloseWithoutReconnect(t *testing.T) {
 	srv := newAuthFrameServer(t)
-	client, err := NewFugleWebSocketClient(nil, WithApiKey("the-key"), WithBaseUrl(srv.url()))
+	client, err := NewFugleWebSocketClient(nil,
+		WithApiKey("the-key"),
+		WithBaseUrl(srv.url()),
+		WithoutReconnect(),
+	)
 	if err != nil {
 		t.Fatalf("NewFugleWebSocketClient: %v", err)
 	}

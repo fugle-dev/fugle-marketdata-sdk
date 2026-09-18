@@ -4,8 +4,12 @@ use std::time::Duration;
 
 use crate::MarketDataError;
 
-/// Default maximum reconnection attempts (VAL-02)
-pub const DEFAULT_MAX_ATTEMPTS: u32 = 5;
+/// Default maximum reconnection attempts: `0`, meaning unlimited (#149).
+///
+/// With no attempt limit the client keeps retrying and [`DEFAULT_MAX_DELAY_MS`]
+/// caps each wait, so a long outage is retried about once a minute instead of
+/// being given up on.
+pub const DEFAULT_MAX_ATTEMPTS: u32 = 0;
 
 /// Default initial reconnection delay in milliseconds (VAL-02)
 pub const DEFAULT_INITIAL_DELAY_MS: u64 = 1000;
@@ -24,19 +28,18 @@ pub const MIN_INITIAL_DELAY_MS: u64 = 100;
 /// fields default to the [`DEFAULT_*`](DEFAULT_MAX_ATTEMPTS) constants) or
 /// via the validating positional constructor [`ReconnectionConfig::new`].
 ///
-/// `enabled` defaults to **`true`** in 0.4.0 — Rust users now get the
-/// production-safe behaviour out of the box, aligning with `reqwest` /
-/// `redis-rs` / `tokio-tungstenite` ergonomics. Bindings that need to
-/// preserve the historical "no auto-reconnect" semantics of
-/// `fugle-marketdata-{python,node}` SDKs MUST construct
-/// [`ReconnectionConfig::disabled`] explicitly at the FFI boundary.
+/// `enabled` defaults to **`true`** and `max_attempts` to `0` (unlimited), in
+/// every language: bindings pass the core default through when the caller
+/// configures nothing (#149). Use [`ReconnectionConfig::disabled`] to turn
+/// auto-reconnect off.
 #[derive(Debug, Clone, bon::Builder)]
 pub struct ReconnectionConfig {
     /// Whether auto-reconnect is active. When `false`, [`ReconnectionManager::should_reconnect`]
     /// always returns `false` regardless of the close code.
     #[builder(default = true)]
     pub enabled: bool,
-    /// Maximum reconnection attempts before giving up
+    /// Maximum reconnection attempts before giving up; `0` means unlimited
+    /// (the default). `ReconnectFailed` is only emitted when this is non-zero.
     #[builder(default = DEFAULT_MAX_ATTEMPTS)]
     pub max_attempts: u32,
     /// Initial delay before first reconnection attempt
@@ -49,11 +52,6 @@ pub struct ReconnectionConfig {
 
 impl Default for ReconnectionConfig {
     fn default() -> Self {
-        // 0.4.0: flipped `enabled` from `false` → `true` so Rust users on
-        // the `WebSocketClient::new(config)` happy path get auto-reconnect
-        // by default. Bindings (Python / Node / UniFFI / etc.) explicitly
-        // call `ReconnectionConfig::disabled()` to keep their historical
-        // "no auto-reconnect" semantics for end users.
         Self::builder().build()
     }
 }
@@ -63,29 +61,18 @@ impl ReconnectionConfig {
     ///
     /// # Errors
     /// Returns `MarketDataError::ConfigError` if:
-    /// - `max_attempts` is 0 (must be >= 1)
     /// - `initial_delay` is less than 100ms
     /// - `max_delay` is less than `initial_delay`
     ///
-    /// Constructing via `new()` is treated as explicit opt-in, so the
-    /// returned config has `enabled: true`. To get a disabled config (e.g.
-    /// to fall back to "no reconnect at all") use [`ReconnectionConfig::disabled`]
-    /// or `ReconnectionConfig::default()`.
+    /// `max_attempts == 0` means unlimited attempts.
     ///
-    /// # Errors
-    /// Returns [`MarketDataError`] on transport, protocol, deserialization,
-    /// validation, or peer-initiated failures.
+    /// The returned config has `enabled: true`. To get a disabled config use
+    /// [`ReconnectionConfig::disabled`].
     pub fn new(
         max_attempts: u32,
         initial_delay: Duration,
         max_delay: Duration,
     ) -> Result<Self, MarketDataError> {
-        if max_attempts == 0 {
-            return Err(MarketDataError::ConfigError(
-                "max_attempts must be >= 1".to_string(),
-            ));
-        }
-
         if initial_delay < Duration::from_millis(MIN_INITIAL_DELAY_MS) {
             return Err(MarketDataError::ConfigError(format!(
                 "initial_delay must be >= {}ms (got {}ms)",
@@ -116,12 +103,10 @@ impl ReconnectionConfig {
     ///
     /// # Stability
     ///
-    /// **Stable public API.** FFI binding crates (`fugle-marketdata-py`,
-    /// `fugle-marketdata-js`, `fugle-marketdata-uniffi`) call this at the
-    /// FFI boundary to preserve their historical "no auto-reconnect"
-    /// semantics — see the `tests/reconnect_default.rs` workspace-level
-    /// gate. The function's name and signature will be preserved across
-    /// every 0.x release; downstream code can rely on it.
+    /// **Stable public API.** This is how every language turns
+    /// auto-reconnect off — see the `tests/reconnect_default.rs` gate. The
+    /// function's name and signature will be preserved across every 0.x
+    /// release; downstream code can rely on it.
     #[must_use]
     pub fn disabled() -> Self {
         Self {
@@ -163,7 +148,7 @@ impl ReconnectionManager {
     /// - Others → reconnect by default
     ///
     /// Always returns `false` if the underlying [`ReconnectionConfig::enabled`]
-    /// flag is `false` (the default — matches old `fugle-marketdata` SDKs).
+    /// flag is `false` (see [`ReconnectionConfig::disabled`]).
     pub fn should_reconnect(&self, close_code: Option<u16>) -> bool {
         if !self.config.enabled {
             return false;
@@ -180,14 +165,15 @@ impl ReconnectionManager {
 
     /// Calculate next reconnection delay with exponential backoff and jitter
     ///
-    /// Returns None if max attempts reached, Some(duration) otherwise.
+    /// Returns None if max attempts reached, Some(duration) otherwise; with
+    /// `max_attempts == 0` (unlimited) it always returns Some.
     /// Increments attempt counter.
     pub fn next_delay(&mut self) -> Option<Duration> {
-        if self.current_attempt >= self.config.max_attempts {
+        if self.config.max_attempts != 0 && self.current_attempt >= self.config.max_attempts {
             return None;
         }
 
-        self.current_attempt += 1;
+        self.current_attempt = self.current_attempt.saturating_add(1);
 
         // Calculate exponential backoff: initial * 2^(attempt-1)
         let exponential_millis = self.config.initial_delay.as_millis()
@@ -213,9 +199,13 @@ impl ReconnectionManager {
         self.current_attempt = 0;
     }
 
-    /// Get number of remaining reconnection attempts
-    pub fn attempts_remaining(&self) -> u32 {
-        self.config.max_attempts.saturating_sub(self.current_attempt)
+    /// Get number of remaining reconnection attempts; `None` when attempts
+    /// are unlimited (`max_attempts == 0`).
+    pub fn attempts_remaining(&self) -> Option<u32> {
+        match self.config.max_attempts {
+            0 => None,
+            max => Some(max.saturating_sub(self.current_attempt)),
+        }
     }
 
     /// Get current attempt number
@@ -229,8 +219,6 @@ mod tests {
     use super::*;
 
     /// Helper: build an explicitly enabled config for the close-code tests.
-    /// `default()` is now disabled (matches old fugle-marketdata SDKs), so
-    /// any test that exercises the close-code logic must opt in.
     fn enabled_config() -> ReconnectionConfig {
         ReconnectionConfig::new(5, Duration::from_secs(1), Duration::from_secs(60))
             .expect("test config is valid")
@@ -241,9 +229,9 @@ mod tests {
         let config = ReconnectionConfig::default();
         assert!(
             config.enabled,
-            "0.4.0 flipped default to enabled — Rust users get auto-reconnect on the happy path"
+            "auto-reconnect is on by default in every language (#149)"
         );
-        assert_eq!(config.max_attempts, 5);
+        assert_eq!(config.max_attempts, 0, "unlimited attempts by default (#149)");
         assert_eq!(config.initial_delay, Duration::from_secs(1));
         assert_eq!(config.max_delay, Duration::from_secs(60));
     }
@@ -265,9 +253,7 @@ mod tests {
     fn test_disabled_config_never_reconnects() {
         // `ReconnectionConfig::disabled()` short-circuits `should_reconnect`
         // even on codes the close-code logic considers retriable
-        // (1006, 1001, …). 0.4.0: the default is now enabled, so this
-        // contract specifically guards the explicit-disable path used by
-        // bindings to preserve historical "no auto-reconnect" semantics.
+        // (1006, 1001, …). It is how every language turns reconnect off.
         let manager = ReconnectionManager::new(ReconnectionConfig::disabled());
         assert!(!manager.should_reconnect(Some(1006)));
         assert!(!manager.should_reconnect(Some(1001)));
@@ -355,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_exponential_backoff_delays() {
-        let config = ReconnectionConfig::default();
+        let config = ReconnectionConfig::builder().max_attempts(5).build();
         let mut manager = ReconnectionManager::new(config);
 
         // First delay should be returned
@@ -380,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_reset_clears_attempts() {
-        let config = ReconnectionConfig::default();
+        let config = ReconnectionConfig::builder().max_attempts(5).build();
         let mut manager = ReconnectionManager::new(config);
 
         // Exhaust attempts
@@ -391,7 +377,7 @@ mod tests {
         // Reset should clear attempts
         manager.reset();
         assert_eq!(manager.current_attempt(), 0);
-        assert_eq!(manager.attempts_remaining(), 5);
+        assert_eq!(manager.attempts_remaining(), Some(5));
 
         // Should be able to get delays again
         let delay = manager.next_delay();
@@ -410,7 +396,7 @@ mod tests {
 
         // 4th attempt should return None
         assert!(manager.next_delay().is_none());
-        assert_eq!(manager.attempts_remaining(), 0);
+        assert_eq!(manager.attempts_remaining(), Some(0));
     }
 
     #[test]
@@ -418,13 +404,30 @@ mod tests {
         let config = ReconnectionConfig::builder().max_attempts(5).build();
         let mut manager = ReconnectionManager::new(config);
 
-        assert_eq!(manager.attempts_remaining(), 5);
+        assert_eq!(manager.attempts_remaining(), Some(5));
 
         let _ = manager.next_delay();
-        assert_eq!(manager.attempts_remaining(), 4);
+        assert_eq!(manager.attempts_remaining(), Some(4));
 
         let _ = manager.next_delay();
-        assert_eq!(manager.attempts_remaining(), 3);
+        assert_eq!(manager.attempts_remaining(), Some(3));
+    }
+
+    #[test]
+    fn test_unlimited_attempts_never_give_up() {
+        let mut manager = ReconnectionManager::new(ReconnectionConfig::default());
+        assert_eq!(manager.attempts_remaining(), None);
+
+        let max_delay = Duration::from_millis(DEFAULT_MAX_DELAY_MS);
+        let mut last = Duration::ZERO;
+        for _ in 0..100 {
+            last = manager.next_delay().expect("unlimited attempts never run out");
+            // max_delay caps the backoff; jitter adds at most 15% on top.
+            assert!(last <= max_delay + max_delay * 15 / 100, "{last:?}");
+        }
+        assert_eq!(manager.current_attempt(), 100);
+        assert_eq!(manager.attempts_remaining(), None);
+        assert!(last >= max_delay, "backoff reaches the cap: {last:?}");
     }
 
     #[test]
@@ -442,20 +445,11 @@ mod tests {
     }
 
     #[test]
-    fn test_new_rejects_zero_max_attempts() {
-        let result = ReconnectionConfig::new(0, Duration::from_secs(1), Duration::from_secs(60));
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("max_attempts"),
-            "Error should mention field name: {}",
-            err
-        );
-        assert!(
-            err.contains(">= 1") || err.contains("must be"),
-            "Error should mention constraint: {}",
-            err
-        );
+    fn test_new_accepts_zero_max_attempts_as_unlimited() {
+        let config = ReconnectionConfig::new(0, Duration::from_secs(1), Duration::from_secs(60))
+            .expect("0 means unlimited");
+        assert_eq!(config.max_attempts, 0);
+        assert_eq!(ReconnectionManager::new(config).attempts_remaining(), None);
     }
 
     #[test]

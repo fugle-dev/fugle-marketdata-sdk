@@ -93,8 +93,11 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 	}
 
 	var reconnectRecord *ReconnectConfigRecord
-	if cfg.reconnect != nil {
+	if cfg.noReconnect {
+		reconnectRecord = &ReconnectConfigRecord{Enabled: false}
+	} else if cfg.reconnect != nil {
 		reconnectRecord = &ReconnectConfigRecord{
+			Enabled:        true,
 			MaxAttempts:    cfg.reconnect.MaxAttempts,
 			InitialDelayMs: cfg.reconnect.InitialDelayMs,
 			MaxDelayMs:     cfg.reconnect.MaxDelayMs,

@@ -1,25 +1,32 @@
-//! Pin the 0.4.0 reconnect-default flip.
+//! Pin the reconnect defaults every language shares (#149).
 //!
-//! These assertions are the workspace-level CI gate for risk **R8** in
-//! `openspec/changes/sdk-04-improvements/design.md`: every binding wrapper
-//! that constructs `ReconnectionConfig` MUST explicitly call
-//! `ReconnectionConfig::disabled()` so its end users observe no behaviour
-//! change. The Rust core, on the other hand, defaults to `enabled = true`.
+//! Bindings no longer override the core default: a client created without a
+//! reconnect config auto-reconnects in Rust, Python, Node.js, C#, Go, Java and
+//! C++ alike, retrying without an attempt limit. `ReconnectionConfig::disabled()`
+//! is how each of them turns it off.
 //!
-//! If a future core bump silently flips this back, this test fails.
+//! If a future core bump silently changes either default, this test fails.
 
-use marketdata_core::ReconnectionConfig;
+use marketdata_core::websocket::ReconnectionManager;
+use marketdata_core::{
+    AuthRequest, ConnectionConfig, ReconnectionConfig, WebSocketClient, DEFAULT_MAX_ATTEMPTS,
+};
 
 #[test]
-fn rust_core_default_is_enabled() {
-    let config = ReconnectionConfig::default();
+fn default_is_enabled() {
     assert!(
-        config.enabled,
-        "core::ReconnectionConfig::default() must have enabled = true (0.4.0+). \
-         If this assertion is flipped back to false, every binding's effective \
-         default also flips and end users start seeing auto-reconnect they did \
-         not opt into."
+        ReconnectionConfig::default().enabled,
+        "ReconnectionConfig::default() must have enabled = true: every binding \
+         passes it through, so flipping it turns auto-reconnect off in every language."
     );
+}
+
+#[test]
+fn default_max_attempts_is_unlimited() {
+    assert_eq!(DEFAULT_MAX_ATTEMPTS, 0);
+    let config = ReconnectionConfig::default();
+    assert_eq!(config.max_attempts, 0);
+    assert_eq!(ReconnectionManager::new(config).attempts_remaining(), None);
 }
 
 #[test]
@@ -27,15 +34,10 @@ fn explicit_disabled_constructor_still_works() {
     let config = ReconnectionConfig::disabled();
     assert!(
         !config.enabled,
-        "ReconnectionConfig::disabled() is the binding-side compensation API: \
-         flipping this would break every Python / Node / UniFFI wrapper that \
-         relies on it to preserve historical 'no auto-reconnect' behaviour."
+        "ReconnectionConfig::disabled() is how every language turns auto-reconnect off"
     );
-}
-
-#[test]
-fn default_max_attempts_unchanged() {
-    // Sanity: the flip changed only `enabled`, not the other fields.
-    let config = ReconnectionConfig::default();
-    assert_eq!(config.max_attempts, 5);
+    let _client = WebSocketClient::with_reconnection_config(
+        ConnectionConfig::fugle_stock(AuthRequest::with_api_key("test-key")),
+        config,
+    );
 }

@@ -307,6 +307,24 @@ counting the failures since the previous report; failures after the last
 report are not reported on their own. An exception thrown by `OnError` itself
 is written to `Console.Error` and not re-reported.
 
+#### Reconnection
+
+After an unexpected drop the client reconnects on its own with exponential
+backoff (1 s doubling up to 60 s), without an attempt limit, and subscribes
+again once it is back. The server closing with 1000 or a 4xxx code (e.g. an
+auth failure) never triggers a reconnect. Configure it with `WebSocketClientOptions.Reconnect`:
+
+```csharp
+// Stop after 10 attempts; OnReconnectFailed fires once the last one fails
+Reconnect = new ReconnectOptions { MaxAttempts = 10 },
+
+// Turn auto-reconnect off
+Reconnect = new ReconnectOptions { Enabled = false },
+```
+
+`MaxAttempts` 0 means unlimited (the default); `InitialDelayMs` (default 1000,
+min 100) and `MaxDelayMs` (default 60000) tune the backoff.
+
 #### Message queue overflow
 
 By default the client buffers up to 4096 unread messages and drops the

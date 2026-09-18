@@ -15,6 +15,7 @@ type clientConfig struct {
 	baseUrl         string
 	endpoint        WebSocketEndpoint
 	reconnect       *ReconnectConfig
+	noReconnect     bool
 	healthCheck     *HealthCheckConfig
 	messageOverflow *MessageOverflow
 	messageBuffer   *uint32
@@ -82,10 +83,23 @@ func WithEndpoint(ep WebSocketEndpoint) Option {
 	}
 }
 
-// WithReconnect sets reconnection configuration for WebSocket client
+// WithReconnect tunes auto-reconnect for the WebSocket client. The client
+// auto-reconnects without it too; see WithoutReconnect to turn it off.
+// Between WithReconnect and WithoutReconnect, the last one given wins.
 func WithReconnect(reconnect ReconnectConfig) Option {
 	return func(cfg *clientConfig) error {
 		cfg.reconnect = &reconnect
+		cfg.noReconnect = false
+		return nil
+	}
+}
+
+// WithoutReconnect turns auto-reconnect off: once the connection drops the
+// client stays closed until Connect is called again.
+func WithoutReconnect() Option {
+	return func(cfg *clientConfig) error {
+		cfg.reconnect = nil
+		cfg.noReconnect = true
 		return nil
 	}
 }

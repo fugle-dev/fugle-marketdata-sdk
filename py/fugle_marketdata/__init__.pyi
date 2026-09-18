@@ -1411,49 +1411,48 @@ class FutOptHistoricalClient:
 
 # WebSocket Client
 class HealthCheckConfig:
-    """Health check (ping-pong) configuration.
+    """Liveness detection configuration.
 
-    Controls WebSocket health check behavior to detect stale connections.
-    When enabled, sends periodic pings and tracks missed pongs.
+    The connection is declared dead when no inbound frame (data, heartbeat or
+    pong) arrives within `heartbeat_timeout_ms`; the reconnect manager then
+    takes over. The server sends a heartbeat every 30 seconds. Enabled by
+    default; a client created without a health check config uses the defaults.
 
     Example:
         ```python
         from fugle_marketdata import HealthCheckConfig, WebSocketClient
 
-        config = HealthCheckConfig(
-            enabled=True,
-            ping_interval=15000,
-            max_missed_pongs=3
-        )
+        # Longer timeout
+        config = HealthCheckConfig(heartbeat_timeout_ms=60000)
         ws = WebSocketClient(api_key="key", health_check=config)
+
+        # Opt out of liveness detection
+        ws = WebSocketClient(api_key="key", health_check=HealthCheckConfig(enabled=False))
         ```
     """
 
     enabled: bool
-    """Whether health check is enabled."""
+    """Whether liveness detection is active (default: True)."""
 
-    ping_interval: int
-    """Ping interval in milliseconds (named to match the old `fugle-marketdata` SDK)."""
-
-    max_missed_pongs: int
-    """Maximum missed pongs before considering connection stale."""
+    heartbeat_timeout_ms: int
+    """Maximum gap between inbound frames in milliseconds before the connection is declared dead."""
 
     def __init__(
         self,
         *,
-        enabled: bool = False,
-        ping_interval: int = 30000,
-        max_missed_pongs: int = 2,
+        enabled: bool = True,
+        heartbeat_timeout_ms: int = 35000,
     ) -> None:
         """Create a new health check configuration.
 
         Args:
-            enabled: Whether health check is enabled (default: False)
-            ping_interval: Ping interval in milliseconds (default: 30000ms = 30s, min: 5000ms)
-            max_missed_pongs: Maximum missed pongs (default: 2, min: 1)
+            enabled: Whether liveness detection is active (default: True)
+            heartbeat_timeout_ms: Maximum gap between inbound frames before the
+                connection is declared dead (default: 35000ms = the server's 30s
+                heartbeat + 5s buffer, min: 5000ms)
 
         Raises:
-            ValueError: If ping_interval < 5000 or max_missed_pongs < 1
+            ValueError: If heartbeat_timeout_ms < 5000
         """
         ...
 
@@ -1470,7 +1469,7 @@ class ReconnectConfig:
 
         config = ReconnectConfig(
             enabled=True,
-            max_attempts=5,
+            max_attempts=10,
             initial_delay_ms=1000,
             max_delay_ms=60000
         )
@@ -1482,7 +1481,7 @@ class ReconnectConfig:
     """Whether auto-reconnect is enabled."""
 
     max_attempts: int
-    """Maximum number of reconnection attempts."""
+    """Maximum number of reconnection attempts; 0 means unlimited."""
 
     initial_delay_ms: int
     """Initial delay in milliseconds for exponential backoff."""
@@ -1494,7 +1493,7 @@ class ReconnectConfig:
         self,
         *,
         enabled: bool = True,
-        max_attempts: int = 5,
+        max_attempts: int = 0,
         initial_delay_ms: int = 1000,
         max_delay_ms: int = 60000,
     ) -> None:
@@ -1502,18 +1501,19 @@ class ReconnectConfig:
 
         Args:
             enabled: Whether auto-reconnect is enabled (default: True)
-            max_attempts: Maximum reconnection attempts (default: 5, min: 1)
+            max_attempts: Maximum reconnection attempts; 0 means unlimited
+                (default: 0, so the client keeps retrying at most max_delay_ms apart)
             initial_delay_ms: Initial delay for exponential backoff (default: 1000ms, min: 100ms)
             max_delay_ms: Maximum delay cap (default: 60000ms = 60s)
 
         Raises:
-            ValueError: If max_attempts < 1, initial_delay_ms < 100, or max_delay_ms < initial_delay_ms
+            ValueError: If initial_delay_ms < 100 or max_delay_ms < initial_delay_ms
         """
         ...
 
     @staticmethod
     def default_config() -> "ReconnectConfig":
-        """Create a default reconnect configuration (enabled with 5 attempts)."""
+        """Create a default reconnect configuration (enabled, unlimited attempts)."""
         ...
 
     @staticmethod
@@ -1539,8 +1539,8 @@ class WebSocketClient:
         rc = ReconnectConfig(max_attempts=10, initial_delay_ms=2000)
         ws = WebSocketClient(api_key="key", reconnect=rc)
 
-        # With health check enabled
-        hc = HealthCheckConfig(enabled=True, ping_interval=15000)
+        # With a longer health check timeout
+        hc = HealthCheckConfig(heartbeat_timeout_ms=60000)
         ws = WebSocketClient(api_key="key", health_check=hc)
 
         # Callback mode
@@ -1591,8 +1591,10 @@ class WebSocketClient:
                 books — branch on the frame's isTrial before acting on a price.
                 Asking for a version a product does not serve raises TypeError
                 rather than silently falling back.
-            reconnect: Optional reconnect configuration (default: enabled with 5 attempts)
-            health_check: Optional health check configuration (default: disabled)
+            reconnect: Optional reconnect configuration (default: enabled, unlimited
+                attempts; pass ReconnectConfig.disabled() to turn it off)
+            health_check: Optional health check configuration (default: enabled,
+                35000ms timeout)
             tls_ca_file: Path to a PEM-encoded root CA to trust (in addition to
                 the system trust store). Mutually exclusive with tls_root_cert_pem.
             tls_root_cert_pem: Raw PEM bytes of a root CA to trust. Mutually
