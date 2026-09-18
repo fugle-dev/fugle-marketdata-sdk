@@ -1138,6 +1138,11 @@ pub struct StockWebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    /// `disconnect()` drops `state`, so "has this client been closed?" cannot
+    /// be answered from it — `is_closed()` read `None` as "not closed" and
+    /// contradicted its own docstring (#146). Set when a disconnect actually
+    /// closes a live client, cleared when `connect()` installs a new one.
+    closed: Arc<AtomicBool>,
     connect_gate: ConnectGate,
 }
 
@@ -1166,6 +1171,7 @@ impl StockWebSocketClient {
             reader_thread_handle: Arc::new(Mutex::new(None)),
             message_queue,
             messages_dropped: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
         }
     }
@@ -1298,6 +1304,7 @@ impl StockWebSocketClient {
             return Err(errors::to_py_err(e));
         }
 
+        self.closed.store(false, Ordering::SeqCst);
         *self.state.lock().map_err(lock_err)? = Some(WebSocketState {
             inner: Arc::new(ws_client),
             handoff,
@@ -1313,6 +1320,9 @@ impl StockWebSocketClient {
         let state = self.state.lock().map_err(lock_err)?.take();
 
         if let Some(state) = state {
+            // Recorded before the close so `is_closed()` is true the moment
+            // `disconnect()` returns, even though `state` is gone (#146).
+            self.closed.store(true, Ordering::SeqCst);
             // Messages before `Disconnected` still reach the callbacks, but
             // the reader no longer waits for an iterator to make room.
             state.stop.store(true, Ordering::SeqCst);
@@ -1366,11 +1376,21 @@ impl StockWebSocketClient {
 
     /// Check if client has been closed
     ///
-    /// Returns true if disconnect() has been called and client is closed.
-    /// Once closed, the client cannot be reused - create a new instance.
+    /// Returns True once disconnect() has closed a live connection, and False
+    /// again after a later connect(). This client builds a fresh core client
+    /// per connect(), so it *can* be reused — see
+    /// `test_connect_after_disconnect_succeeds`. Calling disconnect() on a
+    /// client that was never connected closes nothing and leaves this False.
     #[pyo3(signature = ())]
     pub fn is_closed(&self, py: Python<'_>) -> bool {
-        // If state is None (never connected), not closed
+        // `disconnect()` drops `state`, so ask the flag first: without it a
+        // closed client reports `False` here, contradicting the docstring
+        // above (#146).
+        if self.closed.load(Ordering::SeqCst) {
+            return true;
+        }
+
+        // State still None and never disconnected: never connected, not closed.
         let inner = match self.state.lock() {
             Ok(g) => match g.as_ref() {
                 Some(s) => Arc::clone(&s.inner),
@@ -1707,6 +1727,7 @@ impl StockWebSocketClient {
     pub fn disconnect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let state_arc = Arc::clone(&self.state);
         let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
+        let closed = Arc::clone(&self.closed);
 
         future_into_py(py, async move {
             let state_opt = {
@@ -1717,6 +1738,7 @@ impl StockWebSocketClient {
 
             if let Some(state) = state_opt {
                 // See `disconnect`.
+                closed.store(true, Ordering::SeqCst);
                 state.stop.store(true, Ordering::SeqCst);
                 let _ = state.inner.disconnect().await;
                 // Note: do NOT manually invoke_disconnect — core's disconnect()
@@ -1846,6 +1868,11 @@ pub struct FutOptWebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    /// `disconnect()` drops `state`, so "has this client been closed?" cannot
+    /// be answered from it — `is_closed()` read `None` as "not closed" and
+    /// contradicted its own docstring (#146). Set when a disconnect actually
+    /// closes a live client, cleared when `connect()` installs a new one.
+    closed: Arc<AtomicBool>,
     connect_gate: ConnectGate,
 }
 
@@ -1874,6 +1901,7 @@ impl FutOptWebSocketClient {
             reader_thread_handle: Arc::new(Mutex::new(None)),
             message_queue,
             messages_dropped: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
         }
     }
@@ -1992,6 +2020,7 @@ impl FutOptWebSocketClient {
             return Err(errors::to_py_err(e));
         }
 
+        self.closed.store(false, Ordering::SeqCst);
         *self.state.lock().map_err(lock_err)? = Some(WebSocketState {
             inner: Arc::new(ws_client),
             handoff,
@@ -2007,6 +2036,9 @@ impl FutOptWebSocketClient {
         let state = self.state.lock().map_err(lock_err)?.take();
 
         if let Some(state) = state {
+            // Recorded before the close so `is_closed()` is true the moment
+            // `disconnect()` returns, even though `state` is gone (#146).
+            self.closed.store(true, Ordering::SeqCst);
             // Messages before `Disconnected` still reach the callbacks, but
             // the reader no longer waits for an iterator to make room.
             state.stop.store(true, Ordering::SeqCst);
@@ -2050,11 +2082,21 @@ impl FutOptWebSocketClient {
 
     /// Check if client has been closed
     ///
-    /// Returns true if disconnect() has been called and client is closed.
-    /// Once closed, the client cannot be reused - create a new instance.
+    /// Returns True once disconnect() has closed a live connection, and False
+    /// again after a later connect(). This client builds a fresh core client
+    /// per connect(), so it *can* be reused — see
+    /// `test_connect_after_disconnect_succeeds`. Calling disconnect() on a
+    /// client that was never connected closes nothing and leaves this False.
     #[pyo3(signature = ())]
     pub fn is_closed(&self, py: Python<'_>) -> bool {
-        // If state is None (never connected), not closed
+        // `disconnect()` drops `state`, so ask the flag first: without it a
+        // closed client reports `False` here, contradicting the docstring
+        // above (#146).
+        if self.closed.load(Ordering::SeqCst) {
+            return true;
+        }
+
+        // State still None and never disconnected: never connected, not closed.
         let inner = match self.state.lock() {
             Ok(g) => match g.as_ref() {
                 Some(s) => Arc::clone(&s.inner),
