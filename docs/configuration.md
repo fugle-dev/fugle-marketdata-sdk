@@ -187,50 +187,40 @@ Zero numeric fields mean "use default".
 
 ## HealthCheckConfig / HealthCheckOptions
 
-Controls WebSocket health monitoring via ping/pong messages.
+Controls WebSocket liveness detection. **Enabled by default in every language**
+(3.0): when no inbound frame (data, heartbeat or pong) arrives within
+`heartbeat_timeout_ms`, the connection is declared dead and auto-reconnect
+takes over (see [ReconnectConfig](#reconnectconfig--reconnectoptions)). The
+server sends a heartbeat every 30 seconds.
 
 ### Options Reference
 
 | Option | Type | Default | Min | Max | Description |
 |--------|------|---------|-----|-----|-------------|
-| `enabled` | bool | false | - | - | Enable WebSocket health monitoring |
-| `interval_ms` | u64/int/number | 30000 | 5000 | - | Ping interval in milliseconds |
-| `max_missed_pongs` | u64/int/number | 2 | 1 | - | Missed pongs before reconnect |
+| `enabled` | bool | true | - | - | Whether liveness detection is active |
+| `heartbeat_timeout_ms` | u64/int/number | 35000 | 5000 | - | Maximum gap between inbound frames before the connection is declared dead |
 
 **Constraints:**
 
-- `interval_ms` must be >= 5000ms (5 seconds) to prevent excessive overhead
-- `max_missed_pongs` must be >= 1 (at least one missed pong required to trigger reconnect)
-- Implicit constraint: timeout must be less than interval
-
-**Default Behavior:**
-
-- Health check is **disabled by default** (aligned with official Fugle SDKs)
-- Must explicitly enable if monitoring is needed
-- When enabled, sends ping every `interval_ms` milliseconds
-- Triggers reconnect if `max_missed_pongs` consecutive pongs are missed
+- `heartbeat_timeout_ms` must be >= 5000ms. Values below the server's 30 s
+  heartbeat period cause repeated false disconnects.
 
 ### Language-Specific Examples
 
 #### Python
 
 ```python
-from marketdata_py import WebSocketClient, HealthCheckConfig
+from fugle_marketdata import WebSocketClient, HealthCheckConfig
 
-# Health check disabled by default
+# Default: enabled, 35s timeout
 ws = WebSocketClient(api_key="your-api-key")
 
-# Enable health check with defaults
-health_check = HealthCheckConfig(enabled=True)
-ws = WebSocketClient(api_key="your-api-key", health_check=health_check)
+# Longer timeout
+ws = WebSocketClient(api_key="your-api-key",
+                     health_check=HealthCheckConfig(heartbeat_timeout_ms=60000))
 
-# Custom health check configuration
-health_check = HealthCheckConfig(
-    enabled=True,
-    interval_ms=15000,
-    max_missed_pongs=3
-)
-ws = WebSocketClient(api_key="your-api-key", health_check=health_check)
+# Turn it off
+ws = WebSocketClient(api_key="your-api-key", health_check=HealthCheckConfig(enabled=False))
 ```
 
 #### JavaScript/TypeScript
@@ -238,85 +228,53 @@ ws = WebSocketClient(api_key="your-api-key", health_check=health_check)
 ```typescript
 import { WebSocketClient } from '@fugle/marketdata';
 
-// Health check disabled by default
+// Default: enabled, 35s timeout
 const ws = new WebSocketClient({ apiKey: 'your-api-key' });
 
-// Enable health check with custom config
-const ws = new WebSocketClient({
-  apiKey: 'your-api-key',
-  healthCheck: {
-    enabled: true,
-    intervalMs: 15000,
-    maxMissedPongs: 3,
-  },
-});
+// Longer timeout
+const ws = new WebSocketClient({ apiKey: 'your-api-key', healthCheck: { heartbeatTimeoutMs: 60000 } });
+
+// Turn it off
+const ws = new WebSocketClient({ apiKey: 'your-api-key', healthCheck: { enabled: false } });
 ```
 
 #### Java
 
 ```java
-import tw.com.fugle.marketdata.*;
-
-// Health check disabled by default
-FugleRestClient client = FugleRestClient.builder()
+// Longer timeout (default: enabled, 35s)
+FugleWebSocketClient client = FugleWebSocketClient.builder()
     .apiKey("your-api-key")
+    .stock()
+    .healthCheck(HealthCheckOptions.builder().heartbeatTimeoutMs(60000L).build())
     .build();
 
-// Enable health check with custom config
-HealthCheckOptions healthCheck = new HealthCheckOptions.Builder()
-    .enabled(true)
-    .intervalMs(15000L)
-    .maxMissedPongs(3)
-    .build();
-
-FugleRestClient client = FugleRestClient.builder()
-    .apiKey("your-api-key")
-    .healthCheckOptions(healthCheck)
-    .build();
+// Turn it off: HealthCheckOptions.builder().enabled(false).build()
 ```
 
 #### Go
 
 ```go
-import marketdata "github.com/fugle-dev/fugle-marketdata-go"
-
-// Health check disabled by default
-client, err := marketdata.NewFugleRestClient(
-    marketdata.WithApiKey("your-api-key"),
+// Longer timeout (default: enabled, 35s). Set Enabled explicitly: a
+// HealthCheckConfig's zero value turns detection off (see #152).
+client, err := mkt.NewFugleWebSocketClient(listener,
+    mkt.WithApiKey("your-api-key"),
+    mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: true, HeartbeatTimeoutMs: 60000}),
 )
 
-// Enable health check with custom config
-client, err := marketdata.NewFugleRestClient(
-    marketdata.WithApiKey("your-api-key"),
-    marketdata.WithHealthCheckOptions(marketdata.HealthCheckOptions{
-        Enabled:         true,
-        IntervalMs:      15000,
-        MaxMissedPongs:  3,
-    }),
-)
+// Turn it off: mkt.WithHealthCheck(mkt.HealthCheckConfig{Enabled: false})
 ```
 
 #### C\#
 
 ```csharp
-using MarketdataUniffi;
-
-// Health check disabled by default
-var client = new RestClient(new RestClientOptions {
-    ApiKey = "your-api-key"
-});
-
-// Enable health check with custom config
-var healthCheck = new HealthCheckOptions {
-    Enabled = true,
-    IntervalMs = 15000,
-    MaxMissedPongs = 3,
-};
-
-var client = new RestClient(new RestClientOptions {
+// Longer timeout (default: enabled, 35s)
+using var client = new WebSocketClient(new WebSocketClientOptions
+{
     ApiKey = "your-api-key",
-    HealthCheckOptions = healthCheck
-});
+    HealthCheck = new HealthCheckOptions { HeartbeatTimeoutMs = 60000 },
+}, listener);
+
+// Turn it off: HealthCheck = new HealthCheckOptions { Enabled = false }
 ```
 
 ---
@@ -504,26 +462,17 @@ const ws = new WebSocketClient({
 
 ### HealthCheckConfig Errors
 
-**"health_check interval must be >= 5000ms (got {value}ms)"**
+**"heartbeat_timeout must be >= 5000ms (got {value})"**
 
-- **Cause:** `interval_ms` less than minimum 5000ms (5 seconds)
-- **Solution:** Use at least 5000ms interval
-
-**"max_missed_pongs must be >= 1"**
-
-- **Cause:** `max_missed_pongs` set to 0
-- **Solution:** Use at least 1 missed pong
+- **Cause:** `heartbeat_timeout_ms` less than the 5000ms floor
+- **Solution:** Use at least 5000ms; below 30000ms the server's heartbeat period causes false disconnects
 
 **Example (Python):**
 
 ```python
-# ✗ Wrong - interval too small
-health_check = HealthCheckConfig(enabled=True, interval_ms=2000)
-# ConfigError: health_check interval must be >= 5000ms (got 2000ms)
-
-# ✗ Wrong - max_missed_pongs is 0
-health_check = HealthCheckConfig(enabled=True, max_missed_pongs=0)
-# ConfigError: max_missed_pongs must be >= 1
+# ✗ Wrong - timeout below the floor
+health_check = HealthCheckConfig(heartbeat_timeout_ms=2000)
+# ValueError: Configuration error: heartbeat_timeout must be >= 5000ms (got 2s)
 ```
 
 ---
@@ -538,9 +487,8 @@ Quick reference of all default values:
 | | `max_attempts` | 0 | Unlimited |
 | | `initial_delay_ms` | 1000 | 1 second |
 | | `max_delay_ms` | 60000 | 1 minute |
-| **Health Check** | `enabled` | false | Must explicitly enable |
-| | `interval_ms` | 30000 | 30 seconds |
-| | `max_missed_pongs` | 2 | |
+| **Health Check** | `enabled` | true | On in every language (3.0) |
+| | `heartbeat_timeout_ms` | 35000 | Server heartbeat (30 s) + 5 s |
 
 **Default values sourced from:**
 

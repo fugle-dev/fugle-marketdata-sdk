@@ -148,26 +148,24 @@ To turn it off: `new WebSocketClient({ apiKey: 'your-key', reconnect: { enabled:
 
 ### Health Check Options
 
-Control WebSocket health check (ping-pong) behavior:
+Liveness detection is on by default: when no inbound frame (data, heartbeat or
+pong) arrives within `heartbeatTimeoutMs`, the connection is declared dead and
+auto-reconnect takes over. The server sends a heartbeat every 30 seconds.
 
 ```javascript
 const { WebSocketClient } = require('@fugle/marketdata');
 
 const ws = new WebSocketClient({
   apiKey: 'your-key',
-  healthCheck: {
-    enabled: true,
-    pingInterval: 15000,
-    maxMissedPongs: 3
-  }
+  healthCheck: { heartbeatTimeoutMs: 60000 }, // or { enabled: false } to turn it off
 });
 ```
 
 **HealthCheckOptions:**
 
-- `enabled` (boolean): Whether health check is enabled (default: false)
-- `pingInterval` (number): Ping interval in milliseconds (default: 30000, min: 5000)
-- `maxMissedPongs` (number): Maximum missed pongs before considering connection stale (default: 2, min: 1)
+- `enabled` (boolean): Whether health check is enabled (default: true)
+- `heartbeatTimeoutMs` (number): Maximum gap between inbound frames before the
+  connection is declared dead (default: 35000, min: 5000)
 
 ### Message Queue
 

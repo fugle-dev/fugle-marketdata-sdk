@@ -1411,49 +1411,48 @@ class FutOptHistoricalClient:
 
 # WebSocket Client
 class HealthCheckConfig:
-    """Health check (ping-pong) configuration.
+    """Liveness detection configuration.
 
-    Controls WebSocket health check behavior to detect stale connections.
-    When enabled, sends periodic pings and tracks missed pongs.
+    The connection is declared dead when no inbound frame (data, heartbeat or
+    pong) arrives within `heartbeat_timeout_ms`; the reconnect manager then
+    takes over. The server sends a heartbeat every 30 seconds. Enabled by
+    default; a client created without a health check config uses the defaults.
 
     Example:
         ```python
         from fugle_marketdata import HealthCheckConfig, WebSocketClient
 
-        config = HealthCheckConfig(
-            enabled=True,
-            ping_interval=15000,
-            max_missed_pongs=3
-        )
+        # Longer timeout
+        config = HealthCheckConfig(heartbeat_timeout_ms=60000)
         ws = WebSocketClient(api_key="key", health_check=config)
+
+        # Opt out of liveness detection
+        ws = WebSocketClient(api_key="key", health_check=HealthCheckConfig(enabled=False))
         ```
     """
 
     enabled: bool
-    """Whether health check is enabled."""
+    """Whether liveness detection is active (default: True)."""
 
-    ping_interval: int
-    """Ping interval in milliseconds (named to match the old `fugle-marketdata` SDK)."""
-
-    max_missed_pongs: int
-    """Maximum missed pongs before considering connection stale."""
+    heartbeat_timeout_ms: int
+    """Maximum gap between inbound frames in milliseconds before the connection is declared dead."""
 
     def __init__(
         self,
         *,
-        enabled: bool = False,
-        ping_interval: int = 30000,
-        max_missed_pongs: int = 2,
+        enabled: bool = True,
+        heartbeat_timeout_ms: int = 35000,
     ) -> None:
         """Create a new health check configuration.
 
         Args:
-            enabled: Whether health check is enabled (default: False)
-            ping_interval: Ping interval in milliseconds (default: 30000ms = 30s, min: 5000ms)
-            max_missed_pongs: Maximum missed pongs (default: 2, min: 1)
+            enabled: Whether liveness detection is active (default: True)
+            heartbeat_timeout_ms: Maximum gap between inbound frames before the
+                connection is declared dead (default: 35000ms = the server's 30s
+                heartbeat + 5s buffer, min: 5000ms)
 
         Raises:
-            ValueError: If ping_interval < 5000 or max_missed_pongs < 1
+            ValueError: If heartbeat_timeout_ms < 5000
         """
         ...
 
@@ -1540,8 +1539,8 @@ class WebSocketClient:
         rc = ReconnectConfig(max_attempts=10, initial_delay_ms=2000)
         ws = WebSocketClient(api_key="key", reconnect=rc)
 
-        # With health check enabled
-        hc = HealthCheckConfig(enabled=True, ping_interval=15000)
+        # With a longer health check timeout
+        hc = HealthCheckConfig(heartbeat_timeout_ms=60000)
         ws = WebSocketClient(api_key="key", health_check=hc)
 
         # Callback mode
@@ -1594,7 +1593,8 @@ class WebSocketClient:
                 rather than silently falling back.
             reconnect: Optional reconnect configuration (default: enabled, unlimited
                 attempts; pass ReconnectConfig.disabled() to turn it off)
-            health_check: Optional health check configuration (default: disabled)
+            health_check: Optional health check configuration (default: enabled,
+                35000ms timeout)
             tls_ca_file: Path to a PEM-encoded root CA to trust (in addition to
                 the system trust store). Mutually exclusive with tls_root_cert_pem.
             tls_root_cert_pem: Raw PEM bytes of a root CA to trust. Mutually

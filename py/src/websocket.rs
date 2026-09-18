@@ -378,19 +378,16 @@ impl Default for ReconnectConfig {
 
 /// Health check configuration for WebSocket connections
 ///
-/// Configures ping/pong based connection monitoring.
+/// Configures liveness detection: the connection is declared dead when no
+/// inbound frame arrives within `heartbeat_timeout_ms`. Enabled by default.
 ///
 /// # Example (Python)
 ///
 /// ```python
 /// from fugle_marketdata import HealthCheckConfig, WebSocketClient
 ///
-/// # Custom health check
-/// health_check = HealthCheckConfig(
-///     enabled=True,
-///     ping_interval=15000,  # 15 seconds
-///     max_missed_pongs=3
-/// )
+/// # Longer timeout
+/// health_check = HealthCheckConfig(heartbeat_timeout_ms=60000)
 ///
 /// ws = WebSocketClient(
 ///     api_key="your-key",
@@ -539,8 +536,8 @@ impl WebSocketClient {
     ///     rc = ReconnectConfig(max_attempts=10)
     ///     ws = WebSocketClient(api_key="key", reconnect=rc)
     ///
-    ///     # With health check
-    ///     hc = HealthCheckConfig(enabled=True, interval_ms=15000)
+    ///     # With a longer health check timeout
+    ///     hc = HealthCheckConfig(heartbeat_timeout_ms=60000)
     ///     ws = WebSocketClient(api_key="key", health_check=hc)
     ///     ```
     #[new]

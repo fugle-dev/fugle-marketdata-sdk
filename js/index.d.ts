@@ -2726,12 +2726,7 @@ export interface EtfHoldingsParams {
 /**
  * Health check options for WebSocket connections
  *
- * All fields are optional - defaults are applied when not specified:
- * - enabled: false
- * - pingInterval: 30000
- * - maxMissedPongs: 2
- *
- * Defaults: enabled=true, heartbeatTimeoutMs=35000.
+ * All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000.
  */
 export interface HealthCheckOptions {
   /** Whether liveness detection is active (default: true in 3.0) */

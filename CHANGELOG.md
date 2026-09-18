@@ -42,9 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **C#**: the `WebSocketClientOptions.Reconnect` and `HealthCheck` docs said
-  omitting them meant reconnect with 5 attempts and no health check; they now
-  describe the defaults.
+- **Docs**: several places said health check is off by default; it has been
+  on since 3.0 (`DEFAULT_HEALTH_CHECK_ENABLED = true`, 35 s timeout) in every
+  language, and it is what hands a dead connection to auto-reconnect.
+  Corrected in the C# `WebSocketClientOptions.Reconnect` / `HealthCheck` docs
+  (which also claimed omitting `Reconnect` meant 5 attempts),
+  `docs/configuration.md`, the Python type stubs (`__init__.pyi`, where
+  `HealthCheckConfig` still listed the removed `ping_interval` /
+  `max_missed_pongs` and `enabled=False`), the Node `HealthCheckOptions` doc
+  and the Node and Python READMEs, whose examples also used the removed
+  ping/pong fields instead of `heartbeatTimeoutMs` / `heartbeat_timeout_ms`.
 
 ## [Bindings 3.0.0-rc.3 / core 0.9.0-rc.2 / uniffi 0.2.0-rc.2] - 2026-09-18
 
