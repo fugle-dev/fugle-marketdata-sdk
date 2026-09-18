@@ -601,7 +601,7 @@ namespace FugleMarketData
         /// <param name="symbol">ETF symbol (e.g. "0050")</param>
         /// <param name="from">Range start date (optional)</param>
         /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
         public Task<string> GetEtfHoldingsAsync(
             string symbol, string? from = null, string? to = null, string? sort = null)
             => _inner.GetEtfHoldings(symbol, from, to, sort);
@@ -612,7 +612,7 @@ namespace FugleMarketData
         /// <param name="symbol">Stock symbol (e.g. "2330")</param>
         /// <param name="from">Range start date (optional)</param>
         /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
         public Task<string> GetInstitutionalTradesAsync(
             string symbol, string? from = null, string? to = null, string? sort = null)
             => _inner.GetInstitutionalTrades(symbol, from, to, sort);
@@ -623,7 +623,7 @@ namespace FugleMarketData
         /// <param name="symbol">Stock symbol (e.g. "2330")</param>
         /// <param name="from">Range start date (optional)</param>
         /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
         public Task<string> GetDirectorHoldingsAsync(
             string symbol, string? from = null, string? to = null, string? sort = null)
             => _inner.GetDirectorHoldings(symbol, from, to, sort);
@@ -634,7 +634,7 @@ namespace FugleMarketData
         /// <param name="symbol">Stock symbol (e.g. "2330")</param>
         /// <param name="from">Range start date (optional)</param>
         /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); anything else throws</param>
+        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
         public Task<string> GetTdccDistributionAsync(
             string symbol, string? from = null, string? to = null, string? sort = null)
             => _inner.GetTdccDistribution(symbol, from, to, sort);

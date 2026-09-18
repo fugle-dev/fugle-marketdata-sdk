@@ -78,8 +78,16 @@ describe('stock.ownership', () => {
     expect(paths[paths.length - 1]).toBe(`/v1.0/stock/ownership/${path}/2330?from=2026-07-01&to=2026-07-31&sort=desc`);
   });
 
-  test('rejects an unknown sort', async () => {
-    await expect(client.stock.ownership.directorHoldings({ symbol: '2330', sort: 'newest' })).rejects.toThrow(/sort/);
+  test.each(Object.entries(ENDPOINTS))('%s sends sort=asc and sort=desc', async (name, path) => {
+    for (const sort of ['asc', 'desc']) {
+      await client.stock.ownership[name]({ symbol: '2330', sort });
+      expect(paths[paths.length - 1]).toBe(`/v1.0/stock/ownership/${path}/2330?sort=${sort}`);
+    }
+  });
+
+  test('sends an unknown sort as given (keys are checked, values are not — #164, #179)', async () => {
+    await client.stock.ownership.directorHoldings({ symbol: '2330', sort: 'newest' });
+    expect(paths[paths.length - 1]).toBe('/v1.0/stock/ownership/director-holdings/2330?sort=newest');
   });
 
   test('decodes institutionalTrades', async () => {

@@ -129,9 +129,20 @@ def test_duplicate_date_argument_is_rejected(client):
         client.stock.ownership.director_holdings(symbol="2330", from_date="2026-01-01", from_="2026-02-01")
 
 
-def test_invalid_sort_is_rejected(client):
-    with pytest.raises(ValueError):
-        client.stock.ownership.institutional_trades(symbol="2330", sort="newest")
+@pytest.mark.parametrize("name,path", ENDPOINTS.items())
+def test_sort_asc_and_desc_are_sent(client, server, name, path):
+    _, requests = server
+    for sort in ("asc", "desc"):
+        getattr(client.stock.ownership, name)(symbol="2330", sort=sort)
+        assert requests[-1] == f"/v1.0/stock/ownership/{path}/2330?sort={sort}"
+
+
+def test_sort_is_sent_as_given(client, server):
+    # Keys are checked, values are not (#164): a sort the server does not
+    # know gets the server's own error, like every other endpoint (#179).
+    _, requests = server
+    client.stock.ownership.institutional_trades(symbol="2330", sort="newest")
+    assert requests[-1].endswith("/institutional-trades/2330?sort=newest")
 
 
 def test_institutional_trades_decoding(client):

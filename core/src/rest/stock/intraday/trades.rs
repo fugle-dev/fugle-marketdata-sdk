@@ -12,7 +12,7 @@ pub struct TradesRequestBuilder<'a> {
     odd_lot: Option<bool>,
     offset: Option<u32>,
     limit: Option<u32>,
-    sort: Option<&'static str>,
+    sort: Option<String>,
     is_trial: Option<bool>,
 }
 
@@ -54,15 +54,10 @@ impl<'a> TradesRequestBuilder<'a> {
         self
     }
 
-    /// Oldest-first ordering
-    pub fn sort_asc(mut self) -> Self {
-        self.sort = Some("asc");
-        self
-    }
-
-    /// Newest-first ordering (server default)
-    pub fn sort_desc(mut self) -> Self {
-        self.sort = Some("desc");
+    /// Set the sort order (`"asc"` oldest first, `"desc"` newest first — the
+    /// server default). Sent as given; the server rejects anything else.
+    pub fn sort(mut self, sort: &str) -> Self {
+        self.sort = Some(sort.to_string());
         self
     }
 
@@ -150,12 +145,12 @@ mod tests {
             .symbol("2330")
             .offset(50)
             .limit(100)
-            .sort_desc()
+            .sort("desc")
             .is_trial(true);
 
         assert_eq!(builder.offset, Some(50));
         assert_eq!(builder.limit, Some(100));
-        assert_eq!(builder.sort, Some("desc"));
+        assert_eq!(builder.sort, Some("desc".to_string()));
         assert_eq!(builder.is_trial, Some(true));
     }
 
@@ -169,5 +164,21 @@ mod tests {
 
         let url = TradesRequestBuilder::new(&client).symbol("2330").odd_lot(false).url().unwrap();
         assert_eq!(url, format!("{}/stock/intraday/trades/2330", base));
+    }
+
+    #[test]
+    fn test_trades_url_sort_is_sent_as_given() {
+        let client = RestClient::new(Auth::SdkToken("test".to_string()));
+        let base = client.get_base_url().to_string();
+
+        let url = TradesRequestBuilder::new(&client).symbol("2330").sort("asc").url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/trades/2330?sort=asc", base));
+
+        let url = TradesRequestBuilder::new(&client).symbol("2330").sort("desc").url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/trades/2330?sort=desc", base));
+
+        // Keys are checked, values are not (#164): the server answers a bad value.
+        let url = TradesRequestBuilder::new(&client).symbol("2330").sort("newest").url().unwrap();
+        assert_eq!(url, format!("{}/stock/intraday/trades/2330?sort=newest", base));
     }
 }

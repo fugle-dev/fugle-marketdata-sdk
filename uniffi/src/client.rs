@@ -1430,30 +1430,9 @@ impl StockOwnershipClient {
     }
 }
 
-/// Parse the `sort` argument shared by every ownership endpoint.
-///
-/// `sort` is validated rather than dropped: a typo would otherwise return the
-/// opposite series without complaint.
-fn parse_holdings_sort(
-    sort: Option<&str>,
-) -> Result<
-    Option<marketdata_core::rest::stock::ownership::HoldingsSort>,
-    marketdata_core::MarketDataError,
-> {
-    use marketdata_core::rest::stock::ownership::HoldingsSort;
-
-    match sort {
-        None => Ok(None),
-        Some("asc") => Ok(Some(HoldingsSort::Asc)),
-        Some("desc") => Ok(Some(HoldingsSort::Desc)),
-        Some(other) => Err(marketdata_core::MarketDataError::ConfigError(format!(
-            "sort must be 'asc' or 'desc' (got '{other}')"
-        ))),
-    }
-}
-
 /// Generate one blocking request function per ownership endpoint. The core
-/// builders share a query contract but no trait, hence a macro.
+/// builders share a query contract but no trait, hence a macro. `sort` is
+/// sent as given: keys are checked, values are not (#164).
 macro_rules! ownership_request {
     ($fn_name:ident, $method:ident) => {
         fn $fn_name(
@@ -1463,7 +1442,6 @@ macro_rules! ownership_request {
             to: Option<&str>,
             sort: Option<&str>,
         ) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
-            let sort = parse_holdings_sort(sort)?;
             let stock = client.stock();
             let ownership = stock.ownership();
             let mut builder = ownership.$method().symbol(symbol);

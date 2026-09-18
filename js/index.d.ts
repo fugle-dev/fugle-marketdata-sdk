@@ -2375,8 +2375,6 @@ export declare class StockOwnershipClient {
    * await client.stock.ownership.etfHoldings({ symbol: '0050' });
    * await client.stock.ownership.etfHoldings({ symbol: '0050', from: '2026-01-01', sort: 'desc' });
    * ```
-   *
-   * @throws {Error} If `sort` is neither "asc" nor "desc"
    */
   etfHoldings(params: EtfHoldingsParams): Promise<EtfHoldingsResponse>
   /**
@@ -2386,8 +2384,6 @@ export declare class StockOwnershipClient {
    * await client.stock.ownership.institutionalTrades({ symbol: '2330' });
    * await client.stock.ownership.institutionalTrades({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
    * ```
-   *
-   * @throws {Error} If `sort` is neither "asc" nor "desc"
    */
   institutionalTrades(params: InstitutionalTradesParams): Promise<InstitutionalTradesResponse>
   /**
@@ -2397,8 +2393,6 @@ export declare class StockOwnershipClient {
    * await client.stock.ownership.directorHoldings({ symbol: '2330' });
    * await client.stock.ownership.directorHoldings({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
    * ```
-   *
-   * @throws {Error} If `sort` is neither "asc" nor "desc"
    */
   directorHoldings(params: DirectorHoldingsParams): Promise<DirectorHoldingsResponse>
   /**
@@ -2408,8 +2402,6 @@ export declare class StockOwnershipClient {
    * await client.stock.ownership.tdccDistribution({ symbol: '2330' });
    * await client.stock.ownership.tdccDistribution({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
    * ```
-   *
-   * @throws {Error} If `sort` is neither "asc" nor "desc"
    */
   tdccDistribution(params: TdccDistributionParams): Promise<TdccDistributionResponse>
 }

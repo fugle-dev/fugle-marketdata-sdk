@@ -745,6 +745,36 @@ back changes; calls that passed them stop compiling (or raise, in Python).
   `capital_changes_sync` and the dividends / listing-applicants
   counterparts lose the leading `date`.
 
+## 19. `sort`: one shape on every builder
+
+`sort` had three shapes in core for one server contract (`asc|desc`): a
+string on the candles and corporate-actions builders, `sort_asc()` /
+`sort_desc()` on intraday trades, and a `HoldingsSort` enum on the four
+ownership builders (#179). It is `sort(&str)` everywhere now, following the
+rule from §17: keys are checked, values are sent as given. A sort value the
+server adds later needs no SDK release.
+
+- **Rust**: `TradesRequestBuilder::sort_asc()` / `sort_desc()` are replaced
+  by `sort("asc")` / `sort("desc")`. `HoldingsSort` is gone; the ownership
+  builders' `sort()` takes `"asc"` / `"desc"`.
+
+  ```rust
+  // Before
+  client.stock().intraday().trades().symbol("2330").sort_desc().send()?;
+  client.stock().ownership().etf_holdings().symbol("0050").sort(HoldingsSort::Desc).send()?;
+  // After
+  client.stock().intraday().trades().symbol("2330").sort("desc").send()?;
+  client.stock().ownership().etf_holdings().symbol("0050").sort("desc").send()?;
+  ```
+
+- **Python, Node, C#, Go, Java, C++**: no signature change. `sort` was the
+  last free-form string parameter the bindings still checked the *value* of —
+  `stock.intraday.trades(sort=...)` in Python and the four `stock.ownership.*`
+  methods everywhere raised (Python `ValueError`), rejected (Node `Error`)
+  or failed with a config error (C#, Go, Java, C++) on anything but `"asc"`
+  / `"desc"`. They now send the value and return the server's error, like
+  every other parameter.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

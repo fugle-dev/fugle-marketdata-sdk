@@ -3121,8 +3121,7 @@ pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::limit(s
 pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::odd_lot(self, bool) -> Self
 pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::offset(self, u32) -> Self
 pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::sort_asc(self) -> Self
-pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::sort_desc(self) -> Self
+pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>::symbol(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::stock::intraday::TradesRequestBuilder<'a>
@@ -3144,30 +3143,11 @@ impl<'a> core::marker::UnsafeUnpin for marketdata_core::rest::stock::intraday::V
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::stock::intraday::VolumesRequestBuilder<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::intraday::VolumesRequestBuilder<'a>
 pub mod marketdata_core::rest::stock::ownership
-pub enum marketdata_core::rest::stock::ownership::HoldingsSort
-pub marketdata_core::rest::stock::ownership::HoldingsSort::Asc
-pub marketdata_core::rest::stock::ownership::HoldingsSort::Desc
-impl core::clone::Clone for marketdata_core::rest::stock::ownership::HoldingsSort
-pub fn marketdata_core::rest::stock::ownership::HoldingsSort::clone(&self) -> marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::cmp::Eq for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::cmp::PartialEq for marketdata_core::rest::stock::ownership::HoldingsSort
-pub fn marketdata_core::rest::stock::ownership::HoldingsSort::eq(&self, &marketdata_core::rest::stock::ownership::HoldingsSort) -> bool
-impl core::fmt::Debug for marketdata_core::rest::stock::ownership::HoldingsSort
-pub fn marketdata_core::rest::stock::ownership::HoldingsSort::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::marker::StructuralPartialEq for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::marker::Freeze for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::marker::Send for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::marker::Sync for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::marker::Unpin for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::marker::UnsafeUnpin for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::stock::ownership::HoldingsSort
-impl core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::ownership::HoldingsSort
 pub struct marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>::sort(self, marketdata_core::rest::stock::ownership::HoldingsSort) -> Self
+pub fn marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>::to(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::ownership::DirectorHoldingsRequestBuilder<'a>
@@ -3181,7 +3161,7 @@ pub struct marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a
 impl<'a> marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>::sort(self, marketdata_core::rest::stock::ownership::HoldingsSort) -> Self
+pub fn marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>::to(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::ownership::EtfHoldingsRequestBuilder<'a>
@@ -3195,7 +3175,7 @@ pub struct marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBu
 impl<'a> marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>::sort(self, marketdata_core::rest::stock::ownership::HoldingsSort) -> Self
+pub fn marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>::to(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::ownership::InstitutionalTradesRequestBuilder<'a>
@@ -3209,7 +3189,7 @@ pub struct marketdata_core::rest::stock::ownership::TdccDistributionRequestBuild
 impl<'a> marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>::from(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>::sort(self, marketdata_core::rest::stock::ownership::HoldingsSort) -> Self
+pub fn marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>::sort(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>::symbol(self, &str) -> Self
 pub fn marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>::to(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::ownership::TdccDistributionRequestBuilder<'a>
