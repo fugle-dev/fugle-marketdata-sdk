@@ -18,7 +18,8 @@
 //!   `Disconnected`;
 //! - the claim on reporting that connection's `Disconnected` (#41), and
 //!   whether the client's close has been reported: one final event per
-//!   disconnect, even when `disconnect()` stops a reconnect (#98);
+//!   disconnect, even when `disconnect()` stops a reconnect (#98), and
+//!   nothing from the reconnect loop after it (#145);
 //! - the drop bookkeeping behind `MessagesDropped`.
 //!
 //! [`MessageOverflow::DropNewest`]: crate::websocket::MessageOverflow::DropNewest
@@ -52,7 +53,8 @@ struct State {
     disconnect_claimed: bool,
     /// The client's close has been reported: a `Disconnected` with
     /// `will_reconnect: false` or a `ReconnectFailed` is queued, and nothing
-    /// reconnects until a connection authenticates again (#98).
+    /// reconnects until a connection authenticates again (#98). The reconnect
+    /// loop reports only while it is unset (#145).
     close_reported: bool,
     /// Message drops not covered by a `MessagesDropped` yet, and when the
     /// last one was queued on the current connection.
@@ -196,14 +198,24 @@ impl StreamSender {
     pub(crate) fn authenticated(&self, data: serde_json::Value, frames: Vec<WebSocketMessage>) {
         let mut state = self.shared.lock();
         let mut outcome = Outcome::default();
+        self.open_connection(&mut state, data, frames, &mut outcome);
+        self.finish(state, outcome);
+    }
+
+    fn open_connection(
+        &self,
+        state: &mut State,
+        data: serde_json::Value,
+        frames: Vec<WebSocketMessage>,
+        outcome: &mut Outcome,
+    ) {
         state.disconnect_claimed = false;
         state.close_reported = false;
         state.open = true;
-        self.push_event(&mut state, ConnectionEvent::Authenticated { data }, &mut outcome);
+        self.push_event(state, ConnectionEvent::Authenticated { data }, outcome);
         for frame in frames {
-            self.push_message_locked(&mut state, frame, &mut outcome);
+            self.push_message_locked(state, frame, outcome);
         }
-        self.finish(state, outcome);
     }
 
     /// Report the credentials rejected: queue `Unauthenticated`, then the
@@ -216,15 +228,97 @@ impl StreamSender {
     ) {
         let mut state = self.shared.lock();
         let mut outcome = Outcome::default();
-        self.push_event(
-            &mut state,
-            ConnectionEvent::Unauthenticated { message, data },
-            &mut outcome,
-        );
-        for frame in frames {
-            self.push_message_locked(&mut state, frame, &mut outcome);
-        }
+        self.push_rejection(&mut state, message, data, frames, &mut outcome);
         self.finish(state, outcome);
+    }
+
+    fn push_rejection(
+        &self,
+        state: &mut State,
+        message: String,
+        data: serde_json::Value,
+        frames: Vec<WebSocketMessage>,
+        outcome: &mut Outcome,
+    ) {
+        self.push_event(state, ConnectionEvent::Unauthenticated { message, data }, outcome);
+        for frame in frames {
+            self.push_message_locked(state, frame, outcome);
+        }
+    }
+
+    /// Report a step of the reconnect loop: set `connection` to `next` and
+    /// queue `event`, unless the client's close has been reported (#145).
+    /// `false` means it has: nothing was changed and the loop must stop, so
+    /// the final event stays final and its `Closed` state is kept.
+    ///
+    /// Only the reconnect loop reports through this: a `connect()` the caller
+    /// starts is never held back (a reported close leaves the client
+    /// `Closed`, which refuses `connect()` anyway). Same lock order as
+    /// [`connection_lost`](Self::connection_lost).
+    pub(crate) fn reconnect_step(
+        &self,
+        connection: &RwLock<ConnectionState>,
+        next: ConnectionState,
+        event: Option<ConnectionEvent>,
+    ) -> bool {
+        self.unless_closed(|state, outcome| {
+            // Writers only assign, so a poisoned lock holds a whole value.
+            *connection.write().unwrap_or_else(PoisonError::into_inner) = next;
+            if let Some(event) = event {
+                self.push_event(state, event, outcome);
+            }
+        })
+    }
+
+    /// Queue `event` unless the client's close has been reported (#145):
+    /// an `Error` of a reconnect attempt or a subscription replay is not
+    /// reported after the final event. `false` if it was not queued.
+    pub(crate) fn emit_unless_closed(&self, event: ConnectionEvent) -> bool {
+        self.unless_closed(|state, outcome| self.push_event(state, event, outcome))
+    }
+
+    /// [`authenticated`](Self::authenticated) for the reconnect loop, with
+    /// `connection` set to `Connected` first, unless the client's close has
+    /// been reported (#145): a stopped reconnect never reopens. `false`
+    /// means it has, and nothing was changed.
+    pub(crate) fn reconnect_authenticated(
+        &self,
+        connection: &RwLock<ConnectionState>,
+        data: serde_json::Value,
+        frames: Vec<WebSocketMessage>,
+    ) -> bool {
+        self.unless_closed(|state, outcome| {
+            // Writers only assign, so a poisoned lock holds a whole value.
+            *connection.write().unwrap_or_else(PoisonError::into_inner) =
+                ConnectionState::Connected;
+            self.open_connection(state, data, frames, outcome);
+        })
+    }
+
+    /// [`unauthenticated`](Self::unauthenticated) for the reconnect loop,
+    /// unless the client's close has been reported (#145).
+    pub(crate) fn reconnect_rejected(
+        &self,
+        message: String,
+        data: serde_json::Value,
+        frames: Vec<WebSocketMessage>,
+    ) -> bool {
+        self.unless_closed(|state, outcome| {
+            self.push_rejection(state, message, data, frames, outcome);
+        })
+    }
+
+    /// Run `report` under the lock unless the client's close has been
+    /// reported; `false` if it has.
+    fn unless_closed(&self, report: impl FnOnce(&mut State, &mut Outcome)) -> bool {
+        let mut state = self.shared.lock();
+        if state.close_reported {
+            return false;
+        }
+        let mut outcome = Outcome::default();
+        report(&mut state, &mut outcome);
+        self.finish(state, outcome);
+        true
     }
 
     /// Queue the current connection's `Disconnected`, unless it has one
@@ -860,6 +954,117 @@ mod tests {
                 .count();
             assert_eq!(finals, 1, "{items:?}");
             assert!(matches!(*connection.read().unwrap(), ConnectionState::Closed { .. }));
+        }
+    }
+
+    /// Every step the reconnect loop reports; `true` if all were reported.
+    fn reconnect_steps(tx: &StreamSender, connection: &RwLock<ConnectionState>) -> Vec<bool> {
+        vec![
+            tx.reconnect_step(
+                connection,
+                ConnectionState::Reconnecting { attempt: 1 },
+                Some(ConnectionEvent::Reconnecting { attempt: 1 }),
+            ),
+            tx.reconnect_step(connection, ConnectionState::Connecting, Some(ConnectionEvent::Connecting {})),
+            tx.reconnect_step(connection, ConnectionState::Disconnected, None),
+            tx.emit_unless_closed(ConnectionEvent::Connected {}),
+            tx.reconnect_rejected("nope".into(), serde_json::Value::Null, vec![message(1)]),
+            tx.reconnect_authenticated(connection, serde_json::Value::Null, vec![message(2)]),
+        ]
+    }
+
+    #[test]
+    fn a_reported_close_ends_the_reconnect_loop_s_reports() {
+        // By the caller, and by the loop giving up.
+        for close_by_client in [true, false] {
+            let f = fixture(8, 8);
+            open(&f.tx);
+            let connection = RwLock::new(ConnectionState::Connected);
+            f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
+            if close_by_client {
+                f.tx.client_closed(&connection, 1006, "Force closed".into());
+            } else {
+                f.tx.reconnect_failed(&connection, None, 1);
+            }
+            let closed_state = connection.read().unwrap().clone();
+            let before = drain(&f.rx);
+
+            assert_eq!(reconnect_steps(&f.tx, &connection), vec![false; 6]);
+            assert!(drain(&f.rx).is_empty(), "nothing follows {before:?}");
+            assert_eq!(*connection.read().unwrap(), closed_state);
+            // Not reopened: messages are still refused.
+            f.tx.push_message(message(3));
+            assert!(drain(&f.rx).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_reconnect_loop_reports_until_the_close_is_reported() {
+        let f = fixture(16, 16);
+        open(&f.tx);
+        let connection = RwLock::new(ConnectionState::Connected);
+        f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
+        drain(&f.rx);
+
+        assert_eq!(reconnect_steps(&f.tx, &connection), vec![true; 6]);
+        assert_eq!(*connection.read().unwrap(), ConnectionState::Connected);
+        assert_eq!(
+            drain(&f.rx),
+            vec![
+                "Reconnecting { attempt: 1 }".to_string(),
+                "Connecting".into(),
+                "Connected".into(),
+                "Unauthenticated { message: \"nope\", data: Null }".into(),
+                "m1".into(),
+                "Authenticated { data: Null }".into(),
+                "m2".into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_new_connection_lets_the_reconnect_loop_report_again() {
+        let f = fixture(16, 16);
+        open(&f.tx);
+        let connection = RwLock::new(ConnectionState::Connected);
+        f.tx.client_closed(&connection, 1000, "Normal closure".into());
+        // A `connect()` reports through the unconditional calls.
+        open(&f.tx);
+        drain(&f.rx);
+        f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
+        assert!(f.tx.reconnect_step(
+            &connection,
+            ConnectionState::Reconnecting { attempt: 1 },
+            Some(ConnectionEvent::Reconnecting { attempt: 1 }),
+        ));
+    }
+
+    #[test]
+    fn a_close_racing_the_reconnect_loop_is_the_last_event() {
+        for _ in 0..200 {
+            // Room for every step the loop can report, so none is dropped.
+            let f = fixture(1_000, 4_000);
+            open(&f.tx);
+            let connection = Arc::new(RwLock::new(ConnectionState::Connected));
+            f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
+            drain(&f.rx);
+            let reconnecting = {
+                let tx = f.tx.clone();
+                let connection = Arc::clone(&connection);
+                thread::spawn(move || {
+                    for _ in 0..500 {
+                        if !reconnect_steps(&tx, &connection).iter().all(|&ok| ok) {
+                            break;
+                        }
+                    }
+                })
+            };
+            f.tx.client_closed(&connection, 1006, "Force closed".into());
+            reconnecting.join().expect("reconnect loop");
+            let items = drain(&f.rx);
+            let last = items.last().expect("the final event");
+            assert!(last.starts_with("Disconnected") && last.contains("will_reconnect: false"), "{items:?}");
+            assert_eq!(*connection.read().unwrap(), client_close(1006, "Force closed"));
         }
     }
 

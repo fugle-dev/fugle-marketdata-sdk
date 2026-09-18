@@ -537,7 +537,8 @@ pub(crate) fn replay_subscriptions(
             })
         });
         if let Err(e) = sent {
-            stream.emit(ConnectionEvent::resubscribe_failed(&label, &e));
+            // Not after the client's close has been reported (#145).
+            stream.emit_unless_closed(ConnectionEvent::resubscribe_failed(&label, &e));
             first_err.get_or_insert(e);
         }
     }
@@ -546,26 +547,35 @@ pub(crate) fn replay_subscriptions(
 
 /// Run the auth handshake on a freshly-reconnected stream and emit lifecycle events.
 ///
-/// If `should_stop` is set while connecting, the new connection is dropped
-/// without emitting further events and `ClientClosed` is returned.
+/// If `should_stop` is set while connecting, or the client's close has been
+/// reported (#145), the new connection is dropped without emitting further
+/// events and `ClientClosed` is returned.
 fn reconnect_and_authenticate(
     shared: &Arc<OwnerShared>,
 ) -> Result<(SyncWs, mpsc::Receiver<String>), MarketDataError> {
     let stopping = || shared.should_stop.load(Ordering::SeqCst);
 
-    set_state(shared, ConnectionState::Connecting);
-    shared.stream.emit(ConnectionEvent::Connecting {
-    });
+    // Each step is reported only if the client's close has not been (#145).
+    if !shared.stream.reconnect_step(
+        &shared.state,
+        ConnectionState::Connecting,
+        Some(ConnectionEvent::Connecting {}),
+    ) {
+        return Err(MarketDataError::ClientClosed);
+    }
 
     let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config))?;
     if stopping() {
         return Err(MarketDataError::ClientClosed);
     }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws reconnected");
-    shared.stream.emit(ConnectionEvent::Connected {
-    });
-
-    set_state(shared, ConnectionState::Authenticating);
+    if !shared.stream.reconnect_step(
+        &shared.state,
+        ConnectionState::Authenticating,
+        Some(ConnectionEvent::Connected {}),
+    ) {
+        return Err(MarketDataError::ClientClosed);
+    }
     let handshake = do_auth_handshake(&mut ws, &shared.config, &shared.stream);
     if stopping() {
         return Err(MarketDataError::ClientClosed);
@@ -573,7 +583,9 @@ fn reconnect_and_authenticate(
     let (data, frames) = match handshake {
         AuthHandshake::Authenticated { data, frames } => (data, frames),
         AuthHandshake::Rejected { message, data, frames } => {
-            shared.stream.unauthenticated(message.clone(), data, frames);
+            if !shared.stream.reconnect_rejected(message.clone(), data, frames) {
+                return Err(MarketDataError::ClientClosed);
+            }
             return Err(MarketDataError::AuthError { msg: message, http: None });
         }
         AuthHandshake::Failed(e) => return Err(e),
@@ -598,10 +610,12 @@ fn reconnect_and_authenticate(
     // Replay subscriptions
     let _ = replay_subscriptions(resubscribe, &shared.stream, &write_tx);
 
-    set_state(shared, ConnectionState::Connected);
+    // Before this thread reads the new connection; it may report its own
+    // close. A close reported meanwhile keeps it from reopening (#145).
+    if !shared.stream.reconnect_authenticated(&shared.state, data, frames) {
+        return Err(MarketDataError::ClientClosed);
+    }
     crate::tracing_compat::info!(target: "fugle_marketdata::ws", "ws re-authenticated");
-    // Before this thread reads the new connection; it may report its own close.
-    shared.stream.authenticated(data, frames);
     Ok((ws, write_rx))
 }
 
@@ -685,16 +699,21 @@ pub(crate) fn run_supervisor(
                 let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
                 mgr.current_attempt()
             };
-            set_state(&shared, ConnectionState::Reconnecting { attempt });
+            // A close reported since the check above ends the loop here,
+            // so nothing follows the final event (#145).
+            if !shared.stream.reconnect_step(
+                &shared.state,
+                ConnectionState::Reconnecting { attempt },
+                Some(ConnectionEvent::Reconnecting { attempt }),
+            ) {
+                return;
+            }
             warn!(
                 target: "fugle_marketdata::ws",
                 attempt,
                 delay_ms = d.as_millis() as u64,
                 "ws reconnect attempt"
             );
-            shared.stream.emit(ConnectionEvent::Reconnecting {
-                attempt,
-            });
 
             std::thread::sleep(d);
             // `disconnect()` during the backoff: it reports the final
@@ -705,12 +724,16 @@ pub(crate) fn run_supervisor(
 
             match reconnect_and_authenticate(&shared) {
                 Ok(pair) => break Some(pair),
-                // Stopped mid-attempt; the shutdown path owns the close.
+                // Stopped mid-attempt, or the close was reported meanwhile
+                // (#145); the shutdown path owns the close.
+                Err(MarketDataError::ClientClosed) => return,
                 Err(_) if shared.should_stop.load(Ordering::SeqCst) => return,
                 Err(e) => {
                     // A rejection was already reported as `Unauthenticated`.
-                    if !matches!(e, MarketDataError::AuthError { .. }) {
-                        shared.stream.emit(ConnectionEvent::error(&e));
+                    if !matches!(e, MarketDataError::AuthError { .. })
+                        && !shared.stream.emit_unless_closed(ConnectionEvent::error(&e))
+                    {
+                        return;
                     }
                     continue;
                 }
@@ -718,11 +741,6 @@ pub(crate) fn run_supervisor(
         };
         connection = new_conn;
     }
-}
-
-fn set_state(shared: &OwnerShared, new_state: ConnectionState) {
-    let mut st = shared.state.write().expect("state lock poisoned");
-    *st = new_state;
 }
 
 // Suppress warning: AtomicBool re-export is only used through shared.should_stop.
