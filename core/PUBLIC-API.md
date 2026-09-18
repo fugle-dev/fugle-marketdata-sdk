@@ -35,6 +35,27 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — two REST endpoints the server had and the SDK did not (#176)
+
+Additive. Parameters follow the server's DTOs and controllers
+(`stock/intraday/dto/get-quotes.dto.ts`,
+`stock/snapshot/dto/get-snapshot-heatmap.dto.ts`), not developer.fugle.tw.
+
+- `+` `rest::IntradayClient::quotes` →
+  `rest::stock::intraday::QuotesRequestBuilder` (`symbol`, `odd_lot`, `send`)
+  — `GET /stock/intraday/quotes`, the batch form of `quote`: no path
+  parameter, the symbols are the comma-separated `symbol` query value, the
+  response is an array of quote objects.
+- `+` `rest::stock::snapshot::SnapshotClient::heatmap` →
+  `rest::stock::snapshot::HeatmapRequestBuilder` (`symbol`, `time`, `period`,
+  `send`) — `GET /stock/snapshot/heatmap/{symbol}`, where `symbol` is an
+  **index code** (`IX0001`); a stock symbol or a market is HTTP 404.
+- `+` `models::SnapshotHeatmapResponse`, `models::SnapshotHeatmapData` — the
+  heatmap payload, fields from a prod answer (2026-09-18).
+
+`futopt/historical/contracts` is in the gateway's source but not deployed
+(prod answers `Cannot GET`), so it is left out until it is.
+
 ### Unreleased — one shape for `sort`: `sort(&str)` everywhere (#179)
 
 `sort` had three shapes in core (`sort(&str)`, `sort_asc()` / `sort_desc()`,

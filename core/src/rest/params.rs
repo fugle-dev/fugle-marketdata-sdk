@@ -187,7 +187,8 @@ fn fold(key: &str) -> String {
 // Shared parameters
 // ---------------------------------------------------------------------------
 
-/// `type=oddlot` on the single-symbol stock intraday endpoints.
+/// `type=oddlot` on the stock intraday endpoints (single-symbol, and the
+/// batch `quotes`).
 const ODD_LOT: ParamSpec = ParamSpec {
     aliases: &["oddLot"],
     flag: Some("oddlot"),
@@ -258,9 +259,9 @@ macro_rules! endpoint {
 /// The server also serves `warrant/intraday/*` (six endpoints). They are left
 /// out on purpose: Fugle does not offer warrant data through the SDK (#176),
 /// so `core/src/rest` has no `warrant/` module and the table has no row for
-/// it. `stock/intraday/quotes`, `stock/snapshot/heatmap` and
-/// `futopt/historical/contracts` exist on the server too and are tracked by
-/// #176 as builders still to write.
+/// it. `futopt/historical/contracts` is in the gateway's source but not
+/// deployed (prod answers `Cannot GET`, 2026-09-19); it gets a builder and a
+/// row once it is, so the SDK never ships a call that only 404s.
 pub static ENDPOINTS: &[EndpointSpec] = &[
     // stock / intraday — src/stock/intraday/dto/*.dto.ts
     endpoint!(
@@ -293,6 +294,15 @@ pub static ENDPOINTS: &[EndpointSpec] = &[
         &[],
         "stock/intraday/quote.rs",
         [ODD_LOT]
+    ),
+    // `quotes` is the batch form: no path segment, the symbols are a
+    // comma-separated query value.
+    endpoint!(
+        stock("intraday", "quotes"),
+        None,
+        &[],
+        "stock/intraday/quotes.rs",
+        [required("symbol", "symbol"), ODD_LOT]
     ),
     endpoint!(
         stock("intraday", "candles"),
@@ -373,6 +383,14 @@ pub static ENDPOINTS: &[EndpointSpec] = &[
         &[],
         "stock/snapshot/actives.rs",
         [required("trade", "trade"), TYPE_FILTER,]
+    ),
+    // `heatmap`'s path segment is an index code (`IX0001`), not a market.
+    endpoint!(
+        stock("snapshot", "heatmap"),
+        Some("symbol"),
+        &[],
+        "stock/snapshot/heatmap.rs",
+        [param("time", "time"), param("period", "period"),]
     ),
     // stock / technical — src/stock/technical/dto/*.dto.ts
     endpoint!(
@@ -597,8 +615,8 @@ mod tests {
     // -- lookup -------------------------------------------------------------
 
     #[test]
-    fn covers_the_thirty_two_typed_endpoints_once_each() {
-        assert_eq!(ENDPOINTS.len(), 32);
+    fn covers_the_thirty_four_typed_endpoints_once_each() {
+        assert_eq!(ENDPOINTS.len(), 34);
         let paths: BTreeSet<_> = ENDPOINTS.iter().map(|e| e.path).collect();
         assert_eq!(paths.len(), ENDPOINTS.len(), "duplicate path");
         let sources: BTreeSet<_> = ENDPOINTS.iter().map(|e| e.builder_src).collect();
@@ -622,7 +640,13 @@ mod tests {
         assert!(EndpointSpec::for_name("stock.corporate-actions.capital-changes").is_some());
 
         assert!(EndpointSpec::for_path(&["stock", "intraday"]).is_none());
-        assert!(EndpointSpec::for_name("stock.intraday.quotes").is_none());
+        assert!(EndpointSpec::for_name("stock.intraday.quotez").is_none());
+
+        // The batch quotes take `symbol` as a query key, the single one as the path.
+        let quotes = EndpointSpec::for_name("stock.intraday.quotes").unwrap();
+        assert_eq!(quotes.path_param, None);
+        assert!(quotes.resolve("symbol").unwrap().spec.required);
+        assert!(EndpointSpec::for_name("stock.intraday.quote").unwrap().resolve("symbol").is_none());
     }
 
     #[test]
@@ -876,6 +900,14 @@ mod tests {
                     .odd_lot(true)
                     .send()
             }),
+            (&["stock", "intraday", "quotes"], |c| {
+                c.stock()
+                    .intraday()
+                    .quotes()
+                    .symbol("2330,2317")
+                    .odd_lot(true)
+                    .send()
+            }),
             (&["stock", "intraday", "candles"], |c| {
                 c.stock()
                     .intraday()
@@ -952,6 +984,15 @@ mod tests {
                     .market("TSE")
                     .trade("volume")
                     .type_filter("COMMONSTOCK")
+                    .send()
+            }),
+            (&["stock", "snapshot", "heatmap"], |c| {
+                c.stock()
+                    .snapshot()
+                    .heatmap()
+                    .symbol("IX0001")
+                    .time("100000")
+                    .period("1m")
                     .send()
             }),
             (&["stock", "technical", "sma"], |c| {

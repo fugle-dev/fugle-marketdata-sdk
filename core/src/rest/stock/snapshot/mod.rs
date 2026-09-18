@@ -4,12 +4,15 @@
 //! - quotes: Market-wide quotes snapshot
 //! - movers: Top gainers and losers
 //! - actives: Most active stocks by volume/value
+//! - heatmap: Constituents of an index with their change
 
 mod actives;
+mod heatmap;
 mod movers;
 mod quotes;
 
 pub use actives::ActivesRequestBuilder;
+pub use heatmap::HeatmapRequestBuilder;
 pub use movers::MoversRequestBuilder;
 pub use quotes::SnapshotQuotesRequestBuilder;
 
@@ -66,5 +69,22 @@ impl<'a> SnapshotClient<'a> {
     /// ```
     pub fn actives(&self) -> ActivesRequestBuilder<'_> {
         ActivesRequestBuilder::new(self.client)
+    }
+
+    /// Get the heatmap of an index: its constituents with their change
+    ///
+    /// The path takes an **index code** (`IX0001`, `IX0027`), not a stock
+    /// symbol or a market; those return HTTP 404.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use marketdata_core::{RestClient, Auth};
+    ///
+    /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
+    /// let heatmap = client.stock().snapshot().heatmap().symbol("IX0001").period("1m").send()?;
+    /// # Ok::<(), marketdata_core::MarketDataError>(())
+    /// ```
+    pub fn heatmap(&self) -> HeatmapRequestBuilder<'_> {
+        HeatmapRequestBuilder::new(self.client)
     }
 }

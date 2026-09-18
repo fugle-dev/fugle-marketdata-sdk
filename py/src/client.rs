@@ -618,6 +618,59 @@ impl StockIntradayClient {
         }
     }
 
+    /// Get intraday quotes for several stock symbols in one request
+    ///
+    /// The batch form of `quote()`: one request, one quote object per
+    /// symbol, in a list.
+    ///
+    /// Args:
+    ///     symbol: Stock symbols, comma-separated (e.g., "2330,2317")
+    ///     odd_lot: Whether to query odd lot data (default: False)
+    ///
+    /// Returns:
+    ///     Awaitable[list[dict]]: One quote dict per symbol
+    ///
+    /// Raises:
+    ///     MarketDataError: If the request fails
+    ///
+    /// Example:
+    ///     ```python
+    ///     quotes = await client.stock.intraday.quotes_async("2330,2317")
+    ///     for quote in quotes:
+    ///         print(quote["symbol"], quote["lastPrice"])
+    ///     ```
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn quotes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quotes", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let result = tokio::task::spawn_blocking(move || send_stock_quotes(&client, &symbol, odd_lot))
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
+
+            match result {
+                Ok(quotes) => Python::attach(|py| types::json_value_to_py(py, &quotes)),
+                Err(e) => Err(errors::to_py_err(e)),
+            }
+        })
+    }
+
+    /// Sync sibling of `quotes_async()` for legacy fugle-marketdata callers.
+    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    pub fn quotes(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Py<PyAny>> {
+        let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quotes", &_extra)?;
+        let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
+        kw.finish()?;
+        let inner = self.inner.clone();
+        let result = py.detach(|| send_stock_quotes(&inner, &symbol, odd_lot));
+        match result {
+            Ok(quotes) => types::json_value_to_py(py, &quotes),
+            Err(e) => Err(errors::to_py_err(e)),
+        }
+    }
+
     /// Get ticker information for a stock symbol
     ///
     /// Args:
@@ -1439,6 +1492,52 @@ impl StockSnapshotClient {
         })
     }
 
+    /// Get the heatmap of an index: its constituents with their change
+    ///
+    /// Args:
+    ///     symbol: Index code (e.g., "IX0001" for the TAIEX, "IX0027" for the
+    ///         TPEx index). Not a stock symbol or a market: "2330" and "TSE"
+    ///         both return 404.
+    ///     time: Intraday snapshot time (HHmmss, e.g., "100000"); the server
+    ///         defaults to the latest snapshot
+    ///     period: Change period instead of the day's change ("1w", "1m",
+    ///         "3m", "6m", "1y", "ytd")
+    ///
+    /// Returns:
+    ///     Awaitable[dict]: The index, its sub-indices and its constituent stocks
+    ///
+    /// Example:
+    ///     ```python
+    ///     heatmap = await client.stock.snapshot.heatmap_async("IX0001", period="1m")
+    ///     ```
+    #[pyo3(signature = (symbol, time=None, period=None, **_extra))]
+    pub fn heatmap_async<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        time: Option<String>,
+        period: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.heatmap", &_extra)?;
+        let time = kw.take_string("time", time)?;
+        let period = kw.take_string("period", period)?;
+        kw.finish()?;
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let result = tokio::task::spawn_blocking(move || {
+                send_snapshot_heatmap(&client, &symbol, time.as_deref(), period.as_deref())
+            })
+            .await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
+
+            match result {
+                Ok(heatmap) => Python::attach(|py| types::value_to_dict(py, &heatmap)),
+                Err(e) => Err(errors::to_py_err(e)),
+            }
+        })
+    }
+
     /// Sync sibling of `quotes()` for legacy fugle-marketdata callers.
     #[pyo3(signature = (market, type_filter=None, **_extra))]
     pub fn quotes(
@@ -1553,6 +1652,54 @@ impl StockSnapshotClient {
             Err(e) => Err(errors::to_py_err(e)),
         }
     }
+
+    /// Sync sibling of `heatmap_async()` for legacy fugle-marketdata callers.
+    #[pyo3(signature = (symbol, time=None, period=None, **_extra))]
+    pub fn heatmap(
+        &self,
+        py: Python<'_>,
+        symbol: String,
+        time: Option<String>,
+        period: Option<String>,
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    ) -> PyResult<Py<pyo3::types::PyDict>> {
+        let mut kw = crate::kwargs::Kwargs::parse("stock.snapshot.heatmap", &_extra)?;
+        let time = kw.take_string("time", time)?;
+        let period = kw.take_string("period", period)?;
+        kw.finish()?;
+        let inner = self.inner.clone();
+        let result = py.detach(|| send_snapshot_heatmap(&inner, &symbol, time.as_deref(), period.as_deref()));
+        match result {
+            Ok(heatmap) => types::value_to_dict(py, &heatmap),
+            Err(e) => Err(errors::to_py_err(e)),
+        }
+    }
+}
+
+fn send_stock_quotes(
+    client: &marketdata_core::RestClient,
+    symbol: &str,
+    odd_lot: Option<bool>,
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
+    let stock = client.stock();
+    let intraday = stock.intraday();
+    let mut builder = intraday.quotes().symbol(symbol);
+    if odd_lot == Some(true) { builder = builder.odd_lot(true); }
+    builder.send()
+}
+
+fn send_snapshot_heatmap(
+    client: &marketdata_core::RestClient,
+    symbol: &str,
+    time: Option<&str>,
+    period: Option<&str>,
+) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
+    let stock = client.stock();
+    let snapshot = stock.snapshot();
+    let mut builder = snapshot.heatmap().symbol(symbol);
+    if let Some(t) = time { builder = builder.time(t); }
+    if let Some(p) = period { builder = builder.period(p); }
+    builder.send()
 }
 
 /// Stock technical indicator endpoints client

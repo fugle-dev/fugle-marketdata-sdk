@@ -69,6 +69,11 @@ const CASES = [
     '/stock/intraday/volumes/2330', { type: 'oddlot' }],
   ['stock.intraday.tickers', (c) => c.stock.intraday.tickers({ type: 'EQUITY', isAttention: true, isDisposition: false, isHalted: true }),
     '/stock/intraday/tickers', { type: 'EQUITY', isAttention: 'true', isDisposition: 'false', isHalted: 'true' }],
+  // The batch quote has no path param: `symbol` is a query key (#176).
+  ['stock.intraday.quotes', (c) => c.stock.intraday.quotes({ symbol: '2330,2317', type: 'oddlot' }),
+    '/stock/intraday/quotes', { symbol: '2330,2317', type: 'oddlot' }],
+  ['stock.intraday.quotes oddLot: true', (c) => c.stock.intraday.quotes({ symbol: '2330', oddLot: true }),
+    '/stock/intraday/quotes', { symbol: '2330', type: 'oddlot' }],
 
   // stock.historical
   ['stock.historical.candles', (c) => c.stock.historical.candles({ symbol: '2330', fields: 'open,close,change', adjusted: true, sort: 'asc' }),
@@ -83,6 +88,9 @@ const CASES = [
     '/stock/snapshot/movers/TSE', { direction: 'up', change: 'percent', type: 'ALL', gte: '5', lt: '9.5' }],
   ['stock.snapshot.actives', (c) => c.stock.snapshot.actives({ market: 'OTC', trade: 'value', type: 'ALLBUT0999' }),
     '/stock/snapshot/actives/OTC', { trade: 'value', type: 'ALLBUT0999' }],
+  // The heatmap path is an index code, not a market (#176).
+  ['stock.snapshot.heatmap', (c) => c.stock.snapshot.heatmap({ symbol: 'IX0001', time: '100000', period: '1m' }),
+    '/stock/snapshot/heatmap/IX0001', { time: '100000', period: '1m' }],
 
   // stock.technical
   ['stock.technical.sma', (c) => c.stock.technical.sma({ symbol: '2330', from: '2026-08-01', to: '2026-09-10', timeframe: 'D', period: 20 }),
@@ -282,6 +290,12 @@ describe('snake_case and flag aliases resolve through the table', () => {
       '/stock/intraday/quote/2330', { type: 'oddlot' }],
     ['object oddLot: null with positional true', (c) => c.stock.intraday.quote({ symbol: '2330', oddLot: null }, true),
       '/stock/intraday/quote/2330', { type: 'oddlot' }],
+    ['quotes: positional oddLot with the object form', (c) => c.stock.intraday.quotes({ symbol: '2330,2317' }, true),
+      '/stock/intraday/quotes', { symbol: '2330,2317', type: 'oddlot' }],
+    ['quotes: object oddLot: false wins over positional true', (c) => c.stock.intraday.quotes({ symbol: '2330', oddLot: false }, true),
+      '/stock/intraday/quotes', { symbol: '2330' }],
+    ['quotes: object type: oddlot with positional true is not a duplicate', (c) => c.stock.intraday.quotes({ symbol: '2330', type: 'oddlot' }, true),
+      '/stock/intraday/quotes', { symbol: '2330', type: 'oddlot' }],
   ])('%s', async (_name, call, path, query) => {
     await call(ctx.client);
     expect(ctx.lastRequest()).toEqual({ path: `/v1.0${path}`, query });
@@ -293,6 +307,11 @@ describe('positional calls are unchanged', () => {
     ['ticker', (c) => c.stock.intraday.ticker('2330'), '/stock/intraday/ticker/2330', {}],
     ['quote odd lot', (c) => c.stock.intraday.quote('2330', true), '/stock/intraday/quote/2330', { type: 'oddlot' }],
     ['candles without timeframe', (c) => c.stock.intraday.candles('2330'), '/stock/intraday/candles/2330', {}],
+    ['quotes', (c) => c.stock.intraday.quotes('2330,2317'), '/stock/intraday/quotes', { symbol: '2330,2317' }],
+    ['quotes odd lot', (c) => c.stock.intraday.quotes('2330,2317', true), '/stock/intraday/quotes', { symbol: '2330,2317', type: 'oddlot' }],
+    ['heatmap', (c) => c.stock.snapshot.heatmap('IX0001'), '/stock/snapshot/heatmap/IX0001', {}],
+    ['heatmap with time and period', (c) => c.stock.snapshot.heatmap('IX0001', '100000', 'ytd'),
+      '/stock/snapshot/heatmap/IX0001', { time: '100000', period: 'ytd' }],
     ['candles with timeframe', (c) => c.stock.intraday.candles('2330', '5'), '/stock/intraday/candles/2330', { timeframe: '5' }],
     ['kdj', (c) => c.stock.technical.kdj('2330', undefined, undefined, 'D', 9, 3, 3),
       '/stock/technical/kdj/2330', { timeframe: 'D', rPeriod: '9', kPeriod: '3', dPeriod: '3' }],
@@ -318,6 +337,10 @@ describe('positional calls are unchanged', () => {
 
   test('a missing first argument is rejected', async () => {
     await expect(ctx.client.stock.intraday.ticker()).rejects.toThrow('`symbol` is required');
+  });
+
+  test('quotes without symbols is rejected before any request', async () => {
+    await expect(ctx.client.stock.intraday.quotes()).rejects.toThrow('`symbol` is required');
   });
 });
 

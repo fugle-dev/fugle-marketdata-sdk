@@ -2280,6 +2280,61 @@ impl core::marker::Unpin for marketdata_core::models::SmaResponse
 impl core::marker::UnsafeUnpin for marketdata_core::models::SmaResponse
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::SmaResponse
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::SmaResponse
+pub struct marketdata_core::models::SnapshotHeatmapData
+pub marketdata_core::models::SnapshotHeatmapData::change: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::change_percent: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::close_price: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::data_type: core::option::Option<alloc::string::String>
+pub marketdata_core::models::SnapshotHeatmapData::date: core::option::Option<alloc::string::String>
+pub marketdata_core::models::SnapshotHeatmapData::exchange: core::option::Option<alloc::string::String>
+pub marketdata_core::models::SnapshotHeatmapData::high_price: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::industry: core::option::Option<alloc::string::String>
+pub marketdata_core::models::SnapshotHeatmapData::last_updated: core::option::Option<i64>
+pub marketdata_core::models::SnapshotHeatmapData::low_price: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::market_value_weight: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::name: core::option::Option<alloc::string::String>
+pub marketdata_core::models::SnapshotHeatmapData::open_price: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::previous_close: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::symbol: alloc::string::String
+pub marketdata_core::models::SnapshotHeatmapData::trade_value: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::trade_value_weight: core::option::Option<f64>
+pub marketdata_core::models::SnapshotHeatmapData::trade_volume: core::option::Option<i64>
+impl core::clone::Clone for marketdata_core::models::SnapshotHeatmapData
+pub fn marketdata_core::models::SnapshotHeatmapData::clone(&self) -> marketdata_core::models::SnapshotHeatmapData
+impl core::fmt::Debug for marketdata_core::models::SnapshotHeatmapData
+pub fn marketdata_core::models::SnapshotHeatmapData::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for marketdata_core::models::SnapshotHeatmapData
+pub fn marketdata_core::models::SnapshotHeatmapData::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for marketdata_core::models::SnapshotHeatmapData
+pub fn marketdata_core::models::SnapshotHeatmapData::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for marketdata_core::models::SnapshotHeatmapData
+impl core::marker::Send for marketdata_core::models::SnapshotHeatmapData
+impl core::marker::Sync for marketdata_core::models::SnapshotHeatmapData
+impl core::marker::Unpin for marketdata_core::models::SnapshotHeatmapData
+impl core::marker::UnsafeUnpin for marketdata_core::models::SnapshotHeatmapData
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::SnapshotHeatmapData
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::SnapshotHeatmapData
+pub struct marketdata_core::models::SnapshotHeatmapResponse
+pub marketdata_core::models::SnapshotHeatmapResponse::data: alloc::vec::Vec<marketdata_core::models::SnapshotHeatmapData>
+pub marketdata_core::models::SnapshotHeatmapResponse::date: alloc::string::String
+pub marketdata_core::models::SnapshotHeatmapResponse::period: core::option::Option<alloc::string::String>
+pub marketdata_core::models::SnapshotHeatmapResponse::symbol: alloc::string::String
+pub marketdata_core::models::SnapshotHeatmapResponse::time: core::option::Option<alloc::string::String>
+impl core::clone::Clone for marketdata_core::models::SnapshotHeatmapResponse
+pub fn marketdata_core::models::SnapshotHeatmapResponse::clone(&self) -> marketdata_core::models::SnapshotHeatmapResponse
+impl core::fmt::Debug for marketdata_core::models::SnapshotHeatmapResponse
+pub fn marketdata_core::models::SnapshotHeatmapResponse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for marketdata_core::models::SnapshotHeatmapResponse
+pub fn marketdata_core::models::SnapshotHeatmapResponse::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for marketdata_core::models::SnapshotHeatmapResponse
+pub fn marketdata_core::models::SnapshotHeatmapResponse::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for marketdata_core::models::SnapshotHeatmapResponse
+impl core::marker::Send for marketdata_core::models::SnapshotHeatmapResponse
+impl core::marker::Sync for marketdata_core::models::SnapshotHeatmapResponse
+impl core::marker::Unpin for marketdata_core::models::SnapshotHeatmapResponse
+impl core::marker::UnsafeUnpin for marketdata_core::models::SnapshotHeatmapResponse
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::SnapshotHeatmapResponse
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::SnapshotHeatmapResponse
 pub struct marketdata_core::models::SnapshotQuote
 pub marketdata_core::models::SnapshotQuote::change: core::option::Option<f64>
 pub marketdata_core::models::SnapshotQuote::change_percent: core::option::Option<f64>
@@ -3083,6 +3138,18 @@ impl<'a> core::marker::Unpin for marketdata_core::rest::stock::intraday::QuoteRe
 impl<'a> core::marker::UnsafeUnpin for marketdata_core::rest::stock::intraday::QuoteRequestBuilder<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::stock::intraday::QuoteRequestBuilder<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::intraday::QuoteRequestBuilder<'a>
+pub struct marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+pub fn marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>::odd_lot(self, bool) -> Self
+pub fn marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>::symbol(self, &str) -> Self
+impl<'a> core::marker::Freeze for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> core::marker::Send for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> core::marker::Sync for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> core::marker::Unpin for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> core::marker::UnsafeUnpin for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'a>
 pub struct marketdata_core::rest::stock::intraday::TickerRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::intraday::TickerRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::intraday::TickerRequestBuilder<'a>::odd_lot(self, bool) -> Self
@@ -3213,6 +3280,19 @@ impl<'a> core::marker::Unpin for marketdata_core::rest::stock::snapshot::Actives
 impl<'a> core::marker::UnsafeUnpin for marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'a>
+pub struct marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+pub fn marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>::period(self, &str) -> Self
+pub fn marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>::symbol(self, &str) -> Self
+pub fn marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>::time(self, &str) -> Self
+impl<'a> core::marker::Freeze for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> core::marker::Send for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> core::marker::Sync for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> core::marker::Unpin for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> core::marker::UnsafeUnpin for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'a>
 pub struct marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
 impl<'a> marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>
 pub fn marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'a>::change(self, &str) -> Self
@@ -3235,6 +3315,7 @@ impl<'a> !core::panic::unwind_safe::UnwindSafe for marketdata_core::rest::stock:
 pub struct marketdata_core::rest::stock::snapshot::SnapshotClient<'a>
 impl<'a> marketdata_core::rest::stock::snapshot::SnapshotClient<'a>
 pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::actives(&self) -> marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'_>
+pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::heatmap(&self) -> marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'_>
 pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::movers(&self) -> marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'_>
 pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::quotes(&self) -> marketdata_core::rest::stock::snapshot::SnapshotQuotesRequestBuilder<'_>
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::snapshot::SnapshotClient<'a>
@@ -3402,6 +3483,7 @@ pub struct marketdata_core::rest::IntradayClient<'a>
 impl<'a> marketdata_core::rest::IntradayClient<'a>
 pub fn marketdata_core::rest::IntradayClient<'a>::candles(&self) -> marketdata_core::rest::stock::intraday::CandlesRequestBuilder<'_>
 pub fn marketdata_core::rest::IntradayClient<'a>::quote(&self) -> marketdata_core::rest::stock::intraday::QuoteRequestBuilder<'_>
+pub fn marketdata_core::rest::IntradayClient<'a>::quotes(&self) -> marketdata_core::rest::stock::intraday::QuotesRequestBuilder<'_>
 pub fn marketdata_core::rest::IntradayClient<'a>::ticker(&self) -> marketdata_core::rest::stock::intraday::TickerRequestBuilder<'_>
 pub fn marketdata_core::rest::IntradayClient<'a>::tickers(&self) -> marketdata_core::rest::stock::intraday::TickersRequestBuilder<'_>
 pub fn marketdata_core::rest::IntradayClient<'a>::trades(&self) -> marketdata_core::rest::stock::intraday::TradesRequestBuilder<'_>
@@ -3457,6 +3539,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::RetryPolicy
 pub struct marketdata_core::rest::SnapshotClient<'a>
 impl<'a> marketdata_core::rest::stock::snapshot::SnapshotClient<'a>
 pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::actives(&self) -> marketdata_core::rest::stock::snapshot::ActivesRequestBuilder<'_>
+pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::heatmap(&self) -> marketdata_core::rest::stock::snapshot::HeatmapRequestBuilder<'_>
 pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::movers(&self) -> marketdata_core::rest::stock::snapshot::MoversRequestBuilder<'_>
 pub fn marketdata_core::rest::stock::snapshot::SnapshotClient<'a>::quotes(&self) -> marketdata_core::rest::stock::snapshot::SnapshotQuotesRequestBuilder<'_>
 impl<'a> core::marker::Freeze for marketdata_core::rest::stock::snapshot::SnapshotClient<'a>

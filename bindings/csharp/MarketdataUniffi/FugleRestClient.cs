@@ -262,6 +262,15 @@ namespace FugleMarketData
         public Task<string> GetTickersAsync(string type)
             => _inner.GetTickers(type);
 
+        /// <summary>
+        /// Get quotes for several stock symbols in one request (async).
+        /// </summary>
+        /// <param name="symbol">Stock symbols, comma-separated (e.g., "2330,2317")</param>
+        /// <param name="oddLot">True to query odd-lot data instead of board-lot</param>
+        /// <returns>JSON array with one quote object per symbol</returns>
+        public Task<string> GetQuotesAsync(string symbol, bool oddLot = false)
+            => _inner.GetQuotes(symbol, oddLot);
+
         // ========== Sync Methods (Blocking) ==========
 
         /// <summary>
@@ -310,6 +319,15 @@ namespace FugleMarketData
         /// </summary>
         public string GetTickers(string type)
             => _inner.TickersSync(type);
+
+        /// <summary>
+        /// Get quotes for several stock symbols in one request (blocking).
+        /// </summary>
+        /// <param name="symbol">Stock symbols, comma-separated (e.g., "2330,2317")</param>
+        /// <param name="oddLot">True to query odd-lot data instead of board-lot</param>
+        /// <returns>JSON array with one quote object per symbol</returns>
+        public string GetQuotes(string symbol, bool oddLot = false)
+            => _inner.QuotesSync(symbol, oddLot);
     }
 
     /// <summary>
@@ -402,6 +420,17 @@ namespace FugleMarketData
             string market, string? trade = null)
             => _inner.GetActives(market, trade);
 
+        /// <summary>
+        /// Get the heatmap of an index: its constituents with their change (async).
+        /// </summary>
+        /// <param name="symbol">Index code ("IX0001" for the TAIEX, "IX0027" for the TPEx index).
+        /// Not a stock symbol or a market: "2330" and "TSE" return 404.</param>
+        /// <param name="time">Intraday snapshot time, HHmmss (optional; latest by default)</param>
+        /// <param name="period">Change period instead of the day's change: "1w", "1m", "3m", "6m", "1y", "ytd" (optional)</param>
+        public Task<string> GetHeatmapAsync(
+            string symbol, string? time = null, string? period = null)
+            => _inner.GetHeatmap(symbol, time, period);
+
         // ========== Sync Methods ==========
 
         /// <summary>
@@ -424,6 +453,13 @@ namespace FugleMarketData
         public string GetActives(
             string market, string? trade = null)
             => _inner.ActivesSync(market, trade);
+
+        /// <summary>
+        /// Get the heatmap of an index (blocking). <paramref name="symbol"/> is an index code such as "IX0001".
+        /// </summary>
+        public string GetHeatmap(
+            string symbol, string? time = null, string? period = null)
+            => _inner.HeatmapSync(symbol, time, period);
     }
 
     /// <summary>
