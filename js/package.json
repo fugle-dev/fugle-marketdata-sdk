@@ -1,6 +1,6 @@
 {
   "name": "@fugle/marketdata",
-  "version": "3.0.0-rc.3",
+  "version": "3.0.0-rc.4",
   "description": "Fugle marketdata SDK for Node.js - REST and WebSocket client",
   "main": "index.js",
   "types": "index.d.ts",
