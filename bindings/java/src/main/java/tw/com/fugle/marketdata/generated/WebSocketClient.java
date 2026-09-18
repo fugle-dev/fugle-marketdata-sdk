@@ -253,6 +253,41 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
 
   
     /**
+     * Measure the round trip to the server: send a ping, wait for its pong,
+     * and return the time between the two in milliseconds.
+     *
+     * Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+     * this waits for the answer, and its pong is not delivered. Works
+     * whether or not `probe_enabled` is set, and sends nothing in the
+     * background. `timeout_ms` defaults to 5000 when `None`.
+     *
+     * Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+     * (2001) when the connection closes before the pong, `TimeoutError`
+     * (3001) when no pong arrives within `timeout_ms`, and
+     * `InvalidParameter` (1005) for a `timeout_ms` of 0.
+     */
+    @Override
+    
+    public CompletableFuture<Double> measureLatency(Long timeoutMs){
+        return UniffiAsyncHelpers.uniffiRustCallAsync(
+        callWithPointer(thisPtr -> {
+            return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency(
+                thisPtr,
+                FfiConverterOptionalLong.INSTANCE.lower(timeoutMs)
+            );
+        }),
+        (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_f64(future, callback, continuation),
+        (future, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_complete_f64(future, continuation),
+        (future) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_free_f64(future),
+        // lift function
+        (it) -> FfiConverterDouble.INSTANCE.lift(it),
+        // Error FFI converter
+        new MarketDataExceptionErrorHandler()
+    );
+    }
+
+  
+    /**
      * Messages dropped because they arrived while the message queue held
      * `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
      *

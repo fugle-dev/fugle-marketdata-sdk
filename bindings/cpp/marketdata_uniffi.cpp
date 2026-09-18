@@ -189,6 +189,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected() != 18665) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency_sync() != 46118) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total() != 28793) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -1334,6 +1337,13 @@ bool WebSocketClient::is_connected() {
         nullptr,
         ptr));
 }
+double WebSocketClient::measure_latency_sync(std::optional<uint64_t> timeout_ms) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterDouble::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency_sync,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterOptionalUInt64::lower(timeout_ms)));
+}
 uint64_t WebSocketClient::messages_dropped_total() {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterUInt64::lift(uniffi::rust_call(
@@ -1639,6 +1649,7 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
         this->instance
     );
 }
+
 
 
 
@@ -2120,6 +2131,9 @@ RustBuffer FfiConverterTypeHealthCheckConfigRecord::lower(const HealthCheckConfi
 HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::read(RustStream &stream) {
     return {
         FfiConverterBool::read(stream),
+        FfiConverterUInt64::read(stream),
+        FfiConverterBool::read(stream),
+        FfiConverterUInt64::read(stream),
         FfiConverterUInt64::read(stream)
     };
 }
@@ -2127,13 +2141,19 @@ HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::read(RustStream
 void FfiConverterTypeHealthCheckConfigRecord::write(RustStream &stream, const HealthCheckConfigRecord &val) {
     FfiConverterBool::write(stream, val.enabled);
     FfiConverterUInt64::write(stream, val.heartbeat_timeout_ms);
+    FfiConverterBool::write(stream, val.probe_enabled);
+    FfiConverterUInt64::write(stream, val.idle_probe_after_ms);
+    FfiConverterUInt64::write(stream, val.probe_timeout_ms);
 }
 
 uint64_t FfiConverterTypeHealthCheckConfigRecord::allocation_size(const HealthCheckConfigRecord &val) {
     
     return 
         FfiConverterBool::allocation_size(val.enabled) +
-        FfiConverterUInt64::allocation_size(val.heartbeat_timeout_ms);
+        FfiConverterUInt64::allocation_size(val.heartbeat_timeout_ms) +
+        FfiConverterBool::allocation_size(val.probe_enabled) +
+        FfiConverterUInt64::allocation_size(val.idle_probe_after_ms) +
+        FfiConverterUInt64::allocation_size(val.probe_timeout_ms);
     
 }
 
@@ -3014,6 +3034,53 @@ uint64_t FfiConverterOptionalInt32::allocation_size(const std::optional<int32_t>
 
     if (val) {
         ret += FfiConverterInt32::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<uint64_t> FfiConverterOptionalUInt64::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalUInt64::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalUInt64::lower(const std::optional<uint64_t>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalUInt64::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalUInt64::write(stream, val);
+
+    return buf;
+}
+
+std::optional<uint64_t> FfiConverterOptionalUInt64::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterUInt64::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalUInt64::write(RustStream &stream, const std::optional<uint64_t>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterUInt64::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalUInt64::allocation_size(const std::optional<uint64_t> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterUInt64::allocation_size(val.value());
     }
 
     return ret;

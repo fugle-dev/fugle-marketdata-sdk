@@ -39,6 +39,7 @@ fn short_heartbeat() -> HealthCheckConfig {
     HealthCheckConfig {
         enabled: true,
         heartbeat_timeout: Duration::from_millis(300),
+        ..HealthCheckConfig::default()
     }
 }
 

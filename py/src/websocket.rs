@@ -380,6 +380,8 @@ impl Default for ReconnectConfig {
 ///
 /// Configures liveness detection: the connection is declared dead when no
 /// inbound frame arrives within `heartbeat_timeout_ms`. Enabled by default.
+/// With `probe_enabled`, a silent connection is asked with a ping first (see
+/// `HealthCheckConfig.__init__`).
 ///
 /// # Example (Python)
 ///
@@ -401,9 +403,21 @@ pub struct HealthCheckConfig {
     #[pyo3(get)]
     pub enabled: bool,
     /// Maximum allowed gap between inbound frames before declaring the
-    /// connection dead, in milliseconds. Default 35 000.
+    /// connection dead, in milliseconds. Default 35 000. Does not apply
+    /// when `probe_enabled` is true.
     #[pyo3(get)]
     pub heartbeat_timeout_ms: u64,
+    /// Confirm a silent connection with a ping before declaring it dead
+    /// (default: False).
+    #[pyo3(get)]
+    pub probe_enabled: bool,
+    /// Silence before the probe, in milliseconds. Default 30 000.
+    #[pyo3(get)]
+    pub idle_probe_after_ms: u64,
+    /// Wait for any inbound frame after the probe, in milliseconds.
+    /// Default 5 000.
+    #[pyo3(get)]
+    pub probe_timeout_ms: u64,
 }
 
 #[pymethods]
@@ -416,10 +430,26 @@ impl HealthCheckConfig {
     ///         the connection is declared dead. Default 35 000 ms (Fugle
     ///         server's 30 s heartbeat + 5 s buffer). Floor is 5 000 ms;
     ///         values below the live server's heartbeat period (30 s)
-    ///         will cause repeated false disconnects.
+    ///         will cause repeated false disconnects. **Does not apply
+    ///         when `probe_enabled` is True.**
+    ///     probe_enabled: Confirm a silent connection with a ping before
+    ///         declaring it dead (default: False). After
+    ///         `idle_probe_after_ms` of silence one ping is sent; if nothing
+    ///         arrives within `probe_timeout_ms` the connection is declared
+    ///         dead. With the defaults detection stays at 35 s and no ping
+    ///         is sent while the server's heartbeat is on time. Does not
+    ///         detect a connection whose writes no longer reach the server
+    ///         while the server still sends.
+    ///     idle_probe_after_ms: Silence before the probe. Default 30 000 ms
+    ///         (the server's heartbeat period); floor 5 000 ms. Below 30 000
+    ///         a ping is sent in every gap between heartbeats while no data
+    ///         flows.
+    ///     probe_timeout_ms: Wait for any inbound frame after the probe.
+    ///         Default 5 000 ms; floor 1 000 ms.
     ///
     /// Raises:
-    ///     ValueError: If `heartbeat_timeout_ms` < 5 000.
+    ///     ValueError: If `heartbeat_timeout_ms` < 5 000,
+    ///         `idle_probe_after_ms` < 5 000 or `probe_timeout_ms` < 1 000.
     ///
     /// Example:
     ///     ```python
@@ -432,19 +462,40 @@ impl HealthCheckConfig {
     ///
     ///     # Opt out of liveness detection
     ///     config = HealthCheckConfig(enabled=False)
+    ///
+    ///     # Confirm with a ping before disconnecting; know within 10 s
+    ///     config = HealthCheckConfig(probe_enabled=True,
+    ///                                idle_probe_after_ms=5000,
+    ///                                probe_timeout_ms=5000)
     ///     ```
     #[new]
-    #[pyo3(signature = (*, enabled=true, heartbeat_timeout_ms=35_000))]
-    pub fn new(enabled: bool, heartbeat_timeout_ms: u64) -> PyResult<Self> {
-        // Validate via core even when disabled, for early feedback on bad input.
-        let duration = Duration::from_millis(heartbeat_timeout_ms);
-        let _ = marketdata_core::HealthCheckConfig::with_timeout(duration)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-
-        Ok(Self {
+    #[pyo3(signature = (
+        *,
+        enabled=true,
+        heartbeat_timeout_ms=marketdata_core::DEFAULT_HEARTBEAT_TIMEOUT_MS,
+        probe_enabled=false,
+        idle_probe_after_ms=marketdata_core::DEFAULT_IDLE_PROBE_AFTER_MS,
+        probe_timeout_ms=marketdata_core::DEFAULT_PROBE_TIMEOUT_MS,
+    ))]
+    pub fn new(
+        enabled: bool,
+        heartbeat_timeout_ms: u64,
+        probe_enabled: bool,
+        idle_probe_after_ms: u64,
+        probe_timeout_ms: u64,
+    ) -> PyResult<Self> {
+        let config = Self {
             enabled,
             heartbeat_timeout_ms,
-        })
+            probe_enabled,
+            idle_probe_after_ms,
+            probe_timeout_ms,
+        };
+        // Validate via core even when disabled, for early feedback on bad input.
+        config
+            .try_to_core()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(config)
     }
 }
 
@@ -453,12 +504,17 @@ impl HealthCheckConfig {
     ///
     /// This should not fail since validation already happened in __new__
     pub fn to_core(&self) -> marketdata_core::HealthCheckConfig {
-        let mut cfg = marketdata_core::HealthCheckConfig::with_timeout(
-            Duration::from_millis(self.heartbeat_timeout_ms),
+        self.try_to_core().expect("Config already validated in constructor")
+    }
+
+    fn try_to_core(&self) -> Result<marketdata_core::HealthCheckConfig, marketdata_core::MarketDataError> {
+        marketdata_core::HealthCheckConfig::from_parts(
+            self.enabled,
+            Some(Duration::from_millis(self.heartbeat_timeout_ms)),
+            self.probe_enabled,
+            Some(Duration::from_millis(self.idle_probe_after_ms)),
+            Some(Duration::from_millis(self.probe_timeout_ms)),
         )
-        .expect("Config already validated in constructor");
-        cfg.enabled = self.enabled;
-        cfg
     }
 }
 
@@ -466,7 +522,10 @@ impl Default for HealthCheckConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            heartbeat_timeout_ms: 35_000,
+            heartbeat_timeout_ms: marketdata_core::DEFAULT_HEARTBEAT_TIMEOUT_MS,
+            probe_enabled: false,
+            idle_probe_after_ms: marketdata_core::DEFAULT_IDLE_PROBE_AFTER_MS,
+            probe_timeout_ms: marketdata_core::DEFAULT_PROBE_TIMEOUT_MS,
         }
     }
 }
@@ -877,6 +936,16 @@ fn live_handles(
         pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
     })?;
     Ok((inner, runtime))
+}
+
+/// [`live_handles`] for `measure_latency`, which reports a missing
+/// connection as `ClientClosed` like core does.
+fn latency_handles(
+    state: &Mutex<Option<WebSocketState>>,
+    runtime: &Mutex<Option<SharedRuntime>>,
+) -> PyResult<(Arc<marketdata_core::aio::WebSocketClient>, SharedRuntime)> {
+    live_handles(state, runtime)
+        .map_err(|_| errors::to_py_err(marketdata_core::MarketDataError::ClientClosed))
 }
 
 /// Run `fut` to completion on `runtime` with the GIL released.
@@ -1605,6 +1674,9 @@ impl StockWebSocketClient {
 
     /// Send a `ping` frame to the server (matches the old fugle-marketdata SDK).
     ///
+    /// Fire and forget: the server's `pong` reply is delivered to the message
+    /// handlers. To wait for it and get the round trip, use `measure_latency()`.
+    ///
     /// Args:
     ///     state: Optional state string echoed back in the server's `pong` reply
     ///
@@ -1616,6 +1688,30 @@ impl StockWebSocketClient {
 
         let request = marketdata_core::WebSocketRequest::ping(state);
         block_on_detached(py, runtime, async move { inner.send(request).await })
+            .map_err(errors::to_py_err)
+    }
+
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and return the time between the two in milliseconds.
+    ///
+    /// Works whether or not `probe_enabled` is set, and sends nothing in the
+    /// background. Its pong is not delivered to the message handlers. Blocks
+    /// with the GIL released.
+    ///
+    /// Args:
+    ///     timeout_ms: How long to wait for the pong (default: 5000)
+    ///
+    /// Raises:
+    ///     WebSocketError: Code 2010 (ClientClosed) if not connected, 2001 if
+    ///         the connection closes before the pong
+    ///     TimeoutError: Code 3001 if no pong arrives within `timeout_ms`
+    ///     MarketDataError: Code 1005 for a `timeout_ms` of 0
+    #[pyo3(signature = (timeout_ms=None))]
+    pub fn measure_latency(&self, py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<f64> {
+        let (inner, runtime) = latency_handles(&self.state, &self.runtime)?;
+        let timeout = timeout_ms.map(Duration::from_millis);
+        block_on_detached(py, runtime, async move { inner.measure_latency(timeout).await })
+            .map(|rtt| rtt.as_secs_f64() * 1000.0)
             .map_err(errors::to_py_err)
     }
 
@@ -1817,6 +1913,35 @@ impl StockWebSocketClient {
                 .map_err(crate::errors::to_py_err)?;
 
             Ok(())
+        })
+    }
+
+    /// Measure the round trip to the server (async version of
+    /// `measure_latency()`); resolves to milliseconds.
+    ///
+    /// Args:
+    ///     timeout_ms: How long to wait for the pong (default: 5000)
+    #[pyo3(signature = (timeout_ms=None))]
+    pub fn measure_latency_async<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let state_arc = Arc::clone(&self.state);
+        let timeout = timeout_ms.map(Duration::from_millis);
+        future_into_py(py, async move {
+            // Cloned out of the lock so no guard is held across the await.
+            let ws_client = state_arc
+                .lock()
+                .map_err(lock_err)?
+                .as_ref()
+                .map(|state| Arc::clone(&state.inner))
+                .ok_or_else(|| errors::to_py_err(marketdata_core::MarketDataError::ClientClosed))?;
+            ws_client
+                .measure_latency(timeout)
+                .await
+                .map(|rtt| rtt.as_secs_f64() * 1000.0)
+                .map_err(errors::to_py_err)
         })
     }
 
@@ -2291,6 +2416,9 @@ impl FutOptWebSocketClient {
 
     /// Send a `ping` frame to the server (matches the old fugle-marketdata SDK).
     ///
+    /// Fire and forget: the server's `pong` reply is delivered to the message
+    /// handlers. To wait for it and get the round trip, use `measure_latency()`.
+    ///
     /// Args:
     ///     state: Optional state string echoed back in the server's `pong` reply
     ///
@@ -2302,6 +2430,30 @@ impl FutOptWebSocketClient {
 
         let request = marketdata_core::WebSocketRequest::ping(state);
         block_on_detached(py, runtime, async move { inner.send(request).await })
+            .map_err(errors::to_py_err)
+    }
+
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and return the time between the two in milliseconds.
+    ///
+    /// Works whether or not `probe_enabled` is set, and sends nothing in the
+    /// background. Its pong is not delivered to the message handlers. Blocks
+    /// with the GIL released.
+    ///
+    /// Args:
+    ///     timeout_ms: How long to wait for the pong (default: 5000)
+    ///
+    /// Raises:
+    ///     WebSocketError: Code 2010 (ClientClosed) if not connected, 2001 if
+    ///         the connection closes before the pong
+    ///     TimeoutError: Code 3001 if no pong arrives within `timeout_ms`
+    ///     MarketDataError: Code 1005 for a `timeout_ms` of 0
+    #[pyo3(signature = (timeout_ms=None))]
+    pub fn measure_latency(&self, py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<f64> {
+        let (inner, runtime) = latency_handles(&self.state, &self.runtime)?;
+        let timeout = timeout_ms.map(Duration::from_millis);
+        block_on_detached(py, runtime, async move { inner.measure_latency(timeout).await })
+            .map(|rtt| rtt.as_secs_f64() * 1000.0)
             .map_err(errors::to_py_err)
     }
 }

@@ -1,12 +1,32 @@
-//! WebSocket connection liveness detection — configuration only.
+//! WebSocket connection liveness detection — configuration.
 //!
-//! In 3.0 the SDK uses a single timeout window: if no inbound frame
-//! arrives within `heartbeat_timeout`, the connection is declared dead
-//! and the reconnect path takes over. The actual timeout enforcement
-//! lives at the read site in `crate::websocket::message::dispatch_messages`,
-//! wrapped via `tokio::time::timeout(heartbeat_timeout, ws_read.next())`.
-//! No background polling task, no atomic activity timestamps — just
-//! plain async-native pre-emption.
+//! Two modes, chosen by [`HealthCheckConfig::probe_enabled`]:
+//!
+//! - **Passive** (default): if no inbound frame arrives within
+//!   `heartbeat_timeout`, the connection is declared dead and the reconnect
+//!   path takes over. The verdict is a guess — a server heartbeat that is
+//!   merely late looks the same as a dead connection.
+//! - **Probe**: once the connection has been silent for `idle_probe_after`,
+//!   the SDK sends one application-level `{"event":"ping"}`; if nothing
+//!   arrives within `probe_timeout` after that, the connection is declared
+//!   dead. The verdict is confirmed. `heartbeat_timeout` does not apply.
+//!
+//! In both modes *any* inbound frame (heartbeat, data, pong) resets the
+//! silence, so while market data flows no ping is ever sent. The timer is
+//! enforced at the read site of each client (`aio::dispatch`,
+//! `sync::owner_thread`) through the shared `liveness::Liveness` state
+//! machine — no background polling task.
+//!
+//! The defaults make "just turn `probe_enabled` on" free: `idle_probe_after`
+//! (30s) matches the server's 30-second heartbeat, so a punctual heartbeat
+//! keeps the silence below it and no ping is sent. Only a *late* heartbeat —
+//! the case that causes false disconnects in passive mode — triggers one
+//! ping, and detection stays at 30s + 5s = 35s, the passive default.
+//!
+//! Probe mode does **not** cover a half-open connection where the server can
+//! still send but our writes no longer reach it: the server's broadcast
+//! heartbeat keeps arriving and resetting the silence, so the probe never
+//! fires.
 //!
 //! # Mapping from the official SDKs
 //!
@@ -19,9 +39,9 @@
 //! | Official option / behaviour | Here |
 //! |---|---|
 //! | `healthCheck.enabled` | [`HealthCheckConfig::enabled`] |
-//! | `healthCheck.interval` (ping cadence) | no equivalent — nothing is sent |
+//! | `healthCheck.interval` (ping cadence) | no fixed cadence: with [`HealthCheckConfig::probe_enabled`], one ping after [`HealthCheckConfig::idle_probe_after`] of silence |
 //! | `healthCheck.maxMissedPongs` | no equivalent — nothing is counted |
-//! | `interval × maxMissedPongs` (effective deadline) | [`HealthCheckConfig::heartbeat_timeout`] |
+//! | `interval × maxMissedPongs` (effective deadline) | [`HealthCheckConfig::heartbeat_timeout`], or `idle_probe_after + probe_timeout` with probing |
 //! | `disconnect` event with `{ reason: 'health-check-timeout' }` | [`ConnectionEvent::HeartbeatTimeout`](crate::websocket::ConnectionEvent::HeartbeatTimeout), then `Disconnected { intent: Network }` |
 //!
 //! The `maxMissedPongs`-of-0 bug the official SDKs clamped in 1.5.0 (a zero
@@ -50,14 +70,31 @@ pub const DEFAULT_HEARTBEAT_TIMEOUT_MS: u64 = 35_000;
 /// SDK roadmap; see `WEBSOCKET-SERVER-RECOMMENDATIONS.md`).
 pub const MIN_HEARTBEAT_TIMEOUT_MS: u64 = 5_000;
 
+/// Default silence before a probe is sent (probe mode): the Fugle server's
+/// 30s heartbeat period (`@Cron('*/30 * * * * *')`). A punctual heartbeat
+/// keeps the silence below it, so with this default a ping is sent only when
+/// the heartbeat is late — and detection stays at 30s + 5s, the same as the
+/// passive default.
+pub const DEFAULT_IDLE_PROBE_AFTER_MS: u64 = 30_000;
+
+/// Floor for [`HealthCheckConfig::idle_probe_after`]. Each connection sends
+/// a ping every `idle_probe_after` of silence, so this bounds the load a
+/// client can put on the server during quiet periods.
+pub const MIN_IDLE_PROBE_AFTER_MS: u64 = 5_000;
+
+/// Default wait for any inbound frame after a probe is sent (probe mode).
+pub const DEFAULT_PROBE_TIMEOUT_MS: u64 = 5_000;
+
+/// Floor for [`HealthCheckConfig::probe_timeout`].
+pub const MIN_PROBE_TIMEOUT_MS: u64 = 1_000;
+
 /// Configuration for WebSocket connection liveness detection.
 ///
-/// A single timeout window controls when the SDK declares the
-/// connection dead: if no inbound frame (heartbeat, data, anything)
-/// arrives within `heartbeat_timeout`, the dispatch path emits
+/// When the connection is declared dead the dispatch path emits
 /// [`ConnectionEvent::HeartbeatTimeout`](crate::websocket::ConnectionEvent::HeartbeatTimeout)
 /// followed by `Disconnected { intent: Network }` and exits, which lets the
-/// reconnect manager take over.
+/// reconnect manager take over. See the [module docs](self) for the two
+/// modes and what probe mode does not cover.
 #[derive(Debug, Clone)]
 pub struct HealthCheckConfig {
     /// Whether liveness detection is active. Default: `true` (changed
@@ -70,10 +107,38 @@ pub struct HealthCheckConfig {
     /// Maximum allowed gap between inbound frames before declaring
     /// the connection dead.
     ///
+    /// **Passive mode only: does not apply when `probe_enabled` is true**,
+    /// where detection is `idle_probe_after + probe_timeout` instead.
+    ///
     /// Default: 35s (the Fugle server emits a heartbeat every 30s;
     /// 5s buffer absorbs network jitter). Use [`HealthCheckConfig::with_timeout`]
     /// to construct with validation.
     pub heartbeat_timeout: Duration,
+
+    /// Confirm a silent connection with a ping instead of declaring it dead
+    /// on `heartbeat_timeout`. Default: `false`.
+    ///
+    /// When true, `heartbeat_timeout` does not apply: after
+    /// `idle_probe_after` of silence one `{"event":"ping"}` is sent, and the
+    /// connection is declared dead if nothing arrives within
+    /// `probe_timeout`. Detection time is `idle_probe_after + probe_timeout`
+    /// (35s with the defaults, the same as passive mode). A probe that
+    /// cannot be written within `probe_timeout` counts as no answer.
+    pub probe_enabled: bool,
+
+    /// Silence before a probe is sent (probe mode only). `None` means
+    /// [`DEFAULT_IDLE_PROBE_AFTER_MS`] (30s, the server's heartbeat period);
+    /// floor [`MIN_IDLE_PROBE_AFTER_MS`].
+    ///
+    /// Below 30s a ping is sent in every gap between server heartbeats
+    /// while no market data flows — one per `idle_probe_after`, per
+    /// connection.
+    pub idle_probe_after: Option<Duration>,
+
+    /// Wait for any inbound frame after a probe is sent (probe mode only).
+    /// `None` means [`DEFAULT_PROBE_TIMEOUT_MS`] (5s); floor
+    /// [`MIN_PROBE_TIMEOUT_MS`].
+    pub probe_timeout: Option<Duration>,
 }
 
 impl Default for HealthCheckConfig {
@@ -81,11 +146,80 @@ impl Default for HealthCheckConfig {
         Self {
             enabled: DEFAULT_HEALTH_CHECK_ENABLED,
             heartbeat_timeout: Duration::from_millis(DEFAULT_HEARTBEAT_TIMEOUT_MS),
+            probe_enabled: false,
+            idle_probe_after: None,
+            probe_timeout: None,
         }
     }
 }
 
+/// `ConfigError` unless `value` is absent or at least `min_ms`.
+fn check_floor(name: &str, value: Option<Duration>, min_ms: u64) -> Result<(), MarketDataError> {
+    match value {
+        Some(value) if value < Duration::from_millis(min_ms) => Err(MarketDataError::ConfigError(
+            format!("{name} must be >= {min_ms}ms (got {value:?})"),
+        )),
+        _ => Ok(()),
+    }
+}
+
 impl HealthCheckConfig {
+    /// Build a config from every setting at once, validating each against
+    /// its floor. `None` means that setting's default. This is the
+    /// constructor the language bindings convert into.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError::ConfigError`] if a given value is below its
+    /// floor ([`MIN_HEARTBEAT_TIMEOUT_MS`], [`MIN_IDLE_PROBE_AFTER_MS`],
+    /// [`MIN_PROBE_TIMEOUT_MS`]). Values are checked even for a mode that
+    /// is not in use, so a bad setting surfaces before it is switched on.
+    pub fn from_parts(
+        enabled: bool,
+        heartbeat_timeout: Option<Duration>,
+        probe_enabled: bool,
+        idle_probe_after: Option<Duration>,
+        probe_timeout: Option<Duration>,
+    ) -> Result<Self, MarketDataError> {
+        check_floor("heartbeat_timeout", heartbeat_timeout, MIN_HEARTBEAT_TIMEOUT_MS)?;
+        check_floor("idle_probe_after", idle_probe_after, MIN_IDLE_PROBE_AFTER_MS)?;
+        check_floor("probe_timeout", probe_timeout, MIN_PROBE_TIMEOUT_MS)?;
+        Ok(Self {
+            enabled,
+            heartbeat_timeout: heartbeat_timeout
+                .unwrap_or(Duration::from_millis(DEFAULT_HEARTBEAT_TIMEOUT_MS)),
+            probe_enabled,
+            idle_probe_after,
+            probe_timeout,
+        })
+    }
+
+    /// Construct an enabled config in probe mode (see
+    /// [`probe_enabled`](Self::probe_enabled)): a ping after `idle_probe_after`
+    /// of silence, dead if nothing arrives within `probe_timeout` of it.
+    ///
+    /// # Errors
+    /// Returns [`MarketDataError::ConfigError`] if `idle_probe_after` is below
+    /// [`MIN_IDLE_PROBE_AFTER_MS`] or `probe_timeout` below
+    /// [`MIN_PROBE_TIMEOUT_MS`].
+    pub fn with_probe(
+        idle_probe_after: Duration,
+        probe_timeout: Duration,
+    ) -> Result<Self, MarketDataError> {
+        Self::from_parts(true, None, true, Some(idle_probe_after), Some(probe_timeout))
+    }
+
+    /// The silence before a probe is sent, defaulted.
+    pub fn idle_probe_after_or_default(&self) -> Duration {
+        self.idle_probe_after
+            .unwrap_or(Duration::from_millis(DEFAULT_IDLE_PROBE_AFTER_MS))
+    }
+
+    /// The wait after a probe is sent, defaulted.
+    pub fn probe_timeout_or_default(&self) -> Duration {
+        self.probe_timeout
+            .unwrap_or(Duration::from_millis(DEFAULT_PROBE_TIMEOUT_MS))
+    }
+
     /// Construct an enabled config with the given timeout.
     ///
     /// Returns [`MarketDataError::ConfigError`] if `timeout` is below
@@ -98,16 +232,7 @@ impl HealthCheckConfig {
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,
     /// validation, or peer-initiated failures.
     pub fn with_timeout(timeout: Duration) -> Result<Self, MarketDataError> {
-        if timeout < Duration::from_millis(MIN_HEARTBEAT_TIMEOUT_MS) {
-            return Err(MarketDataError::ConfigError(format!(
-                "heartbeat_timeout must be >= {}ms (got {:?})",
-                MIN_HEARTBEAT_TIMEOUT_MS, timeout
-            )));
-        }
-        Ok(Self {
-            enabled: true,
-            heartbeat_timeout: timeout,
-        })
+        Self::from_parts(true, Some(timeout), false, None, None)
     }
 
     /// Construct a disabled config. Without liveness detection a
@@ -116,10 +241,9 @@ impl HealthCheckConfig {
     pub fn disabled() -> Self {
         Self {
             enabled: false,
-            heartbeat_timeout: Duration::from_millis(DEFAULT_HEARTBEAT_TIMEOUT_MS),
+            ..Self::default()
         }
     }
-
 }
 
 #[cfg(test)]
@@ -166,4 +290,52 @@ mod tests {
         assert!(result.is_err(), "below 5s floor must be rejected");
     }
 
+    #[test]
+    fn test_probe_defaults() {
+        let config = HealthCheckConfig::default();
+        assert!(!config.probe_enabled, "probe mode is opt-in");
+        assert_eq!(config.idle_probe_after_or_default(), Duration::from_secs(30));
+        assert_eq!(config.probe_timeout_or_default(), Duration::from_secs(5));
+    }
+
+    #[test]
+    fn test_default_probe_detection_matches_passive_default() {
+        // Turning probe mode on alone must not slow detection down.
+        let config = HealthCheckConfig::default();
+        assert_eq!(
+            config.idle_probe_after_or_default() + config.probe_timeout_or_default(),
+            config.heartbeat_timeout,
+        );
+    }
+
+    #[test]
+    fn test_with_probe() {
+        let config =
+            HealthCheckConfig::with_probe(Duration::from_secs(5), Duration::from_secs(5)).unwrap();
+        assert!(config.enabled && config.probe_enabled);
+        assert_eq!(config.idle_probe_after, Some(Duration::from_secs(5)));
+        assert_eq!(config.probe_timeout, Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn test_probe_floors() {
+        assert!(HealthCheckConfig::with_probe(Duration::from_millis(5_000), Duration::from_millis(1_000)).is_ok());
+        let idle = HealthCheckConfig::with_probe(Duration::from_millis(4_999), Duration::from_secs(5));
+        assert!(matches!(idle, Err(MarketDataError::ConfigError(_))));
+        let timeout = HealthCheckConfig::with_probe(Duration::from_secs(5), Duration::from_millis(999));
+        assert!(matches!(timeout, Err(MarketDataError::ConfigError(_))));
+    }
+
+    #[test]
+    fn test_from_parts_validates_unused_mode() {
+        // A bad probe setting is rejected even with probe mode off.
+        let result = HealthCheckConfig::from_parts(
+            true,
+            None,
+            false,
+            None,
+            Some(Duration::from_millis(10)),
+        );
+        assert!(result.is_err());
+    }
 }

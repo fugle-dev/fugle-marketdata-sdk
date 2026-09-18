@@ -1428,20 +1428,46 @@ class HealthCheckConfig:
 
         # Opt out of liveness detection
         ws = WebSocketClient(api_key="key", health_check=HealthCheckConfig(enabled=False))
+
+        # Confirm with a ping before disconnecting; know within 10 s
+        config = HealthCheckConfig(probe_enabled=True,
+                                   idle_probe_after_ms=5000,
+                                   probe_timeout_ms=5000)
         ```
+
+    With ``probe_enabled``, a silent connection is asked before it is declared
+    dead: after ``idle_probe_after_ms`` of silence one ping is sent, and only
+    if nothing arrives within ``probe_timeout_ms`` is the connection declared
+    dead. The defaults keep detection at 35 s and send no ping while the
+    server's heartbeat is on time. Probing does not detect a half-open
+    connection (the server still sends, our writes no longer arrive).
     """
 
     enabled: bool
     """Whether liveness detection is active (default: True)."""
 
     heartbeat_timeout_ms: int
-    """Maximum gap between inbound frames in milliseconds before the connection is declared dead."""
+    """Maximum gap between inbound frames in milliseconds before the connection is declared dead.
+
+    Does not apply when ``probe_enabled`` is True."""
+
+    probe_enabled: bool
+    """Confirm a silent connection with a ping before declaring it dead (default: False)."""
+
+    idle_probe_after_ms: int
+    """Silence in milliseconds before the probe (default: 30000, the server's heartbeat period)."""
+
+    probe_timeout_ms: int
+    """Wait in milliseconds for any inbound frame after the probe (default: 5000)."""
 
     def __init__(
         self,
         *,
         enabled: bool = True,
         heartbeat_timeout_ms: int = 35000,
+        probe_enabled: bool = False,
+        idle_probe_after_ms: int = 30000,
+        probe_timeout_ms: int = 5000,
     ) -> None:
         """Create a new health check configuration.
 
@@ -1449,10 +1475,20 @@ class HealthCheckConfig:
             enabled: Whether liveness detection is active (default: True)
             heartbeat_timeout_ms: Maximum gap between inbound frames before the
                 connection is declared dead (default: 35000ms = the server's 30s
-                heartbeat + 5s buffer, min: 5000ms)
+                heartbeat + 5s buffer, min: 5000ms). Does not apply when
+                ``probe_enabled`` is True.
+            probe_enabled: Confirm a silent connection with a ping before
+                declaring it dead (default: False). Detection is
+                ``idle_probe_after_ms + probe_timeout_ms``.
+            idle_probe_after_ms: Silence before the ping (default: 30000ms, the
+                server's heartbeat period, min: 5000ms). Below 30000 a ping is
+                sent in every gap between heartbeats while no data flows.
+            probe_timeout_ms: Wait for any inbound frame after the ping
+                (default: 5000ms, min: 1000ms)
 
         Raises:
-            ValueError: If heartbeat_timeout_ms < 5000
+            ValueError: If heartbeat_timeout_ms < 5000, idle_probe_after_ms <
+                5000 or probe_timeout_ms < 1000
         """
         ...
 
@@ -1785,6 +1821,10 @@ class StockWebSocketClient:
         """
         ...
 
+    async def measure_latency_async(self, timeout_ms: int | None = None) -> float:
+        """Async version of :meth:`measure_latency`."""
+        ...
+
     def unsubscribe(
         self,
         subscription_id: Mapping[str, Any] | str | None = None,
@@ -1839,11 +1879,33 @@ class StockWebSocketClient:
     def ping(self, state: str | None = None) -> None:
         """Send a ``ping`` frame to the server.
 
+        Fire and forget: the server's pong reply is delivered to the message
+        handlers. To wait for it and get the round trip, use
+        :meth:`measure_latency`.
+
         Args:
             state: Optional state string echoed back in the server's pong reply
 
         Raises:
             RuntimeError: If not connected
+        """
+        ...
+
+    def measure_latency(self, timeout_ms: int | None = None) -> float:
+        """Measure the round trip to the server, in milliseconds.
+
+        Sends a ping and waits for its pong. Works whether or not
+        ``probe_enabled`` is set and sends nothing in the background; its pong
+        is not delivered to the message handlers. Blocks with the GIL released.
+
+        Args:
+            timeout_ms: How long to wait for the pong (default: 5000)
+
+        Raises:
+            WebSocketError: Code 2010 if not connected, 2001 if the connection
+                closes before the pong
+            TimeoutError: Code 3001 if no pong arrives within ``timeout_ms``
+            MarketDataError: Code 1005 for a ``timeout_ms`` of 0
         """
         ...
 
@@ -2020,11 +2082,33 @@ class FutOptWebSocketClient:
     def ping(self, state: str | None = None) -> None:
         """Send a ``ping`` frame to the server.
 
+        Fire and forget: the server's pong reply is delivered to the message
+        handlers. To wait for it and get the round trip, use
+        :meth:`measure_latency`.
+
         Args:
             state: Optional state string echoed back in the server's pong reply
 
         Raises:
             RuntimeError: If not connected
+        """
+        ...
+
+    def measure_latency(self, timeout_ms: int | None = None) -> float:
+        """Measure the round trip to the server, in milliseconds.
+
+        Sends a ping and waits for its pong. Works whether or not
+        ``probe_enabled`` is set and sends nothing in the background; its pong
+        is not delivered to the message handlers. Blocks with the GIL released.
+
+        Args:
+            timeout_ms: How long to wait for the pong (default: 5000)
+
+        Raises:
+            WebSocketError: Code 2010 if not connected, 2001 if the connection
+                closes before the pong
+            TimeoutError: Code 3001 if no pong arrives within ``timeout_ms``
+            MarketDataError: Code 1005 for a ``timeout_ms`` of 0
         """
         ...
 

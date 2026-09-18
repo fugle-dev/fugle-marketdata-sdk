@@ -240,4 +240,57 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
     ]);
     expect(pongs[0].data.state).toBe('obj');
   });
+
+  test('measureLatency() resolves with the round trip; only ping() pongs reach message (#150)', async () => {
+    await setup({ healthCheck: { probeEnabled: true } });
+    const pongs = [];
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw);
+      if (msg.event === 'pong') pongs.push(msg);
+    });
+    await ws.connect();
+
+    const latency = await ws.measureLatency();
+    expect(typeof latency).toBe('number');
+    expect(latency).toBeGreaterThanOrEqual(0);
+    expect(latency).toBeLessThan(5000);
+
+    ws.ping('mine');
+    await waitFor(() => pongs.length === 1, 'the ping() pong');
+    await sleep(100);
+    expect(pongs.map((pong) => pong.data.state)).toEqual(['mine']);
+  });
+
+  test('measureLatency() rejects with ClientClosed before connect() (#150)', async () => {
+    await setup();
+    const error = await ws.measureLatency().catch((e) => e);
+    expect(isError(error)).toBe(true);
+    expect(error.code).toBe(2010);
+  });
+});
+
+describe('healthCheck probe options (#150)', () => {
+  test('accepts the probe options', () => {
+    const ws = new WebSocketClient({
+      apiKey: 'test-key',
+      healthCheck: { probeEnabled: true, idleProbeAfterMs: 5000, probeTimeoutMs: 1000 },
+    });
+    expect(ws.stock).toBeDefined();
+  });
+
+  test.each([
+    [{ heartbeatTimeoutMs: 4999 }],
+    [{ probeEnabled: true, idleProbeAfterMs: 4999 }],
+    [{ probeEnabled: true, probeTimeoutMs: 999 }],
+    // Checked even with probing off, before it is switched on.
+    [{ probeTimeoutMs: 10 }],
+  ])('rejects %j below its floor with 1004', (healthCheck) => {
+    let error;
+    try {
+      new WebSocketClient({ apiKey: 'test-key', healthCheck });
+    } catch (e) {
+      error = e;
+    }
+    expect(error && error.code).toBe(1004);
+  });
 });

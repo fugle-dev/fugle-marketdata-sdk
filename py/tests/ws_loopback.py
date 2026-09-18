@@ -200,6 +200,10 @@ class _Server:
                 },
                 {"event": "data", "data": {"symbol": symbol, "price": 100}, "id": sub_id, "channel": channel},
             ]
+        if event == "ping":
+            # Like the server: echo `state`, with the server's time.
+            state = (frame.get("data") or {}).get("state")
+            return [{"event": "pong", "data": {"time": 0, "state": state}}]
         return []
 
 

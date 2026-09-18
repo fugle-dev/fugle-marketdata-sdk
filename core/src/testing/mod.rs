@@ -107,6 +107,19 @@ pub struct MockWsServer {
     /// per-client tasks so [`Self::set_auth_response`] applies to auth
     /// requests that arrive after the call.
     auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
+    /// `ping` handling, shared with the per-client tasks.
+    pings: Arc<PingControl>,
+}
+
+/// How the mock treats `ping` requests. Like the Fugle server
+/// (`streaming.gateway.ts`), it answers each with
+/// `{"event":"pong","data":{"time":…,"state":…}}`, echoing `state`.
+#[derive(Default)]
+struct PingControl {
+    /// Set to stop answering, as a server that no longer processes requests.
+    silent: std::sync::atomic::AtomicBool,
+    /// `data` of every `ping` received, in order.
+    received: std::sync::Mutex<Vec<serde_json::Value>>,
 }
 
 /// Default reply to an `auth` request: `{"event":"authenticated"}`.
@@ -152,6 +165,7 @@ impl MockWsServer {
         let mut clients = Vec::with_capacity(capacity);
         let mut accept_seeds = Vec::with_capacity(capacity);
         let auth_response = Arc::new(std::sync::Mutex::new(default_auth_response()));
+        let pings = Arc::new(PingControl::default());
 
         for _ in 0..capacity {
             let pending_sub_ids: Arc<Mutex<VecDeque<String>>> =
@@ -169,6 +183,7 @@ impl MockWsServer {
                 inject_rx,
                 drop_rx,
                 auth_response: Arc::clone(&auth_response),
+                pings: Arc::clone(&pings),
             });
         }
 
@@ -180,7 +195,19 @@ impl MockWsServer {
             addr,
             clients,
             auth_response,
+            pings,
         }
+    }
+
+    /// Whether `ping` requests are answered with a `pong` (default true).
+    /// Pings are still recorded while unanswered.
+    pub fn set_answer_pings(&self, answer: bool) {
+        self.pings.silent.store(!answer, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The `data` of every `ping` request received so far, from any client.
+    pub fn pings_received(&self) -> Vec<serde_json::Value> {
+        self.pings.received.lock().expect("pings lock poisoned").clone()
     }
 
     /// Replace the frame every client receives in reply to its `auth`
@@ -343,6 +370,7 @@ struct AcceptSeed {
     inject_rx: mpsc::UnboundedReceiver<MockInjection>,
     drop_rx: oneshot::Receiver<()>,
     auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
+    pings: Arc<PingControl>,
 }
 
 /// Convenience: spin up a fresh single-client [`MockWsServer`] and a
@@ -396,6 +424,7 @@ async fn run_client_loop(
         mut inject_rx,
         mut drop_rx,
         auth_response,
+        pings,
     } = seed;
 
     loop {
@@ -442,6 +471,17 @@ async fn run_client_loop(
                                         "symbol": symbol,
                                     });
                                     let _ = ws.send(Message::Text(ack.to_string().into())).await;
+                                }
+                                "ping" => {
+                                    let data = json.get("data").cloned().unwrap_or_default();
+                                    pings.received.lock().expect("pings lock poisoned").push(data.clone());
+                                    if !pings.silent.load(std::sync::atomic::Ordering::SeqCst) {
+                                        let pong = serde_json::json!({
+                                            "event": "pong",
+                                            "data": { "time": 0, "state": data.get("state") },
+                                        });
+                                        let _ = ws.send(Message::Text(pong.to_string().into())).await;
+                                    }
                                 }
                                 _ => {}
                             }

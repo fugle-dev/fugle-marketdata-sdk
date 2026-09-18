@@ -152,6 +152,13 @@ Liveness detection is on by default: when no inbound frame (data, heartbeat or
 pong) arrives within `heartbeatTimeoutMs`, the connection is declared dead and
 auto-reconnect takes over. The server sends a heartbeat every 30 seconds.
 
+With `probeEnabled`, a silent connection is asked before it is declared dead:
+after `idleProbeAfterMs` of silence one ping is sent, and only if nothing
+arrives within `probeTimeoutMs` is the connection declared dead. The defaults
+keep detection at 35 seconds and send no ping while the server's heartbeat is
+on time, so turning on `probeEnabled` alone only removes false disconnects
+caused by a late heartbeat.
+
 ```javascript
 const { WebSocketClient } = require('@fugle/marketdata');
 
@@ -159,13 +166,34 @@ const ws = new WebSocketClient({
   apiKey: 'your-key',
   healthCheck: { heartbeatTimeoutMs: 60000 }, // or { enabled: false } to turn it off
 });
+
+// Confirm before disconnecting; know within 10 seconds
+const fast = new WebSocketClient({
+  apiKey: 'your-key',
+  healthCheck: { probeEnabled: true, idleProbeAfterMs: 5000, probeTimeoutMs: 5000 },
+});
+
+// Round trip on demand, in milliseconds (default timeout 5000)
+const rtt = await fast.stock.measureLatency();
 ```
 
 **HealthCheckOptions:**
 
 - `enabled` (boolean): Whether health check is enabled (default: true)
 - `heartbeatTimeoutMs` (number): Maximum gap between inbound frames before the
-  connection is declared dead (default: 35000, min: 5000)
+  connection is declared dead (default: 35000, min: 5000). **Does not apply
+  when `probeEnabled` is true.**
+- `probeEnabled` (boolean): Confirm with a ping before declaring the connection
+  dead (default: false). Detection is `idleProbeAfterMs + probeTimeoutMs`.
+- `idleProbeAfterMs` (number): Silence before the ping (default: 30000, the
+  server's heartbeat period; min: 5000). Below 30000 a ping is sent in every
+  gap between heartbeats while no data flows.
+- `probeTimeoutMs` (number): Wait for any inbound frame after the ping
+  (default: 5000, min: 1000)
+
+Probing does not detect a half-open connection (the server still sends, our
+writes no longer arrive). See [docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the trade-offs and the server cost of short probe intervals.
 
 ### Message Queue
 
@@ -204,7 +232,7 @@ const { WebSocketClient } = require('@fugle/marketdata');
 const ws = new WebSocketClient({
   apiKey: 'your-key',
   reconnect: { maxAttempts: 10, initialDelayMs: 2000 },
-  healthCheck: { enabled: true, pingInterval: 15000 }
+  healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 }
 });
 ```
 
@@ -269,7 +297,8 @@ class WebSocketClient {
 class StockWebSocketClient {
   on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void;
   connect(): Promise<WebSocketAuthData | undefined>;
-  ping(params?: string | { state?: unknown }): void;
+  ping(params?: string | { state?: unknown }): void;   // fire and forget; pong via 'message'
+  measureLatency(timeoutMs?: number): Promise<number>; // round trip in ms
   subscribe(options: { channel: string; symbol: string; oddLot?: boolean }): void;
   // A server id, { id } / { ids }, or the subscribe() options (FutOpt: afterHours)
   unsubscribe(options: string | { id?: string; ids?: string[] } | { channel: string; symbol?: string; symbols?: string[]; intradayOddLot?: boolean }): void;

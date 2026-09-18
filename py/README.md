@@ -193,13 +193,41 @@ ws = WebSocketClient(api_key="your-key", health_check=health_check)
 
 # Turn liveness detection off
 ws = WebSocketClient(api_key="your-key", health_check=HealthCheckConfig(enabled=False))
+
+# Confirm with a ping before disconnecting; know within 10 seconds
+ws = WebSocketClient(api_key="your-key",
+                     health_check=HealthCheckConfig(probe_enabled=True,
+                                                    idle_probe_after_ms=5000,
+                                                    probe_timeout_ms=5000))
+
+# Round trip on demand, in milliseconds (default timeout 5000)
+latency = ws.stock.measure_latency()
 ```
+
+With `probe_enabled`, a silent connection is asked before it is declared dead:
+after `idle_probe_after_ms` of silence one ping is sent, and only if nothing
+arrives within `probe_timeout_ms` is the connection declared dead. The defaults
+keep detection at 35 seconds and send no ping while the server's heartbeat is on
+time, so turning on `probe_enabled` alone only removes false disconnects caused
+by a late heartbeat.
 
 **HealthCheckConfig Options:**
 
 - `enabled` (bool): Whether health check is enabled (default: True)
 - `heartbeat_timeout_ms` (int): Maximum gap between inbound frames before the
-  connection is declared dead (default: 35000ms, min: 5000ms)
+  connection is declared dead (default: 35000ms, min: 5000ms). **Does not
+  apply when `probe_enabled` is True.**
+- `probe_enabled` (bool): Confirm with a ping before declaring the connection
+  dead (default: False). Detection is `idle_probe_after_ms + probe_timeout_ms`.
+- `idle_probe_after_ms` (int): Silence before the ping (default: 30000ms, the
+  server's heartbeat period; min: 5000ms). Below 30000 a ping is sent in every
+  gap between heartbeats while no data flows.
+- `probe_timeout_ms` (int): Wait for any inbound frame after the ping
+  (default: 5000ms, min: 1000ms)
+
+Probing does not detect a half-open connection (the server still sends, our
+writes no longer arrive). See [docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the trade-offs and the server cost of short probe intervals.
 
 ### Combined Configuration
 

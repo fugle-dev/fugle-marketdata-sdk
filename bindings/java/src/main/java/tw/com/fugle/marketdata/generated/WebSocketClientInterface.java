@@ -48,6 +48,22 @@ public interface WebSocketClientInterface {
     public Boolean isConnected();
     
     /**
+     * Measure the round trip to the server: send a ping, wait for its pong,
+     * and return the time between the two in milliseconds.
+     *
+     * Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+     * this waits for the answer, and its pong is not delivered. Works
+     * whether or not `probe_enabled` is set, and sends nothing in the
+     * background. `timeout_ms` defaults to 5000 when `None`.
+     *
+     * Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+     * (2001) when the connection closes before the pong, `TimeoutError`
+     * (3001) when no pong arrives within `timeout_ms`, and
+     * `InvalidParameter` (1005) for a `timeout_ms` of 0.
+     */
+    public CompletableFuture<Double> measureLatency(Long timeoutMs) ;
+    
+    /**
      * Messages dropped because they arrived while the message queue held
      * `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
      *

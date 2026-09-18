@@ -6,6 +6,9 @@
 //! WebSocket+queue+state in place.
 
 use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
+use crate::websocket::liveness::{
+    probe_frame, FailWaitersOnDrop, LatencyWaiters, Liveness, LivenessAction,
+};
 use crate::websocket::stream_queue::StreamSender;
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_resubscribe, parse_binary_frame, parse_text_frame,
@@ -34,6 +37,15 @@ const READ_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Auth handshake timeout. Mirrors the async client.
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Write timeout of the socket while the health check's probe is enabled.
+///
+/// Writes here block the owner thread, so a stuck socket would also stop
+/// the liveness check that is meant to notice it. The value is fixed rather
+/// than tied to `probe_timeout`, so a short probe timeout never fails an
+/// ordinary write such as a large batch of subscriptions; the probe's own
+/// write is bounded by its deadline instead (see [`write_probe`]).
+const PROBE_MODE_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Outbound queue capacity. Matches the async path (`aio::writer` uses 64).
 pub(crate) const WRITE_QUEUE_CAPACITY: usize = 64;
@@ -90,6 +102,8 @@ pub(crate) struct OwnerShared {
     pub config: ConnectionConfig,
     pub tls_config: Arc<rustls::ClientConfig>,
     pub health: HealthCheckConfig,
+    /// Pending `measure_latency()` calls, answered by the owner loop.
+    pub latency: LatencyWaiters,
     pub reconnection: Mutex<ReconnectionManager>,
     pub state: Arc<RwLock<ConnectionState>>,
     pub subscriptions: Arc<SubscriptionManager>,
@@ -173,18 +187,64 @@ pub(crate) fn do_blocking_connect(
 /// `MaybeTlsStream::Rustls` wrapper. Without the explicit downcast,
 /// `set_read_timeout` is unreachable through the WebSocket facade.
 pub(crate) fn set_read_timeout(ws: &mut SyncWs, t: Option<Duration>) {
+    if let Some(tcp) = tcp_stream(ws) {
+        let _ = tcp.set_read_timeout(t);
+    }
+}
+
+/// Apply `set_write_timeout` to the underlying `TcpStream`; see
+/// [`set_read_timeout`].
+fn set_write_timeout(ws: &mut SyncWs, t: Option<Duration>) {
+    if let Some(tcp) = tcp_stream(ws) {
+        let _ = tcp.set_write_timeout(t);
+    }
+}
+
+fn tcp_stream(ws: &mut SyncWs) -> Option<&mut TcpStream> {
     match ws.get_mut() {
-        MaybeTlsStream::Plain(s) => {
-            let _ = s.set_read_timeout(t);
-        }
-        MaybeTlsStream::Rustls(s) => {
-            let _ = s.sock.set_read_timeout(t);
-        }
+        MaybeTlsStream::Plain(s) => Some(s),
+        MaybeTlsStream::Rustls(s) => Some(&mut s.sock),
         _ => {
             // NativeTls variant not enabled by our feature flags. The catch-all
             // here is intentional but should be made exhaustive if we add
             // native-tls support in the future.
+            None
         }
+    }
+}
+
+/// Any inbound frame proves the connection alive.
+fn on_inbound(liveness: &mut Option<Liveness<Instant>>) {
+    if let Some(liveness) = liveness.as_mut() {
+        liveness.on_inbound(Instant::now());
+    }
+}
+
+/// What became of a probe written by the owner thread.
+enum ProbeWrite {
+    Sent,
+    /// It could not be written before its deadline: no answer can come.
+    TimedOut,
+    Failed(tungstenite::Error),
+}
+
+/// Write a probe, bounded by `deadline` so a stuck socket cannot hold the
+/// verdict back, then restore the connection's write timeout.
+fn write_probe(ws: &mut SyncWs, deadline: Instant) -> ProbeWrite {
+    let remaining = deadline
+        .saturating_duration_since(Instant::now())
+        .max(Duration::from_millis(1));
+    set_write_timeout(ws, Some(remaining));
+    let result = ws.send(Message::Text(probe_frame().into()));
+    set_write_timeout(ws, Some(PROBE_MODE_WRITE_TIMEOUT));
+    match result {
+        Ok(()) => ProbeWrite::Sent,
+        Err(tungstenite::Error::Io(e))
+            if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
+        {
+            ProbeWrite::TimedOut
+        }
+        Err(e) => ProbeWrite::Failed(e),
     }
 }
 
@@ -275,12 +335,11 @@ fn owner_loop(
     shared: &OwnerShared,
 ) -> Option<u16> {
     set_read_timeout(&mut ws, Some(READ_POLL_INTERVAL));
-    let heartbeat_window = if shared.health.enabled {
-        Some(shared.health.heartbeat_timeout)
-    } else {
-        None
-    };
-    let mut last_activity = Instant::now();
+    let _fail_waiters = FailWaitersOnDrop(&shared.latency);
+    let mut liveness = Liveness::new(&shared.health, Instant::now());
+    if liveness.as_ref().is_some_and(Liveness::probes) {
+        set_write_timeout(&mut ws, Some(PROBE_MODE_WRITE_TIMEOUT));
+    }
     // Unsubscribe frames for subscriptions unsubscribed before their ack
     // arrived (#136); written ahead of the outbound queue.
     let mut cancel_frames: VecDeque<String> = VecDeque::new();
@@ -308,7 +367,7 @@ fn owner_loop(
         // 1. Try a bounded read
         match ws.read() {
             Ok(Message::Text(text)) => {
-                last_activity = Instant::now();
+                on_inbound(&mut liveness);
                 debug!(
                     target: "fugle_marketdata::ws",
                     bytes = text.len(),
@@ -316,6 +375,7 @@ fn owner_loop(
                     "ws frame received"
                 );
                 match parse_text_frame(&text) {
+                    Ok(ws_msg) if shared.latency.intercept_pong(&ws_msg, Instant::now()) => {}
                     Ok(ws_msg) => {
                         queue_cancels(
                             &mut cancel_frames,
@@ -335,7 +395,7 @@ fn owner_loop(
                 }
             }
             Ok(Message::Binary(data)) => {
-                last_activity = Instant::now();
+                on_inbound(&mut liveness);
                 debug!(
                     target: "fugle_marketdata::ws",
                     bytes = data.len(),
@@ -343,6 +403,7 @@ fn owner_loop(
                     "ws frame received"
                 );
                 match parse_binary_frame(&data) {
+                    Ok(ws_msg) if shared.latency.intercept_pong(&ws_msg, Instant::now()) => {}
                     Ok(ws_msg) => {
                         queue_cancels(
                             &mut cancel_frames,
@@ -362,12 +423,12 @@ fn owner_loop(
                 }
             }
             Ok(Message::Ping(payload)) => {
-                last_activity = Instant::now();
+                on_inbound(&mut liveness);
                 // tungstenite does not auto-pong in blocking mode — respond manually.
                 let _ = ws.send(Message::Pong(payload));
             }
             Ok(Message::Pong(_)) => {
-                last_activity = Instant::now();
+                on_inbound(&mut liveness);
             }
             Ok(Message::Close(frame)) => {
                 let code = frame.as_ref().map(|cf| u16::from(cf.code));
@@ -398,7 +459,7 @@ fn owner_loop(
                 return code;
             }
             Ok(Message::Frame(_)) => {
-                last_activity = Instant::now();
+                on_inbound(&mut liveness);
             }
             Err(tungstenite::Error::Io(e))
                 if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
@@ -449,31 +510,43 @@ fn owner_loop(
             }
         }
 
-        // 2. Heartbeat liveness check
-        if let Some(window) = heartbeat_window {
-            if last_activity.elapsed() > window {
-                // A caller-initiated shutdown reports the close itself.
-                if shared.should_stop.load(Ordering::SeqCst) {
-                    return None;
+        // 2. Liveness check: send the probe when it is due, or declare the
+        // connection dead. A caller-initiated shutdown reports the close
+        // itself, and a `force_close()` sends nothing further.
+        if let Some(liveness) = liveness.as_mut() {
+            loop {
+                match liveness.poll(Instant::now()) {
+                    LivenessAction::Wait(_) => break,
+                    LivenessAction::SendProbe => {
+                        if shared.abort.load(Ordering::SeqCst) {
+                            return None;
+                        }
+                        let deadline =
+                            liveness.probe_deadline().expect("a probe was just sent");
+                        debug!(target: "fugle_marketdata::ws", "liveness probe sent");
+                        match write_probe(&mut ws, deadline) {
+                            ProbeWrite::Sent => {}
+                            ProbeWrite::TimedOut => {
+                                if shared.should_stop.load(Ordering::SeqCst) {
+                                    return None;
+                                }
+                                report_heartbeat_timeout(shared, liveness.window());
+                                return None;
+                            }
+                            ProbeWrite::Failed(e) => {
+                                report_write_error(shared, e);
+                                return None;
+                            }
+                        }
+                    }
+                    LivenessAction::Dead(elapsed) => {
+                        if shared.should_stop.load(Ordering::SeqCst) {
+                            return None;
+                        }
+                        report_heartbeat_timeout(shared, elapsed);
+                        return None;
+                    }
                 }
-                warn!(
-                    target: "fugle_marketdata::ws",
-                    elapsed_ms = window.as_millis() as u64,
-                    "heartbeat timeout: no inbound frame in window"
-                );
-                shared.stream.emit(ConnectionEvent::HeartbeatTimeout {
-                    elapsed: window,
-                });
-                // Through the latch, so a racing `disconnect()` cannot
-                // report this connection's close a second time (#47).
-                shared.stream.connection_lost(
-                    &shared.state,
-                    None,
-                    format!("Heartbeat timeout after {}ms", window.as_millis()),
-                    DisconnectIntent::Network,
-                    will_reconnect(shared, DisconnectIntent::Network, None),
-                );
-                return None;
             }
         }
 
@@ -498,27 +571,52 @@ fn owner_loop(
                 },
             };
             if let Err(e) = ws.send(Message::Text(json.into())) {
-                // A failed write ends this connection just like a
-                // failed read: report `Error`, then `Disconnected`.
-                if shared.should_stop.load(Ordering::SeqCst) {
-                    return None;
-                }
-                let err_msg = format!("WebSocket write error: {e}");
-                shared.stream.emit(ConnectionEvent::error_with_message(
-                    &MarketDataError::from(e),
-                    err_msg.clone(),
-                ));
-                shared.stream.connection_lost(
-                    &shared.state,
-                    None,
-                    err_msg,
-                    DisconnectIntent::Network,
-                    will_reconnect(shared, DisconnectIntent::Network, None),
-                );
+                report_write_error(shared, e);
                 return None;
             }
         }
     }
+}
+
+/// Report a connection declared dead by the liveness check:
+/// `HeartbeatTimeout`, then `Disconnected { intent: Network }`.
+fn report_heartbeat_timeout(shared: &OwnerShared, elapsed: Duration) {
+    let elapsed_ms = elapsed.as_millis() as u64;
+    warn!(
+        target: "fugle_marketdata::ws",
+        elapsed_ms,
+        "heartbeat timeout: no inbound frame in window"
+    );
+    shared.stream.emit(ConnectionEvent::HeartbeatTimeout { elapsed });
+    // Through the latch, so a racing `disconnect()` cannot report this
+    // connection's close a second time (#47).
+    shared.stream.connection_lost(
+        &shared.state,
+        None,
+        format!("Heartbeat timeout after {elapsed_ms}ms"),
+        DisconnectIntent::Network,
+        will_reconnect(shared, DisconnectIntent::Network, None),
+    );
+}
+
+/// A failed write ends the connection just like a failed read: report
+/// `Error`, then `Disconnected`, unless the caller is shutting down.
+fn report_write_error(shared: &OwnerShared, e: tungstenite::Error) {
+    if shared.should_stop.load(Ordering::SeqCst) {
+        return;
+    }
+    let err_msg = format!("WebSocket write error: {e}");
+    shared.stream.emit(ConnectionEvent::error_with_message(
+        &MarketDataError::from(e),
+        err_msg.clone(),
+    ));
+    shared.stream.connection_lost(
+        &shared.state,
+        None,
+        err_msg,
+        DisconnectIntent::Network,
+        will_reconnect(shared, DisconnectIntent::Network, None),
+    );
 }
 
 /// Queue each of `frames` (see [`frame_resubscribe`]), in order. A frame

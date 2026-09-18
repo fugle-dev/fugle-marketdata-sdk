@@ -185,7 +185,10 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     /**
-     * Send a ping message to the server.
+     * Send a ping message to the server. Fire-and-forget: the returned future
+     * completes once the ping is sent, and the pong (if any) arrives later
+     * via the message callback or pull queue. See {@link #measureLatency()}
+     * for an awaitable round-trip measurement.
      *
      * @param state Optional state string echoed back in the pong response (nullable)
      * @return CompletableFuture that completes when the ping is sent
@@ -193,6 +196,27 @@ public class FugleWebSocketClient implements AutoCloseable {
     public CompletableFuture<Void> ping(String state) {
         return webSocketClient.ping(state)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
+    }
+
+    /**
+     * Send a ping and await the matching pong, returning the round-trip time
+     * in milliseconds.
+     *
+     * @param timeoutMs Timeout in milliseconds (nullable; default: 5000)
+     * @return CompletableFuture that completes with the round-trip time in milliseconds
+     */
+    public CompletableFuture<Double> measureLatency(Long timeoutMs) {
+        return webSocketClient.measureLatency(timeoutMs)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+    }
+
+    /**
+     * Send a ping and await the matching pong, using the default timeout (5000ms).
+     *
+     * @return CompletableFuture that completes with the round-trip time in milliseconds
+     */
+    public CompletableFuture<Double> measureLatency() {
+        return measureLatency(null);
     }
 
     /**
@@ -585,10 +609,15 @@ public class FugleWebSocketClient implements AutoCloseable {
             HealthCheckConfigRecord healthCheckRecord = null;
             if (healthCheckOptions != null) {
                 // Unset values map to the core defaults: enabled, and a
-                // heartbeat timeout of 0 meaning "use 35000 ms".
+                // heartbeat timeout of 0 meaning "use 35000 ms". probeEnabled
+                // defaults to false; idleProbeAfterMs/probeTimeoutMs of 0
+                // mean "use default" too.
                 healthCheckRecord = new HealthCheckConfigRecord(
                     healthCheckOptions.getEnabled() != null ? healthCheckOptions.getEnabled() : true,
-                    healthCheckOptions.getHeartbeatTimeoutMs() != null ? healthCheckOptions.getHeartbeatTimeoutMs() : 0L
+                    healthCheckOptions.getHeartbeatTimeoutMs() != null ? healthCheckOptions.getHeartbeatTimeoutMs() : 0L,
+                    healthCheckOptions.getProbeEnabled() != null ? healthCheckOptions.getProbeEnabled() : false,
+                    healthCheckOptions.getIdleProbeAfterMs() != null ? healthCheckOptions.getIdleProbeAfterMs() : 0L,
+                    healthCheckOptions.getProbeTimeoutMs() != null ? healthCheckOptions.getProbeTimeoutMs() : 0L
                 );
             }
 

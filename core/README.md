@@ -193,13 +193,16 @@ let reconnect = ReconnectionConfig::new(
 
 ### HealthCheckConfig
 
-Control connection liveness detection. The SDK declares the connection dead and
-triggers reconnect when no inbound frame arrives within `heartbeat_timeout`.
+Control connection liveness detection. By default the SDK declares the
+connection dead and triggers reconnect when no inbound frame arrives within
+`heartbeat_timeout`. With `probe_enabled` it first sends one JSON `ping` after
+`idle_probe_after` of silence and declares the connection dead only if nothing
+arrives within `probe_timeout`; `heartbeat_timeout` does not apply then.
 
-The SDK uses **passive activity detection at the WebSocket read site** — no
-background task, no atomic timestamps, no protocol-level pings. The dispatch
-loop wraps each `ws_read.next()` in `tokio::time::timeout(heartbeat_timeout, ...)`
-and emits `ConnectionEvent::HeartbeatTimeout` when the timer fires.
+Liveness is checked **at the WebSocket read site** — no background task, no
+atomic timestamps, no control-frame pings. Both clients drive one shared state
+machine (`websocket::liveness`) that bounds each read by the next deadline and
+emits `ConnectionEvent::HeartbeatTimeout` when the connection is declared dead.
 
 ```rust,ignore
 use marketdata_core::websocket::HealthCheckConfig;
@@ -215,6 +218,9 @@ let health = HealthCheckConfig::default();
 // Opt out (discouraged — stalled connections won't surface until OS times
 // out the underlying TCP, typically hours later).
 let health = HealthCheckConfig::disabled();
+
+// Probe mode: a ping after 5s of silence, dead 5s later without an answer.
+let health = HealthCheckConfig::with_probe(Duration::from_secs(5), Duration::from_secs(5))?;
 ```
 
 **Parameters:**
@@ -223,7 +229,18 @@ let health = HealthCheckConfig::disabled();
   (was `false` in 2.x).
 - `heartbeat_timeout` (Duration): Maximum allowed gap between inbound frames.
   Default 35s. Floor 5s — but values below the live server's 30s heartbeat
-  period will cause repeated false disconnects.
+  period will cause repeated false disconnects. Passive mode only.
+- `probe_enabled` (bool): Confirm with a ping before declaring the connection
+  dead. Default `false`.
+- `idle_probe_after` (`Option<Duration>`): Silence before the ping. `None` =
+  30s (the server's heartbeat period, so no ping while it is on time). Floor 5s.
+- `probe_timeout` (`Option<Duration>`): Wait for any inbound frame after the
+  ping. `None` = 5s. Floor 1s.
+
+`HealthCheckConfig::from_parts` builds a config from all five settings with
+validation; the language bindings convert into it. See
+[docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+for the trade-offs, what probing does not cover, and the server cost.
 
 **Migration from 2.x:** `interval × max_missed_pongs` collapsed into a single
 `heartbeat_timeout` field. If you used `HealthCheckConfig::new(enabled, interval,
@@ -245,6 +262,11 @@ pub const MIN_INITIAL_DELAY_MS: u64 = 100;
 pub const DEFAULT_HEALTH_CHECK_ENABLED: bool = true;
 pub const DEFAULT_HEARTBEAT_TIMEOUT_MS: u64 = 35000;
 pub const MIN_HEARTBEAT_TIMEOUT_MS: u64 = 5000;
+pub const DEFAULT_IDLE_PROBE_AFTER_MS: u64 = 30000;
+pub const MIN_IDLE_PROBE_AFTER_MS: u64 = 5000;
+pub const DEFAULT_PROBE_TIMEOUT_MS: u64 = 5000;
+pub const MIN_PROBE_TIMEOUT_MS: u64 = 1000;
+pub const DEFAULT_LATENCY_TIMEOUT_MS: u64 = 5000; // measure_latency()
 ```
 
 ## Which constructor should I use?

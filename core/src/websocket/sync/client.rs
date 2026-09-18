@@ -5,6 +5,10 @@
 
 use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
 use crate::websocket::connect_gate::ConnectGate;
+use crate::websocket::liveness::{
+    latency_connection_lost, latency_frame, latency_timeout, latency_timeout_or_default,
+    LatencyWaiters,
+};
 use crate::websocket::stream_queue::QueueReceiver;
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
@@ -23,7 +27,7 @@ use crate::MarketDataError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Synchronous WebSocket client.
 ///
@@ -95,6 +99,7 @@ impl WebSocketClient {
             config,
             tls_config,
             health: health_check_config,
+            latency: LatencyWaiters::default(),
             reconnection: Mutex::new(ReconnectionManager::new(reconnection_config)),
             state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
             subscriptions: Arc::new(SubscriptionManager::new()),
@@ -614,6 +619,77 @@ impl WebSocketClient {
         }
         let json = frame_request(&request)?;
         self.enqueue_write(json)
+    }
+
+    /// Measure the round trip to the server: send a `ping` and wait for its
+    /// `pong`, returning the time between the two on the local clock.
+    ///
+    /// Unlike [`send`](Self::send)ing a [`WebSocketRequest::ping`] — fire and
+    /// forget, with the pong delivered on the stream — this waits for the
+    /// answer, and its pong is not delivered on the stream. It works whether
+    /// or not the health check's probe is enabled, and costs nothing in the
+    /// background.
+    ///
+    /// `timeout` bounds the whole call, queueing the ping included; `None`
+    /// means [`DEFAULT_LATENCY_TIMEOUT_MS`](crate::DEFAULT_LATENCY_TIMEOUT_MS)
+    /// (5s).
+    ///
+    /// # Errors
+    ///
+    /// - `InvalidParameter` (1005) for a zero `timeout`.
+    /// - `ClientClosed` when not connected.
+    /// - `ConnectionError` when the connection closes before the pong.
+    /// - `TimeoutError` (3001) when no pong arrives within `timeout`.
+    pub fn measure_latency(&self, timeout: Option<Duration>) -> Result<Duration, MarketDataError> {
+        let timeout = latency_timeout_or_default(timeout)?;
+        if !self.is_connected() {
+            return Err(MarketDataError::ClientClosed);
+        }
+        let deadline = Instant::now() + timeout;
+        let (tx, rx) = mpsc::sync_channel(1);
+        let state = self.shared.latency.register(move |arrived| {
+            let _ = tx.try_send(arrived);
+        });
+        let sent = Instant::now();
+        let result = latency_frame(state.clone())
+            .and_then(|frame| self.enqueue_write_until(frame, deadline))
+            .and_then(|()| {
+                match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(arrived) => Ok(arrived.saturating_duration_since(sent)),
+                    Err(mpsc::RecvTimeoutError::Timeout) => Err(latency_timeout()),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => Err(latency_connection_lost()),
+                }
+            });
+        if result.is_err() {
+            self.shared.latency.cancel(&state);
+        }
+        result
+    }
+
+    /// [`enqueue_write`](Self::enqueue_write), giving up at `deadline` while
+    /// the queue is full instead of blocking on it.
+    fn enqueue_write_until(&self, json: String, deadline: Instant) -> Result<(), MarketDataError> {
+        let sender = self
+            .shared
+            .write_tx_slot
+            .lock()
+            .expect("write_tx_slot lock poisoned")
+            .clone()
+            .ok_or(MarketDataError::ClientClosed)?;
+        let mut json = json;
+        loop {
+            match sender.try_send(json) {
+                Ok(()) => return Ok(()),
+                Err(mpsc::TrySendError::Disconnected(_)) => return Err(latency_connection_lost()),
+                Err(mpsc::TrySendError::Full(back)) => {
+                    if Instant::now() >= deadline {
+                        return Err(latency_timeout());
+                    }
+                    json = back;
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
     }
 
     fn enqueue_write(&self, json: String) -> Result<(), MarketDataError> {

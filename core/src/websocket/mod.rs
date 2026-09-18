@@ -13,6 +13,7 @@ pub(crate) mod connect_gate;
 pub mod connection_event;
 pub mod factory;
 pub mod health_check;
+pub(crate) mod liveness;
 pub mod stream;
 pub(crate) mod stream_queue;
 pub(crate) mod protocol;

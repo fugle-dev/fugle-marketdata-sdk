@@ -1796,6 +1796,12 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency(
+        IntPtr @ptr,
+        RustBuffer @timeoutMs
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ulong uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -2529,6 +2535,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
@@ -3506,6 +3515,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected` checksum `18665`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency();
+            if (checksum != 53522)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency` checksum `53522`, library returned `{checksum}`"
                 );
             }
         }
@@ -8815,6 +8834,23 @@ public interface IWebSocketClient
     bool IsConnected();
 
     /// <summary>
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and return the time between the two in milliseconds.
+    ///
+    /// Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+    /// this waits for the answer, and its pong is not delivered. Works
+    /// whether or not `probe_enabled` is set, and sends nothing in the
+    /// background. `timeout_ms` defaults to 5000 when `None`.
+    ///
+    /// Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+    /// (2001) when the connection closes before the pong, `TimeoutError`
+    /// (3001) when no pong arrives within `timeout_ms`, and
+    /// `InvalidParameter` (1005) for a `timeout_ms` of 0.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    Task<double> MeasureLatency(ulong? @timeoutMs);
+
+    /// <summary>
     /// Messages dropped because they arrived while the message queue held
     /// `buffer` unread messages (`MessageOverflowRecord::DropNewest`).
     ///
@@ -9101,6 +9137,52 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                         )
                 )
             )
+        );
+    }
+
+    /// <summary>
+    /// Measure the round trip to the server: send a ping, wait for its pong,
+    /// and return the time between the two in milliseconds.
+    ///
+    /// Unlike `ping()` (fire and forget, pong delivered to `on_message`),
+    /// this waits for the answer, and its pong is not delivered. Works
+    /// whether or not `probe_enabled` is set, and sends nothing in the
+    /// background. `timeout_ms` defaults to 5000 when `None`.
+    ///
+    /// Errors: `ClientClosed` (2010) when not connected, `ConnectionError`
+    /// (2001) when the connection closes before the pong, `TimeoutError`
+    /// (3001) when no pong arrives within `timeout_ms`, and
+    /// `InvalidParameter` (1005) for a `timeout_ms` of 0.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public async Task<double> MeasureLatency(ulong? @timeoutMs)
+    {
+        return await _UniFFIAsync.UniffiRustCallAsync(
+            // Get rust future
+            CallWithPointer(thisPtr =>
+            {
+                return _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency(
+                    thisPtr,
+                    FfiConverterOptionalUInt64.INSTANCE.Lower(@timeoutMs)
+                );
+            }),
+            // Poll
+            (IntPtr future, IntPtr continuation, IntPtr data) =>
+                _UniFFILib.ffi_marketdata_uniffi_rust_future_poll_f64(future, continuation, data),
+            // Complete
+            (IntPtr future, ref UniffiRustCallStatus status) =>
+            {
+                return _UniFFILib.ffi_marketdata_uniffi_rust_future_complete_f64(
+                    future,
+                    ref status
+                );
+            },
+            // Free
+            (IntPtr future) => _UniFFILib.ffi_marketdata_uniffi_rust_future_free_f64(future),
+            // Lift
+            (result) => FfiConverterDouble.INSTANCE.Lift(result),
+            // Error
+            FfiConverterTypeMarketDataError.INSTANCE
         );
     }
 
@@ -10522,7 +10604,7 @@ class FfiConverterTypeErrorInfo : FfiConverterRustBuffer<ErrorInfo>
 /// <summary>
 /// Health check configuration record for FFI
 ///
-/// All fields are optional — zero/false values mean "use default".
+/// The millisecond fields take 0 to mean "use default".
 /// </summary>
 /// <param name="enabled">
 /// Whether liveness detection is active (default: true in 3.0)
@@ -10530,7 +10612,22 @@ class FfiConverterTypeErrorInfo : FfiConverterRustBuffer<ErrorInfo>
 /// <param name="heartbeat_timeout_ms">
 /// Maximum allowed gap between inbound frames before declaring the
 /// connection dead, in milliseconds. Default 35000; floor 5000.
-/// Pass 0 to use the default.
+/// Pass 0 to use the default. Does not apply when `probe_enabled` is
+/// true.
+/// </param>
+/// <param name="probe_enabled">
+/// Confirm a silent connection with a ping before declaring it dead
+/// (default: false). After `idle_probe_after_ms` of silence one ping is
+/// sent; if nothing arrives within `probe_timeout_ms` the connection is
+/// declared dead.
+/// </param>
+/// <param name="idle_probe_after_ms">
+/// Silence before the probe, in milliseconds. Default 30000 (the
+/// server's heartbeat period); floor 5000. Pass 0 to use the default.
+/// </param>
+/// <param name="probe_timeout_ms">
+/// Wait for any inbound frame after the probe, in milliseconds.
+/// Default 5000; floor 1000. Pass 0 to use the default.
 /// </param>
 public record HealthCheckConfigRecord(
     /// <summary>
@@ -10540,9 +10637,27 @@ public record HealthCheckConfigRecord(
     /// <summary>
     /// Maximum allowed gap between inbound frames before declaring the
     /// connection dead, in milliseconds. Default 35000; floor 5000.
-    /// Pass 0 to use the default.
+    /// Pass 0 to use the default. Does not apply when `probe_enabled` is
+    /// true.
     /// </summary>
-    ulong @heartbeatTimeoutMs
+    ulong @heartbeatTimeoutMs,
+    /// <summary>
+    /// Confirm a silent connection with a ping before declaring it dead
+    /// (default: false). After `idle_probe_after_ms` of silence one ping is
+    /// sent; if nothing arrives within `probe_timeout_ms` the connection is
+    /// declared dead.
+    /// </summary>
+    bool @probeEnabled = false,
+    /// <summary>
+    /// Silence before the probe, in milliseconds. Default 30000 (the
+    /// server's heartbeat period); floor 5000. Pass 0 to use the default.
+    /// </summary>
+    ulong @idleProbeAfterMs = 0uL,
+    /// <summary>
+    /// Wait for any inbound frame after the probe, in milliseconds.
+    /// Default 5000; floor 1000. Pass 0 to use the default.
+    /// </summary>
+    ulong @probeTimeoutMs = 0uL
 ) { }
 
 class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthCheckConfigRecord>
@@ -10554,7 +10669,10 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     {
         return new HealthCheckConfigRecord(
             @enabled: FfiConverterBoolean.INSTANCE.Read(stream),
-            @heartbeatTimeoutMs: FfiConverterUInt64.INSTANCE.Read(stream)
+            @heartbeatTimeoutMs: FfiConverterUInt64.INSTANCE.Read(stream),
+            @probeEnabled: FfiConverterBoolean.INSTANCE.Read(stream),
+            @idleProbeAfterMs: FfiConverterUInt64.INSTANCE.Read(stream),
+            @probeTimeoutMs: FfiConverterUInt64.INSTANCE.Read(stream)
         );
     }
 
@@ -10562,13 +10680,19 @@ class FfiConverterTypeHealthCheckConfigRecord : FfiConverterRustBuffer<HealthChe
     {
         return 0
             + FfiConverterBoolean.INSTANCE.AllocationSize(value.@enabled)
-            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@heartbeatTimeoutMs);
+            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@heartbeatTimeoutMs)
+            + FfiConverterBoolean.INSTANCE.AllocationSize(value.@probeEnabled)
+            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@idleProbeAfterMs)
+            + FfiConverterUInt64.INSTANCE.AllocationSize(value.@probeTimeoutMs);
     }
 
     public override void Write(HealthCheckConfigRecord value, BigEndianStream stream)
     {
         FfiConverterBoolean.INSTANCE.Write(value.@enabled, stream);
         FfiConverterUInt64.INSTANCE.Write(value.@heartbeatTimeoutMs, stream);
+        FfiConverterBoolean.INSTANCE.Write(value.@probeEnabled, stream);
+        FfiConverterUInt64.INSTANCE.Write(value.@idleProbeAfterMs, stream);
+        FfiConverterUInt64.INSTANCE.Write(value.@probeTimeoutMs, stream);
     }
 }
 
@@ -11665,6 +11789,45 @@ class FfiConverterOptionalInt32 : FfiConverterRustBuffer<int?>
         {
             stream.WriteByte(1);
             FfiConverterInt32.INSTANCE.Write((int)value, stream);
+        }
+    }
+}
+
+class FfiConverterOptionalUInt64 : FfiConverterRustBuffer<ulong?>
+{
+    public static FfiConverterOptionalUInt64 INSTANCE = new FfiConverterOptionalUInt64();
+
+    public override ulong? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterUInt64.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(ulong? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1 + FfiConverterUInt64.INSTANCE.AllocationSize((ulong)value);
+        }
+    }
+
+    public override void Write(ulong? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterUInt64.INSTANCE.Write((ulong)value, stream);
         }
     }
 }
