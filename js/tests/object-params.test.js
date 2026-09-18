@@ -187,6 +187,20 @@ describe('unknown keys are rejected', () => {
     expect(err.message).toContain('accepted keys: symbol, type, offset, limit, sort, isTrial');
   });
 
+  test.each([
+    ['oddlot', (c) => c.stock.intraday.ticker({ symbol: '2330', oddlot: true }), 'oddLot'],
+    ['odd_Lot', (c) => c.stock.intraday.candles({ symbol: '2330', odd_Lot: true }), 'odd_lot'],
+    ['afterhours', (c) => c.futopt.intraday.quote({ symbol: 'TXFD6', afterhours: true }), 'after_hours'],
+    ['AfterHours', (c) => c.futopt.intraday.products({ type: 'FUTURE', AfterHours: true }), 'after_hours'],
+  ])('a near miss of a flag (%s) suggests the flag, not the wire name it sets', async (_key, call, suggestion) => {
+    // `type: true` / `session: true` would be wrong; the suggested spelling
+    // takes the boolean the caller already wrote.
+    const err = await rejection(call(ctx.client));
+    expect(err.message).toContain(`did you mean \`${suggestion}\`?`);
+    expect(err.message).not.toContain('did you mean `type`');
+    expect(err.message).not.toContain('did you mean `session`');
+  });
+
   test('the rejection carries the unified error fields', async () => {
     const err = await rejection(ctx.client.stock.intraday.ticker({ symbol: '2330', Type: 'oddlot' }));
     expect(err).toMatchObject({ code: 1005, sourceKind: 'client', status: null, body: null, requestId: null });
