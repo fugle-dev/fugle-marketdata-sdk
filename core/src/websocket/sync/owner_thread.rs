@@ -387,7 +387,8 @@ fn owner_loop(
                         shared.stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        shared.stream.emit(ConnectionEvent::error_with_message(
+                        // Not after the client's close has been reported (#159).
+                        shared.stream.emit_unless_closed(ConnectionEvent::error_with_message(
                             &e,
                             format!("Failed to deserialize message: {e}"),
                         ));
@@ -415,7 +416,8 @@ fn owner_loop(
                         shared.stream.push_message(ws_msg);
                     }
                     Err(e) => {
-                        shared.stream.emit(ConnectionEvent::error_with_message(
+                        // Not after the client's close has been reported (#159).
+                        shared.stream.emit_unless_closed(ConnectionEvent::error_with_message(
                             &e,
                             format!("Failed to deserialize binary message: {e}"),
                         ));
@@ -490,20 +492,16 @@ fn owner_loop(
                 // pattern-matching on `ConnectionEvent::Disconnected`
                 // observe abnormal closes the same way they observe
                 // clean closes. Mirrors the async `dispatch.rs` Err
-                // arm. Suppressed when caller initiated shutdown.
+                // arm. Suppressed when caller initiated shutdown, and
+                // held back once the close was reported (#159).
                 if shared.should_stop.load(Ordering::SeqCst) {
                     return None;
                 }
                 let err_msg = format!("WebSocket read error: {e}");
-                shared.stream.emit(ConnectionEvent::error_with_message(
-                    &MarketDataError::from(e),
-                    err_msg.clone(),
-                ));
-                shared.stream.connection_lost(
+                shared.stream.connection_failed(
                     &shared.state,
-                    None,
+                    ConnectionEvent::error_with_message(&MarketDataError::from(e), err_msg.clone()),
                     err_msg,
-                    DisconnectIntent::Network,
                     will_reconnect(shared, DisconnectIntent::Network, None),
                 );
                 return None;
@@ -587,34 +585,30 @@ fn report_heartbeat_timeout(shared: &OwnerShared, elapsed: Duration) {
         elapsed_ms,
         "heartbeat timeout: no inbound frame in window"
     );
-    shared.stream.emit(ConnectionEvent::HeartbeatTimeout { elapsed });
     // Through the latch, so a racing `disconnect()` cannot report this
-    // connection's close a second time (#47).
-    shared.stream.connection_lost(
+    // connection's close a second time (#47), and under one lock, so a
+    // `disconnect()` that reported the close first is not followed by the
+    // timeout (#159).
+    shared.stream.connection_failed(
         &shared.state,
-        None,
+        ConnectionEvent::HeartbeatTimeout { elapsed },
         format!("Heartbeat timeout after {elapsed_ms}ms"),
-        DisconnectIntent::Network,
         will_reconnect(shared, DisconnectIntent::Network, None),
     );
 }
 
 /// A failed write ends the connection just like a failed read: report
-/// `Error`, then `Disconnected`, unless the caller is shutting down.
+/// `Error`, then `Disconnected`, unless the caller is shutting down or
+/// has reported the close already (#159).
 fn report_write_error(shared: &OwnerShared, e: tungstenite::Error) {
     if shared.should_stop.load(Ordering::SeqCst) {
         return;
     }
     let err_msg = format!("WebSocket write error: {e}");
-    shared.stream.emit(ConnectionEvent::error_with_message(
-        &MarketDataError::from(e),
-        err_msg.clone(),
-    ));
-    shared.stream.connection_lost(
+    shared.stream.connection_failed(
         &shared.state,
-        None,
+        ConnectionEvent::error_with_message(&MarketDataError::from(e), err_msg.clone()),
         err_msg,
-        DisconnectIntent::Network,
         will_reconnect(shared, DisconnectIntent::Network, None),
     );
 }
@@ -905,25 +899,57 @@ mod tests {
         assert!(errors[1].message.contains("books:2317"), "{}", errors[1].message);
     }
 
+    /// The owner loop's shared state for a connected client with `health`
+    /// and reconnection disabled.
+    fn owner_shared(stream: StreamSender, health: HealthCheckConfig) -> OwnerShared {
+        let config = ConnectionConfig::new("ws://127.0.0.1", AuthRequest::with_api_key("k"));
+        let counter = || DropCounter::new("test", "localhost", "test");
+        OwnerShared {
+            tls_config: crate::tls::build_rustls_config(&config.tls).expect("tls"),
+            config,
+            health,
+            latency: LatencyWaiters::default(),
+            reconnection: Mutex::new(ReconnectionManager::new(
+                crate::websocket::ReconnectionConfig::disabled(),
+            )),
+            state: Arc::new(RwLock::new(ConnectionState::Connected)),
+            subscriptions: Arc::new(SubscriptionManager::new()),
+            stream,
+            write_tx_slot: Mutex::new(None),
+            should_stop: Arc::new(AtomicBool::new(false)),
+            abort: AtomicBool::new(false),
+            messages_dropped: counter(),
+            events_dropped: counter(),
+        }
+    }
+
+    /// A plain WebSocket to a peer that completes the handshake and then
+    /// runs `peer` with its end of the connection.
+    fn socket_to(peer: impl FnOnce(WebSocket<TcpStream>) + Send + 'static) -> SyncWs {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().expect("accept");
+            peer(tungstenite::accept(tcp).expect("handshake"));
+        });
+        let tcp = TcpStream::connect(addr).expect("connect");
+        let (ws, _) = tungstenite::client(
+            format!("ws://{addr}/"),
+            MaybeTlsStream::Plain(tcp),
+        )
+        .expect("client handshake");
+        ws
+    }
+
     /// A plain WebSocket to a peer that completes the handshake and then
     /// never reads, its send buffers filled so the next write blocks. The
     /// returned sender releases the peer.
     fn stuck_socket() -> (SyncWs, mpsc::Sender<()>) {
         use std::io::Write;
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("addr");
         let (release, released) = mpsc::channel::<()>();
-        std::thread::spawn(move || {
-            let (tcp, _) = listener.accept().expect("accept");
-            let _peer = tungstenite::accept(tcp).expect("handshake");
+        let mut ws = socket_to(move |_peer| {
             let _ = released.recv();
         });
-        let tcp = TcpStream::connect(addr).expect("connect");
-        let (mut ws, _) = tungstenite::client(
-            format!("ws://{addr}/"),
-            MaybeTlsStream::Plain(tcp),
-        )
-        .expect("client handshake");
         let tcp = tcp_stream(&mut ws).expect("plain tcp");
         tcp.set_nonblocking(true).expect("nonblocking");
         // Fill until not even one byte has fit for a while: the kernel can
@@ -951,30 +977,15 @@ mod tests {
         const IDLE: Duration = Duration::from_millis(200);
         const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
         let (stream, rx) = event_stream();
-        let config = ConnectionConfig::new("ws://127.0.0.1", AuthRequest::with_api_key("k"));
-        let counter = || DropCounter::new("test", "localhost", "test");
-        let shared = OwnerShared {
-            tls_config: crate::tls::build_rustls_config(&config.tls).expect("tls"),
-            config,
-            health: HealthCheckConfig {
+        let shared = owner_shared(
+            stream,
+            HealthCheckConfig {
                 probe_enabled: true,
                 idle_probe_after: Some(IDLE),
                 probe_timeout: Some(PROBE_TIMEOUT),
                 ..HealthCheckConfig::default()
             },
-            latency: LatencyWaiters::default(),
-            reconnection: Mutex::new(ReconnectionManager::new(
-                crate::websocket::ReconnectionConfig::disabled(),
-            )),
-            state: Arc::new(RwLock::new(ConnectionState::Connected)),
-            subscriptions: Arc::new(SubscriptionManager::new()),
-            stream,
-            write_tx_slot: Mutex::new(None),
-            should_stop: Arc::new(AtomicBool::new(false)),
-            abort: AtomicBool::new(false),
-            messages_dropped: counter(),
-            events_dropped: counter(),
-        };
+        );
         let (ws, _release) = stuck_socket();
         let (_write_tx, write_rx) = mpsc::sync_channel(1);
 
@@ -1003,5 +1014,58 @@ mod tests {
             ),
             "{events:?}"
         );
+    }
+
+    /// `force_close()` sets `should_stop` and then reports the client's
+    /// close; the owner loop can read the flag before and report after. The
+    /// loop's report must then be held back (#159). Reporting the close
+    /// without the flag replays that interleaving: what the loop sees is
+    /// exactly the flag unset and the close reported.
+    fn assert_nothing_follows_the_client_s_close(
+        health: HealthCheckConfig,
+        peer: impl FnOnce(WebSocket<TcpStream>) + Send + 'static,
+    ) {
+        let (stream, rx) = event_stream();
+        let shared = owner_shared(stream, health);
+        let ws = socket_to(peer);
+        let (_write_tx, write_rx) = mpsc::sync_channel(1);
+        shared.stream.client_closed(&shared.state, 1006, "Force closed".into());
+        let closed = shared.state.read().unwrap().clone();
+
+        let code = owner_loop(ws, write_rx, &shared);
+
+        assert_eq!(code, None);
+        let events: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|item| format!("{item:?}"))
+            .collect();
+        assert_eq!(events.len(), 1, "nothing follows the client's close: {events:?}");
+        assert!(events[0].contains("Disconnected") && events[0].contains("Client"), "{events:?}");
+        assert_eq!(*shared.state.read().unwrap(), closed);
+    }
+
+    #[test]
+    fn heartbeat_timeout_after_the_client_s_close_is_reported_is_not_reported() {
+        assert_nothing_follows_the_client_s_close(
+            HealthCheckConfig {
+                heartbeat_timeout: Duration::from_millis(300),
+                ..HealthCheckConfig::default()
+            },
+            |_peer| std::thread::sleep(Duration::from_secs(5)),
+        );
+    }
+
+    #[test]
+    fn read_error_after_the_client_s_close_is_reported_is_not_reported() {
+        // The peer drops the connection without a Close: a transport error
+        // (`ResetWithoutClosingHandshake`, the read's `Err(e)` arm).
+        assert_nothing_follows_the_client_s_close(HealthCheckConfig::disabled(), drop);
+    }
+
+    #[test]
+    fn deserialize_error_after_the_client_s_close_is_reported_is_not_reported() {
+        assert_nothing_follows_the_client_s_close(HealthCheckConfig::disabled(), |mut peer| {
+            peer.send(Message::Text("not json".into())).expect("send");
+            // Then the transport error above ends the loop.
+        });
     }
 }
