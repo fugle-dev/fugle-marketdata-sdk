@@ -1669,13 +1669,24 @@ export interface FutOptDailyResponse {
 // Every REST method also accepts a single params object, the call shape of the
 // legacy `@fugle/marketdata` 1.x SDK and of the examples on developer.fugle.tw.
 // The path param (`symbol` or `market`) is taken out and every other key is
-// sent verbatim as a query param, so keys use the API's own names. The listed
-// keys are the documented ones; any other key is forwarded too.
+// checked against the table of what the endpoint accepts (core's
+// `rest::params`, built from the server's DTOs) before it is sent under the
+// API's own name; an unknown key rejects with the accepted keys in the
+// message. Values are sent as given and checked by the server. At runtime the
+// snake_case forms (`is_trial`, `contract_month`) are accepted too; the types
+// list the API names.
 
 type Timeframe = 'D' | 'W' | 'M' | '1' | '3' | '5' | '10' | '15' | '30' | '60';
 type IntradayTimeframe = '1' | '5' | '10' | '15' | '30' | '60';
 type SnapshotMarket = 'TSE' | 'OTC' | 'ESB' | 'TIB' | 'PSB';
 type SnapshotType = 'ALL' | 'ALLBUT0999' | 'COMMONSTOCK';
+
+/** The odd-lot switch of the single-symbol stock intraday endpoints. */
+interface RestStockIntradayOddLot {
+  type?: 'oddlot';
+  /** Same as `type: 'oddlot'` when true; this SDK's own spelling from 3.0.0-rc. */
+  oddLot?: boolean;
+}
 
 /** Params for `stock.intraday.tickers` */
 export interface RestStockIntradayTickersParams {
@@ -1687,53 +1698,42 @@ export interface RestStockIntradayTickersParams {
   isAttention?: boolean;
   isDisposition?: boolean;
   isHalted?: boolean;
-  [key: string]: unknown;
+  /** Comma-separated symbols to restrict the list to, e.g. "2330,2317" */
+  symbol?: string;
 }
 
 /** Params for `stock.intraday.ticker` */
-export interface RestStockIntradayTickerParams {
+export interface RestStockIntradayTickerParams extends RestStockIntradayOddLot {
   symbol: string;
-  type?: 'oddlot';
-  [key: string]: unknown;
 }
 
 /** Params for `stock.intraday.quote` */
-export interface RestStockIntradayQuoteParams {
+export interface RestStockIntradayQuoteParams extends RestStockIntradayOddLot {
   symbol: string;
-  type?: 'oddlot';
-  /** Same as `type: 'oddlot'`; kept for 3.0.0-rc callers. */
-  oddLot?: boolean;
-  [key: string]: unknown;
 }
 
 /** @deprecated Use `RestStockIntradayQuoteParams`. */
 export type StockIntradayQuoteParams = RestStockIntradayQuoteParams;
 
 /** Params for `stock.intraday.candles` */
-export interface RestStockIntradayCandlesParams {
+export interface RestStockIntradayCandlesParams extends RestStockIntradayOddLot {
   symbol: string;
-  type?: 'oddlot';
   timeframe?: IntradayTimeframe;
   sort?: 'asc' | 'desc';
-  [key: string]: unknown;
 }
 
 /** Params for `stock.intraday.trades` */
-export interface RestStockIntradayTradesParams {
+export interface RestStockIntradayTradesParams extends RestStockIntradayOddLot {
   symbol: string;
-  type?: 'oddlot';
   offset?: number;
   limit?: number;
   sort?: 'asc' | 'desc';
   isTrial?: boolean;
-  [key: string]: unknown;
 }
 
 /** Params for `stock.intraday.volumes` */
-export interface RestStockIntradayVolumesParams {
+export interface RestStockIntradayVolumesParams extends RestStockIntradayOddLot {
   symbol: string;
-  type?: 'oddlot';
-  [key: string]: unknown;
 }
 
 /** Params for `stock.historical.candles` */
@@ -1745,20 +1745,17 @@ export interface RestStockHistoricalCandlesParams {
   fields?: string;
   sort?: 'asc' | 'desc';
   adjusted?: boolean;
-  [key: string]: unknown;
 }
 
 /** Params for `stock.historical.stats` */
 export interface RestStockHistoricalStatsParams {
   symbol: string;
-  [key: string]: unknown;
 }
 
 /** Params for `stock.snapshot.quotes` */
 export interface RestStockSnapshotQuotesParams {
   market: SnapshotMarket;
   type?: SnapshotType;
-  [key: string]: unknown;
 }
 
 /** Params for `stock.snapshot.movers` */
@@ -1772,7 +1769,6 @@ export interface RestStockSnapshotMoversParams {
   lt?: number;
   lte?: number;
   eq?: number;
-  [key: string]: unknown;
 }
 
 /** Params for `stock.snapshot.actives` */
@@ -1780,7 +1776,6 @@ export interface RestStockSnapshotActivesParams {
   market: SnapshotMarket;
   trade: 'volume' | 'value';
   type?: SnapshotType;
-  [key: string]: unknown;
 }
 
 interface RestStockTechnicalBaseParams {
@@ -1788,7 +1783,6 @@ interface RestStockTechnicalBaseParams {
   from?: string;
   to?: string;
   timeframe?: Timeframe;
-  [key: string]: unknown;
 }
 
 /** Params for `stock.technical.sma` */
@@ -1820,31 +1814,33 @@ export interface RestStockTechnicalBbParams extends RestStockTechnicalBaseParams
   period: number;
 }
 
-interface RestStockCorporateActionsParams {
+interface RestStockCorporateActionsDateRange {
   start_date?: string;
   end_date?: string;
   sort?: 'asc' | 'desc';
-  [key: string]: unknown;
 }
 
-/** Params for `stock.corporateActions.capitalChanges` */
-export type RestStockCorporateActionsCapitalChangesParams = RestStockCorporateActionsParams;
+/** Params for `stock.corporateActions.capitalChanges` (no `exchange`: the server rejects it) */
+export type RestStockCorporateActionsCapitalChangesParams = RestStockCorporateActionsDateRange;
 /** Params for `stock.corporateActions.dividends` */
-export type RestStockCorporateActionsDividendsParams = RestStockCorporateActionsParams;
+export interface RestStockCorporateActionsDividendsParams extends RestStockCorporateActionsDateRange {
+  exchange?: 'TWSE' | 'TPEx';
+}
 /** Params for `stock.corporateActions.listingApplicants` */
-export type RestStockCorporateActionsListingApplicantsParams = RestStockCorporateActionsParams;
+export interface RestStockCorporateActionsListingApplicantsParams extends RestStockCorporateActionsDateRange {
+  exchange?: 'TWSE' | 'TPEx';
+}
 
-/** Params for `futopt.intraday.products` */
+/** Params for `futopt.intraday.products` (no `product`: that key belongs to `tickers`) */
 export interface RestFutOptIntradayProductsParams {
   type: FutOptType;
   exchange?: 'TAIFEX';
   session?: 'REGULAR' | 'AFTERHOURS';
   contractType?: ContractType;
   status?: 'N' | 'P' | 'U';
-  [key: string]: unknown;
 }
 
-/** Params for `futopt.intraday.tickers` */
+/** Params for `futopt.intraday.tickers` (no `status`: that key belongs to `products`) */
 export interface RestFutOptIntradayTickersParams {
   type: FutOptType;
   exchange?: 'TAIFEX';
@@ -1852,13 +1848,11 @@ export interface RestFutOptIntradayTickersParams {
   product?: string;
   contractType?: ContractType;
   isSpread?: boolean;
-  [key: string]: unknown;
 }
 
 interface RestFutOptIntradaySymbolParams {
   symbol: string;
   session?: 'afterhours';
-  [key: string]: unknown;
 }
 
 /** Params for `futopt.intraday.quote` */
@@ -1901,8 +1895,11 @@ export type RestFutOptHistoricalCandlesParams = FutOptHistoricalProduct & {
   /** Comma-separated, from `open,high,low,close,volume,average,transaction,change` */
   fields?: string;
   sort?: 'asc' | 'desc';
+  /** Options only, with `callPut` */
+  strikePrice?: number;
+  /** Options only, with `strikePrice` */
+  callPut?: 'CALL' | 'PUT';
   session?: FutOptHistoricalSession;
-  [key: string]: unknown;
 };
 
 /** Params for `futopt.historical.daily` */
@@ -1910,7 +1907,6 @@ export type RestFutOptHistoricalDailyParams = FutOptHistoricalProduct & {
   /** Trading date (YYYY-MM-DD); the server defaults to today */
   date?: string;
   session?: FutOptHistoricalSession;
-  [key: string]: unknown;
 };
 
 // ============================================================================

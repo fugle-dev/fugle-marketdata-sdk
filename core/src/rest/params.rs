@@ -141,18 +141,25 @@ impl EndpointSpec {
         })
     }
 
-    /// The accepted spelling an unknown key was probably meant as: the same
-    /// letters ignoring case and underscores (`istrial`, `IsTrial`,
-    /// `is_Trial` all point at `isTrial`).
+    /// The accepted spelling an unknown key was probably meant as: the one
+    /// that differs only in case (`ODDLOT` → `oddLot`), else the one that
+    /// differs only in case and underscores (`istrial` → `isTrial`).
+    ///
+    /// It is the matched spelling, not the wire name, so the suggestion can
+    /// be used as written: `oddlot` points at the flag `oddLot` (a boolean),
+    /// not at `type`, which takes the string `'oddlot'`.
     pub fn suggest(&self, key: &str) -> Option<&'static str> {
+        let spellings = || {
+            self.params.iter().flat_map(|spec| {
+                [spec.name, spec.canonical]
+                    .into_iter()
+                    .chain(spec.aliases.iter().copied())
+            })
+        };
         let wanted = fold(key);
-        self.params.iter().find_map(|spec| {
-            [spec.name, spec.canonical]
-                .into_iter()
-                .chain(spec.aliases.iter().copied())
-                .find(|candidate| fold(candidate) == wanted)
-                .map(|_| spec.name)
-        })
+        spellings()
+            .find(|candidate| candidate.eq_ignore_ascii_case(key))
+            .or_else(|| spellings().find(|candidate| fold(candidate) == wanted))
     }
 
     /// The wire names, for "accepted: …" in an error message.
@@ -695,12 +702,22 @@ mod tests {
     }
 
     #[test]
-    fn suggest_points_a_near_miss_at_the_wire_name() {
+    fn suggest_points_a_near_miss_at_a_usable_spelling() {
         let trades = EndpointSpec::for_path(&["stock", "intraday", "trades"]).unwrap();
         assert_eq!(trades.suggest("istrial"), Some("isTrial"));
-        assert_eq!(trades.suggest("Is_Trial"), Some("isTrial"));
-        assert_eq!(trades.suggest("ODDLOT"), Some("type"));
+        assert_eq!(trades.suggest("Is_Trial"), Some("is_trial"), "case alone: the snake_case spelling");
+        assert_eq!(trades.suggest("IsTrial"), Some("isTrial"));
         assert_eq!(trades.suggest("limits"), None);
+        assert_eq!(trades.suggest("sortAsc"), None, "the trades sort has no such spelling");
+
+        // A flag's spelling, never the wire name it sets: `type: true` would
+        // be wrong, `oddLot: true` and `odd_lot: true` are right.
+        assert_eq!(trades.suggest("oddlot"), Some("oddLot"));
+        assert_eq!(trades.suggest("ODDLOT"), Some("oddLot"));
+        assert_eq!(trades.suggest("odd_Lot"), Some("odd_lot"));
+        let quote = EndpointSpec::for_path(&["futopt", "intraday", "quote"]).unwrap();
+        assert_eq!(quote.suggest("afterhours"), Some("after_hours"));
+        assert_eq!(quote.suggest("AfterHours"), Some("after_hours"));
         assert_eq!(
             trades.names().collect::<Vec<_>>(),
             ["type", "offset", "limit", "sort", "isTrial"]

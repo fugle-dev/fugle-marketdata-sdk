@@ -8,16 +8,17 @@ use crate::websocket::RestClientOptions;
 use napi_derive::napi;
 use napi::bindgen_prelude::{FromNapiValue, TypeName, ValueType};
 use napi::{check_status, sys};
+use marketdata_core::rest::params::EndpointSpec;
 use serde_json::{Map, Value};
 
 // ---------------------------------------------------------------------------
 // Legacy fugle-marketdata-node compatibility helpers
 //
 // The legacy `@fugle/marketdata` SDK calls REST methods with a single object
-// argument (e.g. `stock.intraday.quote({ symbol: '2330', type: 'oddlot' })`)
-// and forwards every key except the path param verbatim as a query param.
-// Every REST method here accepts that object as its first argument and does
-// the same through `RestClient::get_json`; a string first argument keeps the
+// argument (e.g. `stock.intraday.quote({ symbol: '2330', type: 'oddlot' })`).
+// Every REST method here accepts that object as its first argument: the keys
+// are checked against `core::rest::params` and sent under the API names
+// through `RestClient::get_json`; a string first argument keeps the
 // positional form, which goes through the typed builders.
 // ---------------------------------------------------------------------------
 
@@ -77,26 +78,37 @@ impl FromNapiValue for RestArg {
     }
 }
 
-/// Send the legacy object form: `params[path_key]` becomes the last path
-/// segment and every other entry is forwarded as a query param.
+/// Send the object form: the path param (`symbol` / `market`, or `product`
+/// where the table allows it) becomes the last path segment and every other
+/// key is checked against `core::rest::params` before it is sent.
+///
+/// An unknown key is refused with the accepted keys in the message; the
+/// server would ignore it or answer 400 depending on the endpoint (see
+/// `core::rest::params`, #164). Values are sent as given; the server checks
+/// those.
 async fn get_with_params(
     client: &marketdata_core::RestClient,
     path: &[&str],
-    path_key: Option<&str>,
     mut params: Map<String, Value>,
 ) -> napi::Result<Settled> {
+    let spec = EndpointSpec::for_path(path)
+        .unwrap_or_else(|| panic!("{} has no entry in core::rest::params", path.join("/")));
     let mut segments: Vec<String> = path.iter().map(|s| s.to_string()).collect();
-    if let Some(key) = path_key {
-        match params.remove(key).as_ref().and_then(scalar_to_string) {
-            Some(value) => segments.push(value),
-            None => {
-                return Err(napi::Error::from_reason(format!(
-                    "`{key}` is required and must be a string"
-                )))
+    let mut path_key_used = None;
+    if let Some(key) = spec.path_param {
+        let given = params.keys().find(|k| spec.is_path_param(k)).cloned();
+        match given.as_ref().and_then(|k| params.remove(k)).as_ref().and_then(scalar_to_string) {
+            Some(value) => {
+                segments.push(value);
+                path_key_used = given;
             }
+            None => return Ok(invalid(key, format!("`{key}` is required and must be a string"))),
         }
     }
-    let query = query_pairs(params)?;
+    let query = match query_pairs(spec, path_key_used.as_deref(), params) {
+        Ok(query) => query,
+        Err(err) => return Ok(err),
+    };
 
     let client = client.clone();
     let result = tokio::task::spawn_blocking(move || {
@@ -109,11 +121,68 @@ async fn get_with_params(
     Ok(Settled(result))
 }
 
-/// Flatten params into query pairs the way the legacy SDK's `query-string`
-/// does: `null` entries are skipped and an array repeats its key per element.
-fn query_pairs(params: Map<String, Value>) -> napi::Result<Vec<(String, String)>> {
+/// A rejection carrying the unified error fields (`code` 1005, `sourceKind`
+/// `client`), built on the JS thread when the promise settles.
+fn invalid(name: &str, reason: String) -> Settled {
+    Settled(Err(marketdata_core::MarketDataError::InvalidParameter {
+        name: name.to_string(),
+        reason,
+    }))
+}
+
+/// Resolve each key through the endpoint's table and flatten the values into
+/// query pairs the way the legacy SDK's `query-string` does: `null` entries
+/// are skipped and an array repeats its key per element.
+///
+/// A key may be the API name (`isTrial`), the snake_case form (`is_trial`) or
+/// a listed alias (`oddLot`); it is sent under the API name. The flag forms
+/// (`odd_lot`, `after_hours`) take a boolean and send the table's literal.
+fn query_pairs(
+    spec: &EndpointSpec,
+    path_key_used: Option<&str>,
+    params: Map<String, Value>,
+) -> Result<Vec<(String, String)>, Settled> {
     let mut pairs = Vec::new();
+    let mut given: Vec<(&'static str, String)> = Vec::new();
     for (key, value) in params {
+        if let (true, Some(used)) = (spec.is_path_param(&key), path_key_used) {
+            return Err(invalid(&key, format!("`{key}` and `{used}` both name the path param; give one")));
+        }
+        let Some(resolved) = spec.resolve(&key) else {
+            let hint = match spec.suggest(&key) {
+                Some(name) => format!("did you mean `{name}`? "),
+                None => String::new(),
+            };
+            let accepted: Vec<&str> = spec
+                .path_param
+                .into_iter()
+                .chain(spec.path_param_aliases.iter().copied())
+                .chain(spec.names())
+                .collect();
+            return Err(invalid(
+                &key,
+                format!(
+                    "`{}` does not accept `{key}`; {hint}accepted keys: {}",
+                    spec.path.join("."),
+                    accepted.join(", ")
+                ),
+            ));
+        };
+        let name = resolved.spec.name;
+        if let Some((_, earlier)) = given.iter().find(|(n, _)| *n == name) {
+            return Err(invalid(&key, format!("`{key}` is `{name}`, already given as `{earlier}`")));
+        }
+        given.push((name, key.clone()));
+
+        if resolved.as_flag {
+            let flag = resolved.spec.flag.expect("as_flag implies a flag value");
+            match value {
+                Value::Bool(true) => pairs.push((name.to_string(), flag.to_string())),
+                Value::Bool(false) | Value::Null => {}
+                _ => return Err(invalid(&key, format!("`{key}` must be a boolean"))),
+            }
+            continue;
+        }
         let items = match value {
             Value::Array(items) => items,
             other => vec![other],
@@ -123,11 +192,12 @@ fn query_pairs(params: Map<String, Value>) -> napi::Result<Vec<(String, String)>
                 continue;
             }
             let Some(item) = scalar_to_string(&item) else {
-                return Err(napi::Error::from_reason(format!(
-                    "`{key}` must be a string, number, boolean or an array of them"
-                )));
+                return Err(invalid(
+                    &key,
+                    format!("`{key}` must be a string, number, boolean or an array of them"),
+                ));
             };
-            pairs.push((key.clone(), item));
+            pairs.push((name.to_string(), item));
         }
     }
     Ok(pairs)
@@ -513,19 +583,18 @@ impl StockIntradayClient {
         let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(symbol) => (symbol, odd_lot),
             RestArg::Params(mut params) => {
-                // `oddLot` is this SDK's own spelling from 3.0.0-rc, not an
-                // API param; forwarded as-is the server would ignore it and
-                // return board-lot data.
-                let params_odd_lot = match params.remove("oddLot") {
-                    Some(Value::Bool(b)) => Some(b),
-                    _ => None,
-                };
-                if params_odd_lot.or(odd_lot) == Some(true) {
-                    params
-                        .entry("type")
-                        .or_insert_with(|| Value::String("oddlot".to_string()));
+                // The positional flag still applies to the object form unless
+                // the object already sets `type` under any spelling; the
+                // table turns `oddLot` into `type=oddlot`.
+                let path = ["stock", "intraday", "quote"];
+                let spec = EndpointSpec::for_path(&path).expect("quote is in the table");
+                let sets_type = params
+                    .iter()
+                    .any(|(k, v)| !v.is_null() && spec.resolve(k).is_some_and(|r| r.spec.name == "type"));
+                if odd_lot == Some(true) && !sets_type {
+                    params.insert("oddLot".to_string(), Value::Bool(true));
                 }
-                return get_with_params(&self.inner, &["stock", "intraday", "quote"], Some("symbol"), params).await;
+                return get_with_params(&self.inner, &path, params).await;
             }
         };
 
@@ -558,7 +627,7 @@ impl StockIntradayClient {
     pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "ticker"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "ticker"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -584,7 +653,7 @@ impl StockIntradayClient {
     pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "candles"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "candles"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -615,7 +684,7 @@ impl StockIntradayClient {
     pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "trades"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "trades"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -640,7 +709,7 @@ impl StockIntradayClient {
     pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "volumes"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "volumes"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -676,7 +745,7 @@ impl StockIntradayClient {
     ) -> napi::Result<Settled> {
         let r#type = match RestArg::required(r#type, "type")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "tickers"], None, params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "tickers"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -734,7 +803,7 @@ impl StockHistoricalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "candles"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "candles"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -771,7 +840,7 @@ impl StockHistoricalClient {
     pub async fn stats(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "stats"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "stats"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -806,7 +875,7 @@ impl StockSnapshotClient {
     pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<String>) -> napi::Result<Settled> {
         let market = match RestArg::required(market, "market")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "quotes"], Some("market"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "quotes"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -844,7 +913,7 @@ impl StockSnapshotClient {
     ) -> napi::Result<Settled> {
         let market = match RestArg::required(market, "market")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "movers"], Some("market"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "movers"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -879,7 +948,7 @@ impl StockSnapshotClient {
     pub async fn actives(&self, market: Option<RestArg>, trade: Option<String>) -> napi::Result<Settled> {
         let market = match RestArg::required(market, "market")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "actives"], Some("market"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "actives"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -930,7 +999,7 @@ impl StockTechnicalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "sma"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "sma"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -981,7 +1050,7 @@ impl StockTechnicalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "rsi"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "rsi"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1036,7 +1105,7 @@ impl StockTechnicalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "kdj"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "kdj"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1097,7 +1166,7 @@ impl StockTechnicalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "macd"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "macd"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1154,7 +1223,7 @@ impl StockTechnicalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "bb"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "bb"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1248,7 +1317,7 @@ impl StockCorporateActionsClient {
         reject_legacy_date_args("capitalChanges", &start_date, &end_date, &legacy_third_arg)?;
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
-            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], None, params).await,
+            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], params).await,
             None => None,
         };
 
@@ -1290,7 +1359,7 @@ impl StockCorporateActionsClient {
         reject_legacy_date_args("dividends", &start_date, &end_date, &legacy_third_arg)?;
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
-            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], None, params).await,
+            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], params).await,
             None => None,
         };
 
@@ -1332,7 +1401,7 @@ impl StockCorporateActionsClient {
         reject_legacy_date_args("listingApplicants", &start_date, &end_date, &legacy_third_arg)?;
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
-            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], None, params).await,
+            Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], params).await,
             None => None,
         };
 
@@ -1409,7 +1478,7 @@ impl FutOptIntradayClient {
     pub async fn quote(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "quote"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "quote"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1434,7 +1503,7 @@ impl FutOptIntradayClient {
     pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "ticker"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "ticker"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1460,7 +1529,7 @@ impl FutOptIntradayClient {
     pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "candles"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "candles"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1491,7 +1560,7 @@ impl FutOptIntradayClient {
     pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "trades"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "trades"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1516,7 +1585,7 @@ impl FutOptIntradayClient {
     pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "volumes"], Some("symbol"), params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "volumes"], params).await,
         };
 
         let inner = self.inner.clone();
@@ -1551,7 +1620,7 @@ impl FutOptIntradayClient {
     ) -> napi::Result<Settled> {
         let typ = match RestArg::required(typ, "type")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "tickers"], None, params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "tickers"], params).await,
         };
 
         use marketdata_core::models::futopt::{ContractType, FutOptType};
@@ -1624,7 +1693,7 @@ impl FutOptIntradayClient {
     pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<String>) -> napi::Result<Settled> {
         let typ = match RestArg::required(typ, "type")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "products"], None, params).await,
+            RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "products"], params).await,
         };
 
         use marketdata_core::models::futopt::{ContractType, FutOptType};
@@ -1686,12 +1755,6 @@ pub struct FutOptHistoricalClient {
 /// FutOpt historical paths take a product code. Accept the API's own name for
 /// it, `product`, as well as the legacy SDK's `symbol`; either way it becomes
 /// the path segment rather than a query param.
-fn product_as_symbol(params: &mut Map<String, Value>) {
-    if let Some(product) = params.remove("product") {
-        params.entry("symbol").or_insert(product);
-    }
-}
-
 #[napi]
 impl FutOptHistoricalClient {
     /// Get historical candles for a futures/options product
@@ -1723,9 +1786,8 @@ impl FutOptHistoricalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(mut params) => {
-                product_as_symbol(&mut params);
-                return get_with_params(&self.inner, &["futopt", "historical", "candles"], Some("symbol"), params).await;
+            RestArg::Params(params) => {
+                return get_with_params(&self.inner, &["futopt", "historical", "candles"], params).await;
             }
         };
 
@@ -1782,9 +1844,8 @@ impl FutOptHistoricalClient {
     ) -> napi::Result<Settled> {
         let symbol = match RestArg::required(symbol, "symbol")? {
             RestArg::Positional(value) => value,
-            RestArg::Params(mut params) => {
-                product_as_symbol(&mut params);
-                return get_with_params(&self.inner, &["futopt", "historical", "daily"], Some("symbol"), params).await;
+            RestArg::Params(params) => {
+                return get_with_params(&self.inner, &["futopt", "historical", "daily"], params).await;
             }
         };
 

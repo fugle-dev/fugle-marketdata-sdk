@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Node: the object form of every REST method rejects a key the endpoint
+  does not accept** (#164). Keys are checked against core's table of the
+  server's DTOs before the request is sent; an unknown key rejects with
+  `code` 1005 (`sourceKind: 'client'`) and a message that names the
+  endpoint, a "did you mean" when the key differs only in case or
+  underscores, and the accepted keys. Values are still sent as given. For
+  `stock.corporateActions.capitalChanges` / `listingApplicants` the call
+  failed already, because their backend answers 400 to any unknown key; the
+  rejection is now the client's (code 1005, `status: null`) instead of the
+  server's (code 2003, `status: 400`), with a clearer message. Every other
+  endpoint used to forward the key and the server ignored it, so a typo
+  (`isTrail`, `oddlot`, `prodcut`) silently returned the unfiltered data; it
+  now fails at the call. Two other object-form errors that used to be plain
+  `Error`s carry the same fields now: a missing path param and a nested
+  object value. Giving one parameter under two spellings (`type: 'oddlot'`
+  with `oddLot: true`, `symbol` with `product`) is rejected instead of one
+  of them being dropped. The `Rest*Params`
+  types lose their `[key: string]: unknown` index signature for the same
+  reason, so TypeScript flags the typo at compile time; they list every key
+  the endpoint takes, including the ones added in #169. The snake_case
+  spellings (`is_trial`, `contract_month`, `odd_lot`, `after_hours`) are
+  accepted at runtime as aliases of the API names, and `oddLot` now works on
+  `ticker` / `candles` / `trades` / `volumes` as it did on `quote`.
 - **C#, Go, Java, C++: `ReconnectConfigRecord.enabled` and
   `HealthCheckConfigRecord.enabled` are optional** (#158, #161). A record
   that did not set `enabled` got `false` and silently turned auto-reconnect
