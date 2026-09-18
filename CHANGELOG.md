@@ -464,10 +464,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such a GET once more on its own, with or without a policy and without
   counting against `max_attempts`; if the second send fails too, its error is
   returned. On macOS the same close can also surface as
-  `io: Invalid argument (os error 22)`, which ureq gets when it sets the
-  timeouts on the dead socket before writing the request; that case is
-  resent too. Refused connections, timeouts and HTTP error statuses are not
-  resent.
+  `io: Invalid argument (os error 22)`, which ureq gets when it sets a
+  timeout on the dead socket; that case is resent too. It is verified only
+  by a manual stress run, not end to end in CI. Refused connections,
+  timeouts and HTTP error statuses are not resent.
 - **C#, Go, C++, Java**: WebSocket `connect()` while connected, connecting or
   auto-reconnecting opened a second connection and switched event delivery
   and `is_connected()` to it; if that connection failed, `is_connected()`

@@ -47,12 +47,14 @@ pub(crate) fn transport_error(url: &str, error: ureq::Error) -> MarketDataError 
 /// part of the header had arrived, so the check is on the failure alone.
 /// `ConnectionAborted` is how Windows reports the same close.
 ///
-/// `InvalidInput` is on the list for macOS. ureq sets the read and write
-/// timeouts on the socket before each request (`maybe_update_timeout` in
-/// ureq's `unversioned/transport/tcp.rs`), and macOS answers that
-/// `setsockopt` with `EINVAL` when the peer has already reset the socket.
-/// The request has not been written at that point, so sending it again is
-/// safer still than after the other kinds. The kind is broad, but in a
+/// `InvalidInput` is on the list for macOS. ureq sets the socket's write
+/// timeout before writing the request and its read timeout before reading
+/// the response (`maybe_update_timeout` in ureq's
+/// `unversioned/transport/tcp.rs`), and macOS answers that `setsockopt`
+/// with `EINVAL` when the peer has already reset the socket. Depending on
+/// which call fails, the request may or may not have been written. Either
+/// way resending is safe: GET is idempotent and it is resent only once —
+/// do not rely on the request being unsent. The kind is broad, but in a
 /// loopback stress run it only appeared on reused connections, never when
 /// the server closed each connection itself.
 ///
@@ -227,6 +229,10 @@ mod tests {
         }
     }
 
+    // The macOS `InvalidInput` (EINVAL) case is only classified here: it
+    // depends on OS timing on a reused socket, so no test drives it through
+    // the connection pool. It was verified by a manual loopback stress run
+    // (#106); CI does not cover that path end to end.
     #[test]
     fn dropped_before_response_covers_peer_closes_only() {
         use std::io::ErrorKind;
