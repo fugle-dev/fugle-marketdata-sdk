@@ -17,7 +17,7 @@ use crate::types;
 /// from fugle_marketdata import RestClient
 ///
 /// # Create client with API key
-/// client = RestClient("your-api-key")
+/// client = RestClient(api_key="your-api-key")
 ///
 /// # Get stock quote
 /// quote = client.stock.intraday.quote("2330")
@@ -280,7 +280,7 @@ impl StockOwnershipClient {
     ///     ```python
     ///     data = await client.stock.ownership.etf_holdings_async(symbol="0050")
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn etf_holdings_async<'py>(
         &self,
         py: Python<'py>,
@@ -295,7 +295,7 @@ impl StockOwnershipClient {
     }
 
     /// Sync sibling of `etf_holdings_async()`, matching the legacy fugle-marketdata call shape.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn etf_holdings(
         &self,
         py: Python<'_>,
@@ -325,7 +325,7 @@ impl StockOwnershipClient {
     ///     ```python
     ///     data = await client.stock.ownership.institutional_trades_async(symbol="2330")
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn institutional_trades_async<'py>(
         &self,
         py: Python<'py>,
@@ -340,7 +340,7 @@ impl StockOwnershipClient {
     }
 
     /// Sync sibling of `institutional_trades_async()`, matching the legacy fugle-marketdata call shape.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn institutional_trades(
         &self,
         py: Python<'_>,
@@ -370,7 +370,7 @@ impl StockOwnershipClient {
     ///     ```python
     ///     data = await client.stock.ownership.director_holdings_async(symbol="2330")
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn director_holdings_async<'py>(
         &self,
         py: Python<'py>,
@@ -385,7 +385,7 @@ impl StockOwnershipClient {
     }
 
     /// Sync sibling of `director_holdings_async()`, matching the legacy fugle-marketdata call shape.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn director_holdings(
         &self,
         py: Python<'_>,
@@ -415,7 +415,7 @@ impl StockOwnershipClient {
     ///     ```python
     ///     data = await client.stock.ownership.tdcc_distribution_async(symbol="2330")
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn tdcc_distribution_async<'py>(
         &self,
         py: Python<'py>,
@@ -430,7 +430,7 @@ impl StockOwnershipClient {
     }
 
     /// Sync sibling of `tdcc_distribution_async()`, matching the legacy fugle-marketdata call shape.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, sort=None, **_extra))]
     pub fn tdcc_distribution(
         &self,
         py: Python<'_>,
@@ -564,11 +564,11 @@ impl StockIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     quote = await client.stock.intraday.quote("2330")
+    ///     quote = await client.stock.intraday.quote_async("2330")
     ///     print(f"Last price: {quote['lastPrice']}")
     ///     print(f"Change: {quote['change']}")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, **_extra))]
     pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quote", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -597,7 +597,7 @@ impl StockIntradayClient {
     ///
     /// Sync sibling of `quote()` for callers migrating from the legacy
     /// fugle-marketdata Python SDK. Releases the GIL during the network call.
-    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, **_extra))]
     pub fn quote(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.quote", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -631,9 +631,9 @@ impl StockIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     ticker = await client.stock.intraday.ticker("2330")
+    ///     ticker = await client.stock.intraday.ticker_async("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, **_extra))]
     pub fn ticker_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.ticker", &_extra)?;
@@ -660,7 +660,7 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, **_extra))]
     pub fn ticker(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.ticker", &_extra)?;
@@ -696,9 +696,9 @@ impl StockIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     candles = await client.stock.intraday.candles("2330", "5")
+    ///     candles = await client.stock.intraday.candles_async("2330", timeframe="5")
     ///     ```
-    #[pyo3(signature = (symbol, timeframe=None, odd_lot=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, timeframe=None, odd_lot=None, sort=None, **_extra))]
     pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: Option<String>, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
@@ -732,7 +732,7 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe=None, odd_lot=None, sort=None, **_extra))]
+    #[pyo3(signature = (symbol, *, timeframe=None, odd_lot=None, sort=None, **_extra))]
     pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: Option<String>, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
@@ -774,9 +774,9 @@ impl StockIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     trades = await client.stock.intraday.trades("2330")
+    ///     trades = await client.stock.intraday.trades_async("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn trades_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -820,7 +820,7 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, offset=None, limit=None, sort=None, is_trial=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn trades(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, offset: Option<u32>, limit: Option<u32>, sort: Option<String>, is_trial: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
@@ -872,9 +872,9 @@ impl StockIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     volumes = await client.stock.intraday.volumes("2330")
+    ///     volumes = await client.stock.intraday.volumes_async("2330")
     ///     ```
-    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, **_extra))]
     pub fn volumes_async<'py>(&self, py: Python<'py>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.volumes", &_extra)?;
@@ -901,7 +901,7 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, odd_lot=None, **_extra))]
+    #[pyo3(signature = (symbol, *, odd_lot=None, **_extra))]
     pub fn volumes(&self, py: Python<'_>, symbol: String, odd_lot: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.volumes", &_extra)?;
@@ -937,9 +937,9 @@ impl StockIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     tickers = await client.stock.intraday.tickers(type="EQUITY")
+    ///     tickers = await client.stock.intraday.tickers_async(type="EQUITY")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, market=None, industry=None, is_normal=None, is_attention=None, is_disposition=None, is_halted=None, symbol=None, **_extra))]
+    #[pyo3(signature = (r#type, *, exchange=None, market=None, industry=None, is_normal=None, is_attention=None, is_disposition=None, is_halted=None, symbol=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn tickers_async<'py>(
         &self,
@@ -1005,7 +1005,7 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, market=None, industry=None, is_normal=None, is_attention=None, is_disposition=None, is_halted=None, symbol=None, **_extra))]
+    #[pyo3(signature = (r#type, *, exchange=None, market=None, industry=None, is_normal=None, is_attention=None, is_disposition=None, is_halted=None, symbol=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn tickers(
         &self,
@@ -1093,14 +1093,14 @@ impl StockHistoricalClient {
     ///
     /// Example:
     ///     ```python
-    ///     candles = await client.stock.historical.candles(
+    ///     candles = await client.stock.historical.candles_async(
     ///         "2330",
     ///         from_date="2024-01-01",
     ///         to_date="2024-01-31",
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, fields=None, sort=None, adjusted=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, timeframe=None, fields=None, sort=None, adjusted=None, **_extra))]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
@@ -1157,7 +1157,7 @@ impl StockHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, fields=None, sort=None, adjusted=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, timeframe=None, fields=None, sort=None, adjusted=None, **_extra))]
     pub fn candles(
         &self,
         py: Python<'_>,
@@ -1218,7 +1218,7 @@ impl StockHistoricalClient {
     ///
     /// Example:
     ///     ```python
-    ///     stats = await client.stock.historical.stats("2330")
+    ///     stats = await client.stock.historical.stats_async("2330")
     ///     print(f"52-week high: {stats['week52High']}")
     ///     ```
     #[pyo3(signature = (symbol, **_extra))]
@@ -1283,9 +1283,9 @@ impl StockSnapshotClient {
     ///
     /// Example:
     ///     ```python
-    ///     quotes = await client.stock.snapshot.quotes("TSE", type_filter="COMMONSTOCK")
+    ///     quotes = await client.stock.snapshot.quotes_async("TSE", type_filter="COMMONSTOCK")
     ///     ```
-    #[pyo3(signature = (market, type_filter=None, **_extra))]
+    #[pyo3(signature = (market, *, type_filter=None, **_extra))]
     pub fn quotes_async<'py>(
         &self,
         py: Python<'py>,
@@ -1328,9 +1328,9 @@ impl StockSnapshotClient {
     ///
     /// Example:
     ///     ```python
-    ///     movers = await client.stock.snapshot.movers("TSE", direction="up", change="percent")
+    ///     movers = await client.stock.snapshot.movers_async("TSE", direction="up", change="percent")
     ///     ```
-    #[pyo3(signature = (market, direction=None, change=None, type_filter=None, gt=None, gte=None, lt=None, lte=None, eq=None, **_extra))]
+    #[pyo3(signature = (market, direction=None, change=None, *, type_filter=None, gt=None, gte=None, lt=None, lte=None, eq=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn movers_async<'py>(
         &self,
@@ -1408,9 +1408,9 @@ impl StockSnapshotClient {
     ///
     /// Example:
     ///     ```python
-    ///     actives = await client.stock.snapshot.actives("TSE", trade="volume")
+    ///     actives = await client.stock.snapshot.actives_async("TSE", trade="volume")
     ///     ```
-    #[pyo3(signature = (market, trade=None, type_filter=None, **_extra))]
+    #[pyo3(signature = (market, trade=None, *, type_filter=None, **_extra))]
     pub fn actives_async<'py>(
         &self,
         py: Python<'py>,
@@ -1446,7 +1446,7 @@ impl StockSnapshotClient {
     }
 
     /// Sync sibling of `quotes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (market, type_filter=None, **_extra))]
+    #[pyo3(signature = (market, *, type_filter=None, **_extra))]
     pub fn quotes(
         &self,
         py: Python<'_>,
@@ -1473,7 +1473,7 @@ impl StockSnapshotClient {
     }
 
     /// Sync sibling of `movers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (market, direction=None, change=None, type_filter=None, gt=None, gte=None, lt=None, lte=None, eq=None, **_extra))]
+    #[pyo3(signature = (market, direction=None, change=None, *, type_filter=None, gt=None, gte=None, lt=None, lte=None, eq=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn movers(
         &self,
@@ -1530,7 +1530,7 @@ impl StockSnapshotClient {
     }
 
     /// Sync sibling of `actives()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (market, trade=None, type_filter=None, **_extra))]
+    #[pyo3(signature = (market, trade=None, *, type_filter=None, **_extra))]
     pub fn actives(
         &self,
         py: Python<'_>,
@@ -1575,22 +1575,23 @@ impl StockTechnicalClient {
     ///
     /// Args:
     ///     symbol: Stock symbol (e.g., "2330" for TSMC)
+    ///     period: Moving average period
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-    ///     period: Moving average period
     ///
     /// Returns:
     ///     Awaitable[dict]: SMA indicator data
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn sma_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
+        period: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.sma", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -1632,22 +1633,23 @@ impl StockTechnicalClient {
     ///
     /// Args:
     ///     symbol: Stock symbol (e.g., "2330" for TSMC)
+    ///     period: RSI period (default 14)
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-    ///     period: RSI period (default 14)
     ///
     /// Returns:
     ///     Awaitable[dict]: RSI indicator data
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn rsi_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
+        period: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.rsi", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -1689,26 +1691,26 @@ impl StockTechnicalClient {
     ///
     /// Args:
     ///     symbol: Stock symbol (e.g., "2330" for TSMC)
-    ///     from_date: Start date (YYYY-MM-DD)
-    ///     to_date: End date (YYYY-MM-DD)
-    ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
     ///     r_period: RSV period (e.g., 9)
     ///     k_period: K smoothing period (e.g., 3)
     ///     d_period: D smoothing period (e.g., 3)
+    ///     from_date: Start date (YYYY-MM-DD)
+    ///     to_date: End date (YYYY-MM-DD)
+    ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
     ///
     /// Returns:
     ///     Awaitable[dict]: KDJ indicator data with K, D, J values
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, r_period=None, k_period=None, d_period=None, **_extra))]
+    #[pyo3(signature = (symbol, r_period=None, k_period=None, d_period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn kdj_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        from_date: Option<String>,
-        to_date: Option<String>,
-        timeframe: Option<String>,
         r_period: Option<u32>,
         k_period: Option<u32>,
         d_period: Option<u32>,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        timeframe: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.kdj", &_extra)?;
@@ -1759,26 +1761,27 @@ impl StockTechnicalClient {
     ///
     /// Args:
     ///     symbol: Stock symbol (e.g., "2330" for TSMC)
-    ///     from_date: Start date (YYYY-MM-DD)
-    ///     to_date: End date (YYYY-MM-DD)
-    ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
     ///     fast: Fast EMA period (default 12)
     ///     slow: Slow EMA period (default 26)
     ///     signal: Signal line period (default 9)
+    ///     from_date: Start date (YYYY-MM-DD)
+    ///     to_date: End date (YYYY-MM-DD)
+    ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
     ///
     /// Returns:
     ///     Awaitable[dict]: MACD indicator data with MACD, signal, histogram
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, fast=None, slow=None, signal=None, **_extra))]
+    #[pyo3(signature = (symbol, fast=None, slow=None, signal=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn macd_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
+        fast: Option<u32>,
+        slow: Option<u32>,
+        signal: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        fast: Option<u32>,
-        slow: Option<u32>,
-        signal: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.macd", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -1828,22 +1831,23 @@ impl StockTechnicalClient {
     ///
     /// Args:
     ///     symbol: Stock symbol (e.g., "2330" for TSMC)
+    ///     period: Moving average period (default 20)
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-    ///     period: Moving average period (default 20)
     ///
     /// Returns:
     ///     Awaitable[dict]: Bollinger Bands data with upper, middle, lower bands
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn bb_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
+        period: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.bb", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -1882,15 +1886,16 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `sma()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn sma(
         &self,
         py: Python<'_>,
         symbol: String,
+        period: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.sma", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -1916,15 +1921,16 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `rsi()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn rsi(
         &self,
         py: Python<'_>,
         symbol: String,
+        period: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.rsi", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -1950,17 +1956,17 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `kdj()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, r_period=None, k_period=None, d_period=None, **_extra))]
+    #[pyo3(signature = (symbol, r_period=None, k_period=None, d_period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn kdj(
         &self,
         py: Python<'_>,
         symbol: String,
-        from_date: Option<String>,
-        to_date: Option<String>,
-        timeframe: Option<String>,
         r_period: Option<u32>,
         k_period: Option<u32>,
         d_period: Option<u32>,
+        from_date: Option<String>,
+        to_date: Option<String>,
+        timeframe: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.kdj", &_extra)?;
@@ -1991,17 +1997,18 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `macd()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, fast=None, slow=None, signal=None, **_extra))]
+    #[pyo3(signature = (symbol, fast=None, slow=None, signal=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn macd(
         &self,
         py: Python<'_>,
         symbol: String,
+        fast: Option<u32>,
+        slow: Option<u32>,
+        signal: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        fast: Option<u32>,
-        slow: Option<u32>,
-        signal: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.macd", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -2031,15 +2038,16 @@ impl StockTechnicalClient {
     }
 
     /// Sync sibling of `bb()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, period=None, **_extra))]
+    #[pyo3(signature = (symbol, period=None, *, from_date=None, to_date=None, timeframe=None, **_extra))]
     pub fn bb(
         &self,
         py: Python<'_>,
         symbol: String,
+        period: Option<u32>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
-        period: Option<u32>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+        _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.technical.bb", &_extra)?;
         let from_date = kw.take_string("from", from_date)?;
@@ -2086,12 +2094,12 @@ impl StockCorporateActionsClient {
     ///
     /// Example:
     ///     ```python
-    ///     changes = await client.stock.corporate_actions.capital_changes(
+    ///     changes = await client.stock.corporate_actions.capital_changes_async(
     ///         start_date="2024-01-01",
     ///         end_date="2024-01-31"
     ///     )
     ///     ```
-    #[pyo3(signature = (start_date=None, end_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (*, start_date=None, end_date=None, sort=None, **_extra))]
     pub fn capital_changes_async<'py>(
         &self,
         py: Python<'py>,
@@ -2142,12 +2150,12 @@ impl StockCorporateActionsClient {
     ///
     /// Example:
     ///     ```python
-    ///     dividends = await client.stock.corporate_actions.dividends(
+    ///     dividends = await client.stock.corporate_actions.dividends_async(
     ///         start_date="2024-01-01",
     ///         end_date="2024-12-31"
     ///     )
     ///     ```
-    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[pyo3(signature = (*, start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn dividends_async<'py>(
         &self,
@@ -2204,9 +2212,9 @@ impl StockCorporateActionsClient {
     ///
     /// Example:
     ///     ```python
-    ///     applicants = await client.stock.corporate_actions.listing_applicants()
+    ///     applicants = await client.stock.corporate_actions.listing_applicants_async()
     ///     ```
-    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[pyo3(signature = (*, start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn listing_applicants_async<'py>(
         &self,
@@ -2251,7 +2259,7 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `capital_changes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (start_date=None, end_date=None, sort=None, **_extra))]
+    #[pyo3(signature = (*, start_date=None, end_date=None, sort=None, **_extra))]
     pub fn capital_changes(
         &self,
         py: Python<'_>,
@@ -2282,7 +2290,7 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `dividends()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[pyo3(signature = (*, start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn dividends(
         &self,
@@ -2318,7 +2326,7 @@ impl StockCorporateActionsClient {
     }
 
     /// Sync sibling of `listing_applicants()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
+    #[pyo3(signature = (*, start_date=None, end_date=None, exchange=None, sort=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn listing_applicants(
         &self,
@@ -2412,12 +2420,12 @@ impl FutOptIntradayClient {
     /// Example:
     ///     ```python
     ///     # Regular session
-    ///     quote = await client.futopt.intraday.quote("TXFC4")
+    ///     quote = await client.futopt.intraday.quote_async("TXFC4")
     ///
     ///     # After-hours session
-    ///     ah_quote = await client.futopt.intraday.quote("TXFC4", after_hours=True)
+    ///     ah_quote = await client.futopt.intraday.quote_async("TXFC4", after_hours=True)
     ///     ```
-    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, **_extra))]
     pub fn quote_async<'py>(&self, py: Python<'py>, symbol: String, after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.quote", &_extra)?;
@@ -2456,9 +2464,9 @@ impl FutOptIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     tickers = await client.futopt.intraday.tickers(type="FUTURE")
+    ///     tickers = await client.futopt.intraday.tickers_async(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
+    #[pyo3(signature = (r#type, *, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers_async<'py>(
         &self,
         py: Python<'py>,
@@ -2528,9 +2536,9 @@ impl FutOptIntradayClient {
     ///
     /// Example:
     ///     ```python
-    ///     products = await client.futopt.intraday.products(type="FUTURE")
+    ///     products = await client.futopt.intraday.products_async(type="FUTURE")
     ///     ```
-    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
+    #[pyo3(signature = (r#type, *, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products_async<'py>(
         &self,
@@ -2583,7 +2591,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `quote()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, **_extra))]
     pub fn quote(&self, py: Python<'_>, symbol: String, after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.quote", &_extra)?;
@@ -2606,7 +2614,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `tickers()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
+    #[pyo3(signature = (r#type, *, exchange=None, after_hours=None, contract_type=None, is_spread=None, product=None, **_extra))]
     pub fn tickers(
         &self,
         py: Python<'_>,
@@ -2661,7 +2669,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `products()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (r#type, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
+    #[pyo3(signature = (r#type, *, contract_type=None, exchange=None, after_hours=None, status=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn products(
         &self,
@@ -2718,7 +2726,7 @@ impl FutOptIntradayClient {
     // ============================================================
 
     /// Get intraday ticker for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, **_extra))]
     pub fn ticker_async<'py>(
         &self,
         py: Python<'py>,
@@ -2755,7 +2763,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `ticker()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, **_extra))]
     pub fn ticker(
         &self,
         py: Python<'_>,
@@ -2787,7 +2795,7 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday candles for a FutOpt contract
-    #[pyo3(signature = (symbol, timeframe=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, timeframe=None, after_hours=None, **_extra))]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
@@ -2823,7 +2831,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, timeframe=None, after_hours=None, **_extra))]
     pub fn candles(
         &self,
         py: Python<'_>,
@@ -2854,7 +2862,7 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday trades for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
     pub fn trades_async<'py>(
         &self,
         py: Python<'py>,
@@ -2901,7 +2909,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `trades()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, offset=None, limit=None, is_trial=None, **_extra))]
     pub fn trades(
         &self,
         py: Python<'_>,
@@ -2943,7 +2951,7 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday volumes for a FutOpt contract
-    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, **_extra))]
     pub fn volumes_async<'py>(
         &self,
         py: Python<'py>,
@@ -2975,7 +2983,7 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `volumes()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, after_hours=None, **_extra))]
     pub fn volumes(
         &self,
         py: Python<'_>,
@@ -3066,7 +3074,7 @@ impl FutOptHistoricalClient {
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles_async<'py>(
         &self,
@@ -3111,7 +3119,7 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles(
         &self,
@@ -3165,7 +3173,7 @@ impl FutOptHistoricalClient {
     ///     ```python
     ///     daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
     ///     ```
-    #[pyo3(signature = (symbol, date=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, date=None, after_hours=None, **_extra))]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
@@ -3193,7 +3201,7 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, date=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, *, date=None, after_hours=None, **_extra))]
     pub fn daily(
         &self,
         py: Python<'_>,

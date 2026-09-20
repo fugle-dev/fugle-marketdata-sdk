@@ -149,12 +149,18 @@ async def test_trades_async_sort_asc_and_desc(client, server):
         assert last_request(server[1]) == ("/v1.0/stock/intraday/trades/2330", {"sort": sort})
 
 
-def test_positional_order_is_unchanged(client, server):
-    # New keywords go after the existing ones, so a positional call keeps
-    # its meaning: `symbol` first, then `timeframe` for candles.
-    client.stock.intraday.candles("2330", "10")
+def test_optional_parameters_are_keyword_only(client, server):
+    # Since #217 only the path parameter and core's required query parameters
+    # are positional; an optional one there would be a silent shuffle when a
+    # new keyword goes in between.
+    with pytest.raises(TypeError, match="positional"):
+        client.stock.intraday.candles("2330", "10")
+    with pytest.raises(TypeError, match="positional"):
+        client.stock.intraday.quote("2330", True)
+    assert server[1] == []
+    client.stock.intraday.candles("2330", timeframe="10")
     assert last_request(server[1]) == ("/v1.0/stock/intraday/candles/2330", {"timeframe": "10"})
-    client.stock.intraday.quote("2330", True)
+    client.stock.intraday.quote("2330", odd_lot=True)
     assert last_request(server[1]) == ("/v1.0/stock/intraday/quote/2330", {"type": "oddlot"})
 
 
@@ -248,8 +254,10 @@ def test_products_exchange_session_and_status(client, server):
     )
 
 
-def test_products_positional_contract_type_is_unchanged(client, server):
-    client.futopt.intraday.products("FUTURE", "I")
+def test_products_contract_type_is_keyword_only(client, server):
+    with pytest.raises(TypeError, match="positional"):
+        client.futopt.intraday.products("FUTURE", "I")
+    client.futopt.intraday.products("FUTURE", contract_type="I")
     assert last_request(server[1]) == (
         "/v1.0/futopt/intraday/products",
         {"type": "FUTURE", "contractType": "I"},

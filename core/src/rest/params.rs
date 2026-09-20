@@ -62,6 +62,9 @@ const fn param(name: &'static str, canonical: &'static str) -> ParamSpec {
     }
 }
 
+/// Recorded for the bindings' signatures: the Python binding takes these
+/// positionally and the rest keyword-only (`py/tests/test_rest_signatures.py`
+/// mirrors the set; `uniffi` puts them ahead of the params record).
 const fn required(name: &'static str, canonical: &'static str) -> ParamSpec {
     ParamSpec {
         required: true,

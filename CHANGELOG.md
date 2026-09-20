@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Python: every REST method's optional parameters are keyword-only**
+  (#217; [migration guide §21](MIGRATION-0.9.md#21-python-optional-parameters-are-keyword-only)).
+  The implementation took every parameter positionally while the stub said
+  keyword-only for most of them, so `candles("2330", "5")` ran but failed
+  mypy / pyright, and `historical.candles("2330", "2024-01-01", "D")` sent
+  the date as `to` — seven optional strings in a row, and the wrong slot is
+  not an error anywhere. Both now agree, with the same rule as the uniffi
+  bindings (#202): the path parameter (`symbol`, `market`, `type`) and the
+  query parameters core's table marks required — `direction` and `change`
+  on `movers`, `trade` on `actives`, `period` / `r_period`, `k_period`,
+  `d_period` / `fast`, `slow`, `signal` on the technical methods — stay
+  positional; everything else is keyword-only, and passing it positionally
+  is `TypeError: candles() takes 1 positional arguments but 2 were given`.
+  On the technical
+  methods the periods therefore move ahead of `from_date` / `to_date` /
+  `timeframe`: `sma("2330", 5, from_date=...)`. The corporate-actions
+  methods take keywords only. Keyword calls are unchanged, and so are the
+  API-name and `from_` spellings through `**_extra`. The stub gains `*` on
+  the 29 signatures that lacked it or had it in the wrong place, and
+  `tests/test_rest_signatures.py` compares every REST method's
+  `inspect.signature` with the stub so the two cannot drift again.
+
 - **C# / Go / Java / C++: every REST method takes the endpoint's required
   parameters positionally and its optional ones as one params record**
   (#202; [migration guide §20](MIGRATION-0.9.md#20-c-go-java-c-one-params-record-per-rest-method)).

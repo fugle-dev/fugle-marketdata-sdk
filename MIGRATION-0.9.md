@@ -947,6 +947,60 @@ they were.
   `intradayOddLot` is Stock only; either on the other endpoint, to any
   value, is 1005 — `afterHours` on Stock was already.
 
+## 21. Python: optional parameters are keyword-only
+
+The REST methods' `#[pyo3(signature)]` accepted every parameter
+positionally, while `__init__.pyi` declared 46 of them keyword-only after
+`symbol` — and the sync siblings partly the other way round (#217). So
+`candles("2330", "5")` ran but mypy / pyright rejected it, and
+`historical.candles("2330", "2024-01-01", "D")` sent `"D"` as `to` without
+an error: seven optional strings in a row, and a slot off is a wrong date
+range, not a rejected request.
+
+Every REST method now follows the rule the uniffi bindings got in §20: the
+path parameter and the parameters core's `rest::params` table marks
+required are positional, everything else is keyword-only. Positional beyond
+that is a `TypeError` naming the limit (`candles() takes 1 positional
+arguments but 2 were given`), raised before any request.
+
+| Methods | Positional | Keyword-only |
+|---|---|---|
+| `stock.intraday` `quote` / `ticker` / `candles` / `trades` / `volumes`, `futopt.intraday` same five | `symbol` | `odd_lot`, `timeframe`, `sort`, `offset`, `limit`, `is_trial`, `after_hours` |
+| `stock.intraday.tickers`, `futopt.intraday.products` / `tickers` | `type` | every filter |
+| `stock.historical.candles`, `futopt.historical.candles` / `daily`, the four `stock.ownership` methods | `symbol` | `from_date`, `to_date`, `timeframe`, `fields`, `sort`, `adjusted`, `date`, … |
+| `stock.snapshot.quotes` | `market` | `type_filter` |
+| `stock.snapshot.movers` | `market`, `direction`, `change` | `type_filter`, `gt`, `gte`, `lt`, `lte`, `eq` |
+| `stock.snapshot.actives` | `market`, `trade` | `type_filter` |
+| `stock.technical.sma` / `rsi` / `bb` | `symbol`, `period` | `from_date`, `to_date`, `timeframe` |
+| `stock.technical.kdj` | `symbol`, `r_period`, `k_period`, `d_period` | same |
+| `stock.technical.macd` | `symbol`, `fast`, `slow`, `signal` | same |
+| `stock.corporate_actions` (three) | — | `start_date`, `end_date`, `exchange`, `sort` |
+
+The required query parameters keep their `None` default, as before: the
+server, not the SDK, reports a missing one. On the technical methods they
+move ahead of the date range in the signature, so `sma("2330", 5)` is the
+period and `sma("2330", "2024-01-01")` is a `TypeError` (`period` is an
+`int`), not a silent date-as-period.
+
+```python
+# Before — ran, but the stub disagreed and the slot order was the contract
+candles = client.stock.intraday.candles("2330", "5")
+hist = client.stock.historical.candles("2330", "2024-01-01", "2024-01-31", "D")
+sma = client.stock.technical.sma("2330", "2024-01-01", "2024-01-31", "D", 5)
+movers = client.stock.snapshot.movers("TSE", "up", "percent", "COMMONSTOCK")
+
+# After — TypeError for each of the above; write
+candles = client.stock.intraday.candles("2330", timeframe="5")
+hist = client.stock.historical.candles("2330", from_date="2024-01-01", to_date="2024-01-31", timeframe="D")
+sma = client.stock.technical.sma("2330", 5, from_date="2024-01-01", to_date="2024-01-31", timeframe="D")
+movers = client.stock.snapshot.movers("TSE", "up", "percent", type_filter="COMMONSTOCK")
+```
+
+Unchanged: `symbol=` as a keyword, every keyword call, the API's own
+spellings and `from_` through `**_extra` (§17), and the async siblings,
+which have the same signatures. Coming from 2.x, where every method was
+`candles(**params)`, nothing was positional to begin with.
+
 ## Fields you could not reach before
 
 Worth checking whether these change anything for you:

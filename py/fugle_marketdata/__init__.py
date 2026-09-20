@@ -8,8 +8,8 @@ Usage:
 
     # REST API (async)
     async def main():
-        client = RestClient("your-api-key")
-        quote = await client.stock.intraday.quote("2330")
+        client = RestClient(api_key="your-api-key")
+        quote = await client.stock.intraday.quote_async("2330")
         print(quote)
 
     # WebSocket (async iterator)
