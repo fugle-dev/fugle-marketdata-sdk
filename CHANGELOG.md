@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.8 / core 0.9.0-rc.6 / uniffi 0.2.0-rc.6] - 2026-09-20
+
 ### Breaking
 
 - **Python: every REST method's optional parameters are keyword-only**
