@@ -60,31 +60,51 @@ if (quote.has("referencePrice")) {
 JsonNode ticker = mapper.readTree(client.stock().intraday().getTicker("2330"));
 System.out.printf("Name: %s%n", ticker.get("name").asText());
 
-// Get intraday candles (5-minute)
-JsonNode candles = mapper.readTree(client.stock().intraday().getCandles("2330", "5"));
+// Get intraday candles. With no params (or null) the server default
+// timeframe (1 minute) applies; pass a StockCandlesParams for another
+// timeframe (minutes: "1", "5", "10", "15", "30", "60").
+JsonNode oneMinute = mapper.readTree(client.stock().intraday().getCandles("2330"));
+JsonNode candles = mapper.readTree(client.stock().intraday().getCandles("2330",
+    new StockCandlesParams("5", null, null)));
 for (JsonNode candle : candles.get("data")) {
     System.out.printf("  %s: O=%.2f C=%.2f%n",
         candle.get("date").asText(), candle.get("open").asDouble(),
         candle.get("close").asDouble());
 }
 
-// Get recent trades
-JsonNode trades = mapper.readTree(client.stock().intraday().getTrades("2330"));
+// Get recent trades, filtered to odd-lot with a limit
+JsonNode trades = mapper.readTree(client.stock().intraday().getTrades("2330",
+    new StockTradesParams(true, null, 20, null, null)));
 for (JsonNode trade : trades.get("data")) {
     System.out.printf("  Price: %.2f, Size: %d%n",
         trade.get("price").asDouble(), trade.get("size").asLong());
 }
 
+// Market movers - direction and change are required positional arguments
+JsonNode movers = mapper.readTree(
+    client.stock().snapshot().moversSync("TSE", "up", "percent", null));
+
 // FutOpt (futures/options) data
 JsonNode futoptQuote = mapper.readTree(client.futopt().intraday().getQuote("TXFC4"));
 System.out.printf("Futures Price: %.2f%n", futoptQuote.get("closePrice").asDouble());
+
+// After-hours session for a FutOpt contract
+JsonNode futoptAfterHours = mapper.readTree(client.futopt().intraday().getQuote("TXFC4",
+    new AfterHoursParams(true)));
 ```
+
+Every REST method's optional filters live in one generated `*Params` record per
+endpoint (`StockTradesParams`, `MoversParams`, `CorporateActionsParams`, ...);
+pass `null` for none of them. See the generated Javadoc for each record's
+fields — they mirror the server's query parameters 1:1.
 
 ### WebSocket Streaming
 
 ```java
 import tw.com.fugle.marketdata.FugleWebSocketClient;
 import tw.com.fugle.marketdata.generated.StreamMessage;
+import tw.com.fugle.marketdata.generated.SubscribeOptions;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 // Create WebSocket client (pull mode with message queue)
@@ -101,6 +121,12 @@ System.out.println("Connected!");
 // Subscribe to channels
 ws.subscribe("trades", "2330").join();
 ws.subscribe("books", "2330").join();
+
+// Subscribe multiple symbols in a single frame
+ws.subscribe("trades", List.of("2330", "2317")).join();
+
+// Stock endpoint only: intraday odd-lot subscription
+ws.subscribe("trades", List.of("2330"), new SubscribeOptions(null, true)).join();
 
 // Poll messages (blocking with timeout)
 while (true) {
@@ -192,55 +218,64 @@ check configs.
 
 #### Stock Intraday Methods
 
+Every method has a single-argument convenience overload (equivalent to
+passing `null` params) alongside the params overload shown below.
+
 ```java
-// Real-time quote
-String getQuote(String symbol)
-CompletableFuture<String> getQuoteAsync(String symbol)
+// Real-time quote (params: OddLotParams, or null)
+String getQuote(String symbol, OddLotParams params)
+CompletableFuture<String> getQuoteAsync(String symbol, OddLotParams params)
 
-// Symbol information
-String getTicker(String symbol)
-CompletableFuture<String> getTickerAsync(String symbol)
+// Symbol information (params: OddLotParams, or null)
+String getTicker(String symbol, OddLotParams params)
+CompletableFuture<String> getTickerAsync(String symbol, OddLotParams params)
 
-// OHLCV candles (timeframe: "1", "5", "10", "15", "30", "60")
-String getCandles(String symbol, String timeframe)
-CompletableFuture<String> getCandlesAsync(String symbol, String timeframe)
+// OHLCV candles (params: StockCandlesParams - timeframe "1"/"5"/"10"/"15"/"30"/"60"
+// minutes, oddLot, sort; null/no timeframe takes the server default, 1 minute)
+String getCandles(String symbol, StockCandlesParams params)
+CompletableFuture<String> getCandlesAsync(String symbol, StockCandlesParams params)
 
-// Trade history
-String getTrades(String symbol)
-CompletableFuture<String> getTradesAsync(String symbol)
+// Trade history (params: StockTradesParams - oddLot, offset, limit, sort, isTrial)
+String getTrades(String symbol, StockTradesParams params)
+CompletableFuture<String> getTradesAsync(String symbol, StockTradesParams params)
 
-// Volume by price
-String getVolumes(String symbol)
-CompletableFuture<String> getVolumesAsync(String symbol)
+// Volume by price (params: OddLotParams, or null)
+String getVolumes(String symbol, OddLotParams params)
+CompletableFuture<String> getVolumesAsync(String symbol, OddLotParams params)
 ```
+
+Stock historical/snapshot/technical/corporate-actions/ownership methods are
+exposed directly from the generated clients (`client.stock().historical()`,
+`.snapshot()`, `.technical()`, `.corporateActions()`), plus a wrapped
+`.ownership()` with the same single-argument convenience overloads (e.g.
+`getEtfHoldings(String symbol, OwnershipParams params)`). See the generated
+Javadoc for their `*Params` record and exact signature (e.g.
+`getMovers(String market, String direction, String change, MoversParams params)`,
+`getSma(String symbol, Integer period, TechnicalParams params)`).
 
 #### FutOpt Intraday Methods
 
 ```java
-// Real-time quote
-String getQuote(String symbol)
-CompletableFuture<String> getQuoteAsync(String symbol)
+// Real-time quote (params: AfterHoursParams, or null for regular hours)
+String getQuote(String symbol, AfterHoursParams params)
+CompletableFuture<String> getQuoteAsync(String symbol, AfterHoursParams params)
 
-// Contract information
-String getTicker(String symbol)
-CompletableFuture<String> getTickerAsync(String symbol)
+// Contract information (params: AfterHoursParams, or null for regular hours)
+String getTicker(String symbol, AfterHoursParams params)
+CompletableFuture<String> getTickerAsync(String symbol, AfterHoursParams params)
 
-// OHLCV candles
-String getCandles(String symbol, String timeframe)
-CompletableFuture<String> getCandlesAsync(String symbol, String timeframe)
-
-// Trade history
-String getTrades(String symbol)
-CompletableFuture<String> getTradesAsync(String symbol)
-
-// Volume by price
-String getVolumes(String symbol)
-CompletableFuture<String> getVolumesAsync(String symbol)
-
-// Product listing (type: "F" for futures, "O" for options)
-String getProducts(String type)
-CompletableFuture<String> getProductsAsync(String type)
+// Product listing (type: "F" for futures, "O" for options;
+// params: FutOptProductsParams, or null)
+String getProducts(String type, FutOptProductsParams params)
+CompletableFuture<String> getProductsAsync(String type, FutOptProductsParams params)
 ```
+
+`FutOptIntradayClientWrapper` currently wraps only the three methods above;
+`getCandles`, `getTrades`, `getVolumes` and the tickers listing exist on the
+generated `FutOptIntradayClient` (e.g.
+`candlesSync(String symbol, FutOptCandlesParams params)`) but are not yet
+exposed through `client.futopt().intraday()` — a pre-existing gap, not
+introduced by the params-record change in this release.
 
 ### FugleWebSocketClient
 
@@ -343,11 +378,15 @@ boolean isClosed()                            // Check if client is closed
 long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
 
 // Subscription management
-CompletableFuture<Void> subscribe(String channel, String symbol)                        // Subscribe
-CompletableFuture<Void> subscribe(String channel, String symbol, boolean afterHours)    // FutOpt after-hours (FutOpt endpoint only; 1005 on Stock)
-CompletableFuture<Void> unsubscribe(String channel, String symbol)                      // Unsubscribe
-CompletableFuture<Void> unsubscribe(String channel, String symbol, boolean afterHours)  // Same afterHours as subscribe
-CompletableFuture<Void> unsubscribe(List<String> ids)                                   // Unsubscribe by server ids (empty: 1005)
+CompletableFuture<Void> subscribe(String channel, String symbol)                                  // Subscribe one symbol
+CompletableFuture<Void> subscribe(String channel, String symbol, boolean afterHours)              // FutOpt after-hours (FutOpt endpoint only; 1005 on Stock)
+CompletableFuture<Void> subscribe(String channel, List<String> symbols)                           // Subscribe multiple symbols in one frame
+CompletableFuture<Void> subscribe(String channel, List<String> symbols, SubscribeOptions opts)    // + afterHours (FutOpt only) / intradayOddLot (Stock only); empty symbols: 1005
+CompletableFuture<Void> unsubscribe(String channel, String symbol)                                // Unsubscribe one symbol
+CompletableFuture<Void> unsubscribe(String channel, String symbol, boolean afterHours)            // Same afterHours as subscribe
+CompletableFuture<Void> unsubscribe(String channel, List<String> symbols)                         // Unsubscribe multiple symbols
+CompletableFuture<Void> unsubscribe(String channel, List<String> symbols, SubscribeOptions opts)  // Same opts as subscribe
+CompletableFuture<Void> unsubscribe(List<String> ids)                                             // Unsubscribe by server ids (empty: 1005)
 List<Subscription> getSubscriptions()                              // List subscriptions
 
 // Message polling (pull mode)
@@ -474,7 +513,8 @@ public class RestExample {
             String ticker = client.stock().intraday().getTicker("2330");
             System.out.printf("Ticker: %s%n", ticker);
 
-            CandlesResponse candles = client.stock().intraday().getCandles("2330", "5");
+            String candles = client.stock().intraday().getCandles("2330",
+                new StockCandlesParams("5", null, null));
             System.out.printf("Candles: %d entries%n",
                 new ObjectMapper().readTree(candles).get("data").size());
 

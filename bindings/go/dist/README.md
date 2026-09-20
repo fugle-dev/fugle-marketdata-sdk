@@ -55,7 +55,7 @@ func main() {
     }
     defer client.Destroy()
 
-    quote, err := client.Stock().Intraday().GetQuote("2330")
+    quote, err := client.Stock().Intraday().GetQuote("2330", nil)
     if err != nil {
         log.Fatal(err)
     }

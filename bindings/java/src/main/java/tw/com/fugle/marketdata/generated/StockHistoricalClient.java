@@ -10,11 +10,7 @@ import java.util.function.Consumer;
 import com.sun.jna.Pointer;
 import java.util.concurrent.CompletableFuture;
 /**
- * Stock historical endpoints with typed model returns
- *
- * All methods have both async (get_*) and sync (*_sync) variants:
- * - Async methods are preferred for best performance (non-blocking)
- * - Sync methods block the calling thread (simpler API for scripting)
+ * Stock historical endpoints
  */
 public class StockHistoricalClient implements AutoCloseable, StockHistoricalClientInterface {
   protected Pointer pointer;
@@ -115,7 +111,7 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
      * Get historical candles for a symbol (sync/blocking)
      */
     @Override
-    public String candlesSync(String symbol, String from, String to, String timeframe) throws MarketDataException {
+    public String candlesSync(String symbol, StockHistoricalCandlesParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -124,7 +120,7 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_candles_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeStockHistoricalCandlesParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -149,21 +145,15 @@ public class StockHistoricalClient implements AutoCloseable, StockHistoricalClie
   
     /**
      * Get historical candles for a symbol (async)
-     *
-     * Parameters:
-     * - symbol: Stock symbol (e.g., "2330")
-     * - from: Start date (YYYY-MM-DD, optional)
-     * - to: End date (YYYY-MM-DD, optional)
-     * - timeframe: "D" (day), "W" (week), "M" (month), or intraday "1", "5", "10", "15", "30", "60"
      */
     @Override
     
-    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe){
+    public CompletableFuture<String> getCandles(String symbol, StockHistoricalCandlesParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_get_candles(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeStockHistoricalCandlesParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),

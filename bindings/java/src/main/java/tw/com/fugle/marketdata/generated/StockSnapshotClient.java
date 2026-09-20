@@ -114,7 +114,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      * Get most actively traded stocks (sync/blocking)
      */
     @Override
-    public String activesSync(String market, String trade) throws MarketDataException {
+    public String activesSync(String market, String trade, SnapshotParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -123,7 +123,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_actives_sync(
-            it, FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalString.INSTANCE.lower(trade), _status);
+            it, FfiConverterString.INSTANCE.lower(market), FfiConverterString.INSTANCE.lower(trade), FfiConverterOptionalTypeSnapshotParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -149,18 +149,16 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
     /**
      * Get most actively traded stocks (async)
      *
-     * Parameters:
-     * - market: Market code (TSE, OTC)
-     * - trade: "volume" or "value" (optional)
+     * trade: "volume" or "value"
      */
     @Override
     
-    public CompletableFuture<String> getActives(String market, String trade){
+    public CompletableFuture<String> getActives(String market, String trade, SnapshotParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_actives(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalString.INSTANCE.lower(trade)
+                FfiConverterString.INSTANCE.lower(market), FfiConverterString.INSTANCE.lower(trade), FfiConverterOptionalTypeSnapshotParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -177,19 +175,17 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
     /**
      * Get top movers (gainers/losers) in a market (async)
      *
-     * Parameters:
-     * - market: Market code (TSE, OTC)
-     * - direction: "up" for gainers, "down" for losers (optional)
-     * - change: "percent" or "value" (optional)
+     * direction: "up" for gainers, "down" for losers;
+     * change: "percent" or "value"
      */
     @Override
     
-    public CompletableFuture<String> getMovers(String market, String direction, String change){
+    public CompletableFuture<String> getMovers(String market, String direction, String change, MoversParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_movers(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalString.INSTANCE.lower(direction), FfiConverterOptionalString.INSTANCE.lower(change)
+                FfiConverterString.INSTANCE.lower(market), FfiConverterString.INSTANCE.lower(direction), FfiConverterString.INSTANCE.lower(change), FfiConverterOptionalTypeMoversParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -206,18 +202,16 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
     /**
      * Get market-wide snapshot quotes (async)
      *
-     * Parameters:
-     * - market: Market code (TSE, OTC, ESB, TIB, PSB)
-     * - type_filter: Optional filter (ALL, ALLBUT0999, COMMONSTOCK)
+     * market: TSE, OTC, ESB, TIB or PSB
      */
     @Override
     
-    public CompletableFuture<String> getQuotes(String market, String typeFilter){
+    public CompletableFuture<String> getQuotes(String market, SnapshotParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_get_quotes(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalString.INSTANCE.lower(typeFilter)
+                FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalTypeSnapshotParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -235,7 +229,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      * Get top movers (sync/blocking)
      */
     @Override
-    public String moversSync(String market, String direction, String change) throws MarketDataException {
+    public String moversSync(String market, String direction, String change, MoversParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -244,7 +238,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_movers_sync(
-            it, FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalString.INSTANCE.lower(direction), FfiConverterOptionalString.INSTANCE.lower(change), _status);
+            it, FfiConverterString.INSTANCE.lower(market), FfiConverterString.INSTANCE.lower(direction), FfiConverterString.INSTANCE.lower(change), FfiConverterOptionalTypeMoversParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -271,7 +265,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
      * Get market-wide snapshot quotes (sync/blocking)
      */
     @Override
-    public String quotesSync(String market, String typeFilter) throws MarketDataException {
+    public String quotesSync(String market, SnapshotParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -280,7 +274,7 @@ public class StockSnapshotClient implements AutoCloseable, StockSnapshotClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_quotes_sync(
-            it, FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalString.INSTANCE.lower(typeFilter), _status);
+            it, FfiConverterString.INSTANCE.lower(market), FfiConverterOptionalTypeSnapshotParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {

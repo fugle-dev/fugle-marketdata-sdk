@@ -168,7 +168,7 @@ func TestRestClient_GetQuote_Integration(t *testing.T) {
 	}
 	defer client.Destroy()
 
-	quote, err := client.Stock().Intraday().GetQuote("2330")
+	quote, err := client.Stock().Intraday().GetQuote("2330", nil)
 	if err != nil {
 		t.Fatalf("Failed to get quote: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestRestClient_GetTicker_Integration(t *testing.T) {
 	}
 	defer client.Destroy()
 
-	ticker, err := client.Stock().Intraday().GetTicker("2330")
+	ticker, err := client.Stock().Intraday().GetTicker("2330", nil)
 	if err != nil {
 		t.Fatalf("Failed to get ticker: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestRestClient_GetTrades_Integration(t *testing.T) {
 	}
 	defer client.Destroy()
 
-	trades, err := client.Stock().Intraday().GetTrades("2330")
+	trades, err := client.Stock().Intraday().GetTrades("2330", nil)
 	if err != nil {
 		t.Fatalf("Failed to get trades: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestRestClient_FutOptProducts_Integration(t *testing.T) {
 	}
 	defer client.Destroy()
 
-	products, err := client.Futopt().Intraday().GetProducts("F")
+	products, err := client.Futopt().Intraday().GetProducts("F", nil)
 	if err != nil {
 		t.Fatalf("Failed to get products: %v", err)
 	}

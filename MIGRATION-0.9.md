@@ -83,7 +83,7 @@ var quote struct {
     Symbol    string   `json:"symbol"`
     LastPrice *float64 `json:"lastPrice"`
 }
-body, err := client.Stock().Intraday().GetQuote("2330")
+body, err := client.Stock().Intraday().GetQuote("2330", nil)
 json.Unmarshal([]byte(body), &quote)
 fmt.Println(quote.Symbol)
 ```
@@ -738,7 +738,8 @@ docs like `RestClient::get_json`.
 
 ### C#, Go, Java, C++
 
-No change here; these bindings keep the parameter set they had.
+Every endpoint's full parameter set is reachable now (#202),
+through one params record per method; see [§20](#20-c-go-java-c-one-params-record-per-rest-method).
 
 ## 18. Parameters the server never read
 
@@ -797,6 +798,148 @@ server adds later needs no SDK release.
   or failed with a config error (C#, Go, Java, C++) on anything but `"asc"`
   / `"desc"`. They now send the value and return the server's error, like
   every other parameter.
+
+## 20. C#, Go, Java, C++: one params record per REST method
+
+The uniffi bindings exposed a fraction of the table from §17 (#202): the
+single-symbol stock intraday methods had no `oddLot`, `trades` had no
+`offset` / `limit` / `sort` / `isTrial`, `tickers` had no filters,
+`historical.candles` had no `fields` / `sort` / `adjusted`, `movers` had no
+thresholds, the corporate-actions methods had no `exchange` / `sort`, and
+the futopt list methods had no filters. Intraday `candles` required a
+`timeframe` and always sent it (the Python bug from #196, in another form).
+The WebSocket `subscribe` took one symbol and had no `intradayOddLot`,
+though core supports both.
+
+Every REST method now takes the endpoint's **required** parameters
+positionally — `type` on the list endpoints, `direction` and `change` on
+`movers`, `trade` on `actives`, the technical periods — and its **optional**
+ones as one record, which may be omitted (C#, Go, Java) or passed as
+`std::nullopt` (C++). Every record field is optional and unset means "not
+sent"; a default record (`new StockTradesParams()`, `nil`, `null`,
+`StockTradesParams{}`) sends nothing, so the server's own defaults apply.
+The flag fields (`oddLot`, `afterHours`) send the table's literal when
+`true` (`type=oddlot`; `session=afterhours` on the single-contract futopt
+endpoints, `session=AFTERHOURS` on `products` / `tickers`) and nothing when
+`false` or unset. A field an endpoint does not take — `exchange` on
+`capital-changes`, the one record shared by the three corporate-actions
+methods — is code 1005, before any request is sent, as in Node and Python.
+Values are sent as given (§17): the price thresholds and `strikePrice` are
+doubles and `0` is a value like any other, so those fields are unset by
+`null`, not by `0`.
+
+The old shapes are gone, not kept as overloads; these bindings have never
+been published, so there is nothing to stay compatible with. In summary
+(the generated methods; the C#, Go and Java wrappers follow):
+
+| Endpoint | Before | Now |
+|---|---|---|
+| `stock.intraday.tickers` | `(type)` | `(type, StockTickersParams?)` |
+| `stock.intraday.ticker` / `quote` / `volumes` | `(symbol)` | `(symbol, OddLotParams?)` |
+| `stock.intraday.candles` | `(symbol, timeframe)` | `(symbol, StockCandlesParams?)` — `timeframe` is a field |
+| `stock.intraday.trades` | `(symbol)` | `(symbol, StockTradesParams?)` |
+| `stock.historical.candles` | `(symbol, from?, to?, timeframe?)` | `(symbol, StockHistoricalCandlesParams?)` |
+| `stock.snapshot.quotes` | `(market, type?)` | `(market, SnapshotParams?)` |
+| `stock.snapshot.movers` | `(market, direction?, change?)` | `(market, direction, change, MoversParams?)` |
+| `stock.snapshot.actives` | `(market, trade?)` | `(market, trade, SnapshotParams?)` |
+| `stock.technical.sma` / `rsi` / `bb` | `(symbol, from?, to?, timeframe?, period?)` | `(symbol, period, TechnicalParams?)` |
+| `stock.technical.kdj` | `(symbol, from?, to?, timeframe?, rPeriod?, kPeriod?, dPeriod?)` | `(symbol, rPeriod, kPeriod, dPeriod, TechnicalParams?)` |
+| `stock.technical.macd` | `(symbol, from?, to?, timeframe?, fast?, slow?, signal?)` | `(symbol, fast, slow, signal, TechnicalParams?)` |
+| `stock.corporateActions.*` | `(startDate?, endDate?)` | `(CorporateActionsParams?)` |
+| `stock.ownership.*` | `(symbol, from?, to?, sort?)` | `(symbol, OwnershipParams?)` |
+| `futopt.intraday.products` | `(type)` | `(type, FutOptProductsParams?)` |
+| `futopt.intraday.tickers` | `(type, isSpread?)` | `(type, FutOptTickersParams?)` |
+| `futopt.intraday.ticker` / `quote` / `volumes` | `(symbol, afterHours)` or `(symbol)` | `(symbol, AfterHoursParams?)` |
+| `futopt.intraday.candles` | `(symbol, timeframe)` | `(symbol, FutOptCandlesParams?)` |
+| `futopt.intraday.trades` | `(symbol)` | `(symbol, FutOptTradesParams?)` |
+| `futopt.historical.candles` | `(symbol, from?, to?, timeframe?, afterHours, contractMonth?, fields?, sort?)` | `(symbol, FutOptHistoricalCandlesParams?)` |
+| `futopt.historical.daily` | `(symbol, date?, afterHours)` | `(symbol, FutOptDailyParams?)` |
+| WebSocket `subscribe` / `unsubscribe` | `(channel, symbol, afterHours?)` | `(channel, symbols, SubscribeOptions?)` |
+
+`stock.historical.stats(symbol)` and `unsubscribeIds(ids)` are unchanged.
+The `movers` thresholds and the technical periods used to be optional and
+the server answered 400 without them; they are required now, which is what
+they were.
+
+- **C#** (`FugleMarketData`): the wrapper methods take the generated records
+  directly, as an optional trailing argument.
+
+  ```csharp
+  // Before
+  var candles = await client.Stock.Intraday.GetCandlesAsync("2330", "1");
+  var trades = await client.Stock.Intraday.GetTradesAsync("2330");
+  var quote = await client.FutOpt.Intraday.GetQuoteAsync("TXFE6", afterHours: true);
+  await ws.SubscribeAsync("trades", "2330");
+  // After
+  var candles = await client.Stock.Intraday.GetCandlesAsync("2330");          // server default timeframe
+  var trades = await client.Stock.Intraday.GetTradesAsync("2330",
+      new uniffi.marketdata_uniffi.StockTradesParams(oddLot: true, limit: 5));
+  var quote = await client.FutOpt.Intraday.GetQuoteAsync("TXFE6",
+      new uniffi.marketdata_uniffi.AfterHoursParams(afterHours: true));
+  await ws.SubscribeAsync("trades", "2330");                                 // kept
+  await ws.SubscribeAsync("trades", new[] { "2330", "2317" });               // one frame
+  await ws.SubscribeAsync("trades", new[] { "2330" }, new SubscribeOptions { IntradayOddLot = true });
+  ```
+
+  `WebSocketClientOptions` gains `Versions` (`WebsocketVersionOptions { Stock, FutOpt }`),
+  which used to be fixed at the latest version.
+
+- **Go**: the generated methods are called directly; `nil` is the empty
+  record. Four helpers take the address of a literal: `Bool`, `String`,
+  `Uint32`, `Float64`. `StreamingClient` keeps `Subscribe(channel, symbol,
+  opts...)` and gains `SubscribeMany` / `UnsubscribeMany` and
+  `WithIntradayOddLot`.
+
+  ```go
+  // Before
+  candles, err := client.Stock().Intraday().GetCandles("2330", "1")
+  trades, err := client.Stock().Intraday().GetTrades("2330")
+  // After
+  candles, err := client.Stock().Intraday().GetCandles("2330", nil)
+  trades, err := client.Stock().Intraday().GetTrades("2330",
+      &marketdata.StockTradesParams{OddLot: marketdata.Bool(true), Limit: marketdata.Uint32(5)})
+  err = stream.SubscribeMany("trades", []string{"2330", "2317"})
+  err = stream.Subscribe("trades", "2330", marketdata.WithIntradayOddLot(true))
+  ```
+
+- **Java**: the wrapper methods take the generated records; `null` is the
+  empty record, and the one-argument overloads (`getQuote(symbol)` and the
+  like) stay. `FugleWebSocketClient` keeps `subscribe(channel, symbol[,
+  afterHours])` and gains `subscribe(channel, List<String> symbols[,
+  SubscribeOptions])`.
+
+  ```java
+  // Before
+  String candles = client.stock().intraday().getCandles("2330", "1");
+  // After
+  String candles = client.stock().intraday().getCandles("2330");
+  String trades = client.stock().intraday().getTrades("2330",
+      new StockTradesParams(true, null, 5, null, null));
+  ws.subscribe("trades", List.of("2330", "2317"));
+  ws.subscribe("trades", List.of("2330"), new SubscribeOptions(null, true));
+  ```
+
+- **C++**: the records are aggregates with every field `std::optional`, so
+  designated initialisers work; pass `std::nullopt` for no record.
+
+  ```cpp
+  // Before
+  intraday->candles_sync("2330", "1");
+  ws->subscribe_sync("trades", "2330");
+  // After
+  intraday->candles_sync("2330", std::nullopt);
+  intraday->trades_sync("2330", StockTradesParams{.odd_lot = true, .limit = 5});
+  ws->subscribe_sync("trades", {"2330", "2317"}, std::nullopt);
+  ws->subscribe_sync("trades", {"2330"}, SubscribeOptions{.intraday_odd_lot = true});
+  ```
+
+- **WebSocket, all four**: `subscribe` / `unsubscribe` take a list of
+  symbols. One symbol is sent as `symbol`, as before; several as `symbols`
+  in one frame, and each becomes its own subscription (`unsubscribe` with
+  the same list removes them all; `unsubscribeIds` still works per id). An
+  empty list is 1005. `SubscribeOptions.afterHours` is FutOpt only and
+  `intradayOddLot` is Stock only; either on the other endpoint, to any
+  value, is 1005 — `afterHours` on Stock was already.
 
 ## Fields you could not reach before
 

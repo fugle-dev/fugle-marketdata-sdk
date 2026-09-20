@@ -125,7 +125,7 @@ int main(int argc, char **argv) {
         url, std::nullopt, std::nullopt);
 
     client->connect_sync();
-    client->subscribe_sync("trades", "2330");
+    client->subscribe_sync("trades", {"2330"}, std::nullopt);
 
     // Wait for done or timeout
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);

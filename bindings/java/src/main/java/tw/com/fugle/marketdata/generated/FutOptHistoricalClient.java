@@ -113,7 +113,7 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
      * Get historical candles for a product such as "TXF" (sync/blocking)
      */
     @Override
-    public String candlesSync(String symbol, String from, String to, String timeframe, Boolean afterHours, String contractMonth, String fields, String sort) throws MarketDataException {
+    public String candlesSync(String symbol, FutOptHistoricalCandlesParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -122,7 +122,7 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterBoolean.INSTANCE.lower(afterHours), FfiConverterOptionalString.INSTANCE.lower(contractMonth), FfiConverterOptionalString.INSTANCE.lower(fields), FfiConverterOptionalString.INSTANCE.lower(sort), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptHistoricalCandlesParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -149,7 +149,7 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
      * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
      */
     @Override
-    public String dailySync(String symbol, String date, Boolean afterHours) throws MarketDataException {
+    public String dailySync(String symbol, FutOptDailyParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -158,7 +158,7 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(date), FfiConverterBoolean.INSTANCE.lower(afterHours), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -183,18 +183,15 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
   
     /**
      * Get historical candles for a product such as "TXF" (async)
-     *
-     * `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
-     * default, "2!", "3!").
      */
     @Override
     
-    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe, Boolean afterHours, String contractMonth, String fields, String sort){
+    public CompletableFuture<String> getCandles(String symbol, FutOptHistoricalCandlesParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_candles(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterBoolean.INSTANCE.lower(afterHours), FfiConverterOptionalString.INSTANCE.lower(contractMonth), FfiConverterOptionalString.INSTANCE.lower(fields), FfiConverterOptionalString.INSTANCE.lower(sort)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptHistoricalCandlesParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -213,12 +210,12 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
      */
     @Override
     
-    public CompletableFuture<String> getDaily(String symbol, String date, Boolean afterHours){
+    public CompletableFuture<String> getDaily(String symbol, FutOptDailyParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(date), FfiConverterBoolean.INSTANCE.lower(afterHours)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),

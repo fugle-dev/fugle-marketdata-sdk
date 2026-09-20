@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -39,8 +40,9 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     public ConcurrentQueue<string> OtherFrames { get; } = new();
 
     /// <summary>
-    /// Answer each single-symbol <c>subscribe</c> frame with a <c>subscribed</c>
-    /// ack whose id is <c>id-&lt;channel&gt;-&lt;symbol&gt;[-ah]</c>.
+    /// Answer each <c>subscribe</c> frame with a <c>subscribed</c> ack whose id
+    /// is <c>id-&lt;channel&gt;-&lt;symbol&gt;[-ah]</c> (single-symbol frames) or
+    /// <c>id-&lt;channel&gt;-&lt;symbol1,symbol2,...&gt;</c> (multi-symbol frames).
     /// </summary>
     public bool AckSubscribes { get; init; }
 
@@ -117,7 +119,10 @@ internal sealed class WebSocketLoopbackServer : IDisposable
 
     private static string SubscribedAck(JsonElement data)
     {
-        var id = $"id-{data.GetProperty("channel").GetString()}-{data.GetProperty("symbol").GetString()}";
+        var symbolPart = data.TryGetProperty("symbol", out var symbol)
+            ? symbol.GetString()
+            : string.Join(",", data.GetProperty("symbols").EnumerateArray().Select(e => e.GetString()));
+        var id = $"id-{data.GetProperty("channel").GetString()}-{symbolPart}";
         if (data.TryGetProperty("afterHours", out var afterHours) && afterHours.ValueKind == JsonValueKind.True)
         {
             id += "-ah";

@@ -15,7 +15,8 @@ namespace FugleMarketData
     /// - Task&lt;T&gt; async pattern for .NET idiomatic usage
     /// - IDisposable for resource cleanup
     ///
-    /// Model types (Quote, Ticker, etc.) are in the uniffi.marketdata_uniffi namespace.
+    /// Model types (Quote, Ticker, etc.) and the params records (e.g.
+    /// <c>StockTradesParams</c>) are in the uniffi.marketdata_uniffi namespace.
     /// </remarks>
     public sealed class RestClient : IDisposable
     {
@@ -217,50 +218,55 @@ namespace FugleMarketData
         /// Get real-time quote for a stock symbol (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330" for TSMC)</param>
+        /// <param name="params">Optional filters, e.g. <c>oddLot</c></param>
         /// <returns>Quote with price, volume, and order book data</returns>
-        public Task<string> GetQuoteAsync(string symbol)
-            => _inner.GetQuote(symbol);
+        public Task<string> GetQuoteAsync(string symbol, uniffi.marketdata_uniffi.OddLotParams? @params = null)
+            => _inner.GetQuote(symbol, @params);
 
         /// <summary>
         /// Get ticker information for a stock symbol (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters, e.g. <c>oddLot</c></param>
         /// <returns>Ticker with stock metadata and trading rules</returns>
-        public Task<string> GetTickerAsync(string symbol)
-            => _inner.GetTicker(symbol);
+        public Task<string> GetTickerAsync(string symbol, uniffi.marketdata_uniffi.OddLotParams? @params = null)
+            => _inner.GetTicker(symbol, @params);
 
         /// <summary>
         /// Get trade history for a stock symbol (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters: oddLot, offset, limit, sort, isTrial</param>
         /// <returns>TradesResponse with list of executed trades</returns>
-        public Task<string> GetTradesAsync(string symbol)
-            => _inner.GetTrades(symbol);
+        public Task<string> GetTradesAsync(string symbol, uniffi.marketdata_uniffi.StockTradesParams? @params = null)
+            => _inner.GetTrades(symbol, @params);
 
         /// <summary>
         /// Get candlestick data for a stock symbol (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
-        /// <param name="timeframe">Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)</param>
+        /// <param name="params">Optional filters: timeframe, oddLot, sort. Unset timeframe takes the server default.</param>
         /// <returns>IntradayCandlesResponse with OHLCV data</returns>
-        public Task<string> GetCandlesAsync(string symbol, string timeframe)
-            => _inner.GetCandles(symbol, timeframe);
+        public Task<string> GetCandlesAsync(string symbol, uniffi.marketdata_uniffi.StockCandlesParams? @params = null)
+            => _inner.GetCandles(symbol, @params);
 
         /// <summary>
         /// Get volume breakdown by price for a stock symbol (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters, e.g. <c>oddLot</c></param>
         /// <returns>VolumesResponse with volume at each price level</returns>
-        public Task<string> GetVolumesAsync(string symbol)
-            => _inner.GetVolumes(symbol);
+        public Task<string> GetVolumesAsync(string symbol, uniffi.marketdata_uniffi.OddLotParams? @params = null)
+            => _inner.GetVolumes(symbol, @params);
 
         /// <summary>
         /// Get batch tickers for a security type (async).
         /// </summary>
         /// <param name="type">Security type (e.g., "EQUITY", "INDEX", "ETF")</param>
+        /// <param name="params">Optional filters: exchange, market, industry, isNormal, isAttention, isDisposition, isHalted, symbol</param>
         /// <returns>List of tickers matching the type filter</returns>
-        public Task<string> GetTickersAsync(string type)
-            => _inner.GetTickers(type);
+        public Task<string> GetTickersAsync(string type, uniffi.marketdata_uniffi.StockTickersParams? @params = null)
+            => _inner.GetTickers(type, @params);
 
         // ========== Sync Methods (Blocking) ==========
 
@@ -268,48 +274,54 @@ namespace FugleMarketData
         /// Get real-time quote for a stock symbol (blocking).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters, e.g. <c>oddLot</c></param>
         /// <returns>Quote with price, volume, and order book data</returns>
-        public string GetQuote(string symbol)
-            => _inner.QuoteSync(symbol);
+        public string GetQuote(string symbol, uniffi.marketdata_uniffi.OddLotParams? @params = null)
+            => _inner.QuoteSync(symbol, @params);
 
         /// <summary>
         /// Get ticker information for a stock symbol (blocking).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters, e.g. <c>oddLot</c></param>
         /// <returns>Ticker with stock metadata and trading rules</returns>
-        public string GetTicker(string symbol)
-            => _inner.TickerSync(symbol);
+        public string GetTicker(string symbol, uniffi.marketdata_uniffi.OddLotParams? @params = null)
+            => _inner.TickerSync(symbol, @params);
 
         /// <summary>
         /// Get trade history for a stock symbol (blocking).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters: oddLot, offset, limit, sort, isTrial</param>
         /// <returns>TradesResponse with list of executed trades</returns>
-        public string GetTrades(string symbol)
-            => _inner.TradesSync(symbol);
+        public string GetTrades(string symbol, uniffi.marketdata_uniffi.StockTradesParams? @params = null)
+            => _inner.TradesSync(symbol, @params);
 
         /// <summary>
         /// Get candlestick data for a stock symbol (blocking).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
-        /// <param name="timeframe">Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)</param>
+        /// <param name="params">Optional filters: timeframe, oddLot, sort. Unset timeframe takes the server default.</param>
         /// <returns>IntradayCandlesResponse with OHLCV data</returns>
-        public string GetCandles(string symbol, string timeframe)
-            => _inner.CandlesSync(symbol, timeframe);
+        public string GetCandles(string symbol, uniffi.marketdata_uniffi.StockCandlesParams? @params = null)
+            => _inner.CandlesSync(symbol, @params);
 
         /// <summary>
         /// Get volume breakdown by price for a stock symbol (blocking).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
+        /// <param name="params">Optional filters, e.g. <c>oddLot</c></param>
         /// <returns>VolumesResponse with volume at each price level</returns>
-        public string GetVolumes(string symbol)
-            => _inner.VolumesSync(symbol);
+        public string GetVolumes(string symbol, uniffi.marketdata_uniffi.OddLotParams? @params = null)
+            => _inner.VolumesSync(symbol, @params);
 
         /// <summary>
         /// Get batch tickers for a security type (blocking).
         /// </summary>
-        public string GetTickers(string type)
-            => _inner.TickersSync(type);
+        /// <param name="type">Security type (e.g., "EQUITY", "INDEX", "ETF")</param>
+        /// <param name="params">Optional filters: exchange, market, industry, isNormal, isAttention, isDisposition, isHalted, symbol</param>
+        public string GetTickers(string type, uniffi.marketdata_uniffi.StockTickersParams? @params = null)
+            => _inner.TickersSync(type, @params);
     }
 
     /// <summary>
@@ -330,12 +342,9 @@ namespace FugleMarketData
         /// Get historical candles for a stock symbol (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g., "2330")</param>
-        /// <param name="from">Start date in YYYY-MM-DD format (optional)</param>
-        /// <param name="to">End date in YYYY-MM-DD format (optional)</param>
-        /// <param name="timeframe">Timeframe: "D" (day), "W" (week), "M" (month), or "1","5","10","15","30","60" (optional)</param>
-        public Task<string> GetCandlesAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null)
-            => _inner.GetCandles(symbol, from, to, timeframe);
+        /// <param name="params">Optional filters: from, to, timeframe, fields, sort, adjusted</param>
+        public Task<string> GetCandlesAsync(string symbol, uniffi.marketdata_uniffi.StockHistoricalCandlesParams? @params = null)
+            => _inner.GetCandles(symbol, @params);
 
         /// <summary>
         /// Get historical stats for a stock symbol (async).
@@ -349,9 +358,8 @@ namespace FugleMarketData
         /// <summary>
         /// Get historical candles for a stock symbol (blocking).
         /// </summary>
-        public string GetCandles(
-            string symbol, string? from = null, string? to = null, string? timeframe = null)
-            => _inner.CandlesSync(symbol, from, to, timeframe);
+        public string GetCandles(string symbol, uniffi.marketdata_uniffi.StockHistoricalCandlesParams? @params = null)
+            => _inner.CandlesSync(symbol, @params);
 
         /// <summary>
         /// Get historical stats for a stock symbol (blocking).
@@ -378,52 +386,52 @@ namespace FugleMarketData
         /// Get market-wide snapshot quotes (async).
         /// </summary>
         /// <param name="market">Market code: TSE, OTC, ESB, TIB, PSB</param>
-        /// <param name="typeFilter">Optional filter: ALL, ALLBUT0999, COMMONSTOCK</param>
-        public Task<string> GetQuotesAsync(
-            string market, string? typeFilter = null)
-            => _inner.GetQuotes(market, typeFilter);
+        /// <param name="params">Optional filter: typeFilter (ALL, ALLBUT0999, COMMONSTOCK)</param>
+        public Task<string> GetQuotesAsync(string market, uniffi.marketdata_uniffi.SnapshotParams? @params = null)
+            => _inner.GetQuotes(market, @params);
 
         /// <summary>
         /// Get top movers (gainers/losers) in a market (async).
         /// </summary>
         /// <param name="market">Market code: TSE, OTC</param>
-        /// <param name="direction">"up" for gainers, "down" for losers (optional)</param>
-        /// <param name="change">"percent" or "value" (optional)</param>
+        /// <param name="direction">"up" for gainers, "down" for losers</param>
+        /// <param name="change">"percent" or "value"</param>
+        /// <param name="params">Optional filters: typeFilter, gt, gte, lt, lte, eq</param>
         public Task<string> GetMoversAsync(
-            string market, string? direction = null, string? change = null)
-            => _inner.GetMovers(market, direction, change);
+            string market, string direction, string change, uniffi.marketdata_uniffi.MoversParams? @params = null)
+            => _inner.GetMovers(market, direction, change, @params);
 
         /// <summary>
         /// Get most actively traded stocks (async).
         /// </summary>
         /// <param name="market">Market code: TSE, OTC</param>
-        /// <param name="trade">"volume" or "value" (optional)</param>
+        /// <param name="trade">"volume" or "value"</param>
+        /// <param name="params">Optional filter: typeFilter</param>
         public Task<string> GetActivesAsync(
-            string market, string? trade = null)
-            => _inner.GetActives(market, trade);
+            string market, string trade, uniffi.marketdata_uniffi.SnapshotParams? @params = null)
+            => _inner.GetActives(market, trade, @params);
 
         // ========== Sync Methods ==========
 
         /// <summary>
         /// Get market-wide snapshot quotes (blocking).
         /// </summary>
-        public string GetQuotes(
-            string market, string? typeFilter = null)
-            => _inner.QuotesSync(market, typeFilter);
+        public string GetQuotes(string market, uniffi.marketdata_uniffi.SnapshotParams? @params = null)
+            => _inner.QuotesSync(market, @params);
 
         /// <summary>
         /// Get top movers (blocking).
         /// </summary>
         public string GetMovers(
-            string market, string? direction = null, string? change = null)
-            => _inner.MoversSync(market, direction, change);
+            string market, string direction, string change, uniffi.marketdata_uniffi.MoversParams? @params = null)
+            => _inner.MoversSync(market, direction, change, @params);
 
         /// <summary>
         /// Get most actively traded stocks (blocking).
         /// </summary>
         public string GetActives(
-            string market, string? trade = null)
-            => _inner.ActivesSync(market, trade);
+            string market, string trade, uniffi.marketdata_uniffi.SnapshotParams? @params = null)
+            => _inner.ActivesSync(market, trade, @params);
     }
 
     /// <summary>
@@ -443,40 +451,58 @@ namespace FugleMarketData
         /// <summary>
         /// Get Simple Moving Average (async).
         /// </summary>
+        /// <param name="symbol">Stock symbol</param>
+        /// <param name="period">Moving average period</param>
+        /// <param name="params">Optional filters: from, to, timeframe</param>
         public Task<string> GetSmaAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, uint? period = null)
-            => _inner.GetSma(symbol, from, to, timeframe, period);
+            string symbol, uint period, uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.GetSma(symbol, period, @params);
 
         /// <summary>
         /// Get Relative Strength Index (async).
         /// </summary>
+        /// <param name="symbol">Stock symbol</param>
+        /// <param name="period">RSI period</param>
+        /// <param name="params">Optional filters: from, to, timeframe</param>
         public Task<string> GetRsiAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, uint? period = null)
-            => _inner.GetRsi(symbol, from, to, timeframe, period);
+            string symbol, uint period, uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.GetRsi(symbol, period, @params);
 
         /// <summary>
         /// Get KDJ Stochastic Oscillator (async).
         /// </summary>
+        /// <param name="symbol">Stock symbol</param>
+        /// <param name="rPeriod">%R period</param>
+        /// <param name="kPeriod">%K period</param>
+        /// <param name="dPeriod">%D period</param>
+        /// <param name="params">Optional filters: from, to, timeframe</param>
         public Task<string> GetKdjAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? rPeriod = null, uint? kPeriod = null, uint? dPeriod = null)
-            => _inner.GetKdj(symbol, from, to, timeframe, rPeriod, kPeriod, dPeriod);
+            string symbol, uint rPeriod, uint kPeriod, uint dPeriod,
+            uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.GetKdj(symbol, rPeriod, kPeriod, dPeriod, @params);
 
         /// <summary>
         /// Get MACD indicator (async).
         /// </summary>
+        /// <param name="symbol">Stock symbol</param>
+        /// <param name="fast">Fast EMA period</param>
+        /// <param name="slow">Slow EMA period</param>
+        /// <param name="signal">Signal line period</param>
+        /// <param name="params">Optional filters: from, to, timeframe</param>
         public Task<string> GetMacdAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? fast = null, uint? slow = null, uint? signal = null)
-            => _inner.GetMacd(symbol, from, to, timeframe, fast, slow, signal);
+            string symbol, uint fast, uint slow, uint signal,
+            uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.GetMacd(symbol, fast, slow, signal, @params);
 
         /// <summary>
         /// Get Bollinger Bands (async).
         /// </summary>
+        /// <param name="symbol">Stock symbol</param>
+        /// <param name="period">Moving average period</param>
+        /// <param name="params">Optional filters: from, to, timeframe</param>
         public Task<string> GetBbAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? period = null)
-            => _inner.GetBb(symbol, from, to, timeframe, period);
+            string symbol, uint period, uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.GetBb(symbol, period, @params);
 
         // ========== Sync Methods ==========
 
@@ -484,39 +510,38 @@ namespace FugleMarketData
         /// Get Simple Moving Average (blocking).
         /// </summary>
         public string GetSma(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, uint? period = null)
-            => _inner.SmaSync(symbol, from, to, timeframe, period);
+            string symbol, uint period, uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.SmaSync(symbol, period, @params);
 
         /// <summary>
         /// Get Relative Strength Index (blocking).
         /// </summary>
         public string GetRsi(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, uint? period = null)
-            => _inner.RsiSync(symbol, from, to, timeframe, period);
+            string symbol, uint period, uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.RsiSync(symbol, period, @params);
 
         /// <summary>
         /// Get KDJ Stochastic Oscillator (blocking).
         /// </summary>
         public string GetKdj(
-            string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? rPeriod = null, uint? kPeriod = null, uint? dPeriod = null)
-            => _inner.KdjSync(symbol, from, to, timeframe, rPeriod, kPeriod, dPeriod);
+            string symbol, uint rPeriod, uint kPeriod, uint dPeriod,
+            uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.KdjSync(symbol, rPeriod, kPeriod, dPeriod, @params);
 
         /// <summary>
         /// Get MACD indicator (blocking).
         /// </summary>
         public string GetMacd(
-            string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? fast = null, uint? slow = null, uint? signal = null)
-            => _inner.MacdSync(symbol, from, to, timeframe, fast, slow, signal);
+            string symbol, uint fast, uint slow, uint signal,
+            uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.MacdSync(symbol, fast, slow, signal, @params);
 
         /// <summary>
         /// Get Bollinger Bands (blocking).
         /// </summary>
         public string GetBb(
-            string symbol, string? from = null, string? to = null, string? timeframe = null,
-            uint? period = null)
-            => _inner.BbSync(symbol, from, to, timeframe, period);
+            string symbol, uint period, uniffi.marketdata_uniffi.TechnicalParams? @params = null)
+            => _inner.BbSync(symbol, period, @params);
     }
 
     /// <summary>
@@ -536,52 +561,49 @@ namespace FugleMarketData
         /// <summary>
         /// Get capital structure changes (async).
         /// </summary>
-        /// <param name="startDate">Range start date (optional)</param>
-        /// <param name="endDate">Range end date (optional)</param>
-        public Task<string> GetCapitalChangesAsync(
-            string? startDate = null, string? endDate = null)
-            => _inner.GetCapitalChanges(startDate, endDate);
+        /// <param name="params">Optional filters: startDate, endDate, sort. <c>exchange</c> is not
+        /// accepted by this endpoint and throws <see cref="uniffi.marketdata_uniffi.MarketDataException"/> (code 1005) if set.</param>
+        public Task<string> GetCapitalChangesAsync(uniffi.marketdata_uniffi.CorporateActionsParams? @params = null)
+            => _inner.GetCapitalChanges(@params);
 
         /// <summary>
         /// Get dividend announcements (async).
         /// </summary>
-        public Task<string> GetDividendsAsync(
-            string? startDate = null, string? endDate = null)
-            => _inner.GetDividends(startDate, endDate);
+        /// <param name="params">Optional filters: startDate, endDate, exchange, sort</param>
+        public Task<string> GetDividendsAsync(uniffi.marketdata_uniffi.CorporateActionsParams? @params = null)
+            => _inner.GetDividends(@params);
 
         /// <summary>
         /// Get IPO listing applicants (async).
         /// </summary>
-        public Task<string> GetListingApplicantsAsync(
-            string? startDate = null, string? endDate = null)
-            => _inner.GetListingApplicants(startDate, endDate);
+        /// <param name="params">Optional filters: startDate, endDate, exchange, sort</param>
+        public Task<string> GetListingApplicantsAsync(uniffi.marketdata_uniffi.CorporateActionsParams? @params = null)
+            => _inner.GetListingApplicants(@params);
 
         // ========== Sync Methods ==========
 
         /// <summary>
         /// Get capital structure changes (blocking).
         /// </summary>
-        public string GetCapitalChanges(
-            string? startDate = null, string? endDate = null)
-            => _inner.CapitalChangesSync(startDate, endDate);
+        public string GetCapitalChanges(uniffi.marketdata_uniffi.CorporateActionsParams? @params = null)
+            => _inner.CapitalChangesSync(@params);
 
         /// <summary>
         /// Get dividend announcements (blocking).
         /// </summary>
-        public string GetDividends(
-            string? startDate = null, string? endDate = null)
-            => _inner.DividendsSync(startDate, endDate);
+        public string GetDividends(uniffi.marketdata_uniffi.CorporateActionsParams? @params = null)
+            => _inner.DividendsSync(@params);
 
         /// <summary>
         /// Get IPO listing applicants (blocking).
         /// </summary>
-        public string GetListingApplicants(
-            string? startDate = null, string? endDate = null)
-            => _inner.ListingApplicantsSync(startDate, endDate);
+        public string GetListingApplicants(uniffi.marketdata_uniffi.CorporateActionsParams? @params = null)
+            => _inner.ListingApplicantsSync(@params);
     }
 
     /// <summary>
-    /// Stock ownership endpoints. Every method takes the same range arguments:
+    /// Stock ownership endpoints. Every method takes the same optional
+    /// filters via <see cref="uniffi.marketdata_uniffi.OwnershipParams"/>:
     /// <c>from</c> / <c>to</c> in YYYY-MM-DD and <c>sort</c> of "asc" or "desc".
     /// </summary>
     public sealed class StockOwnershipClient
@@ -599,45 +621,37 @@ namespace FugleMarketData
         /// Get the constituents an ETF held over a date range (async).
         /// </summary>
         /// <param name="symbol">ETF symbol (e.g. "0050")</param>
-        /// <param name="from">Range start date (optional)</param>
-        /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
+        /// <param name="params">Optional filters: from, to, sort</param>
         public Task<string> GetEtfHoldingsAsync(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.GetEtfHoldings(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.GetEtfHoldings(symbol, @params);
 
         /// <summary>
         /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g. "2330")</param>
-        /// <param name="from">Range start date (optional)</param>
-        /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
+        /// <param name="params">Optional filters: from, to, sort</param>
         public Task<string> GetInstitutionalTradesAsync(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.GetInstitutionalTrades(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.GetInstitutionalTrades(symbol, @params);
 
         /// <summary>
         /// Get monthly holdings and pledges disclosed by directors and supervisors (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g. "2330")</param>
-        /// <param name="from">Range start date (optional)</param>
-        /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
+        /// <param name="params">Optional filters: from, to, sort</param>
         public Task<string> GetDirectorHoldingsAsync(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.GetDirectorHoldings(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.GetDirectorHoldings(symbol, @params);
 
         /// <summary>
         /// Get the weekly TDCC shareholder distribution by holding-size bracket (async).
         /// </summary>
         /// <param name="symbol">Stock symbol (e.g. "2330")</param>
-        /// <param name="from">Range start date (optional)</param>
-        /// <param name="to">Range end date (optional)</param>
-        /// <param name="sort">"asc" (oldest first) or "desc" (newest first); sent as given</param>
+        /// <param name="params">Optional filters: from, to, sort</param>
         public Task<string> GetTdccDistributionAsync(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.GetTdccDistribution(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.GetTdccDistribution(symbol, @params);
 
         // ========== Sync Methods ==========
 
@@ -645,29 +659,29 @@ namespace FugleMarketData
         /// Get the constituents an ETF held over a date range (blocking).
         /// </summary>
         public string GetEtfHoldings(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.EtfHoldingsSync(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.EtfHoldingsSync(symbol, @params);
 
         /// <summary>
         /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer) (blocking).
         /// </summary>
         public string GetInstitutionalTrades(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.InstitutionalTradesSync(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.InstitutionalTradesSync(symbol, @params);
 
         /// <summary>
         /// Get monthly holdings and pledges disclosed by directors and supervisors (blocking).
         /// </summary>
         public string GetDirectorHoldings(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.DirectorHoldingsSync(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.DirectorHoldingsSync(symbol, @params);
 
         /// <summary>
         /// Get the weekly TDCC shareholder distribution by holding-size bracket (blocking).
         /// </summary>
         public string GetTdccDistribution(
-            string symbol, string? from = null, string? to = null, string? sort = null)
-            => _inner.TdccDistributionSync(symbol, from, to, sort);
+            string symbol, uniffi.marketdata_uniffi.OwnershipParams? @params = null)
+            => _inner.TdccDistributionSync(symbol, @params);
     }
 
     /// <summary>
@@ -711,57 +725,60 @@ namespace FugleMarketData
         /// Get real-time quote for a futures/options contract (async).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        /// <param name="afterHours">True for after-hours session</param>
+        /// <param name="params">Optional filter: afterHours (true asks for the after-hours session)</param>
         /// <returns>FutOptQuote with price and trading data</returns>
-        public Task<string> GetQuoteAsync(string symbol, bool afterHours = false)
-            => _inner.GetQuote(symbol, afterHours);
+        public Task<string> GetQuoteAsync(string symbol, uniffi.marketdata_uniffi.AfterHoursParams? @params = null)
+            => _inner.GetQuote(symbol, @params);
 
         /// <summary>
         /// Get ticker information for a contract (async).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        /// <param name="afterHours">True for after-hours session</param>
+        /// <param name="params">Optional filter: afterHours (true asks for the after-hours session)</param>
         /// <returns>FutOptTicker with contract metadata</returns>
-        public Task<string> GetTickerAsync(string symbol, bool afterHours = false)
-            => _inner.GetTicker(symbol, afterHours);
+        public Task<string> GetTickerAsync(string symbol, uniffi.marketdata_uniffi.AfterHoursParams? @params = null)
+            => _inner.GetTicker(symbol, @params);
 
         /// <summary>
         /// Get available products list (async).
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
+        /// <param name="params">Optional filters: exchange, afterHours, contractType, status</param>
         /// <returns>ProductsResponse with available contracts</returns>
-        public Task<string> GetProductsAsync(string type)
-            => _inner.GetProducts(type);
+        public Task<string> GetProductsAsync(string type, uniffi.marketdata_uniffi.FutOptProductsParams? @params = null)
+            => _inner.GetProducts(type, @params);
 
         /// <summary>
         /// Get candlestick data for a futures/options contract (async).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        /// <param name="timeframe">Candle timeframe: "1", "5", "10", "15", "30", "60" (minutes)</param>
-        public Task<string> GetCandlesAsync(string symbol, string timeframe)
-            => _inner.GetCandles(symbol, timeframe);
+        /// <param name="params">Optional filters: afterHours, timeframe</param>
+        public Task<string> GetCandlesAsync(string symbol, uniffi.marketdata_uniffi.FutOptCandlesParams? @params = null)
+            => _inner.GetCandles(symbol, @params);
 
         /// <summary>
         /// Get trade history for a futures/options contract (async).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        public Task<string> GetTradesAsync(string symbol)
-            => _inner.GetTrades(symbol);
+        /// <param name="params">Optional filters: afterHours, offset, limit, isTrial</param>
+        public Task<string> GetTradesAsync(string symbol, uniffi.marketdata_uniffi.FutOptTradesParams? @params = null)
+            => _inner.GetTrades(symbol, @params);
 
         /// <summary>
         /// Get volume breakdown by price for a futures/options contract (async).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        public Task<string> GetVolumesAsync(string symbol)
-            => _inner.GetVolumes(symbol);
+        /// <param name="params">Optional filter: afterHours (true asks for the after-hours session)</param>
+        public Task<string> GetVolumesAsync(string symbol, uniffi.marketdata_uniffi.AfterHoursParams? @params = null)
+            => _inner.GetVolumes(symbol, @params);
 
         /// <summary>
         /// Get batch tickers for futures/options (async).
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
-        /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
-        public Task<string> GetTickersAsync(string type, bool? isSpread = null)
-            => _inner.GetTickers(type, isSpread);
+        /// <param name="params">Optional filters: exchange, afterHours, product, contractType, isSpread</param>
+        public Task<string> GetTickersAsync(string type, uniffi.marketdata_uniffi.FutOptTickersParams? @params = null)
+            => _inner.GetTickers(type, @params);
 
         // ========== Sync Methods (Blocking) ==========
 
@@ -769,53 +786,54 @@ namespace FugleMarketData
         /// Get real-time quote for a futures/options contract (blocking).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        /// <param name="afterHours">True for after-hours session</param>
+        /// <param name="params">Optional filter: afterHours (true asks for the after-hours session)</param>
         /// <returns>FutOptQuote with price and trading data</returns>
-        public string GetQuote(string symbol, bool afterHours = false)
-            => _inner.QuoteSync(symbol, afterHours);
+        public string GetQuote(string symbol, uniffi.marketdata_uniffi.AfterHoursParams? @params = null)
+            => _inner.QuoteSync(symbol, @params);
 
         /// <summary>
         /// Get ticker information for a contract (blocking).
         /// </summary>
         /// <param name="symbol">Contract symbol</param>
-        /// <param name="afterHours">True for after-hours session</param>
+        /// <param name="params">Optional filter: afterHours (true asks for the after-hours session)</param>
         /// <returns>FutOptTicker with contract metadata</returns>
-        public string GetTicker(string symbol, bool afterHours = false)
-            => _inner.TickerSync(symbol, afterHours);
+        public string GetTicker(string symbol, uniffi.marketdata_uniffi.AfterHoursParams? @params = null)
+            => _inner.TickerSync(symbol, @params);
 
         /// <summary>
         /// Get available products list (blocking).
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
+        /// <param name="params">Optional filters: exchange, afterHours, contractType, status</param>
         /// <returns>ProductsResponse with available contracts</returns>
-        public string GetProducts(string type)
-            => _inner.ProductsSync(type);
+        public string GetProducts(string type, uniffi.marketdata_uniffi.FutOptProductsParams? @params = null)
+            => _inner.ProductsSync(type, @params);
 
         /// <summary>
         /// Get candlestick data for a futures/options contract (blocking).
         /// </summary>
-        public string GetCandles(string symbol, string timeframe)
-            => _inner.CandlesSync(symbol, timeframe);
+        public string GetCandles(string symbol, uniffi.marketdata_uniffi.FutOptCandlesParams? @params = null)
+            => _inner.CandlesSync(symbol, @params);
 
         /// <summary>
         /// Get trade history for a futures/options contract (blocking).
         /// </summary>
-        public string GetTrades(string symbol)
-            => _inner.TradesSync(symbol);
+        public string GetTrades(string symbol, uniffi.marketdata_uniffi.FutOptTradesParams? @params = null)
+            => _inner.TradesSync(symbol, @params);
 
         /// <summary>
         /// Get volume breakdown by price for a futures/options contract (blocking).
         /// </summary>
-        public string GetVolumes(string symbol)
-            => _inner.VolumesSync(symbol);
+        public string GetVolumes(string symbol, uniffi.marketdata_uniffi.AfterHoursParams? @params = null)
+            => _inner.VolumesSync(symbol, @params);
 
         /// <summary>
         /// Get batch tickers for futures/options (blocking).
         /// </summary>
         /// <param name="type">Product type: "F" for futures, "O" for options</param>
-        /// <param name="isSpread">Filter to spread (true) or non-spread (false) contracts; null returns both</param>
-        public string GetTickers(string type, bool? isSpread = null)
-            => _inner.TickersSync(type, isSpread);
+        /// <param name="params">Optional filters: exchange, afterHours, product, contractType, isSpread</param>
+        public string GetTickers(string type, uniffi.marketdata_uniffi.FutOptTickersParams? @params = null)
+            => _inner.TickersSync(type, @params);
     }
 
     /// <summary>
@@ -836,26 +854,18 @@ namespace FugleMarketData
         /// Get historical candles for a futures/options product (async).
         /// </summary>
         /// <param name="symbol">Product code, e.g. "TXF" (a contract code such as "TXFC4" returns 404)</param>
-        /// <param name="from">Start date in YYYY-MM-DD format (optional)</param>
-        /// <param name="to">End date in YYYY-MM-DD format (optional)</param>
-        /// <param name="timeframe">Timeframe (optional)</param>
-        /// <param name="afterHours">True for after-hours session</param>
-        /// <param name="contractMonth">"YYYYMM", or a continuous contract: "1!" (server default), "2!", "3!"</param>
-        /// <param name="fields">Comma-separated fields, e.g. "open,high,low,close,volume" (optional)</param>
-        /// <param name="sort">"asc" or "desc" (optional)</param>
+        /// <param name="params">Optional filters: from, to, contractMonth, fields, timeframe, sort, strikePrice, callPut, afterHours</param>
         public Task<string> GetCandlesAsync(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, bool afterHours = false,
-            string? contractMonth = null, string? fields = null, string? sort = null)
-            => _inner.GetCandles(symbol, from, to, timeframe, afterHours, contractMonth, fields, sort);
+            string symbol, uniffi.marketdata_uniffi.FutOptHistoricalCandlesParams? @params = null)
+            => _inner.GetCandles(symbol, @params);
 
         /// <summary>
         /// Get one trading day's daily quotes for every contract month of a futures/options product (async).
         /// </summary>
         /// <param name="symbol">Product code, e.g. "TXF" (a contract code such as "TXFC4" returns 404)</param>
-        /// <param name="date">Trading date in YYYY-MM-DD format; the server defaults to today (optional)</param>
-        /// <param name="afterHours">True for after-hours session</param>
-        public Task<string> GetDailyAsync(string symbol, string? date = null, bool afterHours = false)
-            => _inner.GetDaily(symbol, date, afterHours);
+        /// <param name="params">Optional filters: date, afterHours. Unset date defaults to today.</param>
+        public Task<string> GetDailyAsync(string symbol, uniffi.marketdata_uniffi.FutOptDailyParams? @params = null)
+            => _inner.GetDaily(symbol, @params);
 
         // ========== Sync Methods ==========
 
@@ -863,14 +873,13 @@ namespace FugleMarketData
         /// Get historical candles for a futures/options product (blocking).
         /// </summary>
         public string GetCandles(
-            string symbol, string? from = null, string? to = null, string? timeframe = null, bool afterHours = false,
-            string? contractMonth = null, string? fields = null, string? sort = null)
-            => _inner.CandlesSync(symbol, from, to, timeframe, afterHours, contractMonth, fields, sort);
+            string symbol, uniffi.marketdata_uniffi.FutOptHistoricalCandlesParams? @params = null)
+            => _inner.CandlesSync(symbol, @params);
 
         /// <summary>
         /// Get one trading day's daily quotes for every contract month of a futures/options product (blocking).
         /// </summary>
-        public string GetDaily(string symbol, string? date = null, bool afterHours = false)
-            => _inner.DailySync(symbol, date, afterHours);
+        public string GetDaily(string symbol, uniffi.marketdata_uniffi.FutOptDailyParams? @params = null)
+            => _inner.DailySync(symbol, @params);
     }
 }

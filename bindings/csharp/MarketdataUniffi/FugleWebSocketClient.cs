@@ -7,6 +7,26 @@ using System.Threading.Tasks;
 namespace FugleMarketData
 {
     /// <summary>
+    /// Per-subscription options for <c>WebSocketClient.SubscribeAsync</c>
+    /// and <c>WebSocketClient.UnsubscribeAsync</c>. Maps to
+    /// <see cref="uniffi.marketdata_uniffi.SubscribeOptions"/>.
+    /// </summary>
+    public class SubscribeOptions
+    {
+        /// <summary>
+        /// FutOpt endpoint only: true subscribes to the after-hours session.
+        /// Any non-null value on the Stock endpoint is error 1005.
+        /// </summary>
+        public bool? AfterHours { get; set; }
+
+        /// <summary>
+        /// Stock endpoint only: true subscribes to the intraday odd-lot session.
+        /// Any non-null value on the FutOpt endpoint is error 1005.
+        /// </summary>
+        public bool? IntradayOddLot { get; set; }
+    }
+
+    /// <summary>
     /// WebSocket endpoint types for market data streaming.
     /// </summary>
     public enum WebSocketEndpoint
@@ -300,6 +320,20 @@ namespace FugleMarketData
         }
 
         /// <summary>
+        /// The streaming version record for core, or null to let the server
+        /// pick the latest version for every endpoint.
+        /// </summary>
+        internal static uniffi.marketdata_uniffi.StreamingVersionRecord? ToStreamingVersionRecord(WebsocketClient.WebsocketVersionOptions? options)
+        {
+            if (options == null)
+                return null;
+            return new uniffi.marketdata_uniffi.StreamingVersionRecord(
+                stock: options.Stock,
+                futopt: options.FutOpt
+            );
+        }
+
+        /// <summary>
         /// The connection record for core, or null to keep the core defaults.
         /// An unset <see cref="WebSocketClientOptions.AuthTimeoutMs"/> leaves
         /// the whole record out; core's zero means "use default" (10 s).
@@ -353,6 +387,7 @@ namespace FugleMarketData
             // Convert config options to UniFFI record types
             var reconnectRecord = ToReconnectRecord(options.Reconnect);
             var healthCheckRecord = ToHealthCheckRecord(options.HealthCheck);
+            var versionRecord = ToStreamingVersionRecord(options.Versions);
 
             uniffi.marketdata_uniffi.MessageQueueConfigRecord? messageQueueRecord = null;
             if (options.MessageOverflow != null || options.MessageBuffer != null)
@@ -387,7 +422,7 @@ namespace FugleMarketData
                 reconnectRecord,
                 healthCheckRecord,
                 tls: null,
-                version: null,
+                version: versionRecord,
                 messageQueue: messageQueueRecord,
                 connection: connectionRecord
             );
@@ -416,6 +451,20 @@ namespace FugleMarketData
         public Task DisconnectAsync() => _inner.Disconnect();
 
         /// <summary>
+        /// Map the wrapper's <see cref="SubscribeOptions"/> to the generated
+        /// record, or null when there is nothing to send.
+        /// </summary>
+        internal static uniffi.marketdata_uniffi.SubscribeOptions? ToInnerOptions(SubscribeOptions? options)
+        {
+            if (options == null)
+                return null;
+            return new uniffi.marketdata_uniffi.SubscribeOptions(
+                afterHours: options.AfterHours,
+                intradayOddLot: options.IntradayOddLot
+            );
+        }
+
+        /// <summary>
         /// Subscribe to a market data channel for a symbol.
         /// </summary>
         /// <param name="channel">Channel name: "trades", "candles", "books", "aggregates", plus "indices" on the Stock endpoint</param>
@@ -423,17 +472,49 @@ namespace FugleMarketData
         /// <param name="afterHours">After-hours (盤後) session. FutOpt endpoint only: on the Stock endpoint any non-null value is error 1005</param>
         /// <returns>Task that completes when subscription is confirmed</returns>
         public Task SubscribeAsync(string channel, string symbol, bool? afterHours = null) =>
-            _inner.Subscribe(channel, symbol, afterHours);
+            SubscribeAsync(channel, new[] { symbol }, afterHours.HasValue ? new SubscribeOptions { AfterHours = afterHours } : null);
+
+        /// <summary>
+        /// Subscribe to a market data channel for one or more symbols. This is
+        /// also the form for one symbol with <see cref="SubscribeOptions"/>:
+        /// <c>SubscribeAsync("trades", new[] { "2330" }, options)</c>. (A third
+        /// <c>(string, string, SubscribeOptions)</c> overload would make a
+        /// literal <c>null</c> third argument ambiguous with <c>bool?</c>.)
+        /// </summary>
+        /// <param name="channel">Channel name: "trades", "candles", "books", "aggregates", plus "indices" on the Stock endpoint</param>
+        /// <param name="symbols">Symbols to subscribe; at least one is required</param>
+        /// <param name="options">Endpoint-specific options: <see cref="SubscribeOptions.AfterHours"/> (FutOpt only) or <see cref="SubscribeOptions.IntradayOddLot"/> (Stock only)</param>
+        /// <returns>Task that completes when subscription is confirmed</returns>
+        public Task SubscribeAsync(string channel, IEnumerable<string> symbols, SubscribeOptions? options = null)
+        {
+            if (symbols == null)
+                throw new ArgumentNullException(nameof(symbols));
+            return _inner.Subscribe(channel, symbols.ToArray(), ToInnerOptions(options));
+        }
 
         /// <summary>
         /// Unsubscribe from a market data channel for a symbol.
         /// </summary>
         /// <param name="channel">Channel name</param>
         /// <param name="symbol">Symbol to unsubscribe</param>
-        /// <param name="afterHours">The same value as the <see cref="SubscribeAsync"/> call: an after-hours subscription is separate from the regular one</param>
+        /// <param name="afterHours">The same value as the <c>SubscribeAsync</c> call: an after-hours subscription is separate from the regular one</param>
         /// <returns>Task that completes when unsubscription is confirmed</returns>
         public Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null) =>
-            _inner.Unsubscribe(channel, symbol, afterHours);
+            UnsubscribeAsync(channel, new[] { symbol }, afterHours.HasValue ? new SubscribeOptions { AfterHours = afterHours } : null);
+
+        /// <summary>
+        /// Unsubscribe from a market data channel for one or more symbols.
+        /// </summary>
+        /// <param name="channel">Channel name</param>
+        /// <param name="symbols">Symbols to unsubscribe; at least one is required</param>
+        /// <param name="options">The same options as the matching <c>SubscribeAsync</c> call</param>
+        /// <returns>Task that completes when unsubscription is confirmed</returns>
+        public Task UnsubscribeAsync(string channel, IEnumerable<string> symbols, SubscribeOptions? options = null)
+        {
+            if (symbols == null)
+                throw new ArgumentNullException(nameof(symbols));
+            return _inner.Unsubscribe(channel, symbols.ToArray(), ToInnerOptions(options));
+        }
 
         /// <summary>
         /// Unsubscribe by the ids the server issued in its <c>subscribed</c> messages.

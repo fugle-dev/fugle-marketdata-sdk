@@ -292,40 +292,72 @@ The probe options and their trade-offs are described in
 
 ### REST API Methods
 
-All methods return JSON strings that can be parsed with your language's JSON library:
+All methods return JSON strings that can be parsed with your language's JSON
+library. Each takes the endpoint's required parameters positionally and its
+optional ones as one params record, which may be omitted (`null` / `nil`) or
+passed as `std::nullopt` in C++; every record field is optional and unset is
+not sent, so the server's defaults apply (#202). Sync variants (`*_sync`)
+take the same arguments. Names below are the Rust ones; the generators
+case them per language (`GetTrades` / `TradesSync`, `getTrades`, …).
 
-**Stock Market Data:**
-
-```text
-getStockQuote(symbol)           # Get real-time quote
-getStockTicker(symbol)          # Get symbol information
-getStockCandles(symbol, timeframe)  # Get OHLCV candles
-getStockTrades(symbol)          # Get trade history
-getStockVolumes(symbol)         # Get volume by price
-```
-
-**Futures and Options (FutOpt) Data:**
+**Stock:**
 
 ```text
-getFutOptQuote(symbol, afterHours)   # Get real-time quote
-getFutOptTicker(symbol)              # Get contract information
-getFutOptCandles(symbol, timeframe)  # Get OHLCV candles
-getFutOptTrades(symbol)              # Get trade history
-getFutOptVolumes(symbol)             # Get volume by price
-getFutOptProducts(type)              # Get product listing ("F" or "O")
+intraday.get_tickers(type, StockTickersParams?)           # exchange, market, industry, isNormal, isAttention, isDisposition, isHalted, symbol
+intraday.get_ticker(symbol, OddLotParams?)                # oddLot
+intraday.get_quote(symbol, OddLotParams?)
+intraday.get_volumes(symbol, OddLotParams?)
+intraday.get_candles(symbol, StockCandlesParams?)         # timeframe, oddLot, sort
+intraday.get_trades(symbol, StockTradesParams?)           # oddLot, offset, limit, sort, isTrial
+historical.get_candles(symbol, StockHistoricalCandlesParams?)  # from, to, timeframe, fields, sort, adjusted
+historical.get_stats(symbol)
+snapshot.get_quotes(market, SnapshotParams?)              # type
+snapshot.get_movers(market, direction, change, MoversParams?)  # type, gt, gte, lt, lte, eq
+snapshot.get_actives(market, trade, SnapshotParams?)
+technical.get_sma / get_rsi / get_bb(symbol, period, TechnicalParams?)          # from, to, timeframe
+technical.get_kdj(symbol, r_period, k_period, d_period, TechnicalParams?)
+technical.get_macd(symbol, fast, slow, signal, TechnicalParams?)
+corporate_actions.get_capital_changes / get_dividends / get_listing_applicants(CorporateActionsParams?)  # start_date, end_date, exchange (not capital_changes), sort
+ownership.get_etf_holdings / get_institutional_trades / get_director_holdings / get_tdcc_distribution(symbol, OwnershipParams?)  # from, to, sort
 ```
+
+**Futures and Options (FutOpt):**
+
+```text
+intraday.get_products(type, FutOptProductsParams?)        # exchange, afterHours, contractType, status
+intraday.get_tickers(type, FutOptTickersParams?)          # exchange, afterHours, product, contractType, isSpread
+intraday.get_ticker(symbol, AfterHoursParams?)            # afterHours
+intraday.get_quote(symbol, AfterHoursParams?)
+intraday.get_volumes(symbol, AfterHoursParams?)
+intraday.get_candles(symbol, FutOptCandlesParams?)        # afterHours, timeframe
+intraday.get_trades(symbol, FutOptTradesParams?)          # afterHours, offset, limit, isTrial
+historical.get_candles(symbol, FutOptHistoricalCandlesParams?)  # from, to, contractMonth, fields, timeframe, sort, strikePrice, callPut, afterHours
+historical.get_daily(symbol, FutOptDailyParams?)          # date, afterHours
+```
+
+`type` is `"F"` / `"O"` (or `FUTURE` / `OPTION`, any case). The flag fields
+send the table's literal when `true` — `oddLot` is `type=oddlot`; `afterHours`
+is `session=afterhours` on the single-contract endpoints and
+`session=AFTERHOURS` on `products` / `tickers` — and nothing when `false` or
+unset. The keys come from `core::rest::params`; a field an endpoint does not
+take (`exchange` on `capital_changes`) is code 1005 before any request.
+Values are sent as given; the server checks them.
 
 ### WebSocket Methods
 
 ```text
-connect()                       # Connect to WebSocket server
-disconnect()                    # Disconnect from server
-subscribe(channel, symbol)      # Subscribe to channel
-unsubscribe(channel, symbol)    # Unsubscribe by channel and symbol
-unsubscribe_ids(ids)            # Unsubscribe by server ids from `subscribed`
-isConnected()                   # Check connection status
-isClosed()                      # Check if client is closed
+connect()                                    # Connect to WebSocket server
+disconnect()                                 # Disconnect from server
+subscribe(channel, symbols, SubscribeOptions?)    # One symbol is sent as `symbol`, several as `symbols` in one frame
+unsubscribe(channel, symbols, SubscribeOptions?)  # Same list and options as the subscribe call
+unsubscribe_ids(ids)                         # Unsubscribe by server ids from `subscribed`
+is_connected()                               # Check connection status
+is_closed()                                  # Check if client is closed
 ```
+
+`SubscribeOptions` has `after_hours` (FutOpt only) and `intraday_odd_lot`
+(Stock only); either on the other endpoint is code 1005, as is an empty
+symbol list.
 
 **WebSocket Channels:**
 

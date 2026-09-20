@@ -104,7 +104,12 @@ func main() {
             TradeVolume int64 `json:"tradeVolume"`
         } `json:"total"`
     }
-    body, err := client.Stock().Intraday().GetQuote("2330")
+    // Every REST method takes its required parameters positionally and an
+    // optional `*Params` record for the rest: nil means "no filters", or
+    // build one with field literals using the Bool/String/Uint32/Float64
+    // pointer helpers (a plain Go struct literal takes an address of an
+    // untyped constant just fine too).
+    body, err := client.Stock().Intraday().GetQuote("2330", nil)
     if err != nil {
         log.Fatal(err)
     }
@@ -119,15 +124,16 @@ func main() {
     var ticker struct {
         Name string `json:"name"`
     }
-    body, err = client.Stock().Intraday().GetTicker("2330")
+    body, err = client.Stock().Intraday().GetTicker("2330", nil)
     if err != nil {
         log.Fatal(err)
     }
     json.Unmarshal([]byte(body), &ticker)
     fmt.Printf("Name: %s\n", ticker.Name)
 
-    // Get intraday candles (5-minute)
-    candles, err := client.Stock().Intraday().GetCandles("2330", "5")
+    // Get intraday candles (5-minute). timeframe is optional: nil params, or
+    // omit Timeframe, defaults to the server's default timeframe.
+    candles, err := client.Stock().Intraday().GetCandles("2330", &mkt.StockCandlesParams{Timeframe: mkt.String("5")})
     if err != nil {
         log.Fatal(err)
     }
@@ -146,8 +152,8 @@ func main() {
             i+1, candle.Date, candle.Open, candle.High, candle.Low, candle.Close)
     }
 
-    // Get recent trades
-    trades, err := client.Stock().Intraday().GetTrades("2330")
+    // Get the 5 most recent trades
+    trades, err := client.Stock().Intraday().GetTrades("2330", &mkt.StockTradesParams{Limit: mkt.Uint32(5)})
     if err != nil {
         log.Fatal(err)
     }
@@ -162,8 +168,15 @@ func main() {
         fmt.Printf("  [%d] Price: %.2f, Size: %d\n", i+1, trade.Price, trade.Size)
     }
 
+    // Top movers: direction and change are required positional parameters.
+    movers, err := client.Stock().Snapshot().GetMovers("TSE", "up", "percent", nil)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(movers)
+
     // FutOpt (futures/options) data
-    futoptQuote, err := client.FutOpt().Intraday().GetQuote("TXFC4")
+    futoptQuote, err := client.Futopt().Intraday().GetQuote("TXFC4", nil)
     if err != nil {
         log.Fatal(err)
     }
@@ -209,6 +222,18 @@ func main() {
         log.Fatal(err)
     }
     if err := client.Subscribe("books", "2330"); err != nil {
+        log.Fatal(err)
+    }
+
+    // Subscribe several symbols in one frame instead of one Subscribe call
+    // per symbol
+    if err := client.SubscribeMany("trades", []string{"2317", "2454"}); err != nil {
+        log.Fatal(err)
+    }
+
+    // WithIntradayOddLot subscribes to the intraday odd-lot (盤中零股)
+    // session. Stock endpoint only: on the FutOpt endpoint it is error 1005.
+    if err := client.Subscribe("trades", "2330", mkt.WithIntradayOddLot(true)); err != nil {
         log.Fatal(err)
     }
 
@@ -324,45 +349,57 @@ configs.
 
 ### RestClient
 
+Every method's required parameters are positional; everything else (filters,
+sort, paging) is an optional `*Params` record — pass `nil` for none. Field
+values are pointers; build one with the `Bool`/`String`/`Uint32`/`Float64`
+helpers, e.g. `&StockTradesParams{Limit: mkt.Uint32(5)}`.
+
 #### Stock Intraday Methods
 
 ```go
 // Real-time quote
-GetQuote(symbol string) (*Quote, error)
+GetQuote(symbol string, params *OddLotParams) (string, error)
 
 // Symbol information
-GetTicker(symbol string) (*Ticker, error)
+GetTicker(symbol string, params *OddLotParams) (string, error)
 
-// OHLCV candles (timeframe: "1", "5", "10", "15", "30", "60")
-GetCandles(symbol string, timeframe string) (*CandlesResponse, error)
+// OHLCV candles (params.Timeframe: "1", "5", "10", "15", "30", "60"; omitted uses the server default)
+GetCandles(symbol string, params *StockCandlesParams) (string, error)
 
 // Trade history
-GetTrades(symbol string) (*TradesResponse, error)
+GetTrades(symbol string, params *StockTradesParams) (string, error)
 
 // Volume by price
-GetVolumes(symbol string) (*VolumesResponse, error)
+GetVolumes(symbol string, params *OddLotParams) (string, error)
+```
+
+#### Stock Snapshot Methods
+
+```go
+// direction and change are required positional parameters
+GetMovers(market string, direction string, change string, params *MoversParams) (string, error)
 ```
 
 #### FutOpt Intraday Methods
 
 ```go
 // Real-time quote
-GetQuote(symbol string) (*Quote, error)
+GetQuote(symbol string, params *AfterHoursParams) (string, error)
 
 // Contract information
-GetTicker(symbol string) (*Ticker, error)
+GetTicker(symbol string, params *AfterHoursParams) (string, error)
 
 // OHLCV candles
-GetCandles(symbol string, timeframe string) (*CandlesResponse, error)
+GetCandles(symbol string, params *FutOptCandlesParams) (string, error)
 
 // Trade history
-GetTrades(symbol string) (*TradesResponse, error)
+GetTrades(symbol string, params *FutOptTradesParams) (string, error)
 
 // Volume by price
-GetVolumes(symbol string) (*VolumesResponse, error)
+GetVolumes(symbol string, params *AfterHoursParams) (string, error)
 
 // Product listing (type: "F" for futures, "O" for options)
-GetProducts(productType string) (*ProductsResponse, error)
+GetProducts(productType string, params *FutOptProductsParams) (string, error)
 ```
 
 #### Resource Management
@@ -402,9 +439,12 @@ IsConnected() bool                 // Check connection status
 IsClosed() bool                    // Check if client is closed
 
 // Subscription management
-// opts: WithAfterHours(true) for the FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
-Subscribe(channel string, symbol string, opts ...SubscribeOption) error    // Subscribe to channel
-Unsubscribe(channel string, symbol string, opts ...SubscribeOption) error  // Unsubscribe (same opts as Subscribe)
+// opts: WithAfterHours(true) for the FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock);
+// WithIntradayOddLot(true) for the Stock intraday odd-lot session (Stock endpoint only; 1005 on FutOpt)
+Subscribe(channel string, symbol string, opts ...SubscribeOption) error          // Subscribe one symbol
+SubscribeMany(channel string, symbols []string, opts ...SubscribeOption) error   // Subscribe several symbols in one frame
+Unsubscribe(channel string, symbol string, opts ...SubscribeOption) error        // Unsubscribe one symbol (same opts as Subscribe)
+UnsubscribeMany(channel string, symbols []string, opts ...SubscribeOption) error // Unsubscribe several symbols in one frame
 UnsubscribeIds(ids ...string) error                                        // Unsubscribe by server ids (none: 1005)
 GetSubscriptions() []Subscription                    // List active subscriptions
 
@@ -554,7 +594,7 @@ if err != nil {
 }
 defer client.Destroy()
 
-quote, err := client.Stock().Intraday().GetQuote("2330")
+quote, err := client.Stock().Intraday().GetQuote("2330", nil)
 if err != nil {
     if info, ok := mkt.ErrorInfoOf(err); ok {
         log.Printf("Error [%d] %v: %s", info.Code, info.SourceKind, info.Message)
@@ -631,19 +671,19 @@ func main() {
 
     // Stock data
     fmt.Println("=== Stock Market Data ===")
-    quote, err := client.Stock().Intraday().GetQuote("2330")
+    quote, err := client.Stock().Intraday().GetQuote("2330", nil)
     if err != nil {
         log.Fatalf("Failed to get quote: %v", err)
     }
     fmt.Printf("TSMC Quote: %s\n", quote)  // raw JSON
 
-    ticker, err := client.Stock().Intraday().GetTicker("2330")
+    ticker, err := client.Stock().Intraday().GetTicker("2330", nil)
     if err != nil {
         log.Fatalf("Failed to get ticker: %v", err)
     }
     fmt.Printf("Ticker: %s\n", ticker)  // raw JSON
 
-    candles, err := client.Stock().Intraday().GetCandles("2330", "5")
+    candles, err := client.Stock().Intraday().GetCandles("2330", &mkt.StockCandlesParams{Timeframe: mkt.String("5")})
     if err != nil {
         log.Fatalf("Failed to get candles: %v", err)
     }
@@ -655,7 +695,7 @@ func main() {
 
     // FutOpt data
     fmt.Println("\n=== FutOpt Market Data ===")
-    products, err := client.FutOpt().Intraday().GetProducts("F")
+    products, err := client.Futopt().Intraday().GetProducts("F", nil)
     if err != nil {
         log.Fatalf("Failed to get products: %v", err)
     }

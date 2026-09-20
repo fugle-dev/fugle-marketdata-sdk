@@ -237,9 +237,9 @@ public class PassthroughTests
         var results = new[]
         {
             ownership.GetEtfHoldings("0050"),
-            ownership.GetInstitutionalTrades("2330", "2026-09-01", "2026-09-16", "desc"),
+            ownership.GetInstitutionalTrades("2330", new uniffi.marketdata_uniffi.OwnershipParams(from: "2026-09-01", to: "2026-09-16", sort: "desc")),
             ownership.GetDirectorHoldings("2330"),
-            ownership.GetTdccDistribution("2330", sort: "asc"),
+            ownership.GetTdccDistribution("2330", new uniffi.marketdata_uniffi.OwnershipParams(sort: "asc")),
         };
 
         var want = Canonical(JsonDocument.Parse(body).RootElement);

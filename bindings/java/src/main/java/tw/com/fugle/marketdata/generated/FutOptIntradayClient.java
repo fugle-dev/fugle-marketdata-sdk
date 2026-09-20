@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 import com.sun.jna.Pointer;
 import java.util.concurrent.CompletableFuture;
 /**
- * FutOpt intraday endpoints with typed model returns
+ * FutOpt intraday endpoints
  */
 public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClientInterface {
   protected Pointer pointer;
@@ -111,7 +111,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * Get candlestick data for a contract (sync/blocking)
      */
     @Override
-    public String candlesSync(String symbol, String timeframe) throws MarketDataException {
+    public String candlesSync(String symbol, FutOptCandlesParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -120,7 +120,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_candles_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterString.INSTANCE.lower(timeframe), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptCandlesParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -148,12 +148,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<String> getCandles(String symbol, String timeframe){
+    public CompletableFuture<String> getCandles(String symbol, FutOptCandlesParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_candles(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterString.INSTANCE.lower(timeframe)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptCandlesParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -174,12 +174,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<String> getProducts(String typ){
+    public CompletableFuture<String> getProducts(String typ, FutOptProductsParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_products(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(typ)
+                FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalTypeFutOptProductsParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -195,17 +195,15 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
   
     /**
      * Get quote for a futures/options contract (async)
-     *
-     * after_hours: true for after-hours session
      */
     @Override
     
-    public CompletableFuture<String> getQuote(String symbol, Boolean afterHours){
+    public CompletableFuture<String> getQuote(String symbol, AfterHoursParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_quote(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterBoolean.INSTANCE.lower(afterHours)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeAfterHoursParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -224,12 +222,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<String> getTicker(String symbol, Boolean afterHours){
+    public CompletableFuture<String> getTicker(String symbol, AfterHoursParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_ticker(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterBoolean.INSTANCE.lower(afterHours)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeAfterHoursParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -250,12 +248,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<String> getTickers(String typ, Boolean isSpread){
+    public CompletableFuture<String> getTickers(String typ, FutOptTickersParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_tickers(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalBoolean.INSTANCE.lower(isSpread)
+                FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalTypeFutOptTickersParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -274,12 +272,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<String> getTrades(String symbol){
+    public CompletableFuture<String> getTrades(String symbol, FutOptTradesParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_trades(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptTradesParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -298,12 +296,12 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      */
     @Override
     
-    public CompletableFuture<String> getVolumes(String symbol){
+    public CompletableFuture<String> getVolumes(String symbol, AfterHoursParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_get_volumes(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeAfterHoursParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -319,9 +317,11 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
   
     /**
      * Get available products list (sync/blocking)
+     *
+     * typ: "F" for futures, "O" for options
      */
     @Override
-    public String productsSync(String typ) throws MarketDataException {
+    public String productsSync(String typ, FutOptProductsParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -330,7 +330,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_products_sync(
-            it, FfiConverterString.INSTANCE.lower(typ), _status);
+            it, FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalTypeFutOptProductsParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -357,7 +357,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * Get quote for a futures/options contract (sync/blocking)
      */
     @Override
-    public String quoteSync(String symbol, Boolean afterHours) throws MarketDataException {
+    public String quoteSync(String symbol, AfterHoursParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -366,7 +366,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_quote_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterBoolean.INSTANCE.lower(afterHours), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeAfterHoursParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -393,7 +393,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * Get ticker info for a contract (sync/blocking)
      */
     @Override
-    public String tickerSync(String symbol, Boolean afterHours) throws MarketDataException {
+    public String tickerSync(String symbol, AfterHoursParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -402,7 +402,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_ticker_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterBoolean.INSTANCE.lower(afterHours), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeAfterHoursParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -431,7 +431,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * typ: "F" for futures, "O" for options
      */
     @Override
-    public String tickersSync(String typ, Boolean isSpread) throws MarketDataException {
+    public String tickersSync(String typ, FutOptTickersParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -440,7 +440,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_tickers_sync(
-            it, FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalBoolean.INSTANCE.lower(isSpread), _status);
+            it, FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalTypeFutOptTickersParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -467,7 +467,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * Get trade history for a contract (sync/blocking)
      */
     @Override
-    public String tradesSync(String symbol) throws MarketDataException {
+    public String tradesSync(String symbol, FutOptTradesParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -476,7 +476,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_trades_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptTradesParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -503,7 +503,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
      * Get volume breakdown by price for a contract (sync/blocking)
      */
     @Override
-    public String volumesSync(String symbol) throws MarketDataException {
+    public String volumesSync(String symbol, AfterHoursParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -512,7 +512,7 @@ public class FutOptIntradayClient implements AutoCloseable, FutOptIntradayClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futoptintradayclient_volumes_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeAfterHoursParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {

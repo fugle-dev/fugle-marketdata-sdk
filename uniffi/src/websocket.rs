@@ -735,33 +735,39 @@ impl WebSocketClient {
         self.connect_impl().await
     }
 
-    /// Subscribe to a channel for a symbol.
+    /// Subscribe to a channel for one or more symbols.
     ///
-    /// After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
-    /// other than null is 1005 `INVALID_PARAMETER`.
-    #[uniffi::method(default(after_hours = None))]
+    /// One symbol is sent as `symbol`, several as `symbols` in one frame;
+    /// each symbol is its own subscription afterwards. An empty list is
+    /// 1005 `INVALID_PARAMETER`.
+    ///
+    /// `opts` selects the session: `intraday_odd_lot` is Stock only and
+    /// `after_hours` is FutOpt only; setting either on the other endpoint,
+    /// to any value, is 1005 `INVALID_PARAMETER`.
+    #[uniffi::method(default(opts = None))]
     pub async fn subscribe(
         &self,
         channel: String,
-        symbol: String,
-        after_hours: Option<bool>,
+        symbols: Vec<String>,
+        opts: Option<SubscribeOptions>,
     ) -> Result<(), MarketDataError> {
-        let sub = self.subscription(&channel, &symbol, after_hours)?;
+        let sub = self.subscription(&channel, symbols, opts)?;
         self.subscribe_impl(sub).await
     }
 
-    /// Unsubscribe from a channel for a symbol.
+    /// Unsubscribe from a channel for one or more symbols.
     ///
-    /// Pass the same after-hours value as the `subscribe` call: an after-hours
-    /// subscription is a separate subscription from the regular one.
-    #[uniffi::method(default(after_hours = None))]
+    /// Pass the same options as the `subscribe` call: an odd-lot or
+    /// after-hours subscription is a separate subscription from the regular
+    /// one.
+    #[uniffi::method(default(opts = None))]
     pub async fn unsubscribe(
         &self,
         channel: String,
-        symbol: String,
-        after_hours: Option<bool>,
+        symbols: Vec<String>,
+        opts: Option<SubscribeOptions>,
     ) -> Result<(), MarketDataError> {
-        let sub = self.subscription(&channel, &symbol, after_hours)?;
+        let sub = self.subscription(&channel, symbols, opts)?;
         self.unsubscribe_impl(sub).await
     }
 
@@ -972,34 +978,54 @@ impl WebSocketClient {
     }
 
     /// The subscription for this client's endpoint: FutOpt channels and
-    /// `after_hours` on FutOpt, stock channels on Stock.
+    /// `after_hours` on FutOpt, stock channels and `intraday_odd_lot` on
+    /// Stock.
     ///
-    /// Callers build it before checking the connection, so an unknown channel,
-    /// or `after_hours` on the Stock endpoint, is 1005 `INVALID_PARAMETER`
-    /// whether or not the client is connected.
+    /// Callers build it before checking the connection, so an unknown
+    /// channel, an empty symbol list, or the other endpoint's session option
+    /// is 1005 `INVALID_PARAMETER` whether or not the client is connected.
+    /// The checks run in that order.
+    ///
+    /// Core normalises the symbols: a one-element list is sent as `symbol`,
+    /// as before, and a longer one as `symbols` in a single frame.
     fn subscription(
         &self,
         channel: &str,
-        symbol: &str,
-        after_hours: Option<bool>,
+        symbols: Vec<String>,
+        opts: Option<SubscribeOptions>,
     ) -> Result<Subscription, MarketDataError> {
+        let opts = opts.unwrap_or_default();
+        let invalid = |name: &str, reason: &str| {
+            Err(marketdata_core::MarketDataError::InvalidParameter {
+                name: name.to_string(),
+                reason: reason.to_string(),
+            }
+            .into())
+        };
         match self.endpoint {
             WebSocketEndpoint::Stock => {
                 // The channel first, as on the FutOpt endpoint.
-                let channel = channel.parse()?;
-                if after_hours.is_some() {
-                    return Err(marketdata_core::MarketDataError::InvalidParameter {
-                        name: "afterHours".to_string(),
-                        reason: "only supported on the FutOpt endpoint".to_string(),
-                    }
-                    .into());
+                let channel: marketdata_core::Channel = channel.parse()?;
+                let symbols = non_empty_symbols(symbols)?;
+                if opts.after_hours.is_some() {
+                    return invalid("afterHours", "only supported on the FutOpt endpoint");
                 }
-                Ok(Subscription::Stock(marketdata_core::StockSubscription::new(channel, symbol)))
+                Ok(Subscription::Stock(
+                    marketdata_core::StockSubscription::new(channel, symbols)
+                        .with_odd_lot(opts.intraday_odd_lot.unwrap_or(false)),
+                ))
             }
-            WebSocketEndpoint::FutOpt => Ok(Subscription::FutOpt(
-                marketdata_core::FutOptSubscription::new(channel.parse()?, symbol)
-                    .with_after_hours(after_hours.unwrap_or(false)),
-            )),
+            WebSocketEndpoint::FutOpt => {
+                let channel: marketdata_core::FutOptChannel = channel.parse()?;
+                let symbols = non_empty_symbols(symbols)?;
+                if opts.intraday_odd_lot.is_some() {
+                    return invalid("intradayOddLot", "only supported on the Stock endpoint");
+                }
+                Ok(Subscription::FutOpt(
+                    marketdata_core::FutOptSubscription::new(channel, symbols)
+                        .with_after_hours(opts.after_hours.unwrap_or(false)),
+                ))
+            }
         }
     }
 
@@ -1132,6 +1158,22 @@ impl WebSocketClient {
     }
 }
 
+/// Session options for `subscribe` / `unsubscribe` (#202).
+///
+/// Unset is the regular session, so an omitted or default record subscribes
+/// as before. Each option belongs to one endpoint — `intraday_odd_lot`
+/// (盤中零股) to Stock, `after_hours` (盤後) to FutOpt — and setting it on
+/// the other, to any value, is 1005 `INVALID_PARAMETER`.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct SubscribeOptions {
+    /// FutOpt only: `true` subscribes to the after-hours session.
+    #[uniffi(default = None)]
+    pub after_hours: Option<bool>,
+    /// Stock only: `true` subscribes to the intraday odd-lot session.
+    #[uniffi(default = None)]
+    pub intraday_odd_lot: Option<bool>,
+}
+
 /// A subscription built for the client's endpoint.
 enum Subscription {
     Stock(marketdata_core::StockSubscription),
@@ -1146,6 +1188,20 @@ impl Subscription {
             Subscription::FutOpt(sub) => sub.keys(),
         }
     }
+}
+
+/// `symbols` for `subscribe` / `unsubscribe`: a list with no symbol left
+/// after trimming names no subscription and is 1005 `INVALID_PARAMETER`,
+/// checked before the connection. Core trims and de-duplicates the rest.
+fn non_empty_symbols(symbols: Vec<String>) -> Result<Vec<String>, MarketDataError> {
+    if symbols.iter().all(|s| s.trim().is_empty()) {
+        return Err(marketdata_core::MarketDataError::InvalidParameter {
+            name: "symbols".to_string(),
+            reason: "at least one symbol is required".to_string(),
+        }
+        .into());
+    }
+    Ok(symbols)
 }
 
 /// `ids` for `unsubscribe_ids`: an empty list names no subscription and is
@@ -1185,10 +1241,18 @@ impl WebSocketClient {
         result
     }
 
-    /// Subscribe to a channel for a symbol (blocking).
-    pub fn subscribe_sync(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
+    /// Subscribe to a channel for one or more symbols (blocking).
+    ///
+    /// Same arguments and checks as `subscribe`.
+    #[uniffi::method(default(opts = None))]
+    pub fn subscribe_sync(
+        &self,
+        channel: String,
+        symbols: Vec<String>,
+        opts: Option<SubscribeOptions>,
+    ) -> Result<(), MarketDataError> {
         // Before the runtime check, as in `subscribe`.
-        let sub = self.subscription(&channel, &symbol, None)?;
+        let sub = self.subscription(&channel, symbols, opts)?;
         let guard = self.sync_runtime.lock().unwrap();
         if let Some(ref rt) = *guard {
             rt.block_on(self.subscribe_impl(sub))
@@ -1197,9 +1261,17 @@ impl WebSocketClient {
         }
     }
 
-    /// Unsubscribe from a channel for a symbol (blocking).
-    pub fn unsubscribe_sync(&self, channel: String, symbol: String) -> Result<(), MarketDataError> {
-        let sub = self.subscription(&channel, &symbol, None)?;
+    /// Unsubscribe from a channel for one or more symbols (blocking).
+    ///
+    /// Same arguments and checks as `unsubscribe`.
+    #[uniffi::method(default(opts = None))]
+    pub fn unsubscribe_sync(
+        &self,
+        channel: String,
+        symbols: Vec<String>,
+        opts: Option<SubscribeOptions>,
+    ) -> Result<(), MarketDataError> {
+        let sub = self.subscription(&channel, symbols, opts)?;
         let guard = self.sync_runtime.lock().unwrap();
         if let Some(ref rt) = *guard {
             rt.block_on(self.unsubscribe_impl(sub))
@@ -3135,12 +3207,38 @@ mod tests {
     const STOCK_AFTER_HOURS: &str =
         "Invalid parameter 'afterHours': only supported on the FutOpt endpoint";
 
+    #[cfg(not(feature = "cpp"))]
+    const FUTOPT_ODD_LOT: &str =
+        "Invalid parameter 'intradayOddLot': only supported on the Stock endpoint";
+
+    const EMPTY_SYMBOLS: &str = "Invalid parameter 'symbols': at least one symbol is required";
+
     fn futopt_client() -> Arc<WebSocketClient> {
         WebSocketClient::new_with_endpoint(
             "test-key".to_string(),
             Arc::new(TestListener::new()),
             WebSocketEndpoint::FutOpt,
         )
+    }
+
+    fn syms(symbols: &[&str]) -> Vec<String> {
+        symbols.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn after_hours(value: bool) -> Option<SubscribeOptions> {
+        Some(SubscribeOptions { after_hours: Some(value), intraday_odd_lot: None })
+    }
+
+    fn odd_lot(value: bool) -> Option<SubscribeOptions> {
+        Some(SubscribeOptions { after_hours: None, intraday_odd_lot: Some(value) })
+    }
+
+    /// The subscribe frame's `data` and the local keys `subscription()` builds.
+    fn frame_and_keys(sub: Subscription) -> (serde_json::Value, Vec<String>) {
+        match sub {
+            Subscription::Stock(sub) => (sub.to_subscribe_data(), sub.keys()),
+            Subscription::FutOpt(sub) => (sub.to_subscribe_data(), sub.keys()),
+        }
     }
 
     #[cfg(not(feature = "cpp"))]
@@ -3155,13 +3253,13 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn subscribe_rejects_unknown_channel_before_connecting() {
         let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
-        assert_unknown_channel(client.subscribe("trade".into(), "2330".into(), None).await);
-        assert_unknown_channel(client.unsubscribe("trade".into(), "2330".into(), None).await);
-        // The channel is checked before after-hours.
-        assert_unknown_channel(client.subscribe("trade".into(), "2330".into(), Some(true)).await);
+        assert_unknown_channel(client.subscribe("trade".into(), syms(&["2330"]), None).await);
+        assert_unknown_channel(client.unsubscribe("trade".into(), syms(&["2330"]), None).await);
+        // The channel is checked before the symbols and the options.
+        assert_unknown_channel(client.subscribe("trade".into(), Vec::new(), after_hours(true)).await);
         // A known name, in any case, gets past the check to "not connected".
-        assert_not_connected(client.subscribe("Trades".into(), "2330".into(), None).await);
-        assert_not_connected(client.unsubscribe("Trades".into(), "2330".into(), None).await);
+        assert_not_connected(client.subscribe("Trades".into(), syms(&["2330"]), None).await);
+        assert_not_connected(client.unsubscribe("Trades".into(), syms(&["2330"]), None).await);
     }
 
     #[cfg(not(feature = "cpp"))]
@@ -3169,31 +3267,124 @@ mod tests {
     async fn futopt_endpoint_parses_futopt_channels_before_connecting() {
         let client = futopt_client();
         assert_invalid_parameter(
-            client.subscribe("indices".into(), "TXFE6".into(), None).await,
+            client.subscribe("indices".into(), syms(&["TXFE6"]), None).await,
             FUTOPT_INDICES,
         );
         assert_invalid_parameter(
-            client.unsubscribe("indices".into(), "TXFE6".into(), Some(true)).await,
+            client.unsubscribe("indices".into(), syms(&["TXFE6"]), after_hours(true)).await,
             FUTOPT_INDICES,
         );
-        assert_not_connected(client.subscribe("Books".into(), "TXFE6".into(), Some(true)).await);
-        assert_not_connected(client.unsubscribe("books".into(), "TXFE6".into(), None).await);
+        assert_not_connected(client.subscribe("Books".into(), syms(&["TXFE6"]), after_hours(true)).await);
+        assert_not_connected(client.unsubscribe("books".into(), syms(&["TXFE6"]), None).await);
     }
 
     #[cfg(not(feature = "cpp"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn stock_endpoint_rejects_after_hours_before_connecting() {
         let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
-        for after_hours in [true, false] {
+        for value in [true, false] {
             assert_invalid_parameter(
-                client.subscribe("trades".into(), "2330".into(), Some(after_hours)).await,
+                client.subscribe("trades".into(), syms(&["2330"]), after_hours(value)).await,
                 STOCK_AFTER_HOURS,
             );
             assert_invalid_parameter(
-                client.unsubscribe("trades".into(), "2330".into(), Some(after_hours)).await,
+                client.unsubscribe("trades".into(), syms(&["2330"]), after_hours(value)).await,
                 STOCK_AFTER_HOURS,
             );
         }
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn futopt_endpoint_rejects_intraday_odd_lot_before_connecting() {
+        let client = futopt_client();
+        for value in [true, false] {
+            assert_invalid_parameter(
+                client.subscribe("trades".into(), syms(&["TXFE6"]), odd_lot(value)).await,
+                FUTOPT_ODD_LOT,
+            );
+            assert_invalid_parameter(
+                client.unsubscribe("trades".into(), syms(&["TXFE6"]), odd_lot(value)).await,
+                FUTOPT_ODD_LOT,
+            );
+        }
+    }
+
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn subscribe_rejects_empty_symbols_before_connecting() {
+        for client in [
+            WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new())),
+            futopt_client(),
+        ] {
+            for symbols in [Vec::new(), syms(&[""]), syms(&["  ", "\t"])] {
+                assert_invalid_parameter(
+                    client.subscribe("trades".into(), symbols.clone(), None).await,
+                    EMPTY_SYMBOLS,
+                );
+                assert_invalid_parameter(
+                    client.unsubscribe("trades".into(), symbols, None).await,
+                    EMPTY_SYMBOLS,
+                );
+            }
+        }
+        // The symbols are checked before the endpoint's session option.
+        let stock = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        assert_invalid_parameter(
+            stock.subscribe("trades".into(), Vec::new(), after_hours(true)).await,
+            EMPTY_SYMBOLS,
+        );
+        assert_invalid_parameter(
+            futopt_client().subscribe("trades".into(), Vec::new(), odd_lot(true)).await,
+            EMPTY_SYMBOLS,
+        );
+    }
+
+    /// One symbol is sent as `symbol`, as the single-symbol API did; several
+    /// as `symbols` in one frame. The options add the session field and the
+    /// key suffix.
+    #[test]
+    fn subscription_frames_and_keys() {
+        let stock = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
+        let (frame, keys) = frame_and_keys(stock.subscription("trades", syms(&["2330"]), None).unwrap());
+        assert_eq!(frame, serde_json::json!({ "channel": "trades", "symbol": "2330" }));
+        assert_eq!(keys, ["trades:2330"]);
+
+        let (frame, keys) =
+            frame_and_keys(stock.subscription("trades", syms(&["2330", "2317"]), None).unwrap());
+        assert_eq!(frame, serde_json::json!({ "channel": "trades", "symbols": ["2330", "2317"] }));
+        assert_eq!(keys, ["trades:2330", "trades:2317"]);
+
+        let (frame, keys) =
+            frame_and_keys(stock.subscription("trades", syms(&["2330"]), odd_lot(true)).unwrap());
+        assert_eq!(
+            frame,
+            serde_json::json!({ "channel": "trades", "symbol": "2330", "intradayOddLot": true })
+        );
+        assert_eq!(keys, ["trades:2330:oddlot"]);
+
+        // `false` is the regular session, as is a default record.
+        let (frame, _) = frame_and_keys(stock.subscription("trades", syms(&["2330"]), odd_lot(false)).unwrap());
+        assert_eq!(frame, serde_json::json!({ "channel": "trades", "symbol": "2330" }));
+        let (frame, _) = frame_and_keys(
+            stock.subscription("trades", syms(&["2330"]), Some(SubscribeOptions::default())).unwrap(),
+        );
+        assert_eq!(frame, serde_json::json!({ "channel": "trades", "symbol": "2330" }));
+
+        // Core normalises: trimmed, de-duplicated, one left is `symbol`.
+        let (frame, _) =
+            frame_and_keys(stock.subscription("books", syms(&[" 2330 ", "2330", ""]), None).unwrap());
+        assert_eq!(frame, serde_json::json!({ "channel": "books", "symbol": "2330" }));
+
+        let futopt = futopt_client();
+        let (frame, keys) = frame_and_keys(
+            futopt.subscription("books", syms(&["TXFE6", "MXFE6"]), after_hours(true)).unwrap(),
+        );
+        assert_eq!(
+            frame,
+            serde_json::json!({ "channel": "books", "symbols": ["TXFE6", "MXFE6"], "afterHours": true })
+        );
+        assert_eq!(keys, ["books:TXFE6:afterhours", "books:MXFE6:afterhours"]);
     }
 
     #[cfg(not(feature = "cpp"))]
@@ -3209,17 +3400,47 @@ mod tests {
         client.connect_impl().await.expect("connect");
         let core = client.client().expect("connected");
 
-        client.subscribe("books".into(), "TXFE6".into(), Some(true)).await.expect("subscribe");
-        client.subscribe("books".into(), "TXFE6".into(), None).await.expect("subscribe");
+        client.subscribe("books".into(), syms(&["TXFE6"]), after_hours(true)).await.expect("subscribe");
+        client.subscribe("books".into(), syms(&["TXFE6"]), None).await.expect("subscribe");
         let mut keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
         keys.sort();
         assert_eq!(keys, ["books:TXFE6", "books:TXFE6:afterhours"]);
 
-        client.unsubscribe("books".into(), "TXFE6".into(), Some(true)).await.expect("unsubscribe");
+        client.unsubscribe("books".into(), syms(&["TXFE6"]), after_hours(true)).await.expect("unsubscribe");
         let keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
         assert_eq!(keys, ["books:TXFE6"]);
 
-        client.unsubscribe("Books".into(), "TXFE6".into(), None).await.expect("unsubscribe");
+        client.unsubscribe("Books".into(), syms(&["TXFE6"]), None).await.expect("unsubscribe");
+        assert_eq!(core.subscription_count(), 0);
+        client.disconnect_impl().await;
+    }
+
+    /// A batch is one frame and N subscriptions; `unsubscribe` with the same
+    /// list removes them all, and odd-lot is a separate subscription.
+    #[cfg(not(feature = "cpp"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stock_batch_and_odd_lot_subscriptions_are_tracked_per_symbol() {
+        let server = MockWsServer::start().await;
+        let client = mock_client_for(
+            &server,
+            Arc::new(TestListener::new()),
+            WebSocketEndpoint::Stock,
+            None,
+        );
+        client.connect_impl().await.expect("connect");
+        let core = client.client().expect("connected");
+
+        client.subscribe("trades".into(), syms(&["2330", "2317"]), None).await.expect("subscribe");
+        client.subscribe("trades".into(), syms(&["2330"]), odd_lot(true)).await.expect("subscribe");
+        let mut keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
+        keys.sort();
+        assert_eq!(keys, ["trades:2317", "trades:2330", "trades:2330:oddlot"]);
+
+        client.unsubscribe("trades".into(), syms(&["2330", "2317"]), None).await.expect("unsubscribe");
+        let keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
+        assert_eq!(keys, ["trades:2330:oddlot"]);
+
+        client.unsubscribe("trades".into(), syms(&["2330"]), odd_lot(true)).await.expect("unsubscribe");
         assert_eq!(core.subscription_count(), 0);
         client.disconnect_impl().await;
     }
@@ -3250,8 +3471,8 @@ mod tests {
         client.connect_impl().await.expect("connect");
         let core = client.client().expect("connected");
 
-        client.subscribe("trades".into(), "2330".into(), None).await.expect("subscribe");
-        client.subscribe("books".into(), "2330".into(), None).await.expect("subscribe");
+        client.subscribe("trades".into(), syms(&["2330"]), None).await.expect("subscribe");
+        client.subscribe("books".into(), syms(&["2330"]), None).await.expect("subscribe");
         client.unsubscribe_ids(vec!["trades:2330".into()]).await.expect("unsubscribe");
         let keys: Vec<_> = core.subscriptions().iter().map(|sub| sub.key()).collect();
         assert_eq!(keys, ["books:2330"]);
@@ -3269,15 +3490,24 @@ mod tests {
     #[test]
     fn subscribe_sync_rejects_unknown_channel_before_connecting() {
         let client = WebSocketClient::new("test-key".to_string(), Arc::new(TestListener::new()));
-        assert_unknown_channel(client.subscribe_sync("trade".into(), "2330".into()));
-        assert_unknown_channel(client.unsubscribe_sync("trade".into(), "2330".into()));
+        assert_unknown_channel(client.subscribe_sync("trade".into(), syms(&["2330"]), None));
+        assert_unknown_channel(client.unsubscribe_sync("trade".into(), syms(&["2330"]), None));
+        assert_invalid_parameter(client.subscribe_sync("trades".into(), Vec::new(), None), EMPTY_SYMBOLS);
+        assert_invalid_parameter(
+            client.subscribe_sync("trades".into(), syms(&["2330"]), after_hours(true)),
+            "Invalid parameter 'afterHours': only supported on the FutOpt endpoint",
+        );
     }
 
     #[cfg(feature = "cpp")]
     #[test]
     fn sync_futopt_endpoint_parses_futopt_channels() {
         let client = futopt_client();
-        assert_invalid_parameter(client.subscribe_sync("indices".into(), "TXFE6".into()), FUTOPT_INDICES);
-        assert_invalid_parameter(client.unsubscribe_sync("indices".into(), "TXFE6".into()), FUTOPT_INDICES);
+        assert_invalid_parameter(client.subscribe_sync("indices".into(), syms(&["TXFE6"]), None), FUTOPT_INDICES);
+        assert_invalid_parameter(client.unsubscribe_sync("indices".into(), syms(&["TXFE6"]), None), FUTOPT_INDICES);
+        assert_invalid_parameter(
+            client.subscribe_sync("trades".into(), syms(&["TXFE6"]), odd_lot(true)),
+            "Invalid parameter 'intradayOddLot': only supported on the Stock endpoint",
+        );
     }
 }
