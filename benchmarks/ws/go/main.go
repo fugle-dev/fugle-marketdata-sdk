@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"syscall"
 	"time"
 
 	mkt "github.com/fugle-dev/fugle-marketdata-go"
@@ -40,7 +41,10 @@ func main() {
 
 	var startMem runtime.MemStats
 	runtime.ReadMemStats(&startMem)
-	startCPU := time.Now()
+	// Process-wide CPU (all threads, including the Rust runtime's), so the
+	// column is comparable with the other clients (#215).
+	var startRu syscall.Rusage
+	syscall.Getrusage(syscall.RUSAGE_SELF, &startRu)
 
 	// Create raw WebSocket client (bypass channel wrapper for max perf)
 	listener := &benchListener{
@@ -128,7 +132,10 @@ func main() {
 	if t0Set {
 		elapsed = time.Now().UnixMilli() - t0
 	}
-	cpuUser := time.Since(startCPU).Seconds() * 1000 // approximate user CPU
+	var endRu syscall.Rusage
+	syscall.Getrusage(syscall.RUSAGE_SELF, &endRu)
+	cpuUser := timevalMs(endRu.Utime) - timevalMs(startRu.Utime)
+	cpuSystem := timevalMs(endRu.Stime) - timevalMs(startRu.Stime)
 
 	var endMem runtime.MemStats
 	runtime.ReadMemStats(&endMem)
@@ -184,7 +191,7 @@ func main() {
 		"latency_max_ms":      nil,
 		"mem_rss_delta_mb":    math.Round(memDelta*10) / 10,
 		"cpu_user_ms":         math.Round(cpuUser*10) / 10,
-		"cpu_system_ms":       0.0,
+		"cpu_system_ms":       math.Round(cpuSystem*10) / 10,
 		"server_msgs_per_sec": ssMps,
 	}
 
@@ -218,3 +225,8 @@ func (l *benchListener) OnError(err mkt.ErrorInfo)           { l.onErr(err) }
 func (l *benchListener) OnReconnecting(attempt uint32)       {}
 func (l *benchListener) OnReconnectFailed(attempts uint32)   {}
 func (l *benchListener) OnMessagesDropped(count uint64)      {} // reported from MessagesDroppedTotal
+
+// timevalMs converts a getrusage Timeval to milliseconds.
+func timevalMs(tv syscall.Timeval) float64 {
+	return float64(tv.Sec)*1000 + float64(tv.Usec)/1000
+}

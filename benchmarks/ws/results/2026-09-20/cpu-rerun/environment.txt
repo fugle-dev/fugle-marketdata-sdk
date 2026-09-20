@@ -1,0 +1,23 @@
+date: 2026-09-20 (evening rerun, after the 10k-*/50k-* runs in the parent directory)
+commit: bc36960 (main bc36960 + the #215 bench-client changes: process-wide CPU in all six clients)
+purpose: #215 -- the Go, C++ and Java clients used to report wall clock / main-thread CPU in cpu_user_ms;
+         every client now reports process-wide CPU, so the 10K and 50K tables in REPORT.md are taken
+         from this rerun (throughput, latency and CPU from the same runs). The rate-limited runs and
+         the May-snapshot control are unchanged (rate500-* and may-snapshot-go.txt in the parent directory).
+hardware: Apple M3 Pro, 18 GB, macOS 26.5.1; load average 3.4-3.6 (idle desktop) for the whole rerun
+node: v24.19.0
+python: Python 3.12.2
+rust: rustc 1.95.0 (59807616e 2026-04-14)
+dotnet: 9.0.101 (binding built with -p:TargetFrameworks=net8.0)
+go: go version go1.23.4 darwin/arm64
+java: openjdk version "21.0.11" (Homebrew)
+old JS SDK: @fugle/marketdata@1.6.0
+old Python SDK: fugle-marketdata==2.7.0rc1
+new SDK: built from this worktree (cargo build -p marketdata-uniffi --release; js npm run build; py maturin develop --release)
+command (cwd = repo root): node benchmarks/ws/ws-bench-run.js <10000|50000> 0 1000 3 --lang <js|py|cs|go|java|cpp>
+null client: 10k-null.jsonl / 50k-null.jsonl (node benchmarks/ws/js/bench-null.js against the mock server, 3 runs)
+env: BENCH_PY_NEW=$PWD/py/.venv/bin/python3 BENCH_PY_OLD=$PWD/benchmarks/ws/py/.venv-old/bin/python3 BENCH_DOTNET_ARGS=-p:TargetFrameworks=net8.0
+cpu_user_ms: JS process.cpuUsage().user; Python getrusage(RUSAGE_SELF).ru_utime; C# Process.UserProcessorTime;
+             Go syscall.Getrusage(RUSAGE_SELF).Utime; C++ getrusage(RUSAGE_SELF).ru_utime;
+             Java OperatingSystemMXBean.getProcessCpuTime() (user + system; the JDK has no process-level user-only figure)
+cpu_system_ms: the matching system figure (Java: 0 in these files; the committed client emits null, since its user figure already includes system)

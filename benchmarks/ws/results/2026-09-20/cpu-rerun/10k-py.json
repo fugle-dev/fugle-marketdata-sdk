@@ -1,0 +1,115 @@
+{
+  "config": {
+    "count": 10000,
+    "rate": 0,
+    "warmup": 1000,
+    "runs": 3,
+    "lang": "py"
+  },
+  "timestamp": "2026-09-20T10:17:01.213Z",
+  "results": {
+    "Python-old": [
+      {
+        "sdk": "old-py-2.7.0rc1",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "elapsed_ms": 389,
+        "msgs_per_sec": 25706,
+        "latency_p50_ms": 190,
+        "latency_p99_ms": 372,
+        "latency_min_ms": 13,
+        "latency_max_ms": 375,
+        "mem_rss_delta_kb": 606208,
+        "cpu_user_ms": 727.6,
+        "cpu_system_ms": 33.2,
+        "server_msgs_per_sec": 285714
+      },
+      {
+        "sdk": "old-py-2.7.0rc1",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "elapsed_ms": 387,
+        "msgs_per_sec": 25839,
+        "latency_p50_ms": 188,
+        "latency_p99_ms": 367,
+        "latency_min_ms": 12,
+        "latency_max_ms": 371,
+        "mem_rss_delta_kb": 573440,
+        "cpu_user_ms": 819.4,
+        "cpu_system_ms": 33,
+        "server_msgs_per_sec": 277778
+      },
+      {
+        "sdk": "old-py-2.7.0rc1",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "elapsed_ms": 380,
+        "msgs_per_sec": 26315,
+        "latency_p50_ms": 184,
+        "latency_p99_ms": 362,
+        "latency_min_ms": 12,
+        "latency_max_ms": 365,
+        "mem_rss_delta_kb": 557056,
+        "cpu_user_ms": 736.4,
+        "cpu_system_ms": 33.2,
+        "server_msgs_per_sec": 294118
+      }
+    ],
+    "Python-new": [
+      {
+        "sdk": "rust-core-py",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "elapsed_ms": 60,
+        "msgs_per_sec": 166666,
+        "latency_p50_ms": 2,
+        "latency_p99_ms": 8,
+        "latency_min_ms": 0,
+        "latency_max_ms": 9,
+        "mem_rss_delta_kb": 13434880,
+        "cpu_user_ms": 132.2,
+        "cpu_system_ms": 53.2,
+        "server_msgs_per_sec": 163934,
+        "dropped": 0
+      },
+      {
+        "sdk": "rust-core-py",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "elapsed_ms": 60,
+        "msgs_per_sec": 166666,
+        "latency_p50_ms": 4,
+        "latency_p99_ms": 10,
+        "latency_min_ms": 1,
+        "latency_max_ms": 10,
+        "mem_rss_delta_kb": 14254080,
+        "cpu_user_ms": 135.3,
+        "cpu_system_ms": 53.1,
+        "server_msgs_per_sec": 163934,
+        "dropped": 0
+      },
+      {
+        "sdk": "rust-core-py",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "elapsed_ms": 59,
+        "msgs_per_sec": 169491,
+        "latency_p50_ms": 3,
+        "latency_p99_ms": 9,
+        "latency_min_ms": 0,
+        "latency_max_ms": 9,
+        "mem_rss_delta_kb": 13762560,
+        "cpu_user_ms": 135.6,
+        "cpu_system_ms": 51.5,
+        "server_msgs_per_sec": 169492,
+        "dropped": 0
+      }
+    ]
+  }
+}

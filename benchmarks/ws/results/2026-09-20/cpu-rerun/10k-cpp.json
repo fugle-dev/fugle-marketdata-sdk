@@ -1,0 +1,65 @@
+{
+  "config": {
+    "count": 10000,
+    "rate": 0,
+    "warmup": 1000,
+    "runs": 3,
+    "lang": "cpp"
+  },
+  "timestamp": "2026-09-20T10:17:26.710Z",
+  "results": {
+    "C++-new": [
+      {
+        "sdk": "rust-core-cpp",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 58,
+        "msgs_per_sec": 172413,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 2,
+        "latency_min_ms": 0,
+        "latency_max_ms": 2,
+        "mem_rss_delta_mb": 0,
+        "cpu_user_ms": 123.7,
+        "cpu_system_ms": 42.5,
+        "server_msgs_per_sec": 156250
+      },
+      {
+        "sdk": "rust-core-cpp",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 58,
+        "msgs_per_sec": 172413,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 2,
+        "latency_min_ms": 0,
+        "latency_max_ms": 2,
+        "mem_rss_delta_mb": 0,
+        "cpu_user_ms": 123.8,
+        "cpu_system_ms": 43.8,
+        "server_msgs_per_sec": 153846
+      },
+      {
+        "sdk": "rust-core-cpp",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 59,
+        "msgs_per_sec": 169491,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 0,
+        "cpu_user_ms": 124.9,
+        "cpu_system_ms": 42.9,
+        "server_msgs_per_sec": 158730
+      }
+    ]
+  }
+}

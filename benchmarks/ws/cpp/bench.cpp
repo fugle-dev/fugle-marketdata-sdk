@@ -17,6 +17,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <sys/resource.h>
 #include <thread>
 #include <vector>
 
@@ -52,6 +53,18 @@ static std::string flag(int argc, char **argv, const std::string &name, const st
     for (int i = 1; i < argc - 1; i++)
         if (std::string(argv[i]) == "--" + name) return argv[i + 1];
     return fallback;
+}
+
+// Process-wide CPU (all threads, including the Rust runtime's) in ms, so the
+// column is comparable with the other clients (#215).
+static double timeval_ms(const timeval &tv) {
+    return static_cast<double>(tv.tv_sec) * 1000.0 + static_cast<double>(tv.tv_usec) / 1000.0;
+}
+
+static rusage process_rusage() {
+    rusage ru{};
+    getrusage(RUSAGE_SELF, &ru);
+    return ru;
 }
 
 static long now_ms() {
@@ -117,7 +130,7 @@ int main(int argc, char **argv) {
     auto url = flag(argc, argv, "url", "ws://localhost:8765");
     auto timeout = std::stoi(flag(argc, argv, "timeout", "60000"));
 
-    long start_time = now_ms();
+    rusage start_ru = process_rusage();
 
     auto listener = std::make_shared<BenchListener>();
     auto client = WebSocketClient::new_with_url(
@@ -142,7 +155,9 @@ int main(int argc, char **argv) {
     uint64_t dropped = client->messages_dropped_total();
     long elapsed = g_t0_set.load() ? now_ms() - g_t0.load() : 0;
     int count = g_received.load();
-    double cpu_ms = static_cast<double>(now_ms() - start_time);
+    rusage end_ru = process_rusage();
+    double cpu_user_ms = timeval_ms(end_ru.ru_utime) - timeval_ms(start_ru.ru_utime);
+    double cpu_system_ms = timeval_ms(end_ru.ru_stime) - timeval_ms(start_ru.ru_stime);
 
     std::sort(g_latencies.begin(), g_latencies.end());
     auto percentile = [&](int p) -> std::string {
@@ -169,8 +184,8 @@ int main(int argc, char **argv) {
         << ",\"latency_min_ms\":" << (g_latencies.empty() ? "null" : std::to_string(g_latencies.front()))
         << ",\"latency_max_ms\":" << (g_latencies.empty() ? "null" : std::to_string(g_latencies.back()))
         << ",\"mem_rss_delta_mb\":0"
-        << ",\"cpu_user_ms\":" << std::round(cpu_ms * 10) / 10
-        << ",\"cpu_system_ms\":0"
+        << ",\"cpu_user_ms\":" << std::round(cpu_user_ms * 10) / 10
+        << ",\"cpu_system_ms\":" << std::round(cpu_system_ms * 10) / 10
         << ",\"server_msgs_per_sec\":" << (g_ss_mps > 0 ? std::to_string(g_ss_mps) : "null")
         << "}";
     std::cout << out.str() << std::endl;

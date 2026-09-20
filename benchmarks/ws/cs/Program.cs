@@ -36,8 +36,11 @@ int maxSerial = -1;
 JsonElement? serverStats = null;
 var done = new ManualResetEventSlim(false);
 
+// Process-wide CPU (all threads, including the Rust runtime's), split into
+// user / system so the column is comparable with the other clients (#215).
 var proc = Process.GetCurrentProcess();
 var startCpu = proc.UserProcessorTime;
+var startCpuSys = proc.PrivilegedProcessorTime;
 var startMem = proc.WorkingSet64;
 
 // Force GC before benchmark
@@ -130,6 +133,7 @@ var dropped = client.MessagesDroppedTotal;
 var elapsed = t0Set ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - t0 : 0L;
 proc.Refresh();
 var endCpu = proc.UserProcessorTime;
+var endCpuSys = proc.PrivilegedProcessorTime;
 var endMem = proc.WorkingSet64;
 
 // Sort latencies
@@ -167,7 +171,7 @@ var result = new Dictionary<string, object?>
     ["latency_max_ms"] = lats.Length > 0 ? (double?)lats[^1] : null,
     ["mem_rss_delta_mb"] = Math.Round((endMem - startMem) / 1e6, 1),
     ["cpu_user_ms"] = Math.Round((endCpu - startCpu).TotalMilliseconds, 1),
-    ["cpu_system_ms"] = 0.0,
+    ["cpu_system_ms"] = Math.Round((endCpuSys - startCpuSys).TotalMilliseconds, 1),
     ["server_msgs_per_sec"] = ssMps,
 };
 
