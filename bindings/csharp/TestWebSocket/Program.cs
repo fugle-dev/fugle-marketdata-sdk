@@ -2,7 +2,8 @@
 //
 // 執行方式:
 //   cd bindings/csharp
-//   dotnet run --project TestWebSocket
+//   dotnet run --project TestWebSocket            # IWebSocketListener 介面
+//   dotnet run --project TestWebSocket -- event   # FubonNeo 形狀的事件介面（#204）
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +11,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FugleMarketData;
+using FugleMarketData.WebsocketClient;
+using FugleMarketData.WebsocketModels;
 using uniffi.marketdata_uniffi;
 
 /// <summary>
@@ -137,6 +140,12 @@ class Program
             Environment.Exit(1);
         }
 
+        if (args.Length > 0 && args[0] == "event")
+        {
+            await RunEventClient(apiKey);
+            return;
+        }
+
         Console.WriteLine("=== C# WebSocket 測試 ===\n");
 
         var listener = new MyListener();
@@ -165,6 +174,58 @@ class Program
             // 5. 斷線
             Console.WriteLine("4. 斷線中...");
             await client.DisconnectAsync();
+
+            Console.WriteLine("\n=== 測試完成 ===");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"錯誤: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            Environment.Exit(1);
+        }
+    }
+
+    /// <summary>
+    /// 同一個流程，改用 FubonNeo 形狀的事件介面：Action&lt;string&gt; 事件、
+    /// StockChannel 列舉、多檔 Subscribe。
+    /// </summary>
+    static async Task RunEventClient(string apiKey)
+    {
+        Console.WriteLine("=== C# WebSocket 測試（事件介面）===\n");
+
+        var received = 0;
+        using var factory = FugleWebsocketClientFactory.CreateWithApiKey(apiKey);
+        var stock = factory.Stock;
+        stock.OnConnected = msg => Console.WriteLine($"✓ {msg}");
+        stock.OnDisconnected = msg => Console.WriteLine($"✓ 已斷線: {msg}");
+        stock.OnClose = msg => Console.WriteLine($"⟳ {msg}");
+        stock.OnError = raw => Console.WriteLine($"✗ 伺服器錯誤: {raw}");
+        stock.OnException = ex => Console.WriteLine($"✗ 例外: {ex.Message}");
+        stock.OnReconnecting = attempt => Console.WriteLine($"⟳ 重新連線中... (第 {attempt} 次)");
+        stock.OnMessage = raw =>
+        {
+            received++;
+            Console.WriteLine($"✓ 收到訊息 {raw}");
+        };
+
+        try
+        {
+            Console.WriteLine("1. 連線中...");
+            await stock.Connect();
+
+            Console.WriteLine("2. 訂閱 2330、2317 trades（一個 frame）...");
+            await stock.Subscribe(StockChannel.Trades, "2330", "2317");
+
+            Console.WriteLine("3. 訂閱 2330 盤中零股 trades...");
+            await stock.Subscribe(StockChannel.Trades, new StockSubscribeParams { Symbol = "2330", IntradayOddLot = true });
+
+            Console.WriteLine("4. 等待訊息 (30秒)...\n");
+            await Task.Delay(TimeSpan.FromSeconds(30));
+
+            Console.WriteLine($"\n=== 總共收到 {received} 則訊息 ===\n");
+
+            Console.WriteLine("5. 斷線中...");
+            await stock.Disconnect("bye");
 
             Console.WriteLine("\n=== 測試完成 ===");
         }
