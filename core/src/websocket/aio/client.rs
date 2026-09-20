@@ -530,7 +530,6 @@ impl WebSocketClient {
                 &mut ws_read,
                 &self.config,
                 &self.stream,
-                Duration::from_secs(10),
             ) => Some(handshake),
             () = shutdown.as_mut() => None,
         };

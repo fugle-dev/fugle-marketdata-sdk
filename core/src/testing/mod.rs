@@ -107,6 +107,9 @@ pub struct MockWsServer {
     /// per-client tasks so [`Self::set_auth_response`] applies to auth
     /// requests that arrive after the call.
     auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
+    /// Set to leave `auth` requests unanswered, as a server that received
+    /// the frame but never replies (#199).
+    auth_silent: Arc<std::sync::atomic::AtomicBool>,
     /// `ping` handling, shared with the per-client tasks.
     pings: Arc<PingControl>,
 }
@@ -165,6 +168,7 @@ impl MockWsServer {
         let mut clients = Vec::with_capacity(capacity);
         let mut accept_seeds = Vec::with_capacity(capacity);
         let auth_response = Arc::new(std::sync::Mutex::new(default_auth_response()));
+        let auth_silent = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pings = Arc::new(PingControl::default());
 
         for _ in 0..capacity {
@@ -183,6 +187,7 @@ impl MockWsServer {
                 inject_rx,
                 drop_rx,
                 auth_response: Arc::clone(&auth_response),
+                auth_silent: Arc::clone(&auth_silent),
                 pings: Arc::clone(&pings),
             });
         }
@@ -195,6 +200,7 @@ impl MockWsServer {
             addr,
             clients,
             auth_response,
+            auth_silent,
             pings,
         }
     }
@@ -220,6 +226,14 @@ impl MockWsServer {
     /// rejection.
     pub fn set_auth_response(&self, frame: serde_json::Value) {
         *self.auth_response.lock().expect("auth_response lock poisoned") = frame;
+    }
+
+    /// Whether `auth` requests are answered at all (default true). Set
+    /// false for a server that receives the auth frame and never replies,
+    /// so the client's `auth_timeout` elapses (#199). Applies to auth
+    /// requests received after the call, so set it before `connect()`.
+    pub fn set_answer_auth(&self, answer: bool) {
+        self.auth_silent.store(!answer, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// `ws://127.0.0.1:<port>/marketdata/v1.0/stock/streaming`.
@@ -370,6 +384,7 @@ struct AcceptSeed {
     inject_rx: mpsc::UnboundedReceiver<MockInjection>,
     drop_rx: oneshot::Receiver<()>,
     auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
+    auth_silent: Arc<std::sync::atomic::AtomicBool>,
     pings: Arc<PingControl>,
 }
 
@@ -424,6 +439,7 @@ async fn run_client_loop(
         mut inject_rx,
         mut drop_rx,
         auth_response,
+        auth_silent,
         pings,
     } = seed;
 
@@ -444,6 +460,9 @@ async fn run_client_loop(
                             let event = json.get("event").and_then(|v| v.as_str()).unwrap_or("");
                             match event {
                                 "auth" => {
+                                    if auth_silent.load(std::sync::atomic::Ordering::SeqCst) {
+                                        continue;
+                                    }
                                     let ack = auth_response
                                         .lock()
                                         .expect("auth_response lock poisoned")

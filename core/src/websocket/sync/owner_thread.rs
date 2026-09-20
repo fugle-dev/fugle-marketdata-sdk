@@ -36,9 +36,6 @@ use tungstenite::{Connector, Message, WebSocket};
 /// worst-case outbound write latency under low inbound traffic.
 const READ_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Auth handshake timeout. Mirrors the async client.
-const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// Write timeout of the socket while the health check's probe is enabled.
 ///
 /// Writes here block the owner thread, so a stuck socket would also stop
@@ -272,8 +269,9 @@ pub(crate) fn do_auth_handshake(
     }
 
     // Read auth response with overall wall-clock timeout
-    set_read_timeout(ws, Some(AUTH_TIMEOUT));
-    let deadline = Instant::now() + AUTH_TIMEOUT;
+    // (`ConnectionConfig::auth_timeout`, shared with the async client).
+    set_read_timeout(ws, Some(config.auth_timeout));
+    let deadline = Instant::now() + config.auth_timeout;
     loop {
         if Instant::now() >= deadline {
             return AuthHandshake::Failed(MarketDataError::TimeoutError {

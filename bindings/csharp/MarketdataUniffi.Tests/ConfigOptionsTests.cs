@@ -501,6 +501,62 @@ public class ConfigOptionsTests
         StringAssert.Contains(ex.ParamName, "MessageBuffer");
     }
 
+    // ========== Connection (AuthTimeoutMs) Tests (#199) ==========
+
+    [TestMethod]
+    public void WebSocketClientOptions_AuthTimeoutMs_DefaultIsNull()
+    {
+        var options = new FugleMarketData.WebSocketClientOptions();
+
+        Assert.IsNull(options.AuthTimeoutMs);
+        // Unset: no record, so core keeps its default (10 s).
+        Assert.IsNull(FugleMarketData.WebSocketClient.ToConnectionRecord(null));
+    }
+
+    [TestMethod]
+    public void ToConnectionRecord_PassesAuthTimeoutMsThrough()
+    {
+        var record = FugleMarketData.WebSocketClient.ToConnectionRecord(15000);
+
+        Assert.IsNotNull(record);
+        Assert.AreEqual(15000ul, record.authTimeoutMs);
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_AuthTimeoutMs_Zero_ThrowsArgumentOutOfRangeException()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            AuthTimeoutMs = 0
+        };
+        var listener = new TestWebSocketListener();
+
+        var ex = Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+            new FugleMarketData.WebSocketClient(options, listener)
+        );
+
+        StringAssert.Contains(ex.ParamName, "AuthTimeoutMs");
+    }
+
+    [TestMethod]
+    public void WebSocketClientOptions_AcceptsAuthTimeoutMs()
+    {
+        SkipIfNativeLibraryUnavailable();
+
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "test-api-key",
+            AuthTimeoutMs = 15000
+        };
+        var listener = new TestWebSocketListener();
+
+        using var client = new FugleMarketData.WebSocketClient(options, listener);
+        Assert.IsNotNull(client);
+    }
+
     [TestMethod]
     public void WebSocketClientOptions_AcceptsDropNewestOverflow()
     {

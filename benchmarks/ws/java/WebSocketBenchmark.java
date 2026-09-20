@@ -124,7 +124,8 @@ public class WebSocketBenchmark {
         WebSocketClient client = WebSocketClient.newWithCredentials(
             new CredentialsRecord("bench-key", null, null), listener, WebSocketEndpoint.STOCK,
             url, null, null, null, null,
-            new MessageQueueConfigRecord(MessageOverflowRecord.UNBOUNDED, 0)
+            new MessageQueueConfigRecord(MessageOverflowRecord.UNBOUNDED, 0),
+            null
         );
 
         client.connect().join();

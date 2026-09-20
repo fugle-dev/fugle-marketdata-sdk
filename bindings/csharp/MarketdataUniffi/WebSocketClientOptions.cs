@@ -159,5 +159,15 @@ namespace FugleMarketData
         /// Must be greater than 0 when set.
         /// </summary>
         public int? MessageBuffer { get; set; }
+
+        /// <summary>
+        /// How long the auth handshake may take once the WebSocket is open, in
+        /// milliseconds: from the auth frame being sent until the server's
+        /// verdict (optional; null uses the default of 10000). Applies to the
+        /// first connect and to every reconnect; elapsing it fails the attempt
+        /// with a timeout error (code 3001). Must be greater than 0 when set.
+        /// The server itself allows 60 seconds.
+        /// </summary>
+        public ulong? AuthTimeoutMs { get; set; }
     }
 }

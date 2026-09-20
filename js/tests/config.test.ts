@@ -191,6 +191,27 @@ describe('WebSocketClient constructor', () => {
     });
   });
 
+  describe('authTimeoutMs (#199)', () => {
+    it('accepts authTimeoutMs', () => {
+      const ws = new WebSocketClient({ apiKey: 'test-key', authTimeoutMs: 15000 });
+      expect(ws).toBeDefined();
+    });
+
+    it('rejects authTimeoutMs of 0 or below with code 1004', () => {
+      for (const authTimeoutMs of [0, -1]) {
+        let thrown: unknown;
+        try {
+          new WebSocketClient({ apiKey: 'test-key', authTimeoutMs });
+        } catch (e) {
+          thrown = e;
+        }
+        expect(isError(thrown)).toBe(true);
+        expect((thrown as { code?: number }).code).toBe(1004);
+        expect((thrown as Error).message).toContain('auth_timeout_ms must be greater than 0');
+      }
+    });
+  });
+
   describe('combined config', () => {
     it('accepts both reconnect and healthCheck', () => {
       const ws = new WebSocketClient({

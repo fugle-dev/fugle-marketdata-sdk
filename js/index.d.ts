@@ -2913,4 +2913,12 @@ export interface WebSocketClientOptions {
    * events the SDK drops them too.
    */
   messageBuffer?: number
+  /**
+   * How long the auth handshake may take once the WebSocket is open, in
+   * milliseconds: from the auth frame being sent until the server's
+   * verdict (default 10000). Applies to the first `connect()` and to
+   * every reconnect; elapsing it fails the attempt with a `TimeoutError`
+   * (code 3001). Must be greater than 0. The server itself allows 60 s.
+   */
+  authTimeoutMs?: number
 }

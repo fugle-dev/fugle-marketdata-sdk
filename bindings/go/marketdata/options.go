@@ -2,6 +2,7 @@ package marketdata_uniffi
 
 import (
 	"errors"
+	"time"
 )
 
 // Option configures a client (REST or WebSocket)
@@ -20,6 +21,7 @@ type clientConfig struct {
 	noHealthCheck   bool
 	messageOverflow *MessageOverflow
 	messageBuffer   *uint32
+	authTimeoutMs   *uint64
 }
 
 // MessageOverflow controls what happens to new WebSocket messages once the
@@ -150,6 +152,23 @@ func WithMessageBuffer(n int) Option {
 		}
 		buffer := uint32(n)
 		cfg.messageBuffer = &buffer
+		return nil
+	}
+}
+
+// WithAuthTimeout sets how long the WebSocket auth handshake may take once
+// the connection is open, from the auth frame being sent until the server's
+// verdict (default: 10s). It applies to the first Connect and to every
+// reconnect; elapsing it fails the attempt with a timeout error (code 3001).
+// Must be at least one millisecond (core takes it in milliseconds). The
+// server itself allows 60 seconds.
+func WithAuthTimeout(d time.Duration) Option {
+	return func(cfg *clientConfig) error {
+		if d < time.Millisecond {
+			return errors.New("auth timeout must be at least one millisecond")
+		}
+		ms := uint64(d / time.Millisecond)
+		cfg.authTimeoutMs = &ms
 		return nil
 	}
 }

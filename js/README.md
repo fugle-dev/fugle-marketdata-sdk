@@ -224,6 +224,22 @@ reports) separately from messages, and drops any beyond that. This takes a
 listener that stays blocked for a long time, since `messagesDropped` is
 reported at most once per second.
 
+### Auth Timeout
+
+```javascript
+const ws = new WebSocketClient({
+  apiKey: 'your-key',
+  authTimeoutMs: 15000, // auth handshake limit (default 10000)
+});
+```
+
+Once the WebSocket is open the client sends its auth frame and waits for the
+server's verdict for `authTimeoutMs` (default 10 s). It applies to the first
+`connect()` and to every reconnect; elapsing it fails the attempt with a
+`TimeoutError` (code 3001). Raise it on a slow route to the server; the
+server itself allows 60 s. It must be greater than 0 (a config error, code
+1004, otherwise).
+
 ### Combined Configuration
 
 ```javascript
@@ -232,7 +248,8 @@ const { WebSocketClient } = require('@fugle/marketdata');
 const ws = new WebSocketClient({
   apiKey: 'your-key',
   reconnect: { maxAttempts: 10, initialDelayMs: 2000 },
-  healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 }
+  healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 },
+  authTimeoutMs: 15000
 });
 ```
 
@@ -347,6 +364,7 @@ interface WebSocketClientOptions {
   healthCheck?: HealthCheckOptions;    // Health check configuration (optional)
   messageOverflow?: 'dropNewest' | 'unbounded'; // While messageBuffer are unread (default 'dropNewest')
   messageBuffer?: number;              // Unread messages held (default 4096)
+  authTimeoutMs?: number;              // Auth handshake limit in ms (default 10000; > 0)
 }
 ```
 

@@ -326,7 +326,14 @@ use std::time::Duration;
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let auth = AuthRequest::with_api_key("your-api-key");
-let connection = ConnectionConfig::fugle_stock(auth);
+let connection = ConnectionConfig::builder(
+    "wss://api.fugle.tw/marketdata/v1.0/stock/streaming",
+    auth,
+)
+// Auth handshake limit once the WebSocket is open (default 10 s); applies
+// to the first connect() and to every reconnect. The server allows 60 s.
+.auth_timeout(Duration::from_secs(15))
+.build();
 let reconnect = ReconnectionConfig::new(
     10,
     Duration::from_secs(2),

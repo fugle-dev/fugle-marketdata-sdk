@@ -3495,6 +3495,7 @@ pub async fn marketdata_core::testing::MockWsServer::inject_frame_for(&self, usi
 pub async fn marketdata_core::testing::MockWsServer::next_subscribe_id(&self, impl core::convert::Into<alloc::string::String>)
 pub async fn marketdata_core::testing::MockWsServer::next_subscribe_id_for(&self, usize, impl core::convert::Into<alloc::string::String>)
 pub fn marketdata_core::testing::MockWsServer::pings_received(&self) -> alloc::vec::Vec<serde_json::value::Value>
+pub fn marketdata_core::testing::MockWsServer::set_answer_auth(&self, bool)
 pub fn marketdata_core::testing::MockWsServer::set_answer_pings(&self, bool)
 pub fn marketdata_core::testing::MockWsServer::set_auth_response(&self, serde_json::value::Value)
 pub async fn marketdata_core::testing::MockWsServer::start() -> Self
@@ -3742,6 +3743,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::con
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::MessageOverflow
 pub struct marketdata_core::websocket::config::ConnectionConfig
 pub marketdata_core::websocket::config::ConnectionConfig::auth: marketdata_core::AuthRequest
+pub marketdata_core::websocket::config::ConnectionConfig::auth_timeout: core::time::Duration
 pub marketdata_core::websocket::config::ConnectionConfig::client_id: core::option::Option<alloc::string::String>
 pub marketdata_core::websocket::config::ConnectionConfig::connect_timeout: core::time::Duration
 pub marketdata_core::websocket::config::ConnectionConfig::event_buffer: usize
@@ -3769,6 +3771,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::con
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfig
 pub struct marketdata_core::websocket::config::ConnectionConfigBuilder
 impl marketdata_core::websocket::config::ConnectionConfigBuilder
+pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::auth_timeout(self, core::time::Duration) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::build(self) -> marketdata_core::websocket::config::ConnectionConfig
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::client_id(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::connect_timeout(self, core::time::Duration) -> Self
@@ -3786,8 +3789,10 @@ impl core::marker::UnsafeUnpin for marketdata_core::websocket::config::Connectio
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::config::ConnectionConfigBuilder
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfigBuilder
 pub const marketdata_core::websocket::config::CLIENT_ID_MAX_LEN: usize
+pub const marketdata_core::websocket::config::DEFAULT_AUTH_TIMEOUT: core::time::Duration
 pub const marketdata_core::websocket::config::DEFAULT_EVENT_BUFFER: usize
 pub const marketdata_core::websocket::config::DEFAULT_MESSAGE_BUFFER: usize
+pub fn marketdata_core::websocket::config::auth_timeout_from_millis(u64) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub mod marketdata_core::websocket::connection_event
 #[non_exhaustive] pub enum marketdata_core::websocket::connection_event::ConnectionEvent
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated
@@ -4423,6 +4428,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::str
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamItem
 pub struct marketdata_core::websocket::ConnectionConfig
 pub marketdata_core::websocket::ConnectionConfig::auth: marketdata_core::AuthRequest
+pub marketdata_core::websocket::ConnectionConfig::auth_timeout: core::time::Duration
 pub marketdata_core::websocket::ConnectionConfig::client_id: core::option::Option<alloc::string::String>
 pub marketdata_core::websocket::ConnectionConfig::connect_timeout: core::time::Duration
 pub marketdata_core::websocket::ConnectionConfig::event_buffer: usize
@@ -4450,6 +4456,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::con
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::config::ConnectionConfig
 pub struct marketdata_core::websocket::ConnectionConfigBuilder
 impl marketdata_core::websocket::config::ConnectionConfigBuilder
+pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::auth_timeout(self, core::time::Duration) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::build(self) -> marketdata_core::websocket::config::ConnectionConfig
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::client_id(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn marketdata_core::websocket::config::ConnectionConfigBuilder::connect_timeout(self, core::time::Duration) -> Self
@@ -4713,9 +4720,11 @@ impl<S> core::marker::Unpin for marketdata_core::websocket::factory::WebSocketFa
 impl<S> core::marker::UnsafeUnpin for marketdata_core::websocket::factory::WebSocketFactory<S> where S: core::marker::UnsafeUnpin
 impl<S> core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::factory::WebSocketFactory<S> where S: core::panic::unwind_safe::RefUnwindSafe
 impl<S> core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::factory::WebSocketFactory<S> where S: core::panic::unwind_safe::UnwindSafe
+pub const marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT: core::time::Duration
 pub const marketdata_core::websocket::DEFAULT_EVENT_BUFFER: usize
 pub const marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER: usize
 pub const marketdata_core::websocket::REPORT_INTERVAL: core::time::Duration
+pub fn marketdata_core::websocket::auth_timeout_from_millis(u64) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
 pub enum marketdata_core::Auth
 pub marketdata_core::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::Auth::BearerToken(alloc::string::String)
@@ -5424,6 +5433,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::stream
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::streaming::CandlesSnapshot
 pub struct marketdata_core::ConnectionConfig
 pub marketdata_core::ConnectionConfig::auth: marketdata_core::AuthRequest
+pub marketdata_core::ConnectionConfig::auth_timeout: core::time::Duration
 pub marketdata_core::ConnectionConfig::client_id: core::option::Option<alloc::string::String>
 pub marketdata_core::ConnectionConfig::connect_timeout: core::time::Duration
 pub marketdata_core::ConnectionConfig::event_buffer: usize

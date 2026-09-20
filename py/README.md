@@ -229,6 +229,19 @@ Probing does not detect a half-open connection (the server still sends, our
 writes no longer arrive). See [docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
 for the trade-offs and the server cost of short probe intervals.
 
+### Auth Timeout
+
+```python
+ws = WebSocketClient(api_key="your-key", auth_timeout_ms=15000)  # default 10000
+```
+
+Once the WebSocket is open the client sends its auth frame and waits for the
+server's verdict for `auth_timeout_ms` (default 10 s). It applies to the
+first connect and to every reconnect; elapsing it fails the attempt with
+`TimeoutError` (code 3001). Raise it on a slow route to the server; the
+server itself allows 60 s. It must be greater than 0 (`ConfigError`, code
+1004, otherwise).
+
 ### Combined Configuration
 
 ```python
@@ -240,7 +253,8 @@ health_check = HealthCheckConfig(heartbeat_timeout_ms=60000)
 ws = WebSocketClient(
     api_key="your-key",
     reconnect=reconnect,
-    health_check=health_check
+    health_check=health_check,
+    auth_timeout_ms=15000,
 )
 ```
 

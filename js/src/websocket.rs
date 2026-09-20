@@ -707,6 +707,12 @@ pub struct WebSocketClientOptions {
     /// listeners hold up delivery, events wait as well; beyond 1024 unread
     /// events the SDK drops them too.
     pub message_buffer: Option<u32>,
+    /// How long the auth handshake may take once the WebSocket is open, in
+    /// milliseconds: from the auth frame being sent until the server's
+    /// verdict (default 10000). Applies to the first `connect()` and to
+    /// every reconnect; elapsing it fails the attempt with a `TimeoutError`
+    /// (code 3001). Must be greater than 0. The server itself allows 60 s.
+    pub auth_timeout_ms: Option<f64>,
 }
 
 /// `messageOverflow` / `messageBuffer` of a `WebSocketClient` (#46).
@@ -1201,6 +1207,8 @@ pub struct WebSocketClient {
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
     message_queue: MessageQueueSettings,
+    /// `authTimeoutMs`, validated in the constructor (#199).
+    auth_timeout: Duration,
     // Shared state for child clients — created once in constructor so that
     // every `ws.stock` / `ws.futopt` getter access shares the same Arcs.
     stock_callbacks: Arc<Listeners>,
@@ -1258,6 +1266,14 @@ impl WebSocketClient {
             options.message_overflow.as_deref(),
             options.message_buffer,
         )?;
+        // Core validates it (ConfigError, 1004): 0 or negative is refused.
+        let auth_timeout = match options.auth_timeout_ms {
+            None => marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
+            Some(ms) => marketdata_core::websocket::auth_timeout_from_millis(
+                if ms.is_finite() && ms >= 1.0 { ms as u64 } else { 0 },
+            )
+            .map_err(|e| crate::errors::to_napi_error(&env, e))?,
+        };
 
         // Resolve both endpoints now so a bad `baseUrl` throws from the
         // constructor rather than from `.stock.connect()` much later. Matches
@@ -1319,6 +1335,7 @@ impl WebSocketClient {
             health_check_config: health_check_cfg,
             tls_config,
             message_queue,
+            auth_timeout,
             stock_callbacks: Arc::new(Listeners::default()),
             stock_worker: Arc::new(Mutex::new(None)),
             stock_connection: Arc::new(Mutex::new(None)),
@@ -1344,6 +1361,7 @@ impl WebSocketClient {
             self.health_check_config.clone(),
             self.tls_config.clone(),
             self.message_queue,
+            self.auth_timeout,
             Arc::clone(&self.stock_callbacks),
             Arc::clone(&self.stock_worker),
             Arc::clone(&self.stock_connection),
@@ -1364,6 +1382,7 @@ impl WebSocketClient {
             self.health_check_config.clone(),
             self.tls_config.clone(),
             self.message_queue,
+            self.auth_timeout,
             Arc::clone(&self.futopt_callbacks),
             Arc::clone(&self.futopt_worker),
             Arc::clone(&self.futopt_connection),
@@ -1403,6 +1422,7 @@ pub struct StockWebSocketClient {
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
     message_queue: MessageQueueSettings,
+    auth_timeout: Duration,
     callbacks: Arc<Listeners>,
     worker: WorkerSlot,
     connection: ConnectionSlot,
@@ -1423,6 +1443,7 @@ impl StockWebSocketClient {
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
+        auth_timeout: Duration,
         callbacks: Arc<Listeners>,
         worker: WorkerSlot,
         connection: ConnectionSlot,
@@ -1436,6 +1457,7 @@ impl StockWebSocketClient {
             health_check_config,
             tls_config,
             message_queue,
+            auth_timeout,
             callbacks,
             worker,
             connection,
@@ -1535,6 +1557,7 @@ impl StockWebSocketClient {
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
         let message_queue = self.message_queue;
+        let auth_timeout = self.auth_timeout;
         let connection = Arc::clone(&self.connection);
         let ending_for_worker = Arc::clone(&ending);
         let test_panic = test_panic_site();
@@ -1593,6 +1616,7 @@ impl StockWebSocketClient {
                 });
                 config.tls = tls_config;
                 message_queue.apply(&mut config);
+                config.auth_timeout = auth_timeout;
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
@@ -1889,6 +1913,7 @@ pub struct FutOptWebSocketClient {
     health_check_config: marketdata_core::HealthCheckConfig,
     tls_config: marketdata_core::TlsConfig,
     message_queue: MessageQueueSettings,
+    auth_timeout: Duration,
     callbacks: Arc<Listeners>,
     worker: WorkerSlot,
     connection: ConnectionSlot,
@@ -1907,6 +1932,7 @@ impl FutOptWebSocketClient {
         health_check_config: marketdata_core::HealthCheckConfig,
         tls_config: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
+        auth_timeout: Duration,
         callbacks: Arc<Listeners>,
         worker: WorkerSlot,
         connection: ConnectionSlot,
@@ -1920,6 +1946,7 @@ impl FutOptWebSocketClient {
             health_check_config,
             tls_config,
             message_queue,
+            auth_timeout,
             callbacks,
             worker,
             connection,
@@ -1982,6 +2009,7 @@ impl FutOptWebSocketClient {
         let health_check_config = self.health_check_config.clone();
         let tls_config = self.tls_config.clone();
         let message_queue = self.message_queue;
+        let auth_timeout = self.auth_timeout;
         let connection = Arc::clone(&self.connection);
         let ending_for_worker = Arc::clone(&ending);
         let test_panic = test_panic_site();
@@ -2037,6 +2065,7 @@ impl FutOptWebSocketClient {
                 });
                 config.tls = tls_config;
                 message_queue.apply(&mut config);
+                config.auth_timeout = auth_timeout;
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).

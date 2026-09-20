@@ -58,7 +58,7 @@ pub(crate) async fn replay_subscriptions(
 }
 
 /// Send the auth frame, then read frames off `ws_read` until a terminal
-/// auth outcome arrives or `auth_timeout` elapses. The text frames read are
+/// auth outcome arrives or `config.auth_timeout` elapses. The text frames read are
 /// returned with the outcome, to be queued after the matching event (#68).
 /// Shared by
 /// `WebSocketClient::connect` and `try_connect` so the auth protocol cannot
@@ -68,7 +68,6 @@ pub(crate) async fn authenticate(
     ws_read: &mut WsStream,
     config: &ConnectionConfig,
     stream: &StreamSender,
-    auth_timeout: Duration,
 ) -> AuthHandshake {
     // The drop count restarts with each connection attempt.
     stream.start_connection();
@@ -79,7 +78,7 @@ pub(crate) async fn authenticate(
     if let Err(e) = ws_sink.send(Message::Text(auth_json.into())).await {
         return AuthHandshake::Failed(e.into());
     }
-    await_auth_response(ws_read, auth_timeout).await
+    await_auth_response(ws_read, config.auth_timeout).await
 }
 
 /// Read frames off `ws_read` until a terminal auth outcome arrives or
@@ -363,7 +362,6 @@ pub(crate) async fn try_connect(
         &mut ws_read,
         &config,
         &stream,
-        Duration::from_secs(10),
     )
     .await;
     if stopping() {
