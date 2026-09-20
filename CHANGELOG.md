@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **All languages: every failed auto-reconnect attempt now reports an
+  `Error`** (#200). A reconnect attempt the server refused, that timed out,
+  or whose auth response never came used to leave nothing on the stream but
+  the next `Reconnecting { n + 1 }` (or `ReconnectFailed`), so a consumer
+  could not tell a refused TCP connection from a server that accepts the
+  socket and stays silent. The async client now reports each failed attempt
+  as `Reconnecting { n }` → `Connecting` → (`Connected` →) `Error(e)` before
+  the next `Reconnecting`, as the Rust sync client already did; a rejection
+  is still reported as `Unauthenticated` alone. The Node `error` listener,
+  the Python error callback and the C# / Go / Java / C++ `on_error` (all
+  built on the async client) are therefore called once per failed attempt.
+  No reconnect decision changes, and nothing is reported after
+  `disconnect()`. The `connection_event` module's delivery guarantee 3
+  documents the sequence.
+
 ## [Bindings 3.0.0-rc.7 / core 0.9.0-rc.5 / uniffi 0.2.0-rc.5] - 2026-09-20
 
 ### Fixed
