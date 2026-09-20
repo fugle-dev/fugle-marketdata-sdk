@@ -35,6 +35,14 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — top-level `message` on error frames (#209)
+
+- `+` `models::WebSocketMessage::message: Option<String>` — the server's
+  code-less error shape `{"event":"error","message":"…"}` carries its
+  message at the top level, not under `data`. `error_message()` reads
+  `data.message` first and falls back to this field. Additive; struct
+  literals of `WebSocketMessage` gain one field, as with `code` in #201.
+
 ### Unreleased — reconnect policy follows the server; the last `error` code (#201)
 
 - `~` `websocket::ReconnectionManager::should_reconnect(&self, Option<u16>)`

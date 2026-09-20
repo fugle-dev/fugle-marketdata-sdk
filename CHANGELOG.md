@@ -116,7 +116,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `1011` (auth service unavailable). It now comes from core's
   `error_code()`, and `errorMessage` falls back to a top-level `message`
   for the code-less `{"event":"error","message":"…"}` shape the server
-  also sends — `data.message` still wins when both are present.
+  also sends — `data.message` still wins when both are present. Core
+  changes too: `WebSocketMessage` gains the `message` field that carries
+  the fallback (see Added).
 - **All languages: rejected credentials no longer make the client retry
   forever** (#201). The server rejects credentials with `error{1000}` and
   then closes the connection *without* a close code, which the reconnect
