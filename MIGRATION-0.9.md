@@ -861,10 +861,16 @@ The `movers` thresholds and the technical periods used to be optional and
 the server answered 400 without them; they are required now, which is what
 they were.
 
-- **C#** (`FugleMarketData`): the wrapper methods take the generated records
-  directly, as an optional trailing argument.
+- **C#** (`FugleMarketData`): the wrapper methods take the FubonNeo request
+  models (`FugleMarketData.QueryModels.*`, #203) as an optional trailing
+  argument; the generated records are what the raw
+  `uniffi.marketdata_uniffi` clients take.
 
   ```csharp
+  using FugleMarketData.QueryModels;
+  using FugleMarketData.QueryModels.Stock.Intraday;
+  using FugleMarketData.QueryModels.FuOpt;
+  using FuOptIntraday = FugleMarketData.QueryModels.FuOpt.Intraday;
   // Before
   var candles = await client.Stock.Intraday.GetCandlesAsync("2330", "1");
   var trades = await client.Stock.Intraday.GetTradesAsync("2330");
@@ -873,9 +879,9 @@ they were.
   // After
   var candles = await client.Stock.Intraday.GetCandlesAsync("2330");          // server default timeframe
   var trades = await client.Stock.Intraday.GetTradesAsync("2330",
-      new uniffi.marketdata_uniffi.StockTradesParams(oddLot: true, limit: 5));
+      new TradeRequest(TickerType.OddLot, limit: 5));
   var quote = await client.FutOpt.Intraday.GetQuoteAsync("TXFE6",
-      new uniffi.marketdata_uniffi.AfterHoursParams(afterHours: true));
+      new FuOptIntraday.TickerVolumeRequest(TradeSession.AfterHours));
   await ws.SubscribeAsync("trades", "2330");                                 // kept
   await ws.SubscribeAsync("trades", new[] { "2330", "2317" });               // one frame
   await ws.SubscribeAsync("trades", new[] { "2330" }, new SubscribeOptions { IntradayOddLot = true });

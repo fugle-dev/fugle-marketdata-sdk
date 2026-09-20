@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using FugleMarketData.QueryModels.Stock.Ownership;
+using SortType = FugleMarketData.QueryModels.Stock.History.SortType;
 
 namespace MarketdataUniffi.Tests;
 
@@ -212,7 +214,7 @@ public class PassthroughTests
         using var server = new LoopbackServer(envelope);
         using var client = server.NewClient();
 
-        var json = await client.Stock.Intraday.GetTickersAsync("EQUITY").ConfigureAwait(false);
+        var json = await client.Stock.Intraday.GetTickersAsync().ConfigureAwait(false);
         var root = JsonDocument.Parse(json).RootElement;
 
         // Earlier releases returned just `data`, losing the sibling metadata.
@@ -237,9 +239,9 @@ public class PassthroughTests
         var results = new[]
         {
             ownership.GetEtfHoldings("0050"),
-            ownership.GetInstitutionalTrades("2330", new uniffi.marketdata_uniffi.OwnershipParams(from: "2026-09-01", to: "2026-09-16", sort: "desc")),
+            ownership.GetInstitutionalTrades("2330", new OwnershipRequest(new DateTime(2026, 9, 1), new DateTime(2026, 9, 16), SortType.Desc)),
             ownership.GetDirectorHoldings("2330"),
-            ownership.GetTdccDistribution("2330", new uniffi.marketdata_uniffi.OwnershipParams(sort: "asc")),
+            ownership.GetTdccDistribution("2330", new OwnershipRequest(sort: SortType.Asc)),
         };
 
         var want = Canonical(JsonDocument.Parse(body).RootElement);

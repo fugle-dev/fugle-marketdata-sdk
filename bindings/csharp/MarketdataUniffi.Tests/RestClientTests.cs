@@ -100,7 +100,16 @@ public class RestClientTests
     {
         var type = typeof(FugleMarketData.StockIntradayClient);
 
+        // FubonNeo names (#203)
+        Assert.IsNotNull(type.GetMethod("Tickers"));
+        Assert.IsNotNull(type.GetMethod("Ticker"));
+        Assert.IsNotNull(type.GetMethod("Quote"));
+        Assert.IsNotNull(type.GetMethod("Candles"));
+        Assert.IsNotNull(type.GetMethod("Trades"));
+        Assert.IsNotNull(type.GetMethod("Volume"));
+
         // Async methods
+        Assert.IsNotNull(type.GetMethod("GetTickersAsync"));
         Assert.IsNotNull(type.GetMethod("GetQuoteAsync"));
         Assert.IsNotNull(type.GetMethod("GetTickerAsync"));
         Assert.IsNotNull(type.GetMethod("GetTradesAsync"));
@@ -108,6 +117,7 @@ public class RestClientTests
         Assert.IsNotNull(type.GetMethod("GetVolumesAsync"));
 
         // Sync methods
+        Assert.IsNotNull(type.GetMethod("GetTickers"));
         Assert.IsNotNull(type.GetMethod("GetQuote"));
         Assert.IsNotNull(type.GetMethod("GetTicker"));
         Assert.IsNotNull(type.GetMethod("GetTrades"));
@@ -120,6 +130,15 @@ public class RestClientTests
     {
         var type = typeof(FugleMarketData.FutOptIntradayClient);
 
+        // FubonNeo names (#203)
+        Assert.IsNotNull(type.GetMethod("Products"));
+        Assert.IsNotNull(type.GetMethod("Tickers"));
+        Assert.IsNotNull(type.GetMethod("Ticker"));
+        Assert.IsNotNull(type.GetMethod("Quote"));
+        Assert.IsNotNull(type.GetMethod("Candles"));
+        Assert.IsNotNull(type.GetMethod("Trades"));
+        Assert.IsNotNull(type.GetMethod("Volumes"));
+
         // Async methods
         Assert.IsNotNull(type.GetMethod("GetQuoteAsync"));
         Assert.IsNotNull(type.GetMethod("GetTickerAsync"));
@@ -129,6 +148,15 @@ public class RestClientTests
         Assert.IsNotNull(type.GetMethod("GetQuote"));
         Assert.IsNotNull(type.GetMethod("GetTicker"));
         Assert.IsNotNull(type.GetMethod("GetProducts"));
+    }
+
+    [TestMethod]
+    public void FubonNeoAliases_Exist()
+    {
+        Assert.AreEqual(typeof(FugleMarketData.FutOptClient),
+            typeof(FugleMarketData.RestClient).GetProperty("FutureOption")!.PropertyType);
+        Assert.AreEqual(typeof(FugleMarketData.StockHistoricalClient),
+            typeof(FugleMarketData.StockClient).GetProperty("History")!.PropertyType);
     }
 
     // ========== Constructor Tests (require native library) ==========
