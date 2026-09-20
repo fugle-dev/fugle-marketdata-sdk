@@ -116,8 +116,8 @@ class RestClient:
         from fugle_marketdata import RestClient
 
         async def main():
-            client = RestClient("your-api-key")
-            quote = await client.stock.intraday.quote("2330")
+            client = RestClient(api_key="your-api-key")
+            quote = await client.stock.intraday.quote_async("2330")
             print(f"Last price: {quote['lastPrice']}")
 
         asyncio.run(main())
@@ -342,7 +342,7 @@ class StockIntradayClient:
 
         Example:
             ```python
-            quote = await client.stock.intraday.quote("2330")
+            quote = await client.stock.intraday.quote_async("2330")
             print(f"Last price: {quote['lastPrice']}")
             print(f"Change: {quote['change']}")
             ```
@@ -434,6 +434,7 @@ class StockIntradayClient:
     async def tickers_async(
         self,
         type: str,
+        *,
         exchange: str | None = None,
         market: str | None = None,
         industry: str | None = None,
@@ -470,13 +471,14 @@ class StockIntradayClient:
         """Blocking version of `quote()`."""
         ...
 
-    def ticker(self, symbol: str, odd_lot: Optional[bool] = None) -> dict[str, Any]:
+    def ticker(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `ticker()`."""
         ...
 
     def candles(
         self,
         symbol: str,
+        *,
         timeframe: Optional[str] = None,
         odd_lot: Optional[bool] = None,
         sort: Optional[str] = None,
@@ -487,6 +489,7 @@ class StockIntradayClient:
     def trades(
         self,
         symbol: str,
+        *,
         odd_lot: Optional[bool] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
@@ -496,13 +499,14 @@ class StockIntradayClient:
         """Blocking version of `trades()`."""
         ...
 
-    def volumes(self, symbol: str, odd_lot: Optional[bool] = None) -> dict[str, Any]:
+    def volumes(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `volumes()`."""
         ...
 
     def tickers(
         self,
         type: str,
+        *,
         exchange: str | None = None,
         market: str | None = None,
         industry: str | None = None,
@@ -553,7 +557,7 @@ class StockHistoricalClient:
 
         Example:
             ```python
-            candles = await client.stock.historical.candles(
+            candles = await client.stock.historical.candles_async(
                 "2330",
                 from_date="2024-01-01",
                 to_date="2024-01-31",
@@ -577,7 +581,7 @@ class StockHistoricalClient:
 
         Example:
             ```python
-            stats = await client.stock.historical.stats("2330")
+            stats = await client.stock.historical.stats_async("2330")
             print(f"52-week high: {stats['week52High']}")
             ```
         """
@@ -631,7 +635,7 @@ class StockSnapshotClient:
 
         Example:
             ```python
-            quotes = await client.stock.snapshot.quotes("TSE", type_filter="COMMONSTOCK")
+            quotes = await client.stock.snapshot.quotes_async("TSE", type_filter="COMMONSTOCK")
             ```
         """
         ...
@@ -639,9 +643,9 @@ class StockSnapshotClient:
     async def movers_async(
         self,
         market: str,
-        *,
         direction: Optional[str] = None,
         change: Optional[str] = None,
+        *,
         type_filter: Optional[str] = None,
         gt: Optional[float] = None,
         gte: Optional[float] = None,
@@ -670,7 +674,7 @@ class StockSnapshotClient:
 
         Example:
             ```python
-            movers = await client.stock.snapshot.movers("TSE", direction="up", change="percent")
+            movers = await client.stock.snapshot.movers_async("TSE", direction="up", change="percent")
             ```
         """
         ...
@@ -678,8 +682,8 @@ class StockSnapshotClient:
     async def actives_async(
         self,
         market: str,
-        *,
         trade: Optional[str] = None,
+        *,
         type_filter: Optional[str] = None,
     ) -> dict[str, Any]:
         """Get most active stocks for a market.
@@ -697,14 +701,14 @@ class StockSnapshotClient:
 
         Example:
             ```python
-            actives = await client.stock.snapshot.actives("TSE", trade="volume")
+            actives = await client.stock.snapshot.actives_async("TSE", trade="volume")
             ```
         """
         ...
 
     # ----- Sync siblings (legacy fugle-marketdata compatibility) -----
 
-    def quotes(self, market: str, type_filter: Optional[str] = None) -> dict[str, Any]:
+    def quotes(self, market: str, *, type_filter: Optional[str] = None) -> dict[str, Any]:
         """Blocking version of `quotes()`."""
         ...
 
@@ -713,6 +717,7 @@ class StockSnapshotClient:
         market: str,
         direction: Optional[str] = None,
         change: Optional[str] = None,
+        *,
         type_filter: Optional[str] = None,
         gt: Optional[float] = None,
         gte: Optional[float] = None,
@@ -724,7 +729,7 @@ class StockSnapshotClient:
         ...
 
     def actives(
-        self, market: str, trade: Optional[str] = None, type_filter: Optional[str] = None
+        self, market: str, trade: Optional[str] = None, *, type_filter: Optional[str] = None
     ) -> dict[str, Any]:
         """Blocking version of `actives()`."""
         ...
@@ -740,20 +745,20 @@ class StockTechnicalClient:
     async def sma_async(
         self,
         symbol: str,
+        period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Get Simple Moving Average (SMA) data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
+            period: Moving average period
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-            period: Moving average period
 
         Returns:
             SMA indicator data
@@ -766,20 +771,20 @@ class StockTechnicalClient:
     async def rsi_async(
         self,
         symbol: str,
+        period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Get Relative Strength Index (RSI) data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
+            period: RSI period (default 14)
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-            period: RSI period (default 14)
 
         Returns:
             RSI indicator data
@@ -792,24 +797,24 @@ class StockTechnicalClient:
     async def kdj_async(
         self,
         symbol: str,
+        r_period: Optional[int] = None,
+        k_period: Optional[int] = None,
+        d_period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        r_period: Optional[int] = None,
-        k_period: Optional[int] = None,
-        d_period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Get KDJ (Stochastic Oscillator) data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
-            from_date: Start date (YYYY-MM-DD)
-            to_date: End date (YYYY-MM-DD)
-            timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
             r_period: RSV period (e.g., 9)
             k_period: K smoothing period (e.g., 3)
             d_period: D smoothing period (e.g., 3)
+            from_date: Start date (YYYY-MM-DD)
+            to_date: End date (YYYY-MM-DD)
+            timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
 
         Returns:
             KDJ indicator data with K, D, J values
@@ -822,24 +827,24 @@ class StockTechnicalClient:
     async def macd_async(
         self,
         symbol: str,
+        fast: Optional[int] = None,
+        slow: Optional[int] = None,
+        signal: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        fast: Optional[int] = None,
-        slow: Optional[int] = None,
-        signal: Optional[int] = None,
     ) -> dict[str, Any]:
         """Get MACD (Moving Average Convergence Divergence) data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
-            from_date: Start date (YYYY-MM-DD)
-            to_date: End date (YYYY-MM-DD)
-            timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
             fast: Fast EMA period (default 12)
             slow: Slow EMA period (default 26)
             signal: Signal line period (default 9)
+            from_date: Start date (YYYY-MM-DD)
+            to_date: End date (YYYY-MM-DD)
+            timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
 
         Returns:
             MACD indicator data with MACD, signal, histogram
@@ -852,20 +857,20 @@ class StockTechnicalClient:
     async def bb_async(
         self,
         symbol: str,
+        period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Get Bollinger Bands (BB) data.
 
         Args:
             symbol: Stock symbol (e.g., "2330" for TSMC)
+            period: Moving average period (default 20)
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", etc.)
-            period: Moving average period (default 20)
 
         Returns:
             Bollinger Bands data with upper, middle, lower bands
@@ -880,11 +885,11 @@ class StockTechnicalClient:
     def sma(
         self,
         symbol: str,
+        period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Blocking version of `sma()`."""
         ...
@@ -892,11 +897,11 @@ class StockTechnicalClient:
     def rsi(
         self,
         symbol: str,
+        period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Blocking version of `rsi()`."""
         ...
@@ -904,13 +909,13 @@ class StockTechnicalClient:
     def kdj(
         self,
         symbol: str,
+        r_period: Optional[int] = None,
+        k_period: Optional[int] = None,
+        d_period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        r_period: Optional[int] = None,
-        k_period: Optional[int] = None,
-        d_period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Blocking version of `kdj()`."""
         ...
@@ -918,13 +923,13 @@ class StockTechnicalClient:
     def macd(
         self,
         symbol: str,
+        fast: Optional[int] = None,
+        slow: Optional[int] = None,
+        signal: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        fast: Optional[int] = None,
-        slow: Optional[int] = None,
-        signal: Optional[int] = None,
     ) -> dict[str, Any]:
         """Blocking version of `macd()`."""
         ...
@@ -932,11 +937,11 @@ class StockTechnicalClient:
     def bb(
         self,
         symbol: str,
+        period: Optional[int] = None,
         *,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
-        period: Optional[int] = None,
     ) -> dict[str, Any]:
         """Blocking version of `bb()`."""
         ...
@@ -1158,7 +1163,7 @@ class StockCorporateActionsClient:
 
         Example:
             ```python
-            changes = await client.stock.corporate_actions.capital_changes(
+            changes = await client.stock.corporate_actions.capital_changes_async(
                 start_date="2024-01-01",
                 end_date="2024-01-31"
             )
@@ -1190,7 +1195,7 @@ class StockCorporateActionsClient:
 
         Example:
             ```python
-            dividends = await client.stock.corporate_actions.dividends(
+            dividends = await client.stock.corporate_actions.dividends_async(
                 start_date="2024-01-01",
                 end_date="2024-12-31"
             )
@@ -1222,7 +1227,7 @@ class StockCorporateActionsClient:
 
         Example:
             ```python
-            applicants = await client.stock.corporate_actions.listing_applicants()
+            applicants = await client.stock.corporate_actions.listing_applicants_async()
             ```
         """
         ...
@@ -1311,10 +1316,10 @@ class FutOptIntradayClient:
         Example:
             ```python
             # Regular session
-            quote = await client.futopt.intraday.quote("TXFC4")
+            quote = await client.futopt.intraday.quote_async("TXFC4")
 
             # After-hours session
-            ah_quote = await client.futopt.intraday.quote("TXFC4", after_hours=True)
+            ah_quote = await client.futopt.intraday.quote_async("TXFC4", after_hours=True)
             ```
         """
         ...
@@ -1400,6 +1405,7 @@ class FutOptIntradayClient:
     async def tickers_async(
         self,
         type: str,
+        *,
         exchange: str | None = None,
         after_hours: Optional[bool] = None,
         contract_type: str | None = None,
@@ -1427,6 +1433,7 @@ class FutOptIntradayClient:
     async def products_async(
         self,
         type: str,
+        *,
         contract_type: str | None = None,
         exchange: str | None = None,
         after_hours: Optional[bool] = None,
@@ -1455,13 +1462,14 @@ class FutOptIntradayClient:
         """Blocking version of `quote()`."""
         ...
 
-    def ticker(self, symbol: str, after_hours: Optional[bool] = None) -> dict[str, Any]:
+    def ticker(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `ticker()`."""
         ...
 
     def candles(
         self,
         symbol: str,
+        *,
         timeframe: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
@@ -1471,6 +1479,7 @@ class FutOptIntradayClient:
     def trades(
         self,
         symbol: str,
+        *,
         after_hours: Optional[bool] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
@@ -1479,13 +1488,14 @@ class FutOptIntradayClient:
         """Blocking version of `trades()`."""
         ...
 
-    def volumes(self, symbol: str, after_hours: Optional[bool] = None) -> dict[str, Any]:
+    def volumes(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
         """Blocking version of `volumes()`."""
         ...
 
     def tickers(
         self,
         type: str,
+        *,
         exchange: str | None = None,
         after_hours: Optional[bool] = None,
         contract_type: str | None = None,
@@ -1498,6 +1508,7 @@ class FutOptIntradayClient:
     def products(
         self,
         type: str,
+        *,
         contract_type: str | None = None,
         exchange: str | None = None,
         after_hours: Optional[bool] = None,

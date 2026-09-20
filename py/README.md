@@ -300,6 +300,13 @@ client.stock.technical.sma("2330", from_date="2026-08-01", to_date="2026-09-10",
 client.stock.technical.sma("2330", from_="2026-08-01", to="2026-09-10", period=5)  # same call
 ```
 
+Only the path parameter (`symbol`, `market`, `type`) and the query
+parameters the server requires (`movers(market, direction, change)`,
+`actives(market, trade)`, the technical periods — `sma(symbol, period)`,
+`kdj(symbol, r_period, k_period, d_period)`, `macd(symbol, fast, slow,
+signal)`) may be passed positionally; every optional one is keyword-only,
+so `candles("2330", "5")` is a `TypeError` rather than a slot to get wrong.
+
 A keyword the endpoint does not take raises `TypeError` naming the accepted
 ones, and so does one parameter given under two spellings. Values are sent as
 given and the server reports a bad value, except the two switches behind a
