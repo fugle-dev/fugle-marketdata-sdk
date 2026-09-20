@@ -13,7 +13,7 @@ namespace MarketdataUniffi.Tests;
 /// <summary>
 /// A loopback WebSocket server that records the <c>data</c> of every
 /// <c>auth</c> frame (as compact JSON) and acks it, and records every other
-/// text frame as is.
+/// text frame as is. <see cref="SendToAll"/> pushes a frame to the clients;
 /// <see cref="DropConnections"/> cuts the open connections without a Close frame.
 /// </summary>
 internal sealed class WebSocketLoopbackServer : IDisposable
@@ -45,6 +45,22 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     /// <c>id-&lt;channel&gt;-&lt;symbol1,symbol2,...&gt;</c> (multi-symbol frames).
     /// </summary>
     public bool AckSubscribes { get; init; }
+
+    /// <summary>
+    /// Answer the <c>auth</c> frame with the server's credentials-rejected
+    /// frame (<c>error</c>, code 1000) instead of <c>authenticated</c>.
+    /// </summary>
+    public bool RejectAuth { get; init; }
+
+    /// <summary>Send a text frame to every open connection.</summary>
+    public async Task SendToAll(string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        foreach (var socket in _connections.Values)
+        {
+            await socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Cut every open connection at the transport, as a network failure would.</summary>
     public void DropConnections()
@@ -106,7 +122,9 @@ internal sealed class WebSocketLoopbackServer : IDisposable
                 else
                 {
                     AuthData.Enqueue(frame.RootElement.GetProperty("data").GetRawText());
-                    var ack = Encoding.UTF8.GetBytes("{\"event\":\"authenticated\",\"data\":{\"message\":\"Authenticated successfully\"}}");
+                    var ack = Encoding.UTF8.GetBytes(RejectAuth
+                        ? "{\"event\":\"error\",\"code\":1000,\"data\":{\"message\":\"Invalid token\"}}"
+                        : "{\"event\":\"authenticated\",\"data\":{\"message\":\"Authenticated successfully\"}}");
                     await socket.SendAsync(ack, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
                 }
             }

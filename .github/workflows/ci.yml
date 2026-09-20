@@ -197,8 +197,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           # The library multi-targets net10.0, so restoring anything that
-          # references it needs the .NET 10 SDK; tests run on net8.0.
+          # references it needs the .NET 10 SDK; tests run on net8.0. The
+          # 6.0 runtime is for the net6 smoke below.
           dotnet-version: |
+            6.0.x
             8.0.x
             10.0.x
       - uses: actions/setup-go@v5
@@ -334,6 +336,66 @@ jobs:
           System.Console.WriteLine("OK");
           CS
           LD_LIBRARY_PATH="$PWD/target/release" dotnet run --project /tmp/cs-smoke
+
+      # FubonNeo users mostly run .NET 6, which consumes the netstandard2.0
+      # assets; nothing else loads those at runtime (#204). One REST call and
+      # one WS call cross the FFI and lift an error back.
+      - name: C# net6 runtime smoke
+        run: |
+          # Written by hand: newer SDKs' console template no longer offers net6.0.
+          mkdir -p /tmp/cs-net6-smoke
+          cat > /tmp/cs-net6-smoke/cs-net6-smoke.csproj <<CSPROJ
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net6.0</TargetFramework>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="$PWD/bindings/csharp/MarketdataUniffi/MarketdataUniffi.csproj" />
+            </ItemGroup>
+          </Project>
+          CSPROJ
+          cat > /tmp/cs-net6-smoke/Program.cs <<'CS'
+          using System;
+          using FugleMarketData;
+          using FugleMarketData.WebsocketClient;
+          using FugleMarketData.WebsocketModels;
+          using uniffi.marketdata_uniffi;
+          using RestClient = FugleMarketData.RestClient;
+
+          // REST: a real FFI call whose error is lifted back (nothing listens on port 9).
+          using var rest = new RestClient(new RestClientOptions { ApiKey = "x", BaseUrl = "http://127.0.0.1:9" });
+          try
+          {
+              rest.Stock.Intraday.GetQuote("2330");
+              throw new Exception("GetQuote against a closed port did not throw");
+          }
+          catch (MarketDataException ex)
+          {
+              Console.WriteLine($"REST error lifted: code={ex.GetInfo().code}");
+          }
+
+          // WS: the event client; subscribe before connect is core's "Not connected" (2001).
+          using var factory = FugleWebsocketClientFactory.Create("tok");
+          var stock = factory.Stock;
+          stock.OnMessage += _ => { };
+          try
+          {
+              stock.Subscribe(StockChannel.Trades, "2330").GetAwaiter().GetResult();
+              throw new Exception("Subscribe before connect did not throw");
+          }
+          catch (MarketDataException ex)
+          {
+              var code = ex.GetInfo().code;
+              if (code != 2001) throw new Exception($"expected 2001, got {code}");
+              Console.WriteLine($"WS error lifted: code={code}");
+          }
+          Console.WriteLine($"Runtime: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+          Console.WriteLine("OK");
+          CS
+          LD_LIBRARY_PATH="$PWD/target/release" dotnet run --project /tmp/cs-net6-smoke
 
       - name: Go tests
         working-directory: bindings/go/marketdata
