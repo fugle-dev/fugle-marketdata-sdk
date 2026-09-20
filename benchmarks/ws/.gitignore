@@ -7,3 +7,4 @@ java/*.class
 cpp/ws-bench-cpp
 cpp/libmarketdata_uniffi.dylib
 cpp/libmarketdata_uniffi.so
+py/.venv-old/

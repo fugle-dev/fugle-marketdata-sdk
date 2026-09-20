@@ -7,7 +7,7 @@
  * stdout.
  *
  * Usage:
- *   node ws-bench-new.js --url ws://localhost:8765 --timeout 30000
+ *   node js/bench-new.js --url ws://localhost:8765 --timeout 30000
  */
 
 const { WebSocketClient } = require('../../../js/index.js');
@@ -43,7 +43,10 @@ if (global.gc) global.gc();
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
-const ws = new WebSocketClient({ apiKey: 'bench-key', baseUrl: BASE_URL });
+// The default (dropNewest, 4096 unread) drops messages -- and possibly
+// bench_done -- while the listener lags a burst; the benchmark measures full
+// delivery, same as the C#/Go/Java clients.
+const ws = new WebSocketClient({ apiKey: 'bench-key', baseUrl: BASE_URL, messageOverflow: 'unbounded' });
 
 ws.stock.on('message', (data) => {
   const msg = JSON.parse(data);
@@ -112,6 +115,7 @@ function finish() {
     cpu_user_ms: endCpu.user / 1000,
     cpu_system_ms: endCpu.system / 1000,
     server_msgs_per_sec: serverStats ? serverStats.server_msgs_per_sec : null,
+    dropped: ws.stock.messagesDroppedTotal,
   }));
 
   ws.stock.disconnect();

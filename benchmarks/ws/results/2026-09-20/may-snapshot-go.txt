@@ -1,0 +1,6 @@
+# Go client built from 14fb9f6 (2026-05-15 v0.3.0 snapshot, earliest commit in this repo) run against today's mock server, 10K burst, warmup 1000
+# columns: msgs_per_sec p50_ms p99_ms wall_ms(bench reports wall clock as cpu_user_ms) lost
+run1 188679 3 4 199 lost= 0
+run2 181818 1 3 199 lost= 0
+run3 178571 1 2 197 lost= 0
+# JS and Python clients from the same snapshot panic in core aio message_stream() ('there is no reactor running'), so no May data point for them

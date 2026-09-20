@@ -1,0 +1,65 @@
+{
+  "config": {
+    "count": 5000,
+    "rate": 500,
+    "warmup": 1000,
+    "runs": 3,
+    "lang": "go"
+  },
+  "timestamp": "2026-09-20T08:52:34.638Z",
+  "results": {
+    "Go-new": [
+      {
+        "count": 5000,
+        "cpu_system_ms": 0,
+        "cpu_user_ms": 2660.6,
+        "dropped": 0,
+        "elapsed_ms": 2510,
+        "expected": 5000,
+        "latency_max_ms": 2,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.7,
+        "msgs_per_sec": 1992,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 1984
+      },
+      {
+        "count": 5000,
+        "cpu_system_ms": 0,
+        "cpu_user_ms": 2727.2,
+        "dropped": 0,
+        "elapsed_ms": 2598,
+        "expected": 5000,
+        "latency_max_ms": 3,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.5,
+        "msgs_per_sec": 1924,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 1916
+      },
+      {
+        "count": 5000,
+        "cpu_system_ms": 0,
+        "cpu_user_ms": 2668.3,
+        "dropped": 0,
+        "elapsed_ms": 2537,
+        "expected": 5000,
+        "latency_max_ms": 3,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.5,
+        "msgs_per_sec": 1970,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 1962
+      }
+    ]
+  }
+}

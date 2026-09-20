@@ -1,0 +1,115 @@
+{
+  "config": {
+    "count": 50000,
+    "rate": 0,
+    "warmup": 1000,
+    "runs": 3,
+    "lang": "js"
+  },
+  "timestamp": "2026-09-20T08:22:41.673Z",
+  "results": {
+    "JS-old": [
+      {
+        "sdk": "old-js-1.6.0",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "elapsed_ms": 191,
+        "msgs_per_sec": 261780,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 11.1,
+        "cpu_user_ms": 188.388,
+        "cpu_system_ms": 58.431,
+        "server_msgs_per_sec": 250000
+      },
+      {
+        "sdk": "old-js-1.6.0",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "elapsed_ms": 193,
+        "msgs_per_sec": 259067,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 10.3,
+        "cpu_user_ms": 189.76,
+        "cpu_system_ms": 57.539,
+        "server_msgs_per_sec": 248756
+      },
+      {
+        "sdk": "old-js-1.6.0",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "elapsed_ms": 189,
+        "msgs_per_sec": 264550,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 10.3,
+        "cpu_user_ms": 185.39,
+        "cpu_system_ms": 56.539,
+        "server_msgs_per_sec": 253807
+      }
+    ],
+    "JS-new": [
+      {
+        "sdk": "rust-core",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "elapsed_ms": 212,
+        "msgs_per_sec": 235849,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 16.4,
+        "cpu_user_ms": 338.548,
+        "cpu_system_ms": 203.056,
+        "server_msgs_per_sec": 226244,
+        "dropped": 0
+      },
+      {
+        "sdk": "rust-core",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "elapsed_ms": 214,
+        "msgs_per_sec": 233645,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 16.1,
+        "cpu_user_ms": 337.678,
+        "cpu_system_ms": 206.817,
+        "server_msgs_per_sec": 225225,
+        "dropped": 0
+      },
+      {
+        "sdk": "rust-core",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "elapsed_ms": 212,
+        "msgs_per_sec": 235849,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "latency_min_ms": 0,
+        "latency_max_ms": 1,
+        "mem_rss_delta_mb": 16.3,
+        "cpu_user_ms": 342.053,
+        "cpu_system_ms": 199.24,
+        "server_msgs_per_sec": 227273,
+        "dropped": 0
+      }
+    ]
+  }
+}
