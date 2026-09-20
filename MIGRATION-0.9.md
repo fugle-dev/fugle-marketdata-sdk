@@ -878,7 +878,7 @@ they were.
       new uniffi.marketdata_uniffi.AfterHoursParams(afterHours: true));
   await ws.SubscribeAsync("trades", "2330");                                 // kept
   await ws.SubscribeAsync("trades", new[] { "2330", "2317" });               // one frame
-  await ws.SubscribeAsync("trades", "2330", new SubscribeOptions { IntradayOddLot = true });
+  await ws.SubscribeAsync("trades", new[] { "2330" }, new SubscribeOptions { IntradayOddLot = true });
   ```
 
   `WebSocketClientOptions` gains `Versions` (`WebsocketVersionOptions { Stock, FutOpt }`),

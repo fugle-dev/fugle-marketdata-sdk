@@ -103,7 +103,7 @@ public class WebSocketSubscribeFrameTests
 
         await client.SubscribeAsync("trades", new[] { "2330", "2317" }).WaitAsync(TimeSpan.FromSeconds(10));
         await client.SubscribeAsync("trades", "2330").WaitAsync(TimeSpan.FromSeconds(10));
-        await client.SubscribeAsync("trades", "2330", new FugleMarketData.SubscribeOptions { IntradayOddLot = true })
+        await client.SubscribeAsync("trades", new[] { "2330" }, new FugleMarketData.SubscribeOptions { IntradayOddLot = true })
             .WaitAsync(TimeSpan.FromSeconds(10));
 
         var expected = new[]

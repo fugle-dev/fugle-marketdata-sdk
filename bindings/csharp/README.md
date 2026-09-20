@@ -160,7 +160,7 @@ await ws.SubscribeAsync("books", "2330");
 // Multiple symbols in one subscription; endpoint-specific options
 // (Stock: IntradayOddLot, FutOpt: AfterHours)
 await ws.SubscribeAsync("trades", new[] { "2330", "2317" });
-await ws.SubscribeAsync("trades", "2330", new SubscribeOptions { IntradayOddLot = true });
+await ws.SubscribeAsync("trades", new[] { "2330" }, new SubscribeOptions { IntradayOddLot = true });
 
 // Keep running for 10 seconds
 await Task.Delay(TimeSpan.FromSeconds(10));
@@ -299,10 +299,9 @@ ulong MessagesDroppedTotal                    // Messages dropped this connectio
 Task SubscribeAsync(string channel, string symbol, bool? afterHours = null)    // Subscribe to channel
 Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null)  // Unsubscribe (same afterHours as subscribe)
 
-// SubscribeOptions { AfterHours (FutOpt only), IntradayOddLot (Stock only) }
-Task SubscribeAsync(string channel, string symbol, SubscribeOptions options)
+// SubscribeOptions { AfterHours (FutOpt only), IntradayOddLot (Stock only) };
+// one symbol with options is new[] { "2330" }
 Task SubscribeAsync(string channel, IEnumerable<string> symbols, SubscribeOptions? options = null)  // multiple symbols in one frame
-Task UnsubscribeAsync(string channel, string symbol, SubscribeOptions options)
 Task UnsubscribeAsync(string channel, IEnumerable<string> symbols, SubscribeOptions? options = null)
 
 Task UnsubscribeAsync(IEnumerable<string> ids)                                // Unsubscribe by server ids (empty: 1005)

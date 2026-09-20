@@ -475,17 +475,11 @@ namespace FugleMarketData
             SubscribeAsync(channel, new[] { symbol }, afterHours.HasValue ? new SubscribeOptions { AfterHours = afterHours } : null);
 
         /// <summary>
-        /// Subscribe to a market data channel for one symbol, with explicit options.
-        /// </summary>
-        /// <param name="channel">Channel name: "trades", "candles", "books", "aggregates", plus "indices" on the Stock endpoint</param>
-        /// <param name="symbol">Symbol to subscribe (e.g., "2330" for TSMC)</param>
-        /// <param name="options">Endpoint-specific options: <see cref="SubscribeOptions.AfterHours"/> (FutOpt only) or <see cref="SubscribeOptions.IntradayOddLot"/> (Stock only)</param>
-        /// <returns>Task that completes when subscription is confirmed</returns>
-        public Task SubscribeAsync(string channel, string symbol, SubscribeOptions options) =>
-            SubscribeAsync(channel, new[] { symbol }, options);
-
-        /// <summary>
-        /// Subscribe to a market data channel for one or more symbols.
+        /// Subscribe to a market data channel for one or more symbols. This is
+        /// also the form for one symbol with <see cref="SubscribeOptions"/>:
+        /// <c>SubscribeAsync("trades", new[] { "2330" }, options)</c>. (A third
+        /// <c>(string, string, SubscribeOptions)</c> overload would make a
+        /// literal <c>null</c> third argument ambiguous with <c>bool?</c>.)
         /// </summary>
         /// <param name="channel">Channel name: "trades", "candles", "books", "aggregates", plus "indices" on the Stock endpoint</param>
         /// <param name="symbols">Symbols to subscribe; at least one is required</param>
@@ -507,16 +501,6 @@ namespace FugleMarketData
         /// <returns>Task that completes when unsubscription is confirmed</returns>
         public Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null) =>
             UnsubscribeAsync(channel, new[] { symbol }, afterHours.HasValue ? new SubscribeOptions { AfterHours = afterHours } : null);
-
-        /// <summary>
-        /// Unsubscribe from a market data channel for one symbol, with explicit options.
-        /// </summary>
-        /// <param name="channel">Channel name</param>
-        /// <param name="symbol">Symbol to unsubscribe</param>
-        /// <param name="options">The same options as the matching <c>SubscribeAsync</c> call</param>
-        /// <returns>Task that completes when unsubscription is confirmed</returns>
-        public Task UnsubscribeAsync(string channel, string symbol, SubscribeOptions options) =>
-            UnsubscribeAsync(channel, new[] { symbol }, options);
 
         /// <summary>
         /// Unsubscribe from a market data channel for one or more symbols.
