@@ -545,6 +545,21 @@ it unread holds up message delivery once it is full. A drop report is the
 exception: when `Errors()` is full it is skipped instead, so messages keep
 flowing; `MessagesDroppedTotal()` still counts those drops.
 
+#### Auth Timeout
+
+Once the WebSocket is open the client sends its auth frame and waits for the
+server's verdict for `WithAuthTimeout` (default 10s). It applies to the first
+`Connect()` and to every reconnect; elapsing it fails the attempt with a
+timeout error (code 3001). Raise it on a slow route to the server; the
+server itself allows 60 seconds. The duration must be at least one millisecond.
+
+```go
+client, err := mkt.NewFugleWebSocketClient(listener,
+    mkt.WithApiKey("your-api-key"),
+    mkt.WithAuthTimeout(15*time.Second), // default 10s
+)
+```
+
 #### StreamMessage Type
 
 ```go

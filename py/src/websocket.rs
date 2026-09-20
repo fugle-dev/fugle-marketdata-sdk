@@ -559,6 +559,8 @@ pub struct WebSocketClient {
     health_check_config: HealthCheckConfig,
     tls: marketdata_core::TlsConfig,
     message_queue: MessageQueueSettings,
+    /// `auth_timeout_ms`, validated in the constructor (#199).
+    auth_timeout: Duration,
 }
 
 #[pymethods]
@@ -580,12 +582,17 @@ impl WebSocketClient {
     ///     reporting them through the `messages_dropped` callback;
     ///     "unbounded" never drops, and memory grows while you lag
     ///   - message_buffer: unread messages held (default 4096)
+    ///   - auth_timeout_ms: how long the auth handshake may take once the
+    ///     WebSocket is open, in milliseconds (default 10000). Applies to
+    ///     the first connect and to every reconnect; elapsing it fails the
+    ///     attempt with TimeoutError (code 3001). Must be > 0.
     ///
     /// Returns:
     ///     A new WebSocketClient instance
     ///
     /// Raises:
-    ///     ConfigError: code 1004 if zero or multiple auth methods provided
+    ///     ConfigError: code 1004 if zero or multiple auth methods provided,
+    ///         or if auth_timeout_ms is not greater than 0
     ///
     /// Example:
     ///     ```python
@@ -601,7 +608,8 @@ impl WebSocketClient {
     ///     ws = WebSocketClient(api_key="key", health_check=hc)
     ///     ```
     #[new]
-    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None, base_url=None, version=None, reconnect=None, health_check=None, tls_ca_file=None, tls_root_cert_pem=None, tls_accept_invalid_certs=false, message_overflow=None, message_buffer=None))]
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None, base_url=None, version=None, reconnect=None, health_check=None, tls_ca_file=None, tls_root_cert_pem=None, tls_accept_invalid_certs=false, message_overflow=None, message_buffer=None, auth_timeout_ms=None))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         py: Python<'_>,
         api_key: Option<String>,
@@ -616,6 +624,7 @@ impl WebSocketClient {
         tls_accept_invalid_certs: bool,
         message_overflow: Option<String>,
         message_buffer: Option<i64>,
+        auth_timeout_ms: Option<i64>,
     ) -> PyResult<Self> {
         // Core requires exactly one non-blank credential (ConfigError, 1004)
         // and sends it in the auth frame field matching its kind (#91).
@@ -646,6 +655,14 @@ impl WebSocketClient {
 
         let (stock_version, futopt_version) = parse_ws_versions(version)?;
         let message_queue = MessageQueueSettings::parse(message_overflow.as_deref(), message_buffer)?;
+        // Core validates it (ConfigError, 1004): 0 or negative is refused.
+        let auth_timeout = match auth_timeout_ms {
+            None => marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
+            Some(ms) => marketdata_core::websocket::auth_timeout_from_millis(
+                u64::try_from(ms).unwrap_or(0),
+            )
+            .map_err(crate::errors::to_py_err)?,
+        };
 
         // Resolve both endpoints now so a bad `base_url` raises here rather
         // than from `.stock.connect()` much later. Matches the official SDK,
@@ -670,6 +687,7 @@ impl WebSocketClient {
             health_check_config,
             tls,
             message_queue,
+            auth_timeout,
         })
     }
 
@@ -688,6 +706,7 @@ impl WebSocketClient {
             self.health_check_config.clone(),
             self.tls.clone(),
             self.message_queue,
+            self.auth_timeout,
         )
     }
 
@@ -706,6 +725,7 @@ impl WebSocketClient {
             self.health_check_config.clone(),
             self.tls.clone(),
             self.message_queue,
+            self.auth_timeout,
         )
     }
 }
@@ -1329,6 +1349,7 @@ pub struct StockWebSocketClient {
     // Background thread control
     reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
     message_queue: MessageQueueSettings,
+    auth_timeout: Duration,
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
@@ -1353,6 +1374,7 @@ impl StockWebSocketClient {
         health_check_config: HealthCheckConfig,
         tls: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
+        auth_timeout: Duration,
     ) -> Self {
         Self {
             auth,
@@ -1367,6 +1389,7 @@ impl StockWebSocketClient {
             runtime: Arc::new(Mutex::new(None)),
             reader_thread_handle: Arc::new(Mutex::new(None)),
             message_queue,
+            auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
             closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
@@ -1392,6 +1415,7 @@ impl StockWebSocketClient {
         });
         config.tls = self.tls.clone();
         self.message_queue.apply(&mut config);
+        config.auth_timeout = self.auth_timeout;
         config
     }
 
@@ -1899,6 +1923,7 @@ impl StockWebSocketClient {
         let state_arc = Arc::clone(&self.state);
         let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
         let message_queue = self.message_queue;
+        let auth_timeout = self.auth_timeout;
         let messages_dropped = Arc::clone(&self.messages_dropped);
         let test_panic = test_panic_site();
         let connect_gate = self.connect_gate.clone();
@@ -1918,6 +1943,7 @@ impl StockWebSocketClient {
             .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
             let mut config = config;
             message_queue.apply(&mut config);
+            config.auth_timeout = auth_timeout;
             let capacity = handoff_capacity(&config);
             let ws_client = Arc::new(marketdata_core::aio::WebSocketClient::with_full_config(
                 config,
@@ -2147,6 +2173,7 @@ pub struct FutOptWebSocketClient {
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
     reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
     message_queue: MessageQueueSettings,
+    auth_timeout: Duration,
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
@@ -2171,6 +2198,7 @@ impl FutOptWebSocketClient {
         health_check_config: HealthCheckConfig,
         tls: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
+        auth_timeout: Duration,
     ) -> Self {
         Self {
             auth,
@@ -2185,6 +2213,7 @@ impl FutOptWebSocketClient {
             runtime: Arc::new(Mutex::new(None)),
             reader_thread_handle: Arc::new(Mutex::new(None)),
             message_queue,
+            auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
             closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
@@ -2208,6 +2237,7 @@ impl FutOptWebSocketClient {
         });
         config.tls = self.tls.clone();
         self.message_queue.apply(&mut config);
+        config.auth_timeout = self.auth_timeout;
         config
     }
 
@@ -2743,6 +2773,7 @@ mod tests {
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
             MessageQueueSettings::parse(None, None).unwrap(),
+            marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
@@ -2759,6 +2790,7 @@ mod tests {
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
             MessageQueueSettings::parse(None, None).unwrap(),
+            marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
@@ -2788,6 +2820,7 @@ mod tests {
             HealthCheckConfig::default(),
             marketdata_core::TlsConfig::default(),
             MessageQueueSettings::parse(None, None).unwrap(),
+            marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());

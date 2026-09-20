@@ -243,7 +243,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config() != 8956) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials() != 10661) {
+    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials() != 53902) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint() != 35702) {
@@ -252,7 +252,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config() != 32798) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options() != 1033) {
+    if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options() != 2558) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url() != 63549) {
@@ -1279,10 +1279,10 @@ std::shared_ptr<WebSocketClient> WebSocketClient::new_with_config(const std::str
         nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config))));
 }
 
-std::shared_ptr<WebSocketClient> WebSocketClient::new_with_credentials(const CredentialsRecord &credentials, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue) {
+std::shared_ptr<WebSocketClient> WebSocketClient::new_with_credentials(const CredentialsRecord &credentials, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue, std::optional<ConnectionConfigRecord> connection) {
     return std::shared_ptr<WebSocketClient>(new WebSocketClient(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials,
-        uniffi::FfiConverterMarketDataError::lift, uniffi::FfiConverterTypeCredentialsRecord::lower(credentials), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version), uniffi::FfiConverterOptionalTypeMessageQueueConfigRecord::lower(message_queue))));
+        uniffi::FfiConverterMarketDataError::lift, uniffi::FfiConverterTypeCredentialsRecord::lower(credentials), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version), uniffi::FfiConverterOptionalTypeMessageQueueConfigRecord::lower(message_queue), uniffi::FfiConverterOptionalTypeConnectionConfigRecord::lower(connection))));
 }
 
 std::shared_ptr<WebSocketClient> WebSocketClient::new_with_endpoint(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint) {
@@ -1297,10 +1297,10 @@ std::shared_ptr<WebSocketClient> WebSocketClient::new_with_full_config(const std
         nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version))));
 }
 
-std::shared_ptr<WebSocketClient> WebSocketClient::new_with_options(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue) {
+std::shared_ptr<WebSocketClient> WebSocketClient::new_with_options(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue, std::optional<ConnectionConfigRecord> connection) {
     return std::shared_ptr<WebSocketClient>(new WebSocketClient(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options,
-        nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version), uniffi::FfiConverterOptionalTypeMessageQueueConfigRecord::lower(message_queue))));
+        nullptr, uniffi::FfiConverterString::lower(api_key), uniffi::FfiConverterWebSocketListener::lower(listener), uniffi::FfiConverterWebSocketEndpoint::lower(endpoint), uniffi::FfiConverterOptionalString::lower(base_url), uniffi::FfiConverterOptionalTypeReconnectConfigRecord::lower(reconnect_config), uniffi::FfiConverterOptionalTypeHealthCheckConfigRecord::lower(health_check_config), uniffi::FfiConverterOptionalTypeTlsConfigRecord::lower(tls), uniffi::FfiConverterOptionalTypeStreamingVersionRecord::lower(version), uniffi::FfiConverterOptionalTypeMessageQueueConfigRecord::lower(message_queue), uniffi::FfiConverterOptionalTypeConnectionConfigRecord::lower(connection))));
 }
 
 std::shared_ptr<WebSocketClient> WebSocketClient::new_with_url(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, const std::string &base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config) {
@@ -1649,6 +1649,8 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
         this->instance
     );
 }
+
+
 
 
 
@@ -2082,6 +2084,42 @@ uint64_t FfiConverterTypeAfterHoursParams::allocation_size(const AfterHoursParam
     
     return 
         FfiConverterOptionalBool::allocation_size(val.after_hours);
+    
+}
+
+
+ConnectionConfigRecord FfiConverterTypeConnectionConfigRecord::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeConnectionConfigRecord::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeConnectionConfigRecord::lower(const ConnectionConfigRecord &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeConnectionConfigRecord::write(stream, val);
+
+    return std::move(buf);
+}
+
+ConnectionConfigRecord FfiConverterTypeConnectionConfigRecord::read(RustStream &stream) {
+    return {
+        FfiConverterUInt64::read(stream)
+    };
+}
+
+void FfiConverterTypeConnectionConfigRecord::write(RustStream &stream, const ConnectionConfigRecord &val) {
+    FfiConverterUInt64::write(stream, val.auth_timeout_ms);
+}
+
+uint64_t FfiConverterTypeConnectionConfigRecord::allocation_size(const ConnectionConfigRecord &val) {
+    
+    return 
+        FfiConverterUInt64::allocation_size(val.auth_timeout_ms);
     
 }
 
@@ -4153,6 +4191,53 @@ uint64_t FfiConverterOptionalTypeAfterHoursParams::allocation_size(const std::op
 
     if (val) {
         ret += FfiConverterTypeAfterHoursParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<ConnectionConfigRecord> FfiConverterOptionalTypeConnectionConfigRecord::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeConnectionConfigRecord::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeConnectionConfigRecord::lower(const std::optional<ConnectionConfigRecord>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeConnectionConfigRecord::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeConnectionConfigRecord::write(stream, val);
+
+    return buf;
+}
+
+std::optional<ConnectionConfigRecord> FfiConverterOptionalTypeConnectionConfigRecord::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeConnectionConfigRecord::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeConnectionConfigRecord::write(RustStream &stream, const std::optional<ConnectionConfigRecord>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeConnectionConfigRecord::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeConnectionConfigRecord::allocation_size(const std::optional<ConnectionConfigRecord> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeConnectionConfigRecord::allocation_size(val.value());
     }
 
     return ret;

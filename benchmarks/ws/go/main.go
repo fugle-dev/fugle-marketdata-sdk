@@ -97,6 +97,7 @@ func main() {
 		mkt.CredentialsRecord{ApiKey: &apiKey}, listener, mkt.WebSocketEndpointStock,
 		url, nil, nil, nil, nil,
 		&mkt.MessageQueueConfigRecord{Overflow: mkt.MessageOverflowRecordUnbounded},
+		nil,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create client failed: %v\n", err)

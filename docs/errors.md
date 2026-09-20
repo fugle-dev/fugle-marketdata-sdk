@@ -125,7 +125,7 @@ Rust constants live in `marketdata_core::error_code`.
 | 2003 | `API` | `ApiError` | by status: 429 `rate_limit`, 5xx `network`, else `client` | The API answered with any other error status. |
 | 2010 | `CLIENT_CLOSED` | `ClientClosed`, `ConnectionAborted` | `client` | `ClientClosed`: the client was already closed. `ConnectionAborted` (message `Connection aborted: …`): `connect()` given up because `disconnect()` was called before the connection was established (Rust async client, Node, Python, and the C#, Go, Java and C++ bindings, which report it as the `ClientClosed` variant). |
 | 2011 | `ALREADY_CONNECTED` | `AlreadyConnected` | `client` | WebSocket `connect()` called while connected, connecting or auto-reconnecting. |
-| 3001 | `TIMEOUT` | `TimeoutError` | `network` | A request or the WebSocket connect timed out. |
+| 3001 | `TIMEOUT` | `TimeoutError` | `network` | A request, the WebSocket connect or its auth handshake (`auth_timeout_ms`, default 10 s) timed out. |
 | 3002 | `WEBSOCKET` | `WebSocketError` | by kind: I/O `network`, TLS `auth`, upgrade HTTP status as for 2003 (401/403 `auth`), else `protocol` | A WebSocket connect, read or write fails. |
 | 3003 | `HEARTBEAT_TIMEOUT` | `HeartbeatTimeout` | `network` | No inbound WebSocket frame within the heartbeat window. |
 | 3004 | `CALLBACK_FAILED` | — | `client` | A WebSocket callback / listener raised an exception, or (Node) the Promise it returned rejected. See [Callback failures](#callback-failures). |

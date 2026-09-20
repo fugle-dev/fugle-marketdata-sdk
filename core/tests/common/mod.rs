@@ -22,7 +22,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame};
 use tokio_tungstenite::tungstenite::Message;
 
-/// Behaviour the server applies after the auth handshake completes.
+/// Behaviour the server applies after the auth handshake completes (or, for
+/// [`AfterAuth::NeverAuthenticate`], in place of answering it).
 #[derive(Debug, Clone)]
 pub enum AfterAuth {
     /// Park the connection — never send anything, never close.
@@ -81,6 +82,9 @@ pub enum AfterAuth {
         id_prefix: String,
         notify: Arc<tokio::sync::Notify>,
     },
+    /// Accept the WebSocket but never answer the auth frame: idle until the
+    /// client gives the connection up (its auth timeout, #200).
+    NeverAuthenticate,
 }
 
 /// Collect items from `recv` until none arrives for [`QUIET`], capped at
@@ -201,16 +205,20 @@ async fn serve(
     let (mut sink, mut stream) = ws.split();
 
     // Auth handshake: read first text frame, send "authenticated".
+    // `NeverAuthenticate` swallows the frame and idles instead.
+    let answer_auth = !matches!(*behaviour, AfterAuth::NeverAuthenticate);
     if let Some(Ok(_first)) = stream.next().await {
-        let _ = sink
-            .send(Message::Text(
-                r#"{"event":"authenticated"}"#.to_string().into(),
-            ))
-            .await;
+        if answer_auth {
+            let _ = sink
+                .send(Message::Text(
+                    r#"{"event":"authenticated"}"#.to_string().into(),
+                ))
+                .await;
+        }
     }
 
     match (*behaviour).clone() {
-        AfterAuth::Idle => loop {
+        AfterAuth::Idle | AfterAuth::NeverAuthenticate => loop {
             match stream.next().await {
                 Some(Ok(Message::Close(_))) => {
                     // tungstenite already queued the RFC-6455 Close

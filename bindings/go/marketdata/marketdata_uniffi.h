@@ -1032,7 +1032,7 @@ void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_config(Ru
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_CREDENTIALS
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_CREDENTIALS
-void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(RustBuffer credentials, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustCallStatus *out_status
+void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(RustBuffer credentials, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustBuffer connection, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_ENDPOINT
@@ -1047,7 +1047,7 @@ void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_full_conf
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_OPTIONS
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_OPTIONS
-void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer api_key, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustCallStatus *out_status
+void* uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(RustBuffer api_key, void* listener, RustBuffer endpoint, RustBuffer base_url, RustBuffer reconnect_config, RustBuffer health_check_config, RustBuffer tls, RustBuffer version, RustBuffer message_queue, RustBuffer connection, RustCallStatus *out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CONSTRUCTOR_WEBSOCKETCLIENT_NEW_WITH_URL

@@ -1821,6 +1821,7 @@ class WebSocketClient:
         tls_accept_invalid_certs: bool = False,
         message_overflow: Literal["drop_newest", "unbounded"] | None = None,
         message_buffer: int | None = None,
+        auth_timeout_ms: int | None = None,
     ) -> None:
         """Create a new WebSocket client with authentication and configuration.
 
@@ -1855,11 +1856,17 @@ class WebSocketClient:
                 never drops, and memory grows while you fall behind.
             message_buffer: Unread messages held before message_overflow
                 applies (default 4096; must be positive).
+            auth_timeout_ms: How long the auth handshake may take once the
+                WebSocket is open, in milliseconds: from the auth frame being
+                sent until the server's verdict (default 10000). Applies to
+                the first connect and to every reconnect; elapsing it fails
+                the attempt with TimeoutError (code 3001). Must be greater
+                than 0. The server itself allows 60 seconds.
 
         Raises:
             ConfigError: code 1004 if zero or multiple non-empty auth
                 methods are given (empty or whitespace-only values count as
-                not given)
+                not given), or if auth_timeout_ms is not greater than 0
             TypeError: both TLS cert options set, or a base_url carrying a
                 version segment
             OSError: tls_ca_file path not readable

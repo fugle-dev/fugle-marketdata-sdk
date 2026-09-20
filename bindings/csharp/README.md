@@ -437,6 +437,23 @@ using var ws = new WebSocketClient(options, listener);
 FutOpt v1.1 adds trial-matching (試撮) frames on `trades` / `books` — check
 the frame's `isTrial` before acting on a price.
 
+#### Auth timeout
+
+Once the WebSocket is open the client sends its auth frame and waits for the
+server's verdict for `AuthTimeoutMs` (default 10000). It applies to the
+first connect and to every reconnect; elapsing it fails the attempt with a
+timeout error (code 3001). Raise it on a slow route to the server; the
+server itself allows 60 seconds.
+
+```csharp
+var options = new WebSocketClientOptions
+{
+    ApiKey = "your-api-key",
+    AuthTimeoutMs = 15000,  // null = default (10000); must be > 0
+};
+using var ws = new WebSocketClient(options, listener);
+```
+
 #### StreamMessage Properties
 
 | Property | Type | Description |

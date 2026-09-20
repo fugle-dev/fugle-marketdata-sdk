@@ -6,6 +6,7 @@ package marketdata_uniffi
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // Test 1: ReconnectConfig zero-value defaults
@@ -267,6 +268,7 @@ func TestOptionFunctions(t *testing.T) {
 		{"WithoutHealthCheck", WithoutHealthCheck()},
 		{"WithMessageOverflow", WithMessageOverflow(MessageOverflowUnbounded)},
 		{"WithMessageBuffer", WithMessageBuffer(8192)},
+		{"WithAuthTimeout", WithAuthTimeout(15 * time.Second)},
 	}
 
 	for _, tt := range tests {
@@ -505,5 +507,32 @@ func TestHealthCheckRecord(t *testing.T) {
 	}
 	if rec := cfg.healthCheckRecord(); rec == nil || !enabledIs(rec.Enabled, false) {
 		t.Errorf("WithoutHealthCheck: want Enabled=false, got %+v", rec)
+	}
+}
+
+// WithAuthTimeout fills the connection record in milliseconds; without it
+// the record stays nil so core keeps its default (10 s) (#199).
+func TestWithAuthTimeout(t *testing.T) {
+	if rec := (&clientConfig{}).connectionRecord(); rec != nil {
+		t.Errorf("no option: want nil record (core defaults), got %+v", *rec)
+	}
+
+	cfg := &clientConfig{}
+	if err := WithAuthTimeout(15 * time.Second)(cfg); err != nil {
+		t.Fatalf("option: %v", err)
+	}
+	rec := cfg.connectionRecord()
+	if rec == nil || rec.AuthTimeoutMs != 15000 {
+		t.Errorf("WithAuthTimeout(15s): want AuthTimeoutMs=15000, got %+v", rec)
+	}
+
+	for _, d := range []time.Duration{0, -time.Second, 500 * time.Microsecond} {
+		cfg := &clientConfig{}
+		if err := WithAuthTimeout(d)(cfg); err == nil {
+			t.Errorf("WithAuthTimeout(%v): want error, got nil", d)
+		}
+		if cfg.authTimeoutMs != nil {
+			t.Errorf("WithAuthTimeout(%v): want authTimeoutMs unset, got %d", d, *cfg.authTimeoutMs)
+		}
 	}
 }

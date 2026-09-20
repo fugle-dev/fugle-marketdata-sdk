@@ -1347,7 +1347,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials()
 		})
-		if checksum != 10661 {
+		if checksum != 53902 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials: UniFFI API checksum mismatch")
 		}
@@ -1374,7 +1374,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options()
 		})
-		if checksum != 1033 {
+		if checksum != 2558 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options: UniFFI API checksum mismatch")
 		}
@@ -4548,9 +4548,9 @@ func WebSocketClientNewWithConfig(apiKey string, listener WebSocketListener, end
 // The credentials are one record rather than three arguments: with three
 // more buffers than `new_with_options` the Java binding (JNA) passed
 // garbage to Rust on macOS arm64.
-func WebSocketClientNewWithCredentials(credentials CredentialsRecord, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord, messageQueue *MessageQueueConfigRecord) (*WebSocketClient, error) {
+func WebSocketClientNewWithCredentials(credentials CredentialsRecord, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord, messageQueue *MessageQueueConfigRecord, connection *ConnectionConfigRecord) (*WebSocketClient, error) {
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
-		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(FfiConverterCredentialsRecordINSTANCE.Lower(credentials), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), FfiConverterOptionalMessageQueueConfigRecordINSTANCE.Lower(messageQueue), _uniffiStatus)
+		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(FfiConverterCredentialsRecordINSTANCE.Lower(credentials), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), FfiConverterOptionalMessageQueueConfigRecordINSTANCE.Lower(messageQueue), FfiConverterOptionalConnectionConfigRecordINSTANCE.Lower(connection), _uniffiStatus)
 	})
 	if _uniffiErr != nil {
 		var _uniffiDefaultValue *WebSocketClient
@@ -4593,11 +4593,13 @@ func WebSocketClientNewWithFullConfig(apiKey string, listener WebSocketListener,
 }
 
 // Create a new WebSocket client with full configuration plus the
-// message queue settings.
+// message queue and connection settings.
 //
 // Same as `new_with_full_config`, with `message_queue` choosing what
 // happens while `on_message` falls behind (None for the defaults:
-// `DropNewest`, 4096 messages).
+// `DropNewest`, 4096 messages) and `connection` setting the
+// connection's own timeouts (None for the defaults: 10 s auth
+// timeout).
 //
 // # Arguments
 // * `api_key` - Fugle API key for authentication
@@ -4609,9 +4611,10 @@ func WebSocketClientNewWithFullConfig(apiKey string, listener WebSocketListener,
 // * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
 // * `version` - Optional per-product streaming version
 // * `message_queue` - Optional message queue configuration
-func WebSocketClientNewWithOptions(apiKey string, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord, messageQueue *MessageQueueConfigRecord) *WebSocketClient {
+// * `connection` - Optional connection configuration (auth timeout)
+func WebSocketClientNewWithOptions(apiKey string, listener WebSocketListener, endpoint WebSocketEndpoint, baseUrl *string, reconnectConfig *ReconnectConfigRecord, healthCheckConfig *HealthCheckConfigRecord, tls *TlsConfigRecord, version *StreamingVersionRecord, messageQueue *MessageQueueConfigRecord, connection *ConnectionConfigRecord) *WebSocketClient {
 	return FfiConverterWebSocketClientINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) unsafe.Pointer {
-		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(FfiConverterStringINSTANCE.Lower(apiKey), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), FfiConverterOptionalMessageQueueConfigRecordINSTANCE.Lower(messageQueue), _uniffiStatus)
+		return C.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(FfiConverterStringINSTANCE.Lower(apiKey), FfiConverterWebSocketListenerINSTANCE.Lower(listener), FfiConverterWebSocketEndpointINSTANCE.Lower(endpoint), FfiConverterOptionalStringINSTANCE.Lower(baseUrl), FfiConverterOptionalReconnectConfigRecordINSTANCE.Lower(reconnectConfig), FfiConverterOptionalHealthCheckConfigRecordINSTANCE.Lower(healthCheckConfig), FfiConverterOptionalTlsConfigRecordINSTANCE.Lower(tls), FfiConverterOptionalStreamingVersionRecordINSTANCE.Lower(version), FfiConverterOptionalMessageQueueConfigRecordINSTANCE.Lower(messageQueue), FfiConverterOptionalConnectionConfigRecordINSTANCE.Lower(connection), _uniffiStatus)
 	}))
 }
 
@@ -5522,6 +5525,57 @@ func (c FfiConverterAfterHoursParams) Write(writer io.Writer, value AfterHoursPa
 type FfiDestroyerAfterHoursParams struct{}
 
 func (_ FfiDestroyerAfterHoursParams) Destroy(value AfterHoursParams) {
+	value.Destroy()
+}
+
+// Connection configuration record for FFI: the timeouts of the connection
+// itself (#199).
+//
+// Every field's zero value means "use default", so a zero-initialized
+// record (C++ `ConnectionConfigRecord{}`, a Go `ConnectionConfigRecord{}`
+// literal) is the full default. Omitting the record gives the same result.
+type ConnectionConfigRecord struct {
+	// How long the auth handshake may take once the WebSocket is open, in
+	// milliseconds: from the auth frame being sent until the server's
+	// verdict. Default 10000. Pass 0 to use the default. Applies to the
+	// first `connect()` and to every reconnect; elapsing it fails the
+	// attempt with a `TimeoutError` (3001). The server itself allows 60 s.
+	AuthTimeoutMs uint64
+}
+
+func (r *ConnectionConfigRecord) Destroy() {
+	FfiDestroyerUint64{}.Destroy(r.AuthTimeoutMs)
+}
+
+type FfiConverterConnectionConfigRecord struct{}
+
+var FfiConverterConnectionConfigRecordINSTANCE = FfiConverterConnectionConfigRecord{}
+
+func (c FfiConverterConnectionConfigRecord) Lift(rb RustBufferI) ConnectionConfigRecord {
+	return LiftFromRustBuffer[ConnectionConfigRecord](c, rb)
+}
+
+func (c FfiConverterConnectionConfigRecord) Read(reader io.Reader) ConnectionConfigRecord {
+	return ConnectionConfigRecord{
+		FfiConverterUint64INSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterConnectionConfigRecord) Lower(value ConnectionConfigRecord) C.RustBuffer {
+	return LowerIntoRustBuffer[ConnectionConfigRecord](c, value)
+}
+
+func (c FfiConverterConnectionConfigRecord) LowerExternal(value ConnectionConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[ConnectionConfigRecord](c, value))
+}
+
+func (c FfiConverterConnectionConfigRecord) Write(writer io.Writer, value ConnectionConfigRecord) {
+	FfiConverterUint64INSTANCE.Write(writer, value.AuthTimeoutMs)
+}
+
+type FfiDestroyerConnectionConfigRecord struct{}
+
+func (_ FfiDestroyerConnectionConfigRecord) Destroy(value ConnectionConfigRecord) {
 	value.Destroy()
 }
 
@@ -8142,6 +8196,47 @@ type FfiDestroyerOptionalAfterHoursParams struct{}
 func (_ FfiDestroyerOptionalAfterHoursParams) Destroy(value *AfterHoursParams) {
 	if value != nil {
 		FfiDestroyerAfterHoursParams{}.Destroy(*value)
+	}
+}
+
+type FfiConverterOptionalConnectionConfigRecord struct{}
+
+var FfiConverterOptionalConnectionConfigRecordINSTANCE = FfiConverterOptionalConnectionConfigRecord{}
+
+func (c FfiConverterOptionalConnectionConfigRecord) Lift(rb RustBufferI) *ConnectionConfigRecord {
+	return LiftFromRustBuffer[*ConnectionConfigRecord](c, rb)
+}
+
+func (_ FfiConverterOptionalConnectionConfigRecord) Read(reader io.Reader) *ConnectionConfigRecord {
+	if readInt8(reader) == 0 {
+		return nil
+	}
+	temp := FfiConverterConnectionConfigRecordINSTANCE.Read(reader)
+	return &temp
+}
+
+func (c FfiConverterOptionalConnectionConfigRecord) Lower(value *ConnectionConfigRecord) C.RustBuffer {
+	return LowerIntoRustBuffer[*ConnectionConfigRecord](c, value)
+}
+
+func (c FfiConverterOptionalConnectionConfigRecord) LowerExternal(value *ConnectionConfigRecord) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*ConnectionConfigRecord](c, value))
+}
+
+func (_ FfiConverterOptionalConnectionConfigRecord) Write(writer io.Writer, value *ConnectionConfigRecord) {
+	if value == nil {
+		writeInt8(writer, 0)
+	} else {
+		writeInt8(writer, 1)
+		FfiConverterConnectionConfigRecordINSTANCE.Write(writer, *value)
+	}
+}
+
+type FfiDestroyerOptionalConnectionConfigRecord struct{}
+
+func (_ FfiDestroyerOptionalConnectionConfigRecord) Destroy(value *ConnectionConfigRecord) {
+	if value != nil {
+		FfiDestroyerConnectionConfigRecord{}.Destroy(*value)
 	}
 }
 

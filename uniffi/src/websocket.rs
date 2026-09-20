@@ -318,6 +318,33 @@ impl MessageQueueConfigRecord {
     }
 }
 
+/// Connection configuration record for FFI: the timeouts of the connection
+/// itself (#199).
+///
+/// Every field's zero value means "use default", so a zero-initialized
+/// record (C++ `ConnectionConfigRecord{}`, a Go `ConnectionConfigRecord{}`
+/// literal) is the full default. Omitting the record gives the same result.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct ConnectionConfigRecord {
+    /// How long the auth handshake may take once the WebSocket is open, in
+    /// milliseconds: from the auth frame being sent until the server's
+    /// verdict. Default 10000. Pass 0 to use the default. Applies to the
+    /// first `connect()` and to every reconnect; elapsing it fails the
+    /// attempt with a `TimeoutError` (3001). The server itself allows 60 s.
+    #[uniffi(default = 0)]
+    pub auth_timeout_ms: u64,
+}
+
+impl ConnectionConfigRecord {
+    fn apply(&self, config: &mut marketdata_core::ConnectionConfig) {
+        // 0 means "unset" across the FFI boundary, so it keeps the core
+        // default; any other value is valid (there is no floor).
+        if self.auth_timeout_ms > 0 {
+            config.auth_timeout = std::time::Duration::from_millis(self.auth_timeout_ms);
+        }
+    }
+}
+
 /// Endpoint type for WebSocket connection
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum WebSocketEndpoint {
@@ -406,6 +433,7 @@ pub struct WebSocketClient {
     health_check_config: Result<Option<marketdata_core::HealthCheckConfig>, String>,
     tls_config: Option<marketdata_core::TlsConfig>,
     message_queue: Option<MessageQueueConfigRecord>,
+    connection_config: Option<ConnectionConfigRecord>,
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: std::sync::Mutex<Option<marketdata_core::MessagesDroppedHandle>>,
@@ -432,6 +460,7 @@ impl WebSocketClient {
         tls_config: Option<marketdata_core::TlsConfig>,
         version: StreamingVersionRecord,
         message_queue: Option<MessageQueueConfigRecord>,
+        connection_config: Option<ConnectionConfigRecord>,
     ) -> Arc<Self> {
         Arc::new(Self {
             connection: std::sync::Mutex::new(ConnectionSlot::default()),
@@ -445,6 +474,7 @@ impl WebSocketClient {
             health_check_config,
             tls_config,
             message_queue,
+            connection_config,
             messages_dropped: std::sync::Mutex::new(None),
             callback_failures: CallbackFailures::default(),
             connect_gate: tokio::sync::Mutex::new(()),
@@ -463,7 +493,7 @@ impl WebSocketClient {
     /// * `listener` - Callback interface for receiving WebSocket events
     #[uniffi::constructor]
     pub fn new(api_key: String, listener: Arc<dyn WebSocketListener>) -> Arc<Self> {
-        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, Ok(None), Ok(None), None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, WebSocketEndpoint::Stock, Ok(None), Ok(None), None, None, Default::default(), None, None)
     }
 
     /// Create a new WebSocket client for a specific endpoint
@@ -478,7 +508,7 @@ impl WebSocketClient {
         listener: Arc<dyn WebSocketListener>,
         endpoint: WebSocketEndpoint,
     ) -> Arc<Self> {
-        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, Ok(None), Ok(None), None, None, Default::default(), None)
+        Self::new_internal(AuthRequest::with_api_key(api_key), listener, endpoint, Ok(None), Ok(None), None, None, Default::default(), None, None)
     }
 
     /// Create a new WebSocket client with full configuration
@@ -507,6 +537,7 @@ impl WebSocketClient {
             None,
             Default::default(),
             None,
+            None,
         )
     }
 
@@ -529,6 +560,7 @@ impl WebSocketClient {
             Some(base_url),
             None,
             Default::default(),
+            None,
             None,
         )
     }
@@ -568,15 +600,18 @@ impl WebSocketClient {
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
             None,
+            None,
         )
     }
 
     /// Create a new WebSocket client with full configuration plus the
-    /// message queue settings.
+    /// message queue and connection settings.
     ///
     /// Same as `new_with_full_config`, with `message_queue` choosing what
     /// happens while `on_message` falls behind (None for the defaults:
-    /// `DropNewest`, 4096 messages).
+    /// `DropNewest`, 4096 messages) and `connection` setting the
+    /// connection's own timeouts (None for the defaults: 10 s auth
+    /// timeout).
     ///
     /// # Arguments
     /// * `api_key` - Fugle API key for authentication
@@ -588,6 +623,7 @@ impl WebSocketClient {
     /// * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
     /// * `version` - Optional per-product streaming version
     /// * `message_queue` - Optional message queue configuration
+    /// * `connection` - Optional connection configuration (auth timeout)
     #[uniffi::constructor]
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_options(
@@ -600,6 +636,7 @@ impl WebSocketClient {
         tls: Option<crate::tls::TlsConfigRecord>,
         version: Option<StreamingVersionRecord>,
         message_queue: Option<MessageQueueConfigRecord>,
+        connection: Option<ConnectionConfigRecord>,
     ) -> Arc<Self> {
         Self::new_internal(
             AuthRequest::with_api_key(api_key),
@@ -611,6 +648,7 @@ impl WebSocketClient {
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
             message_queue,
+            connection,
         )
     }
 
@@ -637,6 +675,7 @@ impl WebSocketClient {
         tls: Option<crate::tls::TlsConfigRecord>,
         version: Option<StreamingVersionRecord>,
         message_queue: Option<MessageQueueConfigRecord>,
+        connection: Option<ConnectionConfigRecord>,
     ) -> Result<Arc<Self>, MarketDataError> {
         let CredentialsRecord { api_key, bearer_token, sdk_token } = credentials;
         let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)?;
@@ -652,6 +691,7 @@ impl WebSocketClient {
             tls.map(|t| t.to_core()),
             version.unwrap_or_default(),
             message_queue,
+            connection,
         ))
     }
 
@@ -818,6 +858,9 @@ impl WebSocketClient {
         }
         if let Some(ref message_queue) = self.message_queue {
             message_queue.apply(&mut config);
+        }
+        if let Some(ref connection) = self.connection_config {
+            connection.apply(&mut config);
         }
 
         let reconnect_config = self
@@ -1916,6 +1959,7 @@ mod tests {
             None,
             None,
             Some(message_queue),
+            None,
         )
     }
 
@@ -2206,6 +2250,76 @@ mod tests {
         assert_eq!(health.heartbeat_timeout, std::time::Duration::from_secs(35));
     }
 
+    /// `auth_timeout_ms` reaches core's `ConnectionConfig`; its zero keeps
+    /// the core default (10 s), so a zero record is the full default (#199).
+    #[test]
+    fn connection_record_sets_auth_timeout_and_zero_keeps_the_default() {
+        let mut config = marketdata_core::ConnectionConfig::builder(
+            "ws://127.0.0.1:1/x",
+            AuthRequest::with_api_key("k"),
+        )
+        .build();
+
+        ConnectionConfigRecord::default().apply(&mut config);
+        assert_eq!(config.auth_timeout, marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT);
+        assert_eq!(config.auth_timeout, std::time::Duration::from_secs(10));
+
+        ConnectionConfigRecord { auth_timeout_ms: 15_000 }.apply(&mut config);
+        assert_eq!(config.auth_timeout, std::time::Duration::from_secs(15));
+
+        // A later zero record leaves an earlier value alone: 0 is "unset".
+        ConnectionConfigRecord { auth_timeout_ms: 0 }.apply(&mut config);
+        assert_eq!(config.auth_timeout, std::time::Duration::from_secs(15));
+    }
+
+    /// A server that never answers the auth frame: `connect()` fails with
+    /// `TimeoutError` (3001) after `auth_timeout_ms`, not the old 10 s (#199).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unanswered_auth_times_out_after_auth_timeout_ms() {
+        let server = MockWsServer::start().await;
+        server.set_answer_auth(false);
+        let listener = Arc::new(TestListener::new());
+        let client = WebSocketClient::new_with_credentials(
+            CredentialsRecord {
+                api_key: Some("test-key".to_string()),
+                bearer_token: None,
+                sdk_token: None,
+            },
+            Arc::clone(&listener) as Arc<dyn WebSocketListener>,
+            WebSocketEndpoint::Stock,
+            Some(format!("ws://{}/marketdata", server.address())),
+            Some(ReconnectConfigRecord { enabled: Some(false), ..Default::default() }),
+            None,
+            None,
+            None,
+            None,
+            Some(ConnectionConfigRecord { auth_timeout_ms: 300 }),
+        )
+        .expect("valid config");
+
+        let started = std::time::Instant::now();
+        let result = client.connect_impl().await;
+        let elapsed = started.elapsed();
+
+        match result {
+            Err(MarketDataError::TimeoutError { msg, info }) => {
+                assert_eq!(info.code, marketdata_core::error_code::TIMEOUT, "{info:?}");
+                assert_eq!(msg, "WebSocket authentication");
+            }
+            other => panic!("expected TimeoutError, got {other:?}"),
+        }
+        assert!(elapsed >= std::time::Duration::from_millis(300), "{elapsed:?}");
+        assert!(elapsed < std::time::Duration::from_secs(3), "took the old 10 s: {elapsed:?}");
+        // `on_error` arrives from the event thread, after connect() returned.
+        listener.wait_for("error(Timeout error: WebSocket authentication)").await;
+        let last_error = listener.last_error.lock().unwrap().clone();
+        assert_eq!(
+            last_error.as_ref().map(|e| e.code),
+            Some(marketdata_core::error_code::TIMEOUT),
+            "{last_error:?}"
+        );
+    }
+
     /// Validation runs after the zero fields take their defaults (#153):
     /// `initial_delay_ms: 0` is "use 1000", never "below the 100 ms floor",
     /// so a zero record stays legal (#158, #161). Each field is checked on
@@ -2262,6 +2376,7 @@ mod tests {
                 WebSocketEndpoint::Stock,
                 None,
                 Some(record),
+                None,
                 None,
                 None,
                 None,
@@ -2325,6 +2440,7 @@ mod tests {
             None,
             None,
             Some(probe_record(1_000, 0)),
+            None,
             None,
             None,
             None,
@@ -3010,6 +3126,7 @@ mod tests {
             },
             Arc::new(TestListener::new()),
             WebSocketEndpoint::Stock,
+            None,
             None,
             None,
             None,

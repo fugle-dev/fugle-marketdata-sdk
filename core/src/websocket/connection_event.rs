@@ -50,6 +50,12 @@
 //!    [`Reconnecting { attempt }`](ConnectionEvent::Reconnecting) follows,
 //!    then either sequence 2 or
 //!    [`ReconnectFailed { attempts >= 1 }`](ConnectionEvent::ReconnectFailed).
+//!    Each attempt that fails says why (#200): `Reconnecting { n }` →
+//!    `Connecting` → (`Connected` →) exactly one of `Error` (the transport
+//!    was refused or timed out, or the auth response never came) or
+//!    `Unauthenticated` (the credentials were rejected), then
+//!    `Reconnecting { n + 1 }` or `ReconnectFailed`. The `Error` is
+//!    diagnostic: it changes neither the state nor whether the loop goes on.
 //!    If `disconnect()` or `force_close()` is called in the meantime, the
 //!    reconnect stops: the state becomes `Closed { intent: Client, .. }`,
 //!    then a final `Disconnected { intent: Client, will_reconnect: false }`

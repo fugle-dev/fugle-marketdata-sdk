@@ -1676,6 +1676,7 @@ static class _UniFFILib
         RustBuffer @tls,
         RustBuffer @version,
         RustBuffer @messageQueue,
+        RustBuffer @connection,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -1711,6 +1712,7 @@ static class _UniFFILib
         RustBuffer @tls,
         RustBuffer @version,
         RustBuffer @messageQueue,
+        RustBuffer @connection,
         ref UniffiRustCallStatus _uniffi_out_err
     );
 
@@ -3653,10 +3655,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials();
-            if (checksum != 10661)
+            if (checksum != 53902)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials` checksum `10661`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials` checksum `53902`, library returned `{checksum}`"
                 );
             }
         }
@@ -3683,10 +3685,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options();
-            if (checksum != 1033)
+            if (checksum != 2558)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options` checksum `1033`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options` checksum `2558`, library returned `{checksum}`"
                 );
             }
         }
@@ -9189,7 +9191,8 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         HealthCheckConfigRecord? @healthCheckConfig,
         TlsConfigRecord? @tls,
         StreamingVersionRecord? @version,
-        MessageQueueConfigRecord? @messageQueue
+        MessageQueueConfigRecord? @messageQueue,
+        ConnectionConfigRecord? @connection
     )
     {
         return new WebSocketClient(
@@ -9212,6 +9215,7 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                         FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.Lower(
                             @messageQueue
                         ),
+                        FfiConverterOptionalTypeConnectionConfigRecord.INSTANCE.Lower(@connection),
                         ref _status
                     )
             )
@@ -9296,11 +9300,13 @@ public class WebSocketClient : IWebSocketClient, IDisposable
 
     /// <summary>
     /// Create a new WebSocket client with full configuration plus the
-    /// message queue settings.
+    /// message queue and connection settings.
     ///
     /// Same as `new_with_full_config`, with `message_queue` choosing what
     /// happens while `on_message` falls behind (None for the defaults:
-    /// `DropNewest`, 4096 messages).
+    /// `DropNewest`, 4096 messages) and `connection` setting the
+    /// connection's own timeouts (None for the defaults: 10 s auth
+    /// timeout).
     ///
     /// # Arguments
     /// * `api_key` - Fugle API key for authentication
@@ -9312,6 +9318,7 @@ public class WebSocketClient : IWebSocketClient, IDisposable
     /// * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
     /// * `version` - Optional per-product streaming version
     /// * `message_queue` - Optional message queue configuration
+    /// * `connection` - Optional connection configuration (auth timeout)
     /// </summary>
     public static WebSocketClient NewWithOptions(
         string @apiKey,
@@ -9322,7 +9329,8 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         HealthCheckConfigRecord? @healthCheckConfig,
         TlsConfigRecord? @tls,
         StreamingVersionRecord? @version,
-        MessageQueueConfigRecord? @messageQueue
+        MessageQueueConfigRecord? @messageQueue,
+        ConnectionConfigRecord? @connection
     )
     {
         return new WebSocketClient(
@@ -9344,6 +9352,7 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                         FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.Lower(
                             @messageQueue
                         ),
+                        FfiConverterOptionalTypeConnectionConfigRecord.INSTANCE.Lower(@connection),
                         ref _status
                     )
             )
@@ -10234,6 +10243,53 @@ class FfiConverterTypeAfterHoursParams : FfiConverterRustBuffer<AfterHoursParams
     public override void Write(AfterHoursParams value, BigEndianStream stream)
     {
         FfiConverterOptionalBoolean.INSTANCE.Write(value.@afterHours, stream);
+    }
+}
+
+/// <summary>
+/// Connection configuration record for FFI: the timeouts of the connection
+/// itself (#199).
+///
+/// Every field's zero value means "use default", so a zero-initialized
+/// record (C++ `ConnectionConfigRecord{}`, a Go `ConnectionConfigRecord{}`
+/// literal) is the full default. Omitting the record gives the same result.
+/// </summary>
+/// <param name="auth_timeout_ms">
+/// How long the auth handshake may take once the WebSocket is open, in
+/// milliseconds: from the auth frame being sent until the server's
+/// verdict. Default 10000. Pass 0 to use the default. Applies to the
+/// first `connect()` and to every reconnect; elapsing it fails the
+/// attempt with a `TimeoutError` (3001). The server itself allows 60 s.
+/// </param>
+public record ConnectionConfigRecord(
+    /// <summary>
+    /// How long the auth handshake may take once the WebSocket is open, in
+    /// milliseconds: from the auth frame being sent until the server's
+    /// verdict. Default 10000. Pass 0 to use the default. Applies to the
+    /// first `connect()` and to every reconnect; elapsing it fails the
+    /// attempt with a `TimeoutError` (3001). The server itself allows 60 s.
+    /// </summary>
+    ulong @authTimeoutMs = 0uL
+) { }
+
+class FfiConverterTypeConnectionConfigRecord : FfiConverterRustBuffer<ConnectionConfigRecord>
+{
+    public static FfiConverterTypeConnectionConfigRecord INSTANCE =
+        new FfiConverterTypeConnectionConfigRecord();
+
+    public override ConnectionConfigRecord Read(BigEndianStream stream)
+    {
+        return new ConnectionConfigRecord(@authTimeoutMs: FfiConverterUInt64.INSTANCE.Read(stream));
+    }
+
+    public override int AllocationSize(ConnectionConfigRecord value)
+    {
+        return 0 + FfiConverterUInt64.INSTANCE.AllocationSize(value.@authTimeoutMs);
+    }
+
+    public override void Write(ConnectionConfigRecord value, BigEndianStream stream)
+    {
+        FfiConverterUInt64.INSTANCE.Write(value.@authTimeoutMs, stream);
     }
 }
 
@@ -12932,6 +12988,53 @@ class FfiConverterOptionalTypeAfterHoursParams : FfiConverterRustBuffer<AfterHou
         {
             stream.WriteByte(1);
             FfiConverterTypeAfterHoursParams.INSTANCE.Write((AfterHoursParams)value, stream);
+        }
+    }
+}
+
+class FfiConverterOptionalTypeConnectionConfigRecord
+    : FfiConverterRustBuffer<ConnectionConfigRecord?>
+{
+    public static FfiConverterOptionalTypeConnectionConfigRecord INSTANCE =
+        new FfiConverterOptionalTypeConnectionConfigRecord();
+
+    public override ConnectionConfigRecord? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterTypeConnectionConfigRecord.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(ConnectionConfigRecord? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1
+                + FfiConverterTypeConnectionConfigRecord.INSTANCE.AllocationSize(
+                    (ConnectionConfigRecord)value
+                );
+        }
+    }
+
+    public override void Write(ConnectionConfigRecord? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterTypeConnectionConfigRecord.INSTANCE.Write(
+                (ConnectionConfigRecord)value,
+                stream
+            );
         }
     }
 }

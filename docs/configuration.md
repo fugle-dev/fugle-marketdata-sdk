@@ -392,6 +392,92 @@ using var client = new WebSocketClient(new WebSocketClientOptions
 
 ---
 
+## Auth Timeout
+
+How long the auth handshake may take once the WebSocket is open: from the
+auth frame being sent until the server's verdict arrives (#199). It applies to
+the first connect and to every reconnect; elapsing it fails the attempt with
+a timeout error (code 3001, `TimeoutError` with operation `"WebSocket
+authentication"`). It is independent of the transport timeout (Rust
+`connect_timeout`, 30 s), which covers only the TCP + TLS + HTTP upgrade
+before it, and no ordering between the two is enforced.
+
+Before 3.0.0 / core 0.9.0 the limit was hardcoded at 10 s in every client;
+the default is unchanged. Raise it where the round trip to the server is
+slow (outside a broker's network, across regions). The server itself gives a
+client 60 s to authenticate, so a client-side limit above that cannot
+help.
+
+### Options Reference
+
+| Option | Type | Default | Min | Description |
+|--------|------|---------|-----|-------------|
+| `auth_timeout_ms` | u64/int/number | 10000 | 1 | Auth handshake limit in milliseconds |
+
+**Constraints:**
+
+- Must be greater than 0. Node.js and Python raise a configuration error
+  (code 1004; Python: `ConfigError`) from the constructor; the C# wrapper
+  throws `ArgumentOutOfRangeException`; the Go option returns an error.
+- In the generated C#, Go, Java and C++ record (`ConnectionConfigRecord`)
+  the zero value means "use default", like every other record, so a
+  zero-valued or omitted record keeps the 10 s default.
+
+### Language-Specific Examples
+
+#### Python
+
+```python
+from fugle_marketdata import WebSocketClient
+
+ws = WebSocketClient(api_key="your-api-key", auth_timeout_ms=15000)
+```
+
+#### Node.js
+
+```javascript
+const ws = new WebSocketClient({ apiKey: 'your-api-key', authTimeoutMs: 15000 });
+```
+
+#### Rust
+
+```rust
+use fugle_marketdata::{AuthRequest, websocket::ConnectionConfig};
+use std::time::Duration;
+
+let config = ConnectionConfig::builder(url, AuthRequest::with_api_key("your-api-key"))
+    .auth_timeout(Duration::from_secs(15))
+    .build();
+```
+
+#### Go
+
+```go
+client, err := mkt.NewFugleWebSocketClient(listener,
+    mkt.WithApiKey("your-api-key"),
+    mkt.WithAuthTimeout(15*time.Second),
+)
+```
+
+#### C\#
+
+```csharp
+using var client = new WebSocketClient(new WebSocketClientOptions
+{
+    ApiKey = "your-api-key",
+    AuthTimeoutMs = 15000,
+}, listener);
+```
+
+#### C++ / generated constructors
+
+`WebSocketClient::new_with_credentials(..., message_queue, connection)` and
+`new_with_options(..., message_queue, connection)` take an optional
+`ConnectionConfigRecord { auth_timeout_ms }` as their last argument; pass
+`std::nullopt` / `null` / `nil` to keep the default.
+
+---
+
 ## Authentication Options
 
 All clients require exactly one authentication method. An empty or whitespace-only value counts as not provided. Providing zero or multiple authentication methods results in a configuration error (code 1004, see [errors.md](errors.md)) at construction time.
@@ -611,11 +697,13 @@ Quick reference of all default values:
 | | `probe_enabled` | false | Opt-in |
 | | `idle_probe_after_ms` | 30000 | Server heartbeat (30 s); probe mode only |
 | | `probe_timeout_ms` | 5000 | Probe mode only |
+| **Connection** | `auth_timeout_ms` | 10000 | Auth handshake limit; the 10 s that was hardcoded before |
 
 **Default values sourced from:**
 
 - `core/src/websocket/reconnection.rs` constants
 - `core/src/websocket/health_check.rs` constants
+- `core/src/websocket/config.rs` (`DEFAULT_AUTH_TIMEOUT`)
 
 ---
 
