@@ -15,6 +15,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"sync"
 	"testing"
 )
 
@@ -78,6 +81,111 @@ func serveJSON(t *testing.T, body string) *RestClient {
 	return client
 }
 
+// queryRecorder records the RawQuery of every request a queryServer
+// received, in arrival order.
+type queryRecorder struct {
+	mu      sync.Mutex
+	queries []string
+}
+
+func (r *queryRecorder) record(raw string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.queries = append(r.queries, raw)
+}
+
+// all returns every recorded query, in arrival order.
+func (r *queryRecorder) all() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.queries...)
+}
+
+// queryServer starts a loopback server returning body on every request,
+// recording each request's RawQuery, and returns a client pointed at it
+// plus the recorder.
+func queryServer(t *testing.T, body string) (*RestClient, *queryRecorder) {
+	t.Helper()
+	rec := &queryRecorder{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := NewFugleRestClient(WithApiKey("test-key"), WithBaseUrl(srv.URL))
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	t.Cleanup(client.Destroy)
+
+	return client, rec
+}
+
+// assertQuery parses raw as a query string and compares it against want,
+// as a set of key -> values (order-independent).
+func assertQuery(t *testing.T, raw string, want url.Values) {
+	t.Helper()
+	got, err := url.ParseQuery(raw)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", raw, err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("query = %v, want %v", got, want)
+	}
+}
+
+func TestQueryParams_TradesSendsOddLotAndLimit(t *testing.T) {
+	client, rec := queryServer(t, `{}`)
+	if _, err := client.Stock().Intraday().GetTrades("2330", &StockTradesParams{OddLot: Bool(true), Limit: Uint32(5)}); err != nil {
+		t.Fatalf("GetTrades failed: %v", err)
+	}
+	assertQuery(t, rec.all()[0], url.Values{"type": {"oddlot"}, "limit": {"5"}})
+}
+
+func TestQueryParams_MoversSendsDirectionAndChange(t *testing.T) {
+	client, rec := queryServer(t, `{}`)
+	if _, err := client.Stock().Snapshot().GetMovers("TSE", "up", "percent", nil); err != nil {
+		t.Fatalf("GetMovers failed: %v", err)
+	}
+	assertQuery(t, rec.all()[0], url.Values{"direction": {"up"}, "change": {"percent"}})
+}
+
+func TestQueryParams_CapitalChangesWithExchangeIsInvalidParameter(t *testing.T) {
+	client, rec := queryServer(t, `{}`)
+	_, err := client.Stock().CorporateActions().GetCapitalChanges(&CorporateActionsParams{Exchange: String("TWSE")})
+	if err == nil {
+		t.Fatal("GetCapitalChanges with exchange should have errored")
+	}
+	info, ok := ErrorInfoOf(err)
+	if !ok || info.Code != 1005 {
+		t.Fatalf("error = %v (info=%+v, ok=%v), want code 1005", err, info, ok)
+	}
+	if queries := rec.all(); len(queries) != 0 {
+		t.Fatalf("request should not have reached the server, got queries %v", queries)
+	}
+}
+
+func TestQueryParams_NilParamsSendsEmptyQuery(t *testing.T) {
+	client, rec := queryServer(t, quote2330)
+	if _, err := client.Stock().Intraday().GetQuote("2330", nil); err != nil {
+		t.Fatalf("GetQuote failed: %v", err)
+	}
+	if got := rec.all()[0]; got != "" {
+		t.Fatalf("query = %q, want empty", got)
+	}
+}
+
+func TestQueryParams_FutOptProductsSendsTypeAndSession(t *testing.T) {
+	client, rec := queryServer(t, `{}`)
+	if _, err := client.Futopt().Intraday().GetProducts("F", &FutOptProductsParams{AfterHours: Bool(true)}); err != nil {
+		t.Fatalf("GetProducts failed: %v", err)
+	}
+	assertQuery(t, rec.all()[0], url.Values{"type": {"FUTURE"}, "session": {"AFTERHOURS"}})
+}
+
 func decode(t *testing.T, body string) map[string]any {
 	t.Helper()
 
@@ -89,7 +197,7 @@ func decode(t *testing.T, body string) map[string]any {
 }
 
 func TestPassthrough_ResponseMatchesWhatTheServerSent(t *testing.T) {
-	got, err := serveJSON(t, quote2330).Stock().Intraday().GetQuote("2330")
+	got, err := serveJSON(t, quote2330).Stock().Intraday().GetQuote("2330", nil)
 	if err != nil {
 		t.Fatalf("GetQuote failed: %v", err)
 	}
@@ -115,7 +223,7 @@ func TestPassthrough_ResponseMatchesWhatTheServerSent(t *testing.T) {
 }
 
 func TestPassthrough_ReferencePriceIsTheBasisForChange(t *testing.T) {
-	got, err := serveJSON(t, quote2330).Stock().Intraday().GetQuote("2330")
+	got, err := serveJSON(t, quote2330).Stock().Intraday().GetQuote("2330", nil)
 	if err != nil {
 		t.Fatalf("GetQuote failed: %v", err)
 	}
@@ -135,7 +243,7 @@ func TestPassthrough_ReferencePriceIsTheBasisForChange(t *testing.T) {
 }
 
 func TestPassthrough_OmittedFieldsStayAbsent(t *testing.T) {
-	got, err := serveJSON(t, quote2330).Stock().Intraday().GetQuote("2330")
+	got, err := serveJSON(t, quote2330).Stock().Intraday().GetQuote("2330", nil)
 	if err != nil {
 		t.Fatalf("GetQuote failed: %v", err)
 	}
@@ -155,7 +263,7 @@ func TestPassthrough_OmittedFieldsStayAbsent(t *testing.T) {
 
 func TestPassthrough_UnknownFieldStillReachesTheCaller(t *testing.T) {
 	body := `{"symbol":"2330","someFieldAddedLater":{"nested":[1,2]}}`
-	got, err := serveJSON(t, body).Stock().Intraday().GetQuote("2330")
+	got, err := serveJSON(t, body).Stock().Intraday().GetQuote("2330", nil)
 	if err != nil {
 		t.Fatalf("GetQuote failed: %v", err)
 	}
@@ -169,7 +277,7 @@ func TestPassthrough_UnknownFieldStillReachesTheCaller(t *testing.T) {
 func TestPassthrough_TickersKeepsTheEnvelope(t *testing.T) {
 	body := `{"date":"2026-09-16","type":"EQUITY","exchange":"TWSE","market":"TSE",
 	          "data":[{"symbol":"2330","name":"台積電"}]}`
-	got, err := serveJSON(t, body).Stock().Intraday().GetTickers("EQUITY")
+	got, err := serveJSON(t, body).Stock().Intraday().GetTickers("EQUITY", nil)
 	if err != nil {
 		t.Fatalf("GetTickers failed: %v", err)
 	}

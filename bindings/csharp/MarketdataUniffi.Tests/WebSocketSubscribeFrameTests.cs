@@ -88,4 +88,31 @@ public class WebSocketSubscribeFrameTests
         var ex = await Assert.ThrowsExceptionAsync<uniffi.marketdata_uniffi.MarketDataException.ApiException>(call);
         Assert.AreEqual(1005, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
     }
+
+    [TestMethod]
+    public async Task MultipleSymbols_SendSymbolsArray_SingleStaysSymbol_OddLotSendsFlag()
+    {
+        using var server = new WebSocketLoopbackServer { AckSubscribes = true };
+        var options = new FugleMarketData.WebSocketClientOptions
+        {
+            ApiKey = "the-key",
+            BaseUrl = server.Url,
+        };
+        using var client = new FugleMarketData.WebSocketClient(options, new TestWebSocketListener());
+        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        await client.SubscribeAsync("trades", new[] { "2330", "2317" }).WaitAsync(TimeSpan.FromSeconds(10));
+        await client.SubscribeAsync("trades", "2330").WaitAsync(TimeSpan.FromSeconds(10));
+        await client.SubscribeAsync("trades", "2330", new FugleMarketData.SubscribeOptions { IntradayOddLot = true })
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        var expected = new[]
+        {
+            "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbols\":[\"2330\",\"2317\"]}}",
+            "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbol\":\"2330\"}}",
+            "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbol\":\"2330\",\"intradayOddLot\":true}}",
+        };
+        await AssertFrames(server, expected);
+        await client.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(10));
+    }
 }

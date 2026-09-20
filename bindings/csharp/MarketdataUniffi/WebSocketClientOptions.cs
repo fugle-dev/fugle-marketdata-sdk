@@ -1,5 +1,6 @@
 // Options classes for configuring FugleMarketData.WebSocketClient
 using System;
+using FugleMarketData.WebsocketClient;
 
 namespace FugleMarketData
 {
@@ -159,5 +160,12 @@ namespace FugleMarketData
         /// Must be greater than 0 when set.
         /// </summary>
         public int? MessageBuffer { get; set; }
+
+        /// <summary>
+        /// Streaming protocol version per endpoint (optional). If not
+        /// provided, the server picks the latest version for both Stock and
+        /// FutOpt.
+        /// </summary>
+        public WebsocketVersionOptions? Versions { get; set; }
     }
 }

@@ -13,6 +13,8 @@ import java.util.concurrent.CompletableFuture;
  * Stock technical indicator endpoints
  *
  * Provides access to SMA, RSI, KDJ, MACD, and Bollinger Bands indicators.
+ * The periods are required by the server and so are positional; the date
+ * range is the record.
  */
 public class StockTechnicalClient implements AutoCloseable, StockTechnicalClientInterface {
   protected Pointer pointer;
@@ -113,7 +115,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Bollinger Bands (sync/blocking)
      */
     @Override
-    public String bbSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String bbSync(String symbol, Integer period, TechnicalParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -122,7 +124,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(period), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -150,12 +152,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getBb(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getBb(String symbol, Integer period, TechnicalParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_bb(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(period), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -174,12 +176,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getKdj(String symbol, String from, String to, String timeframe, Integer rPeriod, Integer kPeriod, Integer dPeriod){
+    public CompletableFuture<String> getKdj(String symbol, Integer rPeriod, Integer kPeriod, Integer dPeriod, TechnicalParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_kdj(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(rPeriod), FfiConverterOptionalInteger.INSTANCE.lower(kPeriod), FfiConverterOptionalInteger.INSTANCE.lower(dPeriod)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(rPeriod), FfiConverterInteger.INSTANCE.lower(kPeriod), FfiConverterInteger.INSTANCE.lower(dPeriod), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -198,12 +200,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getMacd(String symbol, String from, String to, String timeframe, Integer fast, Integer slow, Integer signal){
+    public CompletableFuture<String> getMacd(String symbol, Integer fast, Integer slow, Integer signal, TechnicalParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_macd(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(fast), FfiConverterOptionalInteger.INSTANCE.lower(slow), FfiConverterOptionalInteger.INSTANCE.lower(signal)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(fast), FfiConverterInteger.INSTANCE.lower(slow), FfiConverterInteger.INSTANCE.lower(signal), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -222,12 +224,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getRsi(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getRsi(String symbol, Integer period, TechnicalParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_rsi(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(period), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -246,12 +248,12 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      */
     @Override
     
-    public CompletableFuture<String> getSma(String symbol, String from, String to, String timeframe, Integer period){
+    public CompletableFuture<String> getSma(String symbol, Integer period, TechnicalParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_get_sma(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(period), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -269,7 +271,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get KDJ (sync/blocking)
      */
     @Override
-    public String kdjSync(String symbol, String from, String to, String timeframe, Integer rPeriod, Integer kPeriod, Integer dPeriod) throws MarketDataException {
+    public String kdjSync(String symbol, Integer rPeriod, Integer kPeriod, Integer dPeriod, TechnicalParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -278,7 +280,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_kdj_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(rPeriod), FfiConverterOptionalInteger.INSTANCE.lower(kPeriod), FfiConverterOptionalInteger.INSTANCE.lower(dPeriod), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(rPeriod), FfiConverterInteger.INSTANCE.lower(kPeriod), FfiConverterInteger.INSTANCE.lower(dPeriod), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -305,7 +307,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get MACD (sync/blocking)
      */
     @Override
-    public String macdSync(String symbol, String from, String to, String timeframe, Integer fast, Integer slow, Integer signal) throws MarketDataException {
+    public String macdSync(String symbol, Integer fast, Integer slow, Integer signal, TechnicalParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -314,7 +316,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_macd_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(fast), FfiConverterOptionalInteger.INSTANCE.lower(slow), FfiConverterOptionalInteger.INSTANCE.lower(signal), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(fast), FfiConverterInteger.INSTANCE.lower(slow), FfiConverterInteger.INSTANCE.lower(signal), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -341,7 +343,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Relative Strength Index (sync/blocking)
      */
     @Override
-    public String rsiSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String rsiSync(String symbol, Integer period, TechnicalParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -350,7 +352,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_rsi_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(period), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -377,7 +379,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
      * Get Simple Moving Average (sync/blocking)
      */
     @Override
-    public String smaSync(String symbol, String from, String to, String timeframe, Integer period) throws MarketDataException {
+    public String smaSync(String symbol, Integer period, TechnicalParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -386,7 +388,7 @@ public class StockTechnicalClient implements AutoCloseable, StockTechnicalClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_sma_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(timeframe), FfiConverterOptionalInteger.INSTANCE.lower(period), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterInteger.INSTANCE.lower(period), FfiConverterOptionalTypeTechnicalParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {

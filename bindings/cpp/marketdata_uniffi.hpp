@@ -89,13 +89,31 @@ struct StockSnapshotClient;
 struct StockTechnicalClient;
 struct WebSocketClient;
 struct WebSocketListener;
+struct AfterHoursParams;
+struct CorporateActionsParams;
 struct CredentialsRecord;
 struct ErrorInfo;
+struct FutOptCandlesParams;
+struct FutOptDailyParams;
+struct FutOptHistoricalCandlesParams;
+struct FutOptProductsParams;
+struct FutOptTickersParams;
+struct FutOptTradesParams;
 struct HealthCheckConfigRecord;
 struct MessageQueueConfigRecord;
+struct MoversParams;
+struct OddLotParams;
+struct OwnershipParams;
 struct ReconnectConfigRecord;
+struct SnapshotParams;
+struct StockCandlesParams;
+struct StockHistoricalCandlesParams;
+struct StockTickersParams;
+struct StockTradesParams;
 struct StreamMessage;
 struct StreamingVersionRecord;
+struct SubscribeOptions;
+struct TechnicalParams;
 struct TlsConfigRecord;
 enum class CredentialKind;
 enum class ErrorSourceKind;
@@ -504,11 +522,11 @@ struct FutOptHistoricalClient
     /**
      * Get historical candles for a product such as "TXF" (sync/blocking)
      */
-    std::string candles_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, bool after_hours, std::optional<std::string> contract_month, std::optional<std::string> fields, std::optional<std::string> sort);
+    std::string candles_sync(const std::string &symbol, std::optional<FutOptHistoricalCandlesParams> params);
     /**
      * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
      */
-    std::string daily_sync(const std::string &symbol, std::optional<std::string> date, bool after_hours);
+    std::string daily_sync(const std::string &symbol, std::optional<FutOptDailyParams> params);
 
     private:
     FutOptHistoricalClient(const FutOptHistoricalClient &);
@@ -526,7 +544,7 @@ namespace uniffi {
 } // namespace uniffi
 
 /**
- * FutOpt intraday endpoints with typed model returns
+ * FutOpt intraday endpoints
  */
 struct FutOptIntradayClient
 
@@ -546,33 +564,35 @@ struct FutOptIntradayClient
     /**
      * Get candlestick data for a contract (sync/blocking)
      */
-    std::string candles_sync(const std::string &symbol, const std::string &timeframe);
+    std::string candles_sync(const std::string &symbol, std::optional<FutOptCandlesParams> params);
     /**
      * Get available products list (sync/blocking)
+     *
+     * typ: "F" for futures, "O" for options
      */
-    std::string products_sync(const std::string &typ);
+    std::string products_sync(const std::string &typ, std::optional<FutOptProductsParams> params);
     /**
      * Get quote for a futures/options contract (sync/blocking)
      */
-    std::string quote_sync(const std::string &symbol, bool after_hours);
+    std::string quote_sync(const std::string &symbol, std::optional<AfterHoursParams> params);
     /**
      * Get ticker info for a contract (sync/blocking)
      */
-    std::string ticker_sync(const std::string &symbol, bool after_hours);
+    std::string ticker_sync(const std::string &symbol, std::optional<AfterHoursParams> params);
     /**
      * Get batch tickers for futures/options (sync/blocking)
      *
      * typ: "F" for futures, "O" for options
      */
-    std::string tickers_sync(const std::string &typ, std::optional<bool> is_spread);
+    std::string tickers_sync(const std::string &typ, std::optional<FutOptTickersParams> params);
     /**
      * Get trade history for a contract (sync/blocking)
      */
-    std::string trades_sync(const std::string &symbol);
+    std::string trades_sync(const std::string &symbol, std::optional<FutOptTradesParams> params);
     /**
      * Get volume breakdown by price for a contract (sync/blocking)
      */
-    std::string volumes_sync(const std::string &symbol);
+    std::string volumes_sync(const std::string &symbol, std::optional<AfterHoursParams> params);
 
     private:
     FutOptIntradayClient(const FutOptIntradayClient &);
@@ -708,6 +728,8 @@ namespace uniffi {
  * Stock corporate actions endpoints
  *
  * Provides access to capital changes, dividends, and listing applicants (IPO).
+ * One record serves all three; `capital-changes` has no `exchange`, so
+ * setting it there is 1005 `INVALID_PARAMETER`.
  */
 struct StockCorporateActionsClient
 
@@ -727,15 +749,15 @@ struct StockCorporateActionsClient
     /**
      * Get capital structure changes (sync/blocking)
      */
-    std::string capital_changes_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string capital_changes_sync(std::optional<CorporateActionsParams> params);
     /**
      * Get dividend announcements (sync/blocking)
      */
-    std::string dividends_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string dividends_sync(std::optional<CorporateActionsParams> params);
     /**
      * Get IPO listing applicants (sync/blocking)
      */
-    std::string listing_applicants_sync(std::optional<std::string> start_date, std::optional<std::string> end_date);
+    std::string listing_applicants_sync(std::optional<CorporateActionsParams> params);
 
     private:
     StockCorporateActionsClient(const StockCorporateActionsClient &);
@@ -753,11 +775,7 @@ namespace uniffi {
 } // namespace uniffi
 
 /**
- * Stock historical endpoints with typed model returns
- *
- * All methods have both async (get_*) and sync (*_sync) variants:
- * - Async methods are preferred for best performance (non-blocking)
- * - Sync methods block the calling thread (simpler API for scripting)
+ * Stock historical endpoints
  */
 struct StockHistoricalClient
 
@@ -777,7 +795,7 @@ struct StockHistoricalClient
     /**
      * Get historical candles for a symbol (sync/blocking)
      */
-    std::string candles_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe);
+    std::string candles_sync(const std::string &symbol, std::optional<StockHistoricalCandlesParams> params);
     /**
      * Get historical stats for a symbol (sync/blocking)
      */
@@ -799,7 +817,7 @@ namespace uniffi {
 } // namespace uniffi
 
 /**
- * Stock intraday endpoints with typed model returns
+ * Stock intraday endpoints
  *
  * All methods have both async (get_*) and sync (*_sync) variants:
  * - Async methods are preferred for best performance (non-blocking)
@@ -823,29 +841,29 @@ struct StockIntradayClient
     /**
      * Get candlestick data for a symbol (sync/blocking)
      */
-    std::string candles_sync(const std::string &symbol, const std::string &timeframe);
+    std::string candles_sync(const std::string &symbol, std::optional<StockCandlesParams> params);
     /**
      * Get quote for a symbol (sync/blocking)
      */
-    std::string quote_sync(const std::string &symbol);
+    std::string quote_sync(const std::string &symbol, std::optional<OddLotParams> params);
     /**
      * Get ticker info for a symbol (sync/blocking)
      */
-    std::string ticker_sync(const std::string &symbol);
+    std::string ticker_sync(const std::string &symbol, std::optional<OddLotParams> params);
     /**
      * Get batch tickers for a security type (sync/blocking)
      *
      * typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
      */
-    std::string tickers_sync(const std::string &typ);
+    std::string tickers_sync(const std::string &typ, std::optional<StockTickersParams> params);
     /**
      * Get trade history for a symbol (sync/blocking)
      */
-    std::string trades_sync(const std::string &symbol);
+    std::string trades_sync(const std::string &symbol, std::optional<StockTradesParams> params);
     /**
      * Get volume breakdown for a symbol (sync/blocking)
      */
-    std::string volumes_sync(const std::string &symbol);
+    std::string volumes_sync(const std::string &symbol, std::optional<OddLotParams> params);
 
     private:
     StockIntradayClient(const StockIntradayClient &);
@@ -883,19 +901,19 @@ struct StockOwnershipClient
     /**
      * Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
      */
-    std::string director_holdings_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort);
+    std::string director_holdings_sync(const std::string &symbol, std::optional<OwnershipParams> params);
     /**
      * Get the constituents an ETF held over a date range (sync/blocking)
      */
-    std::string etf_holdings_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort);
+    std::string etf_holdings_sync(const std::string &symbol, std::optional<OwnershipParams> params);
     /**
      * Get daily trading by the three major institutional investors (sync/blocking)
      */
-    std::string institutional_trades_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort);
+    std::string institutional_trades_sync(const std::string &symbol, std::optional<OwnershipParams> params);
     /**
      * Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
      */
-    std::string tdcc_distribution_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort);
+    std::string tdcc_distribution_sync(const std::string &symbol, std::optional<OwnershipParams> params);
 
     private:
     StockOwnershipClient(const StockOwnershipClient &);
@@ -936,15 +954,15 @@ struct StockSnapshotClient
     /**
      * Get most actively traded stocks (sync/blocking)
      */
-    std::string actives_sync(const std::string &market, std::optional<std::string> trade);
+    std::string actives_sync(const std::string &market, const std::string &trade, std::optional<SnapshotParams> params);
     /**
      * Get top movers (sync/blocking)
      */
-    std::string movers_sync(const std::string &market, std::optional<std::string> direction, std::optional<std::string> change);
+    std::string movers_sync(const std::string &market, const std::string &direction, const std::string &change, std::optional<MoversParams> params);
     /**
      * Get market-wide snapshot quotes (sync/blocking)
      */
-    std::string quotes_sync(const std::string &market, std::optional<std::string> type_filter);
+    std::string quotes_sync(const std::string &market, std::optional<SnapshotParams> params);
 
     private:
     StockSnapshotClient(const StockSnapshotClient &);
@@ -965,6 +983,8 @@ namespace uniffi {
  * Stock technical indicator endpoints
  *
  * Provides access to SMA, RSI, KDJ, MACD, and Bollinger Bands indicators.
+ * The periods are required by the server and so are positional; the date
+ * range is the record.
  */
 struct StockTechnicalClient
 
@@ -984,23 +1004,23 @@ struct StockTechnicalClient
     /**
      * Get Bollinger Bands (sync/blocking)
      */
-    std::string bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
+    std::string bb_sync(const std::string &symbol, uint32_t period, std::optional<TechnicalParams> params);
     /**
      * Get KDJ (sync/blocking)
      */
-    std::string kdj_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> r_period, std::optional<uint32_t> k_period, std::optional<uint32_t> d_period);
+    std::string kdj_sync(const std::string &symbol, uint32_t r_period, uint32_t k_period, uint32_t d_period, std::optional<TechnicalParams> params);
     /**
      * Get MACD (sync/blocking)
      */
-    std::string macd_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> fast, std::optional<uint32_t> slow, std::optional<uint32_t> signal);
+    std::string macd_sync(const std::string &symbol, uint32_t fast, uint32_t slow, uint32_t signal, std::optional<TechnicalParams> params);
     /**
      * Get Relative Strength Index (sync/blocking)
      */
-    std::string rsi_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
+    std::string rsi_sync(const std::string &symbol, uint32_t period, std::optional<TechnicalParams> params);
     /**
      * Get Simple Moving Average (sync/blocking)
      */
-    std::string sma_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period);
+    std::string sma_sync(const std::string &symbol, uint32_t period, std::optional<TechnicalParams> params);
 
     private:
     StockTechnicalClient(const StockTechnicalClient &);
@@ -1171,9 +1191,11 @@ struct WebSocketClient
      */
     void query_subscriptions_sync();
     /**
-     * Subscribe to a channel for a symbol (blocking).
+     * Subscribe to a channel for one or more symbols (blocking).
+     *
+     * Same arguments and checks as `subscribe`.
      */
-    void subscribe_sync(const std::string &channel, const std::string &symbol);
+    void subscribe_sync(const std::string &channel, const std::vector<std::string> &symbols, std::optional<SubscribeOptions> opts);
     /**
      * Unsubscribe by the ids the server issued (blocking).
      *
@@ -1181,9 +1203,11 @@ struct WebSocketClient
      */
     void unsubscribe_ids_sync(const std::vector<std::string> &ids);
     /**
-     * Unsubscribe from a channel for a symbol (blocking).
+     * Unsubscribe from a channel for one or more symbols (blocking).
+     *
+     * Same arguments and checks as `unsubscribe`.
      */
-    void unsubscribe_sync(const std::string &channel, const std::string &symbol);
+    void unsubscribe_sync(const std::string &channel, const std::vector<std::string> &symbols, std::optional<SubscribeOptions> opts);
 
     private:
     WebSocketClient(const WebSocketClient &);
@@ -1453,6 +1477,45 @@ struct WebSocketListenerImpl
 
 
 /**
+ * The after-hours session flag for `futopt/intraday/ticker`, `quote` and
+ * `volumes`.
+ */
+struct AfterHoursParams {
+    /**
+     * `true` asks for the after-hours session (`session=afterhours`);
+     * unset or `false` is the regular session.
+     */
+    std::optional<bool> after_hours = std::nullopt;
+};
+
+
+/**
+ * Parameters for the three `stock/corporate-actions` endpoints.
+ *
+ * `capital-changes` has no `exchange`: setting it there is 1005
+ * `INVALID_PARAMETER`.
+ */
+struct CorporateActionsParams {
+    /**
+     * `YYYY-MM-DD`.
+     */
+    std::optional<std::string> start_date = std::nullopt;
+    /**
+     * `YYYY-MM-DD`.
+     */
+    std::optional<std::string> end_date = std::nullopt;
+    /**
+     * `TWSE` or `TPEx` (dividends and listing-applicants only).
+     */
+    std::optional<std::string> exchange = std::nullopt;
+    /**
+     * `asc` or `desc`.
+     */
+    std::optional<std::string> sort = std::nullopt;
+};
+
+
+/**
  * The credentials a WebSocket client authenticates with.
  *
  * Exactly one must be non-empty; an empty or whitespace-only value counts
@@ -1475,6 +1538,146 @@ struct CredentialsRecord {
      * Fugle SDK token, sent as `sdkToken`
      */
     std::optional<std::string> sdk_token;
+};
+
+
+/**
+ * Parameters for `futopt/intraday/candles`.
+ */
+struct FutOptCandlesParams {
+    /**
+     * `true` asks for the after-hours session (`session=afterhours`).
+     */
+    std::optional<bool> after_hours = std::nullopt;
+    /**
+     * `1`, `5`, `10`, `15`, `30` or `60` minutes.
+     */
+    std::optional<std::string> timeframe = std::nullopt;
+};
+
+
+/**
+ * Parameters for `futopt/historical/daily`.
+ */
+struct FutOptDailyParams {
+    /**
+     * `YYYY-MM-DD`.
+     */
+    std::optional<std::string> date = std::nullopt;
+    /**
+     * `true` asks for the after-hours session (`session=afterhours`).
+     */
+    std::optional<bool> after_hours = std::nullopt;
+};
+
+
+/**
+ * Parameters for `futopt/historical/candles`.
+ *
+ * `strike_price` is `f64`, and 0 is a strike like any other: unlike the
+ * config records, an unset field is `None`, not 0.
+ */
+struct FutOptHistoricalCandlesParams {
+    /**
+     * Start date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> from = std::nullopt;
+    /**
+     * End date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> to = std::nullopt;
+    /**
+     * `YYYYMM`, or a continuous contract: `1!` (the server default), `2!`,
+     * `3!`.
+     */
+    std::optional<std::string> contract_month = std::nullopt;
+    /**
+     * Comma-separated field names.
+     */
+    std::optional<std::string> fields = std::nullopt;
+    /**
+     * `D`, or `1`, `5`, `10`, `15`, `30`, `60` minutes.
+     */
+    std::optional<std::string> timeframe = std::nullopt;
+    /**
+     * `asc` or `desc`.
+     */
+    std::optional<std::string> sort = std::nullopt;
+    /**
+     * Options only.
+     */
+    std::optional<double> strike_price = std::nullopt;
+    /**
+     * Options only: `C` or `P`.
+     */
+    std::optional<std::string> call_put = std::nullopt;
+    /**
+     * `true` asks for the after-hours session (`session=afterhours`).
+     */
+    std::optional<bool> after_hours = std::nullopt;
+};
+
+
+/**
+ * Filters for `futopt/intraday/products`; `type` is the method's argument.
+ */
+struct FutOptProductsParams {
+    /**
+     * `TAIFEX`.
+     */
+    std::optional<std::string> exchange = std::nullopt;
+    /**
+     * `true` asks for the after-hours session (`session=AFTERHOURS`);
+     * unset or `false` is the regular session.
+     */
+    std::optional<bool> after_hours = std::nullopt;
+    /**
+     * `I`, `R`, `B`, `C`, `S` or `E`.
+     */
+    std::optional<std::string> contract_type = std::nullopt;
+    /**
+     * `N` (normal) or `U` (unlisted).
+     */
+    std::optional<std::string> status = std::nullopt;
+};
+
+
+/**
+ * Filters for `futopt/intraday/tickers`; `type` is the method's argument.
+ */
+struct FutOptTickersParams {
+    /**
+     * `TAIFEX`.
+     */
+    std::optional<std::string> exchange = std::nullopt;
+    /**
+     * `true` asks for the after-hours session (`session=AFTERHOURS`);
+     * unset or `false` is the regular session.
+     */
+    std::optional<bool> after_hours = std::nullopt;
+    /**
+     * Product code, `TXF`.
+     */
+    std::optional<std::string> product = std::nullopt;
+    /**
+     * `I`, `R`, `B`, `C`, `S` or `E`.
+     */
+    std::optional<std::string> contract_type = std::nullopt;
+    std::optional<bool> is_spread = std::nullopt;
+};
+
+
+/**
+ * Parameters for `futopt/intraday/trades`.
+ */
+struct FutOptTradesParams {
+    /**
+     * `true` asks for the after-hours session (`session=afterhours`).
+     */
+    std::optional<bool> after_hours = std::nullopt;
+    std::optional<uint32_t> offset = std::nullopt;
+    std::optional<uint32_t> limit = std::nullopt;
+    std::optional<bool> is_trial = std::nullopt;
 };
 
 
@@ -1520,6 +1723,71 @@ struct HealthCheckConfigRecord {
 
 
 /**
+ * Parameters for `stock/snapshot/movers`; `direction` and `change` are the
+ * method's arguments.
+ *
+ * The price bounds are `f64`, and 0 is a bound like any other: unlike the
+ * config records, an unset field is `None`, not 0.
+ */
+struct MoversParams {
+    /**
+     * `type`: `ALL`, `ALLBUT0999` or `COMMONSTOCK`.
+     */
+    std::optional<std::string> type_filter = std::nullopt;
+    /**
+     * Change greater than.
+     */
+    std::optional<double> gt = std::nullopt;
+    /**
+     * Change greater than or equal to.
+     */
+    std::optional<double> gte = std::nullopt;
+    /**
+     * Change less than.
+     */
+    std::optional<double> lt = std::nullopt;
+    /**
+     * Change less than or equal to.
+     */
+    std::optional<double> lte = std::nullopt;
+    /**
+     * Change equal to.
+     */
+    std::optional<double> eq = std::nullopt;
+};
+
+
+/**
+ * The odd-lot session flag for `stock/intraday/ticker`, `quote` and `volumes`.
+ */
+struct OddLotParams {
+    /**
+     * `true` asks for the intraday odd-lot session (`type=oddlot`).
+     */
+    std::optional<bool> odd_lot = std::nullopt;
+};
+
+
+/**
+ * Parameters for the four `stock/ownership` endpoints.
+ */
+struct OwnershipParams {
+    /**
+     * Start date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> from = std::nullopt;
+    /**
+     * End date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> to = std::nullopt;
+    /**
+     * `asc` or `desc`.
+     */
+    std::optional<std::string> sort = std::nullopt;
+};
+
+
+/**
  * Reconnection configuration record for FFI
  *
  * Every field's zero value means "use default", so a zero-initialized
@@ -1545,6 +1813,113 @@ struct ReconnectConfigRecord {
      * Maximum reconnection delay in milliseconds (default: 60000)
      */
     uint64_t max_delay_ms;
+};
+
+
+/**
+ * Parameters for `stock/snapshot/quotes` and `actives`.
+ */
+struct SnapshotParams {
+    /**
+     * `type`: `ALL`, `ALLBUT0999` or `COMMONSTOCK`.
+     */
+    std::optional<std::string> type_filter = std::nullopt;
+};
+
+
+/**
+ * Parameters for `stock/intraday/candles`.
+ */
+struct StockCandlesParams {
+    /**
+     * `1`, `5`, `10`, `15`, `30` or `60` minutes; unset takes the server
+     * default.
+     */
+    std::optional<std::string> timeframe = std::nullopt;
+    /**
+     * `true` asks for the intraday odd-lot session (`type=oddlot`).
+     */
+    std::optional<bool> odd_lot = std::nullopt;
+    /**
+     * `asc` or `desc`.
+     */
+    std::optional<std::string> sort = std::nullopt;
+};
+
+
+/**
+ * Parameters for `stock/historical/candles`.
+ */
+struct StockHistoricalCandlesParams {
+    /**
+     * Start date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> from = std::nullopt;
+    /**
+     * End date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> to = std::nullopt;
+    /**
+     * `D`, `W`, `M`, or `1`, `5`, `10`, `15`, `30`, `60` minutes.
+     */
+    std::optional<std::string> timeframe = std::nullopt;
+    /**
+     * Comma-separated field names, `open,high,low,close,volume`.
+     */
+    std::optional<std::string> fields = std::nullopt;
+    /**
+     * `asc` or `desc`.
+     */
+    std::optional<std::string> sort = std::nullopt;
+    /**
+     * Adjusted prices.
+     */
+    std::optional<bool> adjusted = std::nullopt;
+};
+
+
+/**
+ * Filters for `stock/intraday/tickers`; `type` is the method's argument.
+ */
+struct StockTickersParams {
+    /**
+     * `TWSE` or `TPEx`.
+     */
+    std::optional<std::string> exchange = std::nullopt;
+    /**
+     * `TSE`, `OTC`, `ESB`, `TIB` or `PSB`.
+     */
+    std::optional<std::string> market = std::nullopt;
+    /**
+     * Industry code.
+     */
+    std::optional<std::string> industry = std::nullopt;
+    std::optional<bool> is_normal = std::nullopt;
+    std::optional<bool> is_attention = std::nullopt;
+    std::optional<bool> is_disposition = std::nullopt;
+    std::optional<bool> is_halted = std::nullopt;
+    /**
+     * Symbol prefix.
+     */
+    std::optional<std::string> symbol = std::nullopt;
+};
+
+
+/**
+ * Parameters for `stock/intraday/trades`.
+ */
+struct StockTradesParams {
+    /**
+     * `true` asks for the intraday odd-lot session (`type=oddlot`).
+     */
+    std::optional<bool> odd_lot = std::nullopt;
+    std::optional<uint32_t> offset = std::nullopt;
+    std::optional<uint32_t> limit = std::nullopt;
+    /**
+     * `asc` or `desc`.
+     */
+    std::optional<std::string> sort = std::nullopt;
+    std::optional<bool> is_trial = std::nullopt;
 };
 
 
@@ -1611,6 +1986,46 @@ struct StreamingVersionRecord {
      * frame's `isTrial` before acting on a price.
      */
     std::optional<std::string> futopt;
+};
+
+
+/**
+ * Session options for `subscribe` / `unsubscribe` (#202).
+ *
+ * Unset is the regular session, so an omitted or default record subscribes
+ * as before. Each option belongs to one endpoint — `intraday_odd_lot`
+ * (盤中零股) to Stock, `after_hours` (盤後) to FutOpt — and setting it on
+ * the other, to any value, is 1005 `INVALID_PARAMETER`.
+ */
+struct SubscribeOptions {
+    /**
+     * FutOpt only: `true` subscribes to the after-hours session.
+     */
+    std::optional<bool> after_hours = std::nullopt;
+    /**
+     * Stock only: `true` subscribes to the intraday odd-lot session.
+     */
+    std::optional<bool> intraday_odd_lot = std::nullopt;
+};
+
+
+/**
+ * The date range for the `stock/technical` endpoints; the periods are the
+ * method's arguments.
+ */
+struct TechnicalParams {
+    /**
+     * Start date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> from = std::nullopt;
+    /**
+     * End date, `YYYY-MM-DD`.
+     */
+    std::optional<std::string> to = std::nullopt;
+    /**
+     * `D`, `W`, `M`, or `1`, `5`, `10`, `15`, `30`, `60` minutes.
+     */
+    std::optional<std::string> timeframe = std::nullopt;
 };
 
 
@@ -1911,6 +2326,22 @@ private:
     inline static HandleMap<WebSocketListener> handle_map = {};
 };
 
+struct FfiConverterTypeAfterHoursParams {
+    static AfterHoursParams lift(RustBuffer);
+    static RustBuffer lower(const AfterHoursParams &);
+    static AfterHoursParams read(RustStream &);
+    static void write(RustStream &, const AfterHoursParams &);
+    static uint64_t allocation_size(const AfterHoursParams &);
+};
+
+struct FfiConverterTypeCorporateActionsParams {
+    static CorporateActionsParams lift(RustBuffer);
+    static RustBuffer lower(const CorporateActionsParams &);
+    static CorporateActionsParams read(RustStream &);
+    static void write(RustStream &, const CorporateActionsParams &);
+    static uint64_t allocation_size(const CorporateActionsParams &);
+};
+
 struct FfiConverterTypeCredentialsRecord {
     static CredentialsRecord lift(RustBuffer);
     static RustBuffer lower(const CredentialsRecord &);
@@ -1925,6 +2356,54 @@ struct FfiConverterTypeErrorInfo {
     static ErrorInfo read(RustStream &);
     static void write(RustStream &, const ErrorInfo &);
     static uint64_t allocation_size(const ErrorInfo &);
+};
+
+struct FfiConverterTypeFutOptCandlesParams {
+    static FutOptCandlesParams lift(RustBuffer);
+    static RustBuffer lower(const FutOptCandlesParams &);
+    static FutOptCandlesParams read(RustStream &);
+    static void write(RustStream &, const FutOptCandlesParams &);
+    static uint64_t allocation_size(const FutOptCandlesParams &);
+};
+
+struct FfiConverterTypeFutOptDailyParams {
+    static FutOptDailyParams lift(RustBuffer);
+    static RustBuffer lower(const FutOptDailyParams &);
+    static FutOptDailyParams read(RustStream &);
+    static void write(RustStream &, const FutOptDailyParams &);
+    static uint64_t allocation_size(const FutOptDailyParams &);
+};
+
+struct FfiConverterTypeFutOptHistoricalCandlesParams {
+    static FutOptHistoricalCandlesParams lift(RustBuffer);
+    static RustBuffer lower(const FutOptHistoricalCandlesParams &);
+    static FutOptHistoricalCandlesParams read(RustStream &);
+    static void write(RustStream &, const FutOptHistoricalCandlesParams &);
+    static uint64_t allocation_size(const FutOptHistoricalCandlesParams &);
+};
+
+struct FfiConverterTypeFutOptProductsParams {
+    static FutOptProductsParams lift(RustBuffer);
+    static RustBuffer lower(const FutOptProductsParams &);
+    static FutOptProductsParams read(RustStream &);
+    static void write(RustStream &, const FutOptProductsParams &);
+    static uint64_t allocation_size(const FutOptProductsParams &);
+};
+
+struct FfiConverterTypeFutOptTickersParams {
+    static FutOptTickersParams lift(RustBuffer);
+    static RustBuffer lower(const FutOptTickersParams &);
+    static FutOptTickersParams read(RustStream &);
+    static void write(RustStream &, const FutOptTickersParams &);
+    static uint64_t allocation_size(const FutOptTickersParams &);
+};
+
+struct FfiConverterTypeFutOptTradesParams {
+    static FutOptTradesParams lift(RustBuffer);
+    static RustBuffer lower(const FutOptTradesParams &);
+    static FutOptTradesParams read(RustStream &);
+    static void write(RustStream &, const FutOptTradesParams &);
+    static uint64_t allocation_size(const FutOptTradesParams &);
 };
 
 struct FfiConverterTypeHealthCheckConfigRecord {
@@ -1943,12 +2422,76 @@ struct FfiConverterTypeMessageQueueConfigRecord {
     static uint64_t allocation_size(const MessageQueueConfigRecord &);
 };
 
+struct FfiConverterTypeMoversParams {
+    static MoversParams lift(RustBuffer);
+    static RustBuffer lower(const MoversParams &);
+    static MoversParams read(RustStream &);
+    static void write(RustStream &, const MoversParams &);
+    static uint64_t allocation_size(const MoversParams &);
+};
+
+struct FfiConverterTypeOddLotParams {
+    static OddLotParams lift(RustBuffer);
+    static RustBuffer lower(const OddLotParams &);
+    static OddLotParams read(RustStream &);
+    static void write(RustStream &, const OddLotParams &);
+    static uint64_t allocation_size(const OddLotParams &);
+};
+
+struct FfiConverterTypeOwnershipParams {
+    static OwnershipParams lift(RustBuffer);
+    static RustBuffer lower(const OwnershipParams &);
+    static OwnershipParams read(RustStream &);
+    static void write(RustStream &, const OwnershipParams &);
+    static uint64_t allocation_size(const OwnershipParams &);
+};
+
 struct FfiConverterTypeReconnectConfigRecord {
     static ReconnectConfigRecord lift(RustBuffer);
     static RustBuffer lower(const ReconnectConfigRecord &);
     static ReconnectConfigRecord read(RustStream &);
     static void write(RustStream &, const ReconnectConfigRecord &);
     static uint64_t allocation_size(const ReconnectConfigRecord &);
+};
+
+struct FfiConverterTypeSnapshotParams {
+    static SnapshotParams lift(RustBuffer);
+    static RustBuffer lower(const SnapshotParams &);
+    static SnapshotParams read(RustStream &);
+    static void write(RustStream &, const SnapshotParams &);
+    static uint64_t allocation_size(const SnapshotParams &);
+};
+
+struct FfiConverterTypeStockCandlesParams {
+    static StockCandlesParams lift(RustBuffer);
+    static RustBuffer lower(const StockCandlesParams &);
+    static StockCandlesParams read(RustStream &);
+    static void write(RustStream &, const StockCandlesParams &);
+    static uint64_t allocation_size(const StockCandlesParams &);
+};
+
+struct FfiConverterTypeStockHistoricalCandlesParams {
+    static StockHistoricalCandlesParams lift(RustBuffer);
+    static RustBuffer lower(const StockHistoricalCandlesParams &);
+    static StockHistoricalCandlesParams read(RustStream &);
+    static void write(RustStream &, const StockHistoricalCandlesParams &);
+    static uint64_t allocation_size(const StockHistoricalCandlesParams &);
+};
+
+struct FfiConverterTypeStockTickersParams {
+    static StockTickersParams lift(RustBuffer);
+    static RustBuffer lower(const StockTickersParams &);
+    static StockTickersParams read(RustStream &);
+    static void write(RustStream &, const StockTickersParams &);
+    static uint64_t allocation_size(const StockTickersParams &);
+};
+
+struct FfiConverterTypeStockTradesParams {
+    static StockTradesParams lift(RustBuffer);
+    static RustBuffer lower(const StockTradesParams &);
+    static StockTradesParams read(RustStream &);
+    static void write(RustStream &, const StockTradesParams &);
+    static uint64_t allocation_size(const StockTradesParams &);
 };
 
 struct FfiConverterTypeStreamMessage {
@@ -1965,6 +2508,22 @@ struct FfiConverterTypeStreamingVersionRecord {
     static StreamingVersionRecord read(RustStream &);
     static void write(RustStream &, const StreamingVersionRecord &);
     static uint64_t allocation_size(const StreamingVersionRecord &);
+};
+
+struct FfiConverterTypeSubscribeOptions {
+    static SubscribeOptions lift(RustBuffer);
+    static RustBuffer lower(const SubscribeOptions &);
+    static SubscribeOptions read(RustStream &);
+    static void write(RustStream &, const SubscribeOptions &);
+    static uint64_t allocation_size(const SubscribeOptions &);
+};
+
+struct FfiConverterTypeTechnicalParams {
+    static TechnicalParams lift(RustBuffer);
+    static RustBuffer lower(const TechnicalParams &);
+    static TechnicalParams read(RustStream &);
+    static void write(RustStream &, const TechnicalParams &);
+    static uint64_t allocation_size(const TechnicalParams &);
 };
 
 struct FfiConverterTypeTlsConfigRecord {
@@ -2038,6 +2597,13 @@ struct FfiConverterOptionalUInt64 {
     static void write(RustStream &stream, const std::optional<uint64_t>& value);
     static uint64_t allocation_size(const std::optional<uint64_t> &val);
 };
+struct FfiConverterOptionalDouble {
+    static std::optional<double> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<double>& val);
+    static std::optional<double> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<double>& value);
+    static uint64_t allocation_size(const std::optional<double> &val);
+};
 struct FfiConverterOptionalBool {
     static std::optional<bool> lift(RustBuffer buf);
     static RustBuffer lower(const std::optional<bool>& val);
@@ -2059,6 +2625,62 @@ struct FfiConverterOptionalBytes {
     static void write(RustStream &stream, const std::optional<std::vector<uint8_t>>& value);
     static uint64_t allocation_size(const std::optional<std::vector<uint8_t>> &val);
 };
+struct FfiConverterOptionalTypeAfterHoursParams {
+    static std::optional<AfterHoursParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<AfterHoursParams>& val);
+    static std::optional<AfterHoursParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<AfterHoursParams>& value);
+    static uint64_t allocation_size(const std::optional<AfterHoursParams> &val);
+};
+struct FfiConverterOptionalTypeCorporateActionsParams {
+    static std::optional<CorporateActionsParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<CorporateActionsParams>& val);
+    static std::optional<CorporateActionsParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<CorporateActionsParams>& value);
+    static uint64_t allocation_size(const std::optional<CorporateActionsParams> &val);
+};
+struct FfiConverterOptionalTypeFutOptCandlesParams {
+    static std::optional<FutOptCandlesParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<FutOptCandlesParams>& val);
+    static std::optional<FutOptCandlesParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<FutOptCandlesParams>& value);
+    static uint64_t allocation_size(const std::optional<FutOptCandlesParams> &val);
+};
+struct FfiConverterOptionalTypeFutOptDailyParams {
+    static std::optional<FutOptDailyParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<FutOptDailyParams>& val);
+    static std::optional<FutOptDailyParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<FutOptDailyParams>& value);
+    static uint64_t allocation_size(const std::optional<FutOptDailyParams> &val);
+};
+struct FfiConverterOptionalTypeFutOptHistoricalCandlesParams {
+    static std::optional<FutOptHistoricalCandlesParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<FutOptHistoricalCandlesParams>& val);
+    static std::optional<FutOptHistoricalCandlesParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<FutOptHistoricalCandlesParams>& value);
+    static uint64_t allocation_size(const std::optional<FutOptHistoricalCandlesParams> &val);
+};
+struct FfiConverterOptionalTypeFutOptProductsParams {
+    static std::optional<FutOptProductsParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<FutOptProductsParams>& val);
+    static std::optional<FutOptProductsParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<FutOptProductsParams>& value);
+    static uint64_t allocation_size(const std::optional<FutOptProductsParams> &val);
+};
+struct FfiConverterOptionalTypeFutOptTickersParams {
+    static std::optional<FutOptTickersParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<FutOptTickersParams>& val);
+    static std::optional<FutOptTickersParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<FutOptTickersParams>& value);
+    static uint64_t allocation_size(const std::optional<FutOptTickersParams> &val);
+};
+struct FfiConverterOptionalTypeFutOptTradesParams {
+    static std::optional<FutOptTradesParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<FutOptTradesParams>& val);
+    static std::optional<FutOptTradesParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<FutOptTradesParams>& value);
+    static uint64_t allocation_size(const std::optional<FutOptTradesParams> &val);
+};
 struct FfiConverterOptionalTypeHealthCheckConfigRecord {
     static std::optional<HealthCheckConfigRecord> lift(RustBuffer buf);
     static RustBuffer lower(const std::optional<HealthCheckConfigRecord>& val);
@@ -2073,6 +2695,27 @@ struct FfiConverterOptionalTypeMessageQueueConfigRecord {
     static void write(RustStream &stream, const std::optional<MessageQueueConfigRecord>& value);
     static uint64_t allocation_size(const std::optional<MessageQueueConfigRecord> &val);
 };
+struct FfiConverterOptionalTypeMoversParams {
+    static std::optional<MoversParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<MoversParams>& val);
+    static std::optional<MoversParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<MoversParams>& value);
+    static uint64_t allocation_size(const std::optional<MoversParams> &val);
+};
+struct FfiConverterOptionalTypeOddLotParams {
+    static std::optional<OddLotParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<OddLotParams>& val);
+    static std::optional<OddLotParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<OddLotParams>& value);
+    static uint64_t allocation_size(const std::optional<OddLotParams> &val);
+};
+struct FfiConverterOptionalTypeOwnershipParams {
+    static std::optional<OwnershipParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<OwnershipParams>& val);
+    static std::optional<OwnershipParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<OwnershipParams>& value);
+    static uint64_t allocation_size(const std::optional<OwnershipParams> &val);
+};
 struct FfiConverterOptionalTypeReconnectConfigRecord {
     static std::optional<ReconnectConfigRecord> lift(RustBuffer buf);
     static RustBuffer lower(const std::optional<ReconnectConfigRecord>& val);
@@ -2080,12 +2723,61 @@ struct FfiConverterOptionalTypeReconnectConfigRecord {
     static void write(RustStream &stream, const std::optional<ReconnectConfigRecord>& value);
     static uint64_t allocation_size(const std::optional<ReconnectConfigRecord> &val);
 };
+struct FfiConverterOptionalTypeSnapshotParams {
+    static std::optional<SnapshotParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<SnapshotParams>& val);
+    static std::optional<SnapshotParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<SnapshotParams>& value);
+    static uint64_t allocation_size(const std::optional<SnapshotParams> &val);
+};
+struct FfiConverterOptionalTypeStockCandlesParams {
+    static std::optional<StockCandlesParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<StockCandlesParams>& val);
+    static std::optional<StockCandlesParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<StockCandlesParams>& value);
+    static uint64_t allocation_size(const std::optional<StockCandlesParams> &val);
+};
+struct FfiConverterOptionalTypeStockHistoricalCandlesParams {
+    static std::optional<StockHistoricalCandlesParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<StockHistoricalCandlesParams>& val);
+    static std::optional<StockHistoricalCandlesParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<StockHistoricalCandlesParams>& value);
+    static uint64_t allocation_size(const std::optional<StockHistoricalCandlesParams> &val);
+};
+struct FfiConverterOptionalTypeStockTickersParams {
+    static std::optional<StockTickersParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<StockTickersParams>& val);
+    static std::optional<StockTickersParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<StockTickersParams>& value);
+    static uint64_t allocation_size(const std::optional<StockTickersParams> &val);
+};
+struct FfiConverterOptionalTypeStockTradesParams {
+    static std::optional<StockTradesParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<StockTradesParams>& val);
+    static std::optional<StockTradesParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<StockTradesParams>& value);
+    static uint64_t allocation_size(const std::optional<StockTradesParams> &val);
+};
 struct FfiConverterOptionalTypeStreamingVersionRecord {
     static std::optional<StreamingVersionRecord> lift(RustBuffer buf);
     static RustBuffer lower(const std::optional<StreamingVersionRecord>& val);
     static std::optional<StreamingVersionRecord> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<StreamingVersionRecord>& value);
     static uint64_t allocation_size(const std::optional<StreamingVersionRecord> &val);
+};
+struct FfiConverterOptionalTypeSubscribeOptions {
+    static std::optional<SubscribeOptions> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<SubscribeOptions>& val);
+    static std::optional<SubscribeOptions> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<SubscribeOptions>& value);
+    static uint64_t allocation_size(const std::optional<SubscribeOptions> &val);
+};
+struct FfiConverterOptionalTypeTechnicalParams {
+    static std::optional<TechnicalParams> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<TechnicalParams>& val);
+    static std::optional<TechnicalParams> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<TechnicalParams>& value);
+    static uint64_t allocation_size(const std::optional<TechnicalParams> &val);
 };
 struct FfiConverterOptionalTypeTlsConfigRecord {
     static std::optional<TlsConfigRecord> lift(RustBuffer buf);

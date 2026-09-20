@@ -245,7 +245,9 @@ public class FugleWebSocketClient implements AutoCloseable {
     /**
      * Subscribe to a channel for a symbol in the regular or after-hours (盤後) session.
      *
-     * <p>FutOpt endpoint only: on the Stock endpoint this fails with error 1005.
+     * <p>FutOpt endpoint only: on the Stock endpoint this fails with error 1005
+     * (even when {@code afterHours} is {@code false} — passing this overload at all
+     * sets the after-hours option, and the Stock endpoint rejects the option itself).
      *
      * @param channel Channel name (e.g., "trades", "candles", "books")
      * @param symbol Symbol to subscribe (e.g., "TXFE6")
@@ -258,7 +260,41 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     private CompletableFuture<Void> subscribeSession(String channel, String symbol, Boolean afterHours) {
-        return webSocketClient.subscribe(channel, symbol, afterHours)
+        SubscribeOptions opts = afterHours == null ? null : new SubscribeOptions(afterHours, null);
+        return webSocketClient.subscribe(channel, Collections.singletonList(symbol), opts)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+    }
+
+    /**
+     * Subscribe to a channel for one or more symbols.
+     *
+     * <p>All symbols are sent in a single frame; the server returns one
+     * subscription id per symbol.
+     *
+     * @param channel Channel name (e.g., "trades", "candles", "books")
+     * @param symbols Symbols to subscribe (e.g., {@code List.of("2330", "2317")})
+     * @return CompletableFuture that completes when subscribed
+     * @throws ApiException if subscription fails
+     */
+    public CompletableFuture<Void> subscribe(String channel, List<String> symbols) {
+        return subscribe(channel, symbols, null);
+    }
+
+    /**
+     * Subscribe to a channel for one or more symbols, with session/lot options.
+     *
+     * <p>All symbols are sent in a single frame. {@code opts.intradayOddLot} is
+     * Stock endpoint only; {@code opts.afterHours} is FutOpt endpoint only. Setting
+     * the option for the wrong endpoint fails with error 1005.
+     *
+     * @param channel Channel name (e.g., "trades", "candles", "books")
+     * @param symbols Symbols to subscribe (e.g., {@code List.of("2330", "2317")})
+     * @param opts Subscribe options, or null for the defaults
+     * @return CompletableFuture that completes when subscribed
+     * @throws ApiException if subscription fails
+     */
+    public CompletableFuture<Void> subscribe(String channel, List<String> symbols, SubscribeOptions opts) {
+        return webSocketClient.subscribe(channel, symbols, opts)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
     }
 
@@ -290,7 +326,35 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     private CompletableFuture<Void> unsubscribeSession(String channel, String symbol, Boolean afterHours) {
-        return webSocketClient.unsubscribe(channel, symbol, afterHours)
+        SubscribeOptions opts = afterHours == null ? null : new SubscribeOptions(afterHours, null);
+        return webSocketClient.unsubscribe(channel, Collections.singletonList(symbol), opts)
+                .exceptionally(e -> { throw FugleException.unwrap(e); });
+    }
+
+    /**
+     * Unsubscribe from a channel for one or more symbols.
+     *
+     * @param channel Channel name
+     * @param symbols Symbols to unsubscribe
+     * @return CompletableFuture that completes when unsubscribed
+     */
+    public CompletableFuture<Void> unsubscribe(String channel, List<String> symbols) {
+        return unsubscribe(channel, symbols, null);
+    }
+
+    /**
+     * Unsubscribe a subscription made with {@link #subscribe(String, List, SubscribeOptions)}.
+     *
+     * <p>Pass the same options: an after-hours or odd-lot subscription is separate
+     * from the regular one.
+     *
+     * @param channel Channel name
+     * @param symbols Symbols to unsubscribe
+     * @param opts The options passed to {@code subscribe}
+     * @return CompletableFuture that completes when unsubscribed
+     */
+    public CompletableFuture<Void> unsubscribe(String channel, List<String> symbols, SubscribeOptions opts) {
+        return webSocketClient.unsubscribe(channel, symbols, opts)
                 .exceptionally(e -> { throw FugleException.unwrap(e); });
     }
 

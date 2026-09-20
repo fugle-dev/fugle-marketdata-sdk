@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -34,6 +35,8 @@ internal sealed class LoopbackServer : IDisposable
                 try { ctx = await _listener.GetContextAsync().ConfigureAwait(false); }
                 catch { return; }
 
+                Requests.Enqueue(ctx.Request.RawUrl ?? string.Empty);
+
                 try
                 {
                     ctx.Response.StatusCode = statusCode;
@@ -52,6 +55,9 @@ internal sealed class LoopbackServer : IDisposable
 
     /// <summary>Base URL to hand to the SDK — host only, no version segment.</summary>
     public string Prefix { get; }
+
+    /// <summary>Every request's raw URL (path + query string), in arrival order.</summary>
+    public ConcurrentQueue<string> Requests { get; } = new();
 
     /// <summary>A client pointed at this server.</summary>
     public FugleMarketData.RestClient NewClient(string apiKey = "test-key") =>

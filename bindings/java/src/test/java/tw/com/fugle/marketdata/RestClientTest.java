@@ -3,8 +3,23 @@ package tw.com.fugle.marketdata;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+import tw.com.fugle.marketdata.generated.CorporateActionsParams;
+import tw.com.fugle.marketdata.generated.OddLotParams;
+import tw.com.fugle.marketdata.generated.OwnershipParams;
+import tw.com.fugle.marketdata.generated.StockCandlesParams;
+import tw.com.fugle.marketdata.generated.StockTradesParams;
+
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
 /**
  * Tests for FugleRestClient wrapper over UniFFI bindings.
@@ -111,10 +126,15 @@ public class RestClientTest {
     @DisplayName("FugleRestClient.StockIntradayClientWrapper has sync methods")
     void intradayStockHasSyncMethods() throws NoSuchMethodException {
         assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getQuote", String.class));
+        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getQuote", String.class, OddLotParams.class));
         assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getTicker", String.class));
+        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getTicker", String.class, OddLotParams.class));
         assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getTrades", String.class));
-        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getCandles", String.class, String.class));
+        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getTrades", String.class, StockTradesParams.class));
+        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getCandles", String.class));
+        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getCandles", String.class, StockCandlesParams.class));
         assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getVolumes", String.class));
+        assertNotNull(FugleRestClient.StockIntradayClientWrapper.class.getMethod("getVolumes", String.class, OddLotParams.class));
     }
 
     @Test
@@ -133,8 +153,14 @@ public class RestClientTest {
     @DisplayName("FugleRestClient.FutOptIntradayClientWrapper has sync methods")
     void intradayFutOptHasSyncMethods() throws NoSuchMethodException {
         assertNotNull(FugleRestClient.FutOptIntradayClientWrapper.class.getMethod("getQuote", String.class));
+        assertNotNull(FugleRestClient.FutOptIntradayClientWrapper.class.getMethod(
+                "getQuote", String.class, tw.com.fugle.marketdata.generated.AfterHoursParams.class));
         assertNotNull(FugleRestClient.FutOptIntradayClientWrapper.class.getMethod("getTicker", String.class));
+        assertNotNull(FugleRestClient.FutOptIntradayClientWrapper.class.getMethod(
+                "getTicker", String.class, tw.com.fugle.marketdata.generated.AfterHoursParams.class));
         assertNotNull(FugleRestClient.FutOptIntradayClientWrapper.class.getMethod("getProducts", String.class));
+        assertNotNull(FugleRestClient.FutOptIntradayClientWrapper.class.getMethod(
+                "getProducts", String.class, tw.com.fugle.marketdata.generated.FutOptProductsParams.class));
     }
 
     @Test
@@ -162,10 +188,16 @@ public class RestClientTest {
         Class<?> type = FugleRestClient.StockOwnershipClientWrapper.class;
         for (String name : new String[] {
                 "getEtfHoldings", "getInstitutionalTrades", "getDirectorHoldings", "getTdccDistribution"}) {
-            Method sync = type.getMethod(name, String.class, String.class, String.class, String.class);
+            Method syncConvenience = type.getMethod(name, String.class);
+            assertEquals(String.class, syncConvenience.getReturnType());
+
+            Method sync = type.getMethod(name, String.class, OwnershipParams.class);
             assertEquals(String.class, sync.getReturnType());
 
-            Method async = type.getMethod(name + "Async", String.class, String.class, String.class, String.class);
+            Method asyncConvenience = type.getMethod(name + "Async", String.class);
+            assertEquals(CompletableFuture.class, asyncConvenience.getReturnType());
+
+            Method async = type.getMethod(name + "Async", String.class, OwnershipParams.class);
             assertEquals(CompletableFuture.class, async.getReturnType());
         }
     }
@@ -257,6 +289,83 @@ public class RestClientTest {
             assertNotNull(client.stock().ownership());
             assertInstanceOf(FugleRestClient.StockOwnershipClientWrapper.class, client.stock().ownership());
         }
+    }
+
+    // ========== Query Parameter Tests (loopback, no network) ==========
+    //
+    // FugleRestClient.Builder cannot set a base URL yet (see TODO in build()),
+    // so these go through the generated RestClient directly via
+    // MarketdataUniffi.newRestClientWithApiKeyAndTls, which the wrapper's
+    // builder uses internally once baseUrl() support lands.
+
+    @Test
+    @DisplayName("getTrades(symbol, StockTradesParams) sends oddLot+limit as query parameters")
+    void getTradesSendsQueryParameters() throws Exception {
+        NativeLibrary.assumeAvailable();
+
+        java.util.concurrent.BlockingQueue<String> rawQueries = new java.util.concurrent.LinkedBlockingQueue<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/", exchange -> {
+            rawQueries.add(exchange.getRequestURI().getRawQuery());
+            byte[] body = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
+        server.start();
+        try {
+            tw.com.fugle.marketdata.generated.RestClient client =
+                    tw.com.fugle.marketdata.generated.MarketdataUniffi.newRestClientWithApiKeyAndTls(
+                            "test-api-key",
+                            "http://127.0.0.1:" + server.getAddress().getPort(),
+                            new tw.com.fugle.marketdata.generated.TlsConfigRecord(null, false));
+
+            client.stock().intraday().tradesSync("2330", new StockTradesParams(true, null, 5, null, null));
+
+            String rawQuery = rawQueries.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertNotNull(rawQuery, "server did not receive a request");
+            assertEquals(queryPairs("type=oddlot&limit=5"), queryPairs(rawQuery));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("getCapitalChanges with exchange fails with code 1005 (unknown key)")
+    void capitalChangesWithExchangeIs1005() {
+        NativeLibrary.assumeAvailable();
+
+        // Validation happens before the request is sent, so an unreachable
+        // baseUrl (port 9, "discard") is enough - no server needed.
+        tw.com.fugle.marketdata.generated.RestClient client;
+        try {
+            client = tw.com.fugle.marketdata.generated.MarketdataUniffi.newRestClientWithApiKeyAndTls(
+                    "test-api-key", "http://127.0.0.1:9",
+                    new tw.com.fugle.marketdata.generated.TlsConfigRecord(null, false));
+        } catch (tw.com.fugle.marketdata.generated.MarketDataException e) {
+            throw new AssertionError(e);
+        }
+
+        tw.com.fugle.marketdata.generated.MarketDataException e = assertThrows(
+                tw.com.fugle.marketdata.generated.MarketDataException.class,
+                () -> client.stock().corporateActions().capitalChangesSync(
+                        new CorporateActionsParams(null, null, "TWSE", null)));
+        assertEquals(Integer.valueOf(1005), FugleException.from(e).getCode());
+    }
+
+    /** Parse a raw query string ("a=b&c=d") into an order-independent set of pairs. */
+    private static Map<String, String> queryPairs(String rawQuery) {
+        Map<String, String> pairs = new TreeMap<>();
+        if (rawQuery == null || rawQuery.isEmpty()) {
+            return pairs;
+        }
+        for (String pair : rawQuery.split("&")) {
+            String[] kv = pair.split("=", 2);
+            pairs.put(kv[0], kv.length > 1 ? kv[1] : "");
+        }
+        return pairs;
     }
 
     // ========== Integration Tests (require FUGLE_API_KEY) ==========

@@ -111,7 +111,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      * Get monthly holdings and pledges disclosed by directors and supervisors (sync/blocking)
      */
     @Override
-    public String directorHoldingsSync(String symbol, String from, String to, String sort) throws MarketDataException {
+    public String directorHoldingsSync(String symbol, OwnershipParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -120,7 +120,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_director_holdings_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -147,7 +147,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      * Get the constituents an ETF held over a date range (sync/blocking)
      */
     @Override
-    public String etfHoldingsSync(String symbol, String from, String to, String sort) throws MarketDataException {
+    public String etfHoldingsSync(String symbol, OwnershipParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -156,7 +156,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_etf_holdings_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -184,12 +184,12 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<String> getDirectorHoldings(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getDirectorHoldings(String symbol, OwnershipParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_director_holdings(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -208,12 +208,12 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<String> getEtfHoldings(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getEtfHoldings(String symbol, OwnershipParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_etf_holdings(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -232,12 +232,12 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<String> getInstitutionalTrades(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getInstitutionalTrades(String symbol, OwnershipParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_institutional_trades(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -256,12 +256,12 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      */
     @Override
     
-    public CompletableFuture<String> getTdccDistribution(String symbol, String from, String to, String sort){
+    public CompletableFuture<String> getTdccDistribution(String symbol, OwnershipParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_get_tdcc_distribution(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -279,7 +279,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      * Get daily trading by the three major institutional investors (sync/blocking)
      */
     @Override
-    public String institutionalTradesSync(String symbol, String from, String to, String sort) throws MarketDataException {
+    public String institutionalTradesSync(String symbol, OwnershipParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -288,7 +288,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_institutional_trades_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -315,7 +315,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
      * Get the weekly TDCC shareholder distribution by holding-size bracket (sync/blocking)
      */
     @Override
-    public String tdccDistributionSync(String symbol, String from, String to, String sort) throws MarketDataException {
+    public String tdccDistributionSync(String symbol, OwnershipParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -324,7 +324,7 @@ public class StockOwnershipClient implements AutoCloseable, StockOwnershipClient
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribution_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalString.INSTANCE.lower(from), FfiConverterOptionalString.INSTANCE.lower(to), FfiConverterOptionalString.INSTANCE.lower(sort), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOwnershipParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {

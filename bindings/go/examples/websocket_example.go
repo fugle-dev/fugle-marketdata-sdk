@@ -52,6 +52,12 @@ func main() {
 		log.Fatalf("訂閱失敗: %v", err)
 	}
 
+	// 3b. 多檔訂閱：一個 frame 送多個 symbol，比逐檔呼叫 Subscribe 省 round-trip
+	fmt.Println("3b. 訂閱 2317, 2454 trades（多檔）...")
+	if err := client.SubscribeMany("trades", []string{"2317", "2454"}); err != nil {
+		log.Fatalf("訂閱失敗: %v", err)
+	}
+
 	// 4. 設定中斷信號處理 (Ctrl+C)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)

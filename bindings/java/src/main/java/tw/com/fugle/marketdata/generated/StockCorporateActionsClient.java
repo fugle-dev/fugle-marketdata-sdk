@@ -13,6 +13,8 @@ import java.util.concurrent.CompletableFuture;
  * Stock corporate actions endpoints
  *
  * Provides access to capital changes, dividends, and listing applicants (IPO).
+ * One record serves all three; `capital-changes` has no `exchange`, so
+ * setting it there is 1005 `INVALID_PARAMETER`.
  */
 public class StockCorporateActionsClient implements AutoCloseable, StockCorporateActionsClientInterface {
   protected Pointer pointer;
@@ -113,7 +115,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      * Get capital structure changes (sync/blocking)
      */
     @Override
-    public String capitalChangesSync(String startDate, String endDate) throws MarketDataException {
+    public String capitalChangesSync(CorporateActionsParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -122,7 +124,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync(
-            it, FfiConverterOptionalString.INSTANCE.lower(startDate), FfiConverterOptionalString.INSTANCE.lower(endDate), _status);
+            it, FfiConverterOptionalTypeCorporateActionsParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -149,7 +151,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      * Get dividend announcements (sync/blocking)
      */
     @Override
-    public String dividendsSync(String startDate, String endDate) throws MarketDataException {
+    public String dividendsSync(CorporateActionsParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -158,7 +160,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync(
-            it, FfiConverterOptionalString.INSTANCE.lower(startDate), FfiConverterOptionalString.INSTANCE.lower(endDate), _status);
+            it, FfiConverterOptionalTypeCorporateActionsParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -186,12 +188,12 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      */
     @Override
     
-    public CompletableFuture<String> getCapitalChanges(String startDate, String endDate){
+    public CompletableFuture<String> getCapitalChanges(CorporateActionsParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_capital_changes(
                 thisPtr,
-                FfiConverterOptionalString.INSTANCE.lower(startDate), FfiConverterOptionalString.INSTANCE.lower(endDate)
+                FfiConverterOptionalTypeCorporateActionsParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -210,12 +212,12 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      */
     @Override
     
-    public CompletableFuture<String> getDividends(String startDate, String endDate){
+    public CompletableFuture<String> getDividends(CorporateActionsParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_dividends(
                 thisPtr,
-                FfiConverterOptionalString.INSTANCE.lower(startDate), FfiConverterOptionalString.INSTANCE.lower(endDate)
+                FfiConverterOptionalTypeCorporateActionsParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -234,12 +236,12 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      */
     @Override
     
-    public CompletableFuture<String> getListingApplicants(String startDate, String endDate){
+    public CompletableFuture<String> getListingApplicants(CorporateActionsParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_get_listing_applicants(
                 thisPtr,
-                FfiConverterOptionalString.INSTANCE.lower(startDate), FfiConverterOptionalString.INSTANCE.lower(endDate)
+                FfiConverterOptionalTypeCorporateActionsParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -257,7 +259,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
      * Get IPO listing applicants (sync/blocking)
      */
     @Override
-    public String listingApplicantsSync(String startDate, String endDate) throws MarketDataException {
+    public String listingApplicantsSync(CorporateActionsParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -266,7 +268,7 @@ public class StockCorporateActionsClient implements AutoCloseable, StockCorporat
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync(
-            it, FfiConverterOptionalString.INSTANCE.lower(startDate), FfiConverterOptionalString.INSTANCE.lower(endDate), _status);
+            it, FfiConverterOptionalTypeCorporateActionsParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {

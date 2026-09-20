@@ -47,6 +47,65 @@ func TestSubscribeFrame_FutOptEndpointSendsAfterHours(t *testing.T) {
 	assertFrames(t, srv, want)
 }
 
+func TestSubscribeFrame_SubscribeManySendsSymbolsArray(t *testing.T) {
+	srv := newAuthFrameServer(t)
+	client, err := NewFugleWebSocketClient(nil, WithApiKey("the-key"), WithBaseUrl(srv.url()))
+	if err != nil {
+		t.Fatalf("NewFugleWebSocketClient: %v", err)
+	}
+	defer client.Close()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	if err := client.SubscribeMany("trades", []string{"2330", "2317"}); err != nil {
+		t.Fatalf("SubscribeMany: %v", err)
+	}
+	if err := client.Subscribe("trades", "2330"); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	want := []map[string]any{
+		{"event": "subscribe", "data": map[string]any{"channel": "trades", "symbols": []any{"2330", "2317"}}},
+		{"event": "subscribe", "data": map[string]any{"channel": "trades", "symbol": "2330"}},
+	}
+	assertFrames(t, srv, want)
+}
+
+func TestSubscribeFrame_IntradayOddLotSendsFlag(t *testing.T) {
+	srv := newAuthFrameServer(t)
+	client, err := NewFugleWebSocketClient(nil, WithApiKey("the-key"), WithBaseUrl(srv.url()))
+	if err != nil {
+		t.Fatalf("NewFugleWebSocketClient: %v", err)
+	}
+	defer client.Close()
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	if err := client.Subscribe("trades", "2330", WithIntradayOddLot(true)); err != nil {
+		t.Fatalf("Subscribe intraday odd lot: %v", err)
+	}
+
+	want := []map[string]any{
+		{"event": "subscribe", "data": map[string]any{"channel": "trades", "symbol": "2330", "intradayOddLot": true}},
+	}
+	assertFrames(t, srv, want)
+}
+
+func TestSubscribeFrame_FutOptEndpointRejectsIntradayOddLot(t *testing.T) {
+	client, err := NewFugleWebSocketClient(nil, WithApiKey("the-key"), WithEndpoint(WebSocketEndpointFutOpt))
+	if err != nil {
+		t.Fatalf("NewFugleWebSocketClient: %v", err)
+	}
+	defer client.Close()
+
+	for _, oddLot := range []bool{true, false} {
+		assertErrorCode(t, client.Subscribe("trades", "TXFE6", WithIntradayOddLot(oddLot)), 1005)
+		assertErrorCode(t, client.Unsubscribe("trades", "TXFE6", WithIntradayOddLot(oddLot)), 1005)
+	}
+}
+
 func TestSubscribeFrame_UnsubscribeIdsSendsIds(t *testing.T) {
 	srv := newAuthFrameServer(t)
 	client, err := NewFugleWebSocketClient(nil, WithApiKey("the-key"), WithBaseUrl(srv.url()))

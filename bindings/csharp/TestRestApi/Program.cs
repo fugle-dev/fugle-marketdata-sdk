@@ -5,8 +5,11 @@
 //   dotnet run --project TestRestApi
 
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 using FugleMarketData;
+using StockTradesParams = uniffi.marketdata_uniffi.StockTradesParams;
+using StockCandlesParams = uniffi.marketdata_uniffi.StockCandlesParams;
 
 class Program
 {
@@ -29,47 +32,52 @@ class Program
         {
             // 1. 取得股票報價
             Console.WriteLine("1. 取得 2330 (台積電) 報價...");
-            var quote = await client.Stock.Intraday.GetQuoteAsync("2330");
-            Console.WriteLine($"   股票代號: {quote.symbol}");
-            Console.WriteLine($"   日期: {quote.date}");
-            Console.WriteLine($"   收盤價: {quote.closePrice}");
-            Console.WriteLine($"   漲跌: {quote.change}");
-            Console.WriteLine($"   漲跌幅: {quote.changePercent}%");
-            if (quote.total != null)
+            var quote = JsonDocument.Parse(await client.Stock.Intraday.GetQuoteAsync("2330")).RootElement;
+            Console.WriteLine($"   股票代號: {quote.GetProperty("symbol")}");
+            Console.WriteLine($"   日期: {quote.GetProperty("date")}");
+            Console.WriteLine($"   收盤價: {quote.GetProperty("closePrice")}");
+            Console.WriteLine($"   漲跌: {quote.GetProperty("change")}");
+            Console.WriteLine($"   漲跌幅: {quote.GetProperty("changePercent")}%");
+            if (quote.TryGetProperty("total", out var total))
             {
-                Console.WriteLine($"   成交量: {quote.total.tradeVolume}");
-                Console.WriteLine($"   成交金額: {quote.total.tradeValue}");
+                Console.WriteLine($"   成交量: {total.GetProperty("tradeVolume")}");
+                Console.WriteLine($"   成交金額: {total.GetProperty("tradeValue")}");
             }
             Console.WriteLine();
 
             // 2. 取得股票基本資訊
             Console.WriteLine("2. 取得 2330 基本資訊...");
-            var ticker = await client.Stock.Intraday.GetTickerAsync("2330");
-            Console.WriteLine($"   名稱: {ticker.name}");
-            Console.WriteLine($"   交易所: {ticker.exchange}");
-            Console.WriteLine($"   漲停價: {ticker.limitUpPrice}");
-            Console.WriteLine($"   跌停價: {ticker.limitDownPrice}");
+            var ticker = JsonDocument.Parse(await client.Stock.Intraday.GetTickerAsync("2330")).RootElement;
+            Console.WriteLine($"   名稱: {ticker.GetProperty("name")}");
+            Console.WriteLine($"   交易所: {ticker.GetProperty("exchange")}");
+            Console.WriteLine($"   漲停價: {ticker.GetProperty("limitUpPrice")}");
+            Console.WriteLine($"   跌停價: {ticker.GetProperty("limitDownPrice")}");
             Console.WriteLine();
 
             // 3. 取得成交明細
             Console.WriteLine("3. 取得 2330 成交明細 (前 3 筆)...");
-            var trades = await client.Stock.Intraday.GetTradesAsync("2330");
-            Console.WriteLine($"   共 {trades.data.Length} 筆成交");
-            for (int i = 0; i < Math.Min(3, trades.data.Length); i++)
+            var trades = JsonDocument.Parse(
+                await client.Stock.Intraday.GetTradesAsync("2330", new StockTradesParams(limit: 3))).RootElement;
+            var tradesData = trades.GetProperty("data");
+            Console.WriteLine($"   共 {tradesData.GetArrayLength()} 筆成交");
+            var i = 0;
+            foreach (var trade in tradesData.EnumerateArray())
             {
-                var trade = trades.data[i];
-                Console.WriteLine($"   [{i+1}] 價格: {trade.price}, 數量: {trade.size}, 時間: {trade.time}");
+                Console.WriteLine($"   [{++i}] 價格: {trade.GetProperty("price")}, 數量: {trade.GetProperty("size")}, 時間: {trade.GetProperty("time")}");
             }
             Console.WriteLine();
 
             // 4. 取得 K 線資料
-            Console.WriteLine("4. 取得 2330 五分鐘 K 線 (前 3 根)...");
-            var candles = await client.Stock.Intraday.GetCandlesAsync("2330", "5");
-            Console.WriteLine($"   共 {candles.data.Length} 根 K 線");
-            for (int i = 0; i < Math.Min(3, candles.data.Length); i++)
+            Console.WriteLine("4. 取得 2330 五分鐘 K 線...");
+            var candles = JsonDocument.Parse(
+                await client.Stock.Intraday.GetCandlesAsync("2330", new StockCandlesParams(timeframe: "5"))).RootElement;
+            var candlesData = candles.GetProperty("data");
+            Console.WriteLine($"   共 {candlesData.GetArrayLength()} 根 K 線");
+            i = 0;
+            foreach (var candle in candlesData.EnumerateArray())
             {
-                var candle = candles.data[i];
-                Console.WriteLine($"   [{i+1}] 時間: {candle.date}, O:{candle.open} H:{candle.high} L:{candle.low} C:{candle.close} V:{candle.volume}");
+                if (++i > 3) break;
+                Console.WriteLine($"   [{i}] 時間: {candle.GetProperty("date")}, O:{candle.GetProperty("open")} H:{candle.GetProperty("high")} L:{candle.GetProperty("low")} C:{candle.GetProperty("close")} V:{candle.GetProperty("volume")}");
             }
             Console.WriteLine();
 

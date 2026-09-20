@@ -69,8 +69,10 @@ func main() {
 	defer client.Destroy()
 
 	// 2. 取得股票報價 (TSMC 2330)
+	//
+	// 必填參數是位置參數，其餘篩選條件放進 *Params record；不需要篩選就傳 nil。
 	fmt.Println("\n2. 取得 2330 報價...")
-	body, err := client.Stock().Intraday().GetQuote("2330")
+	body, err := client.Stock().Intraday().GetQuote("2330", nil)
 	if err != nil {
 		log.Fatalf("取得報價失敗: %v", err)
 	}
@@ -99,7 +101,7 @@ func main() {
 
 	// 4. 取得 Ticker 資訊
 	fmt.Println("\n3. 取得 2330 Ticker...")
-	body, err = client.Stock().Intraday().GetTicker("2330")
+	body, err = client.Stock().Intraday().GetTicker("2330", nil)
 	if err != nil {
 		log.Fatalf("取得 ticker 失敗: %v", err)
 	}
@@ -115,6 +117,16 @@ func main() {
 	printPrice("參考價", ticker.ReferencePrice)
 	printPrice("漲停價", ticker.LimitUpPrice)
 	printPrice("跌停價", ticker.LimitDownPrice)
+
+	// 5. 取得成交明細，只要最新 5 筆
+	//
+	// *Params record 的欄位全是指標；mkt.Uint32/Bool/String/Float64 是給字面值用的 helper。
+	fmt.Println("\n4. 取得 2330 最新 5 筆成交明細...")
+	body, err = client.Stock().Intraday().GetTrades("2330", &mkt.StockTradesParams{Limit: mkt.Uint32(5)})
+	if err != nil {
+		log.Fatalf("取得成交明細失敗: %v", err)
+	}
+	fmt.Println(body)
 
 	fmt.Println("\n完成!")
 }

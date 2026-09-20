@@ -51,31 +51,31 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_futoptclient_intraday() != 43120) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync() != 48969) {
+    if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync() != 8321) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync() != 9970) {
+    if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync() != 43568) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_candles_sync() != 6239) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_candles_sync() != 15435) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_products_sync() != 26308) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_products_sync() != 21712) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_quote_sync() != 54590) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_quote_sync() != 49258) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_ticker_sync() != 57757) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_ticker_sync() != 25885) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_tickers_sync() != 25670) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_tickers_sync() != 32515) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_trades_sync() != 53906) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_trades_sync() != 4933) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_volumes_sync() != 46081) {
+    if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_volumes_sync() != 40116) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_restclient_base_url() != 36384) {
@@ -108,73 +108,73 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stockclient_technical() != 10974) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync() != 44530) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_capital_changes_sync() != 31988) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync() != 35826) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_dividends_sync() != 37175) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync() != 37063) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockcorporateactionsclient_listing_applicants_sync() != 4098) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_candles_sync() != 61155) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_candles_sync() != 16718) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_stockhistoricalclient_stats_sync() != 20776) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_candles_sync() != 39759) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_candles_sync() != 43276) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync() != 62355) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_quote_sync() != 14450) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_ticker_sync() != 37699) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_ticker_sync() != 12061) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_tickers_sync() != 53677) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_tickers_sync() != 50959) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_trades_sync() != 6270) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_trades_sync() != 17544) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_volumes_sync() != 33858) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockintradayclient_volumes_sync() != 53696) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync() != 53633) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_director_holdings_sync() != 42397) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync() != 61307) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_etf_holdings_sync() != 9047) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync() != 11313) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_institutional_trades_sync() != 27652) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync() != 57031) {
+    if (uniffi_marketdata_uniffi_checksum_method_stockownershipclient_tdcc_distribution_sync() != 41522) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync() != 40591) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_actives_sync() != 34682) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_movers_sync() != 41234) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_movers_sync() != 58532) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_quotes_sync() != 31044) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocksnapshotclient_quotes_sync() != 8259) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync() != 23057) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_bb_sync() != 60077) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync() != 57078) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_kdj_sync() != 7023) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_macd_sync() != 3744) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_macd_sync() != 3187) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_rsi_sync() != 14395) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_rsi_sync() != 43008) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_sma_sync() != 62329) {
+    if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_sma_sync() != 21533) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_connect_sync() != 3230) {
@@ -201,13 +201,13 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions_sync() != 55765) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync() != 38599) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync() != 22113) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids_sync() != 4280) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync() != 58011) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync() != 38235) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected() != 42437) {
@@ -661,19 +661,19 @@ FutOptHistoricalClient::FutOptHistoricalClient(const FutOptHistoricalClient &oth
 
 
 
-std::string FutOptHistoricalClient::candles_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, bool after_hours, std::optional<std::string> contract_month, std::optional<std::string> fields, std::optional<std::string> sort) {
+std::string FutOptHistoricalClient::candles_sync(const std::string &symbol, std::optional<FutOptHistoricalCandlesParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterBool::lower(after_hours), uniffi::FfiConverterOptionalString::lower(contract_month), uniffi::FfiConverterOptionalString::lower(fields), uniffi::FfiConverterOptionalString::lower(sort)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeFutOptHistoricalCandlesParams::lower(params)));
 }
-std::string FutOptHistoricalClient::daily_sync(const std::string &symbol, std::optional<std::string> date, bool after_hours) {
+std::string FutOptHistoricalClient::daily_sync(const std::string &symbol, std::optional<FutOptDailyParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(date), uniffi::FfiConverterBool::lower(after_hours)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeFutOptDailyParams::lower(params)));
 }
 
 FutOptHistoricalClient::~FutOptHistoricalClient() {
@@ -706,54 +706,54 @@ FutOptIntradayClient::FutOptIntradayClient(const FutOptIntradayClient &other) : 
 
 
 
-std::string FutOptIntradayClient::candles_sync(const std::string &symbol, const std::string &timeframe) {
+std::string FutOptIntradayClient::candles_sync(const std::string &symbol, std::optional<FutOptCandlesParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_candles_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterString::lower(timeframe)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeFutOptCandlesParams::lower(params)));
 }
-std::string FutOptIntradayClient::products_sync(const std::string &typ) {
+std::string FutOptIntradayClient::products_sync(const std::string &typ, std::optional<FutOptProductsParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_products_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(typ)));
+        ptr, uniffi::FfiConverterString::lower(typ), uniffi::FfiConverterOptionalTypeFutOptProductsParams::lower(params)));
 }
-std::string FutOptIntradayClient::quote_sync(const std::string &symbol, bool after_hours) {
+std::string FutOptIntradayClient::quote_sync(const std::string &symbol, std::optional<AfterHoursParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_quote_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterBool::lower(after_hours)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeAfterHoursParams::lower(params)));
 }
-std::string FutOptIntradayClient::ticker_sync(const std::string &symbol, bool after_hours) {
+std::string FutOptIntradayClient::ticker_sync(const std::string &symbol, std::optional<AfterHoursParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_ticker_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterBool::lower(after_hours)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeAfterHoursParams::lower(params)));
 }
-std::string FutOptIntradayClient::tickers_sync(const std::string &typ, std::optional<bool> is_spread) {
+std::string FutOptIntradayClient::tickers_sync(const std::string &typ, std::optional<FutOptTickersParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_tickers_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(typ), uniffi::FfiConverterOptionalBool::lower(is_spread)));
+        ptr, uniffi::FfiConverterString::lower(typ), uniffi::FfiConverterOptionalTypeFutOptTickersParams::lower(params)));
 }
-std::string FutOptIntradayClient::trades_sync(const std::string &symbol) {
+std::string FutOptIntradayClient::trades_sync(const std::string &symbol, std::optional<FutOptTradesParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_trades_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeFutOptTradesParams::lower(params)));
 }
-std::string FutOptIntradayClient::volumes_sync(const std::string &symbol) {
+std::string FutOptIntradayClient::volumes_sync(const std::string &symbol, std::optional<AfterHoursParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futoptintradayclient_volumes_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeAfterHoursParams::lower(params)));
 }
 
 FutOptIntradayClient::~FutOptIntradayClient() {
@@ -918,26 +918,26 @@ StockCorporateActionsClient::StockCorporateActionsClient(const StockCorporateAct
 
 
 
-std::string StockCorporateActionsClient::capital_changes_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::capital_changes_sync(std::optional<CorporateActionsParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_capital_changes_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalTypeCorporateActionsParams::lower(params)));
 }
-std::string StockCorporateActionsClient::dividends_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::dividends_sync(std::optional<CorporateActionsParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_dividends_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalTypeCorporateActionsParams::lower(params)));
 }
-std::string StockCorporateActionsClient::listing_applicants_sync(std::optional<std::string> start_date, std::optional<std::string> end_date) {
+std::string StockCorporateActionsClient::listing_applicants_sync(std::optional<CorporateActionsParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockcorporateactionsclient_listing_applicants_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterOptionalString::lower(start_date), uniffi::FfiConverterOptionalString::lower(end_date)));
+        ptr, uniffi::FfiConverterOptionalTypeCorporateActionsParams::lower(params)));
 }
 
 StockCorporateActionsClient::~StockCorporateActionsClient() {
@@ -970,12 +970,12 @@ StockHistoricalClient::StockHistoricalClient(const StockHistoricalClient &other)
 
 
 
-std::string StockHistoricalClient::candles_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe) {
+std::string StockHistoricalClient::candles_sync(const std::string &symbol, std::optional<StockHistoricalCandlesParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockhistoricalclient_candles_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeStockHistoricalCandlesParams::lower(params)));
 }
 std::string StockHistoricalClient::stats_sync(const std::string &symbol) {
     auto ptr = this->_uniffi_internal_clone_pointer();
@@ -1015,47 +1015,47 @@ StockIntradayClient::StockIntradayClient(const StockIntradayClient &other) : ins
 
 
 
-std::string StockIntradayClient::candles_sync(const std::string &symbol, const std::string &timeframe) {
+std::string StockIntradayClient::candles_sync(const std::string &symbol, std::optional<StockCandlesParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockintradayclient_candles_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterString::lower(timeframe)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeStockCandlesParams::lower(params)));
 }
-std::string StockIntradayClient::quote_sync(const std::string &symbol) {
+std::string StockIntradayClient::quote_sync(const std::string &symbol, std::optional<OddLotParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOddLotParams::lower(params)));
 }
-std::string StockIntradayClient::ticker_sync(const std::string &symbol) {
+std::string StockIntradayClient::ticker_sync(const std::string &symbol, std::optional<OddLotParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockintradayclient_ticker_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOddLotParams::lower(params)));
 }
-std::string StockIntradayClient::tickers_sync(const std::string &typ) {
+std::string StockIntradayClient::tickers_sync(const std::string &typ, std::optional<StockTickersParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockintradayclient_tickers_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(typ)));
+        ptr, uniffi::FfiConverterString::lower(typ), uniffi::FfiConverterOptionalTypeStockTickersParams::lower(params)));
 }
-std::string StockIntradayClient::trades_sync(const std::string &symbol) {
+std::string StockIntradayClient::trades_sync(const std::string &symbol, std::optional<StockTradesParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockintradayclient_trades_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeStockTradesParams::lower(params)));
 }
-std::string StockIntradayClient::volumes_sync(const std::string &symbol) {
+std::string StockIntradayClient::volumes_sync(const std::string &symbol, std::optional<OddLotParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockintradayclient_volumes_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOddLotParams::lower(params)));
 }
 
 StockIntradayClient::~StockIntradayClient() {
@@ -1088,33 +1088,33 @@ StockOwnershipClient::StockOwnershipClient(const StockOwnershipClient &other) : 
 
 
 
-std::string StockOwnershipClient::director_holdings_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+std::string StockOwnershipClient::director_holdings_sync(const std::string &symbol, std::optional<OwnershipParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockownershipclient_director_holdings_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOwnershipParams::lower(params)));
 }
-std::string StockOwnershipClient::etf_holdings_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+std::string StockOwnershipClient::etf_holdings_sync(const std::string &symbol, std::optional<OwnershipParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockownershipclient_etf_holdings_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOwnershipParams::lower(params)));
 }
-std::string StockOwnershipClient::institutional_trades_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+std::string StockOwnershipClient::institutional_trades_sync(const std::string &symbol, std::optional<OwnershipParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockownershipclient_institutional_trades_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOwnershipParams::lower(params)));
 }
-std::string StockOwnershipClient::tdcc_distribution_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> sort) {
+std::string StockOwnershipClient::tdcc_distribution_sync(const std::string &symbol, std::optional<OwnershipParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stockownershipclient_tdcc_distribution_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(sort)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeOwnershipParams::lower(params)));
 }
 
 StockOwnershipClient::~StockOwnershipClient() {
@@ -1147,26 +1147,26 @@ StockSnapshotClient::StockSnapshotClient(const StockSnapshotClient &other) : ins
 
 
 
-std::string StockSnapshotClient::actives_sync(const std::string &market, std::optional<std::string> trade) {
+std::string StockSnapshotClient::actives_sync(const std::string &market, const std::string &trade, std::optional<SnapshotParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_actives_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterOptionalString::lower(trade)));
+        ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterString::lower(trade), uniffi::FfiConverterOptionalTypeSnapshotParams::lower(params)));
 }
-std::string StockSnapshotClient::movers_sync(const std::string &market, std::optional<std::string> direction, std::optional<std::string> change) {
+std::string StockSnapshotClient::movers_sync(const std::string &market, const std::string &direction, const std::string &change, std::optional<MoversParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_movers_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterOptionalString::lower(direction), uniffi::FfiConverterOptionalString::lower(change)));
+        ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterString::lower(direction), uniffi::FfiConverterString::lower(change), uniffi::FfiConverterOptionalTypeMoversParams::lower(params)));
 }
-std::string StockSnapshotClient::quotes_sync(const std::string &market, std::optional<std::string> type_filter) {
+std::string StockSnapshotClient::quotes_sync(const std::string &market, std::optional<SnapshotParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocksnapshotclient_quotes_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterOptionalString::lower(type_filter)));
+        ptr, uniffi::FfiConverterString::lower(market), uniffi::FfiConverterOptionalTypeSnapshotParams::lower(params)));
 }
 
 StockSnapshotClient::~StockSnapshotClient() {
@@ -1199,40 +1199,40 @@ StockTechnicalClient::StockTechnicalClient(const StockTechnicalClient &other) : 
 
 
 
-std::string StockTechnicalClient::bb_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period) {
+std::string StockTechnicalClient::bb_sync(const std::string &symbol, uint32_t period, std::optional<TechnicalParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_bb_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(period)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterUInt32::lower(period), uniffi::FfiConverterOptionalTypeTechnicalParams::lower(params)));
 }
-std::string StockTechnicalClient::kdj_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> r_period, std::optional<uint32_t> k_period, std::optional<uint32_t> d_period) {
+std::string StockTechnicalClient::kdj_sync(const std::string &symbol, uint32_t r_period, uint32_t k_period, uint32_t d_period, std::optional<TechnicalParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_kdj_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(r_period), uniffi::FfiConverterOptionalUInt32::lower(k_period), uniffi::FfiConverterOptionalUInt32::lower(d_period)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterUInt32::lower(r_period), uniffi::FfiConverterUInt32::lower(k_period), uniffi::FfiConverterUInt32::lower(d_period), uniffi::FfiConverterOptionalTypeTechnicalParams::lower(params)));
 }
-std::string StockTechnicalClient::macd_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> fast, std::optional<uint32_t> slow, std::optional<uint32_t> signal) {
+std::string StockTechnicalClient::macd_sync(const std::string &symbol, uint32_t fast, uint32_t slow, uint32_t signal, std::optional<TechnicalParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_macd_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(fast), uniffi::FfiConverterOptionalUInt32::lower(slow), uniffi::FfiConverterOptionalUInt32::lower(signal)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterUInt32::lower(fast), uniffi::FfiConverterUInt32::lower(slow), uniffi::FfiConverterUInt32::lower(signal), uniffi::FfiConverterOptionalTypeTechnicalParams::lower(params)));
 }
-std::string StockTechnicalClient::rsi_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period) {
+std::string StockTechnicalClient::rsi_sync(const std::string &symbol, uint32_t period, std::optional<TechnicalParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_rsi_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(period)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterUInt32::lower(period), uniffi::FfiConverterOptionalTypeTechnicalParams::lower(params)));
 }
-std::string StockTechnicalClient::sma_sync(const std::string &symbol, std::optional<std::string> from, std::optional<std::string> to, std::optional<std::string> timeframe, std::optional<uint32_t> period) {
+std::string StockTechnicalClient::sma_sync(const std::string &symbol, uint32_t period, std::optional<TechnicalParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_stocktechnicalclient_sma_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalString::lower(from), uniffi::FfiConverterOptionalString::lower(to), uniffi::FfiConverterOptionalString::lower(timeframe), uniffi::FfiConverterOptionalUInt32::lower(period)));
+        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterUInt32::lower(period), uniffi::FfiConverterOptionalTypeTechnicalParams::lower(params)));
 }
 
 StockTechnicalClient::~StockTechnicalClient() {
@@ -1365,12 +1365,12 @@ void WebSocketClient::query_subscriptions_sync() {
         uniffi::FfiConverterMarketDataError::lift,
         ptr);
 }
-void WebSocketClient::subscribe_sync(const std::string &channel, const std::string &symbol) {
+void WebSocketClient::subscribe_sync(const std::string &channel, const std::vector<std::string> &symbols, std::optional<SubscribeOptions> opts) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(channel), uniffi::FfiConverterString::lower(symbol));
+        ptr, uniffi::FfiConverterString::lower(channel), uniffi::FfiConverterSequenceString::lower(symbols), uniffi::FfiConverterOptionalTypeSubscribeOptions::lower(opts));
 }
 void WebSocketClient::unsubscribe_ids_sync(const std::vector<std::string> &ids) {
     auto ptr = this->_uniffi_internal_clone_pointer();
@@ -1379,12 +1379,12 @@ void WebSocketClient::unsubscribe_ids_sync(const std::vector<std::string> &ids) 
         uniffi::FfiConverterMarketDataError::lift,
         ptr, uniffi::FfiConverterSequenceString::lower(ids));
 }
-void WebSocketClient::unsubscribe_sync(const std::string &channel, const std::string &symbol) {
+void WebSocketClient::unsubscribe_sync(const std::string &channel, const std::vector<std::string> &symbols, std::optional<SubscribeOptions> opts) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(channel), uniffi::FfiConverterString::lower(symbol));
+        ptr, uniffi::FfiConverterString::lower(channel), uniffi::FfiConverterSequenceString::lower(symbols), uniffi::FfiConverterOptionalTypeSubscribeOptions::lower(opts));
 }
 
 WebSocketClient::~WebSocketClient() {
@@ -1649,6 +1649,43 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
         this->instance
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2013,6 +2050,87 @@ uint64_t FfiConverterWebSocketListener::allocation_size(const std::shared_ptr<We
 }
 
 
+AfterHoursParams FfiConverterTypeAfterHoursParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeAfterHoursParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeAfterHoursParams::lower(const AfterHoursParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeAfterHoursParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+AfterHoursParams FfiConverterTypeAfterHoursParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeAfterHoursParams::write(RustStream &stream, const AfterHoursParams &val) {
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+}
+
+uint64_t FfiConverterTypeAfterHoursParams::allocation_size(const AfterHoursParams &val) {
+    
+    return 
+        FfiConverterOptionalBool::allocation_size(val.after_hours);
+    
+}
+
+
+CorporateActionsParams FfiConverterTypeCorporateActionsParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeCorporateActionsParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeCorporateActionsParams::lower(const CorporateActionsParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeCorporateActionsParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+CorporateActionsParams FfiConverterTypeCorporateActionsParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeCorporateActionsParams::write(RustStream &stream, const CorporateActionsParams &val) {
+    FfiConverterOptionalString::write(stream, val.start_date);
+    FfiConverterOptionalString::write(stream, val.end_date);
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.sort);
+}
+
+uint64_t FfiConverterTypeCorporateActionsParams::allocation_size(const CorporateActionsParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.start_date) +
+        FfiConverterOptionalString::allocation_size(val.end_date) +
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.sort);
+    
+}
+
+
 CredentialsRecord FfiConverterTypeCredentialsRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterTypeCredentialsRecord::read(stream);
@@ -2109,6 +2227,282 @@ uint64_t FfiConverterTypeErrorInfo::allocation_size(const ErrorInfo &val) {
 }
 
 
+FutOptCandlesParams FfiConverterTypeFutOptCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeFutOptCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeFutOptCandlesParams::lower(const FutOptCandlesParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeFutOptCandlesParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+FutOptCandlesParams FfiConverterTypeFutOptCandlesParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeFutOptCandlesParams::write(RustStream &stream, const FutOptCandlesParams &val) {
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+    FfiConverterOptionalString::write(stream, val.timeframe);
+}
+
+uint64_t FfiConverterTypeFutOptCandlesParams::allocation_size(const FutOptCandlesParams &val) {
+    
+    return 
+        FfiConverterOptionalBool::allocation_size(val.after_hours) +
+        FfiConverterOptionalString::allocation_size(val.timeframe);
+    
+}
+
+
+FutOptDailyParams FfiConverterTypeFutOptDailyParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeFutOptDailyParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeFutOptDailyParams::lower(const FutOptDailyParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeFutOptDailyParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+FutOptDailyParams FfiConverterTypeFutOptDailyParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeFutOptDailyParams::write(RustStream &stream, const FutOptDailyParams &val) {
+    FfiConverterOptionalString::write(stream, val.date);
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+}
+
+uint64_t FfiConverterTypeFutOptDailyParams::allocation_size(const FutOptDailyParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.date) +
+        FfiConverterOptionalBool::allocation_size(val.after_hours);
+    
+}
+
+
+FutOptHistoricalCandlesParams FfiConverterTypeFutOptHistoricalCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeFutOptHistoricalCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeFutOptHistoricalCandlesParams::lower(const FutOptHistoricalCandlesParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeFutOptHistoricalCandlesParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+FutOptHistoricalCandlesParams FfiConverterTypeFutOptHistoricalCandlesParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeFutOptHistoricalCandlesParams::write(RustStream &stream, const FutOptHistoricalCandlesParams &val) {
+    FfiConverterOptionalString::write(stream, val.from);
+    FfiConverterOptionalString::write(stream, val.to);
+    FfiConverterOptionalString::write(stream, val.contract_month);
+    FfiConverterOptionalString::write(stream, val.fields);
+    FfiConverterOptionalString::write(stream, val.timeframe);
+    FfiConverterOptionalString::write(stream, val.sort);
+    FfiConverterOptionalDouble::write(stream, val.strike_price);
+    FfiConverterOptionalString::write(stream, val.call_put);
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+}
+
+uint64_t FfiConverterTypeFutOptHistoricalCandlesParams::allocation_size(const FutOptHistoricalCandlesParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.from) +
+        FfiConverterOptionalString::allocation_size(val.to) +
+        FfiConverterOptionalString::allocation_size(val.contract_month) +
+        FfiConverterOptionalString::allocation_size(val.fields) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
+        FfiConverterOptionalString::allocation_size(val.sort) +
+        FfiConverterOptionalDouble::allocation_size(val.strike_price) +
+        FfiConverterOptionalString::allocation_size(val.call_put) +
+        FfiConverterOptionalBool::allocation_size(val.after_hours);
+    
+}
+
+
+FutOptProductsParams FfiConverterTypeFutOptProductsParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeFutOptProductsParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeFutOptProductsParams::lower(const FutOptProductsParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeFutOptProductsParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+FutOptProductsParams FfiConverterTypeFutOptProductsParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeFutOptProductsParams::write(RustStream &stream, const FutOptProductsParams &val) {
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+    FfiConverterOptionalString::write(stream, val.contract_type);
+    FfiConverterOptionalString::write(stream, val.status);
+}
+
+uint64_t FfiConverterTypeFutOptProductsParams::allocation_size(const FutOptProductsParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalBool::allocation_size(val.after_hours) +
+        FfiConverterOptionalString::allocation_size(val.contract_type) +
+        FfiConverterOptionalString::allocation_size(val.status);
+    
+}
+
+
+FutOptTickersParams FfiConverterTypeFutOptTickersParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeFutOptTickersParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeFutOptTickersParams::lower(const FutOptTickersParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeFutOptTickersParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+FutOptTickersParams FfiConverterTypeFutOptTickersParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeFutOptTickersParams::write(RustStream &stream, const FutOptTickersParams &val) {
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+    FfiConverterOptionalString::write(stream, val.product);
+    FfiConverterOptionalString::write(stream, val.contract_type);
+    FfiConverterOptionalBool::write(stream, val.is_spread);
+}
+
+uint64_t FfiConverterTypeFutOptTickersParams::allocation_size(const FutOptTickersParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalBool::allocation_size(val.after_hours) +
+        FfiConverterOptionalString::allocation_size(val.product) +
+        FfiConverterOptionalString::allocation_size(val.contract_type) +
+        FfiConverterOptionalBool::allocation_size(val.is_spread);
+    
+}
+
+
+FutOptTradesParams FfiConverterTypeFutOptTradesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeFutOptTradesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeFutOptTradesParams::lower(const FutOptTradesParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeFutOptTradesParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+FutOptTradesParams FfiConverterTypeFutOptTradesParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeFutOptTradesParams::write(RustStream &stream, const FutOptTradesParams &val) {
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+    FfiConverterOptionalUInt32::write(stream, val.offset);
+    FfiConverterOptionalUInt32::write(stream, val.limit);
+    FfiConverterOptionalBool::write(stream, val.is_trial);
+}
+
+uint64_t FfiConverterTypeFutOptTradesParams::allocation_size(const FutOptTradesParams &val) {
+    
+    return 
+        FfiConverterOptionalBool::allocation_size(val.after_hours) +
+        FfiConverterOptionalUInt32::allocation_size(val.offset) +
+        FfiConverterOptionalUInt32::allocation_size(val.limit) +
+        FfiConverterOptionalBool::allocation_size(val.is_trial);
+    
+}
+
+
 HealthCheckConfigRecord FfiConverterTypeHealthCheckConfigRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterTypeHealthCheckConfigRecord::read(stream);
@@ -2196,6 +2590,135 @@ uint64_t FfiConverterTypeMessageQueueConfigRecord::allocation_size(const Message
 }
 
 
+MoversParams FfiConverterTypeMoversParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeMoversParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeMoversParams::lower(const MoversParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeMoversParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+MoversParams FfiConverterTypeMoversParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream),
+        FfiConverterOptionalDouble::read(stream)
+    };
+}
+
+void FfiConverterTypeMoversParams::write(RustStream &stream, const MoversParams &val) {
+    FfiConverterOptionalString::write(stream, val.type_filter);
+    FfiConverterOptionalDouble::write(stream, val.gt);
+    FfiConverterOptionalDouble::write(stream, val.gte);
+    FfiConverterOptionalDouble::write(stream, val.lt);
+    FfiConverterOptionalDouble::write(stream, val.lte);
+    FfiConverterOptionalDouble::write(stream, val.eq);
+}
+
+uint64_t FfiConverterTypeMoversParams::allocation_size(const MoversParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.type_filter) +
+        FfiConverterOptionalDouble::allocation_size(val.gt) +
+        FfiConverterOptionalDouble::allocation_size(val.gte) +
+        FfiConverterOptionalDouble::allocation_size(val.lt) +
+        FfiConverterOptionalDouble::allocation_size(val.lte) +
+        FfiConverterOptionalDouble::allocation_size(val.eq);
+    
+}
+
+
+OddLotParams FfiConverterTypeOddLotParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeOddLotParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeOddLotParams::lower(const OddLotParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeOddLotParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+OddLotParams FfiConverterTypeOddLotParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeOddLotParams::write(RustStream &stream, const OddLotParams &val) {
+    FfiConverterOptionalBool::write(stream, val.odd_lot);
+}
+
+uint64_t FfiConverterTypeOddLotParams::allocation_size(const OddLotParams &val) {
+    
+    return 
+        FfiConverterOptionalBool::allocation_size(val.odd_lot);
+    
+}
+
+
+OwnershipParams FfiConverterTypeOwnershipParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeOwnershipParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeOwnershipParams::lower(const OwnershipParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeOwnershipParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+OwnershipParams FfiConverterTypeOwnershipParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeOwnershipParams::write(RustStream &stream, const OwnershipParams &val) {
+    FfiConverterOptionalString::write(stream, val.from);
+    FfiConverterOptionalString::write(stream, val.to);
+    FfiConverterOptionalString::write(stream, val.sort);
+}
+
+uint64_t FfiConverterTypeOwnershipParams::allocation_size(const OwnershipParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.from) +
+        FfiConverterOptionalString::allocation_size(val.to) +
+        FfiConverterOptionalString::allocation_size(val.sort);
+    
+}
+
+
 ReconnectConfigRecord FfiConverterTypeReconnectConfigRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterTypeReconnectConfigRecord::read(stream);
@@ -2237,6 +2760,240 @@ uint64_t FfiConverterTypeReconnectConfigRecord::allocation_size(const ReconnectC
         FfiConverterUInt32::allocation_size(val.max_attempts) +
         FfiConverterUInt64::allocation_size(val.initial_delay_ms) +
         FfiConverterUInt64::allocation_size(val.max_delay_ms);
+    
+}
+
+
+SnapshotParams FfiConverterTypeSnapshotParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeSnapshotParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeSnapshotParams::lower(const SnapshotParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeSnapshotParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+SnapshotParams FfiConverterTypeSnapshotParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeSnapshotParams::write(RustStream &stream, const SnapshotParams &val) {
+    FfiConverterOptionalString::write(stream, val.type_filter);
+}
+
+uint64_t FfiConverterTypeSnapshotParams::allocation_size(const SnapshotParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.type_filter);
+    
+}
+
+
+StockCandlesParams FfiConverterTypeStockCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeStockCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeStockCandlesParams::lower(const StockCandlesParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeStockCandlesParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+StockCandlesParams FfiConverterTypeStockCandlesParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeStockCandlesParams::write(RustStream &stream, const StockCandlesParams &val) {
+    FfiConverterOptionalString::write(stream, val.timeframe);
+    FfiConverterOptionalBool::write(stream, val.odd_lot);
+    FfiConverterOptionalString::write(stream, val.sort);
+}
+
+uint64_t FfiConverterTypeStockCandlesParams::allocation_size(const StockCandlesParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
+        FfiConverterOptionalBool::allocation_size(val.odd_lot) +
+        FfiConverterOptionalString::allocation_size(val.sort);
+    
+}
+
+
+StockHistoricalCandlesParams FfiConverterTypeStockHistoricalCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeStockHistoricalCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeStockHistoricalCandlesParams::lower(const StockHistoricalCandlesParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeStockHistoricalCandlesParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+StockHistoricalCandlesParams FfiConverterTypeStockHistoricalCandlesParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeStockHistoricalCandlesParams::write(RustStream &stream, const StockHistoricalCandlesParams &val) {
+    FfiConverterOptionalString::write(stream, val.from);
+    FfiConverterOptionalString::write(stream, val.to);
+    FfiConverterOptionalString::write(stream, val.timeframe);
+    FfiConverterOptionalString::write(stream, val.fields);
+    FfiConverterOptionalString::write(stream, val.sort);
+    FfiConverterOptionalBool::write(stream, val.adjusted);
+}
+
+uint64_t FfiConverterTypeStockHistoricalCandlesParams::allocation_size(const StockHistoricalCandlesParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.from) +
+        FfiConverterOptionalString::allocation_size(val.to) +
+        FfiConverterOptionalString::allocation_size(val.timeframe) +
+        FfiConverterOptionalString::allocation_size(val.fields) +
+        FfiConverterOptionalString::allocation_size(val.sort) +
+        FfiConverterOptionalBool::allocation_size(val.adjusted);
+    
+}
+
+
+StockTickersParams FfiConverterTypeStockTickersParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeStockTickersParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeStockTickersParams::lower(const StockTickersParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeStockTickersParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+StockTickersParams FfiConverterTypeStockTickersParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeStockTickersParams::write(RustStream &stream, const StockTickersParams &val) {
+    FfiConverterOptionalString::write(stream, val.exchange);
+    FfiConverterOptionalString::write(stream, val.market);
+    FfiConverterOptionalString::write(stream, val.industry);
+    FfiConverterOptionalBool::write(stream, val.is_normal);
+    FfiConverterOptionalBool::write(stream, val.is_attention);
+    FfiConverterOptionalBool::write(stream, val.is_disposition);
+    FfiConverterOptionalBool::write(stream, val.is_halted);
+    FfiConverterOptionalString::write(stream, val.symbol);
+}
+
+uint64_t FfiConverterTypeStockTickersParams::allocation_size(const StockTickersParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.exchange) +
+        FfiConverterOptionalString::allocation_size(val.market) +
+        FfiConverterOptionalString::allocation_size(val.industry) +
+        FfiConverterOptionalBool::allocation_size(val.is_normal) +
+        FfiConverterOptionalBool::allocation_size(val.is_attention) +
+        FfiConverterOptionalBool::allocation_size(val.is_disposition) +
+        FfiConverterOptionalBool::allocation_size(val.is_halted) +
+        FfiConverterOptionalString::allocation_size(val.symbol);
+    
+}
+
+
+StockTradesParams FfiConverterTypeStockTradesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeStockTradesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeStockTradesParams::lower(const StockTradesParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeStockTradesParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+StockTradesParams FfiConverterTypeStockTradesParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
+        FfiConverterOptionalUInt32::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeStockTradesParams::write(RustStream &stream, const StockTradesParams &val) {
+    FfiConverterOptionalBool::write(stream, val.odd_lot);
+    FfiConverterOptionalUInt32::write(stream, val.offset);
+    FfiConverterOptionalUInt32::write(stream, val.limit);
+    FfiConverterOptionalString::write(stream, val.sort);
+    FfiConverterOptionalBool::write(stream, val.is_trial);
+}
+
+uint64_t FfiConverterTypeStockTradesParams::allocation_size(const StockTradesParams &val) {
+    
+    return 
+        FfiConverterOptionalBool::allocation_size(val.odd_lot) +
+        FfiConverterOptionalUInt32::allocation_size(val.offset) +
+        FfiConverterOptionalUInt32::allocation_size(val.limit) +
+        FfiConverterOptionalString::allocation_size(val.sort) +
+        FfiConverterOptionalBool::allocation_size(val.is_trial);
     
 }
 
@@ -2333,6 +3090,87 @@ uint64_t FfiConverterTypeStreamingVersionRecord::allocation_size(const Streaming
     return 
         FfiConverterOptionalString::allocation_size(val.stock) +
         FfiConverterOptionalString::allocation_size(val.futopt);
+    
+}
+
+
+SubscribeOptions FfiConverterTypeSubscribeOptions::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeSubscribeOptions::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeSubscribeOptions::lower(const SubscribeOptions &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeSubscribeOptions::write(stream, val);
+
+    return std::move(buf);
+}
+
+SubscribeOptions FfiConverterTypeSubscribeOptions::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalBool::read(stream)
+    };
+}
+
+void FfiConverterTypeSubscribeOptions::write(RustStream &stream, const SubscribeOptions &val) {
+    FfiConverterOptionalBool::write(stream, val.after_hours);
+    FfiConverterOptionalBool::write(stream, val.intraday_odd_lot);
+}
+
+uint64_t FfiConverterTypeSubscribeOptions::allocation_size(const SubscribeOptions &val) {
+    
+    return 
+        FfiConverterOptionalBool::allocation_size(val.after_hours) +
+        FfiConverterOptionalBool::allocation_size(val.intraday_odd_lot);
+    
+}
+
+
+TechnicalParams FfiConverterTypeTechnicalParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeTechnicalParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeTechnicalParams::lower(const TechnicalParams &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeTechnicalParams::write(stream, val);
+
+    return std::move(buf);
+}
+
+TechnicalParams FfiConverterTypeTechnicalParams::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream),
+        FfiConverterOptionalString::read(stream)
+    };
+}
+
+void FfiConverterTypeTechnicalParams::write(RustStream &stream, const TechnicalParams &val) {
+    FfiConverterOptionalString::write(stream, val.from);
+    FfiConverterOptionalString::write(stream, val.to);
+    FfiConverterOptionalString::write(stream, val.timeframe);
+}
+
+uint64_t FfiConverterTypeTechnicalParams::allocation_size(const TechnicalParams &val) {
+    
+    return 
+        FfiConverterOptionalString::allocation_size(val.from) +
+        FfiConverterOptionalString::allocation_size(val.to) +
+        FfiConverterOptionalString::allocation_size(val.timeframe);
     
 }
 
@@ -3085,6 +3923,53 @@ uint64_t FfiConverterOptionalUInt64::allocation_size(const std::optional<uint64_
     return ret;
 }
 
+std::optional<double> FfiConverterOptionalDouble::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalDouble::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalDouble::lower(const std::optional<double>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalDouble::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalDouble::write(stream, val);
+
+    return buf;
+}
+
+std::optional<double> FfiConverterOptionalDouble::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterDouble::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalDouble::write(RustStream &stream, const std::optional<double>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterDouble::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalDouble::allocation_size(const std::optional<double> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterDouble::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
 std::optional<bool> FfiConverterOptionalBool::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterOptionalBool::read(stream);
@@ -3226,6 +4111,382 @@ uint64_t FfiConverterOptionalBytes::allocation_size(const std::optional<std::vec
     return ret;
 }
 
+std::optional<AfterHoursParams> FfiConverterOptionalTypeAfterHoursParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeAfterHoursParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeAfterHoursParams::lower(const std::optional<AfterHoursParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeAfterHoursParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeAfterHoursParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<AfterHoursParams> FfiConverterOptionalTypeAfterHoursParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeAfterHoursParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeAfterHoursParams::write(RustStream &stream, const std::optional<AfterHoursParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeAfterHoursParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeAfterHoursParams::allocation_size(const std::optional<AfterHoursParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeAfterHoursParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<CorporateActionsParams> FfiConverterOptionalTypeCorporateActionsParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeCorporateActionsParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeCorporateActionsParams::lower(const std::optional<CorporateActionsParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeCorporateActionsParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeCorporateActionsParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<CorporateActionsParams> FfiConverterOptionalTypeCorporateActionsParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeCorporateActionsParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeCorporateActionsParams::write(RustStream &stream, const std::optional<CorporateActionsParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeCorporateActionsParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeCorporateActionsParams::allocation_size(const std::optional<CorporateActionsParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeCorporateActionsParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<FutOptCandlesParams> FfiConverterOptionalTypeFutOptCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeFutOptCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeFutOptCandlesParams::lower(const std::optional<FutOptCandlesParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeFutOptCandlesParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeFutOptCandlesParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<FutOptCandlesParams> FfiConverterOptionalTypeFutOptCandlesParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeFutOptCandlesParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeFutOptCandlesParams::write(RustStream &stream, const std::optional<FutOptCandlesParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeFutOptCandlesParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeFutOptCandlesParams::allocation_size(const std::optional<FutOptCandlesParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeFutOptCandlesParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<FutOptDailyParams> FfiConverterOptionalTypeFutOptDailyParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeFutOptDailyParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeFutOptDailyParams::lower(const std::optional<FutOptDailyParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeFutOptDailyParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeFutOptDailyParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<FutOptDailyParams> FfiConverterOptionalTypeFutOptDailyParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeFutOptDailyParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeFutOptDailyParams::write(RustStream &stream, const std::optional<FutOptDailyParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeFutOptDailyParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeFutOptDailyParams::allocation_size(const std::optional<FutOptDailyParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeFutOptDailyParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<FutOptHistoricalCandlesParams> FfiConverterOptionalTypeFutOptHistoricalCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeFutOptHistoricalCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeFutOptHistoricalCandlesParams::lower(const std::optional<FutOptHistoricalCandlesParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeFutOptHistoricalCandlesParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeFutOptHistoricalCandlesParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<FutOptHistoricalCandlesParams> FfiConverterOptionalTypeFutOptHistoricalCandlesParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeFutOptHistoricalCandlesParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeFutOptHistoricalCandlesParams::write(RustStream &stream, const std::optional<FutOptHistoricalCandlesParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeFutOptHistoricalCandlesParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeFutOptHistoricalCandlesParams::allocation_size(const std::optional<FutOptHistoricalCandlesParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeFutOptHistoricalCandlesParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<FutOptProductsParams> FfiConverterOptionalTypeFutOptProductsParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeFutOptProductsParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeFutOptProductsParams::lower(const std::optional<FutOptProductsParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeFutOptProductsParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeFutOptProductsParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<FutOptProductsParams> FfiConverterOptionalTypeFutOptProductsParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeFutOptProductsParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeFutOptProductsParams::write(RustStream &stream, const std::optional<FutOptProductsParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeFutOptProductsParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeFutOptProductsParams::allocation_size(const std::optional<FutOptProductsParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeFutOptProductsParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<FutOptTickersParams> FfiConverterOptionalTypeFutOptTickersParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeFutOptTickersParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeFutOptTickersParams::lower(const std::optional<FutOptTickersParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeFutOptTickersParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeFutOptTickersParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<FutOptTickersParams> FfiConverterOptionalTypeFutOptTickersParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeFutOptTickersParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeFutOptTickersParams::write(RustStream &stream, const std::optional<FutOptTickersParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeFutOptTickersParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeFutOptTickersParams::allocation_size(const std::optional<FutOptTickersParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeFutOptTickersParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<FutOptTradesParams> FfiConverterOptionalTypeFutOptTradesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeFutOptTradesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeFutOptTradesParams::lower(const std::optional<FutOptTradesParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeFutOptTradesParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeFutOptTradesParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<FutOptTradesParams> FfiConverterOptionalTypeFutOptTradesParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeFutOptTradesParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeFutOptTradesParams::write(RustStream &stream, const std::optional<FutOptTradesParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeFutOptTradesParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeFutOptTradesParams::allocation_size(const std::optional<FutOptTradesParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeFutOptTradesParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
 std::optional<HealthCheckConfigRecord> FfiConverterOptionalTypeHealthCheckConfigRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterOptionalTypeHealthCheckConfigRecord::read(stream);
@@ -3320,6 +4581,147 @@ uint64_t FfiConverterOptionalTypeMessageQueueConfigRecord::allocation_size(const
     return ret;
 }
 
+std::optional<MoversParams> FfiConverterOptionalTypeMoversParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeMoversParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeMoversParams::lower(const std::optional<MoversParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeMoversParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeMoversParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<MoversParams> FfiConverterOptionalTypeMoversParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeMoversParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeMoversParams::write(RustStream &stream, const std::optional<MoversParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeMoversParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeMoversParams::allocation_size(const std::optional<MoversParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeMoversParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<OddLotParams> FfiConverterOptionalTypeOddLotParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeOddLotParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeOddLotParams::lower(const std::optional<OddLotParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeOddLotParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeOddLotParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<OddLotParams> FfiConverterOptionalTypeOddLotParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeOddLotParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeOddLotParams::write(RustStream &stream, const std::optional<OddLotParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeOddLotParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeOddLotParams::allocation_size(const std::optional<OddLotParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeOddLotParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<OwnershipParams> FfiConverterOptionalTypeOwnershipParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeOwnershipParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeOwnershipParams::lower(const std::optional<OwnershipParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeOwnershipParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeOwnershipParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<OwnershipParams> FfiConverterOptionalTypeOwnershipParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeOwnershipParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeOwnershipParams::write(RustStream &stream, const std::optional<OwnershipParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeOwnershipParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeOwnershipParams::allocation_size(const std::optional<OwnershipParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeOwnershipParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
 std::optional<ReconnectConfigRecord> FfiConverterOptionalTypeReconnectConfigRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterOptionalTypeReconnectConfigRecord::read(stream);
@@ -3367,6 +4769,241 @@ uint64_t FfiConverterOptionalTypeReconnectConfigRecord::allocation_size(const st
     return ret;
 }
 
+std::optional<SnapshotParams> FfiConverterOptionalTypeSnapshotParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeSnapshotParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeSnapshotParams::lower(const std::optional<SnapshotParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeSnapshotParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeSnapshotParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<SnapshotParams> FfiConverterOptionalTypeSnapshotParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeSnapshotParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeSnapshotParams::write(RustStream &stream, const std::optional<SnapshotParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeSnapshotParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeSnapshotParams::allocation_size(const std::optional<SnapshotParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeSnapshotParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<StockCandlesParams> FfiConverterOptionalTypeStockCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeStockCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeStockCandlesParams::lower(const std::optional<StockCandlesParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeStockCandlesParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeStockCandlesParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<StockCandlesParams> FfiConverterOptionalTypeStockCandlesParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeStockCandlesParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeStockCandlesParams::write(RustStream &stream, const std::optional<StockCandlesParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeStockCandlesParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeStockCandlesParams::allocation_size(const std::optional<StockCandlesParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeStockCandlesParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<StockHistoricalCandlesParams> FfiConverterOptionalTypeStockHistoricalCandlesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeStockHistoricalCandlesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeStockHistoricalCandlesParams::lower(const std::optional<StockHistoricalCandlesParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeStockHistoricalCandlesParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeStockHistoricalCandlesParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<StockHistoricalCandlesParams> FfiConverterOptionalTypeStockHistoricalCandlesParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeStockHistoricalCandlesParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeStockHistoricalCandlesParams::write(RustStream &stream, const std::optional<StockHistoricalCandlesParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeStockHistoricalCandlesParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeStockHistoricalCandlesParams::allocation_size(const std::optional<StockHistoricalCandlesParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeStockHistoricalCandlesParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<StockTickersParams> FfiConverterOptionalTypeStockTickersParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeStockTickersParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeStockTickersParams::lower(const std::optional<StockTickersParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeStockTickersParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeStockTickersParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<StockTickersParams> FfiConverterOptionalTypeStockTickersParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeStockTickersParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeStockTickersParams::write(RustStream &stream, const std::optional<StockTickersParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeStockTickersParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeStockTickersParams::allocation_size(const std::optional<StockTickersParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeStockTickersParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<StockTradesParams> FfiConverterOptionalTypeStockTradesParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeStockTradesParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeStockTradesParams::lower(const std::optional<StockTradesParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeStockTradesParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeStockTradesParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<StockTradesParams> FfiConverterOptionalTypeStockTradesParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeStockTradesParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeStockTradesParams::write(RustStream &stream, const std::optional<StockTradesParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeStockTradesParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeStockTradesParams::allocation_size(const std::optional<StockTradesParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeStockTradesParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
 std::optional<StreamingVersionRecord> FfiConverterOptionalTypeStreamingVersionRecord::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterOptionalTypeStreamingVersionRecord::read(stream);
@@ -3409,6 +5046,100 @@ uint64_t FfiConverterOptionalTypeStreamingVersionRecord::allocation_size(const s
 
     if (val) {
         ret += FfiConverterTypeStreamingVersionRecord::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<SubscribeOptions> FfiConverterOptionalTypeSubscribeOptions::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeSubscribeOptions::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeSubscribeOptions::lower(const std::optional<SubscribeOptions>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeSubscribeOptions::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeSubscribeOptions::write(stream, val);
+
+    return buf;
+}
+
+std::optional<SubscribeOptions> FfiConverterOptionalTypeSubscribeOptions::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeSubscribeOptions::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeSubscribeOptions::write(RustStream &stream, const std::optional<SubscribeOptions>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeSubscribeOptions::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeSubscribeOptions::allocation_size(const std::optional<SubscribeOptions> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeSubscribeOptions::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<TechnicalParams> FfiConverterOptionalTypeTechnicalParams::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeTechnicalParams::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeTechnicalParams::lower(const std::optional<TechnicalParams>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeTechnicalParams::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeTechnicalParams::write(stream, val);
+
+    return buf;
+}
+
+std::optional<TechnicalParams> FfiConverterOptionalTypeTechnicalParams::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeTechnicalParams::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeTechnicalParams::write(RustStream &stream, const std::optional<TechnicalParams>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeTechnicalParams::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeTechnicalParams::allocation_size(const std::optional<TechnicalParams> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeTechnicalParams::allocation_size(val.value());
     }
 
     return ret;

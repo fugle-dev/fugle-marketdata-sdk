@@ -158,7 +158,8 @@ func WithMessageBuffer(n int) Option {
 type SubscribeOption func(*subscribeConfig)
 
 type subscribeConfig struct {
-	afterHours *bool
+	afterHours     *bool
+	intradayOddLot *bool
 }
 
 // WithAfterHours selects the after-hours (盤後) session. FutOpt endpoint only:
@@ -169,11 +170,48 @@ func WithAfterHours(afterHours bool) SubscribeOption {
 	}
 }
 
-// subscribeAfterHours is the after-hours value opts set, nil if none does.
-func subscribeAfterHours(opts []SubscribeOption) *bool {
+// WithIntradayOddLot selects the intraday odd-lot (盤中零股) session. Stock
+// endpoint only: on the FutOpt endpoint, Subscribe and Unsubscribe return
+// error 1005.
+func WithIntradayOddLot(intradayOddLot bool) SubscribeOption {
+	return func(cfg *subscribeConfig) {
+		cfg.intradayOddLot = &intradayOddLot
+	}
+}
+
+// subscribeOptions builds the *SubscribeOptions record opts set, nil if none
+// does.
+func subscribeOptions(opts []SubscribeOption) *SubscribeOptions {
 	var cfg subscribeConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return cfg.afterHours
+	if cfg.afterHours == nil && cfg.intradayOddLot == nil {
+		return nil
+	}
+	return &SubscribeOptions{
+		AfterHours:     cfg.afterHours,
+		IntradayOddLot: cfg.intradayOddLot,
+	}
+}
+
+// Bool returns a pointer to v, for use as a *Params record field literal,
+// e.g. &StockTradesParams{OddLot: Bool(true)}.
+func Bool(v bool) *bool {
+	return &v
+}
+
+// String returns a pointer to v, for use as a *Params record field literal.
+func String(v string) *string {
+	return &v
+}
+
+// Uint32 returns a pointer to v, for use as a *Params record field literal.
+func Uint32(v uint32) *uint32 {
+	return &v
+}
+
+// Float64 returns a pointer to v, for use as a *Params record field literal.
+func Float64(v float64) *float64 {
+	return &v
 }

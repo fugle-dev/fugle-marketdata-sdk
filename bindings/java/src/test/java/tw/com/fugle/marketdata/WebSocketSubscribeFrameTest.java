@@ -5,6 +5,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
+import tw.com.fugle.marketdata.generated.SubscribeOptions;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -120,6 +122,89 @@ public class WebSocketSubscribeFrameTest {
         try (FugleWebSocketClient client = FugleWebSocketClient.builder().apiKey("the-key").stock().build()) {
             assertInvalidParameter(() -> client.subscribe("trades", "2330", afterHours));
             assertInvalidParameter(() -> client.unsubscribe("trades", "2330", afterHours));
+        }
+    }
+
+    @Test
+    void subscribeSendsMultipleSymbolsInOneFrameAndSingleStillUsesSymbol() throws Exception {
+        NativeLibrary.assumeAvailable();
+
+        List<String> frames = new CopyOnWriteArrayList<>();
+        try (LoopbackWsServer server = new LoopbackWsServer(text -> {
+                 if (text.startsWith("{\"event\":\"auth\"")) {
+                     return List.of("{\"event\":\"authenticated\",\"data\":{}}");
+                 }
+                 frames.add(text);
+                 return List.of();
+             });
+             FugleWebSocketClient client = FugleWebSocketClient.builder()
+                     .apiKey("the-key")
+                     .stock()
+                     .baseUrl(server.url())
+                     .build()) {
+            client.connect().get(10, TimeUnit.SECONDS);
+
+            client.subscribe("trades", List.of("2330", "2317")).get(10, TimeUnit.SECONDS);
+            client.subscribe("trades", List.of("2330")).get(10, TimeUnit.SECONDS);
+
+            List<String> expected = List.of(
+                "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbols\":[\"2330\",\"2317\"]}}",
+                "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbol\":\"2330\"}}");
+            awaitFrames(frames, expected.size());
+            client.disconnect().get(10, TimeUnit.SECONDS);
+
+            assertEquals(expected, frames);
+        }
+    }
+
+    @Test
+    void subscribeSendsIntradayOddLotOnStockEndpoint() throws Exception {
+        NativeLibrary.assumeAvailable();
+
+        List<String> frames = new CopyOnWriteArrayList<>();
+        try (LoopbackWsServer server = new LoopbackWsServer(text -> {
+                 if (text.startsWith("{\"event\":\"auth\"")) {
+                     return List.of("{\"event\":\"authenticated\",\"data\":{}}");
+                 }
+                 frames.add(text);
+                 return List.of();
+             });
+             FugleWebSocketClient client = FugleWebSocketClient.builder()
+                     .apiKey("the-key")
+                     .stock()
+                     .baseUrl(server.url())
+                     .build()) {
+            client.connect().get(10, TimeUnit.SECONDS);
+
+            client.subscribe("trades", List.of("2330"), new SubscribeOptions(null, true))
+                    .get(10, TimeUnit.SECONDS);
+
+            List<String> expected = List.of(
+                "{\"event\":\"subscribe\",\"data\":{\"channel\":\"trades\",\"symbol\":\"2330\",\"intradayOddLot\":true}}");
+            awaitFrames(frames, expected.size());
+            client.disconnect().get(10, TimeUnit.SECONDS);
+
+            assertEquals(expected, frames);
+        }
+    }
+
+    @Test
+    void futoptEndpointRejectsIntradayOddLot() {
+        NativeLibrary.assumeAvailable();
+
+        try (FugleWebSocketClient client = FugleWebSocketClient.builder().apiKey("the-key").futopt().build()) {
+            assertInvalidParameter(() ->
+                    client.subscribe("trades", List.of("TXFE6"), new SubscribeOptions(null, true)));
+        }
+    }
+
+    @Test
+    void emptySymbolsListIsRejected() {
+        NativeLibrary.assumeAvailable();
+
+        try (FugleWebSocketClient client = FugleWebSocketClient.builder().apiKey("the-key").stock().build()) {
+            assertInvalidParameter(() -> client.subscribe("trades", List.of()));
+            assertInvalidParameter(() -> client.unsubscribe("trades", List.of()));
         }
     }
 

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **C# / Go / Java / C++: every REST method takes the endpoint's required
+  parameters positionally and its optional ones as one params record**
+  (#202; [migration guide §20](MIGRATION-0.9.md#20-c-go-java-c-one-params-record-per-rest-method)).
+  The uniffi bindings exposed a fraction of the parameter table from #164:
+  no `oddLot` on the single-symbol stock intraday methods, no `offset` /
+  `limit` / `sort` / `isTrial` on `trades`, no filters on `tickers`, no
+  `fields` / `sort` / `adjusted` on `stock.historical.candles`, no
+  thresholds on `movers`, no `exchange` / `sort` on the corporate-actions
+  methods, no filters on the futopt list methods; intraday `candles`
+  required `timeframe` and always sent it (#196 in another form). There is
+  now one `uniffi::Record` per parameter set (`StockTradesParams`,
+  `OddLotParams`, `MoversParams`, `TechnicalParams`,
+  `CorporateActionsParams`, `OwnershipParams`, `AfterHoursParams`,
+  `FutOptHistoricalCandlesParams`, … 16 in all), every field optional and
+  unset meaning "not sent", so an omitted record (`null` / `nil` /
+  `std::nullopt` / `Record{}`) applies the server's defaults. The keys and
+  the flag literals (`type=oddlot`, `session=afterhours` /
+  `session=AFTERHOURS`) come from core's table, not from the records, and a
+  field an endpoint does not take (`exchange` on `capital-changes`) is code
+  1005 before any request. `movers` now requires `direction` and `change`
+  and the technical methods require their periods — the server answered 400
+  without them. The old signatures are replaced, not overloaded; C#, Go and
+  Java have never been published.
+- **C# / Go / Java / C++: WebSocket `subscribe` / `unsubscribe` take a list
+  of symbols and a `SubscribeOptions` record** (#202). One symbol is sent as
+  `symbol`, as before; several as `symbols` in one frame, each its own
+  subscription. `SubscribeOptions` carries `afterHours` (FutOpt only, as
+  before) and the new `intradayOddLot` (Stock only); either on the other
+  endpoint is code 1005, as is an empty list. The wrappers keep their
+  single-symbol forms — C# `SubscribeAsync(channel, symbol[, afterHours])`,
+  Go `Subscribe(channel, symbol, opts...)`, Java `subscribe(channel,
+  symbol[, afterHours])` — and add the list forms (C# `SubscribeAsync(channel,
+  symbols[, options])`, Go `SubscribeMany` / `WithIntradayOddLot`, Java
+  `subscribe(channel, List<String>[, SubscribeOptions])`). The C++
+  `subscribe_sync` gains the options it lacked.
+
+### Added
+
+- **C#: `WebSocketClientOptions.Versions`** (`WebsocketVersionOptions
+  { Stock, FutOpt }`) selects the streaming version, which the wrapper used
+  to fix at the latest (#202).
+- **Go: `Bool`, `String`, `Uint32`, `Float64`** take the address of a
+  literal for the params records' pointer fields (#202).
+
 ## [Bindings 3.0.0-rc.7 / core 0.9.0-rc.5 / uniffi 0.2.0-rc.5] - 2026-09-20
 
 ### Fixed

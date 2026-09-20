@@ -128,7 +128,7 @@ public class WebSocketBenchmark {
         );
 
         client.connect().join();
-        client.subscribe("trades", "2330", null).join();
+        client.subscribe("trades", List.of("2330"), null).join();
 
         // Wait for bench_done or timeout
         if (!done.await(timeout, TimeUnit.MILLISECONDS)) {

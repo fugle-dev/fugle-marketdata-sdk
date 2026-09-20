@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 import com.sun.jna.Pointer;
 import java.util.concurrent.CompletableFuture;
 /**
- * Stock intraday endpoints with typed model returns
+ * Stock intraday endpoints
  *
  * All methods have both async (get_*) and sync (*_sync) variants:
  * - Async methods are preferred for best performance (non-blocking)
@@ -115,7 +115,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get candlestick data for a symbol (sync/blocking)
      */
     @Override
-    public String candlesSync(String symbol, String timeframe) throws MarketDataException {
+    public String candlesSync(String symbol, StockCandlesParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -124,7 +124,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_candles_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterString.INSTANCE.lower(timeframe), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeStockCandlesParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -150,17 +150,16 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
     /**
      * Get candlestick data for a symbol (async)
      *
-     * timeframe: "1", "5", "10", "15", "30", "60" (minutes)
-     * Returns typed IntradayCandlesResponse with OHLCV data.
+     * `timeframe` is in the record: unset takes the server default.
      */
     @Override
     
-    public CompletableFuture<String> getCandles(String symbol, String timeframe){
+    public CompletableFuture<String> getCandles(String symbol, StockCandlesParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_candles(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterString.INSTANCE.lower(timeframe)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeStockCandlesParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -176,17 +175,15 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
   
     /**
      * Get quote for a symbol (async)
-     *
-     * Returns typed Quote model with all fields directly accessible.
      */
     @Override
     
-    public CompletableFuture<String> getQuote(String symbol){
+    public CompletableFuture<String> getQuote(String symbol, OddLotParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_quote(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOddLotParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -202,17 +199,15 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
   
     /**
      * Get ticker info for a symbol (async)
-     *
-     * Returns typed Ticker model with stock metadata.
      */
     @Override
     
-    public CompletableFuture<String> getTicker(String symbol){
+    public CompletableFuture<String> getTicker(String symbol, OddLotParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_ticker(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOddLotParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -233,12 +228,12 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      */
     @Override
     
-    public CompletableFuture<String> getTickers(String typ){
+    public CompletableFuture<String> getTickers(String typ, StockTickersParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_tickers(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(typ)
+                FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalTypeStockTickersParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -254,17 +249,15 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
   
     /**
      * Get trade history for a symbol (async)
-     *
-     * Returns typed TradesResponse with list of trades.
      */
     @Override
     
-    public CompletableFuture<String> getTrades(String symbol){
+    public CompletableFuture<String> getTrades(String symbol, StockTradesParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_trades(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeStockTradesParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -280,17 +273,15 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
   
     /**
      * Get volume breakdown for a symbol (async)
-     *
-     * Returns typed VolumesResponse with volume at price data.
      */
     @Override
     
-    public CompletableFuture<String> getVolumes(String symbol){
+    public CompletableFuture<String> getVolumes(String symbol, OddLotParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_get_volumes(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol)
+                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOddLotParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),
@@ -308,7 +299,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get quote for a symbol (sync/blocking)
      */
     @Override
-    public String quoteSync(String symbol) throws MarketDataException {
+    public String quoteSync(String symbol, OddLotParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -317,7 +308,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_quote_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOddLotParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -344,7 +335,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get ticker info for a symbol (sync/blocking)
      */
     @Override
-    public String tickerSync(String symbol) throws MarketDataException {
+    public String tickerSync(String symbol, OddLotParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -353,7 +344,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_ticker_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOddLotParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -382,7 +373,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * typ: Security type (e.g., "EQUITY", "INDEX", "ETF")
      */
     @Override
-    public String tickersSync(String typ) throws MarketDataException {
+    public String tickersSync(String typ, StockTickersParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -391,7 +382,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_tickers_sync(
-            it, FfiConverterString.INSTANCE.lower(typ), _status);
+            it, FfiConverterString.INSTANCE.lower(typ), FfiConverterOptionalTypeStockTickersParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -418,7 +409,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get trade history for a symbol (sync/blocking)
      */
     @Override
-    public String tradesSync(String symbol) throws MarketDataException {
+    public String tradesSync(String symbol, StockTradesParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -427,7 +418,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_trades_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeStockTradesParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -454,7 +445,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
      * Get volume breakdown for a symbol (sync/blocking)
      */
     @Override
-    public String volumesSync(String symbol) throws MarketDataException {
+    public String volumesSync(String symbol, OddLotParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -463,7 +454,7 @@ public class StockIntradayClient implements AutoCloseable, StockIntradayClientIn
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_stockintradayclient_volumes_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), _status);
+            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeOddLotParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {

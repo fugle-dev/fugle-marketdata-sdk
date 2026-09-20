@@ -368,19 +368,24 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
 
   
     /**
-     * Subscribe to a channel for a symbol.
+     * Subscribe to a channel for one or more symbols.
      *
-     * After-hours (盤後) is FutOpt only: on the Stock endpoint, any value
-     * other than null is 1005 `INVALID_PARAMETER`.
+     * One symbol is sent as `symbol`, several as `symbols` in one frame;
+     * each symbol is its own subscription afterwards. An empty list is
+     * 1005 `INVALID_PARAMETER`.
+     *
+     * `opts` selects the session: `intraday_odd_lot` is Stock only and
+     * `after_hours` is FutOpt only; setting either on the other endpoint,
+     * to any value, is 1005 `INVALID_PARAMETER`.
      */
     @Override
     
-    public CompletableFuture<Void> subscribe(String channel, String symbol, Boolean afterHours){
+    public CompletableFuture<Void> subscribe(String channel, List<String> symbols, SubscribeOptions opts){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(channel), FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalBoolean.INSTANCE.lower(afterHours)
+                FfiConverterString.INSTANCE.lower(channel), FfiConverterSequenceString.INSTANCE.lower(symbols), FfiConverterOptionalTypeSubscribeOptions.INSTANCE.lower(opts)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_void(future, callback, continuation),
@@ -395,19 +400,20 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
 
   
     /**
-     * Unsubscribe from a channel for a symbol.
+     * Unsubscribe from a channel for one or more symbols.
      *
-     * Pass the same after-hours value as the `subscribe` call: an after-hours
-     * subscription is a separate subscription from the regular one.
+     * Pass the same options as the `subscribe` call: an odd-lot or
+     * after-hours subscription is a separate subscription from the regular
+     * one.
      */
     @Override
     
-    public CompletableFuture<Void> unsubscribe(String channel, String symbol, Boolean afterHours){
+    public CompletableFuture<Void> unsubscribe(String channel, List<String> symbols, SubscribeOptions opts){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(channel), FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalBoolean.INSTANCE.lower(afterHours)
+                FfiConverterString.INSTANCE.lower(channel), FfiConverterSequenceString.INSTANCE.lower(symbols), FfiConverterOptionalTypeSubscribeOptions.INSTANCE.lower(opts)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_void(future, callback, continuation),

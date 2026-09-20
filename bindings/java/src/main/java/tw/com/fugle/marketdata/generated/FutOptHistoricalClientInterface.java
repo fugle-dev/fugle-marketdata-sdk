@@ -16,25 +16,22 @@ public interface FutOptHistoricalClientInterface {
     /**
      * Get historical candles for a product such as "TXF" (sync/blocking)
      */
-    public String candlesSync(String symbol, String from, String to, String timeframe, Boolean afterHours, String contractMonth, String fields, String sort) throws MarketDataException;
+    public String candlesSync(String symbol, FutOptHistoricalCandlesParams params) throws MarketDataException;
     
     /**
      * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
      */
-    public String dailySync(String symbol, String date, Boolean afterHours) throws MarketDataException;
+    public String dailySync(String symbol, FutOptDailyParams params) throws MarketDataException;
     
     /**
      * Get historical candles for a product such as "TXF" (async)
-     *
-     * `contract_month` is "YYYYMM" or a continuous contract ("1!", the server
-     * default, "2!", "3!").
      */
-    public CompletableFuture<String> getCandles(String symbol, String from, String to, String timeframe, Boolean afterHours, String contractMonth, String fields, String sort) ;
+    public CompletableFuture<String> getCandles(String symbol, FutOptHistoricalCandlesParams params) ;
     
     /**
      * Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
      */
-    public CompletableFuture<String> getDaily(String symbol, String date, Boolean afterHours) ;
+    public CompletableFuture<String> getDaily(String symbol, FutOptDailyParams params) ;
     
 }
 

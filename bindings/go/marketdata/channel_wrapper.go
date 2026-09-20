@@ -272,9 +272,26 @@ func (sc *StreamingClient) Connect() error {
 //
 // Valid channels: "trades", "candles", "books", "aggregates", "indices" on the
 // Stock endpoint; "trades", "candles", "books", "aggregates" on FutOpt.
-// WithAfterHours is FutOpt only; on the Stock endpoint it is error 1005.
+// WithAfterHours is FutOpt only; WithIntradayOddLot is Stock only; using
+// either on the other endpoint is error 1005. Single symbol sends a
+// "symbol" frame field; see SubscribeMany for multiple symbols in one frame.
 func (sc *StreamingClient) Subscribe(channel, symbol string, opts ...SubscribeOption) error {
-	err := sc.client.Subscribe(channel, symbol, subscribeAfterHours(opts))
+	err := sc.client.Subscribe(channel, []string{symbol}, subscribeOptions(opts))
+	if err != nil {
+		return fmt.Errorf("subscribe failed: %w", err)
+	}
+	return nil
+}
+
+// SubscribeMany adds a subscription to a channel for multiple symbols in a
+// single frame.
+//
+// Valid channels: "trades", "candles", "books", "aggregates", "indices" on the
+// Stock endpoint; "trades", "candles", "books", "aggregates" on FutOpt.
+// WithAfterHours is FutOpt only; WithIntradayOddLot is Stock only; using
+// either on the other endpoint is error 1005.
+func (sc *StreamingClient) SubscribeMany(channel string, symbols []string, opts ...SubscribeOption) error {
+	err := sc.client.Subscribe(channel, symbols, subscribeOptions(opts))
 	if err != nil {
 		return fmt.Errorf("subscribe failed: %w", err)
 	}
@@ -283,10 +300,23 @@ func (sc *StreamingClient) Subscribe(channel, symbol string, opts ...SubscribeOp
 
 // Unsubscribe removes a subscription
 //
-// Pass the same options as the Subscribe call: an after-hours subscription
-// is separate from the regular one.
+// Pass the same options as the Subscribe call: an after-hours or
+// intraday-odd-lot subscription is separate from the regular one.
 func (sc *StreamingClient) Unsubscribe(channel, symbol string, opts ...SubscribeOption) error {
-	err := sc.client.Unsubscribe(channel, symbol, subscribeAfterHours(opts))
+	err := sc.client.Unsubscribe(channel, []string{symbol}, subscribeOptions(opts))
+	if err != nil {
+		return fmt.Errorf("unsubscribe failed: %w", err)
+	}
+	return nil
+}
+
+// UnsubscribeMany removes a subscription for multiple symbols in a single
+// frame.
+//
+// Pass the same options as the SubscribeMany call: an after-hours or
+// intraday-odd-lot subscription is separate from the regular one.
+func (sc *StreamingClient) UnsubscribeMany(channel string, symbols []string, opts ...SubscribeOption) error {
+	err := sc.client.Unsubscribe(channel, symbols, subscribeOptions(opts))
 	if err != nil {
 		return fmt.Errorf("unsubscribe failed: %w", err)
 	}

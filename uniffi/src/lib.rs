@@ -24,10 +24,9 @@
 //! Console.WriteLine(quote.LastPrice); // Strongly typed access
 //! ```
 
-// UniFFI exports each optional argument as a separate parameter — there is no
-// way to express an options object that reads naturally in C#, Go, Java and
-// C++ at once. Collapsing them into a record to satisfy the lint would change
-// the generated API in all four languages.
+// The WebSocket factories take every option positionally: they predate the
+// records and are part of the generated API in four languages, so they stay
+// as they are. The REST methods take one params record each (#202).
 #![allow(clippy::too_many_arguments)]
 // Every `MarketDataError` variant carries an `ErrorInfo` record (#81), which
 // makes the error large. UniFFI errors cannot hold a `Box`, and the variant
@@ -37,6 +36,7 @@
 mod client;
 mod errors;
 mod models;
+mod params;
 mod tls;
 mod websocket;
 
@@ -52,11 +52,14 @@ pub use errors::{ErrorInfo, ErrorSourceKind, MarketDataError};
 // Re-export client types (FutOpt now consolidated in client module)
 pub use client::{RestClient, StockClient, StockIntradayClient, FutOptClient, FutOptIntradayClient};
 
+// Re-export the REST params records (#202)
+pub use params::*;
+
 // Re-export TLS record
 pub use tls::TlsConfigRecord;
 
 // Re-export WebSocket types
-pub use websocket::{WebSocketClient, WebSocketListener, WebSocketEndpoint};
+pub use websocket::{SubscribeOptions, WebSocketClient, WebSocketListener, WebSocketEndpoint};
 
 // Setup UniFFI scaffolding using proc macros
 // This replaces include_scaffolding!() and allows using derive macros for types

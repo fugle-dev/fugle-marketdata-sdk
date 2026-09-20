@@ -46,6 +46,8 @@ dotnet build
 ```csharp
 using System.Text.Json;
 using FugleMarketData;
+using StockCandlesParams = uniffi.marketdata_uniffi.StockCandlesParams;
+using StockTradesParams = uniffi.marketdata_uniffi.StockTradesParams;
 
 // Create client with API key
 using var client = new RestClient("your-api-key");
@@ -69,9 +71,10 @@ var ticker = JsonDocument.Parse(
     await client.Stock.Intraday.GetTickerAsync("2330")).RootElement;
 Console.WriteLine($"Name: {ticker.GetProperty("name").GetString()}");
 
-// Get intraday candles (5-minute)
+// Get intraday candles (5-minute); unset timeframe takes the server default
 var candles = JsonDocument.Parse(
-    await client.Stock.Intraday.GetCandlesAsync("2330", "5")).RootElement;
+    await client.Stock.Intraday.GetCandlesAsync(
+        "2330", new StockCandlesParams(timeframe: "5"))).RootElement;
 foreach (var candle in candles.GetProperty("data").EnumerateArray().Take(3))
 {
     Console.WriteLine($"  {candle.GetProperty("date").GetString()}: "
@@ -79,10 +82,11 @@ foreach (var candle in candles.GetProperty("data").EnumerateArray().Take(3))
         + $"C={candle.GetProperty("close").GetDouble()}");
 }
 
-// Get recent trades
+// Get recent trades, limited to 5 (params record: oddLot, offset, limit, sort, isTrial)
 var trades = JsonDocument.Parse(
-    await client.Stock.Intraday.GetTradesAsync("2330")).RootElement;
-foreach (var trade in trades.GetProperty("data").EnumerateArray().Take(5))
+    await client.Stock.Intraday.GetTradesAsync(
+        "2330", new StockTradesParams(limit: 5))).RootElement;
+foreach (var trade in trades.GetProperty("data").EnumerateArray())
 {
     Console.WriteLine($"  Price: {trade.GetProperty("price").GetDouble()}, "
         + $"Size: {trade.GetProperty("size").GetInt64()}");
@@ -153,6 +157,11 @@ await ws.ConnectAsync();
 await ws.SubscribeAsync("trades", "2330");
 await ws.SubscribeAsync("books", "2330");
 
+// Multiple symbols in one subscription; endpoint-specific options
+// (Stock: IntradayOddLot, FutOpt: AfterHours)
+await ws.SubscribeAsync("trades", new[] { "2330", "2317" });
+await ws.SubscribeAsync("trades", "2330", new SubscribeOptions { IntradayOddLot = true });
+
 // Keep running for 10 seconds
 await Task.Delay(TimeSpan.FromSeconds(10));
 
@@ -214,45 +223,58 @@ accepts optional `TlsConfigRecord` plus reconnect/health check configs.
 
 ### RestClient
 
+Every method returns the server's JSON body as a `Task<string>`; parse it with
+`System.Text.Json` or your own model types. Optional filters go through one
+params record per endpoint (`uniffi.marketdata_uniffi` namespace); an unset
+field is not sent, so `new StockTradesParams()` (or the `params: null`
+default) sends nothing extra. Required parameters (`type`, `direction`,
+`change`, `trade`, technical periods) are always positional.
+
 #### Stock Intraday Methods
 
 ```csharp
-// Real-time quote
-Task<Quote> GetQuoteAsync(string symbol)
+// Real-time quote (params: OddLotParams — oddLot)
+Task<string> GetQuoteAsync(string symbol, OddLotParams? @params = null)
 
-// Symbol information
-Task<Ticker> GetTickerAsync(string symbol)
+// Symbol information (params: OddLotParams — oddLot)
+Task<string> GetTickerAsync(string symbol, OddLotParams? @params = null)
 
-// OHLCV candles (timeframe: "1", "5", "10", "15", "30", "60")
-Task<CandlesResponse> GetCandlesAsync(string symbol, string timeframe = "1")
+// OHLCV candles (params: StockCandlesParams — timeframe, oddLot, sort;
+// unset timeframe takes the server default)
+Task<string> GetCandlesAsync(string symbol, StockCandlesParams? @params = null)
 
-// Trade history
-Task<TradesResponse> GetTradesAsync(string symbol)
+// Trade history (params: StockTradesParams — oddLot, offset, limit, sort, isTrial)
+Task<string> GetTradesAsync(string symbol, StockTradesParams? @params = null)
 
-// Volume by price
-Task<VolumesResponse> GetVolumesAsync(string symbol)
+// Volume by price (params: OddLotParams — oddLot)
+Task<string> GetVolumesAsync(string symbol, OddLotParams? @params = null)
+
+// Batch tickers (params: StockTickersParams — exchange, market, industry,
+// isNormal, isAttention, isDisposition, isHalted, symbol)
+Task<string> GetTickersAsync(string type, StockTickersParams? @params = null)
 ```
 
 #### FutOpt Intraday Methods
 
 ```csharp
-// Real-time quote
-Task<Quote> GetQuoteAsync(string symbol)
+// Real-time quote (params: AfterHoursParams — afterHours)
+Task<string> GetQuoteAsync(string symbol, AfterHoursParams? @params = null)
 
-// Contract information
-Task<Ticker> GetTickerAsync(string symbol)
+// Contract information (params: AfterHoursParams — afterHours)
+Task<string> GetTickerAsync(string symbol, AfterHoursParams? @params = null)
 
-// OHLCV candles
-Task<CandlesResponse> GetCandlesAsync(string symbol, string timeframe = "1")
+// OHLCV candles (params: FutOptCandlesParams — afterHours, timeframe)
+Task<string> GetCandlesAsync(string symbol, FutOptCandlesParams? @params = null)
 
-// Trade history
-Task<TradesResponse> GetTradesAsync(string symbol)
+// Trade history (params: FutOptTradesParams — afterHours, offset, limit, isTrial)
+Task<string> GetTradesAsync(string symbol, FutOptTradesParams? @params = null)
 
-// Volume by price
-Task<VolumesResponse> GetVolumesAsync(string symbol)
+// Volume by price (params: AfterHoursParams — afterHours)
+Task<string> GetVolumesAsync(string symbol, AfterHoursParams? @params = null)
 
-// Product listing (type: "F" for futures, "O" for options)
-Task<ProductsResponse> GetProductsAsync(string type)
+// Product listing (type: "F" for futures, "O" for options;
+// params: FutOptProductsParams — exchange, afterHours, contractType, status)
+Task<string> GetProductsAsync(string type, FutOptProductsParams? @params = null)
 ```
 
 ### WebSocketClient
@@ -276,6 +298,13 @@ ulong MessagesDroppedTotal                    // Messages dropped this connectio
 // afterHours: FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
 Task SubscribeAsync(string channel, string symbol, bool? afterHours = null)    // Subscribe to channel
 Task UnsubscribeAsync(string channel, string symbol, bool? afterHours = null)  // Unsubscribe (same afterHours as subscribe)
+
+// SubscribeOptions { AfterHours (FutOpt only), IntradayOddLot (Stock only) }
+Task SubscribeAsync(string channel, string symbol, SubscribeOptions options)
+Task SubscribeAsync(string channel, IEnumerable<string> symbols, SubscribeOptions? options = null)  // multiple symbols in one frame
+Task UnsubscribeAsync(string channel, string symbol, SubscribeOptions options)
+Task UnsubscribeAsync(string channel, IEnumerable<string> symbols, SubscribeOptions? options = null)
+
 Task UnsubscribeAsync(IEnumerable<string> ids)                                // Unsubscribe by server ids (empty: 1005)
 List<Subscription> GetSubscriptions()               // List active subscriptions
 
@@ -385,6 +414,29 @@ Console.WriteLine(ws.MessagesDroppedTotal);
 while `OnMessage` lags, so only use it when the listener is guaranteed to
 keep up.
 
+#### Streaming protocol version
+
+By default the server picks the latest streaming version for both endpoints.
+Pin a specific version with `WebSocketClientOptions.Versions`:
+
+```csharp
+using FugleMarketData.WebsocketClient;
+
+var options = new WebSocketClientOptions
+{
+    ApiKey = "your-api-key",
+    Versions = new WebsocketVersionOptions
+    {
+        Stock = "v1.0",   // only "v1.0" is served
+        FutOpt = "v1.0",  // "v1.0" or "v1.1" (default: latest, v1.1)
+    },
+};
+using var ws = new WebSocketClient(options, listener);
+```
+
+FutOpt v1.1 adds trial-matching (試撮) frames on `trades` / `books` — check
+the frame's `isTrial` before acting on a price.
+
 #### StreamMessage Properties
 
 | Property | Type | Description |
@@ -465,8 +517,10 @@ catch (MarketDataException ex)
 
 ```csharp
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 using FugleMarketData;
+using StockCandlesParams = uniffi.marketdata_uniffi.StockCandlesParams;
 
 class Program
 {
@@ -492,7 +546,8 @@ class Program
             Console.WriteLine($"Ticker: {ticker}");
 
             var candles = JsonDocument.Parse(
-                await client.Stock.Intraday.GetCandlesAsync("2330", "5")).RootElement;
+                await client.Stock.Intraday.GetCandlesAsync(
+                    "2330", new StockCandlesParams(timeframe: "5"))).RootElement;
             Console.WriteLine($"Candles: {candles.GetProperty("data").GetArrayLength()} entries");
 
             // FutOpt data

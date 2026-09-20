@@ -213,7 +213,7 @@ catch (MarketDataException ex)
 **Go**
 
 ```go
-quote, err := client.Stock().Intraday().GetQuote("2330")
+quote, err := client.Stock().Intraday().GetQuote("2330", nil)
 if info, ok := marketdata.ErrorInfoOf(err); ok { // import marketdata "github.com/fugle-dev/fugle-marketdata-go"
     log.Println(info.Code, info.SourceKind, info.Status, info.Body)
 }
