@@ -87,6 +87,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the SDK does not know is not a reason to give up. What is *not* retried is
   the enumerated set documented on the method: reconnect disabled, close
   `1000`, or a connection whose last `error` frame had code `1000`.
+- **Python: core's `ConnectionError` (2001) is raised as `ConnectionError`,
+  no longer as `WebSocketError`** (#219). A REST request that cannot reach
+  the server (DNS, connection refused, TLS), a WebSocket command sent while
+  the connection is down, `messages().recv_timeout()` on a closed stream,
+  and an auth handshake that fails for a reason other than rejected
+  credentials were all mapped to `WebSocketError`, so the `ConnectionError`
+  class the package exports — and the one `docs/errors.md` and the README
+  list for 2001 — was never raised, and `except ConnectionError:` caught
+  nothing. Both classes remain
+  `MarketDataError` subclasses, so `except MarketDataError:` and the
+  `FugleAPIError` alias are unaffected; code that caught a REST transport
+  failure with `except WebSocketError:` must catch `ConnectionError` (or
+  `MarketDataError`) instead. `WebSocketError` (3002, including a WebSocket
+  `connect()` that cannot reach the server), `ClientClosed` /
+  `ConnectionAborted` (2010) and `AlreadyConnected` (2011) still raise
+  `WebSocketError`, and the WebSocket `error` callback still receives a
+  `WebSocketError` whatever the code.
 
 ### Added
 

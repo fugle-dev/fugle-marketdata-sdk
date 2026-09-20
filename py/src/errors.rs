@@ -22,7 +22,10 @@ create_exception!(fugle_marketdata, AuthError, MarketDataError, "Authentication 
 // `ReconnectConfig`, `HealthCheckConfig`. Not a `ValueError` (#171).
 create_exception!(fugle_marketdata, ConfigError, MarketDataError, "Invalid configuration");
 
-// Connection errors
+// Connection errors (core `ConnectionError`, code 2001): a REST request
+// cannot reach the server, a WebSocket command is sent while not connected,
+// or the WebSocket auth handshake fails for a reason other than rejected
+// credentials. Not a `WebSocketError` (#219).
 create_exception!(fugle_marketdata, ConnectionError, MarketDataError, "Connection failed");
 create_exception!(fugle_marketdata, TimeoutError, MarketDataError, "Operation timed out");
 
@@ -35,8 +38,9 @@ create_exception!(fugle_marketdata, WebSocketError, MarketDataError, "WebSocket 
 /// - AuthError → AuthError
 /// - ConfigError → ConfigError
 /// - ApiError → ApiError (or RateLimitError for 429 status)
-/// - TimeoutError → TimeoutError
-/// - Connection/WebSocket errors → WebSocketError
+/// - TimeoutError / HeartbeatTimeout → TimeoutError
+/// - ConnectionError → ConnectionError
+/// - WebSocketError / ClientClosed / ConnectionAborted / AlreadyConnected → WebSocketError
 /// - Other errors → MarketDataError (base exception)
 ///
 /// The exception instance carries the unified error fields (core's
@@ -80,8 +84,10 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
         CoreError::TimeoutError { .. } | CoreError::HeartbeatTimeout { .. } => {
             TimeoutError::new_err((message.clone(), error_code))
         }
-        CoreError::ConnectionError { .. }
-        | CoreError::WebSocketError { .. }
+        CoreError::ConnectionError { .. } => {
+            ConnectionError::new_err((message.clone(), error_code))
+        }
+        CoreError::WebSocketError { .. }
         | CoreError::ClientClosed
         | CoreError::ConnectionAborted
         | CoreError::AlreadyConnected => WebSocketError::new_err((message.clone(), error_code)),
