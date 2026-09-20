@@ -1,0 +1,32 @@
+macOS `sample` of the new-SDK JS client (js/bench-new.js, 1,500,000 frames, sampled for 3 s at 1 ms
+while the burst was in flight; full output in sample-js-new-1500k.txt). Sample counts per thread,
+by subtree (a node is counted once, at its outermost occurrence); each thread has ~1,405-1,560
+samples in total, the rest of each thread's samples are elsewhere in its tree.
+
+thread                          total   parked (cvwait/kevent)   on-CPU (approx.)
+tokio-rt-worker A (dispatch)    1405    755 + 51                 ~600
+tokio-rt-worker B (dispatch)    1405    642 + 125                ~640
+stream reader (unnamed)         1405    999 + 87                 ~320
+JS main thread                  1560    1031 (kevent)            ~530
+stock_ws_worker                 1405    all parked               0
+(the dispatch task is work-stolen between the client runtime's two workers, so A and B together are
+ the core read path)
+
+core read path (A + B):
+  tungstenite read_frame (incl. __recvfrom 320)                548
+  parse_text_frame                                             437
+    of which serde_json Value deserialisation                    351
+      of which IndexMap/hashbrown/SipHash (preserve_order)         187
+  StreamSender::push_message (incl. __psynch_cvbroad 126)      162
+  tokio time driver / timeout_at                               205  (overlaps with park)
+  malloc/free (all occurrences, may double count across subtrees) 102
+
+stream reader thread:
+  StreamReceiver::receive (mostly parked)                     1061
+  EventSink::emit_message / ThreadsafeFunction call            168
+  drop_in_place<serde_json::Value>                             116
+  malloc/free (all occurrences, may double count across subtrees) 156
+
+JS main thread:
+  ThreadSafeFunction::AsyncCb (napi dispatch)                  491
+    of which V8 JsonParser (the listener's JSON.parse)           184

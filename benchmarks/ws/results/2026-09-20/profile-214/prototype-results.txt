@@ -1,0 +1,29 @@
+Prototype: core keeps `data` of a data event as the verbatim JSON slice (serde_json RawValue) instead of
+parsing it into a serde_json::Value tree (preserve_order = IndexMap) that JS and Python never read and
+UniFFI only re-serialises into `data_json`. Patch: prototype-data-rawvalue.patch (measurement only, not
+shipped: it adds a public field to core::WebSocketMessage and leaves `data` empty for data events).
+
+Same machine, same evening, 3 runs each, medians; baseline = cpu-rerun/ (main f7c31e7 tree).
+
+                         baseline                      prototype
+                 tput      p50/p99   user   sys        tput      p50/p99   user   sys
+Go   10K       181,818     1/3       151     35      181,818     0/1       139     40
+Go   50K       203,252    28/64      420     87      233,644    10/24      355    100
+C#   10K       185,185     0/3       156     35      178,571     0/3       145     42
+C#   50K       218,340    19/40      406     84      247,524     1/4       340    106
+JS   10K       178,571     0/1       135     62      175,439     0/1       126     68
+JS   50K       233,645     0/1       336    202      233,645     0/1       292    224
+
+JS per-thread user CPU at 200K frames (ps -M, 10 ms resolution), baseline -> prototype:
+  tokio worker (read path)  0.46 s -> 0.33 s
+  stream reader thread      0.15 s -> 0.10 s
+  JS main thread            0.45 s -> 0.43 s
+  process user total        1.13 s -> 0.89 s   (-21%)
+
+System CPU rises under the prototype in every case (10K: +5-7 ms; 50K: +13-22 ms), so user+system only
+drops 1.5-4% at 10K and 4-10% at 50K. The prototype runs' per-run JSON was not kept (ws-bench-run.js
+overwrites ws-benchmark-results.json); the medians above are what was recorded.
+
+A first prototype that dropped `data` entirely (IgnoredAny) measured Go 108 / 218 ms and C# 120 / 252 ms,
+but those numbers are invalid: the Go/C#/Java bench clients read `dataJson`, which that prototype left
+null, so the clients skipped their own JSON parse. Only the RawValue variant above is a fair comparison.
