@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""WebSocket benchmark client - old fugle-marketdata@2.4.1 Python SDK.
+"""WebSocket benchmark client - old fugle-marketdata@2.7.0rc1 Python SDK.
 
-Same measurement logic as ws-bench-new-py.py for fair comparison.
+Same measurement logic as bench-new.py for fair comparison.
 Old SDK's message callback receives a raw JSON string (not a dict).
 
 Usage:
-    python ws-bench-old-py.py --url ws://localhost:8765 --timeout 30
+    python py/bench-old.py --url ws://localhost:8765 --timeout 30
 """
 
 import argparse
@@ -99,7 +99,7 @@ def main():
         return arr[idx]
 
     result = {
-        'sdk': 'old-py-2.4.1',
+        'sdk': 'old-py-2.7.0rc1',
         'count': received,
         'expected': server_stats.get('count') if server_stats else None,
         'lost': (server_stats.get('count', 0) - received) if server_stats else None,

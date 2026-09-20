@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * WebSocket benchmark client — old @fugle/marketdata@1.4.2 SDK.
+ * WebSocket benchmark client — old @fugle/marketdata@1.6.0 SDK.
  *
- * Same measurement logic as ws-bench-new.js for fair comparison.
+ * Same measurement logic as bench-new.js for fair comparison.
  *
  * Usage:
- *   node ws-bench-old.js --url ws://localhost:8765 --timeout 30000
+ *   node js/bench-old.js --url ws://localhost:8765 --timeout 30000
  */
 
 // Load old SDK from local node_modules (installed via benchmarks/package.json)
@@ -92,7 +92,7 @@ function finish() {
   const sorted = Float64Array.from(lats).sort();
 
   console.log(JSON.stringify({
-    sdk: 'old-js-1.4.2',
+    sdk: 'old-js-1.6.0',
     count: received,
     expected: serverStats ? serverStats.count : null,
     lost: serverStats ? serverStats.count - received : null,

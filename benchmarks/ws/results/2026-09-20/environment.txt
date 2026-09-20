@@ -1,0 +1,16 @@
+date: 2026-09-20
+commit: de76eca (main de76eca + bench-only changes)
+hardware: Apple M3 Pro, 18 GB, macOS 26.5.1
+node: v24.19.0
+python: Python 3.12.2
+rust: rustc 1.95.0 (59807616e 2026-04-14)
+dotnet: 9.0.101 (binding built with -p:TargetFrameworks=net8.0)
+go: go version go1.23.4 darwin/arm64
+java: openjdk version "21.0.11" 2026-04-21
+old JS SDK: @fugle/marketdata@1.6.0
+old Python SDK: fugle-marketdata==2.7.0rc1
+new SDK: built from this worktree (cargo build -p marketdata-uniffi --release; js npm run build; py maturin develop --release)
+command (cwd = repo root): node benchmarks/ws/ws-bench-run.js <10000|50000> 0 1000 3 --lang <js|py|cs|go|java|cpp>
+rate-limited: node benchmarks/ws/ws-bench-run.js 5000 500 1000 3 --lang <lang>  (rate500-<lang>.*)
+null client: see 10k-null.jsonl / 50k-null.jsonl (node benchmarks/ws/js/bench-null.js against the mock server, 3 runs)
+env: BENCH_PY_NEW=$PWD/py/.venv/bin/python3 BENCH_PY_OLD=$PWD/benchmarks/ws/py/.venv-old/bin/python3 BENCH_DOTNET_ARGS=-p:TargetFrameworks=net8.0

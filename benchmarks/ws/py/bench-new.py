@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""WebSocket benchmark client - new Rust-core Python SDK.
+"""WebSocket benchmark client - new Rust-core Python SDK (fugle-marketdata 3.x).
 
 Connects to the mock server, subscribes, receives data messages, and
 reports throughput / latency / memory metrics as a single JSON line on stdout.
 
 Usage:
-    python ws-bench-new-py.py --url ws://localhost:8765 --timeout 30
+    python py/bench-new.py --url ws://localhost:8765 --timeout 30
 """
 
 import argparse
@@ -16,11 +16,11 @@ import sys
 import threading
 import time
 
-# Add the py directory to path so we can import the built module
-SDK_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'py')
-sys.path.insert(0, SDK_DIR)
-
-from marketdata_py import WebSocketClient
+# Run with the interpreter that has the new SDK installed (`cd py &&
+# maturin develop --release` into py/.venv); ws-bench-run.js takes it from
+# BENCH_PY_NEW. The old SDK shares the distribution name, so it needs its
+# own venv (BENCH_PY_OLD).
+from fugle_marketdata import WebSocketClient
 
 
 def parse_args():
@@ -43,7 +43,10 @@ def main():
     start_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     start_time_cpu = time.process_time()
 
-    ws = WebSocketClient(api_key='bench-key', base_url=args.url)
+    # The default (drop_newest, 4096 unread) drops messages -- and possibly
+    # bench_done -- while the callback lags a burst; the benchmark measures
+    # full delivery, same as the C#/Go/Java clients.
+    ws = WebSocketClient(api_key='bench-key', base_url=args.url, message_overflow='unbounded')
     stock = ws.stock
 
     def on_message(msg):
@@ -115,6 +118,7 @@ def main():
         'mem_rss_delta_kb': end_mem - start_mem,
         'cpu_user_ms': round((end_time_cpu - start_time_cpu) * 1000, 1),
         'server_msgs_per_sec': server_stats.get('server_msgs_per_sec') if server_stats else None,
+        'dropped': stock.messages_dropped_total(),
     }
 
     print(json.dumps(result), flush=True)

@@ -87,9 +87,20 @@ function runClient(script, label) {
       cmdArgs = [script, '--url', `ws://localhost:${PORT}`, '--timeout', '60000'];
     } else if (isDotnet) {
       cmd = 'dotnet';
-      cmdArgs = ['run', '--project', script, '--configuration', 'Release', '--', '--url', `ws://localhost:${PORT}`, '--timeout', '60000'];
+      // BENCH_DOTNET_ARGS: extra `dotnet run` flags, e.g. `-p:TargetFrameworks=net8.0`
+      // when the installed SDK cannot build the binding's newest target.
+      const extra = (process.env.BENCH_DOTNET_ARGS || '').split(' ').filter(Boolean);
+      cmdArgs = ['run', '--project', script, '--configuration', 'Release', ...extra, '--', '--url', `ws://localhost:${PORT}`, '--timeout', '60000'];
     } else if (isPython) {
-      cmd = 'python3';
+      // Old and new Python SDKs share the `fugle-marketdata` distribution
+      // name, so they cannot live in one venv: BENCH_PY_OLD / BENCH_PY_NEW
+      // pick the interpreter for each (default: python3 on PATH).
+      const envName = script === CLIENT_OLD_PY ? 'BENCH_PY_OLD' : 'BENCH_PY_NEW';
+      cmd = process.env[envName];
+      if (!cmd) {
+        console.warn(`  [${label}] ${envName} not set, using python3 on PATH (see REPORT.md "How to Run")`);
+        cmd = 'python3';
+      }
       cmdArgs = [script, '--url', `ws://localhost:${PORT}`, '--timeout', '60'];
     } else {
       cmd = 'node';
@@ -170,11 +181,11 @@ async function main() {
   const pairs = [];
   if (LANG === 'js' || LANG === 'all') {
     pairs.push({ label: 'JS', oldScript: CLIENT_OLD_JS, newScript: CLIENT_NEW_JS,
-                 oldName: '@fugle/marketdata@1.4.2', newName: 'rust-core (JS)' });
+                 oldName: '@fugle/marketdata@1.6.0', newName: 'rust-core (JS)' });
   }
   if (LANG === 'py' || LANG === 'all') {
     pairs.push({ label: 'Python', oldScript: CLIENT_OLD_PY, newScript: CLIENT_NEW_PY,
-                 oldName: 'fugle-marketdata@2.4.1', newName: 'rust-core (Py)' });
+                 oldName: 'fugle-marketdata@2.7.0rc1', newName: 'rust-core (Py)' });
   }
   if (LANG === 'cs' || LANG === 'all') {
     pairs.push({ label: 'C#', oldScript: null, newScript: CLIENT_NEW_CS,
