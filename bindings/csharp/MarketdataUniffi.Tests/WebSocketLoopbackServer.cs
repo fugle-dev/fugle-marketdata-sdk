@@ -46,7 +46,10 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     /// </summary>
     public bool AckSubscribes { get; init; }
 
-    /// <summary>Answer the <c>auth</c> frame with an error frame instead of <c>authenticated</c>.</summary>
+    /// <summary>
+    /// Answer the <c>auth</c> frame with the server's credentials-rejected
+    /// frame (<c>error</c>, code 1000) instead of <c>authenticated</c>.
+    /// </summary>
     public bool RejectAuth { get; init; }
 
     /// <summary>Send a text frame to every open connection.</summary>
@@ -120,7 +123,7 @@ internal sealed class WebSocketLoopbackServer : IDisposable
                 {
                     AuthData.Enqueue(frame.RootElement.GetProperty("data").GetRawText());
                     var ack = Encoding.UTF8.GetBytes(RejectAuth
-                        ? "{\"event\":\"error\",\"data\":{\"message\":\"Invalid token\"}}"
+                        ? "{\"event\":\"error\",\"code\":1000,\"data\":{\"message\":\"Invalid token\"}}"
                         : "{\"event\":\"authenticated\",\"data\":{\"message\":\"Authenticated successfully\"}}");
                     await socket.SendAsync(ack, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
                 }
