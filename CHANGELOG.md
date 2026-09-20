@@ -31,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1005 before any request. `movers` now requires `direction` and `change`
   and the technical methods require their periods — the server answered 400
   without them. The old signatures are replaced, not overloaded; C#, Go and
-  Java have never been published.
+  Java have never been published. (The C# wrapper takes the FubonNeo request
+  models instead of the records — see #203 under Added.)
 - **C# / Go / Java / C++: WebSocket `subscribe` / `unsubscribe` take a list
   of symbols and a `SubscribeOptions` record** (#202). One symbol is sent as
   `symbol`, as before; several as `symbols` in one frame, each its own
@@ -47,6 +48,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **C#: the REST wrapper is FubonNeo's `FugleMarketData` client** (#203).
+  FubonNeo 2.3.0 ships a `FugleMarketData` REST client whose shape
+  (`Task<HttpResponseMessage>`, request objects, enums) had nothing in common
+  with the wrapper's, so moving code over meant rewriting every call. The
+  wrapper now reproduces it: the request classes and enums under
+  `FugleMarketData.QueryModels.*` (same namespaces, class names, constructor
+  signatures — `TickersRequest`, `TradeRequest`, `HistoryCandlesRequest`,
+  `MoverRequest`, `KdjRequest`, `CorporateActionsRequest`,
+  `EtfHoldingsRequest`, `ProductsRequest`, `HistoricalCandlesRequest`, …,
+  all deriving from `BaseRequest`; its `ToQueryString()` is not reproduced —
+  the core builds the query),
+  the FubonNeo method names (`Tickers`, `Trades`, `Volume`, `Movers`,
+  `Kdj`, `Dividends`, `Products`, `Daily`, …) and the aliases
+  `RestClient.FutureOption` / `StockClient.History`. Every endpoint has the
+  FubonNeo name and `GetXxxAsync` (both `Task<string>`) plus the blocking
+  `GetXxx`, and one parameter shape: the request class replaces the
+  generated params record on the wrapper (`GetTradesAsync(symbol,
+  StockTradesParams?)` from #202 is gone; the records stay on the raw
+  `uniffi.marketdata_uniffi` clients). Each request converts to its record
+  with FubonNeo's `SetQuery()` rules (`HistoryTimeFrame.Day` → `D`,
+  `FieldsType` flags → `open,close`, `FutOptExchangeType.TaiFex` → `TAIFEX`,
+  `TickerType.OddLot` → `type=oddlot`, …). Beyond FubonNeo: nullable
+  properties for the keys core has and FubonNeo lacked
+  (`TradeRequest.Sort` / `IsTrial`, `TickersRequest.Symbol`,
+  `IntradayCandlesRequest.Sort`, `CorporateActionsRequest.Exchange`,
+  `HistoricalCandlesRequest.StrikePrice` / `CallPut`, `MoverRequest.Type`)
+  and two request types it did not have (`SnapshotRequest` for `Quotes` /
+  `Actives`, `OwnershipRequest` as the base of `EtfHoldingsRequest` for all
+  four ownership methods). Deliberate differences, each in the README's
+  migration section: `IsNormal = true` still sends `isAttention=false` and
+  `isDisposition=false` but no longer overwrites the caller's object;
+  `DailyRequest.AfterHours = true` sends `session=afterhours` (FubonNeo's
+  `afterhours=` was never a key the server read) and `false` sends nothing;
+  `SessionType.Regular` is not sent; `MoverRequest.Price` is formatted
+  invariantly; a negative `Offset` / `Limit` / period is an
+  `ArgumentOutOfRangeException` instead of a 400.
 - **C#: `WebSocketClientOptions.Versions`** (`WebsocketVersionOptions
   { Stock, FutOpt }`) selects the streaming version, which the wrapper used
   to fix at the latest (#202).

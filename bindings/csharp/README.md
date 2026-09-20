@@ -46,8 +46,8 @@ dotnet build
 ```csharp
 using System.Text.Json;
 using FugleMarketData;
-using StockCandlesParams = uniffi.marketdata_uniffi.StockCandlesParams;
-using StockTradesParams = uniffi.marketdata_uniffi.StockTradesParams;
+using FugleMarketData.QueryModels;
+using FugleMarketData.QueryModels.Stock.Intraday;
 
 // Create client with API key
 using var client = new RestClient("your-api-key");
@@ -74,7 +74,7 @@ Console.WriteLine($"Name: {ticker.GetProperty("name").GetString()}");
 // Get intraday candles (5-minute); unset timeframe takes the server default
 var candles = JsonDocument.Parse(
     await client.Stock.Intraday.GetCandlesAsync(
-        "2330", new StockCandlesParams(timeframe: "5"))).RootElement;
+        "2330", new IntradayCandlesRequest(timeFrame: IntradayTimeFrame.FiveMin))).RootElement;
 foreach (var candle in candles.GetProperty("data").EnumerateArray().Take(3))
 {
     Console.WriteLine($"  {candle.GetProperty("date").GetString()}: "
@@ -82,10 +82,10 @@ foreach (var candle in candles.GetProperty("data").EnumerateArray().Take(3))
         + $"C={candle.GetProperty("close").GetDouble()}");
 }
 
-// Get recent trades, limited to 5 (params record: oddLot, offset, limit, sort, isTrial)
+// Get recent trades, limited to 5 (TradeRequest: odd lot, offset, limit, sort, isTrial)
 var trades = JsonDocument.Parse(
     await client.Stock.Intraday.GetTradesAsync(
-        "2330", new StockTradesParams(limit: 5))).RootElement;
+        "2330", new TradeRequest(limit: 5))).RootElement;
 foreach (var trade in trades.GetProperty("data").EnumerateArray())
 {
     Console.WriteLine($"  Price: {trade.GetProperty("price").GetDouble()}, "
@@ -191,6 +191,57 @@ The WebSocket client takes the same three credentials through
 the raw `uniffi.marketdata_uniffi.CredentialsRecord` the credentials are passed
 in: a C# record's `ToString()` prints every field, secrets included.
 
+## Migrating from FubonNeo
+
+FubonNeo 2.3.0 ships a `FugleMarketData` REST client. Its client tree,
+method names, request classes and enums are reproduced here under the same
+namespaces (`FugleMarketData.QueryModels.Stock.Intraday`, `…FuOpt.Historical`,
+…), so `using` lines and call sites carry over. What changes:
+
+```csharp
+// FubonNeo
+var http = FugleHttpClientFactory.Create(sdkToken).Stock;
+HttpResponseMessage res = await http.Intraday.Trades("2330", new TradeRequest(TickerType.OddLot, limit: 5));
+if (res.IsSuccessStatusCode) { var json = await res.Content.ReadAsStringAsync(); }
+
+// This SDK
+using var client = RestClient.WithSdkToken(sdkToken);           // same X-SDK-TOKEN header
+try
+{
+    string json = await client.Stock.Intraday.Trades("2330", new TradeRequest(TickerType.OddLot, limit: 5));
+}
+catch (MarketDataException ex)                                   // uniffi.marketdata_uniffi
+{
+    var info = ex.GetInfo();                                     // info.status, info.body, info.code
+}
+```
+
+- **Return type**: `Task<string>` (the response body) instead of
+  `Task<HttpResponseMessage>`. A non-2xx status is a `MarketDataException`;
+  `GetInfo().status` and `.body` carry what the response had.
+- **Token**: `RestClient.WithSdkToken(token)` (or `new RestClient(apiKey)`)
+  instead of `FugleHttpClientFactory.Create(token)`. There is no
+  `HttpMessageHandler` argument; TLS options are on the uniffi factories.
+- **Client tree**: `FugleStockHttpClient` → `client.Stock`,
+  `FugleFutOptHttpClient` → `client.FutOpt` (alias `client.FutureOption`);
+  `Stock.History` is an alias of `Stock.Historical`. Every method also has a
+  `GetXxxAsync` name and a blocking `GetXxx`.
+- **Snapshot `Quotes` / `Actives`** take an optional `SnapshotRequest`
+  (`Type` filter) FubonNeo did not expose; the other three `Ownership`
+  endpoints take the same `OwnershipRequest` shape as `EtfHoldings`.
+
+Where the query sent differs from FubonNeo's:
+
+| FubonNeo | Here | Why |
+|---|---|---|
+| `TickersRequest.IsNormal = true` overwrote the caller's `IsAttention` / `IsDisposition` to `false` | Sends `isAttention=false&isDisposition=false` the same way, but the request object is left alone | Same wire, no side effect |
+| `DailyRequest.AfterHours` sent `afterhours=true` / `afterhours=false` | `true` sends `session=afterhours`; `false` sends nothing | `afterhours` is not a key the server reads, so the FubonNeo flag never took effect |
+| `SessionType.Regular` sent `session=REGULAR` on `Products` / `Tickers` | Not sent | Regular is the server default; the result is the same |
+| WebSocket `Subscribe(channel, "2330")` with one symbol sent `symbols:["2330"]` | One symbol is sent as `symbol:"2330"`, several as `symbols:[…]` | Same subscription either way; the frame is the core's |
+| `MoverRequest.Price` was formatted in the current culture (`2380,5` under `de-DE`) | Always `2380.5` | Bug fix |
+| A default `SmaRequest` etc. sends `period=0` | Same — the server answers 400 | Unchanged: the SDK validates keys, not values |
+| Negative `Offset` / `Limit` / period were sent and answered 400 | `ArgumentOutOfRangeException` before the request | The SDK's count type is unsigned |
+
 ## Advanced: Custom TLS / self-signed servers
 
 For connecting to servers with a private CA (enterprise deployments) or
@@ -223,58 +274,69 @@ accepts optional `TlsConfigRecord` plus reconnect/health check configs.
 
 ### RestClient
 
-Every method returns the server's JSON body as a `Task<string>`; parse it with
-`System.Text.Json` or your own model types. Optional filters go through one
-params record per endpoint (`uniffi.marketdata_uniffi` namespace); an unset
-field is not sent, so `new StockTradesParams()` (or the `params: null`
-default) sends nothing extra. Required parameters (`type`, `direction`,
-`change`, `trade`, technical periods) are always positional.
+The client tree and the method names are those of FubonNeo 2.3.0's built-in
+`FugleMarketData` client (see [Migrating from FubonNeo](#migrating-from-fubonneo)):
+`client.Stock.Intraday` / `.Historical` (alias `.History`) / `.Snapshot` /
+`.Technical` / `.CorporateActions` / `.Ownership` and `client.FutOpt`
+(alias `.FutureOption`) `.Intraday` / `.Historical`.
 
-#### Stock Intraday Methods
+Every endpoint has three methods with one parameter shape: the FubonNeo name
+(`Trades`) and `GetTradesAsync` both return the server's JSON body as a
+`Task<string>`; `GetTrades` is the blocking form and returns `string`. A
+failed request throws `MarketDataException` (see [Error Handling](#error-handling)).
+
+Optional filters go through one request model per endpoint under
+`FugleMarketData.QueryModels.*` — FubonNeo's classes, enums and constructor
+signatures, plus a few properties FubonNeo did not have (marked below). An
+unset property is not sent, so `null` (the default) sends nothing extra.
+Required parameters (`type`, `market`, `direction`, `change`, `trade`) are
+positional enums with FubonNeo's defaults; the technical periods live on
+their request.
+
+| Client | Methods (`Xxx` / `GetXxxAsync` → `Task<string>`, `GetXxx` → `string`) | Request (namespace under `FugleMarketData.QueryModels`) |
+|---|---|---|
+| `Stock.Intraday` | `Tickers(TickersType type = Equity, request?)` | `Stock.Intraday.TickersRequest` — Market, Exchange, Industry, IsNormal, IsAttention, IsDisposition, IsHalted, **Symbol** |
+| | `Ticker(symbol, request?)`, `Quote(symbol, request?)`, `Volume(symbol, request?)` (`GetVolumesAsync` / `GetVolumes`) | `TickerRequest` / `QuoteRequest` / `VolumeRequest` — `TickerType.OddLot` |
+| | `Candles(symbol, request?)` | `IntradayCandlesRequest` — odd lot, TimeFrame (unset: server default), **Sort** |
+| | `Trades(symbol, request?)` | `TradeRequest` — odd lot, Offset, Limit, **Sort**, **IsTrial** |
+| `Stock.Historical` (`History`) | `Candles(symbol, request?)` | `Stock.History.HistoryCandlesRequest` — From, To, TimeFrame, Fields, Adjusted, Sort |
+| | `Stats(symbol)` | — |
+| `Stock.Snapshot` | `Quotes(MarketType market = TSE, request?)`, `Actives(market, TradeType trade = Volume, request?)` | **`Stock.Snapshot.SnapshotRequest`** — Type (`ALL`, `ALLBUT0999`, `COMMONSTOCK`) |
+| | `Movers(market, DirectionType direction = Up, ChangeType change = Percent, request?)` | `MoverRequest` — Operation + Price, **Type** |
+| `Stock.Technical` | `Sma` / `Rsi` / `Bb(symbol, request?)`, `Kdj(symbol, request?)`, `Macd(symbol, request?)` | `Stock.Technical.SmaRequest` … — Period(s), From, To, TimeFrame |
+| `Stock.CorporateActions` | `CapitalChanges(request?)`, `Dividends(request?)`, `ListingApplicants(request?)` | `Stock.CorporateActions.CorporateActionsRequest` — StartDate, EndDate, Sort, **Exchange** (not on `CapitalChanges`: code 1005) |
+| `Stock.Ownership` | `EtfHoldings` / `InstitutionalTrades` / `DirectorHoldings` / `TdccDistribution(symbol, request?)` | **`Stock.Ownership.OwnershipRequest`** (`EtfHoldingsRequest` derives from it) — From, To, Sort |
+| `FutOpt.Intraday` | `Products(FutOptType type = Future, request?)` | `FuOpt.Intraday.ProductsRequest` — Exchange, Session, ContractType, ProductStatus |
+| | `Tickers(type, request?)` | `FuOpt.Intraday.TickersRequest` — Exchange, Session, Product, ContractType, IsSpread |
+| | `Ticker` / `Quote` / `Volumes(symbol, request?)` | `TickerVolumeRequest` — Session |
+| | `Candles(symbol, request?)` | `CandlesRequest` — Session, TimeFrame |
+| | `Trades(symbol, request?)` | `TradesRequest` — Session, Offset, Limit, IsTrial |
+| `FutOpt.Historical` | `Daily(symbol, request?)` | `FuOpt.Historical.DailyRequest` — Date, AfterHours |
+| | `Candles(product, request?)` | `HistoricalCandlesRequest` — From, To, TimeFrame, Fields, ContractMonth, Sort, Session, **StrikePrice**, **CallPut** |
+
+Bold properties and types are additions over FubonNeo. A negative `Offset`,
+`Limit` or period throws `ArgumentOutOfRangeException` before any request.
 
 ```csharp
-// Real-time quote (params: OddLotParams — oddLot)
-Task<string> GetQuoteAsync(string symbol, OddLotParams? @params = null)
+using FugleMarketData.QueryModels;
+using FugleMarketData.QueryModels.Stock.History;
+using FugleMarketData.QueryModels.Stock.Intraday;
+using FugleMarketData.QueryModels.Stock.Snapshot;
 
-// Symbol information (params: OddLotParams — oddLot)
-Task<string> GetTickerAsync(string symbol, OddLotParams? @params = null)
+// Odd-lot trades, newest 5
+var trades = await client.Stock.Intraday.Trades("2330", new TradeRequest(TickerType.OddLot, limit: 5));
 
-// OHLCV candles (params: StockCandlesParams — timeframe, oddLot, sort;
-// unset timeframe takes the server default)
-Task<string> GetCandlesAsync(string symbol, StockCandlesParams? @params = null)
+// Daily candles over a range, two fields only
+var candles = await client.Stock.History.Candles("2330", new HistoryCandlesRequest(
+    new DateTime(2024, 1, 1), new DateTime(2024, 1, 31),
+    HistoryTimeFrame.Day, FieldsType.Open | FieldsType.Close));
 
-// Trade history (params: StockTradesParams — oddLot, offset, limit, sort, isTrial)
-Task<string> GetTradesAsync(string symbol, StockTradesParams? @params = null)
+// OTC losers by value, price >= 50
+var movers = await client.Stock.Snapshot.Movers(MarketType.OTC, DirectionType.Down, ChangeType.Value,
+    new MoverRequest(OperationType.GreaterThanOrEqual, 50m));
 
-// Volume by price (params: OddLotParams — oddLot)
-Task<string> GetVolumesAsync(string symbol, OddLotParams? @params = null)
-
-// Batch tickers (params: StockTickersParams — exchange, market, industry,
-// isNormal, isAttention, isDisposition, isHalted, symbol)
-Task<string> GetTickersAsync(string type, StockTickersParams? @params = null)
-```
-
-#### FutOpt Intraday Methods
-
-```csharp
-// Real-time quote (params: AfterHoursParams — afterHours)
-Task<string> GetQuoteAsync(string symbol, AfterHoursParams? @params = null)
-
-// Contract information (params: AfterHoursParams — afterHours)
-Task<string> GetTickerAsync(string symbol, AfterHoursParams? @params = null)
-
-// OHLCV candles (params: FutOptCandlesParams — afterHours, timeframe)
-Task<string> GetCandlesAsync(string symbol, FutOptCandlesParams? @params = null)
-
-// Trade history (params: FutOptTradesParams — afterHours, offset, limit, isTrial)
-Task<string> GetTradesAsync(string symbol, FutOptTradesParams? @params = null)
-
-// Volume by price (params: AfterHoursParams — afterHours)
-Task<string> GetVolumesAsync(string symbol, AfterHoursParams? @params = null)
-
-// Product listing (type: "F" for futures, "O" for options;
-// params: FutOptProductsParams — exchange, afterHours, contractType, status)
-Task<string> GetProductsAsync(string type, FutOptProductsParams? @params = null)
+// Same call, blocking
+string json = client.Stock.Intraday.GetQuote("2330");
 ```
 
 ### WebSocketClient
@@ -536,7 +598,8 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using FugleMarketData;
-using StockCandlesParams = uniffi.marketdata_uniffi.StockCandlesParams;
+using FugleMarketData.QueryModels.FuOpt;
+using FugleMarketData.QueryModels.Stock.Intraday;
 
 class Program
 {
@@ -563,12 +626,12 @@ class Program
 
             var candles = JsonDocument.Parse(
                 await client.Stock.Intraday.GetCandlesAsync(
-                    "2330", new StockCandlesParams(timeframe: "5"))).RootElement;
+                    "2330", new IntradayCandlesRequest(timeFrame: IntradayTimeFrame.FiveMin))).RootElement;
             Console.WriteLine($"Candles: {candles.GetProperty("data").GetArrayLength()} entries");
 
             // FutOpt data
             Console.WriteLine("\n=== FutOpt Market Data ===");
-            var products = await client.FutOpt.Intraday.GetProductsAsync("F");
+            var products = await client.FutOpt.Intraday.GetProductsAsync(FutOptType.Future);
             Console.WriteLine($"Futures products: "
                 + JsonDocument.Parse(products).RootElement.GetProperty("data").GetArrayLength());
         }

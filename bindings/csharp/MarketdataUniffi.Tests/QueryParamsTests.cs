@@ -2,13 +2,18 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using FugleMarketData.QueryModels;
+using FugleMarketData.QueryModels.FuOpt;
+using FugleMarketData.QueryModels.Stock.CorporateActions;
+using FugleMarketData.QueryModels.Stock.Intraday;
+using FuOptIntraday = FugleMarketData.QueryModels.FuOpt.Intraday;
 
 namespace MarketdataUniffi.Tests;
 
 /// <summary>
-/// The wrapper sends the query pairs a params record maps to (#202): required
-/// parameters go on the path or as fixed query keys, and each set field of a
-/// params record resolves through the endpoint's table into its wire key.
+/// The wrapper sends the query pairs a request maps to (#202, #203): required
+/// parameters go on the path or as fixed query keys, and each set property of
+/// a request resolves through the endpoint's table into its wire key.
 ///
 /// A real loopback server is used (see <see cref="LoopbackServer"/>) because
 /// the SDK issues HTTP from Rust; only the request's raw URL is inspected
@@ -73,7 +78,7 @@ public class QueryParamsTests
         using var client = server.NewClient();
 
         await client.Stock.Intraday.GetTradesAsync(
-            "2330", new uniffi.marketdata_uniffi.StockTradesParams(oddLot: true, limit: 5)).ConfigureAwait(false);
+            "2330", new TradeRequest(TickerType.OddLot, limit: 5)).ConfigureAwait(false);
 
         Assert.IsTrue(server.Requests.TryDequeue(out var rawUrl));
         var (path, pairs) = Parse(rawUrl!);
@@ -90,7 +95,7 @@ public class QueryParamsTests
         using var server = new LoopbackServer("{}");
         using var client = server.NewClient();
 
-        await client.Stock.Snapshot.GetMoversAsync("TSE", "up", "percent").ConfigureAwait(false);
+        await client.Stock.Snapshot.GetMoversAsync(MarketType.TSE, DirectionType.Up, ChangeType.Percent).ConfigureAwait(false);
 
         Assert.IsTrue(server.Requests.TryDequeue(out var rawUrl));
         var (path, pairs) = Parse(rawUrl!);
@@ -109,7 +114,7 @@ public class QueryParamsTests
 
         var ex = await Assert.ThrowsExceptionAsync<uniffi.marketdata_uniffi.MarketDataException.ApiException>(
             () => client.Stock.CorporateActions.GetCapitalChangesAsync(
-                new uniffi.marketdata_uniffi.CorporateActionsParams(exchange: "TWSE")));
+                new CorporateActionsRequest { Exchange = "TWSE" }));
 
         Assert.AreEqual(1005, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
         // Rejected before any HTTP request is issued.
@@ -141,7 +146,7 @@ public class QueryParamsTests
         using var client = server.NewClient();
 
         await client.FutOpt.Intraday.GetProductsAsync(
-            "F", new uniffi.marketdata_uniffi.FutOptProductsParams(afterHours: true)).ConfigureAwait(false);
+            FutOptType.Future, new FuOptIntraday.ProductsRequest { Session = SessionType.AfterHours }).ConfigureAwait(false);
 
         Assert.IsTrue(server.Requests.TryDequeue(out var rawUrl));
         var (path, pairs) = Parse(rawUrl!);

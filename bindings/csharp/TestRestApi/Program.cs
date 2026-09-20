@@ -8,8 +8,7 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using FugleMarketData;
-using StockTradesParams = uniffi.marketdata_uniffi.StockTradesParams;
-using StockCandlesParams = uniffi.marketdata_uniffi.StockCandlesParams;
+using FugleMarketData.QueryModels.Stock.Intraday;
 
 class Program
 {
@@ -57,7 +56,7 @@ class Program
             // 3. 取得成交明細
             Console.WriteLine("3. 取得 2330 成交明細 (前 3 筆)...");
             var trades = JsonDocument.Parse(
-                await client.Stock.Intraday.GetTradesAsync("2330", new StockTradesParams(limit: 3))).RootElement;
+                await client.Stock.Intraday.GetTradesAsync("2330", new TradeRequest(limit: 3))).RootElement;
             var tradesData = trades.GetProperty("data");
             Console.WriteLine($"   共 {tradesData.GetArrayLength()} 筆成交");
             var i = 0;
@@ -70,7 +69,7 @@ class Program
             // 4. 取得 K 線資料
             Console.WriteLine("4. 取得 2330 五分鐘 K 線...");
             var candles = JsonDocument.Parse(
-                await client.Stock.Intraday.GetCandlesAsync("2330", new StockCandlesParams(timeframe: "5"))).RootElement;
+                await client.Stock.Intraday.GetCandlesAsync("2330", new IntradayCandlesRequest(timeFrame: IntradayTimeFrame.FiveMin))).RootElement;
             var candlesData = candles.GetProperty("data");
             Console.WriteLine($"   共 {candlesData.GetArrayLength()} 根 K 線");
             i = 0;
