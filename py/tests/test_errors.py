@@ -1,4 +1,5 @@
-"""SDK exceptions carry the unified error fields (#81).
+"""SDK exceptions carry the unified error fields (#81) and the core → Python
+class mapping holds (#219).
 
 ``code``, ``source_kind``, ``message``, ``status``, ``body``, ``request_id``
 and ``headers``, plus the 2.4.1 aliases ``status_code`` / ``response_text``.
@@ -12,7 +13,17 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from fugle_marketdata import ApiError, AuthError, MarketDataError, RateLimitError, RestClient
+from fugle_marketdata import (
+    ApiError,
+    AuthError,
+    ConnectionError,
+    MarketDataError,
+    RateLimitError,
+    ReconnectConfig,
+    RestClient,
+    WebSocketClient,
+    WebSocketError,
+)
 
 
 class _Server:
@@ -96,14 +107,46 @@ def test_http_error_carries_response_details(error_client, status, exc_type, cod
     assert e.url is None and e.params is None
 
 
-def test_transport_error_has_no_http_details():
+def test_transport_error_is_connection_error_without_http_details():
+    """REST cannot reach the server: ``ConnectionError`` (2001), not
+    ``WebSocketError`` (#219)."""
     client = RestClient(api_key="test-key", base_url="http://127.0.0.1:9")
 
-    with pytest.raises(MarketDataError) as info:
+    with pytest.raises(ConnectionError) as info:
         client.stock.intraday.quote(symbol="2330")
     e = info.value
 
+    assert isinstance(e, MarketDataError)
+    assert not isinstance(e, WebSocketError)
     assert e.code == 2001
     assert e.source_kind == "network"
     assert (e.status, e.body, e.request_id, e.headers) == (None, None, None, {})
     assert (e.status_code, e.response_text) == (None, None)
+
+
+@pytest.mark.timeout(20, method="thread")
+def test_websocket_connect_failure_stays_websocket_error():
+    """A WebSocket connect that cannot reach the server stays ``WebSocketError``
+    (3002); only core's ``ConnectionError`` moved to ``ConnectionError`` (#219)."""
+    ws = WebSocketClient(
+        api_key="test-key", base_url="ws://127.0.0.1:9", reconnect=ReconnectConfig.disabled()
+    ).stock
+
+    with pytest.raises(WebSocketError) as info:
+        ws.connect()
+    e = info.value
+
+    assert isinstance(e, MarketDataError)
+    assert not isinstance(e, ConnectionError)
+    assert e.code == 3002
+    assert e.source_kind == "network"
+
+
+def test_websocket_command_before_connect_is_runtime_error():
+    """Pinned: a command before ``connect()`` is the binding's own
+    ``RuntimeError``, not a ``ConnectionError`` (2001) nor a ``WebSocketError``."""
+    ws = WebSocketClient(api_key="test-key", reconnect=ReconnectConfig.disabled()).stock
+
+    with pytest.raises(RuntimeError, match="Not connected") as info:
+        ws.subscribe("trades", "2330")
+    assert not isinstance(info.value, MarketDataError)

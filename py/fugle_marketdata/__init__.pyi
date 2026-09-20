@@ -76,10 +76,14 @@ class RateLimitError(ApiError):
     ...
 
 class ConnectionError(MarketDataError):
-    """Network connection failed.
+    """Network connection failed (code 2001, ``source_kind == "network"``).
 
-    Raised when unable to connect to the Fugle API servers.
-    May be due to network issues, DNS resolution, or server unavailability.
+    Raised when a REST request cannot reach the server (DNS resolution,
+    connection refused, TLS), when a WebSocket command is sent while the
+    connection is down, or when the WebSocket auth handshake fails for a
+    reason other than rejected credentials. Not a ``WebSocketError`` (#219);
+    a WebSocket *connect* that cannot reach the server is ``WebSocketError``
+    code 3002.
     """
     ...
 
@@ -2131,8 +2135,8 @@ class StockWebSocketClient:
             timeout_ms: How long to wait for the pong (default: 5000)
 
         Raises:
-            WebSocketError: Code 2010 if not connected, 2001 if the connection
-                closes before the pong
+            WebSocketError: Code 2010 if not connected
+            ConnectionError: Code 2001 if the connection closes before the pong
             TimeoutError: Code 3001 if no pong arrives within ``timeout_ms``
             MarketDataError: Code 1005 for a ``timeout_ms`` of 0
         """
@@ -2338,8 +2342,8 @@ class FutOptWebSocketClient:
             timeout_ms: How long to wait for the pong (default: 5000)
 
         Raises:
-            WebSocketError: Code 2010 if not connected, 2001 if the connection
-                closes before the pong
+            WebSocketError: Code 2010 if not connected
+            ConnectionError: Code 2001 if the connection closes before the pong
             TimeoutError: Code 3001 if no pong arrives within ``timeout_ms``
             MarketDataError: Code 1005 for a ``timeout_ms`` of 0
         """

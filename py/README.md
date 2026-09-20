@@ -492,7 +492,7 @@ keep their built-in `TypeError` / `ValueError`.
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Invalid configuration: not exactly one credential, or a `ReconnectConfig` / `HealthCheckConfig` value below its floor |
 | 1005 | InvalidParameter | Invalid or missing parameter (including an unknown WebSocket channel) |
-| 2001 | ConnectionError | Network connection failed |
+| 2001 | ConnectionError | A REST request cannot reach the server (DNS, connection refused, TLS), a WebSocket command is sent while the connection is down, or the WebSocket auth handshake fails for a reason other than rejected credentials |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed, ConnectionAborted | Client has been closed, or `connect()` / `connect_async()` was given up because `disconnect()` was called before the connection was established (raised as `WebSocketError`, message `Connection aborted: …`) |

@@ -1881,8 +1881,8 @@ impl StockWebSocketClient {
     ///     timeout_ms: How long to wait for the pong (default: 5000)
     ///
     /// Raises:
-    ///     WebSocketError: Code 2010 (ClientClosed) if not connected, 2001 if
-    ///         the connection closes before the pong
+    ///     WebSocketError: Code 2010 (ClientClosed) if not connected
+    ///     ConnectionError: Code 2001 if the connection closes before the pong
     ///     TimeoutError: Code 3001 if no pong arrives within `timeout_ms`
     ///     MarketDataError: Code 1005 for a `timeout_ms` of 0
     #[pyo3(signature = (timeout_ms=None))]
@@ -2667,8 +2667,8 @@ impl FutOptWebSocketClient {
     ///     timeout_ms: How long to wait for the pong (default: 5000)
     ///
     /// Raises:
-    ///     WebSocketError: Code 2010 (ClientClosed) if not connected, 2001 if
-    ///         the connection closes before the pong
+    ///     WebSocketError: Code 2010 (ClientClosed) if not connected
+    ///     ConnectionError: Code 2001 if the connection closes before the pong
     ///     TimeoutError: Code 3001 if no pong arrives within `timeout_ms`
     ///     MarketDataError: Code 1005 for a `timeout_ms` of 0
     #[pyo3(signature = (timeout_ms=None))]
