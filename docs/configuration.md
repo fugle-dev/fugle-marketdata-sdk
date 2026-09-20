@@ -459,7 +459,7 @@ client, err := mkt.NewFugleWebSocketClient(listener,
 )
 ```
 
-#### C#
+#### C\#
 
 ```csharp
 using var client = new WebSocketClient(new WebSocketClientOptions
