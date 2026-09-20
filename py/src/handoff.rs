@@ -135,6 +135,7 @@ mod tests {
             symbol: None,
             id: Some(id.to_string()),
             code: None,
+            message: None,
             raw: String::new(),
         }
     }

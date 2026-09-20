@@ -465,14 +465,23 @@ mod tests {
         }
     }
 
-    /// An `error` without a code is not the server's rejection shape
-    /// (`ws-exception.filter.ts` always sends `code`), so it is a failure.
+    /// An `error` without a code is not the server's rejection shape (a
+    /// rejection always carries `code: 1000`), so it is a failure. The
+    /// message is read from `data.message` or, for the server's code-less
+    /// `{"event":"error","message":"…"}` shape, the top level (#209).
     #[test]
     fn classify_error_without_code_is_a_failure() {
         let msg = parse_msg(r#"{"event":"error","data":{"message":"Invalid token"}}"#);
         match classify_auth_response(&msg) {
             AuthOutcome::Failed(MarketDataError::ConnectionError { msg }) => {
                 assert_eq!(msg, "Authentication failed: Invalid token");
+            }
+            other => panic!("expected Failed(ConnectionError), got {other:?}"),
+        }
+        let msg = parse_msg(r#"{"event":"error","message":"Unauthorized"}"#);
+        match classify_auth_response(&msg) {
+            AuthOutcome::Failed(MarketDataError::ConnectionError { msg }) => {
+                assert_eq!(msg, "Authentication failed: Unauthorized");
             }
             other => panic!("expected Failed(ConnectionError), got {other:?}"),
         }

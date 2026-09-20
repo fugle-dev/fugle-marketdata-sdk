@@ -2766,6 +2766,7 @@ pub marketdata_core::models::WebSocketMessage::code: core::option::Option<i32>
 pub marketdata_core::models::WebSocketMessage::data: core::option::Option<serde_json::value::Value>
 pub marketdata_core::models::WebSocketMessage::event: alloc::string::String
 pub marketdata_core::models::WebSocketMessage::id: core::option::Option<alloc::string::String>
+pub marketdata_core::models::WebSocketMessage::message: core::option::Option<alloc::string::String>
 pub marketdata_core::models::WebSocketMessage::raw: alloc::string::String
 pub marketdata_core::models::WebSocketMessage::symbol: core::option::Option<alloc::string::String>
 impl marketdata_core::WebSocketMessage
@@ -6715,6 +6716,7 @@ pub marketdata_core::WebSocketMessage::code: core::option::Option<i32>
 pub marketdata_core::WebSocketMessage::data: core::option::Option<serde_json::value::Value>
 pub marketdata_core::WebSocketMessage::event: alloc::string::String
 pub marketdata_core::WebSocketMessage::id: core::option::Option<alloc::string::String>
+pub marketdata_core::WebSocketMessage::message: core::option::Option<alloc::string::String>
 pub marketdata_core::WebSocketMessage::raw: alloc::string::String
 pub marketdata_core::WebSocketMessage::symbol: core::option::Option<alloc::string::String>
 impl marketdata_core::WebSocketMessage

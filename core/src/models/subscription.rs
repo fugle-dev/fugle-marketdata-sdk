@@ -264,6 +264,13 @@ pub struct WebSocketMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<i32>,
 
+    /// Top-level error message (for error events). The server normally puts
+    /// the message under `data.message`; one shape (`ws-exception.filter.ts`)
+    /// sends `{"event":"error","message":"…"}` with no `code` and no `data`,
+    /// and this field catches it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+
     /// The frame exactly as the server sent it.
     ///
     /// The fields above are the subset this SDK routes on, so re-serializing
@@ -315,7 +322,11 @@ impl WebSocketMessage {
         self.event == "subscribed"
     }
 
-    /// Get error message if this is an error
+    /// The server's error message if this is an error frame.
+    ///
+    /// Read from `data.message` (the usual shape, next to a top-level
+    /// `code`), falling back to a top-level `message` for the `code`-less
+    /// shape the server also sends.
     pub fn error_message(&self) -> Option<String> {
         if !self.is_error() {
             return None;
@@ -325,6 +336,7 @@ impl WebSocketMessage {
             .and_then(|d| d.get("message"))
             .and_then(|m| m.as_str())
             .map(|s| s.to_string())
+            .or_else(|| self.message.clone())
     }
 
     /// The server's error code if this is an error frame that carries one.
@@ -759,6 +771,25 @@ mod tests {
         assert!(msg.is_error());
         assert_eq!(msg.error_message(), Some("Unauthorized".to_string()));
         assert_eq!(msg.error_code(), None, "no code on the frame");
+    }
+
+    #[test]
+    fn test_websocket_error_message_falls_back_to_top_level() {
+        // The server's code-less shape: `message` next to `event`, no `data`.
+        let json = r#"{"event":"error","message":"Unauthorized"}"#;
+        let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.error_message(), Some("Unauthorized".to_string()));
+        assert_eq!(msg.error_code(), None);
+
+        // `data.message` wins when both are present.
+        let json = r#"{"event":"error","message":"outer","data":{"message":"inner"}}"#;
+        let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.error_message(), Some("inner".to_string()));
+
+        // Only error frames report a message.
+        let json = r#"{"event":"data","message":"x"}"#;
+        let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.error_message(), None);
     }
 
     #[test]

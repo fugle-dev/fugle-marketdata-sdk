@@ -178,6 +178,23 @@ enum class MessageOverflowRecord: int32_t {
 
 
 /**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
+};
+
+
+/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -212,23 +229,6 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1999,11 +1999,16 @@ struct StreamMessage {
      */
     std::optional<std::string> data_json;
     /**
-     * Error code, for error events.
+     * Server error code, for error events: `1000` credentials rejected,
+     * `1001` subscription limit exceeded, `1002` command before
+     * authentication, `1003` request validation failed, `1004` no auth
+     * request within 60 s, `1011` auth service unavailable. Absent when the
+     * server sent an error frame without a code.
      */
     std::optional<int32_t> error_code;
     /**
-     * Error message, for error events.
+     * Error message, for error events: the frame's `data.message`, or its
+     * top-level `message` when the server sent the code-less shape.
      */
     std::optional<std::string> error_message;
 };

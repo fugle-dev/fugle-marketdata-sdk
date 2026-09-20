@@ -39,11 +39,16 @@ public class StreamMessage {
      */
     private String dataJson;
     /**
-     * Error code, for error events.
+     * Server error code, for error events: `1000` credentials rejected,
+     * `1001` subscription limit exceeded, `1002` command before
+     * authentication, `1003` request validation failed, `1004` no auth
+     * request within 60 s, `1011` auth service unavailable. Absent when the
+     * server sent an error frame without a code.
      */
     private Integer errorCode;
     /**
-     * Error message, for error events.
+     * Error message, for error events: the frame's `data.message`, or its
+     * top-level `message` when the server sent the code-less shape.
      */
     private String errorMessage;
 
