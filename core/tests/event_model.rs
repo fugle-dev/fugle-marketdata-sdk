@@ -11,10 +11,15 @@
 //! - (d) a close the reconnect policy does not retry carries
 //!   `will_reconnect: false` and emits no `ReconnectFailed`;
 //! - (e) a retried close carries `will_reconnect: true`, followed by
-//!   `Reconnecting { 1 }` and `ReconnectFailed { 1 }`;
+//!   `Reconnecting { 1 }`, the refused attempt's `Connecting` → `Error`
+//!   (#200) and `ReconnectFailed { 1 }`;
 //! - (f) `disconnect()` during a reconnect backoff emits exactly one final
 //!   `Disconnected { Client, will_reconnect: false }` and nothing else, and
-//!   leaves the state `Closed { Client }` (#98).
+//!   leaves the state `Closed { Client }` (#98);
+//! - (g) a reconnect attempt whose auth response never comes reports
+//!   `Connecting` → `Connected` → `Error { TIMEOUT }` between its
+//!   `Reconnecting` and the next one, which then succeeds (#200; driven by
+//!   the `common` mock, which can withhold the auth response).
 
 #![cfg(all(feature = "test-utils", feature = "tokio-comp"))]
 
@@ -24,12 +29,17 @@ mod common;
 use marketdata_core::testing::MockWsServer;
 use marketdata_core::websocket::{ConnectionEvent, DisconnectIntent};
 use marketdata_core::{
-    AuthRequest, ConnectionConfig, ConnectionState, HealthCheckConfig, ReconnectionConfig,
+    error_code, AuthRequest, ConnectionConfig, ConnectionState, HealthCheckConfig,
+    ReconnectionConfig,
 };
 use serde_json::json;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(5);
+/// Covers the clients' auth timeout plus a backoff. Both timeouts are
+/// hard-coded 10 s constants (`sync::owner_thread::AUTH_TIMEOUT`, the
+/// `authenticate` call in `aio::reconnect`), with no seam to shorten them.
+const AUTH_TIMEOUT_WAIT: Duration = Duration::from_secs(20);
 
 fn config(server: &MockWsServer) -> ConnectionConfig {
     ConnectionConfig::new(server.url(), AuthRequest::with_api_key("mock-test-key"))
@@ -56,6 +66,30 @@ fn slow_retry() -> ReconnectionConfig {
 
 fn is_reconnecting(event: &ConnectionEvent) -> bool {
     matches!(event, ConnectionEvent::Reconnecting { .. })
+}
+
+fn is_authenticated(event: &ConnectionEvent) -> bool {
+    matches!(event, ConnectionEvent::Authenticated { .. })
+}
+
+/// The `common` mock: drops the first connection, withholds the auth
+/// response on the second, authenticates the third.
+async fn auth_timeout_once_server() -> common::MockServerHandle {
+    common::spawn_sequence(vec![
+        common::AfterAuth::ServerDropAfter { delay_ms: 100 },
+        common::AfterAuth::NeverAuthenticate,
+        common::AfterAuth::Idle,
+    ])
+    .await
+}
+
+fn common_config(server: &common::MockServerHandle) -> ConnectionConfig {
+    ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("mock-test-key"))
+}
+
+fn three_attempts() -> ReconnectionConfig {
+    ReconnectionConfig::new(3, Duration::from_millis(100), Duration::from_millis(100))
+        .expect("valid reconnection config")
 }
 
 /// `disconnect()` interrupted the reconnect with one final
@@ -88,7 +122,32 @@ fn recv_until(
     rx: &common::EventReceiver,
     done: impl Fn(&ConnectionEvent) -> bool,
 ) -> Vec<ConnectionEvent> {
-    let deadline = Instant::now() + WAIT;
+    recv_until_within(rx, done, WAIT)
+}
+
+/// Receive until the second `Authenticated` (the reconnect that succeeded)
+/// or [`AUTH_TIMEOUT_WAIT`] elapses.
+fn recv_until_reconnected(rx: &common::EventReceiver) -> Vec<ConnectionEvent> {
+    let seen = std::cell::Cell::new(0);
+    recv_until_within(
+        rx,
+        |e| {
+            if is_authenticated(e) {
+                seen.set(seen.get() + 1);
+            }
+            seen.get() == 2
+        },
+        AUTH_TIMEOUT_WAIT,
+    )
+}
+
+/// Receive until `done` matches an event (inclusive) or `timeout` elapses.
+fn recv_until_within(
+    rx: &common::EventReceiver,
+    done: impl Fn(&ConnectionEvent) -> bool,
+    timeout: Duration,
+) -> Vec<ConnectionEvent> {
+    let deadline = Instant::now() + timeout;
     let mut events = Vec::new();
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         match rx.recv_timeout(left) {
@@ -192,21 +251,19 @@ fn assert_final_close(events: &[ConnectionEvent]) {
     );
 }
 
+/// The one attempt was refused at the TCP level: it reports `Connecting`
+/// and the refusal as `Error` before the loop gives up (#200). The refusal's
+/// code differs between the clients (`CONNECTION` on the sync client,
+/// `WEBSOCKET` on the async one, whose transport error comes from
+/// tungstenite), so only the shape is asserted here.
 fn assert_reconnect_exhausted(events: &[ConnectionEvent]) {
-    let lifecycle: Vec<_> = events
+    let lost = events
         .iter()
-        .filter(|e| {
-            matches!(
-                e,
-                ConnectionEvent::Disconnected { .. }
-                    | ConnectionEvent::Reconnecting { .. }
-                    | ConnectionEvent::ReconnectFailed { .. }
-            )
-        })
-        .collect();
+        .position(is_disconnected)
+        .unwrap_or_else(|| panic!("no Disconnected in {events:?}"));
     assert!(
         matches!(
-            lifecycle.as_slice(),
+            &events[lost..],
             [
                 ConnectionEvent::Disconnected {
                     intent: DisconnectIntent::Network,
@@ -214,10 +271,47 @@ fn assert_reconnect_exhausted(events: &[ConnectionEvent]) {
                     ..
                 },
                 ConnectionEvent::Reconnecting { attempt: 1 },
+                ConnectionEvent::Connecting,
+                ConnectionEvent::Error(_),
                 ConnectionEvent::ReconnectFailed { attempts: 1 },
             ]
         ),
         "unexpected reconnect lifecycle: {events:?}"
+    );
+}
+
+/// The first attempt got a transport but no auth response: it reports
+/// `Connecting` → `Connected` → `Error { TIMEOUT }`, then the second attempt
+/// runs sequence 2 to `Authenticated` (#200).
+fn assert_attempt_timeout_reported(events: &[ConnectionEvent]) {
+    let attempt = |n: u32| {
+        events
+            .iter()
+            .position(|e| matches!(e, ConnectionEvent::Reconnecting { attempt } if *attempt == n))
+            .unwrap_or_else(|| panic!("no Reconnecting {{ {n} }} in {events:?}"))
+    };
+    let (first, second) = (attempt(1), attempt(2));
+    assert!(
+        matches!(
+            &events[first + 1..second],
+            [
+                ConnectionEvent::Connecting,
+                ConnectionEvent::Connected,
+                ConnectionEvent::Error(info),
+            ] if info.code == error_code::TIMEOUT
+        ),
+        "unexpected first attempt: {events:?}"
+    );
+    assert!(
+        matches!(
+            &events[second + 1..],
+            [
+                ConnectionEvent::Connecting,
+                ConnectionEvent::Connected,
+                ConnectionEvent::Authenticated { .. },
+            ]
+        ),
+        "unexpected second attempt: {events:?}"
     );
 }
 
@@ -309,6 +403,18 @@ mod aio {
 
         let events = with_events(&client, |rx| recv_until(rx, is_reconnect_failed)).await;
         assert_reconnect_exhausted(&events);
+    }
+
+    #[tokio::test]
+    async fn reconnect_attempt_without_auth_response_reports_timeout_error() {
+        let server = auth_timeout_once_server().await;
+        let client = WebSocketClient::with_reconnection_config(common_config(&server), three_attempts());
+        client.connect().await.expect("connect");
+
+        let events = with_events(&client, recv_until_reconnected).await;
+        client.disconnect().await.ok();
+
+        assert_attempt_timeout_reported(&events);
     }
 
     #[tokio::test]
@@ -441,6 +547,23 @@ mod sync {
 
         let events = blocking(move || recv_until(&event_rx(&client), is_reconnect_failed)).await;
         assert_reconnect_exhausted(&events);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reconnect_attempt_without_auth_response_reports_timeout_error() {
+        let server = auth_timeout_once_server().await;
+        let config = common_config(&server);
+
+        let events = blocking(move || {
+            let client = WebSocketClient::with_reconnection_config(config, three_attempts());
+            client.connect().expect("connect");
+            let events = recv_until_reconnected(&event_rx(&client));
+            client.disconnect().ok();
+            events
+        })
+        .await;
+
+        assert_attempt_timeout_reported(&events);
     }
 
     #[tokio::test(flavor = "multi_thread")]
