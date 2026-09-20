@@ -136,6 +136,8 @@ mod aio {
         .await
         .expect("event reader");
         assert_reconnect_timed_out(&events.0, events.1);
+        // The failed attempt is reported as an Error too (#200).
+        assert_error_event(&events.0);
     }
 }
 
@@ -190,8 +192,8 @@ mod sync {
         .await
         .expect("blocking task");
         assert_reconnect_timed_out(&events, elapsed);
-        // The sync client also reports the failed attempt itself (after the
-        // dropped transport's own read error).
+        // The failed attempt is reported as an Error too, after the dropped
+        // transport's own read error.
         assert_error_event(&events);
     }
 }
