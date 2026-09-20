@@ -124,22 +124,6 @@ enum class WebSocketEndpoint;
 
 
 /**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
- */
-enum class MessageOverflowRecord: int32_t {
-    /**
-     * Drop new messages and report them through `on_messages_dropped`.
-     */
-    kDropNewest = 1,
-    /**
-     * Never drop: the queue grows while `on_message` lags.
-     */
-    kUnbounded = 2
-};
-
-
-/**
  * Coarse-grained classification of the source of a [`MarketDataError`].
  *
  * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -178,19 +162,18 @@ enum class ErrorSourceKind: int32_t {
 
 
 /**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
  */
-struct MessageQueueConfigRecord {
+enum class MessageOverflowRecord: int32_t {
     /**
-     * What happens to new messages while `buffer` are unread
+     * Drop new messages and report them through `on_messages_dropped`.
      */
-    MessageOverflowRecord overflow;
+    kDropNewest = 1,
     /**
-     * Unread messages held (default 4096; 0 means default)
+     * Never drop: the queue grows while `on_message` lags.
      */
-    uint32_t buffer;
+    kUnbounded = 2
 };
 
 
@@ -229,6 +212,23 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1276,8 +1276,15 @@ struct WebSocketListener {
     virtual
     void on_authenticated(std::optional<std::string> data_json) = 0;
     /**
-     * Called when the server rejects the credentials. `connect()` also
+     * Called when the server rejects the credentials: it answered the auth
+     * frame with an `error` of code 1000. On `connect()` the call also
      * fails with an auth error; no `on_error` is emitted for the rejection.
+     * During an auto-reconnect, `on_reconnect_failed` follows at once: the
+     * same credentials would be rejected again, so the client stops and
+     * stays closed (#201). An auth-phase `error` with any other code (1011
+     * auth service unavailable, 1004 no auth request received) is not a
+     * rejection: it is reported to `on_error` (code 2001) and a reconnect
+     * goes on.
      *
      * `data_json` is the `data` member of the server's rejection frame
      * (the server's message is under `message`), still encoded as JSON, or
@@ -1310,8 +1317,10 @@ struct WebSocketListener {
     virtual
     void on_reconnecting(uint32_t attempt) = 0;
     /**
-     * Called when all reconnection attempts are exhausted. Terminal: no
-     * further lifecycle callbacks follow for this connection.
+     * Called when the reconnect gives up: all attempts are exhausted, or an
+     * attempt's credentials were rejected (`on_unauthenticated` precedes
+     * it, #201). Terminal: no further lifecycle callbacks follow for this
+     * connection.
      */
     virtual
     void on_reconnect_failed(uint32_t attempts) = 0;
@@ -1424,8 +1433,15 @@ struct WebSocketListenerImpl
      */
     void on_authenticated(std::optional<std::string> data_json);
     /**
-     * Called when the server rejects the credentials. `connect()` also
+     * Called when the server rejects the credentials: it answered the auth
+     * frame with an `error` of code 1000. On `connect()` the call also
      * fails with an auth error; no `on_error` is emitted for the rejection.
+     * During an auto-reconnect, `on_reconnect_failed` follows at once: the
+     * same credentials would be rejected again, so the client stops and
+     * stays closed (#201). An auth-phase `error` with any other code (1011
+     * auth service unavailable, 1004 no auth request received) is not a
+     * rejection: it is reported to `on_error` (code 2001) and a reconnect
+     * goes on.
      *
      * `data_json` is the `data` member of the server's rejection frame
      * (the server's message is under `message`), still encoded as JSON, or
@@ -1453,8 +1469,10 @@ struct WebSocketListenerImpl
      */
     void on_reconnecting(uint32_t attempt);
     /**
-     * Called when all reconnection attempts are exhausted. Terminal: no
-     * further lifecycle callbacks follow for this connection.
+     * Called when the reconnect gives up: all attempts are exhausted, or an
+     * attempt's credentials were rejected (`on_unauthenticated` precedes
+     * it, #201). Terminal: no further lifecycle callbacks follow for this
+     * connection.
      */
     void on_reconnect_failed(uint32_t attempts);
     /**

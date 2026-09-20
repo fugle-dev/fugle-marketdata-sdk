@@ -81,8 +81,15 @@ pub trait WebSocketListener: Send + Sync {
     /// frame, still encoded as JSON, or `None` when the frame has none.
     fn on_authenticated(&self, data_json: Option<String>);
 
-    /// Called when the server rejects the credentials. `connect()` also
+    /// Called when the server rejects the credentials: it answered the auth
+    /// frame with an `error` of code 1000. On `connect()` the call also
     /// fails with an auth error; no `on_error` is emitted for the rejection.
+    /// During an auto-reconnect, `on_reconnect_failed` follows at once: the
+    /// same credentials would be rejected again, so the client stops and
+    /// stays closed (#201). An auth-phase `error` with any other code (1011
+    /// auth service unavailable, 1004 no auth request received) is not a
+    /// rejection: it is reported to `on_error` (code 2001) and a reconnect
+    /// goes on.
     ///
     /// `data_json` is the `data` member of the server's rejection frame
     /// (the server's message is under `message`), still encoded as JSON, or
@@ -105,8 +112,10 @@ pub trait WebSocketListener: Send + Sync {
     /// Called when a reconnection attempt starts
     fn on_reconnecting(&self, attempt: u32);
 
-    /// Called when all reconnection attempts are exhausted. Terminal: no
-    /// further lifecycle callbacks follow for this connection.
+    /// Called when the reconnect gives up: all attempts are exhausted, or an
+    /// attempt's credentials were rejected (`on_unauthenticated` precedes
+    /// it, #201). Terminal: no further lifecycle callbacks follow for this
+    /// connection.
     fn on_reconnect_failed(&self, attempts: u32);
 
     /// Called when messages were dropped because `on_message` fell behind
@@ -2096,8 +2105,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn rejected_credentials_never_reach_on_message() {
         let server = MockWsServer::start().await;
+        // The server's rejection: `error` code 1000 (#201).
         server.set_auth_response(serde_json::json!({
             "event": "error",
+            "code": 1000,
             "data": {"message": "Invalid token"}
         }));
         let listener = Arc::new(TestListener::recording_messages());
@@ -2124,8 +2135,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn rejected_credentials_fire_unauthenticated_without_error() {
         let server = MockWsServer::start().await;
+        // The server's rejection: `error` code 1000 (#201).
         server.set_auth_response(serde_json::json!({
             "event": "error",
+            "code": 1000,
             "data": {"message": "Invalid token"}
         }));
         let listener = Arc::new(TestListener::new());
@@ -2757,7 +2770,9 @@ mod tests {
             if will_reconnect {
                 server.drop_transport().await;
             } else {
-                server.close(4001, "bye").await;
+                // A close the (default, enabled) reconnect policy does not
+                // retry: 1000, normal closure (4xxx reconnects since #201).
+                server.close(1000, "bye").await;
             }
             listener.wait_for(&format!("disconnected({will_reconnect})")).await;
             assert_eq!(*listener.connected_on_disconnect.lock().unwrap(), vec![false]);

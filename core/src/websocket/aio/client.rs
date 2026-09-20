@@ -1170,7 +1170,7 @@ impl WebSocketClient {
             let mut current_ws_read = ws_read;
             let mut current_write_failed = write_failed;
             loop {
-                let close_code = dispatch_messages(
+                let close = dispatch_messages(
                     current_ws_read,
                     stream.clone(),
                     &health,
@@ -1202,7 +1202,7 @@ impl WebSocketClient {
 
                 // Attempt auto-reconnect; returns new streams on success.
                 match try_reconnect(
-                    close_code,
+                    close,
                     Arc::clone(&reconnection),
                     config.clone(),
                     Arc::clone(&state),
@@ -2430,9 +2430,9 @@ mod write_failure_tests {
         assert_no_event(&client);
     }
 
-    /// Server that authenticates one client, then sends `Close(4001, "bye")`
-    /// when `close` fires. A plain thread, so it runs while the test's
-    /// runtime thread is blocked.
+    /// Server that authenticates one client, then sends `Close(1000, "bye")`
+    /// (a close the reconnect policy does not retry) when `close` fires. A
+    /// plain thread, so it runs while the test's runtime thread is blocked.
     fn closing_server() -> (String, std::sync::mpsc::Sender<()>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let url = format!("ws://{}", listener.local_addr().expect("addr"));
@@ -2445,7 +2445,7 @@ mod write_failure_tests {
                 .expect("authenticated");
             let _ = close_rx.recv();
             let frame = tungstenite::protocol::CloseFrame {
-                code: 4001.into(),
+                code: 1000.into(),
                 reason: "bye".into(),
             };
             let _ = ws.close(Some(frame));
@@ -2491,14 +2491,14 @@ mod write_failure_tests {
         assert_eq!(
             event,
             ConnectionEvent::Disconnected {
-                code: Some(4001),
+                code: Some(1000),
                 reason: "bye".to_string(),
                 intent: DisconnectIntent::Server,
                 will_reconnect: false,
             }
         );
         let closed = ConnectionState::Closed {
-            code: Some(4001),
+            code: Some(1000),
             reason: "bye".to_string(),
             intent: DisconnectIntent::Server,
         };
@@ -3132,7 +3132,7 @@ mod connect_abort_tests {
     async fn verdict_after_shutdown_request_is_not_installed() {
         for verdict in [
             r#"{"event":"authenticated"}"#,
-            r#"{"event":"error","data":{"message":"Invalid authentication credentials"}}"#,
+            r#"{"event":"error","code":1000,"data":{"message":"Invalid authentication credentials"}}"#,
         ] {
             let (url, authing, answer, seen) = auth_server(verdict).await;
             let client = client(url);
