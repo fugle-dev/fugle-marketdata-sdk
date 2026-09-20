@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.7 / core 0.9.0-rc.5 / uniffi 0.2.0-rc.5] - 2026-09-20
+
 ### Fixed
 
 - **Python: `stock.intraday.candles` / `futopt.intraday.candles` no longer
