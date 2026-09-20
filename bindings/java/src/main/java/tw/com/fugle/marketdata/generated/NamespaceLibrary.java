@@ -352,7 +352,7 @@ final class NamespaceLibrary {
     if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_config() != ((short) 8956)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials() != ((short) 10661)) {
+    if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_credentials() != ((short) 53902)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_endpoint() != ((short) 35702)) {
@@ -361,7 +361,7 @@ final class NamespaceLibrary {
     if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_full_config() != ((short) 32798)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options() != ((short) 1033)) {
+    if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_options() != ((short) 2558)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (lib.uniffi_marketdata_uniffi_checksum_constructor_websocketclient_new_with_url() != ((short) 63549)) {

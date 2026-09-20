@@ -300,16 +300,31 @@ namespace FugleMarketData
         }
 
         /// <summary>
+        /// The connection record for core, or null to keep the core defaults.
+        /// An unset <see cref="WebSocketClientOptions.AuthTimeoutMs"/> leaves
+        /// the whole record out; core's zero means "use default" (10 s).
+        /// </summary>
+        internal static uniffi.marketdata_uniffi.ConnectionConfigRecord? ToConnectionRecord(ulong? authTimeoutMs)
+        {
+            if (authTimeoutMs == null)
+                return null;
+            return new uniffi.marketdata_uniffi.ConnectionConfigRecord(
+                authTimeoutMs: authTimeoutMs.Value
+            );
+        }
+
+        /// <summary>
         /// Create a WebSocket client with configuration options.
         /// Exactly one non-empty authentication method must be provided in the
         /// options; an empty or whitespace-only value counts as not provided.
         /// </summary>
-        /// <param name="options">Configuration options including authentication, connection, and
+        /// <param name="options">Configuration options including authentication, connection
+        /// (<see cref="WebSocketClientOptions.AuthTimeoutMs"/>), and
         /// message queue (<see cref="WebSocketClientOptions.MessageOverflow"/>, <see cref="WebSocketClientOptions.MessageBuffer"/>) settings</param>
         /// <param name="listener">Listener to receive WebSocket events</param>
         /// <exception cref="ArgumentNullException">If options or listener is null</exception>
         /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if zero or multiple non-empty authentication methods are provided</exception>
-        /// <exception cref="ArgumentOutOfRangeException">If <see cref="WebSocketClientOptions.MessageBuffer"/> is set to a value that is not greater than 0</exception>
+        /// <exception cref="ArgumentOutOfRangeException">If <see cref="WebSocketClientOptions.MessageBuffer"/> or <see cref="WebSocketClientOptions.AuthTimeoutMs"/> is set to a value that is not greater than 0</exception>
         public WebSocketClient(WebSocketClientOptions options, IWebSocketListener listener)
         {
             if (options == null)
@@ -319,6 +334,10 @@ namespace FugleMarketData
 
             if (options.MessageBuffer.HasValue && options.MessageBuffer.Value <= 0)
                 throw new ArgumentOutOfRangeException(nameof(options.MessageBuffer), options.MessageBuffer, "MessageBuffer must be greater than 0 when set");
+            // 0 would read as "use default" across the FFI boundary, so it is
+            // refused here rather than silently ignored.
+            if (options.AuthTimeoutMs.HasValue && options.AuthTimeoutMs.Value == 0)
+                throw new ArgumentOutOfRangeException(nameof(options.AuthTimeoutMs), options.AuthTimeoutMs, "AuthTimeoutMs must be greater than 0 when set");
 
             // Create adapter
             var adapter = new WebSocketListenerAdapter(listener);
@@ -351,6 +370,8 @@ namespace FugleMarketData
                 );
             }
 
+            var connectionRecord = ToConnectionRecord(options.AuthTimeoutMs);
+
             // Core requires exactly one non-blank credential and throws its
             // ConfigError (code 1004) unwrapped; the auth frame carries the
             // credential as apikey, token or sdkToken to match its kind.
@@ -367,7 +388,8 @@ namespace FugleMarketData
                 healthCheckRecord,
                 tls: null,
                 version: null,
-                messageQueue: messageQueueRecord
+                messageQueue: messageQueueRecord,
+                connection: connectionRecord
             );
 
             _reconnectOptions = options.Reconnect;

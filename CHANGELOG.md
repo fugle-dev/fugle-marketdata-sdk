@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **WebSocket auth timeout is configurable, symmetric with `connect_timeout`**
+  (#199). The auth handshake — from the auth frame being sent until the
+  server's verdict — was capped at a hardcoded 10 s in three places (the
+  async first `connect()`, the async reconnect and the sync owner thread);
+  `ConnectionConfig.connect_timeout` (30 s) covered only the upgrade before
+  it, so on a slow route to the server the first connect failed with
+  `TimeoutError` and no retry. Core: `ConnectionConfig::auth_timeout`
+  (`DEFAULT_AUTH_TIMEOUT`, 10 s — behaviour is unchanged by default),
+  `ConnectionConfigBuilder::auth_timeout(Duration)` (panics on zero, like
+  `message_buffer`) and `websocket::auth_timeout_from_millis(u64)`, the
+  check the bindings share (zero is a `ConfigError`, 1004); all three call
+  sites read the config. No ordering against `connect_timeout` is enforced;
+  the server itself allows 60 s. Node: `authTimeoutMs` on
+  `WebSocketClientOptions`; Python: `auth_timeout_ms` kwarg on
+  `WebSocketClient` (both a configuration error, code 1004, when not > 0;
+  Python: `ConfigError`). UniFFI: `ConnectionConfigRecord { auth_timeout_ms }`
+  (0 = default) as a new trailing `connection` argument of
+  `WebSocketClient::new_with_options` and `new_with_credentials`, so the
+  generated C#, Go, Java and C++ constructors take one more (optional)
+  argument. C# wrapper: `WebSocketClientOptions.AuthTimeoutMs` (`ulong?`;
+  `ArgumentOutOfRangeException` on 0); Go: `WithAuthTimeout(time.Duration)`.
+  The Java wrapper passes the default through; its builder does not expose
+  the option yet. `MockWsServer::set_answer_auth(false)` (test-utils) makes
+  the mock leave the auth frame unanswered.
+
 ### Fixed
 
 - **All languages: every failed auto-reconnect attempt now reports an

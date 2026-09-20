@@ -115,6 +115,8 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 		baseUrl = &cfg.baseUrl
 	}
 
+	connectionRecord := cfg.connectionRecord()
+
 	// Create channel-based wrapper
 	ch := NewMessageChannel(100)
 	channelListener := &channelListener{ch: ch}
@@ -125,6 +127,7 @@ func NewFugleWebSocketClient(listener WebSocketListener, opts ...Option) (*Strea
 	client, err := WebSocketClientNewWithCredentials(
 		CredentialsRecord{ApiKey: &cfg.apiKey, BearerToken: &cfg.bearerToken, SdkToken: &cfg.sdkToken},
 		channelListener, cfg.endpoint, baseUrl, reconnectRecord, healthCheckRecord, nil, nil, messageQueueRecord,
+		connectionRecord,
 	)
 	if err != nil {
 		return nil, err
@@ -153,6 +156,15 @@ func (cfg *clientConfig) reconnectRecord() *ReconnectConfigRecord {
 		InitialDelayMs: cfg.reconnect.InitialDelayMs,
 		MaxDelayMs:     cfg.reconnect.MaxDelayMs,
 	}
+}
+
+// connectionRecord is the record to hand to core: nil keeps the core
+// defaults (10 s auth timeout); WithAuthTimeout fills it in.
+func (cfg *clientConfig) connectionRecord() *ConnectionConfigRecord {
+	if cfg.authTimeoutMs == nil {
+		return nil
+	}
+	return &ConnectionConfigRecord{AuthTimeoutMs: *cfg.authTimeoutMs}
 }
 
 // healthCheckRecord is the record to hand to core: nil keeps the core

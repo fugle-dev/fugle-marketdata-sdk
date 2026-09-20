@@ -31,8 +31,8 @@ pub mod aio;
 // `marketdata_core::aio::WebSocketClient` with `--features tokio-comp`.
 pub use channels::StockSubscription;
 pub use config::{
-    ConnectionConfig, ConnectionConfigBuilder, MessageOverflow, DEFAULT_EVENT_BUFFER,
-    DEFAULT_MESSAGE_BUFFER,
+    auth_timeout_from_millis, ConnectionConfig, ConnectionConfigBuilder, MessageOverflow,
+    DEFAULT_AUTH_TIMEOUT, DEFAULT_EVENT_BUFFER, DEFAULT_MESSAGE_BUFFER,
 };
 pub use factory::WebSocketFactory;
 pub use connection_event::{ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent};

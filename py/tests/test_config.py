@@ -326,6 +326,19 @@ class TestWebSocketClientKwargsConstructor:
         ws = WebSocketClient(api_key="key", base_url="wss://custom.ws")
         assert ws is not None
 
+    def test_with_auth_timeout_ms(self):
+        """auth_timeout_ms bounds the auth handshake (#199); default 10 s."""
+        ws = WebSocketClient(api_key="key", auth_timeout_ms=15000)
+        assert ws is not None
+
+    @pytest.mark.parametrize("auth_timeout_ms", [0, -1])
+    def test_auth_timeout_ms_below_one_raises_config_error(self, auth_timeout_ms):
+        """Core validates it: a ConfigError, code 1004, not a ValueError."""
+        with pytest.raises(ConfigError) as exc_info:
+            WebSocketClient(api_key="key", auth_timeout_ms=auth_timeout_ms)
+        assert exc_info.value.code == 1004
+        assert "auth_timeout_ms must be greater than 0" in str(exc_info.value)
+
     def test_no_auth_raises_error(self):
         """Must provide at least one auth method."""
         with pytest.raises(MarketDataError) as exc_info:

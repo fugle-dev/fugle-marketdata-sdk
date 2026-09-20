@@ -2,6 +2,7 @@
 
 use crate::models::AuthRequest;
 use crate::tls::TlsConfig;
+use crate::MarketDataError;
 use std::fmt;
 use std::time::Duration;
 
@@ -22,6 +23,16 @@ pub struct ConnectionConfig {
 
     /// Connection timeout (default: 30 seconds)
     pub connect_timeout: Duration,
+
+    /// How long the auth handshake may take once the WebSocket is open:
+    /// from the auth frame being sent until the server's verdict arrives.
+    /// Defaults to [`DEFAULT_AUTH_TIMEOUT`] (10 seconds); use
+    /// [`ConnectionConfigBuilder::auth_timeout`] to override. Applies to
+    /// the first `connect()` and to every reconnect. Elapsing it fails the
+    /// attempt with `TimeoutError { operation: "WebSocket authentication" }`.
+    /// Independent of `connect_timeout`, which covers only the TCP + TLS +
+    /// HTTP upgrade before it. Must be greater than zero.
+    pub auth_timeout: Duration,
 
     /// Read timeout for messages (default: 30 seconds)
     pub read_timeout: Duration,
@@ -56,6 +67,39 @@ pub struct ConnectionConfig {
     /// labels). Values longer than [`CLIENT_ID_MAX_LEN`] are truncated by
     /// the builder.
     pub client_id: Option<String>,
+}
+
+/// Default auth handshake timeout (`auth_timeout`): 10 seconds.
+///
+/// The server gives a client 60 seconds to send its auth frame, so the
+/// client-side limit is well inside the server's. Hardcoded at 10 s in every
+/// client before 0.9.0; configurable since (#199).
+pub const DEFAULT_AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The auth handshake timeout the bindings take in milliseconds, validated
+/// once for all of them: zero is a `ConfigError` (1004), as no handshake can
+/// complete in no time.
+///
+/// # Errors
+///
+/// [`MarketDataError::ConfigError`] when `ms` is 0.
+///
+/// # Example
+///
+/// ```rust
+/// use marketdata_core::websocket::auth_timeout_from_millis;
+/// use std::time::Duration;
+///
+/// assert_eq!(auth_timeout_from_millis(15_000).unwrap(), Duration::from_secs(15));
+/// assert!(auth_timeout_from_millis(0).is_err());
+/// ```
+pub fn auth_timeout_from_millis(ms: u64) -> Result<Duration, MarketDataError> {
+    if ms == 0 {
+        return Err(MarketDataError::ConfigError(
+            "auth_timeout_ms must be greater than 0".to_string(),
+        ));
+    }
+    Ok(Duration::from_millis(ms))
 }
 
 /// Default capacity for the inbound message channel (`message_buffer`).
@@ -150,6 +194,7 @@ impl fmt::Debug for ConnectionConfig {
             .field("url", &redact_url_query(&self.url))
             .field("auth", &"<redacted>")
             .field("connect_timeout", &self.connect_timeout)
+            .field("auth_timeout", &self.auth_timeout)
             .field("read_timeout", &self.read_timeout)
             .field("tls", &self.tls)
             .field("message_buffer", &self.message_buffer)
@@ -167,6 +212,7 @@ impl ConnectionConfig {
             url: url.into(),
             auth,
             connect_timeout: Duration::from_secs(30),
+            auth_timeout: DEFAULT_AUTH_TIMEOUT,
             read_timeout: Duration::from_secs(30),
             tls: TlsConfig::default(),
             message_buffer: DEFAULT_MESSAGE_BUFFER,
@@ -190,6 +236,7 @@ impl ConnectionConfig {
             url: url.into(),
             auth,
             connect_timeout: Duration::from_secs(30),
+            auth_timeout: DEFAULT_AUTH_TIMEOUT,
             read_timeout: Duration::from_secs(30),
             tls: TlsConfig::default(),
             message_buffer: DEFAULT_MESSAGE_BUFFER,
@@ -256,6 +303,7 @@ pub struct ConnectionConfigBuilder {
     url: String,
     auth: AuthRequest,
     connect_timeout: Duration,
+    auth_timeout: Duration,
     read_timeout: Duration,
     tls: TlsConfig,
     message_buffer: usize,
@@ -268,6 +316,26 @@ impl ConnectionConfigBuilder {
     /// Set connection timeout
     pub fn connect_timeout(mut self, timeout: Duration) -> Self {
         self.connect_timeout = timeout;
+        self
+    }
+
+    /// Set the auth handshake timeout.
+    ///
+    /// Defaults to [`DEFAULT_AUTH_TIMEOUT`] (10 seconds). Counted from the
+    /// auth frame being sent until the server's verdict arrives, on the
+    /// first `connect()` and on every reconnect; independent of
+    /// `connect_timeout`. Raise it where the round trip to the server is
+    /// slow; the server itself allows 60 seconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `timeout` is zero — no handshake can complete in no time,
+    /// so it is always a configuration mistake. Bindings that take the
+    /// value from user input validate it with [`auth_timeout_from_millis`]
+    /// first.
+    pub fn auth_timeout(mut self, timeout: Duration) -> Self {
+        assert!(!timeout.is_zero(), "auth_timeout must be greater than zero");
+        self.auth_timeout = timeout;
         self
     }
 
@@ -376,6 +444,7 @@ impl ConnectionConfigBuilder {
             url: self.url,
             auth: self.auth,
             connect_timeout: self.connect_timeout,
+            auth_timeout: self.auth_timeout,
             read_timeout: self.read_timeout,
             tls: self.tls,
             message_buffer: self.message_buffer,
@@ -397,7 +466,50 @@ mod tests {
 
         assert_eq!(config.url, "wss://example.com");
         assert_eq!(config.connect_timeout, Duration::from_secs(30));
+        assert_eq!(config.auth_timeout, Duration::from_secs(10));
         assert_eq!(config.read_timeout, Duration::from_secs(30));
+    }
+
+    /// The default is pinned at the 10 s every client hardcoded before #199,
+    /// so making it configurable changed no behaviour.
+    #[test]
+    fn auth_timeout_defaults_to_ten_seconds() {
+        assert_eq!(DEFAULT_AUTH_TIMEOUT, Duration::from_secs(10));
+        let auth = AuthRequest::with_api_key("test-key");
+        let built = ConnectionConfig::builder("wss://example.com", auth.clone()).build();
+        assert_eq!(built.auth_timeout, DEFAULT_AUTH_TIMEOUT);
+        assert_eq!(ConnectionConfig::fugle_stock(auth).auth_timeout, DEFAULT_AUTH_TIMEOUT);
+    }
+
+    #[test]
+    fn builder_sets_auth_timeout_independently_of_connect_timeout() {
+        let auth = AuthRequest::with_api_key("test-key");
+        // No ordering between the two is enforced.
+        let config = ConnectionConfig::builder("wss://example.com", auth)
+            .connect_timeout(Duration::from_secs(5))
+            .auth_timeout(Duration::from_secs(45))
+            .build();
+
+        assert_eq!(config.connect_timeout, Duration::from_secs(5));
+        assert_eq!(config.auth_timeout, Duration::from_secs(45));
+        assert!(format!("{config:?}").contains("auth_timeout: 45s"));
+    }
+
+    #[test]
+    #[should_panic(expected = "auth_timeout must be greater than zero")]
+    fn builder_rejects_zero_auth_timeout() {
+        let auth = AuthRequest::with_api_key("test-key");
+        let _ = ConnectionConfig::builder("wss://example.com", auth).auth_timeout(Duration::ZERO);
+    }
+
+    #[test]
+    fn auth_timeout_from_millis_rejects_zero_as_config_error() {
+        assert_eq!(auth_timeout_from_millis(2_500).unwrap(), Duration::from_millis(2_500));
+        let err = auth_timeout_from_millis(0).unwrap_err();
+        assert!(
+            matches!(&err, MarketDataError::ConfigError(msg) if msg == "auth_timeout_ms must be greater than 0"),
+            "{err:?}"
+        );
     }
 
     #[test]

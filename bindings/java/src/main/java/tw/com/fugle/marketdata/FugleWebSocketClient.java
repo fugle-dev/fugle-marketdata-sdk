@@ -655,7 +655,10 @@ public class FugleWebSocketClient implements AutoCloseable {
             try {
                 client = WebSocketClient.newWithCredentials(
                     new CredentialsRecord(apiKey, bearerToken, sdkToken), effectiveListener, endpoint, baseUrl,
-                    reconnectRecord, healthCheckRecord, null, null, messageQueueRecord
+                    reconnectRecord, healthCheckRecord, null, null, messageQueueRecord,
+                    // Connection settings (auth timeout, #199): the core
+                    // default until the Java builder exposes them.
+                    null
                 );
             } catch (MarketDataException e) {
                 throw FugleException.from(e);

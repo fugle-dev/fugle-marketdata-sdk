@@ -41,7 +41,7 @@ func newListenerClient(t *testing.T, srv *authFrameServer, listener WebSocketLis
 	apiKey, url := "the-key", srv.url()
 	client, err := WebSocketClientNewWithCredentials(
 		CredentialsRecord{ApiKey: &apiKey},
-		listener, WebSocketEndpointStock, &url, nil, nil, nil, nil, nil,
+		listener, WebSocketEndpointStock, &url, nil, nil, nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("WebSocketClientNewWithCredentials: %v", err)

@@ -89,6 +89,7 @@ struct StockSnapshotClient;
 struct StockTechnicalClient;
 struct WebSocketClient;
 struct WebSocketListener;
+struct ConnectionConfigRecord;
 struct CredentialsRecord;
 struct ErrorInfo;
 struct HealthCheckConfigRecord;
@@ -159,6 +160,23 @@ enum class MessageOverflowRecord: int32_t {
 
 
 /**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
+};
+
+
+/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -193,23 +211,6 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1070,7 +1071,7 @@ struct WebSocketClient
      * more buffers than `new_with_options` the Java binding (JNA) passed
      * garbage to Rust on macOS arm64.
      */
-    static std::shared_ptr<WebSocketClient> new_with_credentials(const CredentialsRecord &credentials, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue);
+    static std::shared_ptr<WebSocketClient> new_with_credentials(const CredentialsRecord &credentials, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue, std::optional<ConnectionConfigRecord> connection);
     /**
      * Create a new WebSocket client for a specific endpoint
      *
@@ -1099,11 +1100,13 @@ struct WebSocketClient
     static std::shared_ptr<WebSocketClient> new_with_full_config(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version);
     /**
      * Create a new WebSocket client with full configuration plus the
-     * message queue settings.
+     * message queue and connection settings.
      *
      * Same as `new_with_full_config`, with `message_queue` choosing what
      * happens while `on_message` falls behind (None for the defaults:
-     * `DropNewest`, 4096 messages).
+     * `DropNewest`, 4096 messages) and `connection` setting the
+     * connection's own timeouts (None for the defaults: 10 s auth
+     * timeout).
      *
      * # Arguments
      * * `api_key` - Fugle API key for authentication
@@ -1115,8 +1118,9 @@ struct WebSocketClient
      * * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
      * * `version` - Optional per-product streaming version
      * * `message_queue` - Optional message queue configuration
+     * * `connection` - Optional connection configuration (auth timeout)
      */
-    static std::shared_ptr<WebSocketClient> new_with_options(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue);
+    static std::shared_ptr<WebSocketClient> new_with_options(const std::string &api_key, const std::shared_ptr<WebSocketListener> &listener, const WebSocketEndpoint &endpoint, std::optional<std::string> base_url, std::optional<ReconnectConfigRecord> reconnect_config, std::optional<HealthCheckConfigRecord> health_check_config, std::optional<TlsConfigRecord> tls, std::optional<StreamingVersionRecord> version, std::optional<MessageQueueConfigRecord> message_queue, std::optional<ConnectionConfigRecord> connection);
     /**
      * Create a new WebSocket client with full configuration including custom base URL
      */
@@ -1449,6 +1453,26 @@ struct WebSocketListenerImpl
     void *_uniffi_internal_clone_pointer() const;
 
     void *instance = nullptr;
+};
+
+
+/**
+ * Connection configuration record for FFI: the timeouts of the connection
+ * itself (#199).
+ *
+ * Every field's zero value means "use default", so a zero-initialized
+ * record (C++ `ConnectionConfigRecord{}`, a Go `ConnectionConfigRecord{}`
+ * literal) is the full default. Omitting the record gives the same result.
+ */
+struct ConnectionConfigRecord {
+    /**
+     * How long the auth handshake may take once the WebSocket is open, in
+     * milliseconds: from the auth frame being sent until the server's
+     * verdict. Default 10000. Pass 0 to use the default. Applies to the
+     * first `connect()` and to every reconnect; elapsing it fails the
+     * attempt with a `TimeoutError` (3001). The server itself allows 60 s.
+     */
+    uint64_t auth_timeout_ms = 0U;
 };
 
 
@@ -1911,6 +1935,14 @@ private:
     inline static HandleMap<WebSocketListener> handle_map = {};
 };
 
+struct FfiConverterTypeConnectionConfigRecord {
+    static ConnectionConfigRecord lift(RustBuffer);
+    static RustBuffer lower(const ConnectionConfigRecord &);
+    static ConnectionConfigRecord read(RustStream &);
+    static void write(RustStream &, const ConnectionConfigRecord &);
+    static uint64_t allocation_size(const ConnectionConfigRecord &);
+};
+
 struct FfiConverterTypeCredentialsRecord {
     static CredentialsRecord lift(RustBuffer);
     static RustBuffer lower(const CredentialsRecord &);
@@ -2058,6 +2090,13 @@ struct FfiConverterOptionalBytes {
     static std::optional<std::vector<uint8_t>> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<std::vector<uint8_t>>& value);
     static uint64_t allocation_size(const std::optional<std::vector<uint8_t>> &val);
+};
+struct FfiConverterOptionalTypeConnectionConfigRecord {
+    static std::optional<ConnectionConfigRecord> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<ConnectionConfigRecord>& val);
+    static std::optional<ConnectionConfigRecord> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<ConnectionConfigRecord>& value);
+    static uint64_t allocation_size(const std::optional<ConnectionConfigRecord> &val);
 };
 struct FfiConverterOptionalTypeHealthCheckConfigRecord {
     static std::optional<HealthCheckConfigRecord> lift(RustBuffer buf);

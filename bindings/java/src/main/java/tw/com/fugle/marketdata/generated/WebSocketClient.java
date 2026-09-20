@@ -491,12 +491,12 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
      * The credentials are one record rather than three arguments: with three
      * more buffers than `new_with_options` the Java binding (JNA) passed
      * garbage to Rust on macOS arm64.
-     */public static WebSocketClient newWithCredentials(CredentialsRecord credentials, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version, MessageQueueConfigRecord messageQueue) throws MarketDataException {
+     */public static WebSocketClient newWithCredentials(CredentialsRecord credentials, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version, MessageQueueConfigRecord messageQueue, ConnectionConfigRecord connection) throws MarketDataException {
             try {
                 return FfiConverterTypeWebSocketClient.INSTANCE.lift(
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_credentials(
-            FfiConverterTypeCredentialsRecord.INSTANCE.lower(credentials), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.lower(messageQueue), _status);
+            FfiConverterTypeCredentialsRecord.INSTANCE.lower(credentials), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.lower(messageQueue), FfiConverterOptionalTypeConnectionConfigRecord.INSTANCE.lower(connection), _status);
     })
     );
             } catch (RuntimeException _e) {
@@ -578,11 +578,13 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
   
     /**
      * Create a new WebSocket client with full configuration plus the
-     * message queue settings.
+     * message queue and connection settings.
      *
      * Same as `new_with_full_config`, with `message_queue` choosing what
      * happens while `on_message` falls behind (None for the defaults:
-     * `DropNewest`, 4096 messages).
+     * `DropNewest`, 4096 messages) and `connection` setting the
+     * connection's own timeouts (None for the defaults: 10 s auth
+     * timeout).
      *
      * # Arguments
      * * `api_key` - Fugle API key for authentication
@@ -594,12 +596,13 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
      * * `tls` - Optional TLS customization (custom CA or accept_invalid_certs)
      * * `version` - Optional per-product streaming version
      * * `message_queue` - Optional message queue configuration
-     */public static WebSocketClient newWithOptions(String apiKey, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version, MessageQueueConfigRecord messageQueue)  {
+     * * `connection` - Optional connection configuration (auth timeout)
+     */public static WebSocketClient newWithOptions(String apiKey, WebSocketListener listener, WebSocketEndpoint endpoint, String baseUrl, ReconnectConfigRecord reconnectConfig, HealthCheckConfigRecord healthCheckConfig, TlsConfigRecord tls, StreamingVersionRecord version, MessageQueueConfigRecord messageQueue, ConnectionConfigRecord connection)  {
             try {
                 return FfiConverterTypeWebSocketClient.INSTANCE.lift(
     UniffiHelpers.uniffiRustCall( _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_constructor_websocketclient_new_with_options(
-            FfiConverterString.INSTANCE.lower(apiKey), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.lower(messageQueue), _status);
+            FfiConverterString.INSTANCE.lower(apiKey), FfiConverterTypeWebSocketListener.INSTANCE.lower(listener), FfiConverterTypeWebSocketEndpoint.INSTANCE.lower(endpoint), FfiConverterOptionalString.INSTANCE.lower(baseUrl), FfiConverterOptionalTypeReconnectConfigRecord.INSTANCE.lower(reconnectConfig), FfiConverterOptionalTypeHealthCheckConfigRecord.INSTANCE.lower(healthCheckConfig), FfiConverterOptionalTypeTlsConfigRecord.INSTANCE.lower(tls), FfiConverterOptionalTypeStreamingVersionRecord.INSTANCE.lower(version), FfiConverterOptionalTypeMessageQueueConfigRecord.INSTANCE.lower(messageQueue), FfiConverterOptionalTypeConnectionConfigRecord.INSTANCE.lower(connection), _status);
     })
     );
             } catch (RuntimeException _e) {

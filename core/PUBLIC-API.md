@@ -35,6 +35,24 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — WebSocket auth timeout as configuration (#199)
+
+The auth handshake limit was a hardcoded 10 s; it is a `ConnectionConfig`
+field now, next to `connect_timeout`. The default is unchanged.
+
+- `+` `websocket::config::ConnectionConfig::auth_timeout: Duration` (also
+  visible through the `websocket::ConnectionConfig` and `ConnectionConfig`
+  re-exports).
+- `+` `websocket::config::ConnectionConfigBuilder::auth_timeout(Duration)`
+  — panics on zero, like `message_buffer` / `event_buffer`.
+- `+` `websocket::config::DEFAULT_AUTH_TIMEOUT` (re-exported from
+  `websocket`) — 10 s.
+- `+` `websocket::config::auth_timeout_from_millis(u64) -> Result<Duration,
+  MarketDataError>` (re-exported from `websocket`) — the bindings' shared
+  validation: zero is a `ConfigError`.
+- `+` `testing::MockWsServer::set_answer_auth(bool)` (`test-utils`) — leave
+  the auth frame unanswered so the timeout can be exercised.
+
 ### Unreleased — one shape for `sort`: `sort(&str)` everywhere (#179)
 
 `sort` had three shapes in core (`sort(&str)`, `sort_asc()` / `sort_desc()`,
