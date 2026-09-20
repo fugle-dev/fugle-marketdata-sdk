@@ -271,8 +271,17 @@ pub(crate) async fn try_reconnect(
                     }
                     // The close was reported meanwhile (#145).
                     Err(MarketDataError::ClientClosed) => return None,
-                    Err(_) => {
-                        // Continue loop to next attempt
+                    // Stopped mid-attempt; the shutdown path owns the close.
+                    Err(_) if stopping() => return None,
+                    Err(e) => {
+                        // Report why this attempt failed before the next
+                        // `Reconnecting` (#200), as the sync client does. A
+                        // rejection was already reported as `Unauthenticated`.
+                        if !matches!(e, MarketDataError::AuthError { .. })
+                            && !stream.emit_unless_closed(ConnectionEvent::error(&e))
+                        {
+                            return None;
+                        }
                         continue;
                     }
                 }
@@ -301,7 +310,10 @@ pub(crate) async fn try_reconnect(
 /// Only the reconnect loop calls this. If `shutdown_requested` is set while
 /// connecting, or the client's close has been reported (#145), the new
 /// connection is dropped without emitting further events or changing the
-/// state, and `ClientClosed` is returned.
+/// state, and `ClientClosed` is returned. Any other error is the caller's to
+/// report (#200): a transport or handshake failure leaves the state
+/// `Disconnected` and its lifecycle events end at `Connecting` or
+/// `Connected`.
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: SharedState,
