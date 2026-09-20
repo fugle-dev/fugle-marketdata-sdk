@@ -35,7 +35,7 @@ pub const MIN_INITIAL_DELAY_MS: u64 = 100;
 #[derive(Debug, Clone, bon::Builder)]
 pub struct ReconnectionConfig {
     /// Whether auto-reconnect is active. When `false`, [`ReconnectionManager::should_reconnect`]
-    /// always returns `false` regardless of the close code.
+    /// always returns `false` regardless of how the connection ended.
     #[builder(default = true)]
     pub enabled: bool,
     /// Maximum reconnection attempts before giving up; `0` means unlimited
@@ -99,7 +99,8 @@ impl ReconnectionConfig {
 
     /// Build an explicitly disabled reconnection config.
     ///
-    /// `should_reconnect()` will always return `false` regardless of close code.
+    /// `should_reconnect()` will always return `false` regardless of how the
+    /// connection ended.
     ///
     /// # Stability
     ///
@@ -120,7 +121,7 @@ impl ReconnectionConfig {
 /// Manages reconnection attempts with exponential backoff
 ///
 /// Tracks reconnection state and determines:
-/// - Whether a close code is retriable
+/// - Whether a lost connection is retried (see [`Self::should_reconnect`])
 /// - Delay before next reconnection attempt
 /// - When max attempts have been reached
 pub struct ReconnectionManager {
@@ -137,30 +138,47 @@ impl ReconnectionManager {
         }
     }
 
-    /// Determine if reconnection should be attempted based on close code
+    /// Whether to reconnect after a connection ended with `close_code` (the
+    /// peer's Close frame code, `None` for a Close without one, a dropped
+    /// transport or a heartbeat timeout) and `last_error_code`, the `code`
+    /// of the last `error` frame the connection delivered, if any.
     ///
-    /// From CONTEXT.md decisions:
-    /// - 1001 (Going away) → reconnect
-    /// - 1006 (Abnormal closure) → reconnect
-    /// - 4001 (Auth failure) → don't reconnect
-    /// - 4000-4999 (Application errors) → don't reconnect
-    /// - 1000 (Normal closure) → don't reconnect
-    /// - Others → reconnect by default
+    /// **Not reconnecting is the enumerated case; everything else
+    /// reconnects** (#201). The set is what the server
+    /// (`fugle-realtime/apps/streamer`) actually expresses as "do not come
+    /// back":
     ///
-    /// Always returns `false` if the underlying [`ReconnectionConfig::enabled`]
-    /// flag is `false` (see [`ReconnectionConfig::disabled`]).
-    pub fn should_reconnect(&self, close_code: Option<u16>) -> bool {
+    /// | Condition | Reconnect |
+    /// |---|---|
+    /// | [`ReconnectionConfig::enabled`] is `false` | no |
+    /// | close `1000` (normal closure) | no |
+    /// | `last_error_code == 1000`: the server rejected the credentials, then closed without a code | no |
+    /// | anything else | yes |
+    ///
+    /// Close codes the server sends: `1001` (maintenance restart,
+    /// connection limit, no auth request within 60 s) and `1008` (too many
+    /// auth messages on one connection; unreachable from this SDK, which
+    /// authenticates once per connection — revisit if it ever re-auths).
+    /// Both reconnect, as do `1006`, an absent code and any unknown code;
+    /// the server never sends 4xxx. Credentials rejected is the one case
+    /// where retrying cannot help: the server says so with `error{1000}`
+    /// followed by a Close with no code, hence the second parameter.
+    ///
+    /// Adding an exception is one row here and one in
+    /// `will_reconnect_after_matrix` (`connection_event.rs`). Shared by the
+    /// sync and async clients, through
+    /// `connection_event::will_reconnect_after`.
+    pub fn should_reconnect(&self, close_code: Option<u16>, last_error_code: Option<i32>) -> bool {
         if !self.config.enabled {
             return false;
         }
-        match close_code {
-            Some(1000) => false, // Normal closure
-            Some(1001) => true,  // Going away
-            Some(1006) => true,  // Abnormal closure
-            Some(4001) => false, // Auth failure
-            Some(code) if (4000..=4999).contains(&code) => false, // Application errors
-            _ => true, // Default: reconnect on unknown errors
+        if close_code == Some(1000) {
+            return false;
         }
+        if last_error_code == Some(crate::websocket::protocol::AUTH_REJECTED_CODE) {
+            return false;
+        }
+        true
     }
 
     /// Calculate next reconnection delay with exponential backoff and jitter
@@ -255,9 +273,9 @@ mod tests {
         // even on codes the close-code logic considers retriable
         // (1006, 1001, …). It is how every language turns reconnect off.
         let manager = ReconnectionManager::new(ReconnectionConfig::disabled());
-        assert!(!manager.should_reconnect(Some(1006)));
-        assert!(!manager.should_reconnect(Some(1001)));
-        assert!(!manager.should_reconnect(None));
+        assert!(!manager.should_reconnect(Some(1006), None));
+        assert!(!manager.should_reconnect(Some(1001), None));
+        assert!(!manager.should_reconnect(None, None));
     }
 
     #[test]
@@ -287,56 +305,43 @@ mod tests {
         assert_eq!(via_builder.max_delay, via_default.max_delay);
     }
 
+    /// The full decision table (#201). Not reconnecting is the enumerated
+    /// case; every other row reconnects. Mirrored, with the intent and
+    /// shutdown inputs, by `connection_event::will_reconnect_after_matrix`.
     #[test]
-    fn test_should_reconnect_on_1006() {
+    fn test_should_reconnect_matrix() {
         let manager = ReconnectionManager::new(enabled_config());
 
-        // 1006 (Abnormal closure) should reconnect
-        assert!(manager.should_reconnect(Some(1006)));
-    }
+        // Normal closure is final.
+        assert!(!manager.should_reconnect(Some(1000), None));
+        assert!(!manager.should_reconnect(Some(1000), Some(1003)));
+        // Credentials rejected: `error{1000}`, then a Close without a code
+        // (what the server does), or with one, or the transport dropped.
+        assert!(!manager.should_reconnect(None, Some(1000)));
+        assert!(!manager.should_reconnect(Some(1001), Some(1000)));
+        assert!(!manager.should_reconnect(Some(1006), Some(1000)));
 
-    #[test]
-    fn test_should_reconnect_on_1001() {
-        let manager = ReconnectionManager::new(enabled_config());
-
-        // 1001 (Going away) should reconnect
-        assert!(manager.should_reconnect(Some(1001)));
-    }
-
-    #[test]
-    fn test_should_not_reconnect_on_4001() {
-        let manager = ReconnectionManager::new(enabled_config());
-
-        // 4001 (Auth failure) should not reconnect
-        assert!(!manager.should_reconnect(Some(4001)));
-    }
-
-    #[test]
-    fn test_should_not_reconnect_on_1000() {
-        let manager = ReconnectionManager::new(enabled_config());
-
-        // 1000 (Normal closure) should not reconnect
-        assert!(!manager.should_reconnect(Some(1000)));
-    }
-
-    #[test]
-    fn test_should_not_reconnect_on_4xxx() {
-        let manager = ReconnectionManager::new(enabled_config());
-
-        // Application errors (4000-4999) should not reconnect
-        assert!(!manager.should_reconnect(Some(4000)));
-        assert!(!manager.should_reconnect(Some(4500)));
-        assert!(!manager.should_reconnect(Some(4999)));
-    }
-
-    #[test]
-    fn test_should_reconnect_on_unknown() {
-        let manager = ReconnectionManager::new(enabled_config());
-
-        // Unknown errors should reconnect by default
-        assert!(manager.should_reconnect(Some(1002)));
-        assert!(manager.should_reconnect(Some(1003)));
-        assert!(manager.should_reconnect(None));
+        // Codes the server sends.
+        assert!(manager.should_reconnect(Some(1001), None)); // going away
+        assert!(manager.should_reconnect(Some(1008), None)); // policy violation
+        // Codes the transport produces.
+        assert!(manager.should_reconnect(Some(1006), None)); // abnormal closure
+        assert!(manager.should_reconnect(None, None)); // no Close frame / no code
+        // Unknown codes reconnect by default, including 4xxx: the server
+        // never sends them, and a code the SDK does not know is not a
+        // reason to give up.
+        assert!(manager.should_reconnect(Some(1002), None));
+        assert!(manager.should_reconnect(Some(1003), None));
+        assert!(manager.should_reconnect(Some(4000), None));
+        assert!(manager.should_reconnect(Some(4001), None));
+        assert!(manager.should_reconnect(Some(4999), None));
+        // Any other last error is not a verdict on the credentials: `1004`
+        // (no auth request seen) precedes the server's 1001, `1011` (auth
+        // service down) is transient, `1003` is a bad request.
+        assert!(manager.should_reconnect(None, Some(1004)));
+        assert!(manager.should_reconnect(Some(1001), Some(1004)));
+        assert!(manager.should_reconnect(None, Some(1011)));
+        assert!(manager.should_reconnect(None, Some(1003)));
     }
 
     #[test]

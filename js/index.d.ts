@@ -870,7 +870,13 @@ export interface WebSocketEventMap {
   connect: () => void;
   /** Authentication succeeded */
   authenticated: (data?: WebSocketAuthData) => void;
-  /** Authentication was rejected by the server */
+  /**
+   * Authentication was rejected by the server (`error` code 1000). During
+   * an auto-reconnect this is terminal: an `error` with code 3005 follows
+   * and the client stays closed (#201). Any other auth-phase server error
+   * (1011 auth service unavailable, 1004 no auth request received) is an
+   * `error` with code 2001 instead, and the reconnect goes on.
+   */
   unauthenticated: (data?: WebSocketAuthData) => void;
   /** Disconnected from WebSocket server */
   disconnect: (event: WebSocketDisconnectEvent) => void;

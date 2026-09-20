@@ -46,6 +46,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `subscribe(channel, List<String>[, SubscribeOptions])`). The C++
   `subscribe_sync` gains the options it lacked.
 
+### Changed
+
+- **All languages: `Unauthenticated` (`unauthenticated`, `OnUnauthenticated`)
+  now means exactly one thing — the server answered the auth frame with an
+  `error` frame of code `1000`, credentials rejected** (#201). Any other
+  auth-phase `error` (`1011` auth service unavailable, `1004` no auth request
+  received, an unknown code, or a frame without a code) is no longer reported
+  as a rejection: `connect()` fails with `ConnectionError` (2001) whose
+  message names the server's code, the stream carries an `Error` with that
+  code instead of `Unauthenticated`, and during an auto-reconnect the loop
+  goes on to the next attempt. Only the server's `error{1000}` shape is a
+  rejection; a test server that rejects with a code-less `error` frame must
+  now send `code: 1000`.
+- **Rust: `ReconnectionManager::should_reconnect` takes the last `error`
+  frame's code as well** — `should_reconnect(close_code, last_error_code)` —
+  and 4xxx close codes reconnect (#201). The server never sends 4xxx; a code
+  the SDK does not know is not a reason to give up. What is *not* retried is
+  the enumerated set documented on the method: reconnect disabled, close
+  `1000`, or a connection whose last `error` frame had code `1000`.
+
 ### Added
 
 - **C#: the REST wrapper is FubonNeo's `FugleMarketData` client** (#203).
@@ -113,9 +133,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The Java wrapper passes the default through; its builder does not expose
   the option yet. `MockWsServer::set_answer_auth(false)` (test-utils) makes
   the mock leave the auth frame unanswered.
+- **Rust: `WebSocketMessage::code` and `WebSocketMessage::error_code()`**
+  (#201): the server's error code, which it sends at the top level of the
+  frame (`{"event":"error","code":1000,"data":{...}}`), not inside `data`.
 
 ### Fixed
 
+- **All languages: rejected credentials no longer make the client retry
+  forever** (#201). The server rejects credentials with `error{1000}` and
+  then closes the connection *without* a close code, which the reconnect
+  policy read as "reconnect"; each attempt was then rejected again, and the
+  loop went on every ≤ 60 s with the same key, reporting an `Unauthenticated`
+  each time (unlimited by default). Now the connection's last `error` code
+  takes part in the decision: `error{1000}` followed by a Close without a
+  code ends in `Disconnected { will_reconnect: false }` and the state
+  `Closed`, and a reconnect attempt whose credentials are rejected stops the
+  loop at once — `Reconnecting { n }` → `Connecting` → `Connected` →
+  `Unauthenticated` → `ReconnectFailed { n }`, then nothing, the state
+  `Closed { intent: Server, .. }` with a reason naming the rejection (Node /
+  Python: the `unauthenticated` event, then `error` code 3005). A first `connect()` that is rejected already stopped; the three
+  paths now agree. A Close without a code and no `error{1000}` before it
+  still reconnects, as do `1001`, `1006`, `1008` and unknown codes.
+- **Rust sync client: a refused reconnect attempt reports the same `Error`
+  as the async client** (#201). The sync client wrapped DNS, TCP and
+  handshake failures in `ConnectionError` (2001, message `TCP connect
+  failed: …`); the async client reports tungstenite's error (3002, kind
+  `Io`, `sourceKind` `network`, and the HTTP status of a rejected upgrade).
+  Both now report the latter, on `connect()` and on every reconnect attempt,
+  and a TCP connect that runs out of `connect_timeout` is `TimeoutError`
+  (3001) on both, so a consumer switching between the two clients sees one
+  code.
+- **Rust sync client: the state between a failed reconnect attempt and the
+  next `Reconnecting` is `Disconnected`, as on the async client** (#201). It
+  used to stay at `Connecting` or `Authenticating`, where the attempt had
+  failed. The `connection_event` module's delivery guarantees 2 and 3
+  document the reconnect policy, the rejection sequence and this state.
 - **All languages: every failed auto-reconnect attempt now reports an
   `Error`** (#200). A reconnect attempt the server refused, that timed out,
   or whose auth response never came used to leave nothing on the stream but

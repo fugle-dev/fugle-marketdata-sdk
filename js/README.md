@@ -142,7 +142,8 @@ To turn it off: `new WebSocketClient({ apiKey: 'your-key', reconnect: { enabled:
 - `enabled` (boolean): Whether auto-reconnect is enabled (default: true)
 - `maxAttempts` (number): Maximum reconnection attempts; 0 means unlimited
   (default: 0). With a limit, the `error` event reports code 3005 once the
-  last attempt fails
+  last attempt fails; whatever the limit, it also does so when a reconnect
+  attempt's credentials are rejected (after `unauthenticated`)
 - `initialDelayMs` (number): Initial delay for exponential backoff (default: 1000, min: 100)
 - `maxDelayMs` (number): Maximum delay cap (default: 60000)
 
@@ -452,7 +453,7 @@ client uses the OS trust store (rustls loads it via
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 3004 | CallbackFailed | A WebSocket listener threw, or its Promise rejected (`error` event) |
-| 3005 | ReconnectFailed | Reconnection failed after the last attempt (`error` event) |
+| 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` event) |
 | 9999 | Other | Unexpected error |
 | -1 | ThreadPanic | A WebSocket worker thread panicked |
 

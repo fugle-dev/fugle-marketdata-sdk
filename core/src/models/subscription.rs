@@ -258,6 +258,12 @@ pub struct WebSocketMessage {
     #[serde(default)]
     pub id: Option<String>,
 
+    /// Server error code (for error events), e.g. `1000` for rejected
+    /// credentials. The server sends it at the top level of the frame, next
+    /// to `event`, not inside `data`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+
     /// The frame exactly as the server sent it.
     ///
     /// The fields above are the subset this SDK routes on, so re-serializing
@@ -321,6 +327,19 @@ impl WebSocketMessage {
             .map(|s| s.to_string())
     }
 
+    /// The server's error code if this is an error frame that carries one.
+    ///
+    /// Codes the server uses: `1000` credentials rejected, `1001`
+    /// subscription limit exceeded, `1002` command before authentication,
+    /// `1003` request validation failed, `1004` no auth request within 60 s,
+    /// `1011` auth service unavailable. `1000` is the one the reconnect
+    /// policy acts on (#201).
+    pub fn error_code(&self) -> Option<i32> {
+        if !self.is_error() {
+            return None;
+        }
+        self.code
+    }
 }
 
 /// WebSocket authentication request
@@ -739,6 +758,26 @@ mod tests {
         let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
         assert!(msg.is_error());
         assert_eq!(msg.error_message(), Some("Unauthorized".to_string()));
+        assert_eq!(msg.error_code(), None, "no code on the frame");
+    }
+
+    #[test]
+    fn test_websocket_error_code_is_top_level() {
+        // The server's shape (`ws-exception.filter.ts`): `code` next to
+        // `event`, the message under `data`.
+        let json = r#"{"event":"error","code":1000,"data":{"message":"Invalid authentication credentials"}}"#;
+        let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.code, Some(1000));
+        assert_eq!(msg.error_code(), Some(1000));
+        assert_eq!(
+            msg.error_message(),
+            Some("Invalid authentication credentials".to_string())
+        );
+
+        // Only error frames report a code.
+        let json = r#"{"event":"data","code":7}"#;
+        let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.error_code(), None);
     }
 
     #[test]

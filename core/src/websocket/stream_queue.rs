@@ -38,6 +38,17 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 
+/// The `Closed` reason recorded by [`StreamSender::reconnect_failed`] when
+/// the reconnect loop ran out of attempts.
+pub(crate) const MAX_ATTEMPTS_REASON: &str = "Max reconnection attempts reached";
+
+/// The `Closed` reason recorded by [`StreamSender::reconnect_failed`] when
+/// a reconnect attempt's credentials were rejected (#201): the server's
+/// rejection message, so the state names why the loop stopped.
+pub(crate) fn rejected_reason(message: &str) -> String {
+    format!("Credentials rejected: {message}")
+}
+
 struct State {
     items: VecDeque<StreamItem>,
     /// Messages currently in `items`.
@@ -490,8 +501,11 @@ impl StreamSender {
     }
 
     /// Report the reconnect loop giving up after `attempts`: set
-    /// `connection` to `Closed` with [`DisconnectIntent::Network`] and
-    /// `code`, the close that started the loop, then queue
+    /// `connection` to `Closed` with `code`, the close that started the
+    /// loop, `reason` and `intent` — [`DisconnectIntent::Network`] and
+    /// [`MAX_ATTEMPTS_REASON`] when the attempts ran out,
+    /// [`DisconnectIntent::Server`] and [`rejected_reason`] when the server
+    /// rejected an attempt's credentials (#201) — then queue
     /// `ReconnectFailed`, unless the client's close has been reported
     /// already (a `disconnect()` got there first). Same lock order as
     /// [`connection_lost`](Self::connection_lost).
@@ -500,6 +514,8 @@ impl StreamSender {
         connection: &RwLock<ConnectionState>,
         code: Option<u16>,
         attempts: u32,
+        reason: String,
+        intent: DisconnectIntent,
     ) {
         let mut state = self.shared.lock();
         if state.close_reported {
@@ -507,11 +523,8 @@ impl StreamSender {
         }
         state.close_reported = true;
         // Writers only assign, so a poisoned lock holds a whole value.
-        *connection.write().unwrap_or_else(PoisonError::into_inner) = ConnectionState::Closed {
-            code,
-            reason: "Max reconnection attempts reached".to_string(),
-            intent: DisconnectIntent::Network,
-        };
+        *connection.write().unwrap_or_else(PoisonError::into_inner) =
+            ConnectionState::Closed { code, reason, intent };
         let mut outcome = Outcome::default();
         self.push_event(&mut state, ConnectionEvent::ReconnectFailed { attempts }, &mut outcome);
         self.finish(state, outcome);
@@ -767,6 +780,7 @@ mod tests {
             channel: None,
             symbol: None,
             id: Some(id.to_string()),
+            code: None,
             raw: String::new(),
         }
     }
@@ -958,17 +972,17 @@ mod tests {
         f.tx.connection_lost(&connection, Some(1006), "lost".into(), DisconnectIntent::Network, true);
         drain(&f.rx);
 
-        f.tx.reconnect_failed(&connection, Some(1006), 3);
+        f.tx.reconnect_failed(&connection, Some(1006), 3, MAX_ATTEMPTS_REASON.to_string(), DisconnectIntent::Network);
         let failed = ConnectionState::Closed {
             code: Some(1006),
-            reason: "Max reconnection attempts reached".into(),
+            reason: MAX_ATTEMPTS_REASON.into(),
             intent: DisconnectIntent::Network,
         };
         assert_eq!(*connection.read().unwrap(), failed);
         assert_eq!(drain(&f.rx), vec!["ReconnectFailed { attempts: 3 }".to_string()]);
 
         f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        f.tx.reconnect_failed(&connection, Some(1006), 3);
+        f.tx.reconnect_failed(&connection, Some(1006), 3, MAX_ATTEMPTS_REASON.to_string(), DisconnectIntent::Network);
         assert_eq!(*connection.read().unwrap(), failed);
         assert!(drain(&f.rx).is_empty());
     }
@@ -982,7 +996,7 @@ mod tests {
         drain(&f.rx);
 
         f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        f.tx.reconnect_failed(&connection, None, 1);
+        f.tx.reconnect_failed(&connection, None, 1, MAX_ATTEMPTS_REASON.to_string(), DisconnectIntent::Network);
         assert_eq!(*connection.read().unwrap(), client_close(1000, "Normal closure"));
         assert_eq!(disconnected_items(&drain(&f.rx)).len(), 1);
     }
@@ -1001,7 +1015,7 @@ mod tests {
                     let connection = Arc::clone(&connection);
                     thread::spawn(move || {
                         if i == 0 {
-                            tx.reconnect_failed(&connection, None, 1);
+                            tx.reconnect_failed(&connection, None, 1, MAX_ATTEMPTS_REASON.to_string(), DisconnectIntent::Network);
                         } else {
                             tx.client_closed(&connection, 1000, "Normal closure".into());
                         }
@@ -1048,7 +1062,7 @@ mod tests {
             if close_by_client {
                 f.tx.client_closed(&connection, 1006, "Force closed".into());
             } else {
-                f.tx.reconnect_failed(&connection, None, 1);
+                f.tx.reconnect_failed(&connection, None, 1, MAX_ATTEMPTS_REASON.to_string(), DisconnectIntent::Network);
             }
             let closed_state = connection.read().unwrap().clone();
             let before = drain(&f.rx);

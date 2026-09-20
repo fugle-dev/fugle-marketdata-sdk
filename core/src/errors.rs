@@ -410,6 +410,11 @@ pub enum MarketDataError {
     ),
 }
 
+/// Never produces `AuthError`: the WebSocket reconnect loops
+/// (`aio::reconnect::try_reconnect`, `sync::owner_thread::run_supervisor`)
+/// take an `AuthError` from a connection attempt as "the server rejected the
+/// credentials" and stop (#201). A TLS failure or an HTTP 401/403 upgrade is
+/// a `WebSocketError` whose `kind` classifies it.
 impl From<tungstenite::Error> for MarketDataError {
     fn from(err: tungstenite::Error) -> Self {
         use tungstenite::Error as WsError;

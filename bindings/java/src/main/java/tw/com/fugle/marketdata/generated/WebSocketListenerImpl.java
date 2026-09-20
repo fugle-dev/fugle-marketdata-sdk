@@ -206,8 +206,15 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
 
   
     /**
-     * Called when the server rejects the credentials. `connect()` also
+     * Called when the server rejects the credentials: it answered the auth
+     * frame with an `error` of code 1000. On `connect()` the call also
      * fails with an auth error; no `on_error` is emitted for the rejection.
+     * During an auto-reconnect, `on_reconnect_failed` follows at once: the
+     * same credentials would be rejected again, so the client stops and
+     * stays closed (#201). An auth-phase `error` with any other code (1011
+     * auth service unavailable, 1004 no auth request received) is not a
+     * rejection: it is reported to `on_error` (code 2001) and a reconnect
+     * goes on.
      *
      * `data_json` is the `data` member of the server's rejection frame
      * (the server's message is under `message`), still encoded as JSON, or
@@ -375,8 +382,10 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
 
   
     /**
-     * Called when all reconnection attempts are exhausted. Terminal: no
-     * further lifecycle callbacks follow for this connection.
+     * Called when the reconnect gives up: all attempts are exhausted, or an
+     * attempt's credentials were rejected (`on_unauthenticated` precedes
+     * it, #201). Terminal: no further lifecycle callbacks follow for this
+     * connection.
      */
     @Override
     public void onReconnectFailed(Integer attempts)  {

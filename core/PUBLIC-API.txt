@@ -2762,12 +2762,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::VolumesRespons
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::VolumesResponse
 pub struct marketdata_core::models::WebSocketMessage
 pub marketdata_core::models::WebSocketMessage::channel: core::option::Option<alloc::string::String>
+pub marketdata_core::models::WebSocketMessage::code: core::option::Option<i32>
 pub marketdata_core::models::WebSocketMessage::data: core::option::Option<serde_json::value::Value>
 pub marketdata_core::models::WebSocketMessage::event: alloc::string::String
 pub marketdata_core::models::WebSocketMessage::id: core::option::Option<alloc::string::String>
 pub marketdata_core::models::WebSocketMessage::raw: alloc::string::String
 pub marketdata_core::models::WebSocketMessage::symbol: core::option::Option<alloc::string::String>
 impl marketdata_core::WebSocketMessage
+pub fn marketdata_core::WebSocketMessage::error_code(&self) -> core::option::Option<i32>
 pub fn marketdata_core::WebSocketMessage::error_message(&self) -> core::option::Option<alloc::string::String>
 pub fn marketdata_core::WebSocketMessage::is_authenticated(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_data(&self) -> bool
@@ -4027,7 +4029,7 @@ pub fn marketdata_core::websocket::reconnection::ReconnectionManager::current_at
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::new(marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::next_delay(&mut self) -> core::option::Option<core::time::Duration>
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::reset(&mut self)
-pub fn marketdata_core::websocket::reconnection::ReconnectionManager::should_reconnect(&self, core::option::Option<u16>) -> bool
+pub fn marketdata_core::websocket::reconnection::ReconnectionManager::should_reconnect(&self, core::option::Option<u16>, core::option::Option<i32>) -> bool
 impl core::marker::Freeze for marketdata_core::websocket::reconnection::ReconnectionManager
 impl core::marker::Send for marketdata_core::websocket::reconnection::ReconnectionManager
 impl core::marker::Sync for marketdata_core::websocket::reconnection::ReconnectionManager
@@ -4575,7 +4577,7 @@ pub fn marketdata_core::websocket::reconnection::ReconnectionManager::current_at
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::new(marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::next_delay(&mut self) -> core::option::Option<core::time::Duration>
 pub fn marketdata_core::websocket::reconnection::ReconnectionManager::reset(&mut self)
-pub fn marketdata_core::websocket::reconnection::ReconnectionManager::should_reconnect(&self, core::option::Option<u16>) -> bool
+pub fn marketdata_core::websocket::reconnection::ReconnectionManager::should_reconnect(&self, core::option::Option<u16>, core::option::Option<i32>) -> bool
 impl core::marker::Freeze for marketdata_core::websocket::reconnection::ReconnectionManager
 impl core::marker::Send for marketdata_core::websocket::reconnection::ReconnectionManager
 impl core::marker::Sync for marketdata_core::websocket::reconnection::ReconnectionManager
@@ -6709,12 +6711,14 @@ impl<S> core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::
 impl<S> core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::factory::WebSocketFactory<S> where S: core::panic::unwind_safe::UnwindSafe
 pub struct marketdata_core::WebSocketMessage
 pub marketdata_core::WebSocketMessage::channel: core::option::Option<alloc::string::String>
+pub marketdata_core::WebSocketMessage::code: core::option::Option<i32>
 pub marketdata_core::WebSocketMessage::data: core::option::Option<serde_json::value::Value>
 pub marketdata_core::WebSocketMessage::event: alloc::string::String
 pub marketdata_core::WebSocketMessage::id: core::option::Option<alloc::string::String>
 pub marketdata_core::WebSocketMessage::raw: alloc::string::String
 pub marketdata_core::WebSocketMessage::symbol: core::option::Option<alloc::string::String>
 impl marketdata_core::WebSocketMessage
+pub fn marketdata_core::WebSocketMessage::error_code(&self) -> core::option::Option<i32>
 pub fn marketdata_core::WebSocketMessage::error_message(&self) -> core::option::Option<alloc::string::String>
 pub fn marketdata_core::WebSocketMessage::is_authenticated(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_data(&self) -> bool

@@ -61,8 +61,9 @@ function startServer({ failAuth = 0, slowAuth = 0, authDelayMs = 300 } = {}) {
           case 'auth':
             if (authFailuresLeft > 0) {
               authFailuresLeft -= 1;
-              socket.send(JSON.stringify({ event: 'error', data: { message: 'Invalid API key' } }));
-              socket.close(4001, 'unauthorized');
+              // The server's rejection: `error` code 1000, then a Close without a code (#201).
+              socket.send(JSON.stringify({ event: 'error', code: 1000, data: { message: 'Invalid API key' } }));
+              socket.close();
             } else {
               const ack = () => socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
               if (slowAuthsLeft > 0) {

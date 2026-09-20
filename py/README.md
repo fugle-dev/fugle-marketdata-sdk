@@ -174,7 +174,8 @@ ws = WebSocketClient(api_key="your-key", reconnect=ReconnectConfig.disabled())
 - `enabled` (bool): Whether auto-reconnect is enabled (default: True)
 - `max_attempts` (int): Maximum reconnection attempts; 0 means unlimited
   (default: 0). With a limit, the `error` callback reports code 3005 once the
-  last attempt fails
+  last attempt fails; whatever the limit, it also does so when a reconnect
+  attempt's credentials are rejected (after `unauthenticated`)
 - `initial_delay_ms` (int): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `max_delay_ms` (int): Maximum delay cap (default: 60000ms)
 
@@ -492,7 +493,7 @@ keep their built-in `TypeError` / `ValueError`.
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 3004 | CallbackFailed | A WebSocket callback raised an exception (`error` callback only) |
-| 3005 | ReconnectFailed | Reconnection failed after the last attempt (`error` callback only) |
+| 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` callback only) |
 | 9999 | Other | Unexpected error |
 | -1 | ThreadPanic | A WebSocket worker thread panicked (`error` callback only) |
 

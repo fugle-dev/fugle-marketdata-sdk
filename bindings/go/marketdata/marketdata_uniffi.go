@@ -1266,7 +1266,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated()
 		})
-		if checksum != 29216 {
+		if checksum != 41202 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated: UniFFI API checksum mismatch")
 		}
@@ -1311,7 +1311,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed()
 		})
-		if checksum != 46093 {
+		if checksum != 51040 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed: UniFFI API checksum mismatch")
 		}
@@ -5040,8 +5040,15 @@ type WebSocketListener interface {
 	// `data_json` is the `data` member of the server's `authenticated`
 	// frame, still encoded as JSON, or `None` when the frame has none.
 	OnAuthenticated(dataJson *string)
-	// Called when the server rejects the credentials. `connect()` also
+	// Called when the server rejects the credentials: it answered the auth
+	// frame with an `error` of code 1000. On `connect()` the call also
 	// fails with an auth error; no `on_error` is emitted for the rejection.
+	// During an auto-reconnect, `on_reconnect_failed` follows at once: the
+	// same credentials would be rejected again, so the client stops and
+	// stays closed (#201). An auth-phase `error` with any other code (1011
+	// auth service unavailable, 1004 no auth request received) is not a
+	// rejection: it is reported to `on_error` (code 2001) and a reconnect
+	// goes on.
 	//
 	// `data_json` is the `data` member of the server's rejection frame
 	// (the server's message is under `message`), still encoded as JSON, or
@@ -5059,8 +5066,10 @@ type WebSocketListener interface {
 	OnError(error ErrorInfo)
 	// Called when a reconnection attempt starts
 	OnReconnecting(attempt uint32)
-	// Called when all reconnection attempts are exhausted. Terminal: no
-	// further lifecycle callbacks follow for this connection.
+	// Called when the reconnect gives up: all attempts are exhausted, or an
+	// attempt's credentials were rejected (`on_unauthenticated` precedes
+	// it, #201). Terminal: no further lifecycle callbacks follow for this
+	// connection.
 	OnReconnectFailed(attempts uint32)
 	// Called when messages were dropped because `on_message` fell behind
 	// while the client's message queue held `buffer` unread messages
@@ -5134,8 +5143,15 @@ func (_self *WebSocketListenerImpl) OnAuthenticated(dataJson *string) {
 	})
 }
 
-// Called when the server rejects the credentials. `connect()` also
+// Called when the server rejects the credentials: it answered the auth
+// frame with an `error` of code 1000. On `connect()` the call also
 // fails with an auth error; no `on_error` is emitted for the rejection.
+// During an auto-reconnect, `on_reconnect_failed` follows at once: the
+// same credentials would be rejected again, so the client stops and
+// stays closed (#201). An auth-phase `error` with any other code (1011
+// auth service unavailable, 1004 no auth request received) is not a
+// rejection: it is reported to `on_error` (code 2001) and a reconnect
+// goes on.
 //
 // `data_json` is the `data` member of the server's rejection frame
 // (the server's message is under `message`), still encoded as JSON, or
@@ -5198,8 +5214,10 @@ func (_self *WebSocketListenerImpl) OnReconnecting(attempt uint32) {
 	})
 }
 
-// Called when all reconnection attempts are exhausted. Terminal: no
-// further lifecycle callbacks follow for this connection.
+// Called when the reconnect gives up: all attempts are exhausted, or an
+// attempt's credentials were rejected (`on_unauthenticated` precedes
+// it, #201). Terminal: no further lifecycle callbacks follow for this
+// connection.
 func (_self *WebSocketListenerImpl) OnReconnectFailed(attempts uint32) {
 	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
 	defer _self.ffiObject.decrementPointer()

@@ -85,6 +85,35 @@ pub enum AfterAuth {
     /// Accept the WebSocket but never answer the auth frame: idle until the
     /// client gives the connection up (its auth timeout, #200).
     NeverAuthenticate,
+    /// Answer the auth frame with the server's error shape,
+    /// `{"event":"error","code":<code>,"data":{"message":<message>}}`, in
+    /// place of `authenticated`. With `close`, follow it with a Close frame
+    /// without a code, as the server does for `1000` and `1004`
+    /// (`ws-exception.filter.ts`); otherwise idle until the client gives the
+    /// connection up (#201).
+    RejectAuth {
+        code: i32,
+        message: String,
+        close: bool,
+    },
+    /// After a brief delay, send an `error` frame with `code` and then a
+    /// Close frame without a code: the server's `error{1000}` +
+    /// `client.close()` on an authenticated connection (#201).
+    ErrorThenClose {
+        delay_ms: u64,
+        code: i32,
+        message: String,
+    },
+    /// After a brief delay, send a Close frame without a code and nothing
+    /// before it (#201 regression: no `error{1000}`, so the client
+    /// reconnects).
+    CloseWithoutCodeAfter { delay_ms: u64 },
+}
+
+/// The server's error frame: `code` at the top level, the message under
+/// `data` (`ws-exception.filter.ts`).
+pub fn error_frame(code: i32, message: &str) -> String {
+    serde_json::json!({ "event": "error", "code": code, "data": { "message": message } }).to_string()
 }
 
 /// Collect items from `recv` until none arrives for [`QUIET`], capped at
@@ -205,20 +234,49 @@ async fn serve(
     let (mut sink, mut stream) = ws.split();
 
     // Auth handshake: read first text frame, send "authenticated".
-    // `NeverAuthenticate` swallows the frame and idles instead.
-    let answer_auth = !matches!(*behaviour, AfterAuth::NeverAuthenticate);
+    // `NeverAuthenticate` swallows the frame and idles instead;
+    // `RejectAuth` answers with an error frame.
     if let Some(Ok(_first)) = stream.next().await {
-        if answer_auth {
-            let _ = sink
-                .send(Message::Text(
-                    r#"{"event":"authenticated"}"#.to_string().into(),
-                ))
-                .await;
+        let answer = match &*behaviour {
+            AfterAuth::NeverAuthenticate => None,
+            AfterAuth::RejectAuth { code, message, .. } => Some(error_frame(*code, message)),
+            _ => Some(r#"{"event":"authenticated"}"#.to_string()),
+        };
+        if let Some(answer) = answer {
+            let _ = sink.send(Message::Text(answer.into())).await;
         }
     }
 
     match (*behaviour).clone() {
-        AfterAuth::Idle | AfterAuth::NeverAuthenticate => loop {
+        AfterAuth::RejectAuth { close: true, .. } => {
+            // `client.close()`: a Close frame without a code.
+            let _ = sink.send(Message::Close(None)).await;
+            while let Some(Ok(msg)) = stream.next().await {
+                if let Message::Close(_) = msg {
+                    break;
+                }
+            }
+        }
+        AfterAuth::ErrorThenClose { delay_ms, code, message } => {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            let _ = sink.send(Message::Text(error_frame(code, &message).into())).await;
+            let _ = sink.send(Message::Close(None)).await;
+            while let Some(Ok(msg)) = stream.next().await {
+                if let Message::Close(_) = msg {
+                    break;
+                }
+            }
+        }
+        AfterAuth::CloseWithoutCodeAfter { delay_ms } => {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            let _ = sink.send(Message::Close(None)).await;
+            while let Some(Ok(msg)) = stream.next().await {
+                if let Message::Close(_) = msg {
+                    break;
+                }
+            }
+        }
+        AfterAuth::Idle | AfterAuth::NeverAuthenticate | AfterAuth::RejectAuth { .. } => loop {
             match stream.next().await {
                 Some(Ok(Message::Close(_))) => {
                     // tungstenite already queued the RFC-6455 Close

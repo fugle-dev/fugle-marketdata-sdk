@@ -35,14 +35,23 @@
 //!    [`Connected`](ConnectionEvent::Connected) (transport established) →
 //!    exactly one of [`Authenticated { data }`](ConnectionEvent::Authenticated),
 //!    [`Unauthenticated { message, data }`](ConnectionEvent::Unauthenticated) or
-//!    [`Error`](ConnectionEvent::Error). If the transport cannot be
-//!    established the sequence is `Connecting` → `Error`. A successful
-//!    reconnect goes through the same sequence, and replays the stored
-//!    subscriptions only after its `Authenticated`: an `Error` for one that
-//!    could not be replayed (`Failed to resubscribe …`) follows that
-//!    `Authenticated` and is read in the state `Connected` (#174). It is a
-//!    failure of the replay, never of the handshake, which ends in exactly
-//!    one of the three events above.
+//!    [`Error`](ConnectionEvent::Error). `Unauthenticated` means exactly one
+//!    thing: the server answered the auth frame with `error` code `1000`,
+//!    credentials rejected; `connect()` then fails with `AuthError` (2002).
+//!    An `error` with any other code (`1011` auth service unavailable,
+//!    `1004` no auth request seen, an unknown code) or none is not a verdict
+//!    on the credentials: it is reported as `Error` with code `CONNECTION`
+//!    (2001) and a message naming the server's code, and `connect()` fails
+//!    with `ConnectionError` (#201); the frames read during that handshake
+//!    are discarded. If the transport cannot be established the sequence is
+//!    `Connecting` → `Error`, on both clients with code `WEBSOCKET` (3002)
+//!    and the transport error's kind (DNS, TCP, TLS, or the upgrade's HTTP
+//!    status), or `TIMEOUT` (3001) when `connect_timeout` ran out. A successful reconnect goes through the same sequence, and
+//!    replays the stored subscriptions only after its `Authenticated`: an
+//!    `Error` for one that could not be replayed (`Failed to resubscribe …`)
+//!    follows that `Authenticated` and is read in the state `Connected`
+//!    (#174). It is a failure of the replay, never of the handshake, which
+//!    ends in exactly one of the three events above.
 //! 3. Each authenticated connection yields at most one
 //!    [`Disconnected`](ConnectionEvent::Disconnected); a
 //!    [`HeartbeatTimeout`](ConnectionEvent::HeartbeatTimeout) precedes it.
@@ -50,12 +59,29 @@
 //!    [`Reconnecting { attempt }`](ConnectionEvent::Reconnecting) follows,
 //!    then either sequence 2 or
 //!    [`ReconnectFailed { attempts >= 1 }`](ConnectionEvent::ReconnectFailed).
+//!    Whether a lost connection is retried is decided by
+//!    [`ReconnectionManager::should_reconnect`]: not reconnecting is the
+//!    enumerated case — reconnect disabled, `disconnect()`, a close with
+//!    code `1000`, or a connection whose last `error` frame had code `1000`
+//!    (the server rejected the credentials and then closed without a code)
+//!    — and every other close reconnects, whatever its code (#201).
 //!    Each attempt that fails says why (#200): `Reconnecting { n }` →
 //!    `Connecting` → (`Connected` →) exactly one of `Error` (the transport
-//!    was refused or timed out, or the auth response never came) or
-//!    `Unauthenticated` (the credentials were rejected), then
-//!    `Reconnecting { n + 1 }` or `ReconnectFailed`. The `Error` is
-//!    diagnostic: it changes neither the state nor whether the loop goes on.
+//!    was refused or timed out, the auth response never came, or it was an
+//!    `error` other than `1000`) or `Unauthenticated` (the credentials were
+//!    rejected). After an `Error` the loop goes on with
+//!    `Reconnecting { n + 1 }` or `ReconnectFailed`; the `Error` is
+//!    diagnostic and, between the attempt and the next `Reconnecting`, the
+//!    state is [`ConnectionState::Disconnected`] on both clients. After an
+//!    `Unauthenticated` the loop stops (#201): the same credentials would be
+//!    rejected again, so `ReconnectFailed { attempts: n }` follows at once,
+//!    the state becomes `Closed { intent: Server, .. }` (the server refused
+//!    the connection, as when it rejects on a live connection) with the
+//!    code of the close that started the loop and a reason naming the
+//!    rejection, and nothing is emitted after it. When the attempts run out
+//!    instead, the state is `Closed { intent: Network, .. }`. (A rejected first `connect()` starts
+//!    no reconnect loop: it fails with `AuthError` and leaves the state
+//!    `Disconnected`, sequence 2.)
 //!    If `disconnect()` or `force_close()` is called in the meantime, the
 //!    reconnect stops: the state becomes `Closed { intent: Client, .. }`,
 //!    then a final `Disconnected { intent: Client, will_reconnect: false }`
@@ -228,10 +254,17 @@ pub enum ConnectionEvent {
         /// [`Null`](serde_json::Value::Null) when the frame has none.
         data: serde_json::Value,
     },
-    /// Server rejected the credentials (parallels the 1.x SDKs'
+    /// Server rejected the credentials: it answered the auth frame with an
+    /// `error` frame of code `1000` (parallels the 1.x SDKs'
     /// `unauthenticated` event). `connect()` fails with
     /// [`AuthError`](crate::MarketDataError::AuthError); no `Error` event is
-    /// emitted for the rejection.
+    /// emitted for the rejection. During an auto-reconnect it is followed at
+    /// once by [`ReconnectFailed`](Self::ReconnectFailed): the same
+    /// credentials would be rejected again, so the loop stops (#201).
+    ///
+    /// An auth-phase `error` with any other code (`1011` auth service
+    /// unavailable, `1004` no auth request seen) is not a rejection: it is
+    /// reported as [`Error`](Self::Error) and, during a reconnect, retried.
     Unauthenticated {
         /// Server-provided rejection message (`"Unknown error"` if absent).
         message: String,
@@ -274,7 +307,9 @@ pub enum ConnectionEvent {
         /// Current attempt number (1-indexed).
         attempt: u32,
     },
-    /// Reconnection gave up after exhausting the configured attempts. Only
+    /// Reconnection gave up: it exhausted the configured attempts, or an
+    /// attempt's credentials were rejected (`Unauthenticated` precedes it,
+    /// #201). Terminal: the state is `Closed` and nothing follows. Only
     /// emitted after at least one attempt; a close the reconnect policy
     /// does not retry is reported solely via
     /// `Disconnected { will_reconnect: false, .. }`.
@@ -336,21 +371,37 @@ impl ConnectionEvent {
     }
 }
 
+/// How a connection ended, as far as the reconnect policy is concerned:
+/// returned by the sync owner loop and the async dispatch loop, consumed by
+/// their reconnect loops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct ConnectionClose {
+    /// The peer's close code; `None` for a Close frame without one, a
+    /// dropped transport, a transport error or a heartbeat timeout.
+    pub(crate) code: Option<u16>,
+    /// The `code` of the last `error` frame the connection delivered after
+    /// it was authenticated, if any. `1000` means the server rejected the
+    /// credentials before closing (#201).
+    pub(crate) last_error_code: Option<i32>,
+}
+
 /// The `will_reconnect` a `Disconnected` should carry: whether the client
 /// is about to enter its reconnect loop for this close.
 ///
 /// A caller-initiated close (or one observed after shutdown was requested)
-/// never reconnects; otherwise the reconnect policy decides.
+/// never reconnects; otherwise the reconnect policy decides from the close
+/// code and the last `error` frame's code
+/// ([`ReconnectionManager::should_reconnect`]).
 pub(crate) fn will_reconnect_after(
     mgr: &ReconnectionManager,
     intent: DisconnectIntent,
-    code: Option<u16>,
+    close: ConnectionClose,
     shutdown_requested: bool,
 ) -> bool {
     if intent == DisconnectIntent::Client || shutdown_requested {
         return false;
     }
-    mgr.should_reconnect(code)
+    mgr.should_reconnect(close.code, close.last_error_code)
 }
 
 /// The `Disconnected` a peer Close frame should produce, if any.
@@ -403,24 +454,53 @@ mod tests {
         }
     }
 
+    /// The full decision table (#201): who closed, with which code, after
+    /// which last `error` frame, and whether shutdown was requested. Not
+    /// reconnecting is the enumerated case; every other row reconnects.
     #[test]
     fn will_reconnect_after_matrix() {
         use DisconnectIntent::{Client, Network, Server};
+        let close = |code: Option<u16>, last_error_code: Option<i32>| ConnectionClose {
+            code,
+            last_error_code,
+        };
+        let plain = |code: Option<u16>| close(code, None);
+
         // Caller-initiated closes never reconnect, even when the policy would.
-        assert!(!will_reconnect_after(&mgr(true), Client, Some(1006), false));
+        assert!(!will_reconnect_after(&mgr(true), Client, plain(Some(1006)), false));
+        assert!(!will_reconnect_after(&mgr(true), Client, plain(None), false));
         // Disabled policy never reconnects.
-        assert!(!will_reconnect_after(&mgr(false), Network, Some(1006), false));
-        assert!(!will_reconnect_after(&mgr(false), Network, None, false));
-        // Normal closure is final.
-        assert!(!will_reconnect_after(&mgr(true), Server, Some(1000), false));
-        // Abnormal closure with reconnect enabled retries.
-        assert!(will_reconnect_after(&mgr(true), Network, Some(1006), false));
-        assert!(will_reconnect_after(&mgr(true), Network, None, false));
-        // Application errors are final.
-        assert!(!will_reconnect_after(&mgr(true), Server, Some(4001), false));
-        assert!(!will_reconnect_after(&mgr(true), Server, Some(4999), false));
+        assert!(!will_reconnect_after(&mgr(false), Network, plain(Some(1006)), false));
+        assert!(!will_reconnect_after(&mgr(false), Server, plain(Some(1001)), false));
+        assert!(!will_reconnect_after(&mgr(false), Network, plain(None), false));
         // A close observed after shutdown was requested is final.
-        assert!(!will_reconnect_after(&mgr(true), Network, Some(1006), true));
+        assert!(!will_reconnect_after(&mgr(true), Network, plain(Some(1006)), true));
+        assert!(!will_reconnect_after(&mgr(true), Server, plain(Some(1001)), true));
+        // Normal closure is final.
+        assert!(!will_reconnect_after(&mgr(true), Server, plain(Some(1000)), false));
+        // Credentials rejected: `error{1000}` then the server's Close
+        // without a code, or a Close with one, or the transport dropped.
+        assert!(!will_reconnect_after(&mgr(true), Server, close(None, Some(1000)), false));
+        assert!(!will_reconnect_after(&mgr(true), Server, close(Some(1001), Some(1000)), false));
+        assert!(!will_reconnect_after(&mgr(true), Network, close(None, Some(1000)), false));
+
+        // Codes the server sends.
+        assert!(will_reconnect_after(&mgr(true), Server, plain(Some(1001)), false));
+        assert!(will_reconnect_after(&mgr(true), Server, plain(Some(1008)), false));
+        // A Close without a code, absent a rejection (regression: the
+        // server's plain `close()` after `error{1004}`, or any other).
+        assert!(will_reconnect_after(&mgr(true), Server, plain(None), false));
+        assert!(will_reconnect_after(&mgr(true), Server, close(None, Some(1004)), false));
+        assert!(will_reconnect_after(&mgr(true), Server, close(None, Some(1011)), false));
+        assert!(will_reconnect_after(&mgr(true), Server, close(None, Some(1003)), false));
+        // Transport closes: abnormal closure, EOF, error, heartbeat timeout.
+        assert!(will_reconnect_after(&mgr(true), Network, plain(Some(1006)), false));
+        assert!(will_reconnect_after(&mgr(true), Network, plain(None), false));
+        assert!(will_reconnect_after(&mgr(true), Network, close(None, Some(1003)), false));
+        // Unknown codes, 4xxx included: the server never sends them.
+        assert!(will_reconnect_after(&mgr(true), Server, plain(Some(1002)), false));
+        assert!(will_reconnect_after(&mgr(true), Server, plain(Some(4001)), false));
+        assert!(will_reconnect_after(&mgr(true), Server, plain(Some(4999)), false));
     }
 
     #[test]
