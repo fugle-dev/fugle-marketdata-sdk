@@ -7221,7 +7221,7 @@ func (err MarketDataError) Unwrap() error {
 }
 
 // Err* are used for checking error type with `errors.Is`
-var ErrMarketDataErrorNetworkError = fmt.Errorf("MarketDataErrorNetworkError")
+var ErrMarketDataErrorConnectionError = fmt.Errorf("MarketDataErrorConnectionError")
 var ErrMarketDataErrorAuthError = fmt.Errorf("MarketDataErrorAuthError")
 var ErrMarketDataErrorRateLimitError = fmt.Errorf("MarketDataErrorRateLimitError")
 var ErrMarketDataErrorInvalidSymbol = fmt.Errorf("MarketDataErrorInvalidSymbol")
@@ -7234,27 +7234,27 @@ var ErrMarketDataErrorApiError = fmt.Errorf("MarketDataErrorApiError")
 var ErrMarketDataErrorOther = fmt.Errorf("MarketDataErrorOther")
 
 // Variant structs
-type MarketDataErrorNetworkError struct {
+type MarketDataErrorConnectionError struct {
 	Msg  string
 	Info ErrorInfo
 }
 
-func NewMarketDataErrorNetworkError(
+func NewMarketDataErrorConnectionError(
 	msg string,
 	info ErrorInfo,
 ) *MarketDataError {
-	return &MarketDataError{err: &MarketDataErrorNetworkError{
+	return &MarketDataError{err: &MarketDataErrorConnectionError{
 		Msg:  msg,
 		Info: info}}
 }
 
-func (e MarketDataErrorNetworkError) destroy() {
+func (e MarketDataErrorConnectionError) destroy() {
 	FfiDestroyerString{}.Destroy(e.Msg)
 	FfiDestroyerErrorInfo{}.Destroy(e.Info)
 }
 
-func (err MarketDataErrorNetworkError) Error() string {
-	return fmt.Sprint("NetworkError",
+func (err MarketDataErrorConnectionError) Error() string {
+	return fmt.Sprint("ConnectionError",
 		": ",
 
 		"Msg=",
@@ -7265,8 +7265,8 @@ func (err MarketDataErrorNetworkError) Error() string {
 	)
 }
 
-func (self MarketDataErrorNetworkError) Is(target error) bool {
-	return target == ErrMarketDataErrorNetworkError
+func (self MarketDataErrorConnectionError) Is(target error) bool {
+	return target == ErrMarketDataErrorConnectionError
 }
 
 type MarketDataErrorAuthError struct {
@@ -7633,7 +7633,7 @@ func (c FfiConverterMarketDataError) Read(reader io.Reader) *MarketDataError {
 
 	switch errorID {
 	case 1:
-		return &MarketDataError{&MarketDataErrorNetworkError{
+		return &MarketDataError{&MarketDataErrorConnectionError{
 			Msg:  FfiConverterStringINSTANCE.Read(reader),
 			Info: FfiConverterErrorInfoINSTANCE.Read(reader),
 		}}
@@ -7693,7 +7693,7 @@ func (c FfiConverterMarketDataError) Read(reader io.Reader) *MarketDataError {
 
 func (c FfiConverterMarketDataError) Write(writer io.Writer, value *MarketDataError) {
 	switch variantValue := value.err.(type) {
-	case *MarketDataErrorNetworkError:
+	case *MarketDataErrorConnectionError:
 		writeInt32(writer, 1)
 		FfiConverterStringINSTANCE.Write(writer, variantValue.Msg)
 		FfiConverterErrorInfoINSTANCE.Write(writer, variantValue.Info)
@@ -7746,7 +7746,7 @@ type FfiDestroyerMarketDataError struct{}
 
 func (_ FfiDestroyerMarketDataError) Destroy(value *MarketDataError) {
 	switch variantValue := value.err.(type) {
-	case MarketDataErrorNetworkError:
+	case MarketDataErrorConnectionError:
 		variantValue.destroy()
 	case MarketDataErrorAuthError:
 		variantValue.destroy()

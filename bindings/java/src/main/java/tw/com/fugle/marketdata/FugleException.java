@@ -127,8 +127,8 @@ public class FugleException extends RuntimeException {
      *         not happen post-0.2.0-rc.2, every variant carries one)
      */
     private static ErrorInfo extractInfo(MarketDataException e) {
-        if (e instanceof MarketDataException.NetworkException) {
-            return ((MarketDataException.NetworkException) e).info();
+        if (e instanceof MarketDataException.ConnectionException) {
+            return ((MarketDataException.ConnectionException) e).info();
         } else if (e instanceof MarketDataException.AuthException) {
             return ((MarketDataException.AuthException) e).info();
         } else if (e instanceof MarketDataException.RateLimitException) {
@@ -172,7 +172,7 @@ public class FugleException extends RuntimeException {
             MarketDataException.RateLimitException rle = (MarketDataException.RateLimitException) e;
             return new RateLimitException(rle.msg(), info, e);
         } else if (e instanceof MarketDataException.ApiException ||
-                   e instanceof MarketDataException.NetworkException ||
+                   e instanceof MarketDataException.ConnectionException ||
                    e instanceof MarketDataException.InvalidSymbol ||
                    e instanceof MarketDataException.ParseException ||
                    e instanceof MarketDataException.TimeoutException ||

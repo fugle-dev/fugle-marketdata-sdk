@@ -2937,7 +2937,7 @@ mod tests {
         let events = listener.events();
         assert_eq!(
             &events[events.len() - 2..],
-            ["ping_sync(WebSocket error: Not connected)".to_string(), "disconnected(false)".to_string()],
+            ["ping_sync(Connection error: Not connected)".to_string(), "disconnected(false)".to_string()],
             "{events:?}"
         );
     }
@@ -3259,7 +3259,9 @@ mod tests {
     #[cfg(not(feature = "cpp"))]
     fn assert_not_connected(result: Result<(), MarketDataError>) {
         match result {
-            Err(MarketDataError::WebSocketError { msg, .. }) if msg == "Not connected" => {}
+            Err(MarketDataError::ConnectionError { msg, info }) if msg == "Not connected" => {
+                assert_eq!(info.code, marketdata_core::error_code::CONNECTION, "{info:?}");
+            }
             other => panic!("expected \"Not connected\", got {other:?}"),
         }
     }

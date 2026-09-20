@@ -17,12 +17,12 @@ public class MarketDataException extends Exception {
     }
 
     
-    public static class NetworkException extends MarketDataException {
+    public static class ConnectionException extends MarketDataException {
       
       String msg;
       
       ErrorInfo info;
-      public NetworkException(String msg, ErrorInfo info) {
+      public ConnectionException(String msg, ErrorInfo info) {
         super(new StringBuilder()
         .append("msg=")
         .append(msg)

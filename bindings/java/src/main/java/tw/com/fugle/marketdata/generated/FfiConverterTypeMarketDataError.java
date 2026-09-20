@@ -10,7 +10,7 @@ public enum FfiConverterTypeMarketDataError implements FfiConverterRustBuffer<Ma
     public MarketDataException read(ByteBuffer buf) {
 
         return switch(buf.getInt()) {
-            case 1 -> new MarketDataException.NetworkException(
+            case 1 -> new MarketDataException.ConnectionException(
                 FfiConverterString.INSTANCE.read(buf),
                 FfiConverterTypeErrorInfo.INSTANCE.read(buf)
                 );
@@ -60,7 +60,7 @@ public enum FfiConverterTypeMarketDataError implements FfiConverterRustBuffer<Ma
     @Override
     public long allocationSize(MarketDataException value) {
         return switch(value) {
-            case MarketDataException.NetworkException x -> (
+            case MarketDataException.ConnectionException x -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4L
                 + FfiConverterString.INSTANCE.allocationSize(x.msg)
@@ -132,7 +132,7 @@ public enum FfiConverterTypeMarketDataError implements FfiConverterRustBuffer<Ma
     @Override
     public void write(MarketDataException value, ByteBuffer buf) {
         switch(value) {
-            case MarketDataException.NetworkException x -> {
+            case MarketDataException.ConnectionException x -> {
                 buf.putInt(1);
                 FfiConverterString.INSTANCE.write(x.msg, buf);
                 FfiConverterTypeErrorInfo.INSTANCE.write(x.info, buf);

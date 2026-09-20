@@ -423,7 +423,7 @@ error codes.
 | `DeserializationError` | JSON parsing failed |
 | `RuntimeError` | Internal runtime error |
 | `ConfigError` | Configuration error |
-| `ConnectionError` | Network connection failed |
+| `ConnectionError` | Network connection failed, or a WebSocket command sent while not connected |
 | `AuthError` | Authentication failed |
 | `ApiError` | API returned error response |
 | `TimeoutError` | Operation timed out |

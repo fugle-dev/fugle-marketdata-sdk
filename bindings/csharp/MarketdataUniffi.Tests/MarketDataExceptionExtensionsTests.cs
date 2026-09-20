@@ -89,7 +89,7 @@ public class MarketDataExceptionExtensionsTests
     }
 
     [TestMethod]
-    public async Task NetworkException_GetInfo_HasNetworkCode()
+    public async Task ConnectionException_GetInfo_HasConnectionCode()
     {
         SkipIfNativeLibraryUnavailable();
 

@@ -25,7 +25,7 @@ namespace FugleMarketData
         {
             switch (ex)
             {
-                case uniffi.marketdata_uniffi.MarketDataException.NetworkException e:
+                case uniffi.marketdata_uniffi.MarketDataException.ConnectionException e:
                     return e.info;
                 case uniffi.marketdata_uniffi.MarketDataException.AuthException e:
                     return e.info;

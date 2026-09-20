@@ -12182,14 +12182,14 @@ public class MarketDataException : UniffiException
 
     // Each variant is a nested class
 
-    public class NetworkException : MarketDataException
+    public class ConnectionException : MarketDataException
     {
         // Members
         public string @msg;
         public ErrorInfo @info;
 
         // Constructor
-        public NetworkException(string @msg, ErrorInfo @info)
+        public ConnectionException(string @msg, ErrorInfo @info)
             : base("@msg" + "=" + @msg + ", " + "@info" + "=" + @info)
         {
             this.@msg = @msg;
@@ -12368,7 +12368,7 @@ class FfiConverterTypeMarketDataError
         switch (value)
         {
             case 1:
-                return new MarketDataException.NetworkException(
+                return new MarketDataException.ConnectionException(
                     FfiConverterString.INSTANCE.Read(stream),
                     FfiConverterTypeErrorInfo.INSTANCE.Read(stream)
                 );
@@ -12435,7 +12435,7 @@ class FfiConverterTypeMarketDataError
     {
         switch (value)
         {
-            case MarketDataException.NetworkException variant_value:
+            case MarketDataException.ConnectionException variant_value:
                 return 4
                     + FfiConverterString.INSTANCE.AllocationSize(variant_value.@msg)
                     + FfiConverterTypeErrorInfo.INSTANCE.AllocationSize(variant_value.@info);
@@ -12501,7 +12501,7 @@ class FfiConverterTypeMarketDataError
     {
         switch (value)
         {
-            case MarketDataException.NetworkException variant_value:
+            case MarketDataException.ConnectionException variant_value:
                 stream.WriteInt(1);
                 FfiConverterString.INSTANCE.Write(variant_value.@msg, stream);
                 FfiConverterTypeErrorInfo.INSTANCE.Write(variant_value.@info, stream);
