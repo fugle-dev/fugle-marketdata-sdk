@@ -67,6 +67,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   symbols[, options])`, Go `SubscribeMany` / `WithIntradayOddLot`, Java
   `subscribe(channel, List<String>[, SubscribeOptions])`). The C++
   `subscribe_sync` gains the options it lacked.
+- **C# / Go / Java / C++: the code 2001 error variant is `ConnectionError`,
+  raised for both a refused connection and a command sent while not
+  connected** (#223). The uniffi enum had it as `NetworkError` — C#
+  `MarketDataException.NetworkException`, Go `MarketDataErrorNetworkError`,
+  Java `MarketDataException.NetworkException`, C++
+  `market_data_error::NetworkError` — a name no README or `docs/errors.md`
+  used (they all said `ConnectionError`, after core), and only for core's
+  `ConnectionError`; any WebSocket command before `connect()` (`subscribe`,
+  `ping`, `measure_latency`, …) carried the same code 2001 in `info` but was
+  raised as the `WebSocketError` variant, so one `catch` / `errors.As` did
+  not cover both.
+  The variant is now `ConnectionError` (C# / Java
+  `MarketDataException.ConnectionException`, Go
+  `MarketDataErrorConnectionError`, C++ `market_data_error::ConnectionError`)
+  with the message prefix `Connection error:` as in core, and the
+  not-connected errors are that variant too — which the Java wrapper
+  therefore wraps as `ApiException`, like every other 2001, where it used
+  to be the base `FugleException`. `info.code` (2001) and `sourceKind`
+  (`network`) are unchanged.
 
 ### Changed
 

@@ -3417,10 +3417,10 @@ std::shared_ptr<MarketDataError> FfiConverterMarketDataError::read(RustStream &s
     switch (v) {
     case 1:
     {
-        market_data_error::NetworkError var;
+        market_data_error::ConnectionError var;
         var.msg = FfiConverterString::read(stream);
         var.info = FfiConverterTypeErrorInfo::read(stream);
-        return std::make_shared<market_data_error::NetworkError>(var);
+        return std::make_shared<market_data_error::ConnectionError>(var);
     }
     case 2:
     {
@@ -3501,7 +3501,7 @@ void FfiConverterMarketDataError::write(RustStream &stream, const MarketDataErro
     switch (val.get_variant_idx()) {
     case 1:
     {
-        auto var = static_cast<const market_data_error::NetworkError&>(val);
+        auto var = static_cast<const market_data_error::ConnectionError&>(val);
         FfiConverterString::write(stream, var.msg);
         FfiConverterTypeErrorInfo::write(stream, var.info);
         break;
@@ -3582,7 +3582,7 @@ uint64_t FfiConverterMarketDataError::allocation_size(const MarketDataError &val
     switch (val.get_variant_idx()) {
     case 1:
     {
-        auto var = static_cast<const market_data_error::NetworkError&>(val);
+        auto var = static_cast<const market_data_error::ConnectionError&>(val);
         return static_cast<uint64_t>(sizeof(int32_t)
             + FfiConverterString::allocation_size(var.msg)
             + FfiConverterTypeErrorInfo::allocation_size(var.info));

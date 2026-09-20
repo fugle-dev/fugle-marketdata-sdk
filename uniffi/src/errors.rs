@@ -100,8 +100,8 @@ impl From<&marketdata_core::ErrorInfo> for ErrorInfo {
 /// Note: This is a FLAT enum per UniFFI constraints - no nested error types.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MarketDataError {
-    #[error("Network error: {msg}")]
-    NetworkError { msg: String, info: ErrorInfo },
+    #[error("Connection error: {msg}")]
+    ConnectionError { msg: String, info: ErrorInfo },
 
     #[error("Authentication error: {msg}")]
     AuthError { msg: String, info: ErrorInfo },
@@ -143,13 +143,12 @@ pub(crate) fn config_error(message: impl Into<String>) -> MarketDataError {
     MarketDataError::ConfigError { msg, info }
 }
 
-/// `MarketDataError::WebSocketError` for an operation attempted before
-/// `connect()`. `info` matches core's own "not connected" error
-/// (`ConnectionError`, code 2001).
+/// `MarketDataError::ConnectionError` for an operation attempted before
+/// `connect()`: the same variant and `info` (code 2001) as core's own
+/// `ConnectionError`, so a not-connected `subscribe()` and a refused REST
+/// connection are caught by one handler (#223).
 pub(crate) fn not_connected_error(message: impl Into<String>) -> MarketDataError {
-    let msg = message.into();
-    let info = ErrorInfo::from(&CoreError::ConnectionError { msg: msg.clone() }.info());
-    MarketDataError::WebSocketError { msg, info }
+    MarketDataError::from(CoreError::ConnectionError { msg: message.into() })
 }
 
 /// `MarketDataError::Other` for a failure outside core (a
@@ -179,7 +178,7 @@ impl From<CoreError> for MarketDataError {
             }
             CoreError::RuntimeError { msg } => MarketDataError::Other { msg, info },
             CoreError::ConfigError(msg) => MarketDataError::ConfigError { msg, info },
-            CoreError::ConnectionError { msg } => MarketDataError::NetworkError { msg, info },
+            CoreError::ConnectionError { msg } => MarketDataError::ConnectionError { msg, info },
             CoreError::AuthError { msg, .. } => MarketDataError::AuthError { msg, info },
             CoreError::ApiError { status, message, .. } => {
                 // Check if this is a rate limit error (429)
@@ -254,11 +253,32 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = MarketDataError::NetworkError {
+        let err = MarketDataError::ConnectionError {
             msg: "connection refused".to_string(),
             info: test_info(),
         };
-        assert_eq!(err.to_string(), "Network error: connection refused");
+        assert_eq!(err.to_string(), "Connection error: connection refused");
+    }
+
+    /// A not-connected WebSocket command and a refused REST connection are
+    /// the same variant with the same code (#223).
+    #[test]
+    fn not_connected_and_core_connection_error_share_a_variant() {
+        let not_connected = not_connected_error("Not connected");
+        let refused: MarketDataError = CoreError::ConnectionError {
+            msg: "connection refused".to_string(),
+        }
+        .into();
+        for err in [&not_connected, &refused] {
+            match err {
+                MarketDataError::ConnectionError { info, .. } => {
+                    assert_eq!(info.code, marketdata_core::error_code::CONNECTION, "{err:?}");
+                    assert!(matches!(info.source_kind, ErrorSourceKind::Network), "{err:?}");
+                }
+                other => panic!("expected ConnectionError, got {other:?}"),
+            }
+        }
+        assert_eq!(not_connected.to_string(), "Connection error: Not connected");
     }
 
     #[test]

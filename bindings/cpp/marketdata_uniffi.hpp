@@ -178,23 +178,6 @@ enum class MessageOverflowRecord: int32_t {
 
 
 /**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
-};
-
-
-/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -229,6 +212,23 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -266,12 +266,12 @@ protected:
  */
 namespace market_data_error {
 
-struct NetworkError: MarketDataError {
+struct ConnectionError: MarketDataError {
     std::string msg;
     ErrorInfo info;
 
-    NetworkError() : MarketDataError("") {}
-    NetworkError(const std::string &what_arg) : MarketDataError(what_arg) {}
+    ConnectionError() : MarketDataError("") {}
+    ConnectionError(const std::string &what_arg) : MarketDataError(what_arg) {}
 
     void throw_underlying() override {
         throw *this;

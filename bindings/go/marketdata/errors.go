@@ -33,7 +33,7 @@ func ErrorInfoOf(err error) (ErrorInfo, bool) {
 	var mde *MarketDataError
 	if errors.As(err, &mde) {
 		switch variant := mde.err.(type) {
-		case *MarketDataErrorNetworkError:
+		case *MarketDataErrorConnectionError:
 			return variant.Info, true
 		case *MarketDataErrorAuthError:
 			return variant.Info, true
