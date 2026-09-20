@@ -216,7 +216,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_authenticated() != 51034) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated() != 29216) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_unauthenticated() != 41202) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_disconnected() != 44379) {
@@ -231,7 +231,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting() != 12322) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed() != 46093) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnect_failed() != 51040) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_messages_dropped() != 34523) {

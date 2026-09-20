@@ -193,7 +193,8 @@ class _Server:
             if (frame.get("data") or {}).get("apikey") == SILENT_API_KEY:
                 return []
             if (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
-                return [{"event": "error", "data": {"message": "Invalid authentication credentials"}}]
+                # The server's rejection shape: `code` 1000 at the top level (#201).
+                return [{"event": "error", "code": 1000, "data": {"message": "Invalid authentication credentials"}}]
             return [{"event": "authenticated", "data": {"message": "Authenticated successfully"}}]
         if event == "subscribe":
             data = frame.get("data") or {}

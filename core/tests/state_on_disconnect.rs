@@ -42,10 +42,12 @@ fn state_on_disconnected(
     }
 }
 
+/// A close the reconnect policy does not retry: `1000`, normal closure
+/// (4xxx reconnects since #201).
 fn server_close() -> common::AfterAuth {
     common::AfterAuth::ServerCloseAfter {
         delay_ms: 50,
-        code: 4001,
+        code: 1000,
         reason: "bye".to_string(),
     }
 }
@@ -91,7 +93,7 @@ async fn aio_server_close_without_reconnect_is_closed_when_reported() {
     assert!(matches!(
         state,
         ConnectionState::Closed {
-            code: Some(4001),
+            code: Some(1000),
             intent: DisconnectIntent::Server,
             ..
         }
@@ -202,7 +204,7 @@ async fn sync_server_close_without_reconnect_is_closed_when_reported() {
     assert!(matches!(
         state,
         ConnectionState::Closed {
-            code: Some(4001),
+            code: Some(1000),
             intent: DisconnectIntent::Server,
             ..
         }
@@ -325,7 +327,7 @@ fn assert_server_close_kept(event: &ConnectionEvent, state: &ConnectionState, cl
         matches!(
             state,
             ConnectionState::Closed {
-                code: Some(4001),
+                code: Some(1000),
                 intent: DisconnectIntent::Server,
                 ..
             }

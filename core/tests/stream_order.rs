@@ -168,6 +168,7 @@ async fn rejected_credentials_queue_the_rejection_frame_after_unauthenticated() 
     let server = marketdata_core::testing::MockWsServer::start().await;
     server.set_auth_response(serde_json::json!({
         "event": "error",
+        "code": 1000,
         "data": { "message": "Invalid authentication credentials" }
     }));
     let config = ConnectionConfig::new(server.url(), AuthRequest::with_api_key("k"));
@@ -304,6 +305,7 @@ async fn sync_client_rejected_credentials_queue_the_rejection_frame_after_unauth
     let server = marketdata_core::testing::MockWsServer::start().await;
     server.set_auth_response(serde_json::json!({
         "event": "error",
+        "code": 1000,
         "data": { "message": "Invalid authentication credentials" }
     }));
     let url = server.url();
