@@ -1,0 +1,65 @@
+{
+  "config": {
+    "count": 50000,
+    "rate": 0,
+    "warmup": 1000,
+    "runs": 3,
+    "lang": "cs"
+  },
+  "timestamp": "2026-09-20T10:18:26.328Z",
+  "results": {
+    "C#-new": [
+      {
+        "sdk": "rust-core-cs",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 221,
+        "msgs_per_sec": 226244,
+        "latency_p50_ms": 11,
+        "latency_p99_ms": 39,
+        "latency_min_ms": 0,
+        "latency_max_ms": 40,
+        "mem_rss_delta_mb": 52.2,
+        "cpu_user_ms": 394.8,
+        "cpu_system_ms": 82.8,
+        "server_msgs_per_sec": 261780
+      },
+      {
+        "sdk": "rust-core-cs",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 229,
+        "msgs_per_sec": 218340,
+        "latency_p50_ms": 19,
+        "latency_p99_ms": 41,
+        "latency_min_ms": 0,
+        "latency_max_ms": 41,
+        "mem_rss_delta_mb": 54.4,
+        "cpu_user_ms": 406.3,
+        "cpu_system_ms": 84.3,
+        "server_msgs_per_sec": 252525
+      },
+      {
+        "sdk": "rust-core-cs",
+        "count": 50000,
+        "expected": 50000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 231,
+        "msgs_per_sec": 216450,
+        "latency_p50_ms": 20,
+        "latency_p99_ms": 40,
+        "latency_min_ms": 0,
+        "latency_max_ms": 41,
+        "mem_rss_delta_mb": 54.1,
+        "cpu_user_ms": 408.9,
+        "cpu_system_ms": 84.7,
+        "server_msgs_per_sec": 251256
+      }
+    ]
+  }
+}

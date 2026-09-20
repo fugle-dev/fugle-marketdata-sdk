@@ -40,8 +40,10 @@ def main():
     server_stats = None
     done_event = threading.Event()
 
-    start_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    start_time_cpu = time.process_time()
+    # Process-wide CPU split into user / system (time.process_time() is the
+    # sum of both), so the column is comparable with the other clients (#215).
+    start_ru = resource.getrusage(resource.RUSAGE_SELF)
+    start_mem = start_ru.ru_maxrss
 
     # The default (drop_newest, 4096 unread) drops messages -- and possibly
     # bench_done -- while the callback lags a burst; the benchmark measures
@@ -91,8 +93,8 @@ def main():
     done_event.wait(timeout=args.timeout)
 
     elapsed = (int(time.time() * 1000) - t0) if t0 is not None else 0
-    end_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    end_time_cpu = time.process_time()
+    end_ru = resource.getrusage(resource.RUSAGE_SELF)
+    end_mem = end_ru.ru_maxrss
 
     # Sort latencies for percentile
     latencies.sort()
@@ -116,7 +118,8 @@ def main():
         'latency_max_ms': latencies[-1] if latencies else None,
         # macOS ru_maxrss is in bytes, Linux in KB
         'mem_rss_delta_kb': end_mem - start_mem,
-        'cpu_user_ms': round((end_time_cpu - start_time_cpu) * 1000, 1),
+        'cpu_user_ms': round((end_ru.ru_utime - start_ru.ru_utime) * 1000, 1),
+        'cpu_system_ms': round((end_ru.ru_stime - start_ru.ru_stime) * 1000, 1),
         'server_msgs_per_sec': server_stats.get('server_msgs_per_sec') if server_stats else None,
         'dropped': stock.messages_dropped_total(),
     }

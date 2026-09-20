@@ -4,8 +4,18 @@ Rust-core SDK vs legacy pure-JS / pure-Python SDKs, plus cross-language comparis
 
 Benchmark date: 2026-09-20 (previous run: 2026-04-12)
 Hardware: Apple M3 Pro (macOS 26.5), localhost loopback
-SDK under test: `main` @ `de76eca` (after #199 / #201 / #202 / #203 / #204 / #209), built from this tree
+SDK under test: `main` @ `de76eca` (after #199 / #201 / #202 / #203 / #204 / #209), built from this tree (the rerun was built from `bc36960`, which differs from it only under `benchmarks/`)
 Raw output: [`results/2026-09-20/`](results/2026-09-20/) (per-run JSON + console log per language, `environment.txt`)
+
+The 10K and 50K tables come from the evening rerun in
+[`results/2026-09-20/cpu-rerun/`](results/2026-09-20/cpu-rerun/), made after
+#215 changed the Go, C++ and Java clients to report process-wide CPU (see
+[Metrics](#metrics)); throughput, latency and CPU in each table are from the
+same runs. The morning run (`10k-*` / `50k-*` in the parent directory, same
+tree, same machine) is kept for reference: its throughput and latency agree
+with the rerun within noise (Java 10K is the one exception, +15%, see
+[Per-run data](#per-run-data)), but its Go/C++/Java CPU column is not CPU.
+The rate-limited runs and the May-snapshot control were not repeated.
 
 All numbers are the median of 3 runs; per-run values are listed in
 [Per-run data](#per-run-data). "vs Apr" compares against the 2026-04-12 report
@@ -19,10 +29,10 @@ percent) mean anything.
 
 | Metric | Old SDK (`@fugle/marketdata@1.6.0`) | New SDK (Rust core) | Delta | vs Apr (old / new) |
 |--------|-------------------------------------|---------------------|-------|--------------------|
-| Throughput | 192,308 msg/s | 172,414 msg/s | **-10.3%** | -7.7% / -6.9% |
+| Throughput | 196,078 msg/s | 178,571 msg/s | **-8.9%** | -5.9% / -3.6% |
 | Latency p50 | 0 ms | 0 ms | -- | -- |
-| Latency p99 | 1 ms | 1 ms | -- | -- |
-| CPU user | 64 ms | 136 ms | +113% | -14% / **+92%** |
+| Latency p99 | 2 ms | 1 ms | -- | -- |
+| CPU user | 64 ms | 135 ms | +111% | -14% / **+90%** |
 
 April's old SDK was `@fugle/marketdata@1.4.2`; 1.6.0 is the npm `latest`.
 
@@ -30,13 +40,18 @@ April's old SDK was `@fugle/marketdata@1.4.2`; 1.6.0 is the npm `latest`.
 
 | Metric | Old SDK (`fugle-marketdata==2.7.0rc1`) | New SDK (Rust core) | Delta | vs Apr (old / new) |
 |--------|----------------------------------------|---------------------|-------|--------------------|
-| Throughput | 26,109 msg/s | 163,934 msg/s | **+528%** | +0.8% / **+57.4%** |
-| Latency p50 | 185 ms | 3 ms | **-98%** | +2% / **-83%** |
-| Latency p99 | 365 ms | 9 ms | **-98%** | -0.3% / **-84%** |
-| CPU user | 937 ms | 190 ms | -80% | -9% / -5% |
+| Throughput | 25,839 msg/s | 166,666 msg/s | **+545%** | -0.3% / **+60.0%** |
+| Latency p50 | 188 ms | 3 ms | **-98%** | +3% / **-83%** |
+| Latency p99 | 367 ms | 9 ms | **-98%** | +0.3% / **-84%** |
+| CPU user | 736 ms | 135 ms | -82% | -29% / -32% |
 
 April's old SDK was `fugle-marketdata==2.4.1`; 2.7.0rc1 is the version the
-PM compares against (2.6.0 is the newest stable release on PyPI).
+PM compares against (2.6.0 is the newest stable release on PyPI). The Python
+CPU figures are now user time only; April's and the morning run's
+`time.process_time()` included system time (33 ms old / 53 ms new here). For
+the new SDK that is the whole difference to the morning run (190 ms then,
+135 + 53 now). The old SDK's 937 ms then vs 736 + 33 now is a wider gap than
+its run-to-run spread (728-819 ms in these three runs); not investigated.
 
 ### C# (.NET 8)
 
@@ -47,7 +62,7 @@ No legacy C# SDK exists, so results are absolute (cross-language comparison only
 | Throughput | **185,185 msg/s** | +5.6% |
 | Latency p50 | 0 ms | 2 → 0 ms |
 | Latency p99 | 3 ms | 4 → 3 ms |
-| CPU user | 159 ms | +73% |
+| CPU user | 156 ms | +70% |
 
 ### Go
 
@@ -55,10 +70,10 @@ No legacy Go SDK exists, so results are absolute (cross-language comparison only
 
 | Metric | New SDK (Rust core / UniFFI) | vs Apr |
 |--------|:---------------------------:|:------:|
-| Throughput | **178,571 msg/s** | **+12.5%** |
-| Latency p50 | 2 ms | 4 → 2 ms |
-| Latency p99 | 4 ms | 11 → 4 ms (**-64%**) |
-| CPU user | 186 ms (wall clock, see note) | n/a |
+| Throughput | **181,818 msg/s** | **+14.5%** |
+| Latency p50 | 1 ms | 4 → 1 ms |
+| Latency p99 | 3 ms | 11 → 3 ms (**-73%**) |
+| CPU user | 151 ms | n/a (April's 86 ms was wall clock, #215) |
 
 ### Java (JDK 21)
 
@@ -66,10 +81,14 @@ No legacy Java SDK exists, so results are absolute (cross-language comparison on
 
 | Metric | New SDK (Rust core / UniFFI+JNA) | vs Apr |
 |--------|:-------------------------------:|:------:|
-| Throughput | **22,321 msg/s** | +5.8% |
-| Latency p50 | 322 ms | -5% |
-| Latency p99 | 481 ms | -6% |
-| CPU user | 107 ms (main thread only, see note) | n/a |
+| Throughput | **25,641 msg/s** | **+21.5%** |
+| Latency p50 | 293 ms | -14% |
+| Latency p99 | 423 ms | -17% |
+| CPU user | 1,926 ms (user + system, see note) | n/a (April's 98 ms was the main thread only, #215) |
+
+The Java CPU figure is the whole process (`getProcessCpuTime()`), which is
+the only process-level figure the JDK offers and includes system time and
+the JIT compiler threads; the other five clients report user time only.
 
 ### C++ (C++20)
 
@@ -77,50 +96,66 @@ No legacy C++ SDK exists, so results are absolute (cross-language comparison onl
 
 | Metric | New SDK (Rust core / UniFFI+C++) | vs Apr |
 |--------|:-------------------------------:|:------:|
-| Throughput | **169,491 msg/s** | +5.1% |
+| Throughput | **172,413 msg/s** | +6.9% |
 | Latency p50 | 0 ms | -- |
 | Latency p99 | 2 ms | 3 → 2 ms |
-| CPU user | 195 ms (wall clock, see note) | n/a |
+| CPU user | 124 ms | n/a (April's 81 ms was wall clock, #215) |
 
 ### Cross-Language Comparison (New Rust-core SDK only, 10K burst)
 
 | Metric | C# (UniFFI) | Go (UniFFI) | JS (napi-rs) | C++ (UniFFI) | Python (PyO3) | Java (UniFFI+JNA) |
 |--------|:-----------:|:-----------:|:------------:|:------------:|:-------------:|:-----------------:|
-| Throughput | 185,185 msg/s | 178,571 msg/s | 172,414 msg/s | 169,491 msg/s | 163,934 msg/s | 22,321 msg/s |
-| Latency p50 | 0 ms | 2 ms | 0 ms | 0 ms | 3 ms | 322 ms |
-| Latency p99 | 3 ms | 4 ms | 1 ms | 2 ms | 9 ms | 481 ms |
-| CPU user | 159 ms | 186 ms\* | 136 ms | 195 ms\* | 190 ms | 107 ms\* |
-| % of null client (196,078 msg/s) | 94% | 91% | 88% | 86% | 84% | 11% |
+| Throughput | 185,185 msg/s | 181,818 msg/s | 178,571 msg/s | 172,413 msg/s | 166,666 msg/s | 25,641 msg/s |
+| Latency p50 | 0 ms | 1 ms | 0 ms | 0 ms | 3 ms | 293 ms |
+| Latency p99 | 3 ms | 3 ms | 1 ms | 2 ms | 9 ms | 423 ms |
+| CPU user | 156 ms | 151 ms | 135 ms | 124 ms | 135 ms | 1,926 ms\* |
+| CPU system | 35 ms | 35 ms | 62 ms | 43 ms | 53 ms | -- |
+| % of null client (192,308 msg/s) | 96% | 95% | 93% | 90% | 87% | 13% |
 
-\* Not comparable: the Go and C++ clients report wall-clock time in this column
-and the Java client reports the main thread's CPU only (#215). JS, C# and
-Python report process-wide CPU.
+\* User + system (`getProcessCpuTime()`), including the JIT compiler threads;
+the JDK has no process-level user-only figure. The other five are user time
+only, process-wide (all threads, including the Rust runtime's).
 
 The last row compares against a null client (`js/bench-null.js`: a raw `ws`
 socket that counts frames and parses nothing), which is the most one consumer
-can take from this mock server on this machine: 196,078 msg/s at 10K,
-268,817 at 50K (`results/2026-09-20/*-null.jsonl`). The legacy JS SDK sits at
-98% of it. The five fast bindings are within 6-16% of that ceiling, so the
-spread between them is real but small; Java is the only binding that is
-clearly client-bound.
+can take from this mock server on this machine: 192,308 msg/s at 10K,
+263,158 at 50K (`results/2026-09-20/cpu-rerun/*-null.jsonl`). The legacy JS
+SDK is at that ceiling (196,078, within noise of it). The five fast bindings
+are within 4-13% of the ceiling, so the spread between them is real but
+small; Java is the only binding that is clearly client-bound.
+
+The CPU columns are close for the five fast bindings (124-156 ms user for
+11,000 frames, i.e. 11-14 µs per message including connect, warmup and the
+listener's own JSON parse) and the ranking does not follow throughput: C++
+(a string scan in the callback, no JSON parser) is the cheapest, C# and Go
+(a full JSON parse in the callback) the most expensive, JS and Python in
+between. JS spends the most system time (62 ms): every frame crosses two
+thread boundaries there (core queue → reader thread → `ThreadsafeFunction` →
+JS thread), see Key Takeaway 3.
 
 ### Heavy burst (50K)
 
 | Metric | JS old | JS new | Py old | Py new | C# | Go | Java | C++ |
 |--------|:------:|:------:|:------:|:------:|:--:|:--:|:----:|:---:|
-| Throughput (msg/s) | 261,780 | 235,849 | 26,274 | 174,825 | 223,214 | 203,252 | 31,685 | 248,756 |
-| Latency p50 (ms) | 0 | 0 | 928 | 52 | 12 | 28 | 895 | 0 |
-| Latency p99 (ms) | 1 | 1 | 1,836 | 103 | 41 | 64 | 1,457 | 1 |
-| CPU user (ms) | 188 | 339 | 2,462 | 536 | 396 | 378\* | 107\* | 338\* |
-| % of null client (268,817 msg/s) | 97% | 88% | 10% | 65% | 83% | 76% | 12% | 93% |
+| Throughput (msg/s) | 264,550 | 233,645 | 26,497 | 177,935 | 218,340 | 203,252 | 32,154 | 246,305 |
+| Latency p50 (ms) | 0 | 0 | 922 | 49 | 19 | 28 | 889 | 0 |
+| Latency p99 (ms) | 1 | 1 | 1,819 | 100 | 40 | 64 | 1,440 | 1 |
+| CPU user (ms) | 188 | 336 | 2,256 | 360 | 406 | 420 | 3,652\* | 298 |
+| CPU system (ms) | 56 | 202 | 135 | 168 | 84 | 87 | -- | 118 |
+| % of null client (263,158 msg/s) | 101% | 89% | 10% | 68% | 83% | 77% | 12% | 94% |
 
-JS old→new: -9.9%. Python old→new: +565%. No run lost a message (`lost` is
+\* User + system, see the cross-language table.
+
+JS old→new: -11.7%. Python old→new: +572%. No run lost a message (`lost` is
 0 in every JSON) and no new-SDK client dropped one (`dropped` is 0).
 
-With 50K the null client reaches 269K msg/s (the per-message cost of the Node
+With 50K the null client reaches 263K msg/s (the per-message cost of the Node
 `ws` server and consumer amortises better) and the ranking separates: C++ and
-JS keep up (p99 1 ms), C# and Go fall behind by 12-28 ms at p50 (their queue
-fills while the callback parses JSON), Python by 52 ms, Java by ~0.9 s.
+JS keep up (p99 1 ms), C# and Go fall behind by 19-28 ms at p50 (their queue
+fills while the callback parses JSON), Python by 49 ms, Java by ~0.9 s. Per
+frame (51,000 including warmup) the user CPU is 6-8 µs for the fast bindings
+at this size (C++ 5.8, JS 6.6, Python 7.1, C# 8.0, Go 8.2), against 3.7 µs
+for the legacy JS SDK.
 
 ### Rate-limited (`rate=500`, 5K messages)
 
@@ -141,12 +176,12 @@ Raw data: `results/2026-09-20/rate500-<lang>.json`.
 
 ## Key Takeaways
 
-1. **Python: the Rust core is now 6.3x the pure-Python SDK** (was 4x in
-   April). The old SDK is unchanged (26.1K vs 25.9K msg/s), the new one went
-   from 104K to 164K msg/s and p50 from 18 ms to 3 ms. The machine explains
-   at most ~12% of that: the Go client built from the earliest commit in this
+1. **Python: the Rust core is now 6.5x the pure-Python SDK** (was 4x in
+   April). The old SDK is unchanged (25.8K vs 25.9K msg/s), the new one went
+   from 104K to 167K msg/s and p50 from 18 ms to 3 ms. The machine explains
+   at most ~15% of that: the Go client built from the earliest commit in this
    repo (`14fb9f6`, the 2026-05-15 v0.3.0 snapshot) runs at 178-189K on
-   today's machine, the same as today's Go, and Go is +12.5% vs April. So most
+   today's machine, the same as today's Go, and Go is +14.5% vs April. So most
    of the Python gain is code, and code from after `14fb9f6` (the control only
    covers May→September; April→May is not in this repo's history). The Python
    and JS clients from that snapshot panic on `connect()` (`no reactor
@@ -156,18 +191,19 @@ Raw data: `results/2026-09-20/rate500-<lang>.json`.
    ordered stream replacing the `receive_timeout(100ms)` poll) and the Python
    message-thread rewrite (`6685dce`). Tracked in #214.
 
-2. **JS: the -10% gap to the legacy SDK is unchanged** (-10.3% vs -11.1% in
-   April) even though the "redundant serde cycle" April blamed is gone: the
-   binding now hands the frame to the listener verbatim (`message.raw`, no
-   `serde_json::to_string`). The legacy SDK is a raw `ws` socket plus an
-   EventEmitter and runs at 98% of the null client; the new binding is at 88%,
-   and the difference is the extra hops: tokio reader thread → core queue →
-   reader thread → `ThreadsafeFunction` → JS thread. Latency is identical
-   (p50 0 ms, p99 1 ms, 10K and 50K).
+2. **JS: the -10% gap to the legacy SDK is unchanged** (-8.9% at 10K and
+   -11.7% at 50K, vs -11.1% in April) even though the "redundant serde cycle"
+   April blamed is gone: the binding now hands the frame to the listener
+   verbatim (`message.raw`, no `serde_json::to_string`). The legacy SDK is a
+   raw `ws` socket plus an EventEmitter and runs at the null client's
+   ceiling; the new binding is at 93% (10K) / 89% (50K), and the difference
+   is the extra hops: tokio reader thread → core queue → reader thread →
+   `ThreadsafeFunction` → JS thread. Latency is identical (p50 0 ms, p99
+   1-2 ms, 10K and 50K).
 
-3. **JS CPU per message roughly doubled** (71 → 136 ms for 10K; the old SDK
+3. **JS CPU per message roughly doubled** (71 → 135 ms for 10K; the old SDK
    went 74 → 64 ms on the same machine, so it is not the environment). It
-   does not show in throughput (the binding is still within 12% of the null
+   does not show in throughput (the binding is still within 7% of the null
    client), but it is the one regression in this run. `process.cpuUsage()`
    includes the Rust threads; candidates are the same queue rewrite plus the
    per-message `InFlight` permit (a mutex + `notify_all` per frame -- with
@@ -175,29 +211,40 @@ Raw data: `results/2026-09-20/rate500-<lang>.json`.
    and liveness bookkeeping. Note the April client ran with the binding's
    defaults, before `messageOverflow` existed; this run sets `unbounded`, so
    the CPU comparison spans that setting change too. Not bisectable for the
-   same reason as (1); tracked in #214. C# (+73%) moves the same way;
-   Go/C++/Java CPU columns cannot be compared (see (6)).
+   same reason as (1); tracked in #214. C# (+70%) moves the same way; the
+   Go/C++/Java CPU columns have no April figure to compare with (see (6)).
+   With all six clients measuring the same thing, though, JS is not an
+   outlier: its 135 ms sits between C++ (124) and C#/Go (151-156), so the
+   doubling brought it in line with the other bindings rather than above
+   them.
 
-4. **C#, Go, C++ and JS are within 10% of each other at 10K** (169-185K
-   msg/s, 86-94% of the null client). April's ranking "C# 2nd, Go 3rd at
-   ~70% of JS" is gone: Go is +12.5% and its p99 went 11 → 4 ms, and the May
+4. **C#, Go, C++ and JS are within 8% of each other at 10K** (172-185K
+   msg/s, 90-96% of the null client). April's ranking "C# 2nd, Go 3rd at
+   ~70% of JS" is gone: Go is +14.5% and its p99 went 11 → 3 ms, and the May
    snapshot's Go client gives the same numbers as today's, so nothing in core
    since May changed Go; April→May is not in this repo's history, so whether
    the rest is the machine or an early core change cannot be told apart. At
    50K the UniFFI bindings with a JSON parse in the callback (C#, Go) start
-   to queue (p50 12-28 ms) while C++ (string scan, no parser) and JS do not.
+   to queue (p50 19-28 ms) while C++ (string scan, no parser) and JS do not.
 
-5. **Java is still ~12% of the others** (22.3K msg/s, p50 322 ms, ~5% better
-   than April). Every `onMessage` crosses JNA's reflection-based callback
+5. **Java is still ~13% of the others** (25.6K msg/s, p50 293 ms, ~20%
+   better than April; the morning run measured 22.3K, see
+   [Per-run data](#per-run-data)). Every `onMessage` crosses JNA's
+   reflection-based callback
    dispatch with a `StreamMessage` record marshalled through `RustBuffer`. At
    production rates (100-500 msg/s) the callback takes well under the
    inter-arrival time, so this only matters for replay/burst workloads.
 
-6. **The CPU column is not one metric.** JS/C#/Python report process-wide
-   CPU; Go and C++ report wall-clock elapsed; Java reports the main thread
-   only (which idles). April's table compared them anyway. Filed as #215; the
-   numbers stay in this report so the next run has something to diff, but do
-   not read Go/C++/Java CPU as CPU.
+6. **The CPU column is now one metric** (#215). Until this rerun the six
+   clients did not measure the same thing: JS/C#/Python reported process-wide
+   CPU, Go and C++ reported wall-clock elapsed, Java the main thread only
+   (which idles), and Python's figure included system time. April's table
+   compared them anyway, and so did the morning run of this report. Every
+   client now reports the process's user CPU across all threads (Java: user +
+   system, the JDK offers nothing finer), with the system figure in
+   `cpu_system_ms`; see [Metrics](#metrics) for the call each one uses. April's
+   Go/C++/Java CPU figures therefore have no successor to compare with; the
+   next run will.
 
 7. **The null client is the yardstick, not the server's self-reported rate.**
    `server_msgs_per_sec` in the JSON is `COUNT / elapsed` of the server's
@@ -207,7 +254,7 @@ Raw data: `results/2026-09-20/rate500-<lang>.json`.
    it includes in `elapsed` (~9% at 10K). It cannot separate server-bound
    from client-bound, and April's "server exceeds 500K msg/s" was read off
    it. A raw `ws` consumer that does no work (`js/bench-null.js`) tops out at
-   196K msg/s (10K) / 269K (50K) on this machine; that is the number each
+   192K msg/s (10K) / 263K (50K) on this machine; that is the number each
    binding is compared against above. Pushing the ceiling higher (several
    sender connections, pre-serialised frames, a Rust/Go sender) would be
    needed to see how far the fast bindings can actually go.
@@ -264,8 +311,25 @@ Each data message is a realistic ~300-byte trades payload with:
 | Throughput (msg/s) | `count / elapsed`, where `elapsed` starts at first data message | Excludes connect/auth/subscribe overhead |
 | Latency p50/p99 (ms) | `Date.now() - msg.data.server_ts` | Same system clock (localhost), ~1ms resolution |
 | Memory delta (MB) | `process.memoryUsage().rss` before/after (JS) or `ru_maxrss` (Python) | |
-| CPU user (ms) | `process.cpuUsage()` (JS) or `time.process_time()` (Python) | |
+| CPU user (ms) | Process-wide user CPU, all threads (the Rust runtime's included), from client start to `bench_done`; see the table below | Java is user + system |
+| CPU system (ms) | The matching system CPU (`cpu_system_ms` in the JSON) | `null` for Java |
 | Message loss | `expected - received` | TCP guarantees delivery; loss = client bug |
+
+How each client measures CPU (#215; before this every client used something
+different, see Key Takeaway 6):
+
+| Client | `cpu_user_ms` | `cpu_system_ms` |
+|--------|---------------|-----------------|
+| JS (both SDKs) | `process.cpuUsage().user` | `.system` |
+| Python (both SDKs) | `resource.getrusage(RUSAGE_SELF).ru_utime` | `.ru_stime` |
+| C# | `Process.UserProcessorTime` | `Process.PrivilegedProcessorTime` |
+| Go | `syscall.Getrusage(RUSAGE_SELF).Utime` | `.Stime` |
+| C++ | `getrusage(RUSAGE_SELF).ru_utime` | `.ru_stime` |
+| Java | `com.sun.management.OperatingSystemMXBean.getProcessCpuTime()` -- user + system, the JDK has no process-level user-only figure (`ThreadMXBean` cannot see JNA's and the Rust runtime's native threads) | `null` (already in `cpu_user_ms`) |
+
+All figures include the connect/auth/subscribe handshake and the 1,000
+warmup frames (the timer starts before the client is created), so the
+per-message cost is `cpu / (count + warmup)`.
 
 ### Measurement Validity
 
@@ -280,7 +344,7 @@ Each data message is a realistic ~300-byte trades payload with:
 - **Server bottleneck check**: the server's own `server_msgs_per_sec` is not a
   ceiling (it is coupled to how fast the client reads, see Key Takeaway 7).
   The ceiling is measured with `js/bench-null.js`, a raw `ws` consumer that
-  parses nothing: 196K msg/s at 10K, 269K at 50K on this machine.
+  parses nothing: 192K msg/s at 10K, 263K at 50K on this machine.
 
 ### Message Path Comparison
 
@@ -402,10 +466,10 @@ WebSocket Benchmark: 10000 messages, rate=burst, warmup=1000, runs=3, lang=py
   --- Python ---
   Metric                        Old SDK      New SDK      Delta
   ----------------------------------------------------------
-  Throughput (msg/s)             26,109      163,934     527.9%
-  Latency p50 (ms)                  185            3
-  Latency p99 (ms)                  365            9
-  CPU user (ms)                   937.4          190
+  Throughput (msg/s)             25,839      166,666     545.0%
+  Latency p50 (ms)                  188            3
+  Latency p99 (ms)                  367            9
+  CPU user (ms)                   736.4        135.3
 ```
 
 ### Output Files
@@ -415,7 +479,9 @@ WebSocket Benchmark: 10000 messages, rate=burst, warmup=1000, runs=3, lang=py
 - **`results/<date>/`**: the runs behind this report -- `<count>-<lang>.json`
   (per-run data), `<count>-<lang>.log` (console), `rate500-<lang>.*` (rate
   limited), `<count>-null.jsonl` (null client), `environment.txt` (versions,
-  command, env), `may-snapshot-go.txt` (the `14fb9f6` control run)
+  command, env), `may-snapshot-go.txt` (the `14fb9f6` control run);
+  `results/2026-09-20/cpu-rerun/` holds the evening rerun the 10K and 50K
+  tables are taken from (same layout, its own `environment.txt`)
 
 ### Running Individual Components
 
@@ -472,21 +538,32 @@ Throughput per run (msg/s), in run order; the median is what the tables above us
 
 | Client | 10K | 50K |
 |--------|-----|-----|
-| JS old | 196,078 / 192,308 / 192,308 | 261,780 / 259,067 / 264,550 |
-| JS new | 178,571 / 172,414 / 172,414 | 235,849 / 233,645 / 235,849 |
-| Python old | 25,445 / 26,109 / 26,246 | 26,028 / 26,315 / 26,274 |
-| Python new | 153,846 / 163,934 / 166,666 | 170,648 / 174,825 / 176,056 |
-| C# | 181,818 / 192,307 / 185,185 | 223,214 / 215,517 / 233,644 |
-| Go | 181,818 / 178,571 / 178,571 | 202,429 / 203,252 / 204,081 |
-| Java | 22,471 / 22,222 / 22,321 | 31,705 / 31,685 / 31,036 |
-| C++ | 163,934 / 169,491 / 178,571 | 251,256 / 248,756 / 246,305 |
+| JS old | 200,000 / 196,078 / 192,308 | 264,550 / 267,380 / 263,158 |
+| JS new | 178,571 / 181,818 / 178,571 | 232,558 / 239,234 / 233,645 |
+| Python old | 25,706 / 25,839 / 26,315 | 26,497 / 26,666 / 26,329 |
+| Python new | 166,666 / 166,666 / 169,491 | 177,304 / 177,935 / 178,571 |
+| C# | 188,679 / 181,818 / 185,185 | 226,244 / 218,340 / 216,450 |
+| Go | 185,185 / 178,571 / 181,818 | 204,918 / 203,252 / 199,203 |
+| Java | 25,000 / 25,641 / 25,906 | 32,175 / 32,154 / 31,565 |
+| C++ | 172,413 / 172,413 / 169,491 | 242,718 / 247,524 / 246,305 |
 
-No run is more than 7% from its median (Python new 10K run 1 at -6.2%, C++
-10K run 3 at +5.4% and C# 50K run 3 at +4.7% are the widest), so none was
-excluded.
+No run is more than 4% from its median (C# 50K run 1 at +3.6% is the widest),
+so none was excluded. CPU user per run (ms), 10K: JS old 63.6 / 63.4 / 63.6,
+JS new 134.5 / 134.6 / 137.4, Python old 728 / 819 / 736, Python new 132 /
+135 / 136, C# 155 / 159 / 156, Go 150.5 / 151.1 / 151.3, Java 2,027 / 1,926 /
+1,907, C++ 123.7 / 123.8 / 124.9.
 
-Null client (`js/bench-null.js`, raw `ws`, no parsing): 10K 196,078 / 196,078 /
-200,000 msg/s; 50K 268,817 / 270,270 / 265,957 msg/s (`*-null.jsonl`).
+The morning run (`results/2026-09-20/10k-*` and `50k-*`, same tree and
+machine) had medians within 4% of these for every client at both sizes except
+Java at 10K: 22,321 msg/s then (22,471 / 22,222 / 22,321), 25,641 now, with
+the 50K Java runs agreeing (31,685 vs 32,154). The Java client changed only
+its CPU calls between the two; the 10K Java measurement window is only
+~0.4 s (10,000 frames at 25K msg/s) at the start of the JVM's life, so it is
+the least stable number in this report.
+
+Null client (`js/bench-null.js`, raw `ws`, no parsing): 10K 196,078 / 192,308 /
+192,308 msg/s; 50K 265,957 / 263,158 / 263,158 msg/s (`cpu-rerun/*-null.jsonl`;
+the morning run measured 196,078 / 268,817).
 
 Rate-limited (`5000 500 1000 3`) throughput per run: JS old 1,698 / 1,723 /
 1,788; JS new 1,746 / 1,825 / 2,037; Python old 2,021 / 1,953 / 1,922; Python

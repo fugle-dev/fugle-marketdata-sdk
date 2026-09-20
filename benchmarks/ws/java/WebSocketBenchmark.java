@@ -13,7 +13,6 @@ import tw.com.fugle.marketdata.*;
 import tw.com.fugle.marketdata.generated.*;
 
 import java.lang.management.ManagementFactory;
-import java.lang.management.OperatingSystemMXBean;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -42,7 +41,7 @@ public class WebSocketBenchmark {
         Thread.sleep(100);
 
         long startMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-        long startCpuNs = ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime();
+        long startCpuNs = processCpuNs();
         long startTimeMs = System.currentTimeMillis();
 
         // Create WebSocket client with direct callback listener (no queue overhead)
@@ -140,11 +139,11 @@ public class WebSocketBenchmark {
         // callback batches its counts until onDisconnected, so read the total.
         long dropped = client.messagesDroppedTotal();
         long endTimeMs = System.currentTimeMillis();
-        long endCpuNs = ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime();
+        long endCpuNs = processCpuNs();
         long endMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 
         long elapsed = t0Set.get() ? endTimeMs - t0.get() : 0;
-        double cpuUserMs = (endCpuNs - startCpuNs) / 1_000_000.0;
+        double cpuMs = (endCpuNs - startCpuNs) / 1_000_000.0;
         double memDeltaMb = (endMem - startMem) / 1_000_000.0;
 
         int count = received.get();
@@ -177,8 +176,8 @@ public class WebSocketBenchmark {
         appendNullableDouble(sb, "latency_min_ms", lats.length > 0 ? lats[0] : null);
         appendNullableDouble(sb, "latency_max_ms", lats.length > 0 ? lats[lats.length - 1] : null);
         sb.append(",\"mem_rss_delta_mb\":").append(round1(memDeltaMb));
-        sb.append(",\"cpu_user_ms\":").append(round1(cpuUserMs));
-        sb.append(",\"cpu_system_ms\":0.0");
+        sb.append(",\"cpu_user_ms\":").append(round1(cpuMs));
+        sb.append(",\"cpu_system_ms\":null"); // included in cpu_user_ms, see processCpuNs()
         appendNullableDouble(sb, "server_msgs_per_sec", ssMps);
         sb.append("}");
 
@@ -187,6 +186,17 @@ public class WebSocketBenchmark {
         client.disconnect().join();
         Thread.sleep(200);
         System.exit(0);
+    }
+
+    /**
+     * Process-wide CPU time in ns (all threads, including JNA's and the Rust
+     * runtime's, which {@code ThreadMXBean} cannot see), so the column is
+     * comparable with the other clients (#215). The JDK exposes no user-only
+     * figure at process level, so this is user + system.
+     */
+    static long processCpuNs() {
+        var os = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+        return os.getProcessCpuTime();
     }
 
     static String flagValue(String[] args, String name, String fallback) {

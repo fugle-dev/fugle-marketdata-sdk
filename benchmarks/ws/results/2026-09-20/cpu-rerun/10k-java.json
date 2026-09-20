@@ -1,0 +1,65 @@
+{
+  "config": {
+    "count": 10000,
+    "rate": 0,
+    "warmup": 1000,
+    "runs": 3,
+    "lang": "java"
+  },
+  "timestamp": "2026-09-20T10:17:22.755Z",
+  "results": {
+    "Java-new": [
+      {
+        "sdk": "rust-core-java",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 400,
+        "msgs_per_sec": 25000,
+        "latency_p50_ms": 296,
+        "latency_p99_ms": 432,
+        "latency_min_ms": 94,
+        "latency_max_ms": 435,
+        "mem_rss_delta_mb": 594.9,
+        "cpu_user_ms": 2027.3,
+        "cpu_system_ms": 0,
+        "server_msgs_per_sec": 153846
+      },
+      {
+        "sdk": "rust-core-java",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 390,
+        "msgs_per_sec": 25641,
+        "latency_p50_ms": 293,
+        "latency_p99_ms": 423,
+        "latency_min_ms": 95,
+        "latency_max_ms": 426,
+        "mem_rss_delta_mb": 303.5,
+        "cpu_user_ms": 1925.5,
+        "cpu_system_ms": 0,
+        "server_msgs_per_sec": 149254
+      },
+      {
+        "sdk": "rust-core-java",
+        "count": 10000,
+        "expected": 10000,
+        "lost": 0,
+        "dropped": 0,
+        "elapsed_ms": 386,
+        "msgs_per_sec": 25906,
+        "latency_p50_ms": 291,
+        "latency_p99_ms": 419,
+        "latency_min_ms": 94,
+        "latency_max_ms": 421,
+        "mem_rss_delta_mb": 916,
+        "cpu_user_ms": 1907.1,
+        "cpu_system_ms": 0,
+        "server_msgs_per_sec": 153846
+      }
+    ]
+  }
+}
