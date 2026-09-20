@@ -36,32 +36,24 @@ pub struct StreamMessage {
     pub id: Option<String>,
     /// The `data` member of the frame, still encoded as JSON.
     pub data_json: Option<String>,
-    /// Error code, for error events.
+    /// Server error code, for error events: `1000` credentials rejected,
+    /// `1001` subscription limit exceeded, `1002` command before
+    /// authentication, `1003` request validation failed, `1004` no auth
+    /// request within 60 s, `1011` auth service unavailable. Absent when the
+    /// server sent an error frame without a code.
     pub error_code: Option<i32>,
-    /// Error message, for error events.
+    /// Error message, for error events: the frame's `data.message`, or its
+    /// top-level `message` when the server sent the code-less shape.
     pub error_message: Option<String>,
 }
 
 impl From<core::WebSocketMessage> for StreamMessage {
     fn from(msg: core::WebSocketMessage) -> Self {
-        // Extract error info from data if event is "error"
-        let (error_code, error_message) = if msg.event == "error" {
-            let code = msg
-                .data
-                .as_ref()
-                .and_then(|d| d.get("code"))
-                .and_then(|v| v.as_i64())
-                .map(|c| c as i32);
-            let message = msg
-                .data
-                .as_ref()
-                .and_then(|d| d.get("message"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            (code, message)
-        } else {
-            (None, None)
-        };
+        // Core knows the frame shape (`code` at the top level, `message`
+        // under `data` or at the top level); both return `None` off an
+        // error frame.
+        let error_code = msg.error_code();
+        let error_message = msg.error_message();
 
         Self {
             raw: msg.raw,
@@ -73,5 +65,54 @@ impl From<core::WebSocketMessage> for StreamMessage {
             error_code,
             error_message,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(json: &str) -> StreamMessage {
+        let mut msg: core::WebSocketMessage = serde_json::from_str(json).unwrap();
+        msg.raw = json.to_string();
+        msg.into()
+    }
+
+    #[test]
+    fn error_code_comes_from_the_top_level() {
+        // The server's shape (`ws-exception.filter.ts`, #209): `code` next to
+        // `event`, the message under `data`.
+        let msg = frame(
+            r#"{"event":"error","code":1000,"data":{"message":"Invalid authentication credentials"}}"#,
+        );
+        assert_eq!(msg.event, "error");
+        assert_eq!(msg.error_code, Some(1000));
+        assert_eq!(
+            msg.error_message.as_deref(),
+            Some("Invalid authentication credentials")
+        );
+        assert_eq!(
+            msg.data_json.as_deref(),
+            Some(r#"{"message":"Invalid authentication credentials"}"#)
+        );
+    }
+
+    #[test]
+    fn error_without_code_reads_the_top_level_message() {
+        let msg = frame(r#"{"event":"error","message":"Unauthorized"}"#);
+        assert_eq!(msg.error_code, None);
+        assert_eq!(msg.error_message.as_deref(), Some("Unauthorized"));
+        assert_eq!(msg.data_json, None);
+    }
+
+    #[test]
+    fn non_error_frames_carry_no_error_fields() {
+        let json = r#"{"event":"data","code":7,"channel":"trades","symbol":"2330","data":{"price":1}}"#;
+        let msg = frame(json);
+        assert_eq!(msg.error_code, None);
+        assert_eq!(msg.error_message, None);
+        assert_eq!(msg.channel.as_deref(), Some("trades"));
+        assert_eq!(msg.symbol.as_deref(), Some("2330"));
+        assert_eq!(msg.raw, json);
     }
 }

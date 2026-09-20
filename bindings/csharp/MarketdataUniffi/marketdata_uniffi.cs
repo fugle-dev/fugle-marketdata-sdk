@@ -11715,10 +11715,15 @@ class FfiConverterTypeStockTradesParams : FfiConverterRustBuffer<StockTradesPara
 /// The `data` member of the frame, still encoded as JSON.
 /// </param>
 /// <param name="error_code">
-/// Error code, for error events.
+/// Server error code, for error events: `1000` credentials rejected,
+/// `1001` subscription limit exceeded, `1002` command before
+/// authentication, `1003` request validation failed, `1004` no auth
+/// request within 60 s, `1011` auth service unavailable. Absent when the
+/// server sent an error frame without a code.
 /// </param>
 /// <param name="error_message">
-/// Error message, for error events.
+/// Error message, for error events: the frame's `data.message`, or its
+/// top-level `message` when the server sent the code-less shape.
 /// </param>
 public record StreamMessage(
     /// <summary>
@@ -11746,11 +11751,16 @@ public record StreamMessage(
     /// </summary>
     string? @dataJson,
     /// <summary>
-    /// Error code, for error events.
+    /// Server error code, for error events: `1000` credentials rejected,
+    /// `1001` subscription limit exceeded, `1002` command before
+    /// authentication, `1003` request validation failed, `1004` no auth
+    /// request within 60 s, `1011` auth service unavailable. Absent when the
+    /// server sent an error frame without a code.
     /// </summary>
     int? @errorCode,
     /// <summary>
-    /// Error message, for error events.
+    /// Error message, for error events: the frame's `data.message`, or its
+    /// top-level `message` when the server sent the code-less shape.
     /// </summary>
     string? @errorMessage
 ) { }

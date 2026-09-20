@@ -99,9 +99,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rust: `WebSocketMessage::code` and `WebSocketMessage::error_code()`**
   (#201): the server's error code, which it sends at the top level of the
   frame (`{"event":"error","code":1000,"data":{...}}`), not inside `data`.
+- **Rust: `WebSocketMessage::message`** (#209): the top-level `message` of
+  the server's code-less error shape (`{"event":"error","message":"…"}`).
+  `error_message()` reads `data.message` first and falls back to it, so an
+  auth failure in that shape reports the server's text instead of
+  `Unknown error`.
 
 ### Fixed
 
+- **C# / Go / Java / C++: `StreamMessage.errorCode` is set on server error
+  frames** (#209). It was read from `data.code`, but the server sends the
+  code at the top level of the frame
+  (`{"event":"error","code":1000,"data":{"message":"…"}}`), so the field
+  was always null and `onMessage` could not tell `1000` (credentials
+  rejected) from `1001` (subscription limit), `1003` (request validation)
+  or `1011` (auth service unavailable). It now comes from core's
+  `error_code()`, and `errorMessage` falls back to a top-level `message`
+  for the code-less `{"event":"error","message":"…"}` shape the server
+  also sends — `data.message` still wins when both are present.
 - **All languages: rejected credentials no longer make the client retry
   forever** (#201). The server rejects credentials with `error{1000}` and
   then closes the connection *without* a close code, which the reconnect
