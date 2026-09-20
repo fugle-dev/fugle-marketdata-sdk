@@ -698,8 +698,8 @@ impl StockIntradayClient {
     ///     ```python
     ///     candles = await client.stock.intraday.candles("2330", "5")
     ///     ```
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=None, sort=None, **_extra))]
-    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: String, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe=None, odd_lot=None, sort=None, **_extra))]
+    pub fn candles_async<'py>(&self, py: Python<'py>, symbol: String, timeframe: Option<String>, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -710,7 +710,10 @@ impl StockIntradayClient {
             let result = tokio::task::spawn_blocking(move || {
                 let stock = client.stock();
                 let intraday = stock.intraday();
-                let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
+                let mut builder = intraday.candles().symbol(&symbol);
+                if let Some(tf) = &timeframe {
+                    builder = builder.timeframe(tf);
+                }
                 if odd_lot == Some(true) {
                     builder = builder.odd_lot(true);
                 }
@@ -729,8 +732,8 @@ impl StockIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), odd_lot=None, sort=None, **_extra))]
-    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: String, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
+    #[pyo3(signature = (symbol, timeframe=None, odd_lot=None, sort=None, **_extra))]
+    pub fn candles(&self, py: Python<'_>, symbol: String, timeframe: Option<String>, odd_lot: Option<bool>, sort: Option<String>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("stock.intraday.candles", &_extra)?;
         let odd_lot = kw.take_flag("odd_lot", odd_lot)?;
@@ -740,7 +743,10 @@ impl StockIntradayClient {
         let result = py.detach(|| {
             let stock = inner.stock();
             let intraday = stock.intraday();
-            let mut builder = intraday.candles().symbol(&symbol).timeframe(&timeframe);
+            let mut builder = intraday.candles().symbol(&symbol);
+            if let Some(tf) = &timeframe {
+                builder = builder.timeframe(tf);
+            }
             if odd_lot == Some(true) {
                 builder = builder.odd_lot(true);
             }
@@ -2781,12 +2787,12 @@ impl FutOptIntradayClient {
     }
 
     /// Get intraday candles for a FutOpt contract
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, timeframe=None, after_hours=None, **_extra))]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
         symbol: String,
-        timeframe: String,
+        timeframe: Option<String>,
         after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.candles", &_extra)?;
@@ -2797,10 +2803,10 @@ impl FutOptIntradayClient {
             let result = tokio::task::spawn_blocking(move || {
                 let futopt = client.futopt();
                 let intraday = futopt.intraday();
-                let mut builder = intraday
-                    .candles()
-                    .symbol(&symbol)
-                    .timeframe(&timeframe);
+                let mut builder = intraday.candles().symbol(&symbol);
+                if let Some(tf) = &timeframe {
+                    builder = builder.timeframe(tf);
+                }
                 if after_hours == Some(true) {
                     builder = builder.after_hours();
                 }
@@ -2817,12 +2823,12 @@ impl FutOptIntradayClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, timeframe="1".to_string(), after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol, timeframe=None, after_hours=None, **_extra))]
     pub fn candles(
         &self,
         py: Python<'_>,
         symbol: String,
-        timeframe: String,
+        timeframe: Option<String>,
         after_hours: Option<bool>, _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.intraday.candles", &_extra)?;
@@ -2832,10 +2838,10 @@ impl FutOptIntradayClient {
         let result = py.detach(|| {
             let futopt = inner.futopt();
             let intraday = futopt.intraday();
-            let mut builder = intraday
-                .candles()
-                .symbol(&symbol)
-                .timeframe(&timeframe);
+            let mut builder = intraday.candles().symbol(&symbol);
+            if let Some(tf) = &timeframe {
+                builder = builder.timeframe(tf);
+            }
             if after_hours == Some(true) {
                 builder = builder.after_hours();
             }

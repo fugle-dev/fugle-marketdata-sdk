@@ -368,7 +368,7 @@ class StockIntradayClient:
         self,
         symbol: str,
         *,
-        timeframe: str = "1",
+        timeframe: Optional[str] = None,
         odd_lot: Optional[bool] = None,
         sort: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -477,7 +477,7 @@ class StockIntradayClient:
     def candles(
         self,
         symbol: str,
-        timeframe: str = "1",
+        timeframe: Optional[str] = None,
         odd_lot: Optional[bool] = None,
         sort: Optional[str] = None,
     ) -> dict[str, Any]:
@@ -1338,7 +1338,7 @@ class FutOptIntradayClient:
         self,
         symbol: str,
         *,
-        timeframe: str = "1",
+        timeframe: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Get candlestick chart data for a futures/options contract.
@@ -1462,7 +1462,7 @@ class FutOptIntradayClient:
     def candles(
         self,
         symbol: str,
-        timeframe: str = "1",
+        timeframe: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Blocking version of `candles()`."""

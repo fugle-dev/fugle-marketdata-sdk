@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Python: `stock.intraday.candles` / `futopt.intraday.candles` no longer
+  send `timeframe=1` when the caller gives no `timeframe`** (#196). The four
+  signatures (sync and async) defaulted `timeframe` to `"1"` and always put
+  it in the query, so a call like `candles("2330")` reached the server as
+  `?timeframe=1` and `meta` came back with an extra `timeframe` key that the
+  2.x SDK, the Node binding and `stock.historical.candles` do not produce.
+  `timeframe` is now `Optional[str] = None` and is sent only when given; the
+  server's own default (1 minute) applies otherwise, so the candle data is
+  unchanged. Passing `timeframe="5"` (or positionally) behaves as before.
+
 ## [Bindings 3.0.0-rc.6 / core 0.9.0-rc.5 / uniffi 0.2.0-rc.5] - 2026-09-19
 
 ### Breaking

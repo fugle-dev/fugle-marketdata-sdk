@@ -93,6 +93,35 @@ def test_candles_odd_lot_and_sort(client, server):
     )
 
 
+def test_candles_without_timeframe_sends_nothing(client, server):
+    """#196: the SDK used to default ``timeframe`` to ``"1"`` and always send it.
+
+    ``historical.candles``, the Node binding and the 2.x SDK all leave the
+    query empty when the caller gives no timeframe, so the server's own
+    default applies and ``meta`` comes back without a ``timeframe`` key.
+    """
+    client.stock.intraday.candles("2330")
+    assert last_request(server[1]) == ("/v1.0/stock/intraday/candles/2330", {})
+    client.futopt.intraday.candles("TXFC4")
+    assert last_request(server[1]) == ("/v1.0/futopt/intraday/candles/TXFC4", {})
+
+
+@pytest.mark.asyncio
+async def test_candles_async_without_timeframe_sends_nothing(client, server):
+    await client.stock.intraday.candles_async("2330")
+    assert last_request(server[1]) == ("/v1.0/stock/intraday/candles/2330", {})
+    await client.futopt.intraday.candles_async("TXFC4")
+    assert last_request(server[1]) == ("/v1.0/futopt/intraday/candles/TXFC4", {})
+
+
+def test_futopt_candles_timeframe_and_after_hours(client, server):
+    client.futopt.intraday.candles("TXFC4", timeframe="5", after_hours=True)
+    assert last_request(server[1]) == (
+        "/v1.0/futopt/intraday/candles/TXFC4",
+        {"timeframe": "5", "session": "afterhours"},
+    )
+
+
 def test_trades_window_sort_and_trial(client, server):
     client.stock.intraday.trades("2330", odd_lot=True, offset=10, limit=5, sort="asc", is_trial=True)
     assert last_request(server[1]) == (
