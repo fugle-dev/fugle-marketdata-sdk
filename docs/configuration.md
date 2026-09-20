@@ -50,10 +50,23 @@ each attempt until hitting the `max_delay_ms` cap. With the defaults the waits
 are about 1s, 2s, 4s, 9s, 18s, 33s, then about once a minute until the
 connection is back.
 
-**Giving up:** only with a non-zero `max_attempts`. After that many failed
-attempts the client emits `ReconnectFailed` (Node/Python: `error` code 3005;
-C#/Go/Java/C++: `OnReconnectFailed`) and stays closed. The server closing with
-1000 (normal) or a 4xxx code (e.g. auth failure) never triggers a reconnect.
+**Giving up:** with a non-zero `max_attempts`, after that many failed
+attempts; and, whatever `max_attempts`, when an attempt's credentials are
+rejected (the server answers the auth frame with `error` code 1000), since
+the same credentials would be rejected again (#201). Either way the client
+emits `ReconnectFailed` (Node/Python: `error` code 3005; C#/Go/Java/C++:
+`OnReconnectFailed`) and stays closed; a rejection is reported as
+`Unauthenticated` (`unauthenticated` / `OnUnauthenticated`) right before it.
+
+**What is not retried** is a short list; every other close reconnects:
+`disconnect()` or reconnect disabled; the server closing with code 1000
+(normal closure); and the server rejecting the credentials on a live
+connection — an `error` frame with code 1000 followed by a Close without a
+code. Closes with 1001 (server restart, connection limit, no auth request
+within 60 s), 1006, 1008, no code, or any code the SDK does not know all
+reconnect. An auth-phase `error` with any other code (1011 auth service
+unavailable, 1004 no auth request received) is not a rejection: it is
+reported as an `error` (code 2001) and the reconnect goes on.
 
 ### Language-Specific Examples
 

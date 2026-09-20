@@ -16,19 +16,31 @@ use crate::MarketDataError;
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
+/// The server's error code for rejected credentials
+/// (`{"event":"error","code":1000,...}`). The only auth-phase error that
+/// ends the handshake as a rejection; every other code is a failure the
+/// reconnect loop retries (#201).
+pub(crate) const AUTH_REJECTED_CODE: i32 = 1000;
+
 /// Classification of the inbound auth response.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(crate) enum AuthOutcome {
     /// Server accepted the credentials. Carries the frame's `data`
     /// (`Null` when absent). Caller should transition to `Connected`.
     Authenticated(serde_json::Value),
-    /// Server rejected the credentials. Caller should emit `Unauthenticated`.
-    Failed {
+    /// Server rejected the credentials (`error` code
+    /// [`AUTH_REJECTED_CODE`]). Caller should emit `Unauthenticated`.
+    Rejected {
         /// Server-provided rejection message.
         message: String,
         /// The frame's `data` (`Null` when absent).
         data: serde_json::Value,
     },
+    /// Server answered the auth frame with an `error` of any other code (or
+    /// none): `1011` auth service unavailable, `1004` no auth request seen,
+    /// an unknown code. Not a verdict on the credentials, so the caller
+    /// should emit `Error` and treat the attempt as failed.
+    Failed(MarketDataError),
     /// Frame is not an auth-related event. Caller should keep reading.
     Pending,
 }
@@ -256,17 +268,28 @@ pub(crate) fn parse_binary_frame(data: &[u8]) -> Result<WebSocketMessage, Market
 }
 
 /// Classify a frame received during the auth handshake.
+///
+/// An `error` frame is a rejection only when its `code` is
+/// [`AUTH_REJECTED_CODE`]; any other code, or none, is a failure of this
+/// attempt (`ConnectionError` naming the code and the server's message), not
+/// of the credentials (#201).
 pub(crate) fn classify_auth_response(msg: &WebSocketMessage) -> AuthOutcome {
     let data = || msg.data.clone().unwrap_or(serde_json::Value::Null);
     if msg.is_authenticated() {
-        AuthOutcome::Authenticated(data())
-    } else if msg.is_error() {
-        AuthOutcome::Failed {
-            message: msg.error_message().unwrap_or_else(|| "Unknown error".to_string()),
-            data: data(),
-        }
-    } else {
-        AuthOutcome::Pending
+        return AuthOutcome::Authenticated(data());
+    }
+    if !msg.is_error() {
+        return AuthOutcome::Pending;
+    }
+    let message = msg.error_message().unwrap_or_else(|| "Unknown error".to_string());
+    match msg.error_code() {
+        Some(AUTH_REJECTED_CODE) => AuthOutcome::Rejected { message, data: data() },
+        Some(code) => AuthOutcome::Failed(MarketDataError::ConnectionError {
+            msg: format!("Authentication failed (server error {code}): {message}"),
+        }),
+        None => AuthOutcome::Failed(MarketDataError::ConnectionError {
+            msg: format!("Authentication failed: {message}"),
+        }),
     }
 }
 
@@ -384,49 +407,88 @@ mod tests {
     #[test]
     fn classify_authenticated_with_data() {
         let msg = parse_msg(r#"{"event":"authenticated","data":{"message":"Authenticated successfully"}}"#);
-        assert_eq!(
+        assert!(matches!(
             classify_auth_response(&msg),
-            AuthOutcome::Authenticated(serde_json::json!({"message":"Authenticated successfully"}))
-        );
+            AuthOutcome::Authenticated(data)
+                if data == serde_json::json!({"message":"Authenticated successfully"})
+        ));
     }
 
     #[test]
     fn classify_authenticated_without_data_is_null() {
         let msg = parse_msg(r#"{"event":"authenticated"}"#);
-        assert_eq!(
+        assert!(matches!(
             classify_auth_response(&msg),
             AuthOutcome::Authenticated(serde_json::Value::Null)
-        );
+        ));
     }
 
     #[test]
-    fn classify_error_with_data() {
+    fn classify_error_1000_is_a_rejection() {
+        let msg = parse_msg(r#"{"event":"error","code":1000,"data":{"message":"Invalid token"}}"#);
+        assert!(matches!(
+            classify_auth_response(&msg),
+            AuthOutcome::Rejected { message, data }
+                if message == "Invalid token" && data == serde_json::json!({"message":"Invalid token"})
+        ));
+    }
+
+    #[test]
+    fn classify_error_1000_without_data() {
+        let msg = parse_msg(r#"{"event":"error","code":1000}"#);
+        assert!(matches!(
+            classify_auth_response(&msg),
+            AuthOutcome::Rejected { message, data: serde_json::Value::Null }
+                if message == "Unknown error"
+        ));
+    }
+
+    /// `1011` (auth service unavailable), `1004` (no auth request seen) and
+    /// any code the SDK does not know are failures of the attempt, reported
+    /// as `ConnectionError`, never as a rejection (#201).
+    #[test]
+    fn classify_other_error_codes_are_failures() {
+        for (code, message) in [
+            (1011, "Auth service unavailable"),
+            (1004, "No authentication request received"),
+            (4242, "future code"),
+        ] {
+            let msg = parse_msg(&format!(
+                r#"{{"event":"error","code":{code},"data":{{"message":"{message}"}}}}"#
+            ));
+            match classify_auth_response(&msg) {
+                AuthOutcome::Failed(MarketDataError::ConnectionError { msg }) => {
+                    assert_eq!(msg, format!("Authentication failed (server error {code}): {message}"));
+                }
+                other => panic!("{code}: expected Failed(ConnectionError), got {other:?}"),
+            }
+        }
+    }
+
+    /// An `error` without a code is not the server's rejection shape
+    /// (`ws-exception.filter.ts` always sends `code`), so it is a failure.
+    #[test]
+    fn classify_error_without_code_is_a_failure() {
         let msg = parse_msg(r#"{"event":"error","data":{"message":"Invalid token"}}"#);
-        assert_eq!(
-            classify_auth_response(&msg),
-            AuthOutcome::Failed {
-                message: "Invalid token".to_string(),
-                data: serde_json::json!({"message":"Invalid token"}),
+        match classify_auth_response(&msg) {
+            AuthOutcome::Failed(MarketDataError::ConnectionError { msg }) => {
+                assert_eq!(msg, "Authentication failed: Invalid token");
             }
-        );
-    }
-
-    #[test]
-    fn classify_error_without_data() {
+            other => panic!("expected Failed(ConnectionError), got {other:?}"),
+        }
         let msg = parse_msg(r#"{"event":"error"}"#);
-        assert_eq!(
-            classify_auth_response(&msg),
-            AuthOutcome::Failed {
-                message: "Unknown error".to_string(),
-                data: serde_json::Value::Null,
+        match classify_auth_response(&msg) {
+            AuthOutcome::Failed(MarketDataError::ConnectionError { msg }) => {
+                assert_eq!(msg, "Authentication failed: Unknown error");
             }
-        );
+            other => panic!("expected Failed(ConnectionError), got {other:?}"),
+        }
     }
 
     #[test]
     fn classify_other_event_is_pending() {
         let msg = parse_msg(r#"{"event":"pong"}"#);
-        assert_eq!(classify_auth_response(&msg), AuthOutcome::Pending);
+        assert!(matches!(classify_auth_response(&msg), AuthOutcome::Pending));
     }
 
     #[test]

@@ -120,16 +120,16 @@ Rust constants live in `marketdata_core::error_code`.
 | 1003 | `RUNTIME` | `RuntimeError` | `client` | An internal runtime operation fails. |
 | 1004 | `CONFIG` | `ConfigError` | `client` | Invalid client configuration (for example a `baseUrl` that includes the version, not exactly one non-empty credential, or a reconnect / health check value below its floor). Python raises its `ConfigError` class, not `ValueError`. |
 | 1005 | `INVALID_PARAMETER` | `InvalidParameter` | `client` | A request parameter is missing or invalid: an unknown WebSocket channel name in `subscribe()`, or (Node) a key the REST endpoint does not take in the object form. Python raises `TypeError` for the latter. |
-| 2001 | `CONNECTION` | `ConnectionError` | `network` | A REST request or WebSocket connection cannot reach the server, or a WebSocket command is sent while not connected. |
-| 2002 | `AUTH` | `AuthError` | `auth` | HTTP 401 / 403, or WebSocket authentication failed. |
+| 2001 | `CONNECTION` | `ConnectionError` | `network` | A REST request cannot reach the server, a WebSocket command is sent while not connected, or the WebSocket auth handshake fails for a reason other than rejected credentials: the server answers the auth frame with an `error` whose code is not 1000 (1011 auth service unavailable, 1004 no auth request received; the message names the code). |
+| 2002 | `AUTH` | `AuthError` | `auth` | HTTP 401 / 403, or the WebSocket server rejected the credentials (`error` code 1000; the `unauthenticated` event / `OnUnauthenticated` is reported instead of an error event). |
 | 2003 | `API` | `ApiError` | by status: 429 `rate_limit`, 5xx `network`, else `client` | The API answered with any other error status. |
 | 2010 | `CLIENT_CLOSED` | `ClientClosed`, `ConnectionAborted` | `client` | `ClientClosed`: the client was already closed. `ConnectionAborted` (message `Connection aborted: …`): `connect()` given up because `disconnect()` was called before the connection was established (Rust async client, Node, Python, and the C#, Go, Java and C++ bindings, which report it as the `ClientClosed` variant). |
 | 2011 | `ALREADY_CONNECTED` | `AlreadyConnected` | `client` | WebSocket `connect()` called while connected, connecting or auto-reconnecting. |
-| 3001 | `TIMEOUT` | `TimeoutError` | `network` | A request, the WebSocket connect or its auth handshake (`auth_timeout_ms`, default 10 s) timed out. |
-| 3002 | `WEBSOCKET` | `WebSocketError` | by kind: I/O `network`, TLS `auth`, upgrade HTTP status as for 2003 (401/403 `auth`), else `protocol` | A WebSocket connect, read or write fails. |
+| 3001 | `TIMEOUT` | `TimeoutError` | `network` | A request, the WebSocket connect (`connect_timeout`, on both Rust clients) or its auth handshake (`auth_timeout_ms`, default 10 s) timed out. |
+| 3002 | `WEBSOCKET` | `WebSocketError` | by kind: I/O `network`, TLS `auth`, upgrade HTTP status as for 2003 (401/403 `auth`), else `protocol` | A WebSocket connect (DNS, TCP, TLS or the HTTP upgrade; the same on the Rust sync and async clients), read or write fails. |
 | 3003 | `HEARTBEAT_TIMEOUT` | `HeartbeatTimeout` | `network` | No inbound WebSocket frame within the heartbeat window. |
 | 3004 | `CALLBACK_FAILED` | — | `client` | A WebSocket callback / listener raised an exception, or (Node) the Promise it returned rejected. See [Callback failures](#callback-failures). |
-| 3005 | `RECONNECT_FAILED` | — | `network` | Automatic reconnection gave up after its last attempt (Node / Python `error`; C#, Go, Java and C++ have a dedicated reconnect-failed callback). |
+| 3005 | `RECONNECT_FAILED` | — | `network` | Automatic reconnection gave up: after its last attempt, or because an attempt's credentials were rejected (an `unauthenticated` event precedes it) (Node / Python `error`; C#, Go, Java and C++ have a dedicated reconnect-failed callback). |
 | 9999 | `OTHER` | `Other` | `client` | Unexpected error. |
 | -1 | `THREAD_PANIC` | — | `protocol` | Node / Python: a WebSocket worker thread panicked. |
 

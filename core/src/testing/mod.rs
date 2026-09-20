@@ -222,8 +222,9 @@ impl MockWsServer {
     ///
     /// Examples: `{"event":"authenticated","data":{"message":"ok"}}` for a
     /// success carrying `data`, or
-    /// `{"event":"error","data":{"message":"Invalid token"}}` for a
-    /// rejection.
+    /// `{"event":"error","code":1000,"data":{"message":"Invalid token"}}`
+    /// for a rejection (the server's shape: `code` at the top level; only
+    /// `1000` is a rejection, #201).
     pub fn set_auth_response(&self, frame: serde_json::Value) {
         *self.auth_response.lock().expect("auth_response lock poisoned") = frame;
     }

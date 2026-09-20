@@ -298,8 +298,10 @@ FugleWebSocketClient.builder()
 
 After an unexpected drop the client reconnects on its own with exponential
 backoff (1 s doubling up to 60 s), without an attempt limit, and subscribes
-again once it is back. The server closing with 1000 or a 4xxx code (e.g. an
-auth failure) never triggers a reconnect. Configure it with `reconnect(...)`:
+again once it is back. Only a normal close (code 1000) and rejected
+credentials (the server's `error` code 1000, on a live connection or on a
+reconnect attempt) are final; every other close reconnects, whatever its code
+(#201). Configure it with `reconnect(...)`:
 
 ```java
 // Stop after 10 attempts; onReconnectFailed fires once the last one fails

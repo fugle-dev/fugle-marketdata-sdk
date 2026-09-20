@@ -134,6 +134,7 @@ mod tests {
             channel: None,
             symbol: None,
             id: Some(id.to_string()),
+            code: None,
             raw: String::new(),
         }
     }

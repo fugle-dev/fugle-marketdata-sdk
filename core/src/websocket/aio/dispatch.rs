@@ -4,7 +4,9 @@
 use crate::tracing_compat::{debug, warn};
 use crate::websocket::aio::writer::WriteFailure;
 use crate::websocket::aio::{SharedState, WsStream};
-use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
+use crate::websocket::connection_event::{
+    peer_close_disconnect, will_reconnect_after, ConnectionClose,
+};
 use crate::websocket::liveness::{
     probe_frame, FailWaitersOnDrop, LatencyWaiters, Liveness, LivenessAction,
 };
@@ -94,9 +96,9 @@ async fn send_probe(
 ///
 /// This task runs in the background after connect() succeeds.
 /// It will terminate when:
-/// 1. WebSocket connection closes (returns close code)
-/// 2. Server sends Close frame (returns close code from frame)
-/// 3. WebSocket error occurs, reading or writing (returns None)
+/// 1. WebSocket connection closes (returns no close code)
+/// 2. Server sends Close frame (returns the close code from the frame)
+/// 3. WebSocket error occurs, reading or writing (returns no close code)
 /// 4. Task is aborted by disconnect() (task cancelled at .await point)
 ///
 /// The function is cancellation-safe: aborting at any `.await` point
@@ -128,10 +130,11 @@ async fn send_probe(
 ///
 /// # Returns
 ///
-/// Close code from the WebSocket close frame, or None if the connection
-/// was dropped without a proper close, due to an error, or due to
-/// the liveness check declaring the connection dead. The dispatch-task caller treats `None` as
-/// reconnectable per `should_reconnect`'s default arm.
+/// How the connection ended: the close code from the WebSocket close frame
+/// (`None` if the connection was dropped without a proper close, due to an
+/// error, or due to the liveness check declaring the connection dead) and
+/// the code of the last `error` frame it delivered, which the caller's
+/// reconnect decision takes into account (#201).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_messages(
     mut ws_read: WsStream,
@@ -144,7 +147,7 @@ pub(crate) async fn dispatch_messages(
     reconnection: Arc<Mutex<ReconnectionManager>>,
     state: SharedState,
     write_failed: &mut oneshot::Receiver<WriteFailure>,
-) -> Option<u16> {
+) -> ConnectionClose {
     let _fail_waiters = FailWaitersOnDrop(latency);
     let mut liveness = Liveness::new(health, Instant::now());
     // A probe waiting for room in a full write queue.
@@ -153,14 +156,19 @@ pub(crate) async fn dispatch_messages(
     // A failed write waiting for the frames received before it, with the
     // number read so far.
     let mut pending_write_failure: Option<(WriteFailure, usize)> = None;
-    let will_reconnect = |intent: DisconnectIntent, code: Option<u16>| {
+    // The code of the last `error` frame this connection delivered: `1000`
+    // is the server rejecting the credentials before it closes (#201).
+    let mut last_error_code: Option<i32> = None;
+    let will_reconnect = |intent: DisconnectIntent, close: ConnectionClose| {
         let reconnection = Arc::clone(&reconnection);
         let shutdown_requested = shutdown_requested.load(Ordering::SeqCst);
         async move {
             let mgr = reconnection.lock().await;
-            will_reconnect_after(&mgr, intent, code, shutdown_requested)
+            will_reconnect_after(&mgr, intent, close, shutdown_requested)
         }
     };
+    // The close this loop returns when no Close frame carried a code.
+    let no_code = |last_error_code: Option<i32>| ConnectionClose { code: None, last_error_code };
 
     loop {
         // A socket that always has data never returns `Pending`, and frames
@@ -189,15 +197,15 @@ pub(crate) async fn dispatch_messages(
                     LivenessAction::Dead(elapsed) => {
                         // A caller-initiated shutdown reports the close itself.
                         if shutdown_requested.load(Ordering::SeqCst) {
-                            return None;
+                            return no_code(last_error_code);
                         }
                         report_heartbeat_timeout(
                             &stream,
                             &state,
                             elapsed,
-                            will_reconnect(DisconnectIntent::Network, None).await,
+                            will_reconnect(DisconnectIntent::Network, no_code(last_error_code)).await,
                         );
-                        return None;
+                        return no_code(last_error_code);
                     }
                 }
             }
@@ -276,16 +284,17 @@ pub(crate) async fn dispatch_messages(
                 // both suppressed when shutdown was caller-initiated, and
                 // both held back once the close was reported (#159).
                 if shutdown_requested.load(Ordering::SeqCst) {
-                    return None;
+                    return no_code(last_error_code);
                 }
-                let will_reconnect = will_reconnect(DisconnectIntent::Network, None).await;
+                let will_reconnect =
+                    will_reconnect(DisconnectIntent::Network, no_code(last_error_code)).await;
                 stream.connection_failed(
                     &state,
                     ConnectionEvent::error_with_message(&error, message.clone()),
                     message,
                     will_reconnect,
                 );
-                return None;
+                return no_code(last_error_code);
             }
             Next::WriterGone => {
                 // The writer stopped without a failure (its queue or sink
@@ -311,10 +320,10 @@ pub(crate) async fn dispatch_messages(
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
-                        will_reconnect(DisconnectIntent::Network, None).await,
+                        will_reconnect(DisconnectIntent::Network, no_code(last_error_code)).await,
                     );
                 }
-                return None;
+                return no_code(last_error_code);
             }
         };
 
@@ -330,6 +339,9 @@ pub(crate) async fn dispatch_messages(
                     Ok(ws_msg) => {
                         if latency.intercept_pong(&ws_msg, std::time::Instant::now()) {
                             continue;
+                        }
+                        if let Some(code) = ws_msg.error_code() {
+                            last_error_code = Some(code);
                         }
                         // Mutex is only taken when event == "subscribed" (cheap
                         // string compare for every other message).
@@ -358,6 +370,9 @@ pub(crate) async fn dispatch_messages(
                         if latency.intercept_pong(&ws_msg, std::time::Instant::now()) {
                             continue;
                         }
+                        if let Some(code) = ws_msg.error_code() {
+                            last_error_code = Some(code);
+                        }
                         let cancels = handle_subscribed_event(&subscriptions, &ws_msg);
                         send_cancels(&write_tx, cancels).await;
                         stream.push_message(ws_msg);
@@ -378,6 +393,7 @@ pub(crate) async fn dispatch_messages(
             }
             Ok(Message::Close(close_frame)) => {
                 let code = close_frame.as_ref().map(|cf| cf.code.into());
+                let close = ConnectionClose { code, last_error_code };
                 // The flag and the emit are not atomic: `disconnect()` may
                 // set the flag right after this check. The latch keeps the
                 // shutdown path from reporting the same close again (#41).
@@ -386,7 +402,7 @@ pub(crate) async fn dispatch_messages(
                     close_frame.as_ref().map(|cf| cf.reason.to_string()),
                     shutdown_requested.load(Ordering::SeqCst),
                 ) {
-                    let will_reconnect = will_reconnect(intent, code).await;
+                    let will_reconnect = will_reconnect(intent, close).await;
                     stream.connection_lost(
                         &state,
                         code,
@@ -395,7 +411,7 @@ pub(crate) async fn dispatch_messages(
                         will_reconnect,
                     );
                 }
-                return code;
+                return close;
             }
             Ok(Message::Ping(_)) => {
                 // Server sent ping, tokio-tungstenite auto-responds with pong
@@ -416,10 +432,11 @@ pub(crate) async fn dispatch_messages(
                 // `Disconnected { intent: Client }`. Once it has, neither
                 // event follows it (#159).
                 if shutdown_requested.load(Ordering::SeqCst) {
-                    return None;
+                    return no_code(last_error_code);
                 }
                 let err_msg = format!("WebSocket error: {}", e);
-                let will_reconnect = will_reconnect(DisconnectIntent::Network, None).await;
+                let will_reconnect =
+                    will_reconnect(DisconnectIntent::Network, no_code(last_error_code)).await;
                 stream.connection_failed(
                     &state,
                     ConnectionEvent::error_with_message(
@@ -429,7 +446,7 @@ pub(crate) async fn dispatch_messages(
                     err_msg,
                     will_reconnect,
                 );
-                return None;
+                return no_code(last_error_code);
             }
             Ok(Message::Frame(_)) => {
                 // Raw frames shouldn't appear in normal usage

@@ -35,6 +35,19 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — reconnect policy follows the server; the last `error` code (#201)
+
+- `~` `websocket::ReconnectionManager::should_reconnect(&self, Option<u16>)`
+  → `should_reconnect(&self, close_code: Option<u16>, last_error_code: Option<i32>)`.
+  The server rejects credentials with `error{1000}` and then a Close without
+  a code, so the close code alone cannot tell a rejection from a dropped
+  connection. Not reconnecting is the enumerated set (disabled, close `1000`,
+  last error `1000`); 4xxx now reconnects.
+- `+` `models::WebSocketMessage::code: Option<i32>` — the server's error
+  code, sent at the top level of the frame next to `event`.
+- `+` `models::WebSocketMessage::error_code(&self) -> Option<i32>` — `code`
+  when the frame is an `error` event.
+
 ### Unreleased — WebSocket auth timeout as configuration (#199)
 
 The auth handshake limit was a hardcoded 10 s; it is a `ConnectionConfig`

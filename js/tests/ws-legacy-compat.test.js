@@ -27,8 +27,9 @@ function startServer({ failAuth = 0 } = {}) {
           case 'auth':
             if (authFailuresLeft > 0) {
               authFailuresLeft -= 1;
-              socket.send(JSON.stringify({ event: 'error', data: AUTH_ERROR }));
-              socket.close(4001, 'unauthorized');
+              // The server's rejection: `error` code 1000, then a Close without a code (#201).
+              socket.send(JSON.stringify({ event: 'error', code: 1000, data: AUTH_ERROR }));
+              socket.close();
             } else {
               socket.send(JSON.stringify({ event: 'authenticated', data: AUTH_DATA }));
             }

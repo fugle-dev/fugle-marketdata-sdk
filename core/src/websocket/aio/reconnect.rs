@@ -2,13 +2,14 @@
 
 use crate::websocket::aio::writer::{start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{SharedState, WsSink, WsStream};
-use crate::websocket::stream_queue::StreamSender;
+use crate::websocket::connection_event::ConnectionClose;
+use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_resubscribe, AuthHandshake, AuthOutcome,
     ResubscribeFrame,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, ReconnectionManager,
+    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
     SubscriptionManager,
 };
 use crate::MarketDataError;
@@ -99,9 +100,10 @@ pub(crate) async fn await_auth_response(
                             AuthOutcome::Authenticated(data) => {
                                 return AuthHandshake::Authenticated { data, frames }
                             }
-                            AuthOutcome::Failed { message, data } => {
+                            AuthOutcome::Rejected { message, data } => {
                                 return AuthHandshake::Rejected { message, data, frames }
                             }
+                            AuthOutcome::Failed(e) => return AuthHandshake::Failed(e),
                             AuthOutcome::Pending => {}
                         }
                     }
@@ -128,8 +130,10 @@ pub(crate) async fn await_auth_response(
 /// (cloned from the spawned task) because `mpsc::Sender` is `!Sync` and
 /// holding `&mpsc::Sender` across await points would make the future `!Send`.
 /// Returns the new read half and the receiver of its writer's failed write
-/// on successful reconnect, `None` if reconnect is not configured, all
-/// attempts are exhausted, or `shutdown_requested` was set.
+/// on successful reconnect, `None` if the policy does not retry `close`
+/// (see [`ReconnectionManager::should_reconnect`]), all attempts are
+/// exhausted, an attempt's credentials were rejected (#201), or
+/// `shutdown_requested` was set.
 ///
 /// Once `disconnect()` sets `shutdown_requested` this emits nothing further
 /// (`disconnect()` queues the final `Disconnected` itself, #98):
@@ -140,7 +144,7 @@ pub(crate) async fn await_auth_response(
 /// installed, so `disconnect()` need not wait out its drain budget (#110).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn try_reconnect(
-    close_code: Option<u16>,
+    close: ConnectionClose,
     reconnection: Arc<Mutex<ReconnectionManager>>,
     config: ConnectionConfig,
     state: SharedState,
@@ -163,7 +167,7 @@ pub(crate) async fn try_reconnect(
     // Check if we should attempt reconnection
     let should_reconnect = {
         let reconnection = reconnection.lock().await;
-        reconnection.should_reconnect(close_code)
+        reconnection.should_reconnect(close.code, close.last_error_code)
     };
 
     if !should_reconnect {
@@ -272,13 +276,29 @@ pub(crate) async fn try_reconnect(
                     Err(MarketDataError::ClientClosed) => return None,
                     // Stopped mid-attempt; the shutdown path owns the close.
                     Err(_) if stopping() => return None,
+                    // The server rejected the credentials (reported as
+                    // `Unauthenticated` by `try_connect`): the same ones
+                    // would be rejected again, so the loop stops here with
+                    // `ReconnectFailed`, the state `Closed` (#201).
+                    Err(MarketDataError::AuthError { msg, .. }) => {
+                        let attempts = {
+                            let reconnection = reconnection.lock().await;
+                            reconnection.current_attempt()
+                        };
+                        // Unless a racing `disconnect()` reported the close first.
+                        stream.reconnect_failed(
+                            &state,
+                            close.code,
+                            attempts,
+                            rejected_reason(&msg),
+                            DisconnectIntent::Server,
+                        );
+                        return None;
+                    }
                     Err(e) => {
                         // Report why this attempt failed before the next
-                        // `Reconnecting` (#200), as the sync client does. A
-                        // rejection was already reported as `Unauthenticated`.
-                        if !matches!(e, MarketDataError::AuthError { .. })
-                            && !stream.emit_unless_closed(ConnectionEvent::error(&e))
-                        {
+                        // `Reconnecting` (#200), as the sync client does.
+                        if !stream.emit_unless_closed(ConnectionEvent::error(&e)) {
                             return None;
                         }
                         continue;
@@ -293,7 +313,13 @@ pub(crate) async fn try_reconnect(
                 };
 
                 // Unless a racing `disconnect()` reported the close first.
-                stream.reconnect_failed(&state, close_code, attempts);
+                stream.reconnect_failed(
+                    &state,
+                    close.code,
+                    attempts,
+                    MAX_ATTEMPTS_REASON.to_string(),
+                    DisconnectIntent::Network,
+                );
 
                 return None;
             }
@@ -309,10 +335,11 @@ pub(crate) async fn try_reconnect(
 /// Only the reconnect loop calls this. If `shutdown_requested` is set while
 /// connecting, or the client's close has been reported (#145), the new
 /// connection is dropped without emitting further events or changing the
-/// state, and `ClientClosed` is returned. Any other error is the caller's to
-/// report (#200): a transport or handshake failure leaves the state
-/// `Disconnected` and its lifecycle events end at `Connecting` or
-/// `Connected`.
+/// state, and `ClientClosed` is returned. Any other error leaves the state
+/// `Disconnected`: a transport or handshake failure is the caller's to
+/// report (#200), its lifecycle events ending at `Connecting` or
+/// `Connected`; rejected credentials are reported here as `Unauthenticated`
+/// and returned as `AuthError`, on which the caller stops (#201).
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
     state: SharedState,
@@ -327,7 +354,15 @@ pub(crate) async fn try_connect(
     }
 
     // Connect to WebSocket
-    let tls_connector = tls_connector_for(&config)?;
+    let tls_connector = match tls_connector_for(&config) {
+        Ok(connector) => connector,
+        Err(e) => {
+            if !stream.reconnect_step(&state, ConnectionState::Disconnected, None) {
+                return Err(MarketDataError::ClientClosed);
+            }
+            return Err(e);
+        }
+    };
     let connect_result = timeout(
         config.connect_timeout,
         connect_async_tls_with_config(&config.url, None, false, Some(tls_connector)),
@@ -446,6 +481,111 @@ mod tests {
         assert!(first.contains(r#""symbols":["2330","2454"]"#), "{first}");
         assert!(second.contains(r#""symbol":"2317""#), "{second}");
         assert!(rx.try_recv().is_err(), "no events on success");
+    }
+
+    /// `try_connect` mid-reconnect against `url`: the state
+    /// `Reconnecting { 1 }`, shutdown not requested.
+    async fn attempt(
+        url: String,
+    ) -> (
+        Result<(WsSink, WsStream), MarketDataError>,
+        SharedState,
+        crate::websocket::stream_queue::QueueReceiver,
+    ) {
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("k"));
+        let counter = || DropCounter::new("test", "localhost", "test");
+        let (tx, rx) = stream(&config, counter(), counter());
+        let state: SharedState =
+            Arc::new(std::sync::RwLock::new(ConnectionState::Reconnecting { attempt: 1 }));
+        let shutdown = AtomicBool::new(false);
+        let result = try_connect(config, Arc::clone(&state), tx, &shutdown).await;
+        (result, state, rx)
+    }
+
+    fn events(rx: &crate::websocket::stream_queue::QueueReceiver) -> Vec<String> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|item| match item {
+                StreamItem::Event(event) => format!("{event:?}"),
+                StreamItem::Message(message) => format!("m:{}", message.event),
+            })
+            .collect()
+    }
+
+    /// A `ws://` URL nothing listens on.
+    async fn refusing_url() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        drop(listener);
+        url
+    }
+
+    /// A `ws://` URL of a server that answers the first frame it reads (the
+    /// auth frame) with `answer` and then waits for the client to go away.
+    async fn answering_url(answer: &'static str) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+            ws.next().await.expect("auth").expect("auth frame");
+            ws.send(Message::Text(answer.into())).await.expect("answer");
+            while let Some(Ok(_)) = ws.next().await {}
+        });
+        url
+    }
+
+    /// A reconnect attempt the transport refuses ends in the state
+    /// `Disconnected` (#200), with tungstenite's error for the caller to
+    /// report — the same code as the sync client's since #201.
+    #[tokio::test]
+    async fn refused_attempt_leaves_state_disconnected() {
+        let (result, state, rx) = attempt(refusing_url().await).await;
+
+        let err = result.expect_err("refused");
+        assert_eq!(err.info().code, error_code::WEBSOCKET, "{err:?}");
+        assert_eq!(*state.read().unwrap(), ConnectionState::Disconnected);
+        assert_eq!(events(&rx), ["Connecting"]);
+    }
+
+    /// An `error` other than `1000` in answer to the auth frame fails the
+    /// attempt (`ConnectionError`) and leaves the state `Disconnected`, with
+    /// no `Unauthenticated` (#201).
+    #[tokio::test]
+    async fn attempt_with_auth_service_down_leaves_state_disconnected() {
+        let (result, state, rx) = attempt(
+            answering_url(r#"{"event":"error","code":1011,"data":{"message":"Auth service unavailable"}}"#)
+                .await,
+        )
+        .await;
+
+        let err = result.expect_err("failed");
+        assert!(
+            matches!(&err, MarketDataError::ConnectionError { msg }
+                if msg == "Authentication failed (server error 1011): Auth service unavailable"),
+            "{err:?}"
+        );
+        assert_eq!(*state.read().unwrap(), ConnectionState::Disconnected);
+        assert_eq!(events(&rx), ["Connecting", "Connected"]);
+    }
+
+    /// Rejected credentials are reported here as `Unauthenticated` and
+    /// returned as `AuthError`, the signal `try_reconnect` stops on (#201).
+    #[tokio::test]
+    async fn rejected_attempt_reports_unauthenticated_and_returns_auth_error() {
+        let (result, state, rx) = attempt(
+            answering_url(r#"{"event":"error","code":1000,"data":{"message":"Invalid token"}}"#).await,
+        )
+        .await;
+
+        let err = result.expect_err("rejected");
+        assert!(matches!(&err, MarketDataError::AuthError { msg, .. } if msg == "Invalid token"), "{err:?}");
+        assert_eq!(*state.read().unwrap(), ConnectionState::Disconnected);
+        // The rejection frame follows `Unauthenticated` (guarantee 4).
+        let events = events(&rx);
+        assert_eq!(events.len(), 4, "{events:?}");
+        assert_eq!(&events[..2], ["Connecting", "Connected"]);
+        assert!(events[2].starts_with("Unauthenticated"), "{events:?}");
+        assert_eq!(events[3], "m:error");
     }
 
     #[tokio::test]

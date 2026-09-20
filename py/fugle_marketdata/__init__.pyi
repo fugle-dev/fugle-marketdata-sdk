@@ -2135,6 +2135,10 @@ class StockWebSocketClient:
           - "connect" / "connected": Called (no args) when the WebSocket opens, before authentication
           - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
           - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
+            (server error code 1000). During an auto-reconnect this is terminal: an "error" with
+            code 3005 follows and the client stays closed. Any other auth-phase server error (1011
+            auth service unavailable, 1004 no auth request received) is an "error" with code 2001
+            instead, and the reconnect goes on.
           - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection closed
           - "reconnect" / "reconnecting": Called with the attempt number when reconnecting
           - "error": Called with a WebSocketError instance when an error occurs

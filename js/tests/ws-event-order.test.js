@@ -66,8 +66,9 @@ function startServer({ rejectAuth = false, dropAfterAuth = false, floodThenClose
       socket.on('message', (raw) => {
         if (JSON.parse(raw.toString()).event !== 'auth') return;
         if (rejectAuth) {
-          socket.send(JSON.stringify({ event: 'error', data: { message: 'Invalid API key' } }));
-          socket.close(4001, 'unauthorized');
+          // The server's rejection: `error` code 1000, then a Close without a code (#201).
+          socket.send(JSON.stringify({ event: 'error', code: 1000, data: { message: 'Invalid API key' } }));
+          socket.close();
           return;
         }
         socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));

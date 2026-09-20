@@ -5,11 +5,13 @@
 //! On disconnect, optionally runs the reconnect loop and rebuilds the
 //! WebSocket+queue+state in place.
 
-use crate::websocket::connection_event::{peer_close_disconnect, will_reconnect_after};
+use crate::websocket::connection_event::{
+    peer_close_disconnect, will_reconnect_after, ConnectionClose,
+};
 use crate::websocket::liveness::{
     probe_frame, FailWaitersOnDrop, LatencyWaiters, Liveness, LivenessAction,
 };
-use crate::websocket::stream_queue::StreamSender;
+use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
     classify_auth_response, frame_auth, frame_resubscribe, parse_binary_frame, parse_text_frame,
     AuthHandshake, AuthOutcome, ResubscribeFrame,
@@ -128,6 +130,13 @@ pub(crate) struct OwnerShared {
 }
 
 /// Build a fresh TLS-wrapped WebSocket via `tungstenite::client_tls_with_config`.
+///
+/// Transport failures — DNS, TCP, TLS and the HTTP upgrade — are reported
+/// through `From<tungstenite::Error>` like the async client's, so both
+/// clients give a refused connection the same `WebSocketError` (code 3002,
+/// kind `Io`), a rejected upgrade the same `Http(status)` and a connect
+/// that runs out of `connect_timeout` the same `TimeoutError` (#201). Only
+/// a URL the client cannot take apart is a `ConnectionError`.
 pub(crate) fn do_blocking_connect(
     config: &ConnectionConfig,
     tls_config: Arc<rustls::ClientConfig>,
@@ -148,21 +157,31 @@ pub(crate) fn do_blocking_connect(
         }
     })?;
 
+    // Reported as tungstenite's `Io` error, like the async client's.
+    let io_error = |e: std::io::Error, what: &str| {
+        tungstenite::Error::Io(std::io::Error::new(e.kind(), format!("{what}: {e}")))
+    };
     let addrs: Vec<_> = (host, port)
         .to_socket_addrs()
-        .map_err(|e| MarketDataError::ConnectionError {
-            msg: format!("DNS lookup failed: {e}"),
-        })?
+        .map_err(|e| io_error(e, "DNS lookup failed"))?
         .collect();
     if addrs.is_empty() {
-        return Err(MarketDataError::ConnectionError {
-            msg: "DNS returned no addresses".to_string(),
-        });
+        return Err(tungstenite::Error::Io(std::io::Error::new(
+            ErrorKind::NotFound,
+            "DNS returned no addresses",
+        ))
+        .into());
     }
 
+    // A TCP connect that runs out of `connect_timeout` is a `TimeoutError`,
+    // as on the async client (whose timeout also covers TLS and the upgrade).
     let tcp = TcpStream::connect_timeout(&addrs[0], config.connect_timeout).map_err(|e| {
-        MarketDataError::ConnectionError {
-            msg: format!("TCP connect failed: {e}"),
+        if e.kind() == ErrorKind::TimedOut {
+            MarketDataError::TimeoutError {
+                operation: "WebSocket connect".to_string(),
+            }
+        } else {
+            io_error(e, "TCP connect failed").into()
         }
     })?;
     tcp.set_nodelay(true).ok();
@@ -174,8 +193,12 @@ pub(crate) fn do_blocking_connect(
         None,
         Some(connector),
     )
-    .map_err(|e| MarketDataError::ConnectionError {
-        msg: format!("WebSocket handshake failed: {e}"),
+    .map_err(|e| match e {
+        tungstenite::HandshakeError::Failure(e) => e,
+        // A blocking socket never leaves the handshake mid-way.
+        tungstenite::HandshakeError::Interrupted(_) => tungstenite::Error::Io(
+            std::io::Error::new(ErrorKind::WouldBlock, "WebSocket handshake interrupted"),
+        ),
     })?;
 
     Ok(ws)
@@ -289,9 +312,10 @@ pub(crate) fn do_auth_handshake(
                         AuthOutcome::Authenticated(data) => {
                             return AuthHandshake::Authenticated { data, frames };
                         }
-                        AuthOutcome::Failed { message, data } => {
+                        AuthOutcome::Rejected { message, data } => {
                             return AuthHandshake::Rejected { message, data, frames };
                         }
+                        AuthOutcome::Failed(e) => return AuthHandshake::Failed(e),
                         AuthOutcome::Pending => continue,
                     }
                 }
@@ -318,21 +342,23 @@ pub(crate) fn do_auth_handshake(
 }
 
 /// The `will_reconnect` for a close observed by the owner thread.
-fn will_reconnect(shared: &OwnerShared, intent: DisconnectIntent, code: Option<u16>) -> bool {
+fn will_reconnect(shared: &OwnerShared, intent: DisconnectIntent, close: ConnectionClose) -> bool {
     let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
-    will_reconnect_after(&mgr, intent, code, shared.should_stop.load(Ordering::SeqCst))
+    will_reconnect_after(&mgr, intent, close, shared.should_stop.load(Ordering::SeqCst))
 }
 
 /// The owner loop. Reads frames + drains outbound queue + emits events.
-/// Returns the close code observed (Some on clean close, None on
-/// error/heartbeat-timeout/stream-end). On `should_stop` returns
+/// Returns how the connection ended: the close code observed (`Some` on a
+/// clean close, `None` on error/heartbeat-timeout/stream-end) and the code
+/// of the last `error` frame it delivered, which the supervisor's reconnect
+/// decision takes into account (#201). On `should_stop` returns code
 /// `Some(1000)` after sending a close frame, or `None` without one when
 /// `abort` is also set.
 fn owner_loop(
     mut ws: SyncWs,
     write_rx: mpsc::Receiver<String>,
     shared: &OwnerShared,
-) -> Option<u16> {
+) -> ConnectionClose {
     set_read_timeout(&mut ws, Some(READ_POLL_INTERVAL));
     let _fail_waiters = FailWaitersOnDrop(&shared.latency);
     let mut liveness = Liveness::new(&shared.health, Instant::now());
@@ -342,12 +368,17 @@ fn owner_loop(
     // Unsubscribe frames for subscriptions unsubscribed before their ack
     // arrived (#136); written ahead of the outbound queue.
     let mut cancel_frames: VecDeque<String> = VecDeque::new();
+    // The code of the last `error` frame this connection delivered: `1000`
+    // is the server rejecting the credentials before it closes (#201).
+    let mut last_error_code: Option<i32> = None;
+    // The close this loop returns when no Close frame carried a code.
+    let no_code = |last_error_code: Option<i32>| ConnectionClose { code: None, last_error_code };
 
     loop {
         if shared.should_stop.load(Ordering::SeqCst) {
             // `force_close()`: dropping `ws` closes the TCP socket as is.
             if shared.abort.load(Ordering::SeqCst) {
-                return None;
+                return no_code(last_error_code);
             }
             // Graceful shutdown sequence:
             //   a) drain any queued writes so subscribe/unsubscribe acks
@@ -360,7 +391,7 @@ fn owner_loop(
             let _ = ws.close(None);
             let _ = ws.flush();
             await_close_ack(&mut ws, CLOSE_ACK_DEADLINE);
-            return Some(1000);
+            return ConnectionClose { code: Some(1000), last_error_code };
         }
 
         // 1. Try a bounded read
@@ -376,6 +407,9 @@ fn owner_loop(
                 match parse_text_frame(&text) {
                     Ok(ws_msg) if shared.latency.intercept_pong(&ws_msg, Instant::now()) => {}
                     Ok(ws_msg) => {
+                        if let Some(code) = ws_msg.error_code() {
+                            last_error_code = Some(code);
+                        }
                         queue_cancels(
                             &mut cancel_frames,
                             crate::websocket::protocol::handle_subscribed_event(
@@ -405,6 +439,9 @@ fn owner_loop(
                 match parse_binary_frame(&data) {
                     Ok(ws_msg) if shared.latency.intercept_pong(&ws_msg, Instant::now()) => {}
                     Ok(ws_msg) => {
+                        if let Some(code) = ws_msg.error_code() {
+                            last_error_code = Some(code);
+                        }
                         queue_cancels(
                             &mut cancel_frames,
                             crate::websocket::protocol::handle_subscribed_event(
@@ -433,6 +470,7 @@ fn owner_loop(
             }
             Ok(Message::Close(frame)) => {
                 let code = frame.as_ref().map(|cf| u16::from(cf.code));
+                let close = ConnectionClose { code, last_error_code };
                 // `should_stop` is checked before the read, so a caller's
                 // `disconnect()` can land while this read is blocked; the
                 // shutdown path then reports the close as `Client` (#22).
@@ -448,7 +486,7 @@ fn owner_loop(
                         code,
                         reason,
                         intent,
-                        will_reconnect(shared, intent, code),
+                        will_reconnect(shared, intent, close),
                     );
                 }
                 // Unlike the graceful path at the loop top, there is no
@@ -457,7 +495,7 @@ fn owner_loop(
                 // rejects further data frames with `SendAfterClosing`.
                 // `close` only flushes the Close reply it already queued.
                 let _ = ws.close(None);
-                return code;
+                return close;
             }
             Ok(Message::Frame(_)) => {
                 on_inbound(&mut liveness);
@@ -479,10 +517,10 @@ fn owner_loop(
                         None,
                         "Connection closed".to_string(),
                         DisconnectIntent::Network,
-                        will_reconnect(shared, DisconnectIntent::Network, None),
+                        will_reconnect(shared, DisconnectIntent::Network, no_code(last_error_code)),
                     );
                 }
-                return None;
+                return no_code(last_error_code);
             }
             Err(e) => {
                 // WebSocket transport error — emit both `Error`
@@ -494,16 +532,16 @@ fn owner_loop(
                 // arm. Suppressed when caller initiated shutdown, and
                 // held back once the close was reported (#159).
                 if shared.should_stop.load(Ordering::SeqCst) {
-                    return None;
+                    return no_code(last_error_code);
                 }
                 let err_msg = format!("WebSocket read error: {e}");
                 shared.stream.connection_failed(
                     &shared.state,
                     ConnectionEvent::error_with_message(&MarketDataError::from(e), err_msg.clone()),
                     err_msg,
-                    will_reconnect(shared, DisconnectIntent::Network, None),
+                    will_reconnect(shared, DisconnectIntent::Network, no_code(last_error_code)),
                 );
-                return None;
+                return no_code(last_error_code);
             }
         }
 
@@ -516,7 +554,7 @@ fn owner_loop(
                     LivenessAction::Wait(_) => break,
                     LivenessAction::SendProbe => {
                         if shared.abort.load(Ordering::SeqCst) {
-                            return None;
+                            return no_code(last_error_code);
                         }
                         let deadline =
                             liveness.probe_deadline().expect("a probe was just sent");
@@ -525,23 +563,23 @@ fn owner_loop(
                             ProbeWrite::Sent => {}
                             ProbeWrite::TimedOut => {
                                 if shared.should_stop.load(Ordering::SeqCst) {
-                                    return None;
+                                    return no_code(last_error_code);
                                 }
-                                report_heartbeat_timeout(shared, liveness.window());
-                                return None;
+                                report_heartbeat_timeout(shared, liveness.window(), last_error_code);
+                                return no_code(last_error_code);
                             }
                             ProbeWrite::Failed(e) => {
-                                report_write_error(shared, e);
-                                return None;
+                                report_write_error(shared, e, last_error_code);
+                                return no_code(last_error_code);
                             }
                         }
                     }
                     LivenessAction::Dead(elapsed) => {
                         if shared.should_stop.load(Ordering::SeqCst) {
-                            return None;
+                            return no_code(last_error_code);
                         }
-                        report_heartbeat_timeout(shared, elapsed);
-                        return None;
+                        report_heartbeat_timeout(shared, elapsed, last_error_code);
+                        return no_code(last_error_code);
                     }
                 }
             }
@@ -551,7 +589,7 @@ fn owner_loop(
         // landed during the read sends nothing further, not even the Close
         // of the `Disconnected` arm below.
         if shared.abort.load(Ordering::SeqCst) {
-            return None;
+            return no_code(last_error_code);
         }
         loop {
             let json = match cancel_frames.pop_front() {
@@ -563,13 +601,13 @@ fn owner_loop(
                         // Client dropped its sender — typically a disconnect()
                         // signal. Send close frame and exit.
                         let _ = ws.close(None);
-                        return Some(1000);
+                        return ConnectionClose { code: Some(1000), last_error_code };
                     }
                 },
             };
             if let Err(e) = ws.send(Message::Text(json.into())) {
-                report_write_error(shared, e);
-                return None;
+                report_write_error(shared, e, last_error_code);
+                return no_code(last_error_code);
             }
         }
     }
@@ -577,7 +615,7 @@ fn owner_loop(
 
 /// Report a connection declared dead by the liveness check:
 /// `HeartbeatTimeout`, then `Disconnected { intent: Network }`.
-fn report_heartbeat_timeout(shared: &OwnerShared, elapsed: Duration) {
+fn report_heartbeat_timeout(shared: &OwnerShared, elapsed: Duration, last_error_code: Option<i32>) {
     let elapsed_ms = elapsed.as_millis() as u64;
     warn!(
         target: "fugle_marketdata::ws",
@@ -592,14 +630,18 @@ fn report_heartbeat_timeout(shared: &OwnerShared, elapsed: Duration) {
         &shared.state,
         ConnectionEvent::HeartbeatTimeout { elapsed },
         format!("Heartbeat timeout after {elapsed_ms}ms"),
-        will_reconnect(shared, DisconnectIntent::Network, None),
+        will_reconnect(
+            shared,
+            DisconnectIntent::Network,
+            ConnectionClose { code: None, last_error_code },
+        ),
     );
 }
 
 /// A failed write ends the connection just like a failed read: report
 /// `Error`, then `Disconnected`, unless the caller is shutting down or
 /// has reported the close already (#159).
-fn report_write_error(shared: &OwnerShared, e: tungstenite::Error) {
+fn report_write_error(shared: &OwnerShared, e: tungstenite::Error, last_error_code: Option<i32>) {
     if shared.should_stop.load(Ordering::SeqCst) {
         return;
     }
@@ -608,7 +650,11 @@ fn report_write_error(shared: &OwnerShared, e: tungstenite::Error) {
         &shared.state,
         ConnectionEvent::error_with_message(&MarketDataError::from(e), err_msg.clone()),
         err_msg,
-        will_reconnect(shared, DisconnectIntent::Network, None),
+        will_reconnect(
+            shared,
+            DisconnectIntent::Network,
+            ConnectionClose { code: None, last_error_code },
+        ),
     );
 }
 
@@ -667,11 +713,23 @@ fn report_resubscribe_failures(
 ///
 /// If `should_stop` is set while connecting, or the client's close has been
 /// reported (#145), the new connection is dropped without emitting further
-/// events and `ClientClosed` is returned.
+/// events and `ClientClosed` is returned. Any other error leaves the state
+/// `Disconnected`, as on the async client: a transport or handshake failure
+/// is the caller's to report (#200); rejected credentials are reported here
+/// as `Unauthenticated` and returned as `AuthError`, on which the caller
+/// stops (#201).
 fn reconnect_and_authenticate(
     shared: &Arc<OwnerShared>,
 ) -> Result<(SyncWs, mpsc::Receiver<String>), MarketDataError> {
     let stopping = || shared.should_stop.load(Ordering::SeqCst);
+    // A failed attempt leaves the state `Disconnected` until the next
+    // `Reconnecting`, unless the client's close has been reported (#145).
+    let failed = |e: MarketDataError| {
+        if !shared.stream.reconnect_step(&shared.state, ConnectionState::Disconnected, None) {
+            return MarketDataError::ClientClosed;
+        }
+        e
+    };
 
     // Each step is reported only if the client's close has not been (#145).
     if !shared.stream.reconnect_step(
@@ -682,7 +740,7 @@ fn reconnect_and_authenticate(
         return Err(MarketDataError::ClientClosed);
     }
 
-    let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config))?;
+    let mut ws = do_blocking_connect(&shared.config, Arc::clone(&shared.tls_config)).map_err(failed)?;
     if stopping() {
         return Err(MarketDataError::ClientClosed);
     }
@@ -701,12 +759,14 @@ fn reconnect_and_authenticate(
     let (data, frames) = match handshake {
         AuthHandshake::Authenticated { data, frames } => (data, frames),
         AuthHandshake::Rejected { message, data, frames } => {
-            if !shared.stream.reconnect_rejected(message.clone(), data, frames) {
+            if !shared.stream.reconnect_step(&shared.state, ConnectionState::Disconnected, None)
+                || !shared.stream.reconnect_rejected(message.clone(), data, frames)
+            {
                 return Err(MarketDataError::ClientClosed);
             }
             return Err(MarketDataError::AuthError { msg: message, http: None });
         }
-        AuthHandshake::Failed(e) => return Err(e),
+        AuthHandshake::Failed(e) => return Err(failed(e)),
     };
 
     // Before the replay is read: the old ids are stale, and a cancel whose
@@ -800,7 +860,7 @@ pub(crate) fn run_supervisor(
             None => return,
         };
 
-        let close_code = owner_loop(ws, write_rx, &shared);
+        let close = owner_loop(ws, write_rx, &shared);
 
         if shared.should_stop.load(Ordering::SeqCst) {
             // A `Closed` recorded with this connection's `Disconnected` (a
@@ -819,7 +879,7 @@ pub(crate) fn run_supervisor(
 
         let should_reconnect = {
             let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
-            mgr.should_reconnect(close_code)
+            mgr.should_reconnect(close.code, close.last_error_code)
         };
         if !should_reconnect {
             // Already reported as `Disconnected { will_reconnect: false }`,
@@ -844,7 +904,13 @@ pub(crate) fn run_supervisor(
                     mgr.current_attempt()
                 };
                 // Unless a racing `disconnect()` reported the close first.
-                shared.stream.reconnect_failed(&shared.state, close_code, attempts);
+                shared.stream.reconnect_failed(
+                    &shared.state,
+                    close.code,
+                    attempts,
+                    MAX_ATTEMPTS_REASON.to_string(),
+                    DisconnectIntent::Network,
+                );
                 return;
             };
 
@@ -881,11 +947,29 @@ pub(crate) fn run_supervisor(
                 // (#145); the shutdown path owns the close.
                 Err(MarketDataError::ClientClosed) => return,
                 Err(_) if shared.should_stop.load(Ordering::SeqCst) => return,
+                // The server rejected the credentials (reported as
+                // `Unauthenticated` by `reconnect_and_authenticate`): the
+                // same ones would be rejected again, so the loop stops here
+                // with `ReconnectFailed`, the state `Closed` (#201).
+                Err(MarketDataError::AuthError { msg, .. }) => {
+                    let attempts = {
+                        let mgr = shared.reconnection.lock().expect("reconnection lock poisoned");
+                        mgr.current_attempt()
+                    };
+                    // Unless a racing `disconnect()` reported the close first.
+                    shared.stream.reconnect_failed(
+                        &shared.state,
+                        close.code,
+                        attempts,
+                        rejected_reason(&msg),
+                        DisconnectIntent::Server,
+                    );
+                    return;
+                }
                 Err(e) => {
-                    // A rejection was already reported as `Unauthenticated`.
-                    if !matches!(e, MarketDataError::AuthError { .. })
-                        && !shared.stream.emit_unless_closed(ConnectionEvent::error(&e))
-                    {
+                    // Report why this attempt failed before the next
+                    // `Reconnecting` (#200).
+                    if !shared.stream.emit_unless_closed(ConnectionEvent::error(&e)) {
                         return;
                     }
                     continue;
@@ -1063,6 +1147,106 @@ mod tests {
         }
     }
 
+    /// A `ws://` URL nothing listens on: the port of a listener that was
+    /// just closed.
+    fn refusing_url() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        drop(listener);
+        url
+    }
+
+    /// A `ws://` URL of a server that answers the first frame it reads (the
+    /// auth frame) with `answer` and then waits for the client to go away.
+    fn answering_url(answer: &'static str) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().expect("accept");
+            let mut ws = tungstenite::accept(tcp).expect("handshake");
+            ws.read().expect("auth");
+            ws.send(Message::Text(answer.into())).expect("answer");
+            while ws.read().is_ok() {}
+        });
+        url
+    }
+
+    /// `owner_shared` mid-reconnect: `url` as the server, the state
+    /// `Reconnecting { 1 }`.
+    fn reconnecting_shared(url: String) -> (Arc<OwnerShared>, crate::websocket::stream_queue::QueueReceiver) {
+        let (stream, rx) = event_stream();
+        let mut shared = owner_shared(stream, HealthCheckConfig::disabled());
+        shared.config = ConnectionConfig::new(url, AuthRequest::with_api_key("k"));
+        *shared.state.write().unwrap() = ConnectionState::Reconnecting { attempt: 1 };
+        (Arc::new(shared), rx)
+    }
+
+    fn events(rx: &crate::websocket::stream_queue::QueueReceiver) -> Vec<String> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|item| match item {
+                StreamItem::Event(event) => format!("{event:?}"),
+                StreamItem::Message(message) => format!("m:{}", message.event),
+            })
+            .collect()
+    }
+
+    /// A reconnect attempt the transport refuses ends in the state
+    /// `Disconnected`, as on the async client (#201): not `Connecting`,
+    /// where it failed. The refusal is tungstenite's error (3002, `Io`),
+    /// also as on the async client, and the caller's to report (#200).
+    #[test]
+    fn refused_reconnect_attempt_leaves_state_disconnected() {
+        let (shared, rx) = reconnecting_shared(refusing_url());
+
+        let err = reconnect_and_authenticate(&shared).expect_err("refused");
+
+        assert_eq!(err.info().code, error_code::WEBSOCKET, "{err:?}");
+        assert_eq!(*shared.state.read().unwrap(), ConnectionState::Disconnected);
+        assert_eq!(events(&rx), ["Connecting"]);
+    }
+
+    /// A reconnect attempt the server answers with an `error` other than
+    /// `1000` fails (`ConnectionError`, for the caller to report) and ends in
+    /// the state `Disconnected`, with no `Unauthenticated` (#201).
+    #[test]
+    fn reconnect_attempt_with_auth_service_down_leaves_state_disconnected() {
+        let (shared, rx) = reconnecting_shared(answering_url(
+            r#"{"event":"error","code":1011,"data":{"message":"Auth service unavailable"}}"#,
+        ));
+
+        let err = reconnect_and_authenticate(&shared).expect_err("failed");
+
+        assert!(
+            matches!(&err, MarketDataError::ConnectionError { msg }
+                if msg == "Authentication failed (server error 1011): Auth service unavailable"),
+            "{err:?}"
+        );
+        assert_eq!(*shared.state.read().unwrap(), ConnectionState::Disconnected);
+        assert_eq!(events(&rx), ["Connecting", "Connected"]);
+    }
+
+    /// A reconnect attempt whose credentials are rejected reports
+    /// `Unauthenticated` itself, returns `AuthError` for the supervisor to
+    /// stop on, and ends in the state `Disconnected` (the supervisor's
+    /// `reconnect_failed` then records `Closed`, #201).
+    #[test]
+    fn rejected_reconnect_attempt_reports_unauthenticated_and_returns_auth_error() {
+        let (shared, rx) = reconnecting_shared(answering_url(
+            r#"{"event":"error","code":1000,"data":{"message":"Invalid token"}}"#,
+        ));
+
+        let err = reconnect_and_authenticate(&shared).expect_err("rejected");
+
+        assert!(matches!(&err, MarketDataError::AuthError { msg, .. } if msg == "Invalid token"), "{err:?}");
+        assert_eq!(*shared.state.read().unwrap(), ConnectionState::Disconnected);
+        // The rejection frame follows `Unauthenticated` (guarantee 4).
+        let events = events(&rx);
+        assert_eq!(events.len(), 4, "{events:?}");
+        assert_eq!(&events[..2], ["Connecting", "Connected"]);
+        assert!(events[2].starts_with("Unauthenticated"), "{events:?}");
+        assert_eq!(events[3], "m:error");
+    }
+
     /// A plain WebSocket to a peer that completes the handshake and then
     /// runs `peer` with its end of the connection.
     fn socket_to(peer: impl FnOnce(WebSocket<TcpStream>) + Send + 'static) -> SyncWs {
@@ -1130,10 +1314,10 @@ mod tests {
         let (_write_tx, write_rx) = mpsc::sync_channel(1);
 
         let started = Instant::now();
-        let code = owner_loop(ws, write_rx, &shared);
+        let close = owner_loop(ws, write_rx, &shared);
         let elapsed = started.elapsed();
 
-        assert_eq!(code, None);
+        assert_eq!(close, ConnectionClose::default());
         // Well short of the fixed write timeout of probe mode (5s).
         assert!(
             elapsed < IDLE + PROBE_TIMEOUT + Duration::from_secs(1),
@@ -1172,9 +1356,9 @@ mod tests {
         shared.stream.client_closed(&shared.state, 1006, "Force closed".into());
         let closed = shared.state.read().unwrap().clone();
 
-        let code = owner_loop(ws, write_rx, &shared);
+        let close = owner_loop(ws, write_rx, &shared);
 
-        assert_eq!(code, None);
+        assert_eq!(close, ConnectionClose::default());
         let events: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
             .map(|item| format!("{item:?}"))
             .collect();
