@@ -1,0 +1,88 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 8fa0ffb..9c1be10 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -16,7 +16,7 @@ tokio = { version = "1.49", features = ["rt", "rt-multi-thread", "sync", "time",
+ 
+ # Serialization
+ serde = { version = "1.0", features = ["derive"] }
+-serde_json = { version = "1.0", features = ["preserve_order", "float_roundtrip"] }
++serde_json = { version = "1.0", features = ["preserve_order", "float_roundtrip", "raw_value"] }
+ 
+ # Error handling
+ thiserror = "2.0"
+diff --git a/core/src/models/subscription.rs b/core/src/models/subscription.rs
+index 7c49e36..9474d2b 100644
+--- a/core/src/models/subscription.rs
++++ b/core/src/models/subscription.rs
+@@ -283,6 +283,9 @@ pub struct WebSocketMessage {
+     /// out of it.
+     #[serde(skip)]
+     pub raw: String,
++    /// PROTOTYPE (#214): `data` as the verbatim JSON slice, for data events.
++    #[serde(skip)]
++    pub data_raw: Option<String>,
+ }
+ 
+ impl WebSocketMessage {
+diff --git a/core/src/websocket/protocol.rs b/core/src/websocket/protocol.rs
+index bdff024..8d3dc2f 100644
+--- a/core/src/websocket/protocol.rs
++++ b/core/src/websocket/protocol.rs
+@@ -253,9 +253,43 @@ pub(crate) fn frame_request(req: &WebSocketRequest) -> Result<String, MarketData
+ 
+ /// Parse an inbound text frame into a typed `WebSocketMessage`.
+ pub(crate) fn parse_text_frame(text: &str) -> Result<WebSocketMessage, MarketDataError> {
++    // PROTOTYPE (#214 measurement only): for data events, keep `data` as the
++    // verbatim slice instead of a `serde_json::Value` tree.
++    if text.starts_with("{\"event\":\"data\"") {
++        #[derive(serde::Deserialize)]
++        struct Light {
++            event: String,
++            #[serde(default)]
++            channel: Option<String>,
++            #[serde(default)]
++            symbol: Option<String>,
++            #[serde(default)]
++            id: Option<String>,
++            #[serde(default)]
++            code: Option<i32>,
++            #[serde(default)]
++            message: Option<String>,
++            #[serde(default)]
++            data: Option<Box<serde_json::value::RawValue>>,
++        }
++        let l: Light =
++            serde_json::from_str(text).map_err(|e| MarketDataError::DeserializationError { source: e })?;
++        return Ok(WebSocketMessage {
++            event: l.event,
++            data: None,
++            data_raw: l.data.map(|d| d.get().to_string()),
++            channel: l.channel,
++            symbol: l.symbol,
++            id: l.id,
++            code: l.code,
++            message: l.message,
++            raw: text.to_string(),
++        });
++    }
+     let mut msg: WebSocketMessage =
+         serde_json::from_str(text).map_err(|e| MarketDataError::DeserializationError { source: e })?;
+     msg.raw = text.to_string();
++    msg.data_raw = None;
+     Ok(msg)
+ }
+ 
+diff --git a/uniffi/src/models.rs b/uniffi/src/models.rs
+index 6312989..42a3169 100644
+--- a/uniffi/src/models.rs
++++ b/uniffi/src/models.rs
+@@ -61,7 +61,7 @@ impl From<core::WebSocketMessage> for StreamMessage {
+             channel: msg.channel,
+             symbol: msg.symbol,
+             id: msg.id,
+-            data_json: msg.data.map(|d| d.to_string()),
++            data_json: msg.data_raw.or_else(|| msg.data.map(|d| d.to_string())),
+             error_code,
+             error_message,
+         }

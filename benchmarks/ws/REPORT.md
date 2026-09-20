@@ -201,22 +201,53 @@ Raw data: `results/2026-09-20/rate500-<lang>.json`.
    `ThreadsafeFunction` → JS thread. Latency is identical (p50 0 ms, p99
    1-2 ms, 10K and 50K).
 
-3. **JS CPU per message roughly doubled** (71 → 135 ms for 10K; the old SDK
-   went 74 → 64 ms on the same machine, so it is not the environment). It
-   does not show in throughput (the binding is still within 7% of the null
-   client), but it is the one regression in this run. `process.cpuUsage()`
-   includes the Rust threads; candidates are the same queue rewrite plus the
-   per-message `InFlight` permit (a mutex + `notify_all` per frame -- with
-   `messageOverflow: 'unbounded'` the `wait_for_room` side returns at once)
-   and liveness bookkeeping. Note the April client ran with the binding's
-   defaults, before `messageOverflow` existed; this run sets `unbounded`, so
-   the CPU comparison spans that setting change too. Not bisectable for the
-   same reason as (1); tracked in #214. C# (+70%) moves the same way; the
-   Go/C++/Java CPU columns have no April figure to compare with (see (6)).
-   With all six clients measuring the same thing, though, JS is not an
-   outlier: its 135 ms sits between C++ (124) and C#/Go (151-156), so the
-   doubling brought it in line with the other bindings rather than above
-   them.
+3. **Every Rust-core binding but Java costs about twice the legacy JS SDK's
+   user CPU, and the cost is in core's shared path, not in any one binding**
+   (#214). April read this as a JS regression (71 → 135 ms for 10K, while the
+   old SDK went 74 → 64 ms on the same machine), but with all six clients
+   measuring the same thing (see (6)) JS is not an outlier: C++ 124, JS 135,
+   Python 135, Go 151, C# 156 ms against the legacy SDK's 64 (Java's 1,926 ms
+   is its own story, see (5)). April→now is still not bisectable (see (1)),
+   so instead the new JS client was profiled on this tree, with the results
+   under [`results/2026-09-20/profile-214/`](results/2026-09-20/profile-214/):
+
+   - **Per thread** (200K frames, `ps -M`, medians of 3): the legacy SDK does
+     everything on the JS thread (0.59 s user). The new SDK's JS thread uses
+     *less* (0.44 s: it no longer decodes WebSocket frames), and the rest is
+     Rust: 0.46 s on the tokio worker running core's read loop and 0.16 s on
+     the thread that moves items from core's queue to the
+     `ThreadsafeFunction`. Per frame that is 2.3 µs + 0.8 µs of Rust on top
+     of 2.2 µs of JS.
+   - **Inside the read loop** (`sample`, share of the loop's on-CPU samples):
+     ~26% the `recvfrom` syscall (system time) and ~18% tungstenite's frame
+     decode, ~35% `parse_text_frame`, ~13% the queue push (mostly its
+     `notify_all` syscall). The parse is the largest user-time item, and 80%
+     of it is building `WebSocketMessage.data` as a `serde_json::Value` tree
+     (an `IndexMap` per object, `preserve_order`); dropping that tree is
+     another third of the queue-reader thread's CPU. JS hands `raw` to the
+     listener and never reads the tree; Python re-parses `raw` into the dict
+     it hands the callback (so it builds the tree twice); the UniFFI bindings
+     only re-serialise it into `data_json`.
+   - **What it would buy**: a measurement-only prototype that keeps `data` as
+     the verbatim JSON slice for data events (`prototype-data-rawvalue.patch`,
+     3 runs each, JS/Go/C# measured) takes 6-8% off user CPU at 10K and
+     13-16% at 50K (JS 336 → 292, Go 420 → 355, C# 406 → 340 ms). System
+     time rises at the same time (5-7 ms at 10K, 13-22 ms at 50K: the
+     threads idle and wake more often), so the process total only drops
+     1.5-4% at 10K and 4-10% at 50K. For the UniFFI bindings the prototype
+     also removes the Value → string round trip on the reader thread, which
+     is most of what was queueing them at 50K: Go p50 28 → 10 ms and C# 19 →
+     1 ms, throughput +13-15%. JS throughput and latency are unchanged (its
+     reader thread was not the bottleneck).
+
+   The remainder (frame decode, the two thread hops, the queue) is the
+   architecture: the legacy SDK is `ws` + an EventEmitter on one thread, the
+   new one crosses two thread boundaries per frame. The `InFlight` permit and
+   liveness bookkeeping named as candidates in the previous version of this
+   report are negligible in the profile (4 samples of ~1,500). Changing how
+   `data` is parsed is a change to core's public `WebSocketMessage` (the
+   prototype is not shippable as is); whether to make it is a separate
+   decision from #214.
 
 4. **C#, Go, C++ and JS are within 8% of each other at 10K** (172-185K
    msg/s, 90-96% of the null client). April's ranking "C# 2nd, Go 3rd at
@@ -481,7 +512,9 @@ WebSocket Benchmark: 10000 messages, rate=burst, warmup=1000, runs=3, lang=py
   limited), `<count>-null.jsonl` (null client), `environment.txt` (versions,
   command, env), `may-snapshot-go.txt` (the `14fb9f6` control run);
   `results/2026-09-20/cpu-rerun/` holds the evening rerun the 10K and 50K
-  tables are taken from (same layout, its own `environment.txt`)
+  tables are taken from (same layout, its own `environment.txt`);
+  `results/2026-09-20/profile-214/` the per-thread and `sample` profiles and
+  the prototype behind Key Takeaway 3 (see its `README.txt`)
 
 ### Running Individual Components
 

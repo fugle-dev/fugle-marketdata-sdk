@@ -1,0 +1,42 @@
+USER      PID   TT   %CPU STAT PRI     STIME     UTIME COMMAND
+zackfan 68748   ??   91.9 S    31T   0:00.20   0:00.58 node --expose-gc bench-old.js ...
+        68748         0.0 S    31T   0:00.00   0:00.00 
+        68748         0.6 S    31T   0:00.00   0:00.01 
+        68748         0.5 S    31T   0:00.00   0:00.01 
+        68748         0.7 S    31T   0:00.00   0:00.01 
+        68748         0.6 S    31T   0:00.00   0:00.01 
+        68748         0.0 S    31T   0:00.00   0:00.00 
+        68748         0.0 S    31T   0:00.00   0:00.00 
+        68748         0.0 S    31T   0:00.00   0:00.00 
+        68748         0.0 S    31T   0:00.00   0:00.00 
+        68748         0.0 S    31T   0:00.00   0:00.00 
+        68748         0.0 S    31T   0:00.00   0:00.00 
+{"sdk":"old-js-1.6.0","count":200000,"expected":200000,"lost":0,"elapsed_ms":714,"msgs_per_sec":280112,"latency_p50_ms":0,"latency_p99_ms":1,"latency_min_ms":0,"latency_max_ms":1,"mem_rss_delta_mb":12.1,"cpu_user_ms":577.193,"cpu_system_ms":194.031,"server_msgs_per_sec":277008}
+USER      PID   TT   %CPU STAT PRI     STIME     UTIME COMMAND
+zackfan 68771   ??   92.4 S    31T   0:00.20   0:00.60 node --expose-gc bench-old.js ...
+        68771         0.0 S    31T   0:00.00   0:00.00 
+        68771         0.4 S    31T   0:00.00   0:00.01 
+        68771         0.6 S    31T   0:00.00   0:00.01 
+        68771         0.4 S    31T   0:00.00   0:00.01 
+        68771         0.6 S    31T   0:00.00   0:00.01 
+        68771         0.0 S    31T   0:00.00   0:00.00 
+        68771         0.0 S    31T   0:00.00   0:00.00 
+        68771         0.0 S    31T   0:00.00   0:00.00 
+        68771         0.0 S    31T   0:00.00   0:00.00 
+        68771         0.0 S    31T   0:00.00   0:00.00 
+        68771         0.0 S    31T   0:00.00   0:00.00 
+{"sdk":"old-js-1.6.0","count":200000,"expected":200000,"lost":0,"elapsed_ms":712,"msgs_per_sec":280899,"latency_p50_ms":0,"latency_p99_ms":1,"latency_min_ms":0,"latency_max_ms":2,"mem_rss_delta_mb":12.1,"cpu_user_ms":573.794,"cpu_system_ms":194.362,"server_msgs_per_sec":277393}
+USER      PID   TT   %CPU STAT PRI     STIME     UTIME COMMAND
+zackfan 68780   ??   93.4 S    31T   0:00.20   0:00.59 node --expose-gc bench-old.js ...
+        68780         0.0 S    31T   0:00.00   0:00.00 
+        68780         0.4 S    31T   0:00.00   0:00.01 
+        68780         0.7 S    31T   0:00.00   0:00.01 
+        68780         0.6 S    31T   0:00.00   0:00.01 
+        68780         0.7 S    31T   0:00.00   0:00.01 
+        68780         0.0 S    31T   0:00.00   0:00.00 
+        68780         0.0 S    31T   0:00.00   0:00.00 
+        68780         0.0 S    31T   0:00.00   0:00.00 
+        68780         0.0 S    31T   0:00.00   0:00.00 
+        68780         0.0 S    31T   0:00.00   0:00.00 
+        68780         0.0 S    31T   0:00.00   0:00.00 
+{"sdk":"old-js-1.6.0","count":200000,"expected":200000,"lost":0,"elapsed_ms":708,"msgs_per_sec":282486,"latency_p50_ms":0,"latency_p99_ms":1,"latency_min_ms":0,"latency_max_ms":2,"mem_rss_delta_mb":11.4,"cpu_user_ms":572.95,"cpu_system_ms":193.157,"server_msgs_per_sec":278940}
