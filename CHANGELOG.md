@@ -104,6 +104,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SessionType.Regular` is not sent; `MoverRequest.Price` is formatted
   invariantly; a negative `Offset` / `Limit` / period is an
   `ArgumentOutOfRangeException` instead of a 400.
+- **C#: event-style WebSocket clients in the FubonNeo shape** (#204).
+  `FugleMarketData.WebsocketClient.FugleWebsocketClientFactory`
+  (`Create(sdkToken, versions, baseUrl)` / `CreateWithApiKey(apiKey, …)`;
+  lazy `Stock` / `FutureOption`), `FugleWebsocketStockClient` /
+  `FugleWebsocketFutOptClient` (also constructible over your own
+  `WebSocketClientOptions`) with `Subscribe(StockChannel, string)`,
+  `Subscribe(StockChannel, params string[])`,
+  `Subscribe(StockChannel, StockSubscribeParams)` (and the
+  `FutureOptionChannel` / `FutureOptionParams` forms), and the abstract
+  `FugleWebsocketClient`: `Action<string>` events `OnMessage`, `OnError`,
+  `OnConnected`, `OnDisconnected`, `OnClose`, `Action<Exception>
+  OnException` (a `MarketDataStreamException` carrying core's `ErrorInfo`),
+  plus `OnReconnecting`, `OnReconnectFailed`, `OnMessagesDropped`;
+  `Connect()`, `Disconnect(msg)`, `Ping(msg)`, three `Unsubscribe` forms,
+  `IsConnected`, `Inner`. `FugleMarketData.WebsocketModels` holds
+  `StockChannel`, `FutureOptionChannel`, `BaseParams`,
+  `StockSubscribeParams`, `FutureOptionParams`, `UnsubscribeParams`. Each
+  client owns one `WebSocketClient` and an internal `IWebSocketListener`
+  that maps the callbacks onto the events (README: "Event-style client");
+  `IWebSocketListener` and `WebSocketClient` are unchanged. No `Mode` and
+  no `Connect(timeout, enablePingPong)`: Speed/Normal is a Fubon endpoint
+  concept and liveness is the SDK's health check.
+- **CI: C# net6 runtime smoke** (#204). A net6.0 console consumes the
+  library's netstandard2.0 assets and makes one REST and one WebSocket call
+  across the FFI, since that is the runtime most FubonNeo users are on and
+  nothing else loaded those assets.
 - **C#: `WebSocketClientOptions.Versions`** (`WebsocketVersionOptions
   { Stock, FutOpt }`) selects the streaming version, which the wrapper used
   to fix at the latest (#202).

@@ -169,6 +169,41 @@ await Task.Delay(TimeSpan.FromSeconds(10));
 await ws.DisconnectAsync();
 ```
 
+### WebSocket Streaming, event style (FubonNeo shape)
+
+The same stream through `Action<string>` events instead of a listener class —
+the shape of FubonNeo's `FugleMarketData` client, so code written against it
+moves over with its `using` lines and event handlers intact:
+
+```csharp
+using FugleMarketData.WebsocketClient;
+using FugleMarketData.WebsocketModels;
+
+using var factory = FugleWebsocketClientFactory.Create(sdkToken);   // or CreateWithApiKey(apiKey)
+var stock = factory.Stock;                                          // factory.FutureOption for FutOpt
+
+stock.OnConnected = msg => Console.WriteLine(msg);                  // "Connected"
+stock.OnMessage += raw => Console.WriteLine(raw);                   // every frame, verbatim
+stock.OnError += raw => Console.WriteLine($"server error: {raw}");  // error frames
+stock.OnException += ex => Console.WriteLine($"sdk error: {ex.Message}");
+stock.OnDisconnected += msg => Console.WriteLine($"disconnected: {msg}");
+
+await stock.Connect();
+await stock.Subscribe(StockChannel.Trades, "2330");
+await stock.Subscribe(StockChannel.Trades, "2330", "2317");         // one frame, symbols: [...]
+await stock.Subscribe(StockChannel.Trades, new StockSubscribeParams { Symbol = "2330", IntradayOddLot = true });
+await stock.Unsubscribe("id-from-subscribed-message");
+
+await stock.Disconnect("bye");                                      // OnDisconnected("bye")
+```
+
+Every event is a settable property with a no-op default, so `=` and `+=`
+both work (set them before `Connect()`; `+=` is not atomic). Handlers run on
+the SDK's callback thread; one that throws does not stop the stream — the
+failure comes back through `OnException` (code 3004).
+See [Event-style client](#event-style-client-fubonneo-shape) for the full
+surface and the differences from FubonNeo.
+
 ## Authentication
 
 Three authentication methods are supported:
@@ -399,6 +434,84 @@ The first failure is reported at once, later ones at most once per second,
 counting the failures since the previous report; failures after the last
 report are not reported on their own. An exception thrown by `OnError` itself
 is written to `Console.Error` and not re-reported.
+
+#### Event-style client (FubonNeo shape)
+
+`FugleMarketData.WebsocketClient` / `FugleMarketData.WebsocketModels` hold a
+second surface over the same `WebSocketClient`: FubonNeo's class names, enums
+and `Action<string>` events. The listener interface and `WebSocketClient`
+are unchanged; each event client owns one `WebSocketClient` (`Inner`) and an
+internal listener that maps its callbacks onto the events.
+
+```csharp
+// FugleMarketData.WebsocketClient
+FugleWebsocketClientFactory.Create(string sdkToken, WebsocketVersionOptions? versions = null, string? baseUrl = null)
+FugleWebsocketClientFactory.CreateWithApiKey(string apiKey, WebsocketVersionOptions? versions = null, string? baseUrl = null)
+factory.Stock          // FugleWebsocketStockClient, built on first access
+factory.FutureOption   // FugleWebsocketFutOptClient, built on first access
+factory.Dispose()      // disposes the clients it built
+
+// Own options (reconnect, health check, message queue, …): Endpoint must match the class
+new FugleWebsocketStockClient(WebSocketClientOptions options)     // Endpoint = Stock (the default)
+new FugleWebsocketFutOptClient(WebSocketClientOptions options)    // Endpoint = FutOpt
+
+// abstract FugleWebsocketClient : IDisposable
+Action<string>    OnMessage, OnError, OnConnected, OnDisconnected, OnClose
+Action<Exception> OnException                       // MarketDataStreamException { ErrorInfo Info }
+Action<uint>      OnReconnecting, OnReconnectFailed // not in FubonNeo
+Action<ulong>     OnMessagesDropped                 // not in FubonNeo
+Task Connect()
+Task Disconnect(string msg = "Disconnect")
+Task Ping(string pingMsg = "ping")
+Task Unsubscribe(string channelId)
+Task Unsubscribe(params string[] channelIds)
+Task Unsubscribe(UnsubscribeParams param)           // ChannelId + ChannelIds in one frame
+bool IsConnected
+WebSocketClient Inner                               // the underlying client
+
+// FugleWebsocketStockClient — StockChannel { Trades, Candles, Books, Aggregates, Indices }
+Task Subscribe(StockChannel channel, string symbol)
+Task Subscribe(StockChannel channel, params string[] symbols)
+Task Subscribe(StockChannel channel, StockSubscribeParams param)    // { Symbol, Symbols, IntradayOddLot }
+
+// FugleWebsocketFutOptClient — FutureOptionChannel { Trades, Books, Candles, Aggregates }
+Task Subscribe(FutureOptionChannel channel, string symbol)
+Task Subscribe(FutureOptionChannel channel, params string[] symbols)
+Task Subscribe(FutureOptionChannel channel, FutureOptionParams param) // { Symbol, Symbols, AfterHours }
+```
+
+The channel string is the enum name lower-cased. A params object's `Symbol`
+(when non-empty) and `Symbols` go into one frame; none at all is error 1005.
+`FutureOptionParams` cannot be passed to the stock client (and vice versa):
+that is a compile error, not a runtime one.
+
+Events, from the listener callbacks:
+
+| Listener callback | Event |
+|---|---|
+| `OnConnected()` | `OnConnected("Connected")` — again after every reconnect |
+| `OnAuthenticated(json)` | nothing |
+| `OnUnauthenticated(json)` | `OnError(json ?? "{}")`, then `OnException(MarketDataStreamException "Authenticate Failed!")` (code 2002) |
+| `OnMessage(msg)` | `OnMessage(msg.raw)`; an `error` frame raises `OnError(msg.raw)` first |
+| `OnError(info)` | `OnException(new MarketDataStreamException(info))` |
+| `OnDisconnected(_)` after `Disconnect(msg)` | `OnDisconnected(msg)` |
+| `OnDisconnected(_)` otherwise | `OnClose("Received close message")`, then `OnDisconnected("Server Disconnected")` — with reconnect on, `OnReconnecting` follows |
+| `OnReconnecting` / `OnReconnectFailed` / `OnMessagesDropped` | same name |
+
+Moving from FubonNeo's `FugleMarketData` client:
+
+| FubonNeo | Here |
+|---|---|
+| `FugleWebsocketClientFactory.Create(token, Mode.Speed, versions, baseUrl)` | `Create(sdkToken, versions, baseUrl)` — no `Mode`: Speed/Normal is a Fubon endpoint concept |
+| `Connect(timeoutMs, enablePingPong)` | `Connect()` — liveness is the SDK's [health check](#health-check) (on by default); auth timeout is `WebSocketClientOptions.AuthTimeoutMs` |
+| `ValueTask` returns | `Task` — `await` as before |
+| events default to `Console.WriteLine` | default to no-op |
+| `WebSocketState` | `IsConnected`, or `Inner.IsClosed` |
+| `Subscribe(channel, new[] { "2330" })` (one-element array) sends `symbols: ["2330"]` | sends `symbol: "2330"` — the server treats both alike |
+| `Unsubscribe(new UnsubscribeParams { ChannelId = "a" })` sent no id at all (the condition was inverted) | sends `id: "a"` |
+| `Disconnect(msg)` always raised `OnDisconnected(msg)`, even with nothing to close | raised by core's disconnect only: no event when never connected, already disconnected, or reconnecting |
+| reconnect: none | on by default (`OnClose` → `OnDisconnected` → `OnReconnecting` → `OnConnected`); off via `new FugleWebsocketStockClient(new WebSocketClientOptions { …, Reconnect = new ReconnectOptions { Enabled = false } })` |
+| an exception in a handler propagates | is caught and reported through `OnException` (code 3004), the stream continues |
 
 #### Reconnection
 
