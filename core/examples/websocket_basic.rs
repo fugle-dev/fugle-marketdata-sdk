@@ -69,7 +69,7 @@ fn main() -> Result<(), marketdata_core::MarketDataError> {
                         msg.channel.as_deref().unwrap_or("?"),
                         msg.symbol.as_deref().unwrap_or("?")
                     );
-                    if let Some(ref data) = msg.data {
+                    if let Some(data) = msg.data() {
                         if msg.channel.as_deref() == Some("trades") {
                             let price = data.get("price").and_then(serde_json::Value::as_f64);
                             let size = data.get("size").and_then(serde_json::Value::as_i64);

@@ -253,18 +253,15 @@ pub(crate) fn frame_request(req: &WebSocketRequest) -> Result<String, MarketData
 
 /// Parse an inbound text frame into a typed `WebSocketMessage`.
 pub(crate) fn parse_text_frame(text: &str) -> Result<WebSocketMessage, MarketDataError> {
-    let mut msg: WebSocketMessage =
-        serde_json::from_str(text).map_err(|e| MarketDataError::DeserializationError { source: e })?;
-    msg.raw = text.to_string();
-    Ok(msg)
+    WebSocketMessage::parse(text)
 }
 
 /// Parse an inbound binary frame into a typed `WebSocketMessage`.
 pub(crate) fn parse_binary_frame(data: &[u8]) -> Result<WebSocketMessage, MarketDataError> {
-    let mut msg: WebSocketMessage =
-        serde_json::from_slice(data).map_err(|e| MarketDataError::DeserializationError { source: e })?;
-    msg.raw = String::from_utf8_lossy(data).into_owned();
-    Ok(msg)
+    let text = std::str::from_utf8(data).map_err(|e| MarketDataError::DeserializationError {
+        source: serde::de::Error::custom(format_args!("frame is not valid UTF-8: {e}")),
+    })?;
+    WebSocketMessage::parse(text)
 }
 
 /// Classify a frame received during the auth handshake.
@@ -274,7 +271,7 @@ pub(crate) fn parse_binary_frame(data: &[u8]) -> Result<WebSocketMessage, Market
 /// attempt (`ConnectionError` naming the code and the server's message), not
 /// of the credentials (#201).
 pub(crate) fn classify_auth_response(msg: &WebSocketMessage) -> AuthOutcome {
-    let data = || msg.data.clone().unwrap_or(serde_json::Value::Null);
+    let data = || msg.data().cloned().unwrap_or(serde_json::Value::Null);
     if msg.is_authenticated() {
         return AuthOutcome::Authenticated(data());
     }
@@ -329,7 +326,7 @@ pub(crate) fn handle_subscribed_event(
     }
 
     // Batched shape: data is an array of subscription entries.
-    if let Some(arr) = msg.data.as_ref().and_then(|d| d.as_array()) {
+    if let Some(arr) = msg.data().and_then(|d| d.as_array()) {
         for entry in arr {
             let Some(id) = entry.get("id").and_then(|v| v.as_str()) else {
                 continue;
@@ -360,7 +357,7 @@ pub(crate) fn handle_subscribed_event(
 
     // Single shape: pull fields from data object when present, falling back
     // to the WebSocketMessage top-level fields the model already exposes.
-    let data_obj = msg.data.as_ref().and_then(|d| d.as_object());
+    let data_obj = msg.data().and_then(|d| d.as_object());
     let id = data_obj
         .and_then(|d| d.get("id"))
         .and_then(|v| v.as_str())
@@ -401,7 +398,21 @@ mod tests {
     use serde_json::json;
 
     fn parse_msg(json: &str) -> WebSocketMessage {
-        serde_json::from_str(json).unwrap()
+        WebSocketMessage::parse(json).unwrap()
+    }
+
+    #[test]
+    fn binary_frame_parses_like_text() {
+        let json = r#"{"event":"data","data":{"price":1},"channel":"trades"}"#;
+        let msg = parse_binary_frame(json.as_bytes()).unwrap();
+        assert_eq!(msg.raw, json);
+        assert_eq!(msg.data_json().as_deref(), Some(r#"{"price":1}"#));
+    }
+
+    #[test]
+    fn non_utf8_binary_frame_is_a_deserialization_error() {
+        let err = parse_binary_frame(b"{\"event\":\"data\",\"channel\":\"\xff\"}").unwrap_err();
+        assert!(matches!(err, MarketDataError::DeserializationError { .. }), "{err:?}");
     }
 
     #[test]
