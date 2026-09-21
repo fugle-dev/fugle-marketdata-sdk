@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.9 / core 0.9.0-rc.7 / uniffi 0.2.0-rc.7] - 2026-09-22
+
 ### Breaking
 
 - **Rust: `WebSocketMessage::data` is a method, parsed on first use** (#236;
