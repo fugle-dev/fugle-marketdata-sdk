@@ -35,8 +35,21 @@ Wheels are built for CPython 3.8+ using the stable ABI (abi3):
 | OS | Architectures |
 |---|---|
 | Linux (glibc 2.17+) | x86_64, aarch64 |
+| Linux (musl 1.2+, e.g. Alpine) | x86_64, aarch64 |
 | macOS | x86_64, arm64 |
 | Windows | x64 |
+
+On Alpine, expect lower Python throughput than on a glibc distribution. The
+gap comes mostly from Alpine's own CPython build, not the SDK: 200,000
+`json.loads` calls of a trade message take 515 ms on `python:3.12-alpine`
+against 358 ms on `python:3.12-slim` (same aarch64 host), and the SDK's
+WebSocket benchmark shows a similar ~20% gap. The Node.js addon shows no
+slowdown on musl. If throughput matters, use a glibc image such as
+`python:3.12-slim`.
+
+No source distribution is published. On any other platform pip cannot use a
+3.x release and installs 2.x instead; see
+[Unsupported platforms](#unsupported-platforms).
 
 ```bash
 pip install --pre "fugle-marketdata==3.0.0rc8"
@@ -57,6 +70,7 @@ The main package pulls in one prebuilt native addon for your platform through
 | OS | Architectures |
 |---|---|
 | Linux (glibc) | x64, arm64 |
+| Linux (musl, e.g. Alpine) | x64, arm64 |
 | macOS | x64, arm64 |
 | Windows | x64 |
 
@@ -139,12 +153,49 @@ because `uniffi-bindgen-cpp` does not support them. See
 
 ---
 
+## Unsupported platforms
+
+The Python and Node.js packages contain native code, so they only install on
+the platforms listed above. Not covered: 32-bit ARM (e.g. armv7l Raspberry Pi
+OS), Windows arm64, 32-bit Windows and x86, and Python 3.7.
+
+**Python.** pip skips a release that has no wheel for your platform and
+installs the newest one that does, so `pip install fugle-marketdata` on these
+platforms installs the pure-Python 2.x SDK, which still works. Only an
+explicit request such as `fugle-marketdata==3.0.0` or `>=3` fails with
+`No matching distribution found`. You have two options:
+
+- Stay on 2.x and make it explicit: `pip install "fugle-marketdata<3"`.
+- Build 3.x from source. This needs a Rust toolchain (<https://rustup.rs>):
+
+  ```bash
+  git clone https://github.com/fugle-dev/fugle-marketdata-sdk.git
+  cd fugle-marketdata-sdk
+  pip install maturin
+  maturin build --release -m py/Cargo.toml
+  pip install target/wheels/fugle_marketdata-*.whl
+  ```
+
+**Node.js.** npm does not fall back to an older version. `npm install` succeeds,
+but `require('@fugle/marketdata')` throws `Cannot find native binding`. Pin
+`@fugle/marketdata@<3` for the pure-JS 1.x SDK, or build the addon from source
+(see [`js/README.md`](../js/README.md#from-source)).
+
+---
+
 ## Troubleshooting
 
 ### pip installs 2.x instead of 3.x
 
-Pre-releases need `--pre` or an explicit version such as
-`fugle-marketdata==3.0.0rc8`.
+Two causes:
+
+- **Missing `--pre`.** Pre-releases need `--pre` or an explicit version such
+  as `fugle-marketdata==3.0.0rc8`.
+- **No wheel for your platform.** pip picks the newest release that installs
+  (see [Unsupported platforms](#unsupported-platforms)); with an explicit 3.x
+  version it reports `No matching distribution found` instead.
+  `pip debug --verbose` lists the tags your interpreter accepts; compare them
+  with the wheel names on <https://pypi.org/project/fugle-marketdata/#files>.
 
 ### npm installs 1.x instead of 3.x
 
@@ -156,7 +207,8 @@ The 3.x pre-releases are on the `next` dist-tag. Use
 npm skipped the optional dependency, usually because of `--no-optional`,
 `--omit=optional`, or a lockfile created on another platform. Reinstall
 without those flags, or delete `node_modules` and the lockfile and install
-again.
+again. If your platform is not in the [table above](#nodejs), no addon exists
+for it; see [Unsupported platforms](#unsupported-platforms).
 
 ### C#: "Unable to load DLL 'marketdata_uniffi'"
 

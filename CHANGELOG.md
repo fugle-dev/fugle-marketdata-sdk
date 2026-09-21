@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Python and Node.js: Linux musl (Alpine) x86_64 and aarch64** (#229).
+  PyPI gains `musllinux_1_2` wheels and npm gains
+  `@fugle/marketdata-linux-x64-musl` / `-linux-arm64-musl`. Before, pip on
+  Alpine skipped 3.x and installed 2.x, and npm installed 3.x but failed at
+  `require`. The release now smoke-tests both in `python:3.12-alpine` and
+  `node:22-alpine`, including one TLS request, before publishing. There is
+  still no sdist, so on other platforms (armv7, Windows arm64, 32-bit) pip
+  keeps installing 2.x. [`docs/INSTALL.md`](docs/INSTALL.md#unsupported-platforms)
+  documents this and how to pin `<3` or build from source.
+
 ## [Bindings 3.0.0-rc.8 / core 0.9.0-rc.6 / uniffi 0.2.0-rc.6] - 2026-09-20
 
 ### Breaking

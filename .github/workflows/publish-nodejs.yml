@@ -142,10 +142,10 @@ jobs:
 
       # Runs in a rehearsal too. `npm publish --dry-run` only packs — it never
       # contacts the registry — so a rehearsal cannot tell whether trusted
-      # publishing is configured. Each of the six packages carries its own
+      # publishing is configured. Each of the eight packages carries its own
       # trusted-publisher config and any one of them being unset fails the
       # real release halfway through, after some packages are already live.
-      # Exchanging an OIDC token per package proves all six up front; the
+      # Exchanging an OIDC token per package proves all eight up front; the
       # tokens are short-lived and discarded here.
       - name: Verify trusted publishers (OIDC)
         working-directory: js

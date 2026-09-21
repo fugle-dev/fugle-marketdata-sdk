@@ -155,6 +155,95 @@ jobs:
       # distribution channel, so build it for every release.
       include_cpp: true
 
+  # Alpine smoke tests of the musl artifacts, before either registry sees
+  # them: install the musllinux wheel / load the musl addon through the
+  # committed loader in python:3.12-alpine / node:22-alpine, then make one
+  # real HTTPS request with a fake key. Any HTTP status (normally 401) proves
+  # the TLS handshake succeeded with rustls reading the image's
+  # /etc/ssl/certs; a TLS or connection failure carries no status. A
+  # transient network failure here blocks the publish: re-run the job.
+  # `docker run` rather than a job container: JavaScript actions cannot run
+  # inside an arm64 Alpine container. Python and Node.js are separate jobs so
+  # one binding's failure only holds back its own registry.
+  smoke-musl-python:
+    name: Smoke test musllinux wheel (${{ matrix.arch }})
+    needs: build-python
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Download musllinux wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.arch }}-musl
+          path: wheels/
+
+      - name: Install, import and make one TLS request on python:3.12-alpine
+        run: |
+          ls wheels/
+          docker run --rm -v "$PWD/wheels:/wheels:ro" python:3.12-alpine sh -euc '
+            pip install --no-cache-dir --root-user-action=ignore /wheels/*musllinux_1_2*.whl
+            python - <<PY
+          from fugle_marketdata import RestClient, WebSocketClient, MarketDataError
+          client = RestClient(api_key="smoke-test-token")
+          assert WebSocketClient(api_key="smoke-test-token").stock is not None
+          try:
+              client.stock.intraday.quote(symbol="2330")
+              raise SystemExit("expected an HTTP error for the fake key")
+          except MarketDataError as e:
+              status = getattr(e, "status", None)
+              if not isinstance(status, int):
+                  raise SystemExit(f"no HTTP response (TLS or connection failure?): {e!r}")
+          print(f"OK: musllinux wheel imports and completes a TLS request (HTTP {status})")
+          PY
+          '
+
+  smoke-musl-nodejs:
+    name: Smoke test musl addon (${{ matrix.target }})
+    needs: build-nodejs
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download musl addon
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: js/
+
+      - name: Load and make one TLS request on node:22-alpine
+        run: |
+          ls js/*.node
+          docker run --rm -v "$PWD/js:/app:ro" -w /app node:22-alpine node -e "
+            const { RestClient, WebSocketClient } = require('./index.js');
+            const client = new RestClient({ apiKey: 'smoke-test-token' });
+            if (!new WebSocketClient({ apiKey: 'smoke-test-token' }).stock) throw new Error('missing WebSocket accessor');
+            client.stock.intraday.quote({ symbol: '2330' }).then(
+              () => { console.error('expected an HTTP error for the fake key'); process.exit(1); },
+              (e) => {
+                if (typeof e.status !== 'number') {
+                  console.error('no HTTP response (TLS or connection failure?):', e); process.exit(1);
+                }
+                console.log('OK: musl addon loads and completes a TLS request (HTTP ' + e.status + ')');
+              });
+          "
+
   # ==============================================================
   # Wave 2: publish to registries
   # ==============================================================
@@ -164,7 +253,7 @@ jobs:
   # `release.yml`, with environment `release` as the trusted publisher.
   publish-python:
     name: Publish to PyPI
-    needs: [resolve, build-python]
+    needs: [resolve, build-python, smoke-musl-python]
     if: needs.resolve.outputs.publish_pypi == 'true'
     runs-on: ubuntu-latest
     environment:
@@ -187,8 +276,11 @@ jobs:
         run: |
           ls -la dist/
           COUNT=$(ls dist/*.whl | wc -l | tr -d ' ')
-          # linux x86_64, linux aarch64, macOS x86_64, macOS arm64, Windows x64
-          [[ "$COUNT" == "5" ]] || { echo "::error::Expected 5 wheels, found $COUNT"; exit 1; }
+          # manylinux x86_64/aarch64, musllinux x86_64/aarch64, macOS x86_64/arm64, Windows x64
+          [[ "$COUNT" == "7" ]] || { echo "::error::Expected 7 wheels, found $COUNT"; exit 1; }
+          for tag in manylinux_2_17_x86_64 manylinux_2_17_aarch64 musllinux_1_2_x86_64 musllinux_1_2_aarch64; do
+            ls dist/*"$tag"*.whl >/dev/null 2>&1 || { echo "::error::Missing $tag wheel"; exit 1; }
+          done
           for w in dist/*.whl; do
             [[ "$(basename "$w")" == fugle_marketdata-${PY_VERSION}-* ]] || { echo "::error::$w is not version $PY_VERSION"; exit 1; }
           done
@@ -234,7 +326,7 @@ jobs:
 
   publish-nodejs:
     name: Publish to npm
-    needs: [resolve, build-nodejs]
+    needs: [resolve, build-nodejs, smoke-musl-nodejs]
     if: needs.resolve.outputs.publish_npm == 'true'
     uses: ./.github/workflows/publish-nodejs.yml
     with:
@@ -395,7 +487,7 @@ jobs:
   # steps are idempotent; re-run failed jobs to finish a partial release.
   create-release:
     name: Create GitHub Release
-    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, publish-java, pack-cpp, smoke-cpp]
+    needs: [resolve, smoke-musl-python, smoke-musl-nodejs, publish-python, publish-nodejs, publish-nuget, publish-go, publish-java, pack-cpp, smoke-cpp]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.resolve.outputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -463,7 +555,7 @@ jobs:
 
   rehearsal-summary:
     name: Rehearsal summary
-    needs: [resolve, publish-python, publish-nodejs, publish-nuget, publish-go, pack-cpp, smoke-cpp]
+    needs: [resolve, smoke-musl-python, smoke-musl-nodejs, publish-python, publish-nodejs, publish-nuget, publish-go, pack-cpp, smoke-cpp]
     if: ${{ always() && needs.resolve.outputs.dry_run == 'true' }}
     runs-on: ubuntu-latest
     steps:

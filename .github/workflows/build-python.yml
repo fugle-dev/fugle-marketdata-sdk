@@ -20,7 +20,7 @@ on:
 
 jobs:
   build:
-    name: Build wheel (${{ matrix.os }}-${{ matrix.target }})
+    name: Build wheel (${{ matrix.os }}-${{ matrix.target }}${{ startsWith(matrix.manylinux, 'musllinux') && '-musl' || '' }})
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +39,15 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64
             manylinux: '2_17'
+          # Linux musl (Alpine) — musllinux_1_2 wheels built in maturin's
+          # musllinux image. Without them pip on Alpine skips 3.x and falls
+          # back to the pure-Python 2.x release.
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: musllinux_1_2
+          - os: ubuntu-24.04-arm
+            target: aarch64
+            manylinux: musllinux_1_2
           # macOS Intel — cross-compiled on Apple Silicon runner. The
           # dedicated `macos-13` Intel runner pool is scarce in GitHub's
           # hosted fleet and sporadically auto-cancels queued jobs before
@@ -113,16 +122,18 @@ jobs:
           args: --release -m py/Cargo.toml --out dist
 
       # Regression guard — if the Linux wheel ever ships without the
-      # manylinux_2_17 ABI tag, fail the build loudly. Historically this
-      # was silently `linux_x86_64` (glibc-locked to the build host),
-      # which broke users on older LTS distros.
-      - name: Assert manylinux ABI tag on Linux wheels
+      # expected ABI tag, fail the build loudly. Historically this was
+      # silently `linux_x86_64` (glibc-locked to the build host), which
+      # broke users on older LTS distros.
+      - name: Assert ABI tag on Linux wheels
         if: runner.os == 'Linux'
         shell: bash
+        env:
+          TAG: ${{ startsWith(matrix.manylinux, 'musllinux') && matrix.manylinux || format('manylinux_{0}', matrix.manylinux) }}
         run: |
           ls dist/*.whl
-          if ! ls dist/*manylinux_2_17*.whl 1>/dev/null 2>&1; then
-            echo "::error::Expected manylinux_2_17 wheel but none found"
+          if ! ls dist/*"${TAG}"*.whl 1>/dev/null 2>&1; then
+            echo "::error::Expected ${TAG} wheel but none found"
             ls dist/
             exit 1
           fi
@@ -130,6 +141,6 @@ jobs:
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.target }}
+          name: wheels-${{ matrix.os }}-${{ matrix.target }}${{ startsWith(matrix.manylinux, 'musllinux') && '-musl' || '' }}
           path: dist/*.whl
           retention-days: 5
