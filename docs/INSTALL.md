@@ -162,8 +162,8 @@ OS), Windows arm64, 32-bit Windows and x86, and Python 3.7.
 **Python.** pip skips a release that has no wheel for your platform and
 installs the newest one that does, so `pip install fugle-marketdata` on these
 platforms installs the pure-Python 2.x SDK, which still works. Only an
-explicit request such as `fugle-marketdata==3.0.0` or `>=3` fails with
-`No matching distribution found`. You have two options:
+explicit request for 3.x (an exact 3.x version, or `fugle-marketdata>=3`)
+fails with `No matching distribution found`. You have two options:
 
 - Stay on 2.x and make it explicit: `pip install "fugle-marketdata<3"`.
 - Build 3.x from source. This needs a Rust toolchain (<https://rustup.rs>):
