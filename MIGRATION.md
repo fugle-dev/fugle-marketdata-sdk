@@ -289,12 +289,18 @@ already dead. Choose one of these:
 
 The SDK warns once per client when it sees this pattern: `disconnect()`
 closing a connection that auto-reconnect restored less than 30 seconds
-earlier. It covers the usual timing only — code that closes the connection
-while the reconnect is still under way loops without it — so no warning
-does not mean no loop. Python issues a `RuntimeWarning`, Node a process warning
-(`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`), and C#, Go, Java
-and C++ report code 3006 through their error callback. The warning changes
-nothing else: the close goes ahead and so does the loop, so fix the code.
+earlier, then `connect()` on the same client less than 30 seconds after
+that. The warning comes from that `connect()`, so the loop is caught in its
+first round. A `disconnect()` with nothing after it — the end of a script or
+a test — is not warned about, however soon after a reconnect it comes, and
+neither is a `connect()` that joins a reconnect under way. It covers the
+usual timing only — code that closes the connection while the reconnect is
+still under way, or waits longer before connecting again, loops without
+it — so no warning does not mean no loop. Python issues a `RuntimeWarning`,
+Node a process warning (`FugleReconnectWarning`, code
+`FUGLE_RECONNECT_CONFLICT`), and C#, Go, Java and C++ report code 3006
+through their error callback. The warning changes nothing else: the
+`connect()` goes ahead and so does the loop, so fix the code.
 
 ```python
 # Turn auto-reconnect off (legacy behaviour)

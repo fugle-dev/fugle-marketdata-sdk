@@ -35,13 +35,21 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
-### Unreleased — reconnect-conflict warning (#226)
+### Unreleased — reconnect-conflict warning (#226, #242)
 
 - `+` `error_code::RECONNECT_CONFLICT` (3006) — a warning reported as
-  `ConnectionEvent::Error` (kind `Client`), at most once per client, right
-  before the `Disconnected` of a `disconnect()` / `force_close()` that
-  closes a connection automatic reconnect restored less than 30 seconds
-  earlier. The close goes ahead. Additive.
+  `ConnectionEvent::Error` (kind `Client`), at most once per client, by a
+  `connect()` made less than 30 seconds after a `disconnect()` /
+  `force_close()` that closed a connection automatic reconnect restored
+  less than 30 seconds earlier, before that `connect()`'s `Connecting`
+  (#242; #226 reported it at the close itself). Nothing fails. Additive.
+- `+` `ReconnectConflictHandle` (also `websocket::ReconnectConflictHandle`;
+  `Clone`, `Default`, `Debug`), `aio::WebSocketClient::reconnect_conflict_handle()`
+  and `aio::WebSocketClient::use_reconnect_conflict_handle(&handle)` — the
+  record behind that warning, shared by code that builds a new client for
+  each connection (the Python, Node and UniFFI bindings) so the close on
+  one client and the `connect()` on the next are seen together (#242).
+  Additive.
 - Behaviour, no signature change: `MarketDataError::AlreadyConnected`
   (2011) displays `Already connected; connect() is not needed while the
   connection is open or being opened` instead of `Already connected; call

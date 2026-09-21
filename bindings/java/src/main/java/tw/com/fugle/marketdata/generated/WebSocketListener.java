@@ -90,10 +90,11 @@ public interface WebSocketListener {
      * Called when an error occurs
      *
      * Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
-     * once per client: `disconnect()` closed a connection that automatic
-     * reconnect had restored less than 30 seconds earlier, which is what
-     * code that also reconnects on its own does (#226). The close goes
-     * ahead; the message says how to resolve it.
+     * once per client: `connect()` was called less than 30 seconds after
+     * `disconnect()` closed a connection that automatic reconnect had
+     * restored less than 30 seconds before, which is what code that also
+     * reconnects on its own does (#226, #242). It comes from that
+     * `connect()`, which goes ahead; the message says how to resolve it.
      */
     public void onError(ErrorInfo error);
     

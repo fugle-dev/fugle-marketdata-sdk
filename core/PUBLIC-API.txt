@@ -16,6 +16,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_droppe
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -29,6 +30,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -91,6 +93,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_droppe
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -104,6 +107,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -3565,6 +3569,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_droppe
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -3578,6 +3583,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -3640,6 +3646,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_droppe
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::messages_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -3653,6 +3660,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -4558,6 +4566,20 @@ impl core::marker::Unpin for marketdata_core::websocket::stream::MessagesDropped
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::MessagesDroppedHandle
 impl !core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
 impl !core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::MessagesDroppedHandle
+pub struct marketdata_core::websocket::ReconnectConflictHandle
+impl core::clone::Clone for marketdata_core::ReconnectConflictHandle
+pub fn marketdata_core::ReconnectConflictHandle::clone(&self) -> marketdata_core::ReconnectConflictHandle
+impl core::default::Default for marketdata_core::ReconnectConflictHandle
+pub fn marketdata_core::ReconnectConflictHandle::default() -> marketdata_core::ReconnectConflictHandle
+impl core::fmt::Debug for marketdata_core::ReconnectConflictHandle
+pub fn marketdata_core::ReconnectConflictHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::ReconnectConflictHandle
+impl core::marker::Send for marketdata_core::ReconnectConflictHandle
+impl core::marker::Sync for marketdata_core::ReconnectConflictHandle
+impl core::marker::Unpin for marketdata_core::ReconnectConflictHandle
+impl core::marker::UnsafeUnpin for marketdata_core::ReconnectConflictHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::ReconnectConflictHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::ReconnectConflictHandle
 pub struct marketdata_core::websocket::ReconnectionConfig
 pub marketdata_core::websocket::ReconnectionConfig::enabled: bool
 pub marketdata_core::websocket::ReconnectionConfig::initial_delay: core::time::Duration
@@ -6152,6 +6174,20 @@ impl core::marker::Unpin for marketdata_core::Quote
 impl core::marker::UnsafeUnpin for marketdata_core::Quote
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::Quote
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::Quote
+pub struct marketdata_core::ReconnectConflictHandle
+impl core::clone::Clone for marketdata_core::ReconnectConflictHandle
+pub fn marketdata_core::ReconnectConflictHandle::clone(&self) -> marketdata_core::ReconnectConflictHandle
+impl core::default::Default for marketdata_core::ReconnectConflictHandle
+pub fn marketdata_core::ReconnectConflictHandle::default() -> marketdata_core::ReconnectConflictHandle
+impl core::fmt::Debug for marketdata_core::ReconnectConflictHandle
+pub fn marketdata_core::ReconnectConflictHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::ReconnectConflictHandle
+impl core::marker::Send for marketdata_core::ReconnectConflictHandle
+impl core::marker::Sync for marketdata_core::ReconnectConflictHandle
+impl core::marker::Unpin for marketdata_core::ReconnectConflictHandle
+impl core::marker::UnsafeUnpin for marketdata_core::ReconnectConflictHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::ReconnectConflictHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::ReconnectConflictHandle
 pub struct marketdata_core::ReconnectionConfig
 pub marketdata_core::ReconnectionConfig::enabled: bool
 pub marketdata_core::ReconnectionConfig::initial_delay: core::time::Duration

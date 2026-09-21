@@ -1489,6 +1489,10 @@ pub struct StockWebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    /// Carries a close made soon after an automatic reconnect to the next
+    /// `connect()`, whose core client is a new one, for the 3006 warning
+    /// (#226, #242).
+    reconnect_conflict: marketdata_core::ReconnectConflictHandle,
     /// `disconnect()` drops `state`, so "has this client been closed?" cannot
     /// be answered from it — `is_closed()` read `None` as "not closed" and
     /// contradicted its own docstring (#146). Set when a disconnect actually
@@ -1527,6 +1531,7 @@ impl StockWebSocketClient {
             message_queue,
             auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
+            reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
             closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
             pending: Arc::new(Mutex::new(None)),
@@ -1644,6 +1649,8 @@ impl StockWebSocketClient {
             self.health_check_config.to_core(),
         ));
         *self.messages_dropped.lock().map_err(lock_err)? = Some(ws_client.messages_dropped_handle());
+        // Before connect(): it warns about the previous connection's close.
+        ws_client.use_reconnect_conflict_handle(&self.reconnect_conflict);
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
@@ -2087,6 +2094,7 @@ impl StockWebSocketClient {
         let message_queue = self.message_queue;
         let auth_timeout = self.auth_timeout;
         let messages_dropped = Arc::clone(&self.messages_dropped);
+        let reconnect_conflict = self.reconnect_conflict.clone();
         let test_panic = test_panic_site();
         let connect_gate = self.connect_gate.clone();
         let pending = Arc::clone(&self.pending);
@@ -2117,6 +2125,8 @@ impl StockWebSocketClient {
             if let Ok(mut slot) = messages_dropped.lock() {
                 *slot = Some(ws_client.messages_dropped_handle());
             }
+            // Before connect(): it warns about the previous connection's close.
+            ws_client.use_reconnect_conflict_handle(&reconnect_conflict);
 
             let handoff = Arc::new(Handoff::new(capacity));
             let stop = Arc::new(AtomicBool::new(false));
@@ -2343,6 +2353,10 @@ pub struct FutOptWebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    /// Carries a close made soon after an automatic reconnect to the next
+    /// `connect()`, whose core client is a new one, for the 3006 warning
+    /// (#226, #242).
+    reconnect_conflict: marketdata_core::ReconnectConflictHandle,
     /// `disconnect()` drops `state`, so "has this client been closed?" cannot
     /// be answered from it — `is_closed()` read `None` as "not closed" and
     /// contradicted its own docstring (#146). Set when a disconnect actually
@@ -2381,6 +2395,7 @@ impl FutOptWebSocketClient {
             message_queue,
             auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
+            reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
             closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
             pending: Arc::new(Mutex::new(None)),
@@ -2484,6 +2499,8 @@ impl FutOptWebSocketClient {
             self.health_check_config.to_core(),
         ));
         *self.messages_dropped.lock().map_err(lock_err)? = Some(ws_client.messages_dropped_handle());
+        // Before connect(): it warns about the previous connection's close.
+        ws_client.use_reconnect_conflict_handle(&self.reconnect_conflict);
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));

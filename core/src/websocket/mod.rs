@@ -39,6 +39,7 @@ pub use connection_event::{ConnectionEvent, ConnectionState, ConnectionStateHand
 pub use health_check::HealthCheckConfig;
 pub use stream::{ConnectionStream, MessagesDroppedHandle, StreamItem, StreamReceiver};
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};
+pub use stream_queue::ReconnectConflictHandle;
 pub use report_throttle::{ReportThrottle, REPORT_INTERVAL};
 pub use subscription::SubscriptionManager;
 pub use sync::WebSocketClient;

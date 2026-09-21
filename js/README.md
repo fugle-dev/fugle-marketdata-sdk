@@ -163,10 +163,11 @@ Reconnect code that first calls `disconnect()` — `disconnect()` then
 `connect()` some time after a `disconnect` event — does not mix with
 auto-reconnect: it closes the connection the SDK has just restored, which
 emits `disconnect` again, and the two loop forever (#226). Remove that code
-or turn auto-reconnect off. When `disconnect()` closes a connection that
-auto-reconnect restored less than 30 seconds earlier, the SDK emits a
-process warning (once per client) pointing at this:
-`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`.
+or turn auto-reconnect off. When `connect()` follows, within 30 seconds, a
+`disconnect()` that closed a connection auto-reconnect restored less than
+30 seconds earlier, the SDK emits a process warning (once per client)
+pointing at this: `FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`.
+A `disconnect()` with no `connect()` after it is not warned about.
 
 ### Health Check Options
 

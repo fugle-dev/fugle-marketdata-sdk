@@ -6,8 +6,10 @@ flag. With auto-reconnect on, that ``disconnect()`` closes the connection the
 SDK has just restored, which fires ``disconnect`` again: the two keep
 triggering each other. The SDK cannot tell that code apart from a deliberate
 close, so it only warns: a ``RuntimeWarning`` (not an ``error`` callback),
-once per client, when ``disconnect()`` closes a connection an automatic
-reconnect restored less than 30 seconds earlier.
+once per client, when ``connect()`` follows, within 30 seconds, a
+``disconnect()`` of a connection an automatic reconnect restored less than 30
+seconds earlier. A ``disconnect()`` with no ``connect()`` after it is the end
+of the program, not a conflict (#242).
 """
 import threading
 import time
@@ -108,3 +110,53 @@ def test_disconnect_of_a_connection_the_caller_opened_is_not_warned_about(server
         ws.connect()
         ws.disconnect()
     assert conflict_warnings(caught) == []
+
+
+def lose_and_reconnect(server, recorder):
+    """Cut the connection and wait for the automatic reconnect's
+    ``authenticated``."""
+    server.drop_connections()
+    recorder.wait_until(
+        lambda calls: [n for n, _ in calls].count("authenticated") == 2, TIMEOUT_S, "the reconnect"
+    )
+
+
+@hard_timeout
+def test_disconnect_soon_after_a_reconnect_with_no_connect_after_it_is_not_warned_about(server):
+    ws = reconnecting_stock(server.url)
+    recorder = Recorder(ws)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            ws.connect()
+            lose_and_reconnect(server, recorder)
+            ws.disconnect()
+            recorder.wait_until(
+                lambda calls: [n for n, _ in calls].count("disconnect") == 2, TIMEOUT_S, "the close"
+            )
+        finally:
+            disconnect_quietly(ws)
+    assert conflict_warnings(caught) == [], [str(w.message) for w in caught]
+
+
+@hard_timeout
+def test_connect_in_the_disconnect_callback_joining_the_reconnect_is_not_warned_about(server):
+    ws = reconnecting_stock(server.url)
+    recorder = Recorder(ws)
+    joined = threading.Event()
+
+    def on_disconnect(*_args):
+        if not joined.is_set():
+            ws.connect()
+            joined.set()
+
+    ws.on("disconnect", on_disconnect)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            ws.connect()
+            lose_and_reconnect(server, recorder)
+            assert joined.wait(TIMEOUT_S), "disconnect callback never ran"
+        finally:
+            disconnect_quietly(ws)
+    assert conflict_warnings(caught) == [], [str(w.message) for w in caught]

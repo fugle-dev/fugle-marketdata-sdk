@@ -222,9 +222,10 @@ thread that runs `disconnect()` then `connect()` after the `disconnect`
 callback set a flag — does not mix with auto-reconnect: it closes the
 connection the SDK has just restored, which fires `disconnect` again, and
 the two loop forever (#226). Remove that code or turn auto-reconnect off.
-When `disconnect()` closes a connection that auto-reconnect restored less
-than 30 seconds earlier, the SDK issues a `RuntimeWarning` (once per
-client) pointing at this.
+When `connect()` follows, within 30 seconds, a `disconnect()` that closed a
+connection auto-reconnect restored less than 30 seconds earlier, the SDK
+issues a `RuntimeWarning` (once per client) pointing at this. A
+`disconnect()` with no `connect()` after it is not warned about.
 
 ### Health Check Config
 

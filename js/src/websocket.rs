@@ -237,12 +237,11 @@ impl EventSink {
     }
 
     /// Emit core's reconnect-conflict report (code 3006) as a process
-    /// warning instead of an `error` event, once per client (#226). Queued
-    /// like an event, so it comes before the `disconnect` that follows it.
+    /// warning instead of an `error` event (#226). Core reports it once per
+    /// client, from a `connect()` (#242). Queued like an event, so it comes
+    /// before that connection's `connect`.
     fn warn_reconnect_conflict(&self, message: String) {
-        if !self.listeners.conflict_warned.swap(true, Ordering::SeqCst) {
-            self.emit(RECONNECT_CONFLICT_WARNING, EventArgs::Text(message));
-        }
+        self.emit(RECONNECT_CONFLICT_WARNING, EventArgs::Text(message));
     }
 
     /// Wait until another `message` frame may be queued (see [`InFlight`]).
@@ -1309,9 +1308,10 @@ struct Listeners {
     /// Throttles the reports of failed listeners (#83), across the client's
     /// connections.
     callback_failures: Mutex<marketdata_core::websocket::ReportThrottle>,
-    /// The reconnect-conflict warning has been emitted (#226): once per
-    /// client, across its connections (each has its own core client).
-    conflict_warned: AtomicBool,
+    /// Carries a close made soon after an automatic reconnect to the next
+    /// `connect()`, and whether the 3006 warning was given, across the
+    /// client's connections: each has its own core client (#226, #242).
+    reconnect_conflict: marketdata_core::ReconnectConflictHandle,
 }
 
 impl Listeners {
@@ -1812,6 +1812,8 @@ impl StockWebSocketClient {
                 message_queue.apply(&mut config);
                 config.auth_timeout = auth_timeout;
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
+                // Before connect(): it warns about the previous connection's close.
+                client.use_reconnect_conflict_handle(&sink.listeners.reconnect_conflict);
                 let _ = client_slot.set(Arc::downgrade(&client));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
@@ -2281,6 +2283,8 @@ impl FutOptWebSocketClient {
                 message_queue.apply(&mut config);
                 config.auth_timeout = auth_timeout;
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
+                // Before connect(): it warns about the previous connection's close.
+                client.use_reconnect_conflict_handle(&sink.listeners.reconnect_conflict);
                 let _ = client_slot.set(Arc::downgrade(&client));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
