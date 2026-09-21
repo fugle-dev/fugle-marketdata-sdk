@@ -1149,7 +1149,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_connect()
 		})
-		if checksum != 34522 {
+		if checksum != 2768 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_connect: UniFFI API checksum mismatch")
 		}
@@ -4436,6 +4436,19 @@ func (_ FfiDestroyerStockTechnicalClient) Destroy(value *StockTechnicalClient) {
 // Wraps the core WebSocketClient and forwards messages to the provided
 // WebSocketListener implementation via a background task.
 type WebSocketClientInterface interface {
+	// Connect to the WebSocket server and authenticate.
+	//
+	// Refused with code 2011 (`ALREADY_CONNECTED`) while connected or while
+	// another `connect()` is in progress.
+	//
+	// During an automatic reconnect it opens no connection of its own: it
+	// waits for that reconnect and returns once the connection is back and
+	// the subscriptions are re-sent, so a `subscribe()` afterwards follows
+	// them. The wait fails with 2010 (`ClientClosed`) if `disconnect()` is
+	// called, 3005 (`RECONNECT_FAILED`) if the reconnect runs out of
+	// attempts, and `AuthError` (2002) if its credentials are rejected.
+	// Called from a listener method, it holds up the listener until the
+	// reconnect ends.
 	Connect() error
 	// Disconnect, returning once the listener has handled the connection's
 	// remaining events, `on_disconnected` included.
@@ -4625,6 +4638,19 @@ func WebSocketClientNewWithUrl(apiKey string, listener WebSocketListener, endpoi
 	}))
 }
 
+// Connect to the WebSocket server and authenticate.
+//
+// Refused with code 2011 (`ALREADY_CONNECTED`) while connected or while
+// another `connect()` is in progress.
+//
+// During an automatic reconnect it opens no connection of its own: it
+// waits for that reconnect and returns once the connection is back and
+// the subscriptions are re-sent, so a `subscribe()` afterwards follows
+// them. The wait fails with 2010 (`ClientClosed`) if `disconnect()` is
+// called, 3005 (`RECONNECT_FAILED`) if the reconnect runs out of
+// attempts, and `AuthError` (2002) if its credentials are rejected.
+// Called from a listener method, it holds up the listener until the
+// reconnect ends.
 func (_self *WebSocketClient) Connect() error {
 	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
 	defer _self.ffiObject.decrementPointer()

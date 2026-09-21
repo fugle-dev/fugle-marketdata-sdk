@@ -219,6 +219,12 @@ impl From<CoreError> for MarketDataError {
                 msg: info.message.clone(),
                 info,
             },
+            // Like `AlreadyConnected`: `info.code` (3005) identifies it; a
+            // `connect()` waiting on the reconnect gets it (#230).
+            CoreError::ReconnectFailed { .. } => MarketDataError::WebSocketError {
+                msg: info.message.clone(),
+                info,
+            },
             CoreError::InvalidParameter { name, reason } => MarketDataError::ApiError {
                 msg: format!("Invalid parameter '{}': {}", name, reason),
                 info,

@@ -177,7 +177,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_sma_sync() != 21533) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_connect_sync() != 3230) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_connect_sync() != 34616) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect_sync() != 7113) {
