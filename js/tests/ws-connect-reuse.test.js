@@ -55,6 +55,7 @@ function startServer({ failAuth = 0, slowAuth = 0, authDelayMs = 300 } = {}) {
   return new Promise((resolve) => {
     const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
     wss.accepted = 0;
+    wss.authenticated = 0;
     wss.subscribes = [];
     wss.rejectAuth = false;
     wss.refuse = 0;
@@ -78,7 +79,10 @@ function startServer({ failAuth = 0, slowAuth = 0, authDelayMs = 300 } = {}) {
               socket.send(JSON.stringify({ event: 'error', code: 1000, data: { message: 'Invalid API key' } }));
               socket.close();
             } else {
-              const ack = () => socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
+              const ack = () => {
+                wss.authenticated += 1;
+                socket.send(JSON.stringify({ event: 'authenticated', data: { message: 'Authenticated successfully' } }));
+              };
               if (slowAuthsLeft > 0) {
                 slowAuthsLeft -= 1;
                 setTimeout(() => socket.readyState === socket.OPEN && ack(), authDelayMs);
@@ -525,8 +529,9 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
  * `connect()` after a `disconnect` event closes the connection the automatic
  * reconnect has just restored, and that close fires `disconnect` again. The
  * SDK only warns, with a process warning (not an `error` event), once per
- * client. Run in a child process: the addon emits on the real `process`, not
- * Jest's sandbox copy.
+ * client, when `connect()` follows such a close; a close with no `connect()`
+ * after it is not warned about (#242). Run in a child process: the addon
+ * emits on the real `process`, not Jest's sandbox copy.
  */
 describe.each(PRODUCTS)('%s own reconnect code with auto-reconnect on (#226)', (product) => {
   let wss;
@@ -589,12 +594,13 @@ describe.each(PRODUCTS)('%s own reconnect code with auto-reconnect on (#226)', (
         }
         const extra = { rounds };
     `);
-    await waitFor(() => wss.accepted >= 1 && openSockets(wss) === 1, 'the first connection');
+    // Once authenticated: a drop before that fails the child's connect().
+    await waitFor(() => wss.authenticated >= 1 && openSockets(wss) === 1, 'the first connection');
     dropConnections(wss);
     // Connection 3 is the first round's connect(): lose it too, so the next
     // core client's automatic reconnect is closed the same way and the
     // warning must not repeat.
-    await waitFor(() => wss.accepted >= 3 && openSockets(wss) === 1, 'the first round');
+    await waitFor(() => wss.authenticated >= 3 && openSockets(wss) === 1, 'the first round');
     dropConnections(wss);
     const run = await child;
 
@@ -607,6 +613,49 @@ describe.each(PRODUCTS)('%s own reconnect code with auto-reconnect on (#226)', (
     expect(conflicts[0].message).toMatch(/automatic reconnect/);
     expect(conflicts[0].message).toMatch(/reconnect: \{ enabled: false \}/);
     expect(errors).not.toContain(3006);
+  });
+
+  it('does not warn when disconnect() soon after a reconnect is the last call', async () => {
+    const child = runWithClient(`
+        let authenticated = 0;
+        ws.on('authenticated', () => { authenticated += 1; });
+        await ws.connect();
+        while (authenticated < 2) await sleep(20);
+        ws.disconnect();
+        await sleep(200);
+    `);
+    // Once authenticated: a drop before that fails the child's connect().
+    await waitFor(() => wss.authenticated >= 1 && openSockets(wss) === 1, 'the first connection');
+    dropConnections(wss);
+    const run = await child;
+
+    expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
+    expect(wss.accepted).toBe(2);
+    expect(run.result.conflicts).toEqual([]);
+  });
+
+  it('does not warn when connect() in a disconnect handler joins the reconnect', async () => {
+    const child = runWithClient(`
+        let authenticated = 0;
+        let joined = false;
+        ws.on('authenticated', () => { authenticated += 1; });
+        ws.on('disconnect', () => {
+          if (!joined) {
+            joined = true;
+            ws.connect().catch(() => {});
+          }
+        });
+        await ws.connect();
+        while (authenticated < 2) await sleep(20);
+    `);
+    // Once authenticated: a drop before that fails the child's connect().
+    await waitFor(() => wss.authenticated >= 1 && openSockets(wss) === 1, 'the first connection');
+    dropConnections(wss);
+    const run = await child;
+
+    expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
+    expect(wss.accepted).toBe(2);
+    expect(run.result.conflicts).toEqual([]);
   });
 
   it('does not warn when disconnect() closes a connection the caller opened', async () => {

@@ -176,11 +176,14 @@ pub mod error_code {
     pub const RECONNECT_FAILED: i32 = 3005;
     /// A warning, reported as a connection `Error` event: `disconnect()` or
     /// `force_close()` closed a connection the automatic reconnect had
-    /// restored less than 30 seconds earlier, which is what code that also
-    /// reconnects on its own does (#226). Reported at most once per client,
-    /// right before that close's `Disconnected`. Nothing fails: the close
-    /// goes ahead. Python turns it into a `RuntimeWarning` and Node into a
-    /// process warning instead of an `error` event.
+    /// restored less than 30 seconds earlier, and `connect()` was called
+    /// again less than 30 seconds after that close, which is what code that
+    /// also reconnects on its own does (#226, #242). A close with no
+    /// `connect()` after it is not warned about. Reported at most once per
+    /// client, by that `connect()`, before its `Connecting`; nothing fails.
+    /// Python turns it into a `RuntimeWarning` and Node into a process
+    /// warning instead of an `error` event. See
+    /// [`ReconnectConflictHandle`](crate::ReconnectConflictHandle).
     pub const RECONNECT_CONFLICT: i32 = 3006;
     /// [`MarketDataError::Other`](super::MarketDataError::Other).
     pub const OTHER: i32 = 9999;

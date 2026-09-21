@@ -39,8 +39,8 @@ pub use rest::{Auth, RestClient, RetryPolicy};
 pub use websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent,
     HealthCheckConfig,
-    ConnectionStream, MessageOverflow, MessagesDroppedHandle, ReconnectionConfig, StreamItem,
-    StreamReceiver,
+    ConnectionStream, MessageOverflow, MessagesDroppedHandle, ReconnectConflictHandle,
+    ReconnectionConfig, StreamItem, StreamReceiver,
     WebSocketClient, WebSocketFactory,
 };
 

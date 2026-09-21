@@ -366,16 +366,17 @@ impl ConnectionEvent {
 
     /// The warning `Error` (code
     /// [`RECONNECT_CONFLICT`](crate::error_code::RECONNECT_CONFLICT)) for a
-    /// caller's close `elapsed` after an automatic reconnect restored the
-    /// connection (#226).
+    /// caller's `connect()` after it closed a connection `elapsed` after an
+    /// automatic reconnect restored it (#226, #242).
     pub(crate) fn reconnect_conflict(elapsed: Duration) -> Self {
         Self::Error(ErrorInfo::new(
             crate::error_code::RECONNECT_CONFLICT,
             crate::ErrorKind::Client,
             format!(
-                "Your code closed the connection {:.1}s after automatic reconnect restored it. \
-                 If your code also reconnects on its own (disconnect() and connect() after a \
-                 disconnect event), the two keep triggering each other and log in again and again. \
+                "Your code closed the connection {:.1}s after automatic reconnect restored it, \
+                 then called connect() again. If that is your own reconnect code (disconnect() and \
+                 connect() after a disconnect event), it and automatic reconnect keep triggering \
+                 each other and log in again and again. \
                  Pick one: remove your own reconnect code, or turn automatic reconnect off \
                  (reconnect config enabled = false; Python: ReconnectConfig.disabled(), \
                  Node: reconnect: {{ enabled: false }}). See MIGRATION.md, section 5.",

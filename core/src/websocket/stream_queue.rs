@@ -23,7 +23,8 @@
 //!   that failed (#159);
 //! - the drop bookkeeping behind `MessagesDropped`;
 //! - when an automatic reconnect last restored the connection, behind the
-//!   reconnect-conflict warning (#226).
+//!   reconnect-conflict warning (#226), and the client's
+//!   [`ReconnectConflictHandle`].
 //!
 //! [`MessageOverflow::DropNewest`]: crate::websocket::MessageOverflow::DropNewest
 
@@ -51,11 +52,55 @@ pub(crate) fn rejected_reason(message: &str) -> String {
     format!("Credentials rejected: {message}")
 }
 
-/// How soon after an automatic reconnect a caller's close is taken for code
-/// that reconnects on its own as well, and warned about (#226). Such code
-/// closes the connection the reconnect restored a few seconds later, and its
-/// own `disconnect` handler then starts the next round.
+/// How soon after an automatic reconnect a caller's close, and how soon
+/// after that close a caller's `connect()`, are taken for code that
+/// reconnects on its own as well, and warned about (#226, #242). Such code
+/// closes the connection the reconnect restored a few seconds later and
+/// opens a new one straight away; a close with no `connect()` after it is
+/// just the end of the program.
 pub(crate) const RECONNECT_CONFLICT_WINDOW: Duration = Duration::from_secs(30);
+
+/// What the reconnect-conflict warning (#226, #242) remembers across
+/// connections: a caller's close soon after an automatic reconnect, waiting
+/// for a `connect()`, and whether the warning has been given.
+///
+/// Every client starts with its own, from
+/// [`reconnect_conflict_handle`](crate::aio::WebSocketClient::reconnect_conflict_handle).
+/// Code that builds a new client for each connection — the Python, Node and
+/// UniFFI bindings do — hands the same handle to each with
+/// [`use_reconnect_conflict_handle`](crate::aio::WebSocketClient::use_reconnect_conflict_handle)
+/// before its `connect()`, so a close on one client and the `connect()` of
+/// the next are seen together, and the warning is given once for all of
+/// them. Cheap to clone; every clone is the same record.
+#[derive(Clone, Default)]
+pub struct ReconnectConflictHandle {
+    inner: Arc<Mutex<ConflictRecord>>,
+}
+
+#[derive(Default)]
+struct ConflictRecord {
+    /// A caller's close of a connection the reconnect loop authenticated
+    /// `elapsed` before it; when it happened.
+    closed: Option<(Duration, Instant)>,
+    /// The warning has been queued.
+    warned: bool,
+}
+
+impl ReconnectConflictHandle {
+    fn lock(&self) -> MutexGuard<'_, ConflictRecord> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl std::fmt::Debug for ReconnectConflictHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let record = self.lock();
+        f.debug_struct("ReconnectConflictHandle")
+            .field("closed_after_reconnect", &record.closed.map(|(elapsed, _)| elapsed))
+            .field("warned", &record.warned)
+            .finish()
+    }
+}
 
 struct State {
     items: VecDeque<StreamItem>,
@@ -80,8 +125,9 @@ struct State {
     /// When the reconnect loop authenticated the current connection; `None`
     /// once a caller's `connect()` has authenticated one since.
     reconnected_at: Option<Instant>,
-    /// The reconnect-conflict warning has been queued: once per client.
-    conflict_warned: bool,
+    /// The reconnect-conflict record, possibly shared with other clients.
+    /// Locked only inside this lock.
+    conflict: ReconnectConflictHandle,
     /// Message drops not covered by a `MessagesDropped` yet, and when the
     /// last one was queued on the current connection.
     drop_reports: ReportThrottle,
@@ -125,7 +171,7 @@ pub(crate) fn stream(
             disconnect_claimed: false,
             close_reported: false,
             reconnected_at: None,
-            conflict_warned: false,
+            conflict: ReconnectConflictHandle::default(),
             drop_reports: ReportThrottle::new(),
             messages_dropped,
             events_dropped,
@@ -252,6 +298,43 @@ impl StreamSender {
         state.open = false;
         state.messages_dropped.reset();
         state.drop_reports.reset();
+    }
+
+    /// The reconnect-conflict record in use.
+    pub(crate) fn reconnect_conflict_handle(&self) -> ReconnectConflictHandle {
+        self.shared.lock().conflict.clone()
+    }
+
+    /// Use `handle` as the reconnect-conflict record from now on.
+    pub(crate) fn use_reconnect_conflict_handle(&self, handle: ReconnectConflictHandle) {
+        self.shared.lock().conflict = handle;
+    }
+
+    /// A caller's `connect()` is opening a new connection. If the last close
+    /// a caller made was of a connection the reconnect loop had authenticated
+    /// less than [`RECONNECT_CONFLICT_WINDOW`] before, and was itself less
+    /// than that ago, queue the reconnect-conflict warning, once per record
+    /// (#226, #242). Either way that close is used up.
+    pub(crate) fn caller_connecting(&self) {
+        let mut state = self.shared.lock();
+        let conflict = state.conflict.clone();
+        let mut record = conflict.lock();
+        let Some((elapsed, closed_at)) = record.closed.take() else {
+            return;
+        };
+        if record.warned || closed_at.elapsed() >= RECONNECT_CONFLICT_WINDOW {
+            return;
+        }
+        record.warned = true;
+        drop(record);
+        crate::tracing_compat::warn!(
+            target: "fugle_marketdata::ws",
+            elapsed_ms = elapsed.as_millis() as u64,
+            "ws connect() soon after the caller closed a connection an automatic reconnect restored"
+        );
+        let mut outcome = Outcome::default();
+        self.push_event(&mut state, ConnectionEvent::reconnect_conflict(elapsed), &mut outcome);
+        self.finish(state, outcome);
     }
 
     /// Report the connection authenticated: queue `Authenticated`, then the
@@ -485,8 +568,9 @@ impl StreamSender {
     /// (#98).
     ///
     /// Closing an open connection that the reconnect loop authenticated less
-    /// than [`RECONNECT_CONFLICT_WINDOW`] ago first queues the
-    /// reconnect-conflict warning, once per client (#226).
+    /// than [`RECONNECT_CONFLICT_WINDOW`] ago is recorded for the
+    /// reconnect-conflict warning, which the next
+    /// [`caller_connecting`](Self::caller_connecting) gives (#226, #242).
     ///
     /// Same lock order as [`connection_lost`](Self::connection_lost).
     pub(crate) fn client_closed(
@@ -511,17 +595,8 @@ impl StreamSender {
         let mut outcome = Outcome::default();
         if !state.close_reported {
             let elapsed = state.reconnected_at.map(|at| at.elapsed());
-            if let Some(elapsed) = elapsed.filter(|elapsed| *elapsed < RECONNECT_CONFLICT_WINDOW) {
-                if state.open && !state.conflict_warned {
-                    state.conflict_warned = true;
-                    crate::tracing_compat::warn!(
-                        target: "fugle_marketdata::ws",
-                        elapsed_ms = elapsed.as_millis() as u64,
-                        "ws closed by the caller soon after an automatic reconnect"
-                    );
-                    self.push_event(&mut state, ConnectionEvent::reconnect_conflict(elapsed), &mut outcome);
-                }
-            }
+            let conflict = elapsed.filter(|elapsed| state.open && *elapsed < RECONNECT_CONFLICT_WINDOW);
+            state.conflict.lock().closed = conflict.map(|elapsed| (elapsed, Instant::now()));
             let disconnect = Disconnect {
                 code: Some(code),
                 reason,
@@ -956,30 +1031,49 @@ mod tests {
         item.starts_with("Error") && item.contains("code: 3006")
     }
 
-    #[test]
-    fn closing_soon_after_a_reconnect_warns_before_the_disconnected() {
-        let f = fixture(8, 8);
-        let connection = RwLock::new(ConnectionState::Connected);
-        reconnected(&f, &connection);
-
-        f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        let items = drain(&f.rx);
-        assert_eq!(items.len(), 2, "{items:?}");
-        assert!(is_conflict_warning(&items[0]), "{items:?}");
-        assert!(items[0].contains("source_kind: Client"), "{items:?}");
-        assert!(items[1].starts_with("Disconnected") && items[1].contains("Client"), "{items:?}");
+    /// A caller's close soon after a reconnect, then the `connect()` of a
+    /// new client sharing the record, as the bindings do: the items the
+    /// close queued, and those of the `connect()`.
+    fn close_then_connect(f: &Fixture, next: &Fixture, connection: &RwLock<ConnectionState>) -> (Vec<String>, Vec<String>) {
+        f.tx.client_closed(connection, 1000, "Normal closure".into());
+        let closed = drain(&f.rx);
+        next.tx.use_reconnect_conflict_handle(f.tx.reconnect_conflict_handle());
+        next.tx.caller_connecting();
+        (closed, drain(&next.rx))
     }
 
     #[test]
-    fn the_reconnect_conflict_is_warned_about_once_per_client() {
+    fn connect_after_closing_soon_after_a_reconnect_warns() {
+        let f = fixture(8, 8);
+        let next = fixture(8, 8);
+        let connection = RwLock::new(ConnectionState::Connected);
+        reconnected(&f, &connection);
+
+        let (closed, connecting) = close_then_connect(&f, &next, &connection);
+        // The close itself is reported as before, without the warning.
+        assert_eq!(closed.len(), 1, "{closed:?}");
+        assert!(closed[0].starts_with("Disconnected") && closed[0].contains("Client"), "{closed:?}");
+        assert_eq!(connecting.len(), 1, "{connecting:?}");
+        assert!(is_conflict_warning(&connecting[0]), "{connecting:?}");
+        assert!(connecting[0].contains("source_kind: Client"), "{connecting:?}");
+        assert!(connecting[0].contains("then called connect() again"), "{connecting:?}");
+    }
+
+    #[test]
+    fn the_same_client_warns_on_its_next_connect() {
         let f = fixture(8, 8);
         let connection = RwLock::new(ConnectionState::Connected);
         reconnected(&f, &connection);
         f.tx.client_closed(&connection, 1000, "Normal closure".into());
         drain(&f.rx);
+        f.tx.caller_connecting();
+        assert!(drain(&f.rx).iter().any(|i| is_conflict_warning(i)));
+    }
 
-        // The caller's own connect() does not count; the next reconnect does,
-        // but the warning was given already.
+    #[test]
+    fn closing_soon_after_a_reconnect_without_a_connect_does_not_warn() {
+        let f = fixture(8, 8);
+        let connection = RwLock::new(ConnectionState::Connected);
         reconnected(&f, &connection);
         f.tx.client_closed(&connection, 1000, "Normal closure".into());
         let items = drain(&f.rx);
@@ -988,35 +1082,89 @@ mod tests {
     }
 
     #[test]
-    fn no_reconnect_conflict_without_a_recent_reconnect() {
+    fn the_reconnect_conflict_is_warned_about_once_per_record() {
+        let f = fixture(8, 8);
+        let second = fixture(8, 8);
+        let third = fixture(8, 8);
+        let connection = RwLock::new(ConnectionState::Connected);
+        reconnected(&f, &connection);
+        let (_, connecting) = close_then_connect(&f, &second, &connection);
+        assert!(connecting.iter().any(|i| is_conflict_warning(i)), "{connecting:?}");
+
+        // The next client's connection is lost, reconnected and closed the
+        // same way: the warning was given already.
+        let connection = RwLock::new(ConnectionState::Connected);
+        reconnected(&second, &connection);
+        let (closed, connecting) = close_then_connect(&second, &third, &connection);
+        assert_eq!(disconnected_items(&closed).len(), 1, "{closed:?}");
+        assert!(!connecting.iter().any(|i| is_conflict_warning(i)), "{connecting:?}");
+    }
+
+    #[test]
+    fn no_reconnect_conflict_without_a_recent_reconnect_and_close() {
         // A connection the caller opened.
         let f = fixture(8, 8);
+        let next = fixture(8, 8);
         let connection = RwLock::new(ConnectionState::Connected);
         reconnected(&f, &connection);
         f.tx.start_connection();
         f.tx.authenticated(serde_json::Value::Null, Vec::new());
-        f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        assert!(!drain(&f.rx).iter().any(|i| is_conflict_warning(i)));
+        let (_, connecting) = close_then_connect(&f, &next, &connection);
+        assert!(connecting.is_empty(), "{connecting:?}");
 
         // A reconnect longer ago than the window.
         let f = fixture(8, 8);
+        let next = fixture(8, 8);
         let connection = RwLock::new(ConnectionState::Connected);
         reconnected(&f, &connection);
         f.tx.shared.lock().reconnected_at =
             Instant::now().checked_sub(RECONNECT_CONFLICT_WINDOW + Duration::from_secs(1));
+        let (_, connecting) = close_then_connect(&f, &next, &connection);
+        assert!(connecting.is_empty(), "{connecting:?}");
+
+        // A connect() longer after the close than the window.
+        let f = fixture(8, 8);
+        let next = fixture(8, 8);
+        let connection = RwLock::new(ConnectionState::Connected);
+        reconnected(&f, &connection);
         f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        let items = drain(&f.rx);
-        assert!(!items.iter().any(|i| is_conflict_warning(i)), "{items:?}");
-        assert_eq!(disconnected_items(&items).len(), 1, "{items:?}");
+        drain(&f.rx);
+        {
+            let handle = f.tx.reconnect_conflict_handle();
+            let mut record = handle.lock();
+            let (elapsed, _) = record.closed.expect("the close is recorded");
+            record.closed = Instant::now()
+                .checked_sub(RECONNECT_CONFLICT_WINDOW + Duration::from_secs(1))
+                .map(|at| (elapsed, at));
+        }
+        next.tx.use_reconnect_conflict_handle(f.tx.reconnect_conflict_handle());
+        next.tx.caller_connecting();
+        assert!(drain(&next.rx).is_empty());
 
         // Stopping a reconnect in progress: the connection is not open.
         let f = fixture(8, 8);
+        let next = fixture(8, 8);
         let connection = RwLock::new(ConnectionState::Connected);
         reconnected(&f, &connection);
         f.tx.connection_lost(&connection, None, "lost".into(), DisconnectIntent::Network, true);
         drain(&f.rx);
+        let (_, connecting) = close_then_connect(&f, &next, &connection);
+        assert!(connecting.is_empty(), "{connecting:?}");
+    }
+
+    #[test]
+    fn a_connect_uses_up_the_close() {
+        let f = fixture(8, 8);
+        let connection = RwLock::new(ConnectionState::Connected);
+        reconnected(&f, &connection);
+        // Warned already by another client: this close is recorded, and the
+        // connect() after it takes it without a warning.
+        f.tx.reconnect_conflict_handle().lock().warned = true;
         f.tx.client_closed(&connection, 1000, "Normal closure".into());
-        assert!(!drain(&f.rx).iter().any(|i| is_conflict_warning(i)));
+        drain(&f.rx);
+        f.tx.caller_connecting();
+        assert!(drain(&f.rx).is_empty());
+        assert!(f.tx.reconnect_conflict_handle().lock().closed.is_none());
     }
 
     fn disconnected_items(items: &[String]) -> Vec<&String> {

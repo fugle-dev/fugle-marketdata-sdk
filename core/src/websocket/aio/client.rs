@@ -11,7 +11,7 @@ use crate::websocket::liveness::{
     latency_connection_lost, latency_frame, latency_timeout, latency_timeout_or_default,
     LatencyWaiters,
 };
-use crate::websocket::stream_queue::{QueueReceiver, StreamSender};
+use crate::websocket::stream_queue::{QueueReceiver, ReconnectConflictHandle, StreamSender};
 use crate::websocket::protocol::{
     frame_request, AuthHandshake, frame_resubscribe, frame_subscribe, frame_subscribe_futopt,
     frame_unsubscribe, unsubscribe_wire_ids,
@@ -239,6 +239,25 @@ impl WebSocketClient {
     #[must_use]
     pub fn events_dropped_total(&self) -> u64 {
         self.events_dropped.load()
+    }
+
+    /// The record behind the reconnect-conflict warning (code
+    /// [`RECONNECT_CONFLICT`](crate::error_code::RECONNECT_CONFLICT)): a
+    /// `disconnect()` / `force_close()` soon after an automatic reconnect,
+    /// followed by a `connect()` (#226, #242). A closed client cannot
+    /// connect again, so code that builds a new client for each connection
+    /// hands this to the next one with
+    /// [`use_reconnect_conflict_handle`](Self::use_reconnect_conflict_handle).
+    pub fn reconnect_conflict_handle(&self) -> ReconnectConflictHandle {
+        self.stream.reconnect_conflict_handle()
+    }
+
+    /// Use `handle`, taken from an earlier client, as this client's
+    /// reconnect-conflict record. Call it before [`connect`](Self::connect):
+    /// that `connect()` then warns about the earlier client's close, and the
+    /// warning is given once across all clients sharing the handle.
+    pub fn use_reconnect_conflict_handle(&self, handle: &ReconnectConflictHandle) {
+        self.stream.use_reconnect_conflict_handle(handle.clone());
     }
 
     /// Get current connection state (snapshot)
@@ -476,6 +495,9 @@ impl WebSocketClient {
         }
         // No dispatch task, so no reconnect under way or left to report.
         self.waiters.fresh_connect();
+        // A new connection of the caller's own: warn if it follows a close
+        // made soon after an automatic reconnect (#226, #242).
+        self.stream.caller_connecting();
         // Before the state leaves its current value, so a bad TLS setting
         // does not leave the client `Connecting`.
         let tls_connector = tls_connector_for(&self.config)?;
@@ -3355,7 +3377,7 @@ mod connect_during_reconnect_tests {
     use super::*;
     use crate::errors::error_code;
     use crate::websocket::channels::StockSubscription;
-    use crate::websocket::{DisconnectIntent, StreamItem};
+    use crate::websocket::StreamItem;
     use crate::AuthRequest;
     use futures_util::{SinkExt, StreamExt};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3751,11 +3773,32 @@ mod connect_during_reconnect_tests {
             .count()
     }
 
+    /// Events queued so far, without waiting for more.
+    fn events_so_far(client: &WebSocketClient) -> Vec<ConnectionEvent> {
+        let rx = client.stream_receiver();
+        let mut events = Vec::new();
+        while let Ok(Some(item)) = rx.receive_timeout(Duration::from_millis(50)) {
+            if let StreamItem::Event(event) = item {
+                events.push(event);
+            }
+        }
+        events
+    }
+
+    /// A client that shares `client`'s reconnect-conflict record, as the
+    /// bindings build one for each `connect()`.
+    fn next_client(server: &Server, client: &WebSocketClient) -> WebSocketClient {
+        let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("test-key"));
+        let next = WebSocketClient::with_reconnection_config(config, reconnection(3, Duration::from_millis(100)));
+        next.use_reconnect_conflict_handle(&client.reconnect_conflict_handle());
+        next
+    }
+
     /// Code that reconnects on its own closes the connection an automatic
-    /// reconnect just restored: warned about once, right before that
-    /// close's `Disconnected` (#226).
+    /// reconnect just restored and connects again: warned about once, by
+    /// that `connect()`, before its `Connecting` (#226, #242).
     #[tokio::test(flavor = "multi_thread")]
-    async fn disconnect_soon_after_a_reconnect_warns_once() {
+    async fn connect_after_a_disconnect_soon_after_a_reconnect_warns_once() {
         let mut server = server(Later::Serve).await;
         let client = connected(&server, reconnection(3, Duration::from_millis(100))).await;
         server.drop_first();
@@ -3764,18 +3807,52 @@ mod connect_during_reconnect_tests {
 
         client.disconnect().await.expect("disconnect");
         let events = events_until_disconnected(&client);
+        assert_eq!(conflict_warnings(&events), 0, "{events:?}");
+
+        let next = next_client(&server, &client);
+        next.connect().await.expect("connect");
+        let events = events_so_far(&next);
         assert_eq!(conflict_warnings(&events), 1, "{events:?}");
         assert!(
-            matches!(
-                events.as_slice(),
-                [.., ConnectionEvent::Error(_), ConnectionEvent::Disconnected {
-                    intent: DisconnectIntent::Client,
-                    will_reconnect: false,
-                    ..
-                }]
-            ),
+            matches!(events.as_slice(), [ConnectionEvent::Error(_), ConnectionEvent::Connecting, ..]),
             "{events:?}"
         );
+
+        // Once per record: the next round is not warned about again.
+        next.disconnect().await.expect("disconnect");
+        let last = next_client(&server, &next);
+        last.connect().await.expect("connect");
+        assert_eq!(conflict_warnings(&events_so_far(&last)), 0);
+        last.disconnect().await.expect("disconnect");
+    }
+
+    /// A program that closes the connection soon after an automatic
+    /// reconnect and connects no more is not warned about (#242).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_soon_after_a_reconnect_without_a_connect_does_not_warn() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(3, Duration::from_millis(100))).await;
+        server.drop_first();
+        lost(&client);
+        wait_for(&client, |e| matches!(e, ConnectionEvent::Authenticated { .. }));
+
+        client.disconnect().await.expect("disconnect");
+        let mut events = events_until_disconnected(&client);
+        events.extend(events_so_far(&client));
+        assert_eq!(conflict_warnings(&events), 0, "{events:?}");
+    }
+
+    /// A `connect()` that joins the reconnect (#230) is not warned about.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_joining_a_reconnect_does_not_warn() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(3, Duration::from_millis(100))).await;
+        server.drop_first();
+        lost(&client);
+        outcome(spawn_connect(&client)).await.expect("joined");
+        let events = events_so_far(&client);
+        assert_eq!(conflict_warnings(&events), 0, "{events:?}");
+        client.disconnect().await.expect("disconnect");
     }
 
     /// A connection the caller's own `connect()` opened is closed without

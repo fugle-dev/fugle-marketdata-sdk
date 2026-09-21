@@ -83,15 +83,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **All languages: a warning when own reconnect code fights auto-reconnect**
-  (#226). When `disconnect()` or `force_close()` closes a connection that
-  automatic reconnect restored less than 30 seconds earlier, the SDK warns
-  once per client: Python with a `RuntimeWarning`, Node with a process
-  warning (`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`), C#, Go,
-  Java and C++ with code 3006 (`RECONNECT_CONFLICT`) in their error callback,
-  Rust with a `ConnectionEvent::Error` of that code right before the close's
-  `Disconnected` (and a `tracing` warning). Only a warning: the close goes
-  ahead, and the logins go on until the code is changed
+  (#226, #242). When `connect()` is called less than 30 seconds after
+  `disconnect()` or `force_close()` closed a connection that automatic
+  reconnect restored less than 30 seconds earlier, the SDK warns once per
+  client: Python with a `RuntimeWarning`, Node with a process warning
+  (`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`), C#, Go, Java
+  and C++ with code 3006 (`RECONNECT_CONFLICT`) in their error callback,
+  Rust with a `ConnectionEvent::Error` of that code before the `connect()`'s
+  `Connecting` (and a `tracing` warning). A close with no `connect()` after
+  it — a script or test that ends soon after a reconnect — is not warned
+  about (#242; the first version warned at the close). Only a warning: the
+  `connect()` goes ahead, and the logins go on until the code is changed
   ([migration guide §5](MIGRATION.md#5-auto-reconnect-is-on-by-default)).
+  Rust code that builds a new client for each connection shares the new
+  `ReconnectConflictHandle` between them to get it, as the bindings do.
 
 - **Python and Node.js: Linux musl (Alpine) x86_64 and aarch64** (#229).
   PyPI gains `musllinux_1_2` wheels and npm gains

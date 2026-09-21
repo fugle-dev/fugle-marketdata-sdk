@@ -124,6 +124,22 @@ enum class WebSocketEndpoint;
 
 
 /**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
+};
+
+
+/**
  * Coarse-grained classification of the source of a [`MarketDataError`].
  *
  * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -158,22 +174,6 @@ enum class ErrorSourceKind: int32_t {
      * already closed, serialization failure, non-auth/non-throttle 4xx.
      */
     kClient = 5
-};
-
-
-/**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
- */
-enum class MessageOverflowRecord: int32_t {
-    /**
-     * Drop new messages and report them through `on_messages_dropped`.
-     */
-    kDropNewest = 1,
-    /**
-     * Never drop: the queue grows while `on_message` lags.
-     */
-    kUnbounded = 2
 };
 
 
@@ -1322,10 +1322,11 @@ struct WebSocketListener {
      * Called when an error occurs
      *
      * Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
-     * once per client: `disconnect()` closed a connection that automatic
-     * reconnect had restored less than 30 seconds earlier, which is what
-     * code that also reconnects on its own does (#226). The close goes
-     * ahead; the message says how to resolve it.
+     * once per client: `connect()` was called less than 30 seconds after
+     * `disconnect()` closed a connection that automatic reconnect had
+     * restored less than 30 seconds before, which is what code that also
+     * reconnects on its own does (#226, #242). It comes from that
+     * `connect()`, which goes ahead; the message says how to resolve it.
      */
     virtual
     void on_error(const ErrorInfo &error) = 0;
@@ -1482,10 +1483,11 @@ struct WebSocketListenerImpl
      * Called when an error occurs
      *
      * Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
-     * once per client: `disconnect()` closed a connection that automatic
-     * reconnect had restored less than 30 seconds earlier, which is what
-     * code that also reconnects on its own does (#226). The close goes
-     * ahead; the message says how to resolve it.
+     * once per client: `connect()` was called less than 30 seconds after
+     * `disconnect()` closed a connection that automatic reconnect had
+     * restored less than 30 seconds before, which is what code that also
+     * reconnects on its own does (#226, #242). It comes from that
+     * `connect()`, which goes ahead; the message says how to resolve it.
      */
     void on_error(const ErrorInfo &error);
     /**

@@ -91,9 +91,6 @@ pub struct CallbackRegistry {
     /// (#25). Only a writer's panic poisons an `RwLock`.
     #[cfg(debug_assertions)]
     test_poison_lock: std::sync::atomic::AtomicBool,
-    /// The reconnect-conflict warning has been issued (#226). Kept here, not
-    /// in core, because every `connect()` builds a new core client.
-    conflict_warned: std::sync::atomic::AtomicBool,
 }
 
 impl CallbackRegistry {
@@ -106,7 +103,6 @@ impl CallbackRegistry {
             test_poison_lock: std::sync::atomic::AtomicBool::new(
                 std::env::var("FUGLE_MARKETDATA_TEST_PANIC").as_deref() == Ok("ws_callback_poison"),
             ),
-            conflict_warned: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -346,13 +342,10 @@ impl CallbackRegistry {
     }
 
     /// Issue core's reconnect-conflict report (code 3006) as a
-    /// `RuntimeWarning` instead of an `error` callback, once per client
-    /// (#226). A warning filter that turns it into an exception gets it
-    /// reported as unraisable: this runs on the SDK's thread.
+    /// `RuntimeWarning` instead of an `error` callback (#226). Core reports
+    /// it once per client. A warning filter that turns it into an exception
+    /// gets it reported as unraisable: this runs on the SDK's thread.
     pub fn warn_reconnect_conflict(&self, py: Python<'_>, info: &ErrorInfo) {
-        if self.conflict_warned.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
         let category = py.get_type::<pyo3::exceptions::PyRuntimeWarning>();
         // `warn_explicit` with a fixed module: there is no Python frame on
         // this thread to attribute it to, and `module="fugle_marketdata"`
