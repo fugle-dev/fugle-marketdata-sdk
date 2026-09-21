@@ -1,5 +1,6 @@
 //! Reconnection and fresh-connect helpers for the async client.
 
+use crate::websocket::aio::connect_wait::{ConnectWaiters, ReconnectEnd};
 use crate::websocket::aio::writer::{start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::ConnectionClose;
@@ -142,6 +143,10 @@ pub(crate) async fn await_auth_response(
 /// ends a backoff sleep or connection attempt in progress, and a connection
 /// that authenticates after shutdown was requested is dropped instead of
 /// installed, so `disconnect()` need not wait out its drain budget (#110).
+///
+/// When it gives up after an attempt, how it ended is recorded in `waiters`
+/// before the state becomes `Closed`, for a `connect()` waiting on it
+/// (#230).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn try_reconnect(
     close: ConnectionClose,
@@ -156,6 +161,7 @@ pub(crate) async fn try_reconnect(
     subscriptions: Arc<SubscriptionManager>,
     shutdown_requested: Arc<AtomicBool>,
     shutdown_notify: Arc<Notify>,
+    waiters: Arc<ConnectWaiters>,
 ) -> Option<(WsStream, oneshot::Receiver<WriteFailure>)> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
     // Registered before the flag is first read: shutdown sets the flag
@@ -256,6 +262,9 @@ pub(crate) async fn try_reconnect(
                         )
                         .await?;
 
+                        #[cfg(test)]
+                        drop(waiters.replay_hold.lock().await);
+
                         // Resubscribe all stored subscriptions through the new writer
                         subscriptions.clear_server_ids();
                         let _ = replay_subscriptions(
@@ -285,6 +294,7 @@ pub(crate) async fn try_reconnect(
                             let reconnection = reconnection.lock().await;
                             reconnection.current_attempt()
                         };
+                        waiters.set_end(Some(ReconnectEnd::Rejected { message: msg.clone() }));
                         // Unless a racing `disconnect()` reported the close first.
                         stream.reconnect_failed(
                             &state,
@@ -311,6 +321,7 @@ pub(crate) async fn try_reconnect(
                     let reconnection = reconnection.lock().await;
                     reconnection.current_attempt()
                 };
+                waiters.set_end(Some(ReconnectEnd::MaxAttempts { attempts }));
 
                 // Unless a racing `disconnect()` reported the close first.
                 stream.reconnect_failed(

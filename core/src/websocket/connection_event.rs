@@ -205,10 +205,11 @@ impl ConnectionStateHandle {
     /// ([`Connecting`](ConnectionState::Connecting),
     /// [`Authenticating`](ConnectionState::Authenticating),
     /// [`Connected`](ConnectionState::Connected) or
-    /// [`Reconnecting`](ConnectionState::Reconnecting)): the states in which
-    /// `connect()` is refused with [`MarketDataError::AlreadyConnected`].
-    /// Lets a binding that opens each connection on a new client refuse the
-    /// same way while its previous client is still live.
+    /// [`Reconnecting`](ConnectionState::Reconnecting)).
+    ///
+    /// Not every state of an automatic reconnect is active: between attempts
+    /// the state is [`Disconnected`](ConnectionState::Disconnected), so
+    /// `is_active()` is not a test of whether a reconnect is under way (#230).
     pub fn is_active(&self) -> bool {
         matches!(
             *self.read(),

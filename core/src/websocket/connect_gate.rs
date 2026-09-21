@@ -19,6 +19,11 @@ impl ConnectGate {
             .ok()
             .map(|_| ConnectClaim { gate: self })
     }
+
+    /// Whether a `connect()` holds the gate.
+    pub(crate) fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::SeqCst)
+    }
 }
 
 /// A held [`ConnectGate`]; see [`ConnectGate::try_claim`].

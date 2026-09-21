@@ -6,6 +6,7 @@
 //! working.
 
 pub mod client;
+pub(crate) mod connect_wait;
 pub mod dispatch;
 pub mod reconnect;
 pub mod runtime;

@@ -29,6 +29,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -103,6 +104,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -203,6 +205,8 @@ pub marketdata_core::errors::MarketDataError::InvalidParameter::reason: alloc::s
 pub marketdata_core::errors::MarketDataError::InvalidSymbol
 pub marketdata_core::errors::MarketDataError::InvalidSymbol::symbol: alloc::string::String
 pub marketdata_core::errors::MarketDataError::Other(anyhow::Error)
+pub marketdata_core::errors::MarketDataError::ReconnectFailed
+pub marketdata_core::errors::MarketDataError::ReconnectFailed::attempts: u32
 pub marketdata_core::errors::MarketDataError::RuntimeError
 pub marketdata_core::errors::MarketDataError::RuntimeError::msg: alloc::string::String
 pub marketdata_core::errors::MarketDataError::TimeoutError
@@ -3570,6 +3574,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -3644,6 +3649,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -5067,6 +5073,8 @@ pub marketdata_core::MarketDataError::InvalidParameter::reason: alloc::string::S
 pub marketdata_core::MarketDataError::InvalidSymbol
 pub marketdata_core::MarketDataError::InvalidSymbol::symbol: alloc::string::String
 pub marketdata_core::MarketDataError::Other(anyhow::Error)
+pub marketdata_core::MarketDataError::ReconnectFailed
+pub marketdata_core::MarketDataError::ReconnectFailed::attempts: u32
 pub marketdata_core::MarketDataError::RuntimeError
 pub marketdata_core::MarketDataError::RuntimeError::msg: alloc::string::String
 pub marketdata_core::MarketDataError::TimeoutError

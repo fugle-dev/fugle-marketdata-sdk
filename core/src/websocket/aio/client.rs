@@ -1,6 +1,7 @@
 //! Async WebSocket client (tokio-tungstenite).
 
 use crate::models::{Channel, SubscribeRequest, WebSocketRequest};
+use crate::websocket::aio::connect_wait::{ConnectWaiters, WakeOnDrop};
 use crate::websocket::aio::dispatch::dispatch_messages;
 use crate::websocket::aio::reconnect::{replay_subscriptions, tls_connector_for, try_reconnect};
 use crate::websocket::aio::writer::{retire_writer, start_writer, WriteFailure, WriterGeneration};
@@ -97,6 +98,9 @@ pub struct WebSocketClient {
     /// requested: `connect()` releases it before closing a given-up socket,
     /// so the wait stays within a small `shutdown_with_timeout()` budget.
     connecting: Mutex<()>,
+    /// What a `connect()` / [`wait_connected`](Self::wait_connected) waiting
+    /// on an automatic reconnect checks and is woken by (#230).
+    waiters: Arc<ConnectWaiters>,
 }
 
 /// How long a `connect()` aborted by `disconnect()` waits for the Close frame
@@ -188,6 +192,7 @@ impl WebSocketClient {
             writer_generation: Arc::default(),
             connect_gate: ConnectGate::default(),
             connecting: Mutex::new(()),
+            waiters: Arc::default(),
         }
     }
 
@@ -403,9 +408,25 @@ impl WebSocketClient {
 
     /// Connect to WebSocket server and authenticate
     ///
-    /// Refused while this client is connected, connecting or
-    /// auto-reconnecting, matching the sync client. Use
-    /// [`reconnect`](Self::reconnect) to replace a live connection.
+    /// What it does depends on the client's state (#230):
+    ///
+    /// | State | `connect()` |
+    /// |---|---|
+    /// | Never connected, or disconnected with no reconnect under way | Opens a connection |
+    /// | Connected | Refused: `AlreadyConnected` (2011) |
+    /// | Another `connect()` in progress | Refused: `AlreadyConnected` (2011) |
+    /// | Automatic reconnect in progress (`Reconnecting`, the `Disconnected` between attempts, or an attempt's `Connecting` / `Authenticating`) | Waits for it, as [`wait_connected`](Self::wait_connected) |
+    /// | `Closed` | Refused: `ClientClosed` (2010) |
+    ///
+    /// A `connect()` waiting on a reconnect returns `Ok(())` once the
+    /// reconnect has installed its connection and queued the replay of the
+    /// stored subscriptions, so a subscribe sent afterwards follows them. It
+    /// fails with `ConnectionAborted` (2010) if `disconnect()` or
+    /// `force_close()` is called, `ReconnectFailed` (3005) if every attempt
+    /// fails, and `AuthError` (2002) if an attempt's credentials are
+    /// rejected. The sync client still refuses it with `AlreadyConnected`.
+    ///
+    /// Use [`reconnect`](Self::reconnect) to replace a live connection.
     ///
     /// # Errors
     ///
@@ -414,7 +435,9 @@ impl WebSocketClient {
     /// - `disconnect()` or `force_close()` was called before the connection
     ///   was established (ConnectionAborted, code 2010); a socket already
     ///   opened is closed and the client stays `Closed`
-    /// - Already connected, connecting or reconnecting (code 2011)
+    /// - Already connected, or another `connect()` is in progress (code 2011)
+    /// - It waited on an automatic reconnect that gave up (ReconnectFailed,
+    ///   code 3005, or AuthError when the credentials were rejected)
     /// - The credential is missing, blank or ambiguous (ConfigError)
     /// - Connection fails
     /// - Authentication fails or times out
@@ -431,16 +454,28 @@ impl WebSocketClient {
         // Bindings reject bad credentials at construction; this catches a
         // config built directly in Rust or through the UniFFI constructors.
         self.config.auth.validate()?;
+        // Declared before the claim, so dropped after it: whatever this call
+        // ends in, a `wait_connected()` looks again with the gate released.
+        // This covers a first `connect()`, one cancelled mid-handshake, and
+        // the one `reconnect()` makes after stopping a reconnect (#230).
+        let _wake = WakeOnDrop(&self.waiters);
         // Held until this connection's dispatch task is running (#119).
         let Some(_claim) = self.connect_gate.try_claim() else {
             return Err(MarketDataError::AlreadyConnected);
         };
         // A second dispatch task would orphan the first, whose later close
         // would then be reported through the shared latch as this new
-        // connection's `Disconnected` (#41).
+        // connection's `Disconnected` (#41). Unless connected, it is
+        // reconnecting: wait for the outcome instead (#230).
         if self.dispatch_task_running().await {
-            return Err(MarketDataError::AlreadyConnected);
+            if self.is_connected().await && !self.waiters.reconnecting() {
+                return Err(MarketDataError::AlreadyConnected);
+            }
+            drop(_claim);
+            return self.wait_connected().await;
         }
+        // No dispatch task, so no reconnect under way or left to report.
+        self.waiters.fresh_connect();
         // Before the state leaves its current value, so a bad TLS setting
         // does not leave the client `Connecting`.
         let tls_connector = tls_connector_for(&self.config)?;
@@ -587,6 +622,61 @@ impl WebSocketClient {
         }
     }
 
+    /// Wait until the client is connected.
+    ///
+    /// Returns `Ok(())` at once when connected, and otherwise waits for the
+    /// `connect()` or automatic reconnect in progress (#230). After an
+    /// automatic reconnect, `Ok(())` means it has installed its connection
+    /// and queued the replay of the stored subscriptions, so a subscribe
+    /// sent afterwards follows them. The exception is an automatic reconnect
+    /// stopped by [`reconnect`](Self::reconnect): the wait ends when its new
+    /// connection is up, which may be before it re-sends the subscriptions.
+    ///
+    /// Any number of callers may wait at once, and dropping the future
+    /// cancels only that caller's wait.
+    ///
+    /// # Errors
+    ///
+    /// - `ConnectionAborted` (2010) once `disconnect()` or `force_close()`
+    ///   has been called.
+    /// - `ReconnectFailed` (3005) when the automatic reconnect gave up after
+    ///   its last attempt, `AuthError` (2002) when an attempt's credentials
+    ///   were rejected, and `ClientClosed` (2010) when the client closed
+    ///   otherwise.
+    /// - `ConnectionError` (2001) when nothing is under way to connect the
+    ///   client: never connected, the `connect()` waited on failed or was
+    ///   cancelled, or the reconnect's task is gone.
+    pub async fn wait_connected(&self) -> Result<(), MarketDataError> {
+        loop {
+            // Registered before the state is read: every change a waiter
+            // looks for is made before the wake-up.
+            let notified = self.waiters.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.stopping() {
+                return Err(MarketDataError::ConnectionAborted);
+            }
+            match self.state() {
+                ConnectionState::Connected if !self.waiters.reconnecting() => return Ok(()),
+                ConnectionState::Closed { .. } => {
+                    return Err(self
+                        .waiters
+                        .end()
+                        .map_or(MarketDataError::ClientClosed, |end| end.into_error()));
+                }
+                // Neither a `connect()` nor a reconnect will change the state
+                // again: nothing to wait for.
+                _ if !self.connect_gate.is_busy() && !self.dispatch_task_running().await => {
+                    return Err(MarketDataError::ConnectionError {
+                        msg: "Not connected; call connect() first".to_string(),
+                    });
+                }
+                _ => {}
+            }
+            notified.await;
+        }
+    }
+
     /// Disconnect from the WebSocket server with a graceful drain.
     ///
     /// Equivalent to
@@ -710,6 +800,7 @@ impl WebSocketClient {
         self.shutdown_requested
             .store(true, std::sync::atomic::Ordering::SeqCst);
         self.shutdown_notify.notify_waiters();
+        self.waiters.wake();
         drop(self.connecting.lock().await);
     }
 
@@ -1164,6 +1255,7 @@ impl WebSocketClient {
         let subscriptions = Arc::clone(&self.subscriptions);
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
         let shutdown_notify = Arc::clone(&self.shutdown_notify);
+        let waiters = Arc::clone(&self.waiters);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -1200,6 +1292,8 @@ impl WebSocketClient {
                     break;
                 }
 
+                // A `connect()` from here on waits for the outcome (#230).
+                waiters.reconnect_started();
                 // Attempt auto-reconnect; returns new streams on success.
                 match try_reconnect(
                     close,
@@ -1214,6 +1308,7 @@ impl WebSocketClient {
                     Arc::clone(&subscriptions),
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&shutdown_notify),
+                    Arc::clone(&waiters),
                 )
                 .await
                 {
@@ -1226,6 +1321,8 @@ impl WebSocketClient {
                         }
                         current_ws_read = ws_read;
                         current_write_failed = write_failed;
+                        // Installed, its replay queued: release the waiters.
+                        waiters.reconnect_finished();
                         // Loop back to dispatch with the new connection
                     }
                     None => {
@@ -1234,6 +1331,8 @@ impl WebSocketClient {
                     }
                 }
             }
+            // The state is final for this task; waiters read it (#230).
+            waiters.reconnect_finished();
         });
 
         let mut dispatch_handle_guard = self.dispatch_handle.lock().await;
@@ -3246,5 +3345,378 @@ mod connect_abort_tests {
         assert!(elapsed < ABORTED_CLOSE_TIMEOUT - BUDGET, "took {elapsed:?}");
         assert_client_closed(&client, 1000);
         aborted(connect).await;
+    }
+}
+
+/// A `connect()` during an automatic reconnect waits for its outcome, and
+/// `wait_connected()` (#230).
+#[cfg(test)]
+mod connect_during_reconnect_tests {
+    use super::*;
+    use crate::errors::error_code;
+    use crate::websocket::channels::StockSubscription;
+    use crate::websocket::StreamItem;
+    use crate::AuthRequest;
+    use futures_util::{SinkExt, StreamExt};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::tungstenite::Message;
+
+    const WAIT: Duration = Duration::from_secs(5);
+    /// Long enough for a waiter that should not return to have returned.
+    const SETTLE: Duration = Duration::from_millis(200);
+
+    /// What the server does with connections after the first.
+    #[derive(Clone, Copy)]
+    enum Later {
+        /// Authenticate, then record the frames received.
+        Serve,
+        /// Reject the credentials.
+        Reject,
+        /// Close the TCP connection before the WebSocket handshake.
+        Refuse,
+    }
+
+    /// Text frames received after authentication, per connection in accept order.
+    type Received = Arc<std::sync::Mutex<Vec<Vec<String>>>>;
+
+    struct Server {
+        url: String,
+        accepted: Arc<AtomicUsize>,
+        received: Received,
+        drop_first: Option<oneshot::Sender<()>>,
+    }
+
+    impl Server {
+        /// Drop the first connection without a Close frame.
+        fn drop_first(&mut self) {
+            let _ = self.drop_first.take().expect("first connection").send(());
+        }
+
+        fn frames(&self, connection: usize) -> Vec<String> {
+            self.received.lock().unwrap().get(connection).cloned().unwrap_or_default()
+        }
+    }
+
+    /// Server that authenticates the first connection, records its frames
+    /// and drops it on [`Server::drop_first`]; later connections are
+    /// handled as `later` says.
+    async fn server(later: Later) -> Server {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let received: Received = Arc::default();
+        let (drop_first, dropped) = oneshot::channel::<()>();
+        let (count, log) = (Arc::clone(&accepted), Arc::clone(&received));
+        tokio::spawn(async move {
+            let mut dropped = Some(dropped);
+            loop {
+                let Ok((tcp, _)) = listener.accept().await else { return };
+                let index = count.fetch_add(1, Ordering::SeqCst);
+                log.lock().unwrap().push(Vec::new());
+                let dropped = dropped.take();
+                let log = Arc::clone(&log);
+                tokio::spawn(async move {
+                    if index > 0 && matches!(later, Later::Refuse) {
+                        return drop(tcp);
+                    }
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await else { return };
+                    ws.next().await; // auth
+                    let verdict = if index > 0 && matches!(later, Later::Reject) {
+                        r#"{"event":"error","code":1000,"data":{"message":"Invalid token"}}"#
+                    } else {
+                        r#"{"event":"authenticated"}"#
+                    };
+                    if ws.send(Message::Text(verdict.into())).await.is_err() {
+                        return;
+                    }
+                    let record = async {
+                        while let Some(Ok(msg)) = ws.next().await {
+                            if let Message::Text(text) = msg {
+                                log.lock().unwrap()[index].push(text.to_string());
+                            }
+                        }
+                    };
+                    match dropped {
+                        Some(dropped) => tokio::select! {
+                            _ = dropped => {}
+                            () = record => {}
+                        },
+                        None => record.await,
+                    }
+                });
+            }
+        });
+        Server { url, accepted, received, drop_first: Some(drop_first) }
+    }
+
+    fn reconnection(max_attempts: u32, delay: Duration) -> ReconnectionConfig {
+        ReconnectionConfig::new(max_attempts, delay, delay).expect("valid")
+    }
+
+    async fn connected(server: &Server, reconnection: ReconnectionConfig) -> Arc<WebSocketClient> {
+        let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("test-key"));
+        let client = Arc::new(WebSocketClient::with_reconnection_config(config, reconnection));
+        client.connect().await.expect("connect");
+        client
+    }
+
+    /// Wait for an event matching `wanted`, skipping everything else.
+    fn wait_for(client: &WebSocketClient, wanted: impl Fn(&ConnectionEvent) -> bool) {
+        let rx = client.stream_receiver();
+        let deadline = std::time::Instant::now() + WAIT;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match rx.receive_timeout(left).expect("receive") {
+                Some(StreamItem::Event(event)) if wanted(&event) => return,
+                Some(_) => continue,
+                None => panic!("event not received"),
+            }
+        }
+    }
+
+    fn lost(client: &WebSocketClient) {
+        wait_for(client, |e| {
+            matches!(e, ConnectionEvent::Disconnected { will_reconnect: true, .. })
+        });
+    }
+
+    fn spawn_connect(client: &Arc<WebSocketClient>) -> JoinHandle<Result<(), MarketDataError>> {
+        let client = Arc::clone(client);
+        tokio::spawn(async move { client.connect().await })
+    }
+
+    fn spawn_wait(client: &Arc<WebSocketClient>) -> JoinHandle<Result<(), MarketDataError>> {
+        let client = Arc::clone(client);
+        tokio::spawn(async move { client.wait_connected().await })
+    }
+
+    async fn outcome(waiter: JoinHandle<Result<(), MarketDataError>>) -> Result<(), MarketDataError> {
+        timeout(WAIT, waiter).await.expect("waiter returns").expect("join")
+    }
+
+    async fn subscribe(client: &WebSocketClient, symbol: &str) {
+        client
+            .subscribe(StockSubscription::new(Channel::Trades, symbol))
+            .await
+            .expect("queued");
+    }
+
+    /// Wait until connection `connection` has received a frame naming `symbol`.
+    async fn received(server: &Server, connection: usize, symbol: &str) -> Vec<String> {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        loop {
+            let frames = server.frames(connection);
+            if frames.iter().any(|f| f.contains(symbol)) {
+                return frames;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "{symbol} not received: {frames:?}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// The replay of `2330` reached connection 1 before the `2317`
+    /// subscribed after the waiters returned.
+    async fn assert_replay_first(server: &Server) {
+        let frames = received(server, 1, "2317").await;
+        let replay = frames.iter().position(|f| f.contains("2330")).expect("replayed");
+        let later = frames.iter().position(|f| f.contains("2317")).expect("subscribed");
+        assert!(replay < later, "{frames:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn connect_during_reconnect_waits_for_it_and_opens_no_connection() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(5, Duration::from_millis(300))).await;
+        subscribe(&client, "2330").await;
+        server.drop_first();
+        lost(&client);
+
+        let (connect, wait) = (spawn_connect(&client), spawn_wait(&client));
+        outcome(connect).await.expect("connect joins the reconnect");
+        outcome(wait).await.expect("wait_connected");
+        subscribe(&client, "2317").await;
+
+        assert_replay_first(&server).await;
+        assert_eq!(server.accepted.load(Ordering::SeqCst), 2, "one new connection");
+        client.force_close().await.expect("force_close");
+    }
+
+    /// The state is `Connected` before the reconnect queues its replay; a
+    /// `connect()` or `wait_connected()` then still waits.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn waiters_wait_for_the_replay_after_the_state_is_connected() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(5, Duration::from_millis(100))).await;
+        subscribe(&client, "2330").await;
+        let hold = client.waiters.replay_hold.lock().await;
+        server.drop_first();
+        lost(&client);
+        wait_for(&client, |e| matches!(e, ConnectionEvent::Authenticated { .. }));
+        assert_eq!(client.state(), ConnectionState::Connected);
+
+        let (connect, wait) = (spawn_connect(&client), spawn_wait(&client));
+        tokio::time::sleep(SETTLE).await;
+        assert!(!connect.is_finished(), "connect() returned before the replay");
+        assert!(!wait.is_finished(), "wait_connected() returned before the replay");
+
+        drop(hold);
+        outcome(connect).await.expect("connect joins the reconnect");
+        outcome(wait).await.expect("wait_connected");
+        subscribe(&client, "2317").await;
+        assert_replay_first(&server).await;
+        client.force_close().await.expect("force_close");
+    }
+
+    /// Every waiter gets `ReconnectFailed`, not only the first.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn waiters_get_reconnect_failed_when_attempts_run_out() {
+        let mut server = server(Later::Refuse).await;
+        let client = connected(&server, reconnection(1, Duration::from_secs(1))).await;
+        server.drop_first();
+        lost(&client);
+
+        let (connect, wait) = (spawn_connect(&client), spawn_wait(&client));
+        for result in [outcome(connect).await, outcome(wait).await] {
+            let err = result.expect_err("reconnect failed");
+            assert!(matches!(err, MarketDataError::ReconnectFailed { attempts: 1 }), "{err:?}");
+            assert_eq!(err.to_error_code(), error_code::RECONNECT_FAILED);
+        }
+        assert!(client.is_closed().await);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn waiters_get_auth_error_when_the_reconnect_is_rejected() {
+        let mut server = server(Later::Reject).await;
+        let client = connected(&server, reconnection(5, Duration::from_secs(1))).await;
+        server.drop_first();
+        lost(&client);
+
+        let err = outcome(spawn_connect(&client)).await.expect_err("rejected");
+        assert!(matches!(&err, MarketDataError::AuthError { msg, .. } if msg == "Invalid token"), "{err:?}");
+        assert_eq!(err.to_error_code(), error_code::AUTH);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn disconnect_during_backoff_aborts_the_waiters_promptly() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(5, Duration::from_secs(30))).await;
+        server.drop_first();
+        lost(&client);
+        let (connect, wait) = (spawn_connect(&client), spawn_wait(&client));
+        tokio::time::sleep(SETTLE).await;
+        assert!(!connect.is_finished() && !wait.is_finished());
+
+        let started = std::time::Instant::now();
+        client.disconnect().await.expect("disconnect");
+        assert!(started.elapsed() < Duration::from_secs(1), "took {:?}", started.elapsed());
+        for result in [outcome(connect).await, outcome(wait).await] {
+            let err = result.expect_err("aborted");
+            assert!(matches!(err, MarketDataError::ConnectionAborted), "{err:?}");
+            assert_eq!(err.to_error_code(), error_code::CLIENT_CLOSED);
+        }
+    }
+
+    /// `reconnect()` stops the reconnect in progress; its own connection
+    /// releases whoever waited on it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn manual_reconnect_releases_waiters_of_the_reconnect_it_stops() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(5, Duration::from_secs(30))).await;
+        server.drop_first();
+        lost(&client);
+        let wait = spawn_wait(&client);
+        tokio::time::sleep(SETTLE).await;
+        assert!(!wait.is_finished());
+
+        client.reconnect().await.expect("reconnect");
+        outcome(wait).await.expect("released by the new connection");
+        client.force_close().await.expect("force_close");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn connect_while_connected_is_still_refused() {
+        let server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(5, Duration::from_millis(100))).await;
+
+        let err = client.connect().await.expect_err("refused");
+        assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
+        assert_eq!(err.to_error_code(), error_code::ALREADY_CONNECTED);
+        client.wait_connected().await.expect("connected");
+        client.force_close().await.expect("force_close");
+    }
+
+    /// Server that accepts one connection and answers its auth frame when
+    /// `answer` fires, never if it is dropped.
+    async fn gated_url() -> (String, oneshot::Sender<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("ws://{}", listener.local_addr().expect("addr"));
+        let (answer, answer_rx) = oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept");
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.expect("handshake");
+            ws.next().await; // auth
+            if answer_rx.await.is_ok() {
+                let _ = ws.send(Message::Text(r#"{"event":"authenticated"}"#.into())).await;
+            }
+            while let Some(Ok(_)) = ws.next().await {}
+        });
+        (url, answer)
+    }
+
+    /// A client whose first `connect()` is waiting for the auth verdict.
+    async fn authenticating() -> (Arc<WebSocketClient>, JoinHandle<Result<(), MarketDataError>>, oneshot::Sender<()>) {
+        let (url, answer) = gated_url().await;
+        let config = ConnectionConfig::new(url, AuthRequest::with_api_key("k"));
+        let client = Arc::new(WebSocketClient::new(config));
+        let connect = spawn_connect(&client);
+        while client.state() != ConnectionState::Authenticating {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        (client, connect, answer)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn wait_connected_waits_for_a_first_connect() {
+        let (client, connect, answer) = authenticating().await;
+        let wait = spawn_wait(&client);
+        tokio::time::sleep(SETTLE).await;
+        assert!(!wait.is_finished(), "waits for the connect() in progress");
+
+        answer.send(()).expect("server waiting");
+        outcome(connect).await.expect("connect");
+        outcome(wait).await.expect("released by the connect()");
+        client.force_close().await.expect("force_close");
+    }
+
+    /// A first `connect()` cancelled mid-handshake leaves the state
+    /// `Authenticating` with nothing left to change it: a waiter is released
+    /// and a later one fails at once instead of waiting forever.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn waiters_of_a_cancelled_connect_are_released() {
+        let (client, connect, _answer) = authenticating().await;
+        let wait = spawn_wait(&client);
+        tokio::time::sleep(SETTLE).await;
+        assert!(!wait.is_finished(), "waits for the connect() in progress");
+
+        connect.abort();
+        let err = outcome(wait).await.expect_err("nothing left to wait for");
+        assert!(matches!(err, MarketDataError::ConnectionError { .. }), "{err:?}");
+        let err = timeout(Duration::from_secs(1), client.wait_connected())
+            .await
+            .expect("returns at once")
+            .expect_err("not connected");
+        assert!(matches!(err, MarketDataError::ConnectionError { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn wait_connected_without_a_connection_fails_at_once() {
+        let config = ConnectionConfig::new("ws://127.0.0.1:1", AuthRequest::with_api_key("k"));
+        let client = WebSocketClient::new(config);
+        let err = timeout(Duration::from_secs(1), client.wait_connected())
+            .await
+            .expect("returns at once")
+            .expect_err("not connected");
+        assert!(matches!(err, MarketDataError::ConnectionError { .. }), "{err:?}");
     }
 }

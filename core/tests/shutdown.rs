@@ -366,11 +366,16 @@ async fn concurrent_connect_is_refused() {
     assert!(client.is_connected().await);
 }
 
-/// While auto-reconnecting, `connect()` is refused; `disconnect()` first
-/// (#119).
+/// While auto-reconnecting, `connect()` waits for the reconnect instead of
+/// opening a second connection (#119, #230). The server accepts only the
+/// two connections the reconnect needs.
 #[tokio::test]
-async fn connect_while_reconnecting_is_refused() {
-    let server = common::spawn(common::AfterAuth::ServerDropAfter { delay_ms: 50 }).await;
+async fn connect_while_reconnecting_waits_for_the_reconnect() {
+    let server = common::spawn_sequence(vec![
+        common::AfterAuth::ServerDropAfter { delay_ms: 50 },
+        common::AfterAuth::Idle,
+    ])
+    .await;
     let config = ConnectionConfig::new(server.url.clone(), AuthRequest::with_api_key("k"));
     let reconnect = ReconnectionConfig::new(3, Duration::from_secs(2), Duration::from_secs(2))
         .expect("reconnection config");
@@ -383,8 +388,11 @@ async fn connect_while_reconnecting_is_refused() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    let err = client.connect().await.expect_err("connect while reconnecting");
-    assert!(matches!(err, MarketDataError::AlreadyConnected), "{err:?}");
+    tokio::time::timeout(Duration::from_secs(5), client.connect())
+        .await
+        .expect("connect returns with the reconnect")
+        .expect("connect joins the reconnect");
+    assert!(client.is_connected().await);
     client.shutdown_with_timeout(Duration::from_millis(500)).await.expect("shutdown");
 }
 
