@@ -159,6 +159,15 @@ or when the connection ends without reconnecting, 3005 when the attempts run
 out, the server's `data` object when the credentials are rejected — so give
 it a `.catch`.
 
+Reconnect code that first calls `disconnect()` — `disconnect()` then
+`connect()` some time after a `disconnect` event — does not mix with
+auto-reconnect: it closes the connection the SDK has just restored, which
+emits `disconnect` again, and the two loop forever (#226). Remove that code
+or turn auto-reconnect off. When `disconnect()` closes a connection that
+auto-reconnect restored less than 30 seconds earlier, the SDK emits a
+process warning (once per client) pointing at this:
+`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`.
+
 ### Health Check Options
 
 Liveness detection is on by default: when no inbound frame (data, heartbeat or

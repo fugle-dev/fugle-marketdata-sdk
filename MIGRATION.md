@@ -259,8 +259,42 @@ quota is used. The one visible effect is when the quota is exactly full: the
 server answers the repeated subscribe with an `error` message of code 1001,
 and the subscription stays active. (1.x code that subscribes in an
 `authenticated` handler already repeats them the same way on every
-reconnect.) Removing that code, or turning auto-reconnect off, is still the
-simpler setup.
+reconnect.)
+
+**Pick one: your own reconnect code, or auto-reconnect — not both.** The
+common 2.x recovery code *closes* the connection before opening a new one —
+a `disconnect` handler that sets a flag, and a background thread that then
+calls `disconnect()` and `connect()`. With auto-reconnect on, that turns
+into an endless reconnect loop (#226):
+
+1. The connection drops; the SDK emits `disconnect`, your flag is set, and
+   the SDK reconnects within about a second.
+2. Your thread wakes up later and calls `disconnect()` on the connection
+   the SDK has just restored. Closing it emits `disconnect` again (a close
+   you ask for emits `disconnect`, as it did in 2.x), which sets your flag
+   again, and `connect()` opens a new connection.
+3. Repeat forever: each round is a full login — 18 in 40 seconds in the
+   report on #226. Messages keep flowing, so nothing looks wrong on your
+   side.
+
+2.x never looped because by the time your thread ran, the connection was
+already dead. Choose one of these:
+
+- **Remove your reconnect code** and let the SDK reconnect. It subscribes
+  again by itself; listen for `reconnect` / `authenticated` if you need to
+  know.
+- **Or turn auto-reconnect off** and keep your code as it is:
+  `ReconnectConfig.disabled()` (Python), `reconnect: { enabled: false }`
+  (Node), `enabled = false` in the reconnect config (C#, Go, Java, C++).
+
+The SDK warns once per client when it sees this pattern: `disconnect()`
+closing a connection that auto-reconnect restored less than 30 seconds
+earlier. It covers the usual timing only — code that closes the connection
+while the reconnect is still under way loops without it — so no warning
+does not mean no loop. Python issues a `RuntimeWarning`, Node a process warning
+(`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`), and C#, Go, Java
+and C++ report code 3006 through their error callback. The warning changes
+nothing else: the close goes ahead and so does the loop, so fix the code.
 
 ```python
 # Turn auto-reconnect off (legacy behaviour)
@@ -400,10 +434,12 @@ client.futopt.historical.candles("TXF", contract_month="1!", timeframe="D")
 The legacy Node SDK let you call `connect()` on a connected client: it opened
 another socket, left the old one open, and registered its listeners again.
 This SDK rejects that call with an error whose `code` is `2011`
-(`Already connected; call disconnect() first`) and keeps the
-existing connection; so does a `connect()` made while the first `connect()`
-is still in progress. To reconnect, `disconnect()` first — calling
-`connect()` straight after `disconnect()` is fine.
+(`Already connected; connect() is not needed while the connection is open or
+being opened`) and keeps the existing connection; so does a `connect()` made
+while the first `connect()` is still in progress. The connection is already
+there, so there is nothing to do; do not call `disconnect()` to make room for
+it — with auto-reconnect on, that is the loop §5 describes. Calling
+`connect()` after `disconnect()` for another reason is fine.
 
 During an automatic reconnect (on by default, see §5), `connect()` does not
 reject with 2011: it waits for the reconnect and resolves with its

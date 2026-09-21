@@ -193,6 +193,15 @@ reconnect ends. It raises if the reconnect does not come back:
 `WebSocketError` with code 2010 on `disconnect()`, code 3005 when the
 attempts run out, and `AuthError` when the credentials are rejected.
 
+Reconnect code that first calls `disconnect()` — typically a background
+thread that runs `disconnect()` then `connect()` after the `disconnect`
+callback set a flag — does not mix with auto-reconnect: it closes the
+connection the SDK has just restored, which fires `disconnect` again, and
+the two loop forever (#226). Remove that code or turn auto-reconnect off.
+When `disconnect()` closes a connection that auto-reconnect restored less
+than 30 seconds earlier, the SDK issues a `RuntimeWarning` (once per
+client) pointing at this.
+
 ### Health Check Config
 
 Liveness detection is on by default: when no inbound frame (data, heartbeat or

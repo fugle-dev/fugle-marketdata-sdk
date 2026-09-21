@@ -236,6 +236,15 @@ impl EventSink {
         self.emit_then("", EventArgs::None, then);
     }
 
+    /// Emit core's reconnect-conflict report (code 3006) as a process
+    /// warning instead of an `error` event, once per client (#226). Queued
+    /// like an event, so it comes before the `disconnect` that follows it.
+    fn warn_reconnect_conflict(&self, message: String) {
+        if !self.listeners.conflict_warned.swap(true, Ordering::SeqCst) {
+            self.emit(RECONNECT_CONFLICT_WARNING, EventArgs::Text(message));
+        }
+    }
+
     /// Wait until another `message` frame may be queued (see [`InFlight`]).
     fn wait_for_room(&self) {
         self.in_flight.wait_for_room();
@@ -269,7 +278,13 @@ impl EventSink {
                     "disconnect" | "unauthenticated" => auth_delivered.store(DELIVERED_LOST, Ordering::SeqCst),
                     _ => {}
                 }
-                call_listener(&listeners, &env, event, args);
+                if event == RECONNECT_CONFLICT_WARNING {
+                    if let EventArgs::Text(message) = args {
+                        emit_process_warning(env.raw(), &message);
+                    }
+                } else {
+                    call_listener(&listeners, &env, event, args);
+                }
                 run_then(&then_after_call);
                 drop(keep_alive);
                 Ok(())
@@ -278,6 +293,35 @@ impl EventSink {
         if status != Status::Ok {
             run_then(&then);
         }
+    }
+}
+
+/// The name [`EventSink::warn_reconnect_conflict`] queues its warning under;
+/// never a listener's event name.
+const RECONNECT_CONFLICT_WARNING: &str = "\0reconnect-conflict";
+
+/// `process.emitWarning(message, { type: 'FugleReconnectWarning', code:
+/// 'FUGLE_RECONNECT_CONFLICT' })`. Failures are ignored, as in
+/// [`print_error`].
+fn emit_process_warning(env: sys::napi_env, message: &str) {
+    let emit = || -> Option<()> {
+        let mut global = std::ptr::null_mut();
+        if unsafe { sys::napi_get_global(env, &mut global) } != sys::Status::napi_ok {
+            return None;
+        }
+        let process = named_property(env, global, c"process")?;
+        let emit_warning = named_property(env, process, c"emitWarning")?;
+        let message = unsafe { String::to_napi_value(env, message.to_string()) }.ok()?;
+        let options = serde_json::json!({ "type": "FugleReconnectWarning", "code": "FUGLE_RECONNECT_CONFLICT" });
+        let options = json_to_napi(env, options).ok()?;
+        let args = [message, options];
+        let mut ignored = std::ptr::null_mut();
+        let status =
+            unsafe { sys::napi_call_function(env, process, emit_warning, args.len(), args.as_ptr(), &mut ignored) };
+        (status == sys::Status::napi_ok).then_some(())
+    };
+    if emit().is_none() {
+        clear_exception(env);
     }
 }
 
@@ -1265,6 +1309,9 @@ struct Listeners {
     /// Throttles the reports of failed listeners (#83), across the client's
     /// connections.
     callback_failures: Mutex<marketdata_core::websocket::ReportThrottle>,
+    /// The reconnect-conflict warning has been emitted (#226): once per
+    /// client, across its connections (each has its own core client).
+    conflict_warned: AtomicBool,
 }
 
 impl Listeners {
@@ -1641,10 +1688,12 @@ impl StockWebSocketClient {
     /// properties; no `[code]` prefix in the message).
     ///
     /// Rejects with code `2011` (`Already connected`) while a connection is open,
-    /// or while the first `connect()` is still in progress (#44). Call
-    /// disconnect() first to reconnect; calling connect() right after
-    /// disconnect(), or from a `disconnect` handler once no auto-reconnect will
-    /// follow, is fine.
+    /// or while the first `connect()` is still in progress (#44). Calling
+    /// connect() right after disconnect(), or from a `disconnect` handler once
+    /// no auto-reconnect will follow, is fine. Code that manages reconnects on
+    /// its own should turn auto-reconnect off (`reconnect: { enabled: false }`):
+    /// calling disconnect() then connect() after an automatic reconnect closes
+    /// the connection it restored, over and over (#226).
     ///
     /// During an automatic reconnect — for instance from a `disconnect`
     /// handler, as 1.x code often does — it waits for the reconnect instead
@@ -2610,6 +2659,11 @@ fn spawn_stream_reader(
                             AuthOutcome::Rejected(data),
                             Some(&ending),
                         );
+                    }
+                    ConnectionEvent::Error(info)
+                        if info.code == marketdata_core::error_code::RECONNECT_CONFLICT =>
+                    {
+                        sink.warn_reconnect_conflict(info.message);
                     }
                     ConnectionEvent::Error(info) => {
                         // Only the first connect() fails with an error; a

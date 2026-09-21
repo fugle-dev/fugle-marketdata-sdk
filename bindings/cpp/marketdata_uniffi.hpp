@@ -178,6 +178,23 @@ enum class MessageOverflowRecord: int32_t {
 
 
 /**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
+};
+
+
+/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -212,23 +229,6 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1320,6 +1320,12 @@ struct WebSocketListener {
     void on_message(const StreamMessage &message) = 0;
     /**
      * Called when an error occurs
+     *
+     * Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+     * once per client: `disconnect()` closed a connection that automatic
+     * reconnect had restored less than 30 seconds earlier, which is what
+     * code that also reconnects on its own does (#226). The close goes
+     * ahead; the message says how to resolve it.
      */
     virtual
     void on_error(const ErrorInfo &error) = 0;
@@ -1474,6 +1480,12 @@ struct WebSocketListenerImpl
     void on_message(const StreamMessage &message);
     /**
      * Called when an error occurs
+     *
+     * Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+     * once per client: `disconnect()` closed a connection that automatic
+     * reconnect had restored less than 30 seconds earlier, which is what
+     * code that also reconnects on its own does (#226). The close goes
+     * ahead; the message says how to resolve it.
      */
     void on_error(const ErrorInfo &error);
     /**

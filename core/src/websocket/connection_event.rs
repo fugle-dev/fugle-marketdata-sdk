@@ -364,6 +364,26 @@ impl ConnectionEvent {
         Self::Error(err.info())
     }
 
+    /// The warning `Error` (code
+    /// [`RECONNECT_CONFLICT`](crate::error_code::RECONNECT_CONFLICT)) for a
+    /// caller's close `elapsed` after an automatic reconnect restored the
+    /// connection (#226).
+    pub(crate) fn reconnect_conflict(elapsed: Duration) -> Self {
+        Self::Error(ErrorInfo::new(
+            crate::error_code::RECONNECT_CONFLICT,
+            crate::ErrorKind::Client,
+            format!(
+                "Your code closed the connection {:.1}s after automatic reconnect restored it. \
+                 If your code also reconnects on its own (disconnect() and connect() after a \
+                 disconnect event), the two keep triggering each other and log in again and again. \
+                 Pick one: remove your own reconnect code, or turn automatic reconnect off \
+                 (reconnect config enabled = false; Python: ReconnectConfig.disabled(), \
+                 Node: reconnect: {{ enabled: false }}). See MIGRATION.md, section 5.",
+                elapsed.as_secs_f64()
+            ),
+        ))
+    }
+
     /// `Error` for a subscription that could not be re-sent after a
     /// reconnect; the message names its key, or for a batch the channel,
     /// modifier and symbol count label (e.g. `trades:oddlot (3 symbols)`).

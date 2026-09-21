@@ -174,6 +174,14 @@ pub mod error_code {
     /// attempt's credentials were rejected. Also
     /// [`MarketDataError::ReconnectFailed`](super::MarketDataError::ReconnectFailed).
     pub const RECONNECT_FAILED: i32 = 3005;
+    /// A warning, reported as a connection `Error` event: `disconnect()` or
+    /// `force_close()` closed a connection the automatic reconnect had
+    /// restored less than 30 seconds earlier, which is what code that also
+    /// reconnects on its own does (#226). Reported at most once per client,
+    /// right before that close's `Disconnected`. Nothing fails: the close
+    /// goes ahead. Python turns it into a `RuntimeWarning` and Node into a
+    /// process warning instead of an `error` event.
+    pub const RECONNECT_CONFLICT: i32 = 3006;
     /// [`MarketDataError::Other`](super::MarketDataError::Other).
     pub const OTHER: i32 = 9999;
     /// Node and Python: a binding's WebSocket worker thread panicked.
@@ -404,7 +412,11 @@ pub enum MarketDataError {
     /// another `connect()` is establishing the connection. During an
     /// automatic reconnect the async client's `connect()` waits for it
     /// instead (#230); the sync client's still returns this.
-    #[error("Already connected; call disconnect() first")]
+    ///
+    /// The message does not suggest calling `disconnect()` first: code that
+    /// does so after an automatic reconnect keeps closing the connection the
+    /// reconnect restored (#226).
+    #[error("Already connected; connect() is not needed while the connection is open or being opened")]
     AlreadyConnected,
 
     /// Automatic reconnection gave up after `attempts` attempts, all of them
@@ -659,7 +671,10 @@ mod tests {
         );
 
         let err = MarketDataError::AlreadyConnected;
-        assert_eq!(err.to_string(), "Already connected; call disconnect() first");
+        assert_eq!(
+            err.to_string(),
+            "Already connected; connect() is not needed while the connection is open or being opened"
+        );
     }
 
     #[test]

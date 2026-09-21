@@ -3595,10 +3595,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error();
-            if (checksum != 44329)
+            if (checksum != 30858)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error` checksum `44329`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error` checksum `30858`, library returned `{checksum}`"
                 );
             }
         }
@@ -9534,6 +9534,12 @@ public interface WebSocketListener
 
     /// <summary>
     /// Called when an error occurs
+    ///
+    /// Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+    /// once per client: `disconnect()` closed a connection that automatic
+    /// reconnect had restored less than 30 seconds earlier, which is what
+    /// code that also reconnects on its own does (#226). The close goes
+    /// ahead; the message says how to resolve it.
     /// </summary>
     void OnError(ErrorInfo @error);
 
@@ -9817,6 +9823,12 @@ public class WebSocketListenerImpl : WebSocketListener, IDisposable
 
     /// <summary>
     /// Called when an error occurs
+    ///
+    /// Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+    /// once per client: `disconnect()` closed a connection that automatic
+    /// reconnect had restored less than 30 seconds earlier, which is what
+    /// code that also reconnects on its own does (#226). The close goes
+    /// ahead; the message says how to resolve it.
     /// </summary>
     public void OnError(ErrorInfo @error)
     {

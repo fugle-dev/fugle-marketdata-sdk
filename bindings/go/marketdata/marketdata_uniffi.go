@@ -1293,7 +1293,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error()
 		})
-		if checksum != 44329 {
+		if checksum != 30858 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error: UniFFI API checksum mismatch")
 		}
@@ -5089,6 +5089,12 @@ type WebSocketListener interface {
 	// Called when a message is received
 	OnMessage(message StreamMessage)
 	// Called when an error occurs
+	//
+	// Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+	// once per client: `disconnect()` closed a connection that automatic
+	// reconnect had restored less than 30 seconds earlier, which is what
+	// code that also reconnects on its own does (#226). The close goes
+	// ahead; the message says how to resolve it.
 	OnError(error ErrorInfo)
 	// Called when a reconnection attempt starts
 	OnReconnecting(attempt uint32)
@@ -5219,6 +5225,12 @@ func (_self *WebSocketListenerImpl) OnMessage(message StreamMessage) {
 }
 
 // Called when an error occurs
+//
+// Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+// once per client: `disconnect()` closed a connection that automatic
+// reconnect had restored less than 30 seconds earlier, which is what
+// code that also reconnects on its own does (#226). The close goes
+// ahead; the message says how to resolve it.
 func (_self *WebSocketListenerImpl) OnError(error ErrorInfo) {
 	_pointer := _self.ffiObject.incrementPointer("WebSocketListener")
 	defer _self.ffiObject.decrementPointer()
