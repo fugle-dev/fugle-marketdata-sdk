@@ -223,6 +223,49 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
     });
   });
 
+  test('1.x reconnect code in a disconnect listener survives an auto-reconnect and exits after disconnect() (#230)', async () => {
+    // 1.x reconnected by hand from the `disconnect` listener, with no `catch`:
+    // with auto-reconnect on (the default) that connect() must wait for the
+    // reconnect, not reject with 2011 as an unhandled rejection (exit 1).
+    const result = await runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, reconnect: { initialDelayMs: 100 } })[${JSON.stringify(product)}];
+      const subscription = ${JSON.stringify(product === 'stock'
+        ? { channel: 'trades', symbol: '2330' }
+        : { channel: 'trades', symbol: 'TXF1!', afterHours: true })};
+      let stopping = false;
+      ws.on('disconnect', (event) => {
+        console.log('DISCONNECT ' + event.code);
+        if (stopping) return;
+        ws.connect().then(() => {
+          console.log('REJOINED');
+          ws.subscribe(subscription);
+          stopping = true;
+          setTimeout(() => ws.disconnect(), 100);
+        });
+      });
+      ws.connect().then(() => {
+        ws.subscribe(subscription);
+        console.log('CONNECTED');
+      });
+    `,
+      {
+        env: { URL: url },
+        onLine: (line) => {
+          // Dropped without a Close frame, as a network failure does.
+          if (line === 'CONNECTED') for (const socket of wss.clients) socket.terminate();
+        },
+      },
+    );
+
+    expectChild(result, () => {
+      expect(result).toMatchObject({ exited: true, code: 0 });
+      expect(result.lines).toEqual(['CONNECTED', expect.stringMatching(/^DISCONNECT /), 'REJOINED', 'DISCONNECT 1000']);
+      expect(result.lines.join('\n') + result.stderr).not.toMatch(/2011|Already connected/);
+    });
+  });
+
   // The final `disconnect` callback is queued on a weak threadsafe function
   // just before the keep-alive handle is released. Between cycles nothing else
   // holds the event loop, so a callback lost to that ordering would end the

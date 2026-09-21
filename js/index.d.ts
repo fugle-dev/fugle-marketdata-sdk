@@ -2107,7 +2107,8 @@ export declare class FutOptWebSocketClient {
    *
    * Returns a Promise that resolves with the server's `authenticated`
    * `data`. See `StockWebSocketClient::connect` for the rejections,
-   * including code `2011` (`Already connected`) (#44).
+   * including code `2011` (`Already connected`) (#44), and for waiting on
+   * an automatic reconnect (#230).
    */
   connect(): Promise<WebSocketAuthData | undefined>
   /**
@@ -2573,10 +2574,21 @@ export declare class StockWebSocketClient {
    * failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
    * properties; no `[code]` prefix in the message).
    *
-   * Rejects with code `2011` (`Already connected`) while a connection is open or
-   * being established (#44). Call disconnect() first to reconnect; calling
-   * connect() right after disconnect(), or from a `disconnect` handler once
-   * no auto-reconnect will follow, is fine.
+   * Rejects with code `2011` (`Already connected`) while a connection is open,
+   * or while the first `connect()` is still in progress (#44). Call
+   * disconnect() first to reconnect; calling connect() right after
+   * disconnect(), or from a `disconnect` handler once no auto-reconnect will
+   * follow, is fine.
+   *
+   * During an automatic reconnect — for instance from a `disconnect`
+   * handler, as 1.x code often does — it waits for the reconnect instead
+   * of starting another connection (#230). It then resolves with the
+   * reconnect's `authenticated` `data` once the stored subscriptions have
+   * been re-sent, so a `subscribe()` made then follows them. It rejects
+   * with code `2010` (`Connection aborted`) if disconnect() is called or
+   * the connection ends without reconnecting, `3005` (`ReconnectFailed`)
+   * when the attempts run out, and with the server's `data` object when
+   * the reconnect's credentials are rejected.
    */
   connect(): Promise<WebSocketAuthData | undefined>
   /**
