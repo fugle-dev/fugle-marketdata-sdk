@@ -210,8 +210,7 @@ impl LatencyWaiters {
             return false;
         }
         let Some(state) = msg
-            .data
-            .as_ref()
+            .data()
             .and_then(|data| data.get("state"))
             .and_then(|state| state.as_str())
         else {
@@ -354,6 +353,14 @@ mod tests {
     fn probe_pong_is_intercepted() {
         let waiters = LatencyWaiters::default();
         assert!(waiters.intercept_pong(&pong(PROBE_STATE.into()), Instant::now()));
+    }
+
+    #[test]
+    fn probe_pong_parsed_off_the_wire_is_intercepted() {
+        let waiters = LatencyWaiters::default();
+        let frame = format!(r#"{{"event":"pong","data":{{"time":1,"state":"{PROBE_STATE}"}}}}"#);
+        let msg = WebSocketMessage::parse(&frame).unwrap();
+        assert!(waiters.intercept_pong(&msg, Instant::now()));
     }
 
     #[test]

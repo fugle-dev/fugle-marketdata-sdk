@@ -19,7 +19,7 @@ use marketdata_core::websocket::{
     ReconnectionConfig, HealthCheckConfig,
     StockSubscription,
 };
-use marketdata_core::{Channel, FutOptChannel, AuthRequest, ConnectionConfig};
+use marketdata_core::{Channel, FutOptChannel, AuthRequest, ConnectionConfig, WebSocketMessage};
 
 /// Benchmark ConnectionConfig construction and building
 fn bench_config_construction(c: &mut Criterion) {
@@ -295,6 +295,35 @@ fn bench_backoff_calculation(c: &mut Criterion) {
     group.finish();
 }
 
+/// ~300-byte compact `trades` frame, shaped like what the server sends.
+const TRADE_FRAME: &str = r#"{"event":"data","data":{"symbol":"2330","type":"EQUITY","exchange":"TWSE","market":"TSE","bid":1085,"ask":1090,"price":1090,"size":3,"volume":21813,"isContinuous":true,"time":1727145004345021,"serial":1234567,"isTrial":false},"id":"4f2e8a1c-9b7d-4c3e-8a5f-6d1b2c3e4f5a","channel":"trades"}"#;
+
+/// Frame parsing on the read loop (#236). `baseline_from_str` is what
+/// `parse_text_frame` did before `data` became lazy: build the whole `Value`
+/// tree, then copy the frame into `raw`. Each iteration also drops the message.
+fn bench_parse_frame(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parse_frame");
+    group.throughput(Throughput::Bytes(TRADE_FRAME.len() as u64));
+    group.bench_function("baseline_from_str", |b| {
+        b.iter(|| {
+            let mut msg: WebSocketMessage = serde_json::from_str(black_box(TRADE_FRAME)).unwrap();
+            msg.raw = TRADE_FRAME.to_string();
+            black_box(msg)
+        })
+    });
+    group.bench_function("parse", |b| {
+        b.iter(|| black_box(WebSocketMessage::parse(black_box(TRADE_FRAME)).unwrap()))
+    });
+    group.bench_function("parse_then_data", |b| {
+        b.iter(|| {
+            let msg = WebSocketMessage::parse(black_box(TRADE_FRAME)).unwrap();
+            black_box(msg.data());
+            black_box(msg)
+        })
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_config_construction,
@@ -304,6 +333,7 @@ criterion_group!(
     bench_message_batch_throughput,
     bench_subscription_key_generation,
     bench_backoff_calculation,
+    bench_parse_frame,
 );
 
 criterion_main!(benches);

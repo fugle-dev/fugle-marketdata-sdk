@@ -10,6 +10,8 @@
 //! What remains is the streaming envelope, which carries routing fields the
 //! binding callbacks dispatch on.
 
+use std::borrow::Cow;
+
 use marketdata_core::models as core;
 
 // ============================================================================
@@ -54,6 +56,7 @@ impl From<core::WebSocketMessage> for StreamMessage {
         // error frame.
         let error_code = msg.error_code();
         let error_message = msg.error_message();
+        let data_json = msg.data_json().map(Cow::into_owned);
 
         Self {
             raw: msg.raw,
@@ -61,7 +64,7 @@ impl From<core::WebSocketMessage> for StreamMessage {
             channel: msg.channel,
             symbol: msg.symbol,
             id: msg.id,
-            data_json: msg.data.map(|d| d.to_string()),
+            data_json,
             error_code,
             error_message,
         }
@@ -73,9 +76,7 @@ mod tests {
     use super::*;
 
     fn frame(json: &str) -> StreamMessage {
-        let mut msg: core::WebSocketMessage = serde_json::from_str(json).unwrap();
-        msg.raw = json.to_string();
-        msg.into()
+        core::WebSocketMessage::parse(json).unwrap().into()
     }
 
     #[test]
@@ -114,5 +115,12 @@ mod tests {
         assert_eq!(msg.channel.as_deref(), Some("trades"));
         assert_eq!(msg.symbol.as_deref(), Some("2330"));
         assert_eq!(msg.raw, json);
+    }
+
+    #[test]
+    fn data_json_is_the_frame_slice_as_sent() {
+        // Re-serializing a `Value` would print `1e21` and drop the spaces.
+        let msg = frame(r#"{"event":"data","data":{"price": 583.0, "n": 1e+21}}"#);
+        assert_eq!(msg.data_json.as_deref(), Some(r#"{"price": 583.0, "n": 1e+21}"#));
     }
 }

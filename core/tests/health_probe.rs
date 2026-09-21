@@ -102,7 +102,7 @@ fn no_disconnect(events: &[ConnectionEvent]) {
 
 /// The pongs among `messages`.
 fn pongs(messages: &[marketdata_core::WebSocketMessage]) -> Vec<String> {
-    messages.iter().filter(|m| m.is_pong()).map(|m| format!("{:?}", m.data)).collect()
+    messages.iter().filter(|m| m.is_pong()).map(|m| format!("{:?}", m.data())).collect()
 }
 
 /// Everything `receiver` yields during `window`, split into events and

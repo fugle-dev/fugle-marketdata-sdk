@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Rust: `WebSocketMessage::data` is a method, parsed on first use** (#236;
+  [migration guide §22](MIGRATION-0.9.md#22-rust-websocketmessagedata-is-a-method)).
+  Reading a frame built its whole `data` payload as a `serde_json::Value`
+  and then dropped it, although Node, Python and the uniffi bindings hand
+  the caller `raw` and core only reads `data` on control frames. The field
+  is now private: `msg.data` becomes `msg.data()` (`Option<&Value>`,
+  parsed the first time and cached), `msg.data_json()` returns the payload
+  as JSON text without parsing it, and `WebSocketMessage::parse(text)`
+  replaces struct literals. Parsing a 289-byte `trades` frame drops from
+  1.23 µs to 0.40 µs; a frame whose `data()` is then read costs 1.49 µs.
+  `Serialize` and `Deserialize` output and input are unchanged; a message
+  built by `Deserialize` still has an empty `raw`.
+
 ### Changed
+
+- **C#, Go, C++, Java: `StreamMessage.dataJson` is the frame's own text**
+  (#236). It was the `data` value re-serialized; it is now that part of
+  the frame as the server sent it, the same bytes as in `raw`. The Fugle
+  server already sends compact JSON in key order, so in practice nothing
+  changes; a difference would show only for number spellings such as
+  `1e+21`, escapes, or a repeated key. No interface change, no generated
+  code change.
 
 - **All languages: `connect()` during an automatic reconnect waits for the
   reconnect instead of failing with 2011** (#230). 1.x / 2.x code often

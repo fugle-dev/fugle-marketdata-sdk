@@ -134,7 +134,8 @@ was discarded and the absent ones came through as `null`.
 C#, Go, C++ and Java gain `StreamMessage.raw`, the frame verbatim. The
 existing `event` / `channel` / `symbol` / `id` / `dataJson` fields are
 unchanged and remain the convenient way to dispatch — they are a parsed subset,
-not the source of truth.
+not the source of truth. `dataJson` is the `data` part of `raw` as sent,
+not a re-serialization (§22).
 
 ```go
 // Full frame
@@ -1003,6 +1004,39 @@ Unchanged: `symbol=` as a keyword, every keyword call, the API's own
 spellings and `from_` through `**_extra` (§17), and the async siblings,
 which have the same signatures. Coming from 2.x, where every method was
 `candles(**params)`, nothing was positional to begin with.
+
+## 22. Rust: `WebSocketMessage.data` is a method
+
+Reading a frame used to build its `data` payload into a `serde_json::Value`
+tree — a map per object, in key order — and the reader thread then spent
+about as long dropping it (#214). Nothing on the market-data path read it:
+Node, Python and the uniffi bindings hand you `raw`, and core looks inside
+`data` only for control frames. `WebSocketMessage` now records where `data`
+sits in `raw` and parses it the first time you ask (#236).
+
+```rust,ignore
+// Before
+if let Some(data) = msg.data.as_ref() { /* … */ }
+let msg = WebSocketMessage { event: "data".into(), data: None, /* … */ raw };
+
+// After
+if let Some(data) = msg.data() { /* … */ }      // Option<&Value>, parsed once, cached
+let text = msg.data_json();                     // Option<Cow<str>>: the payload as sent, not parsed
+let msg = WebSocketMessage::parse(&frame)?;     // replaces struct literals
+```
+
+- `data` is private, so struct literals no longer compile; build a message
+  with `WebSocketMessage::parse`, which also fills `raw`.
+- Calling `data()` on every market-data message is about 20% slower than
+  rc.6, since the frame is scanned once to find `data` and again to parse
+  it. On a hot path, read `data_json()` or `raw` instead.
+- `serde_json::from_str` / `from_value` still work. A message built that
+  way parses `data` up front and has an empty `raw`, as before;
+  `data_json()` then returns the value re-serialized.
+- `raw` stays public. If you overwrite it, `data()` and `data_json()` of a
+  parsed message read from the new string: expect `None`, never a panic.
+- `Serialize` writes the same JSON as before. `Debug` prints `data` as the
+  text of the frame until `data()` has parsed it.
 
 ## Fields you could not reach before
 

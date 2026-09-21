@@ -774,16 +774,7 @@ mod tests {
     }
 
     fn message(id: u32) -> WebSocketMessage {
-        WebSocketMessage {
-            event: "data".into(),
-            data: None,
-            channel: None,
-            symbol: None,
-            id: Some(id.to_string()),
-            code: None,
-            message: None,
-            raw: String::new(),
-        }
+        WebSocketMessage::parse(&format!(r#"{{"event":"data","id":"{id}"}}"#)).unwrap()
     }
 
     fn open(tx: &StreamSender) {
