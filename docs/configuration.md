@@ -57,6 +57,12 @@ the same credentials would be rejected again (#201). Either way the client
 emits `ReconnectFailed` (Node/Python: `error` code 3005; C#/Go/Java/C++:
 `OnReconnectFailed`) and stays closed; a rejection is reported as
 `Unauthenticated` (`unauthenticated` / `OnUnauthenticated`) right before it.
+A `connect()` waiting on the reconnect (#230) — `connect()` made during an
+automatic reconnect waits for it instead of opening another connection —
+fails at the same time: with code 3005 after the last attempt, and after a
+rejection with `AuthError` (2002; Node rejects with the server's `data`
+object instead). `disconnect()` during the reconnect ends that wait with
+code 2010.
 
 **What is not retried** is a short list; every other close reconnects:
 `disconnect()` or reconnect disabled; the server closing with code 1000

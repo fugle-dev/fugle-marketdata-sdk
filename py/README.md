@@ -182,6 +182,17 @@ ws = WebSocketClient(api_key="your-key", reconnect=ReconnectConfig.disabled())
 - `initial_delay_ms` (int): Initial delay for exponential backoff (default: 1000ms, min: 100ms)
 - `max_delay_ms` (int): Maximum delay cap (default: 60000ms)
 
+`connect()` / `connect_async()` during an automatic reconnect opens no
+connection of its own: it waits for the reconnect and returns once the
+connection is back and the subscriptions have been re-sent (#230). So code
+that calls `connect()` and subscribes again from a `disconnect` callback
+keeps working; the repeated subscriptions are harmless
+([migration guide §5](../MIGRATION.md#5-auto-reconnect-is-on-by-default)).
+Called from a callback, it holds up that client's callbacks until the
+reconnect ends. It raises if the reconnect does not come back:
+`WebSocketError` with code 2010 on `disconnect()`, code 3005 when the
+attempts run out, and `AuthError` when the credentials are rejected.
+
 ### Health Check Config
 
 Liveness detection is on by default: when no inbound frame (data, heartbeat or
@@ -498,12 +509,13 @@ keep their built-in `TypeError` / `ValueError`.
 | 2001 | ConnectionError | A REST request cannot reach the server (DNS, connection refused, TLS), a WebSocket command is sent while the connection is down, or the WebSocket auth handshake fails for a reason other than rejected credentials |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
-| 2010 | ClientClosed, ConnectionAborted | Client has been closed, or `connect()` / `connect_async()` was given up because `disconnect()` was called before the connection was established (raised as `WebSocketError`, message `Connection aborted: …`) |
+| 2010 | ClientClosed, ConnectionAborted | Client has been closed, or `connect()` / `connect_async()` was given up because `disconnect()` was called before the connection was established or while it waited on an automatic reconnect (raised as `WebSocketError`, message `Connection aborted: …`) |
+| 2011 | AlreadyConnected | `connect()` / `connect_async()` called while connected or while another connect is in progress; during an automatic reconnect it waits instead (raised as `WebSocketError`) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 3004 | CallbackFailed | A WebSocket callback raised an exception (`error` callback only) |
-| 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` callback only) |
+| 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` callback); a `connect()` / `connect_async()` waiting on the reconnect raises it (`WebSocketError`) after the last attempt |
 | 9999 | Other | Unexpected error |
 | -1 | ThreadPanic | A WebSocket worker thread panicked (`error` callback only) |
 

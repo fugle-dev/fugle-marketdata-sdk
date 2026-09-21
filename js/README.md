@@ -149,6 +149,16 @@ To turn it off: `new WebSocketClient({ apiKey: 'your-key', reconnect: { enabled:
 - `initialDelayMs` (number): Initial delay for exponential backoff (default: 1000, min: 100)
 - `maxDelayMs` (number): Maximum delay cap (default: 60000)
 
+`connect()` during an automatic reconnect opens no connection of its own: it
+waits for the reconnect and resolves with its `authenticated` data once the
+subscriptions have been re-sent (#230). So 1.x code that calls `connect()`
+and subscribes again from a `disconnect` listener keeps working; the repeated
+subscriptions are harmless ([migration guide §5](../MIGRATION.md#5-auto-reconnect-is-on-by-default)).
+It rejects if the reconnect does not come back — code 2010 on `disconnect()`
+or when the connection ends without reconnecting, 3005 when the attempts run
+out, the server's `data` object when the credentials are rejected — so give
+it a `.catch`.
+
 ### Health Check Options
 
 Liveness detection is on by default: when no inbound frame (data, heartbeat or
@@ -449,13 +459,13 @@ client uses the OS trust store (rustls loads it via
 | 2001 | ConnectionError | Network connection failed |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned an error |
-| 2010 | ClientClosed | Client already closed |
-| 2011 | AlreadyConnected | WebSocket `connect()` called while connected or connecting |
+| 2010 | ClientClosed | Client already closed, or `connect()` given up because `disconnect()` was called (also while it waits on an automatic reconnect, or when that connection ends without reconnecting) |
+| 2011 | AlreadyConnected | WebSocket `connect()` called while connected or while the first `connect()` is in progress (during an automatic reconnect it waits instead) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
 | 3004 | CallbackFailed | A WebSocket listener threw, or its Promise rejected (`error` event) |
-| 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` event) |
+| 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` event); a `connect()` waiting on the reconnect rejects with it after the last attempt |
 | 9999 | Other | Unexpected error |
 | -1 | ThreadPanic | A WebSocket worker thread panicked |
 

@@ -574,11 +574,14 @@ error rather than "Not connected".
 
 ## 16. WebSocket: `connect()` while connected, code 2011
 
-`connect()` on a client that is connected, still connecting, or
-auto-reconnecting fails with code `2011` (`ALREADY_CONNECTED`), `source_kind`
-`client`, message `Already connected; call disconnect() first` (#119), as
-Node already did. The live connection is not touched. Call `disconnect()`
-first to open a new one, or `reconnect()` (Rust) to replace it.
+`connect()` on a client that is connected or still connecting fails with
+code `2011` (`ALREADY_CONNECTED`), `source_kind` `client`, message
+`Already connected; call disconnect() first` (#119), as Node already did.
+The live connection is not touched. Call `disconnect()` first to open a new
+one, or `reconnect()` (Rust) to replace it. During an automatic reconnect,
+`connect()` waits for the reconnect instead of failing with 2011 (#230; the
+Rust sync client still fails) — see
+[`docs/errors.md`](docs/errors.md) for how the wait ends.
 
 | Language | Before | After |
 |---|---|---|
