@@ -2769,13 +2769,14 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::VolumesResponse
 pub struct marketdata_core::models::WebSocketMessage
 pub marketdata_core::models::WebSocketMessage::channel: core::option::Option<alloc::string::String>
 pub marketdata_core::models::WebSocketMessage::code: core::option::Option<i32>
-pub marketdata_core::models::WebSocketMessage::data: core::option::Option<serde_json::value::Value>
 pub marketdata_core::models::WebSocketMessage::event: alloc::string::String
 pub marketdata_core::models::WebSocketMessage::id: core::option::Option<alloc::string::String>
 pub marketdata_core::models::WebSocketMessage::message: core::option::Option<alloc::string::String>
 pub marketdata_core::models::WebSocketMessage::raw: alloc::string::String
 pub marketdata_core::models::WebSocketMessage::symbol: core::option::Option<alloc::string::String>
 impl marketdata_core::WebSocketMessage
+pub fn marketdata_core::WebSocketMessage::data(&self) -> core::option::Option<&serde_json::value::Value>
+pub fn marketdata_core::WebSocketMessage::data_json(&self) -> core::option::Option<alloc::borrow::Cow<'_, str>>
 pub fn marketdata_core::WebSocketMessage::error_code(&self) -> core::option::Option<i32>
 pub fn marketdata_core::WebSocketMessage::error_message(&self) -> core::option::Option<alloc::string::String>
 pub fn marketdata_core::WebSocketMessage::is_authenticated(&self) -> bool
@@ -2784,15 +2785,16 @@ pub fn marketdata_core::WebSocketMessage::is_error(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_heartbeat(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_pong(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_subscribed(&self) -> bool
+pub fn marketdata_core::WebSocketMessage::parse(&str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::WebSocketMessage
 pub fn marketdata_core::WebSocketMessage::clone(&self) -> marketdata_core::WebSocketMessage
 impl core::fmt::Debug for marketdata_core::WebSocketMessage
 pub fn marketdata_core::WebSocketMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for marketdata_core::WebSocketMessage
-pub fn marketdata_core::WebSocketMessage::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub fn marketdata_core::WebSocketMessage::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for marketdata_core::WebSocketMessage
-pub fn marketdata_core::WebSocketMessage::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for marketdata_core::WebSocketMessage
+pub fn marketdata_core::WebSocketMessage::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl !core::marker::Freeze for marketdata_core::WebSocketMessage
 impl core::marker::Send for marketdata_core::WebSocketMessage
 impl core::marker::Sync for marketdata_core::WebSocketMessage
 impl core::marker::Unpin for marketdata_core::WebSocketMessage
@@ -4081,7 +4083,7 @@ impl core::clone::Clone for marketdata_core::websocket::stream::StreamItem
 pub fn marketdata_core::websocket::stream::StreamItem::clone(&self) -> marketdata_core::websocket::stream::StreamItem
 impl core::fmt::Debug for marketdata_core::websocket::stream::StreamItem
 pub fn marketdata_core::websocket::stream::StreamItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
+impl !core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Send for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Sync for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
@@ -4430,7 +4432,7 @@ impl core::clone::Clone for marketdata_core::websocket::stream::StreamItem
 pub fn marketdata_core::websocket::stream::StreamItem::clone(&self) -> marketdata_core::websocket::stream::StreamItem
 impl core::fmt::Debug for marketdata_core::websocket::stream::StreamItem
 pub fn marketdata_core::websocket::stream::StreamItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
+impl !core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Send for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Sync for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
@@ -5165,7 +5167,7 @@ impl core::clone::Clone for marketdata_core::websocket::stream::StreamItem
 pub fn marketdata_core::websocket::stream::StreamItem::clone(&self) -> marketdata_core::websocket::stream::StreamItem
 impl core::fmt::Debug for marketdata_core::websocket::stream::StreamItem
 pub fn marketdata_core::websocket::stream::StreamItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
+impl !core::marker::Freeze for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Send for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Sync for marketdata_core::websocket::stream::StreamItem
 impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
@@ -6723,13 +6725,14 @@ impl<S> core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::fac
 pub struct marketdata_core::WebSocketMessage
 pub marketdata_core::WebSocketMessage::channel: core::option::Option<alloc::string::String>
 pub marketdata_core::WebSocketMessage::code: core::option::Option<i32>
-pub marketdata_core::WebSocketMessage::data: core::option::Option<serde_json::value::Value>
 pub marketdata_core::WebSocketMessage::event: alloc::string::String
 pub marketdata_core::WebSocketMessage::id: core::option::Option<alloc::string::String>
 pub marketdata_core::WebSocketMessage::message: core::option::Option<alloc::string::String>
 pub marketdata_core::WebSocketMessage::raw: alloc::string::String
 pub marketdata_core::WebSocketMessage::symbol: core::option::Option<alloc::string::String>
 impl marketdata_core::WebSocketMessage
+pub fn marketdata_core::WebSocketMessage::data(&self) -> core::option::Option<&serde_json::value::Value>
+pub fn marketdata_core::WebSocketMessage::data_json(&self) -> core::option::Option<alloc::borrow::Cow<'_, str>>
 pub fn marketdata_core::WebSocketMessage::error_code(&self) -> core::option::Option<i32>
 pub fn marketdata_core::WebSocketMessage::error_message(&self) -> core::option::Option<alloc::string::String>
 pub fn marketdata_core::WebSocketMessage::is_authenticated(&self) -> bool
@@ -6738,15 +6741,16 @@ pub fn marketdata_core::WebSocketMessage::is_error(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_heartbeat(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_pong(&self) -> bool
 pub fn marketdata_core::WebSocketMessage::is_subscribed(&self) -> bool
+pub fn marketdata_core::WebSocketMessage::parse(&str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::WebSocketMessage
 pub fn marketdata_core::WebSocketMessage::clone(&self) -> marketdata_core::WebSocketMessage
 impl core::fmt::Debug for marketdata_core::WebSocketMessage
 pub fn marketdata_core::WebSocketMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for marketdata_core::WebSocketMessage
-pub fn marketdata_core::WebSocketMessage::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+pub fn marketdata_core::WebSocketMessage::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for marketdata_core::WebSocketMessage
-pub fn marketdata_core::WebSocketMessage::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for marketdata_core::WebSocketMessage
+pub fn marketdata_core::WebSocketMessage::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl !core::marker::Freeze for marketdata_core::WebSocketMessage
 impl core::marker::Send for marketdata_core::WebSocketMessage
 impl core::marker::Sync for marketdata_core::WebSocketMessage
 impl core::marker::Unpin for marketdata_core::WebSocketMessage

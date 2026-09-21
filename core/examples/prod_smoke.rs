@@ -627,7 +627,7 @@ async fn drain_snapshots(
         if !labels.contains_key(channel) || seen.contains_key(channel) {
             continue;
         }
-        let Some(data) = msg.data.as_ref() else {
+        let Some(data) = msg.data() else {
             continue;
         };
         let is_snapshot = msg.event == "snapshot";

@@ -237,7 +237,7 @@ Differences from the legacy object form:
 The legacy SDKs do not have any auto-reconnect — when the WebSocket drops you
 get a `disconnect` event and that is it. This SDK **reconnects by default**:
 after an unexpected drop it retries with exponential backoff (1 s doubling up
-to 60 s) **without an attempt limit**, and subscribes again once it is back.
+to 60 s, each wait plus 0–50% random jitter) **without an attempt limit**, and subscribes again once it is back.
 Each attempt emits a `reconnect` event with its number. Only a normal closure
 by the server (code 1000) and rejected credentials end the connection for
 good; every other close reconnects (#201). See
@@ -268,7 +268,7 @@ calls `disconnect()` and `connect()`. With auto-reconnect on, that turns
 into an endless reconnect loop (#226):
 
 1. The connection drops; the SDK emits `disconnect`, your flag is set, and
-   the SDK reconnects within about a second.
+   the SDK reconnects within a second or two.
 2. Your thread wakes up later and calls `disconnect()` on the connection
    the SDK has just restored. Closing it emits `disconnect` again (a close
    you ask for emits `disconnect`, as it did in 2.x), which sets your flag

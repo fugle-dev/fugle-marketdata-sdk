@@ -1,6 +1,16 @@
 //! WebSocket subscription types - matches Fugle WebSocket API
 
-use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::fmt;
+use std::ops::Range;
+use std::sync::OnceLock;
+
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::value::RawValue;
+use serde_json::Value;
+
+use crate::MarketDataError;
 
 use crate::models::symbols::Symbols;
 
@@ -237,38 +247,42 @@ impl UnsubscribeRequest {
 }
 
 /// WebSocket message wrapper (incoming messages)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Built from a frame with [`parse`](Self::parse). The `data` payload is not
+/// parsed up front: `parse` only records where it sits inside [`raw`](Self::raw),
+/// and [`data`](Self::data) builds the `Value` the first time it is called.
+/// Market-data frames go straight to the caller as `raw`, so the hot path never
+/// builds (or drops) a `Value` tree it does not use (#236).
+///
+/// `Deserialize` still works (`serde_json::from_str` / `from_value`); a
+/// message built that way has its `data` parsed eagerly and an empty `raw`.
+#[derive(Clone)]
 pub struct WebSocketMessage {
     /// Event type (e.g., "data", "subscribed", "error", "authenticated", "pong")
     pub event: String,
 
-    /// Message data (varies by event type)
-    #[serde(default)]
-    pub data: Option<serde_json::Value>,
+    /// Message data (varies by event type); read it with [`data`](Self::data)
+    /// or [`data_json`](Self::data_json).
+    data: DataSlot,
 
     /// Channel (for data events)
-    #[serde(default)]
     pub channel: Option<String>,
 
     /// Symbol (for data events)
-    #[serde(default)]
     pub symbol: Option<String>,
 
     /// Subscription ID (for subscribed events)
-    #[serde(default)]
     pub id: Option<String>,
 
     /// Server error code (for error events), e.g. `1000` for rejected
     /// credentials. The server sends it at the top level of the frame, next
     /// to `event`, not inside `data`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<i32>,
 
     /// Top-level error message (for error events). The server normally puts
     /// the message under `data.message`; one shape (`ws-exception.filter.ts`)
     /// sends `{"event":"error","message":"…"}` with no `code` and no `data`,
     /// and this field catches it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 
     /// The frame exactly as the server sent it.
@@ -281,11 +295,120 @@ pub struct WebSocketMessage {
     ///
     /// Skipped by serde: it is populated from the frame itself, never parsed
     /// out of it.
-    #[serde(skip)]
+    ///
+    /// [`data`](Self::data) and [`data_json`](Self::data_json) of a parsed
+    /// message read their payload out of this string. Overwriting it leaves
+    /// their result unspecified — typically `None`, never a panic; a `data()`
+    /// already returned stays as it was.
     pub raw: String,
 }
 
+/// Where a message's `data` lives: a byte range of `raw` (from `parse`),
+/// and the `Value` built from it on first use (or up front, from `Deserialize`).
+#[derive(Clone, Default)]
+struct DataSlot {
+    span: Option<Range<u32>>,
+    value: OnceLock<Option<Value>>,
+}
+
+impl DataSlot {
+    fn parsed(value: Option<Value>) -> Self {
+        Self { span: None, value: OnceLock::from(value) }
+    }
+}
+
+/// The routed fields of a frame. `parse` reads `data` as a borrowed
+/// `&RawValue`, `Deserialize` as a `Value`.
+#[derive(Deserialize)]
+struct Fields<D> {
+    event: String,
+    #[serde(default = "none")]
+    data: Option<D>,
+    #[serde(default)]
+    channel: Option<String>,
+    #[serde(default)]
+    symbol: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    code: Option<i32>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+// `#[serde(default)]` on a generic field would require `D: Default`.
+fn none<D>() -> Option<D> {
+    None
+}
+
+impl<D> Fields<D> {
+    fn into_message(self, data: DataSlot, raw: String) -> WebSocketMessage {
+        WebSocketMessage {
+            event: self.event,
+            data,
+            channel: self.channel,
+            symbol: self.symbol,
+            id: self.id,
+            code: self.code,
+            message: self.message,
+            raw,
+        }
+    }
+}
+
 impl WebSocketMessage {
+    /// Parse a frame. `raw` is `text`; `data` is located but not parsed.
+    ///
+    /// # Errors
+    ///
+    /// [`MarketDataError::DeserializationError`] when `text` is not a JSON
+    /// object with a string `event`, or a routed field has the wrong type.
+    pub fn parse(text: &str) -> Result<Self, MarketDataError> {
+        let mut frame: Fields<&RawValue> =
+            serde_json::from_str(text).map_err(|source| MarketDataError::DeserializationError { source })?;
+        let data = match frame.data.take() {
+            None => DataSlot::default(),
+            Some(raw) => {
+                // `raw` borrows from `text`, so its offset is its position there.
+                let start = raw.get().as_ptr() as usize - text.as_ptr() as usize;
+                let end = start + raw.get().len();
+                match (u32::try_from(start), u32::try_from(end)) {
+                    (Ok(start), Ok(end)) => DataSlot { span: Some(start..end), value: OnceLock::new() },
+                    // A frame past 4 GiB: parse now rather than widen the span.
+                    _ => DataSlot::parsed(Some(
+                        serde_json::from_str(raw.get())
+                            .map_err(|source| MarketDataError::DeserializationError { source })?,
+                    )),
+                }
+            }
+        };
+        Ok(frame.into_message(data, text.to_string()))
+    }
+
+    /// The `data` payload, parsed on the first call; later calls return the
+    /// same reference. `None` when the frame has no `data` (or `"data":null`).
+    pub fn data(&self) -> Option<&Value> {
+        self.data
+            .value
+            .get_or_init(|| serde_json::from_str(self.raw_data()?).ok())
+            .as_ref()
+    }
+
+    /// The `data` payload as JSON text. For a parsed message this is the
+    /// slice of [`raw`](Self::raw) the server sent, byte for byte; for one
+    /// built by `Deserialize` it is the compact serialization of the value.
+    pub fn data_json(&self) -> Option<Cow<'_, str>> {
+        if self.data.span.is_some() {
+            return self.raw_data().map(Cow::Borrowed);
+        }
+        self.data.value.get()?.as_ref().map(|value| Cow::Owned(value.to_string()))
+    }
+
+    fn raw_data(&self) -> Option<&str> {
+        let span = self.data.span.as_ref()?;
+        self.raw.get(span.start as usize..span.end as usize)
+    }
+
     /// Check if this is an authentication success message
     pub fn is_authenticated(&self) -> bool {
         self.event == "authenticated"
@@ -331,8 +454,7 @@ impl WebSocketMessage {
         if !self.is_error() {
             return None;
         }
-        self.data
-            .as_ref()
+        self.data()
             .and_then(|d| d.get("message"))
             .and_then(|m| m.as_str())
             .map(|s| s.to_string())
@@ -351,6 +473,66 @@ impl WebSocketMessage {
             return None;
         }
         self.code
+    }
+}
+
+/// Prints `data` without parsing it: the parsed value if `data()` has run,
+/// otherwise the slice of `raw` it will be parsed from.
+impl fmt::Debug for WebSocketMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct UnparsedData<'a>(&'a str);
+        impl fmt::Debug for UnparsedData<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+
+        let mut s = f.debug_struct("WebSocketMessage");
+        s.field("event", &self.event);
+        match (self.data.value.get(), self.raw_data()) {
+            (Some(value), _) => s.field("data", value),
+            (None, Some(raw)) => s.field("data", &Some(UnparsedData(raw))),
+            (None, None) => s.field("data", &None::<Value>),
+        };
+        s.field("channel", &self.channel)
+            .field("symbol", &self.symbol)
+            .field("id", &self.id)
+            .field("code", &self.code)
+            .field("message", &self.message)
+            .field("raw", &self.raw)
+            .finish()
+    }
+}
+
+/// Same output as the derived impl before #236: `raw` is left out, and
+/// `code` / `message` only appear when set.
+impl Serialize for WebSocketMessage {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let len = 5 + usize::from(self.code.is_some()) + usize::from(self.message.is_some());
+        let mut s = serializer.serialize_struct("WebSocketMessage", len)?;
+        s.serialize_field("event", &self.event)?;
+        s.serialize_field("data", &self.data())?;
+        s.serialize_field("channel", &self.channel)?;
+        s.serialize_field("symbol", &self.symbol)?;
+        s.serialize_field("id", &self.id)?;
+        if let Some(code) = &self.code {
+            s.serialize_field("code", code)?;
+        }
+        if let Some(message) = &self.message {
+            s.serialize_field("message", message)?;
+        }
+        s.end()
+    }
+}
+
+/// Works from any serde source (not just a borrowed `&str`), so `data` is
+/// parsed up front and `raw` is left empty. Frames off the wire go through
+/// [`WebSocketMessage::parse`] instead.
+impl<'de> Deserialize<'de> for WebSocketMessage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = Fields::<Value>::deserialize(deserializer)?;
+        let data = DataSlot::parsed(fields.data.take());
+        Ok(fields.into_message(data, String::new()))
     }
 }
 
@@ -809,6 +991,100 @@ mod tests {
         let json = r#"{"event":"data","code":7}"#;
         let msg: WebSocketMessage = serde_json::from_str(json).unwrap();
         assert_eq!(msg.error_code(), None);
+    }
+
+    const DATA: &str = r#"{"price": 583.0, "n": 1e+21, "name":"\u53f0"}"#;
+
+    fn data_frame() -> String {
+        format!(r#"{{"event":"data","channel":"trades","data":{DATA},"id":"x"}}"#)
+    }
+
+    #[test]
+    fn parsed_data_json_is_the_frame_slice() {
+        let frame = data_frame();
+        let msg = WebSocketMessage::parse(&frame).unwrap();
+        assert_eq!(msg.raw, frame);
+        assert!(matches!(msg.data_json(), Some(Cow::Borrowed(DATA))));
+        assert_eq!(msg.channel.as_deref(), Some("trades"));
+        assert_eq!(msg.id.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn parsed_data_is_lazy_and_cached() {
+        let msg = WebSocketMessage::parse(&data_frame()).unwrap();
+        assert!(msg.data.value.get().is_none(), "not parsed by parse()");
+        let first = msg.data().unwrap();
+        assert_eq!(first, &serde_json::from_str::<Value>(DATA).unwrap());
+        assert!(std::ptr::eq(first, msg.data().unwrap()));
+    }
+
+    #[test]
+    fn frame_without_data_has_none() {
+        for frame in [r#"{"event":"pong"}"#, r#"{"event":"pong","data":null}"#] {
+            let msg = WebSocketMessage::parse(frame).unwrap();
+            assert!(msg.data().is_none(), "{frame}");
+            assert!(msg.data_json().is_none(), "{frame}");
+        }
+    }
+
+    #[test]
+    fn deserialized_data_is_eager_and_compact() {
+        let msg: WebSocketMessage = serde_json::from_str(&data_frame()).unwrap();
+        assert_eq!(msg.raw, "");
+        assert_eq!(msg.data(), Some(&serde_json::from_str::<Value>(DATA).unwrap()));
+        let json = msg.data_json().unwrap();
+        assert!(matches!(json, Cow::Owned(_)));
+        assert_eq!(json, serde_json::to_string(msg.data().unwrap()).unwrap());
+
+        let msg: WebSocketMessage =
+            serde_json::from_value(serde_json::json!({"event": "pong", "data": {"time": 1}})).unwrap();
+        assert_eq!(msg.data_json().as_deref(), Some(r#"{"time":1}"#));
+    }
+
+    #[test]
+    fn serialize_matches_the_derived_output() {
+        // What the derived impl produced in 0.9.0-rc.6.
+        let msg = WebSocketMessage::parse(r#"{"event":"pong","extra":1}"#).unwrap();
+        assert_eq!(
+            serde_json::to_string(&msg).unwrap(),
+            r#"{"event":"pong","data":null,"channel":null,"symbol":null,"id":null}"#
+        );
+        let msg = WebSocketMessage::parse(
+            r#"{"id":"s","event":"error","code":1000,"message":"m","data":{"b":1,"a":2}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&msg).unwrap(),
+            r#"{"event":"error","data":{"b":1,"a":2},"channel":null,"symbol":null,"id":"s","code":1000,"message":"m"}"#
+        );
+    }
+
+    #[test]
+    fn clone_has_its_own_lazy_state() {
+        let msg = WebSocketMessage::parse(&data_frame()).unwrap();
+        let copy = msg.clone();
+        assert!(msg.data().is_some());
+        assert!(copy.data.value.get().is_none(), "clone taken before data() stays unparsed");
+        assert!(!std::ptr::eq(msg.data().unwrap(), copy.data().unwrap()));
+        assert_eq!(msg.data(), copy.data());
+    }
+
+    #[test]
+    fn overwritten_raw_gives_none_not_a_panic() {
+        let mut msg = WebSocketMessage::parse(&data_frame()).unwrap();
+        msg.raw.truncate(10);
+        assert!(msg.data_json().is_none());
+        assert!(msg.data().is_none());
+    }
+
+    #[test]
+    fn debug_does_not_parse_data() {
+        let msg = WebSocketMessage::parse(&data_frame()).unwrap();
+        let shown = format!("{msg:?}");
+        assert!(shown.contains(&format!("data: Some({DATA})")), "{shown}");
+        assert!(msg.data.value.get().is_none(), "Debug parsed data");
+        msg.data();
+        assert!(format!("{msg:?}").contains("data: Some(Object"), "parsed value shown once present");
     }
 
     #[test]

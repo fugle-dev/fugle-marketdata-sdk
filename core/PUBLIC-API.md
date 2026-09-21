@@ -47,6 +47,23 @@ PR number and listing the new/changed/removed symbols.
   connection is open or being opened` instead of `Already connected; call
   disconnect() first`.
 
+### Unreleased — `WebSocketMessage.data` parsed on first use (#236)
+
+- `-` `models::WebSocketMessage::data: Option<serde_json::Value>` — the
+  field is private; struct literals no longer compile. Breaking.
+- `+` `models::WebSocketMessage::parse(&str) -> Result<Self, MarketDataError>`
+  — `raw` is the frame; `data` is located, not parsed.
+- `+` `models::WebSocketMessage::data(&self) -> Option<&serde_json::Value>`
+  — parsed on the first call and cached.
+- `+` `models::WebSocketMessage::data_json(&self) -> Option<Cow<'_, str>>`
+  — borrowed slice of `raw` for a parsed message; compact serialization
+  for one built by `Deserialize`.
+- `Debug`, `Serialize` and `Deserialize` are hand-written instead of
+  derived; `Serialize` output and `Deserialize` input are unchanged.
+- Auto trait: `WebSocketMessage` and `websocket::stream::StreamItem` are
+  `!Freeze` (the `OnceLock` holding the parsed `data`). Still `Send`,
+  `Sync`, `Unpin`, `UnwindSafe`; only matters for a `const` of the type.
+
 ### Unreleased — `connect()` during an automatic reconnect waits for it (#230)
 
 - `+` `aio::WebSocketClient::wait_connected(&self) -> Result<(), MarketDataError>`
