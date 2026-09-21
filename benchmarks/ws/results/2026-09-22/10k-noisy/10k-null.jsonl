@@ -1,0 +1,3 @@
+{"sdk":"null-ws","count":10000,"expected":10000,"lost":0,"elapsed_ms":53,"msgs_per_sec":188679,"latency_p50_ms":null,"latency_p99_ms":null,"cpu_user_ms":50.621,"cpu_system_ms":28.216,"server_msgs_per_sec":163934}
+{"sdk":"null-ws","count":10000,"expected":10000,"lost":0,"elapsed_ms":39,"msgs_per_sec":256410,"latency_p50_ms":null,"latency_p99_ms":null,"cpu_user_ms":38.535,"cpu_system_ms":22.33,"server_msgs_per_sec":208333}
+{"sdk":"null-ws","count":10000,"expected":10000,"lost":0,"elapsed_ms":44,"msgs_per_sec":227273,"latency_p50_ms":null,"latency_p99_ms":null,"cpu_user_ms":47.852,"cpu_system_ms":26.403,"server_msgs_per_sec":200000}
