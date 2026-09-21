@@ -28,7 +28,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -878,6 +878,57 @@ struct WebSocketState {
     /// Set by `disconnect()`: the stream reader stops waiting on a full
     /// `handoff`.
     stop: Arc<AtomicBool>,
+    /// What the stream reader has delivered to the callbacks, for
+    /// `connect()` (#230).
+    delivered: Delivered,
+}
+
+/// Whether the callbacks were last handed the connection as up, as a
+/// `connect()` decides between refusing and waiting on a reconnect (#230).
+///
+/// Read from what the stream reader delivered rather than core's state: a
+/// `disconnect` callback that calls `connect()` may run after core has
+/// already reconnected, and has to wait on that reconnect, not be refused.
+#[derive(Clone, Default)]
+struct Delivered(Arc<AtomicU8>);
+
+impl Delivered {
+    /// No `authenticated` delivered yet for this connection.
+    const PENDING: u8 = 0;
+    /// `authenticated` delivered, and nothing since that ends it.
+    const AUTHENTICATED: u8 = 1;
+    /// `unauthenticated` or `disconnect` delivered since.
+    const LOST: u8 = 2;
+
+    /// Record `event`. Called by the stream reader before the callbacks run,
+    /// so a callback calling `connect()` reads the event it is handling.
+    fn observe(&self, event: &marketdata_core::websocket::ConnectionEvent) {
+        use marketdata_core::websocket::ConnectionEvent;
+        match event {
+            ConnectionEvent::Authenticated { .. } => self.0.store(Self::AUTHENTICATED, Ordering::SeqCst),
+            ConnectionEvent::Unauthenticated { .. } | ConnectionEvent::Disconnected { .. } => {
+                self.0.store(Self::LOST, Ordering::SeqCst)
+            }
+            _ => {}
+        }
+    }
+
+    /// The connect that opened this connection succeeded: it counts as
+    /// delivered even if the reader has not got to `authenticated` yet, so a
+    /// second `connect()` right after is refused rather than waiting. Unless
+    /// the reader has already delivered the connection's loss.
+    fn connect_succeeded(&self) {
+        let _ = self.0.compare_exchange(
+            Self::PENDING,
+            Self::AUTHENTICATED,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+    }
+
+    fn is_authenticated(&self) -> bool {
+        self.0.load(Ordering::SeqCst) == Self::AUTHENTICATED
+    }
 }
 
 /// Shared so blocking calls can clone it out of its lock before they block.
@@ -909,26 +960,104 @@ impl Drop for ConnectClaim {
     }
 }
 
-/// Claim `gate` for a new connection, or fail with core's `AlreadyConnected`
-/// (code 2011) while another connect runs or the stored connection is open,
-/// being established or auto-reconnecting (#119, #130). Checked before
-/// anything of the live connection is replaced; hold the claim until the new
-/// connection is stored.
+/// What a `connect()` does, decided before anything of the live connection
+/// is replaced (#119, #130, #230).
+enum Claim {
+    /// Open a new connection; hold the claim until it is stored.
+    Fresh(ConnectClaim),
+    /// Wait on the automatic reconnect of the stored connection. The claim is
+    /// already released, so any number of `connect()` calls wait together,
+    /// as on core's client.
+    Join(Arc<marketdata_core::aio::WebSocketClient>),
+}
+
+/// Claim `gate`, or fail with core's `AlreadyConnected` (code 2011) while
+/// another connect runs or the callbacks were last handed the stored
+/// connection as up. A stored connection that is not closed and was not
+/// handed over as up is reconnecting: join it, unless it is `gave_up`, one
+/// whose wait already ended with nothing left to wait for.
+///
+/// Not core's `is_active()`: between reconnect attempts the state is
+/// `Disconnected`, and a connect let through there would leave the old
+/// reconnect loop running beside a new connection (#230).
 fn claim_connect(
     gate: &ConnectGate,
     state: &Mutex<Option<WebSocketState>>,
-) -> PyResult<ConnectClaim> {
+    gave_up: Option<&Arc<marketdata_core::aio::WebSocketClient>>,
+) -> PyResult<Claim> {
     let already = || errors::to_py_err(marketdata_core::MarketDataError::AlreadyConnected);
     let claim = gate.try_claim().ok_or_else(already)?;
-    let active = state
-        .lock()
-        .map_err(lock_err)?
-        .as_ref()
-        .is_some_and(|s| s.inner.state_handle().is_active());
-    if active {
-        return Err(already());
+    let guard = state.lock().map_err(lock_err)?;
+    match guard.as_ref() {
+        None => Ok(Claim::Fresh(claim)),
+        Some(s) if s.inner.is_closed_sync() => Ok(Claim::Fresh(claim)),
+        Some(s) if gave_up.is_some_and(|c| Arc::ptr_eq(c, &s.inner)) => Ok(Claim::Fresh(claim)),
+        Some(s) if s.delivered.is_authenticated() => Err(already()),
+        Some(s) => Ok(Claim::Join(Arc::clone(&s.inner))),
     }
-    Ok(claim)
+}
+
+/// The end of a join: `Ok(true)` once the reconnect is up (the stored
+/// connection is kept as is), `Ok(false)` when there is nothing left to wait
+/// for — the client closed without the reconnect giving up, or core has no
+/// reconnect under way (`ConnectionError`) — so a new connection is opened,
+/// otherwise the error: 2010 on `disconnect()`, 3005 when the attempts ran
+/// out, `AuthError` when the credentials were rejected.
+fn join_ended(result: Result<(), marketdata_core::MarketDataError>) -> PyResult<bool> {
+    use marketdata_core::MarketDataError as CoreError;
+    match result {
+        Ok(()) => Ok(true),
+        Err(CoreError::ClientClosed | CoreError::ConnectionError { .. }) => Ok(false),
+        Err(e) => Err(errors::to_py_err(e)),
+    }
+}
+
+/// [`claim_connect`] for a blocking `connect()`, which waits out a join with
+/// the GIL released. `None`: joined, nothing left to do.
+fn claim_or_join(
+    py: Python<'_>,
+    gate: &ConnectGate,
+    state: &Mutex<Option<WebSocketState>>,
+    runtime: &Mutex<Option<SharedRuntime>>,
+) -> PyResult<Option<ConnectClaim>> {
+    let mut gave_up = None;
+    loop {
+        let inner = match claim_connect(gate, state, gave_up.as_ref())? {
+            Claim::Fresh(claim) => return Ok(Some(claim)),
+            Claim::Join(inner) => inner,
+        };
+        // Only a `disconnect()` since `ensure_runtime()` takes it, and that
+        // ends the reconnect.
+        let Some(runtime) = runtime.lock().map_err(lock_err)?.clone() else {
+            return Err(errors::to_py_err(marketdata_core::MarketDataError::ConnectionAborted));
+        };
+        let waited = Arc::clone(&inner);
+        let result = block_on_detached(py, runtime, async move { waited.wait_connected().await });
+        if join_ended(result)? {
+            return Ok(None);
+        }
+        // Claimed again, as a fresh connect; another caller that got there
+        // first is refused as usual.
+        gave_up = Some(inner);
+    }
+}
+
+/// [`claim_or_join`] for `connect_async()`.
+async fn claim_or_join_async(
+    gate: &ConnectGate,
+    state: &Mutex<Option<WebSocketState>>,
+) -> PyResult<Option<ConnectClaim>> {
+    let mut gave_up = None;
+    loop {
+        let inner = match claim_connect(gate, state, gave_up.as_ref())? {
+            Claim::Fresh(claim) => return Ok(Some(claim)),
+            Claim::Join(inner) => inner,
+        };
+        if join_ended(inner.wait_connected().await)? {
+            return Ok(None);
+        }
+        gave_up = Some(inner);
+    }
 }
 
 fn lock_err<T>(e: std::sync::PoisonError<T>) -> PyErr {
@@ -1035,7 +1164,9 @@ fn settle_connect(
     }
     let mut state = state.lock().map_err(lock_err)?;
     closed.store(false, Ordering::SeqCst);
-    *state = Some(make_state());
+    let installed = state.insert(make_state());
+    // Under the `state` lock, so a `connect()` sees it with the connection.
+    installed.delivered.connect_succeeded();
     *reader_slot.lock().map_err(lock_err)? = Some(entry.reader_thread);
     Ok(ConnectOutcome::Installed)
 }
@@ -1124,6 +1255,7 @@ fn spawn_stream_reader(
     callbacks: Arc<CallbackRegistry>,
     handoff: Arc<Handoff>,
     stop: Arc<AtomicBool>,
+    delivered: Delivered,
     test_panic: Option<String>,
 ) -> PyResult<std::thread::JoinHandle<()>> {
     use marketdata_core::websocket::{ConnectionEvent, StreamItem};
@@ -1147,6 +1279,7 @@ fn spawn_stream_reader(
                                 | ConnectionEvent::Disconnected { .. } => authenticated = false,
                                 _ => {}
                             }
+                            delivered.observe(&event);
                             Python::attach(|py| forward_event(py, &callbacks, event));
                         }
                         StreamItem::Message(msg) if authenticated => {
@@ -1475,16 +1608,29 @@ impl StockWebSocketClient {
     /// order: each message goes to the `message` callbacks if any are
     /// registered when it arrives, otherwise to `messages()` iterators.
     ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and the
+    /// subscriptions are re-sent, so a subscribe() afterwards follows them.
+    /// Called from a callback, it holds up the callbacks until the reconnect
+    /// ends.
+    ///
     /// Raises:
     ///     MarketDataError: If connection fails
-    ///     WebSocketError: Code 2011 if already connected, connecting or reconnecting
+    ///     WebSocketError: Code 2011 if already connected or another connect is
+    ///         in progress. While waiting on a reconnect: code 2010 if
+    ///         disconnect() is called, code 3005 if the reconnect runs out of
+    ///         attempts
+    ///     AuthError: While waiting on a reconnect, if its credentials are
+    ///         rejected
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
-        let _claim = claim_connect(&self.connect_gate, &self.state)?;
-        let test_panic = test_panic_site();
-        // Ensure runtime exists
+        // Before the claim: a join waits on this runtime.
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
         })?;
+        let Some(_claim) = claim_or_join(py, &self.connect_gate, &self.state, &self.runtime)? else {
+            return Ok(());
+        };
+        let test_panic = test_panic_site();
 
         // Create WebSocket client with full config
         let config = self.build_config();
@@ -1498,12 +1644,14 @@ impl StockWebSocketClient {
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
+        let delivered = Delivered::default();
         let reader_thread = spawn_stream_reader(
             "stock_ws_stream",
             ws_client.stream_receiver(),
             Arc::clone(&self.callbacks),
             Arc::clone(&handoff),
             Arc::clone(&stop),
+            delivered.clone(),
             test_panic,
         )?;
 
@@ -1530,7 +1678,7 @@ impl StockWebSocketClient {
             &self.reader_thread_handle,
             &self.closed,
             result,
-            || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop },
+            || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop, delivered },
         )?;
         match outcome {
             ConnectOutcome::Installed => Ok(()),
@@ -1899,9 +2047,20 @@ impl StockWebSocketClient {
     /// Returns an awaitable that completes when connection is established.
     /// Releases GIL during connection, enabling concurrent Python tasks.
     ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and the
+    /// subscriptions are re-sent, so a subscribe() afterwards follows them.
+    /// Called from a callback, it holds up the callbacks until the reconnect
+    /// ends.
+    ///
     /// Raises:
     ///     MarketDataError: If connection fails
-    ///     WebSocketError: Code 2011 if already connected, connecting or reconnecting
+    ///     WebSocketError: Code 2011 if already connected or another connect is
+    ///         in progress. While waiting on a reconnect: code 2010 if
+    ///         disconnect() is called, code 3005 if the reconnect runs out of
+    ///         attempts
+    ///     AuthError: While waiting on a reconnect, if its credentials are
+    ///         rejected
     ///
     /// Example:
     ///     ```python
@@ -1931,7 +2090,9 @@ impl StockWebSocketClient {
         let closed = Arc::clone(&self.closed);
 
         future_into_py(py, async move {
-            let _claim = claim_connect(&connect_gate, &state_arc)?;
+            let Some(_claim) = claim_or_join_async(&connect_gate, &state_arc).await? else {
+                return Ok(());
+            };
             // Create WebSocket client with full config
             let config = build_stream_config(
                 &auth,
@@ -1956,12 +2117,14 @@ impl StockWebSocketClient {
 
             let handoff = Arc::new(Handoff::new(capacity));
             let stop = Arc::new(AtomicBool::new(false));
+            let delivered = Delivered::default();
             let reader_thread = spawn_stream_reader(
                 "stock_ws_stream",
                 ws_client.stream_receiver(),
                 Arc::clone(&callbacks),
                 Arc::clone(&handoff),
                 Arc::clone(&stop),
+                delivered.clone(),
                 test_panic,
             )?;
 
@@ -1980,7 +2143,7 @@ impl StockWebSocketClient {
                 &reader_thread_handle,
                 &closed,
                 result,
-                || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop },
+                || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop, delivered },
             )?;
             match outcome {
                 ConnectOutcome::Installed => Ok(()),
@@ -2284,17 +2447,30 @@ impl FutOptWebSocketClient {
 
     /// Connect to WebSocket server
     ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and the
+    /// subscriptions are re-sent, so a subscribe() afterwards follows them.
+    /// Called from a callback, it holds up the callbacks until the reconnect
+    /// ends.
+    ///
     /// Raises:
     ///     MarketDataError: If connection fails
-    ///     WebSocketError: Code 2011 if already connected, connecting or reconnecting
+    ///     WebSocketError: Code 2011 if already connected or another connect is
+    ///         in progress. While waiting on a reconnect: code 2010 if
+    ///         disconnect() is called, code 3005 if the reconnect runs out of
+    ///         attempts
+    ///     AuthError: While waiting on a reconnect, if its credentials are
+    ///         rejected
     #[pyo3(signature = ())]
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
-        let _claim = claim_connect(&self.connect_gate, &self.state)?;
-        let test_panic = test_panic_site();
-        // Ensure runtime exists
+        // Before the claim: a join waits on this runtime.
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
         })?;
+        let Some(_claim) = claim_or_join(py, &self.connect_gate, &self.state, &self.runtime)? else {
+            return Ok(());
+        };
+        let test_panic = test_panic_site();
 
         // Create WebSocket client for FutOpt endpoint with full config
         let config = self.build_config();
@@ -2308,12 +2484,14 @@ impl FutOptWebSocketClient {
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
+        let delivered = Delivered::default();
         let reader_thread = spawn_stream_reader(
             "futopt_ws_stream",
             ws_client.stream_receiver(),
             Arc::clone(&self.callbacks),
             Arc::clone(&handoff),
             Arc::clone(&stop),
+            delivered.clone(),
             test_panic,
         )?;
 
@@ -2340,7 +2518,7 @@ impl FutOptWebSocketClient {
             &self.reader_thread_handle,
             &self.closed,
             result,
-            || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop },
+            || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop, delivered },
         )?;
         match outcome {
             ConnectOutcome::Installed => Ok(()),

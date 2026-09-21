@@ -286,7 +286,7 @@ final class NamespaceLibrary {
     if (lib.uniffi_marketdata_uniffi_checksum_method_stocktechnicalclient_sma_sync() != ((short) 21533)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (lib.uniffi_marketdata_uniffi_checksum_method_websocketclient_connect() != ((short) 34522)) {
+    if (lib.uniffi_marketdata_uniffi_checksum_method_websocketclient_connect() != ((short) 2768)) {
         throw new RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (lib.uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect() != ((short) 58180)) {

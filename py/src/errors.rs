@@ -40,7 +40,7 @@ create_exception!(fugle_marketdata, WebSocketError, MarketDataError, "WebSocket 
 /// - ApiError → ApiError (or RateLimitError for 429 status)
 /// - TimeoutError / HeartbeatTimeout → TimeoutError
 /// - ConnectionError → ConnectionError
-/// - WebSocketError / ClientClosed / ConnectionAborted / AlreadyConnected → WebSocketError
+/// - WebSocketError / ClientClosed / ConnectionAborted / AlreadyConnected / ReconnectFailed → WebSocketError
 /// - Other errors → MarketDataError (base exception)
 ///
 /// The exception instance carries the unified error fields (core's
@@ -90,7 +90,8 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
         CoreError::WebSocketError { .. }
         | CoreError::ClientClosed
         | CoreError::ConnectionAborted
-        | CoreError::AlreadyConnected => WebSocketError::new_err((message.clone(), error_code)),
+        | CoreError::AlreadyConnected
+        | CoreError::ReconnectFailed { .. } => WebSocketError::new_err((message.clone(), error_code)),
         _ => MarketDataError::new_err((message.clone(), error_code)),
     };
 

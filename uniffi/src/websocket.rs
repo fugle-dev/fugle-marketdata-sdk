@@ -35,7 +35,7 @@ use crate::models::StreamMessage;
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
 use marketdata_core::websocket::{ConnectionEvent, StreamItem, StreamReceiver};
 use marketdata_core::AuthRequest;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 /// Callback interface for WebSocket events
@@ -740,6 +740,19 @@ impl WebSocketClient {
 #[cfg(not(feature = "cpp"))]
 #[uniffi::export(async_runtime = "tokio")]
 impl WebSocketClient {
+    /// Connect to the WebSocket server and authenticate.
+    ///
+    /// Refused with code 2011 (`ALREADY_CONNECTED`) while connected or while
+    /// another `connect()` is in progress.
+    ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and
+    /// the subscriptions are re-sent, so a `subscribe()` afterwards follows
+    /// them. The wait fails with 2010 (`ClientClosed`) if `disconnect()` is
+    /// called, 3005 (`RECONNECT_FAILED`) if the reconnect runs out of
+    /// attempts, and `AuthError` (2002) if its credentials are rejected.
+    /// Called from a listener method, it holds up the listener until the
+    /// reconnect ends.
     pub async fn connect(&self) -> Result<(), MarketDataError> {
         self.connect_impl().await
     }
@@ -828,22 +841,67 @@ impl WebSocketClient {
 }
 
 impl WebSocketClient {
-    /// Connect to the WebSocket server (implementation).
-    ///
-    /// Refused with code 2011 while another `connect()` is running or the
-    /// current connection is open or auto-reconnecting (#119), before
-    /// anything of that connection is replaced.
+    /// Connect to the WebSocket server (implementation); see `connect`.
+    /// `connect_sync` needs the path, so the C++ build has no other caller.
+    #[cfg(any(not(feature = "cpp"), test))]
     async fn connect_impl(&self) -> Result<(), MarketDataError> {
+        self.connect_with_path().await.1
+    }
+
+    /// [`connect_impl`](Self::connect_impl), and whether it opened a
+    /// connection of its own.
+    ///
+    /// Decided before anything of the stored connection is replaced
+    /// (#119, #230): none stored, or a closed one, opens a new connection;
+    /// one the listener was last handed as up is refused with 2011; any other
+    /// is reconnecting, and this waits on core's `wait_connected()` with the
+    /// connect gate released, so any number of calls wait together, as on
+    /// core's client. Not core's `is_active()`: between reconnect attempts
+    /// the state is `Disconnected`, and a connect let through there would
+    /// leave the old reconnect loop running beside a new connection.
+    ///
+    /// A wait that ends with nothing left to wait for — the client closed
+    /// without the reconnect giving up, or core has no reconnect under way
+    /// (`ConnectionError`) — claims the gate again and opens a new
+    /// connection in place of that one.
+    async fn connect_with_path(&self) -> (ConnectPath, Result<(), MarketDataError>) {
+        use marketdata_core::MarketDataError as CoreError;
         // Read before the first await, as in `disconnect_impl`.
         let caller = std::thread::current().id();
-        let Ok(_claim) = self.connect_gate.try_lock() else {
-            return Err(marketdata_core::MarketDataError::AlreadyConnected.into());
-        };
-        // `connection` holds only a client whose `connect()` succeeded; a
-        // closed one (disconnect() takes it) or one that ended leaves room.
-        if self.client().is_some_and(|ws| ws.state_handle().is_active()) {
-            return Err(marketdata_core::MarketDataError::AlreadyConnected.into());
+        let already = || Err(CoreError::AlreadyConnected.into());
+        let mut gave_up: Option<Arc<CoreWebSocketClient>> = None;
+        loop {
+            // Held until a fresh connect ends; released for a join.
+            let Ok(claim) = self.connect_gate.try_lock() else {
+                return (ConnectPath::Refused, already());
+            };
+            let stored = lock_connection(&self.connection).current.clone();
+            let join = match stored {
+                Some(c) if c.ws.is_closed_sync() => None,
+                Some(c) if gave_up.as_ref().is_some_and(|g| Arc::ptr_eq(g, &c.ws)) => None,
+                Some(c) if c.delivered.is_authenticated() => {
+                    return (ConnectPath::Refused, already());
+                }
+                Some(c) => Some(c.ws),
+                None => None,
+            };
+            let Some(ws) = join else {
+                let result = self.open_connection(caller).await;
+                drop(claim);
+                return (ConnectPath::Opened, result);
+            };
+            drop(claim);
+            match ws.wait_connected().await {
+                Ok(()) => return (ConnectPath::Joined, Ok(())),
+                Err(CoreError::ClientClosed | CoreError::ConnectionError { .. }) => gave_up = Some(ws),
+                Err(e) => return (ConnectPath::Joined, Err(e.into())),
+            }
         }
+    }
+
+    /// Open, authenticate and store a new connection, for a `connect()` that
+    /// holds the connect gate and was first polled on `caller`.
+    async fn open_connection(&self, caller: std::thread::ThreadId) -> Result<(), MarketDataError> {
         // Resolve the endpoint through core's factory so `base_url` semantics
         // and the per-product version live in one place. Before 0.8.0 this
         // hand-rolled `format!("{base}/stock/streaming")`, which is how the
@@ -912,10 +970,12 @@ impl WebSocketClient {
         // Its own `stopping` per connection, so a reader still draining a
         // previous connection never sees a later connection's flag.
         let stopping = Arc::new(AtomicBool::new(false));
+        let delivered = Delivered::default();
         let reader = spawn_stream_reader(
             core_ws.stream_receiver(),
             Arc::clone(&self.listener),
             Arc::clone(&stopping),
+            delivered.clone(),
             Arc::clone(&self.callback_failures),
         );
         {
@@ -929,7 +989,7 @@ impl WebSocketClient {
 
         // Connect to server
         let connected = core_ws.connect().await;
-        let connection = Connection { ws: Arc::new(core_ws), stopping, reader };
+        let connection = Connection { ws: Arc::new(core_ws), stopping, reader, delivered };
 
         // Stored in one step, or given up in one step: a `disconnect()` that
         // ran during the handshake found no connection to close and asked for
@@ -939,7 +999,12 @@ impl WebSocketClient {
             slot.pending = None;
             let cancelled = std::mem::take(&mut slot.disconnect_requested);
             match (connected.is_ok(), cancelled) {
-                (true, false) => slot.current = Some(connection.clone()),
+                (true, false) => {
+                    // Under the lock, so a `connect()` sees it with the
+                    // connection.
+                    connection.delivered.connect_succeeded();
+                    slot.current = Some(connection.clone());
+                }
                 // What that `disconnect()` waits for, once it stops waiting
                 // for the handshake's reader.
                 (true, true) => slot.closing = connection.reader.clone(),
@@ -962,7 +1027,7 @@ impl WebSocketClient {
     /// Close `connection` and wait for its listener calls, unless `caller` is
     /// the thread running them (#126).
     async fn close(&self, connection: Connection, caller: std::thread::ThreadId) {
-        let Connection { ws, stopping, reader } = connection;
+        let Connection { ws, stopping, reader, .. } = connection;
         // No messages are delivered once `disconnect()` has been called; the
         // connection's remaining events still are.
         stopping.store(true, Ordering::SeqCst);
@@ -1232,16 +1297,27 @@ fn non_empty_ids(ids: Vec<String>) -> Result<Vec<String>, MarketDataError> {
 #[uniffi::export]
 impl WebSocketClient {
     /// Connect to the WebSocket server (blocking).
+    ///
+    /// Refused with code 2011 (`ALREADY_CONNECTED`) while connected or while
+    /// another `connect()` is in progress.
+    ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and
+    /// the subscriptions are re-sent, so a `subscribe()` afterwards follows
+    /// them. The wait fails with 2010 (`ClientClosed`) if `disconnect()` is
+    /// called, 3005 (`RECONNECT_FAILED`) if the reconnect runs out of
+    /// attempts, and `AuthError` (2002) if its credentials are rejected.
+    /// Called from a listener method, it holds up the listener until the
+    /// reconnect ends.
     pub fn connect_sync(&self) -> Result<(), MarketDataError> {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| crate::errors::other_error(e.to_string()))?;
-        let result = rt.block_on(self.connect_impl());
-        // A refused connect leaves the live connection's runtime in place;
-        // replacing it would abort that connection's tasks (#119).
-        if let Err(MarketDataError::WebSocketError { info, .. }) = &result {
-            if info.code == marketdata_core::error_code::ALREADY_CONNECTED {
-                return result;
-            }
+        let (path, result) = rt.block_on(self.connect_with_path());
+        // A connect that opened nothing — refused, or joined the reconnect of
+        // the live connection — leaves that connection's runtime in place;
+        // replacing it would abort that connection's tasks (#119, #230).
+        if path != ConnectPath::Opened {
+            return result;
         }
         // Store runtime to keep background tasks alive
         if let Ok(mut guard) = self.sync_runtime.lock() {
@@ -1368,6 +1444,7 @@ fn spawn_stream_reader(
     stream: Arc<StreamReceiver>,
     listener: Arc<dyn WebSocketListener>,
     stopping: Arc<AtomicBool>,
+    delivered: Delivered,
     callback_failures: CallbackFailures,
 ) -> Option<StreamReader> {
     let (running, finished) = tokio::sync::watch::channel(());
@@ -1392,6 +1469,7 @@ fn spawn_stream_reader(
                             | ConnectionEvent::Disconnected { .. } => authenticated = false,
                             _ => {}
                         }
+                        delivered.observe(&event);
                         if !forward_event(event, &mut calls) {
                             break;
                         }
@@ -1432,6 +1510,67 @@ struct Connection {
     stopping: Arc<AtomicBool>,
     /// `None` if the thread could not be started.
     reader: Option<StreamReader>,
+    /// What the stream reader has handed the listener, for `connect()`.
+    delivered: Delivered,
+}
+
+/// What a `connect()` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConnectPath {
+    /// Refused with 2011: nothing opened or waited on.
+    Refused,
+    /// Waited on the stored connection's automatic reconnect (#230).
+    Joined,
+    /// Built a new core client, whatever the outcome.
+    Opened,
+}
+
+/// Whether the listener was last handed the connection as up, as a
+/// `connect()` decides between refusing and waiting on a reconnect (#230).
+///
+/// Read from what the stream reader delivered rather than core's state: an
+/// `on_disconnected` that calls `connect()` may run after core has already
+/// reconnected, and has to wait on that reconnect, not be refused.
+#[derive(Clone, Default)]
+struct Delivered(Arc<AtomicU8>);
+
+impl Delivered {
+    /// No `on_authenticated` delivered yet for this connection.
+    const PENDING: u8 = 0;
+    /// `on_authenticated` delivered, and nothing since that ends it.
+    const AUTHENTICATED: u8 = 1;
+    /// `on_unauthenticated` or `on_disconnected` delivered since.
+    const LOST: u8 = 2;
+
+    /// Record `event`. Called by the stream reader before the listener
+    /// runs, so a listener method calling `connect()` reads the event it is
+    /// handling.
+    fn observe(&self, event: &ConnectionEvent) {
+        match event {
+            ConnectionEvent::Authenticated { .. } => self.0.store(Self::AUTHENTICATED, Ordering::SeqCst),
+            ConnectionEvent::Unauthenticated { .. } | ConnectionEvent::Disconnected { .. } => {
+                self.0.store(Self::LOST, Ordering::SeqCst)
+            }
+            _ => {}
+        }
+    }
+
+    /// The connect that opened this connection succeeded: it counts as
+    /// delivered even if the reader has not got to `on_authenticated` yet, so
+    /// a second `connect()` right after is refused rather than waiting.
+    /// Unless the reader has already delivered the connection's loss.
+    fn connect_succeeded(&self) {
+        let _ = self.0.compare_exchange(
+            Self::PENDING,
+            Self::AUTHENTICATED,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+    }
+
+    fn is_authenticated(&self) -> bool {
+        self.0.load(Ordering::SeqCst) == Self::AUTHENTICATED
+    }
 }
 
 /// A connection's stream reader thread, as `disconnect()` waits for it.
@@ -1668,6 +1807,11 @@ mod tests {
         disconnect_on_message: std::sync::atomic::AtomicBool,
         /// `on_authenticated` does the same, during the handshake.
         disconnect_on_authenticated: std::sync::atomic::AtomicBool,
+        /// The next `on_disconnected` calls `connect()` on `client`, blocking
+        /// until it returns, and records `connect(ok)` or `connect(<code>)`.
+        connect_on_disconnect: std::sync::atomic::AtomicBool,
+        /// Milliseconds `on_connected` blocks, to hold up the reader.
+        connected_delay_ms: std::sync::atomic::AtomicU64,
         /// `on_disconnected` calls `ping_sync` on `client` and records the
         /// result (C++ sync API only).
         #[cfg(feature = "cpp")]
@@ -1694,6 +1838,8 @@ mod tests {
                 disconnected_entered: std::sync::atomic::AtomicBool::new(false),
                 disconnect_on_message: std::sync::atomic::AtomicBool::new(false),
                 disconnect_on_authenticated: std::sync::atomic::AtomicBool::new(false),
+                connect_on_disconnect: std::sync::atomic::AtomicBool::new(false),
+                connected_delay_ms: std::sync::atomic::AtomicU64::new(0),
                 #[cfg(feature = "cpp")]
                 ping_sync_on_disconnect: std::sync::atomic::AtomicBool::new(false),
             }
@@ -1716,6 +1862,18 @@ mod tests {
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
             rt.block_on(client.disconnect_impl());
             self.record("disconnect returned".to_string());
+        }
+
+        /// `connect()` on `client` from the callback this runs in, the way a
+        /// foreign listener blocks on the returned future.
+        fn connect_here(&self) {
+            let client = self.client.get().and_then(std::sync::Weak::upgrade).expect("client");
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            let result = rt.block_on(client.connect_impl());
+            self.record(match result {
+                Ok(()) => "connect(ok)".to_string(),
+                Err(e) => format!("connect({})", error_code(&e)),
+            });
         }
 
         fn events(&self) -> Vec<String> {
@@ -1762,6 +1920,10 @@ mod tests {
 
     impl WebSocketListener for TestListener {
         fn on_connected(&self) {
+            let delay = self.connected_delay_ms.load(Ordering::SeqCst);
+            if delay > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
             self.connected_count.fetch_add(1, Ordering::SeqCst);
             self.record("connected".to_string());
         }
@@ -1798,6 +1960,9 @@ mod tests {
             }
             self.disconnected_count.fetch_add(1, Ordering::SeqCst);
             self.record(format!("disconnected({will_reconnect})"));
+            if self.connect_on_disconnect.swap(false, Ordering::SeqCst) {
+                self.connect_here();
+            }
         }
 
         fn on_message(&self, message: StreamMessage) {
@@ -2595,27 +2760,253 @@ mod tests {
         assert_eq!(listener.connected_count.load(Ordering::SeqCst), 1);
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn connect_while_reconnecting_is_refused() {
-        let server = MockWsServer::start_with_capacity(2).await;
+    /// `info.code` of any error.
+    fn error_code(error: &MarketDataError) -> i32 {
+        match error {
+            MarketDataError::ConnectionError { info, .. }
+            | MarketDataError::AuthError { info, .. }
+            | MarketDataError::RateLimitError { info, .. }
+            | MarketDataError::InvalidSymbol { info, .. }
+            | MarketDataError::ParseError { info, .. }
+            | MarketDataError::TimeoutError { info, .. }
+            | MarketDataError::WebSocketError { info, .. }
+            | MarketDataError::ClientClosed { info }
+            | MarketDataError::ConfigError { info, .. }
+            | MarketDataError::ApiError { info, .. }
+            | MarketDataError::Other { info, .. } => info.code,
+        }
+    }
+
+    fn reconnect_every(max_attempts: u32, delay_ms: u64) -> Option<ReconnectConfigRecord> {
+        Some(ReconnectConfigRecord {
+            enabled: Some(true),
+            max_attempts,
+            initial_delay_ms: delay_ms,
+            max_delay_ms: delay_ms,
+        })
+    }
+
+    /// A connected client whose connection the server then drops, once
+    /// `on_disconnected(true)` has been handled. Beyond `capacity` the server
+    /// accepts no connection, so reconnect attempts fail.
+    async fn lost_connection(
+        capacity: usize,
+        reconnect: Option<ReconnectConfigRecord>,
+    ) -> (MockWsServer, Arc<TestListener>, Arc<WebSocketClient>) {
+        let server = MockWsServer::start_with_capacity(capacity).await;
         let listener = Arc::new(TestListener::new());
-        let client = mock_client(
-            &server,
-            Arc::clone(&listener),
-            Some(ReconnectConfigRecord {
-                enabled: Some(true),
-                max_attempts: 3,
-                initial_delay_ms: 1000,
-                max_delay_ms: 1000,
-            }),
-        );
+        let client = mock_client(&server, Arc::clone(&listener), reconnect);
+        let _ = listener.client.set(Arc::downgrade(&client));
+        client.connect_impl().await.expect("connect");
+        server.drop_transport_for(0).await;
+        listener.wait_for("disconnected(true)").await;
+        (server, listener, client)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_in_on_disconnected_joins_the_reconnect() {
+        let server = MockWsServer::start_with_capacity(3).await;
+        let listener = Arc::new(TestListener::new());
+        listener.connect_on_disconnect.store(true, Ordering::SeqCst);
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 100));
+        let _ = listener.client.set(Arc::downgrade(&client));
 
         client.connect_impl().await.expect("connect");
         server.drop_transport_for(0).await;
-        listener.wait_for("reconnecting(1)").await;
+        listener.wait_for("connect(ok)").await;
+        listener.wait_authenticated(2).await;
+        // The reconnect's connection only: no third one.
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 2, "{:?}", listener.events());
+        assert!(client.is_connected());
 
+        // Once its `on_authenticated` is delivered, it is refused again.
         assert_already_connected(client.connect_impl().await);
         client.disconnect_impl().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_during_backoff_waits_and_disconnect_ends_it_with_2010() {
+        let (_server, _listener, client) = lost_connection(1, reconnect_every(0, 5000)).await;
+
+        let join = tokio::spawn({
+            let client = Arc::clone(&client);
+            async move { client.connect_impl().await }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert!(!join.is_finished(), "connect() did not wait on the reconnect");
+
+        let started = std::time::Instant::now();
+        client.disconnect_impl().await;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), join)
+            .await
+            .expect("connect() returned")
+            .unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "disconnect() waited out the backoff");
+        assert_client_closed(result.expect_err("connect() during the backoff"));
+    }
+
+    /// Like core's client, every caller waits on the one reconnect and gets
+    /// its outcome.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_connects_during_reconnect_all_join_it() {
+        let (_server, listener, client) = lost_connection(2, reconnect_every(0, 1000)).await;
+
+        let (first, second) = tokio::join!(client.connect_impl(), client.connect_impl());
+        first.expect("first join");
+        second.expect("second join");
+        assert!(client.is_connected());
+        listener.wait_authenticated(2).await;
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 2);
+        client.disconnect_impl().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_connects_during_reconnect_all_get_3005() {
+        let (_server, _listener, client) = lost_connection(1, reconnect_every(1, 1000)).await;
+
+        let (first, second) = tokio::join!(client.connect_impl(), client.connect_impl());
+        for result in [first, second] {
+            let error = result.expect_err("the only attempt fails");
+            assert_eq!(error_code(&error), marketdata_core::error_code::RECONNECT_FAILED, "{error:?}");
+        }
+        client.disconnect_impl().await;
+    }
+
+    /// The join runs on the stream reader, which `disconnect()` waits for.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_while_on_disconnected_waits_on_the_reconnect() {
+        let server = MockWsServer::start_with_capacity(1).await;
+        let listener = Arc::new(TestListener::new());
+        listener.connect_on_disconnect.store(true, Ordering::SeqCst);
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 5000));
+        let _ = listener.client.set(Arc::downgrade(&client));
+
+        client.connect_impl().await.expect("connect");
+        server.drop_transport_for(0).await;
+        listener.wait_for("disconnected(true)").await;
+        assert!(!listener.events().iter().any(|e| e.starts_with("connect(")), "{:?}", listener.events());
+
+        let started = std::time::Instant::now();
+        tokio::time::timeout(std::time::Duration::from_secs(5), client.disconnect_impl())
+            .await
+            .expect("disconnect() returned");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "disconnect() waited out the backoff");
+        // disconnect() waited for the listener, this call included.
+        let code = marketdata_core::error_code::CLIENT_CLOSED;
+        assert!(listener.events().contains(&format!("connect({code})")), "{:?}", listener.events());
+        assert_eq!(Arc::strong_count(&listener), 2, "the stream reader is still running");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_during_reconnect_fails_with_3005_when_the_attempts_run_out() {
+        let (_server, _listener, client) = lost_connection(1, reconnect_every(1, 1000)).await;
+
+        let error = client.connect_impl().await.expect_err("the only attempt fails");
+        assert!(matches!(error, MarketDataError::WebSocketError { .. }), "{error:?}");
+        assert_eq!(error_code(&error), marketdata_core::error_code::RECONNECT_FAILED);
+        client.disconnect_impl().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_during_reconnect_fails_with_auth_error_when_it_is_rejected() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 1000));
+        client.connect_impl().await.expect("connect");
+        server.set_auth_response(serde_json::json!({
+            "event": "error", "code": 1000, "data": {"message": "Invalid token"}
+        }));
+        server.drop_transport_for(0).await;
+        listener.wait_for("disconnected(true)").await;
+
+        let error = client.connect_impl().await.expect_err("the reconnect is rejected");
+        assert!(matches!(error, MarketDataError::AuthError { .. }), "{error:?}");
+        client.disconnect_impl().await;
+    }
+
+    /// `connect()` returns before the reader has delivered
+    /// `on_authenticated`; a second one is still refused, not joined.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn second_connect_is_refused_before_on_authenticated_is_delivered() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        listener.connected_delay_ms.store(300, Ordering::SeqCst);
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 100));
+
+        client.connect_impl().await.expect("connect");
+        assert!(!listener.events().iter().any(|e| e.starts_with("authenticated")));
+        assert_already_connected(client.connect_impl().await);
+        listener.wait_authenticated(1).await;
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 1);
+        client.disconnect_impl().await;
+    }
+
+    /// Poll `listener` until `event` is recorded, off any runtime.
+    #[cfg(feature = "cpp")]
+    fn wait_for_blocking(listener: &TestListener, event: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !listener.events().iter().any(|e| e == event) {
+            assert!(std::time::Instant::now() < deadline, "no {event}; got {:?}", listener.events());
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    /// A `connect_sync()` that joined the reconnect keeps the runtime the
+    /// connection runs on (#230): replacing it would abort that connection's
+    /// tasks.
+    #[cfg(feature = "cpp")]
+    #[test]
+    fn connect_sync_that_joins_keeps_the_connection_running() {
+        let server_rt = tokio::runtime::Runtime::new().unwrap();
+        let server = server_rt.block_on(MockWsServer::start_with_capacity(3));
+        let listener = Arc::new(TestListener::new());
+        // Long enough a backoff that the second `connect_sync()` is within it.
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 1500));
+
+        client.connect_sync().expect("connect_sync");
+        server_rt.block_on(server.drop_transport_for(0));
+        wait_for_blocking(&listener, "disconnected(true)");
+        client.connect_sync().expect("connect_sync joins the reconnect");
+
+        client.ping_sync(Some("after-join".to_string())).expect("ping_sync");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !server.pings_received().iter().any(|p| p["state"] == "after-join") {
+            assert!(std::time::Instant::now() < deadline, "the ping never reached the server");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(client.is_connected());
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 2);
+        client.disconnect_sync();
+    }
+
+    /// One that joined and failed keeps it too; the connection is gone, and
+    /// the next `connect_sync()` opens a working one on its own runtime.
+    #[cfg(feature = "cpp")]
+    #[test]
+    fn connect_sync_after_a_failed_join_opens_a_working_connection() {
+        let server_rt = tokio::runtime::Runtime::new().unwrap();
+        let server = server_rt.block_on(MockWsServer::start_with_capacity(3));
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(1, 1500));
+
+        client.connect_sync().expect("connect_sync");
+        server.set_auth_response(serde_json::json!({
+            "event": "error", "code": 1000, "data": {"message": "Invalid token"}
+        }));
+        server_rt.block_on(server.drop_transport_for(0));
+        wait_for_blocking(&listener, "disconnected(true)");
+        let error = client.connect_sync().expect_err("the reconnect is rejected");
+        assert!(matches!(error, MarketDataError::AuthError { .. }), "{error:?}");
+
+        server.set_auth_response(serde_json::json!({ "event": "authenticated" }));
+        client.connect_sync().expect("connect_sync after the failed join");
+        client.ping_sync(Some("fresh".to_string())).expect("ping_sync");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !server.pings_received().iter().any(|p| p["state"] == "fresh") {
+            assert!(std::time::Instant::now() < deadline, "the ping never reached the server");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        client.disconnect_sync();
     }
 
     #[tokio::test(flavor = "multi_thread")]

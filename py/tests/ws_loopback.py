@@ -12,6 +12,11 @@ closes. With ``burst_on_close`` it answers the client's Close with that many
 ``data`` frames before its own Close: frames written after ``disconnect()``
 started, and read by the client before the close completes.
 
+For reconnect tests the in-process server counts the connections it accepts,
+can cut them without a Close frame (``drop_connections()``), refuse new ones
+(``refuse_connections``) or reject every ``auth`` (``reject_auth``), and logs
+each ``subscribe`` with the index of the connection it came on.
+
 ``LoopbackServer`` runs the server in a child process; ``InProcessLoopbackServer``
 runs it on threads of the test process, which only works while the blocking
 client calls release the GIL (#39).
@@ -113,6 +118,16 @@ class _Server:
         self.unsubscribe_data = []
         # ``data`` of every ``ping`` frame received, in arrival order.
         self.ping_data = []
+        # Connections accepted so far, refused ones included.
+        self.connections_accepted = 0
+        # ``(connection index, symbol)`` of every ``subscribe``, in arrival order.
+        self.subscribe_log = []
+        # Close every new connection at once, so reconnect attempts fail.
+        self.refuse_connections = False
+        # Answer every ``auth`` with the rejection, whatever the key.
+        self.reject_auth = False
+        self._open_conns = []
+        self._conns_lock = threading.Lock()
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen()
@@ -134,9 +149,27 @@ class _Server:
                 except socket.timeout:
                     continue
                 conn.settimeout(None)
-                threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+                with self._conns_lock:
+                    index = self.connections_accepted
+                    self.connections_accepted += 1
+                    if self.refuse_connections:
+                        conn.close()
+                        continue
+                    self._open_conns.append(conn)
+                threading.Thread(target=self._serve, args=(conn, index), daemon=True).start()
 
-    def _serve(self, conn):
+    def drop_connections(self):
+        """Cut every open connection without a Close frame: the client sees
+        the transport end (1006) and, if enabled, reconnects."""
+        with self._conns_lock:
+            conns, self._open_conns = self._open_conns, []
+        for conn in conns:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def _serve(self, conn, index=0):
         send_lock = threading.Lock()
         closed = threading.Event()
 
@@ -156,6 +189,9 @@ class _Server:
                         self.unsubscribe_data.append(frame.get("data"))
                     if frame.get("event") == "ping":
                         self.ping_data.append(frame.get("data"))
+                    if frame.get("event") == "subscribe":
+                        symbol = (frame.get("data") or {}).get("symbol")
+                        self.subscribe_log.append((index, symbol))
                     for reply in self._replies(frame):
                         send(OP_TEXT, json.dumps(reply).encode())
                     if self._flood and frame.get("event") == "subscribe":
@@ -175,6 +211,9 @@ class _Server:
             return
         finally:
             closed.set()
+            with self._conns_lock:
+                if conn in self._open_conns:
+                    self._open_conns.remove(conn)
             conn.close()
 
     def _flood_data(self, send, closed, frame):
@@ -186,13 +225,12 @@ class _Server:
         except OSError:
             return
 
-    @staticmethod
-    def _replies(frame):
+    def _replies(self, frame):
         event = frame.get("event")
         if event == "auth":
             if (frame.get("data") or {}).get("apikey") == SILENT_API_KEY:
                 return []
-            if (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
+            if self.reject_auth or (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
                 # The server's rejection shape: `code` 1000 at the top level (#201).
                 return [{"event": "error", "code": 1000, "data": {"message": "Invalid authentication credentials"}}]
             return [{"event": "authenticated", "data": {"message": "Authenticated successfully"}}]
@@ -280,6 +318,28 @@ class InProcessLoopbackServer:
     def ping_data(self):
         """``data`` of every ``ping`` frame the server received."""
         return list(self._server.ping_data)
+
+    @property
+    def connections_accepted(self):
+        """Connections the server accepted, refused ones included."""
+        return self._server.connections_accepted
+
+    @property
+    def subscribe_log(self):
+        """``(connection index, symbol)`` of every ``subscribe`` received."""
+        return list(self._server.subscribe_log)
+
+    def drop_connections(self):
+        """Cut every open connection without a Close frame."""
+        self._server.drop_connections()
+
+    def refuse_connections(self, refuse=True):
+        """Close new connections at once, so reconnect attempts fail."""
+        self._server.refuse_connections = refuse
+
+    def reject_auth(self, reject=True):
+        """Reject every ``auth`` from now on."""
+        self._server.reject_auth = reject
 
     def __enter__(self):
         self._server.start()

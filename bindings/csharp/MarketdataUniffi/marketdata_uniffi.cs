@@ -3435,10 +3435,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_connect();
-            if (checksum != 34522)
+            if (checksum != 2768)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_connect` checksum `34522`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_connect` checksum `2768`, library returned `{checksum}`"
                 );
             }
         }
@@ -8549,6 +8549,21 @@ class FfiConverterTypeStockTechnicalClient : FfiConverter<StockTechnicalClient, 
 /// </summary>
 public interface IWebSocketClient
 {
+    /// <summary>
+    /// Connect to the WebSocket server and authenticate.
+    ///
+    /// Refused with code 2011 (`ALREADY_CONNECTED`) while connected or while
+    /// another `connect()` is in progress.
+    ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and
+    /// the subscriptions are re-sent, so a `subscribe()` afterwards follows
+    /// them. The wait fails with 2010 (`ClientClosed`) if `disconnect()` is
+    /// called, 3005 (`RECONNECT_FAILED`) if the reconnect runs out of
+    /// attempts, and `AuthError` (2002) if its credentials are rejected.
+    /// Called from a listener method, it holds up the listener until the
+    /// reconnect ends.
+    /// </summary>
     /// <exception cref="MarketDataException"></exception>
     Task Connect();
 
@@ -8790,6 +8805,21 @@ public class WebSocketClient : IWebSocketClient, IDisposable
         }
     }
 
+    /// <summary>
+    /// Connect to the WebSocket server and authenticate.
+    ///
+    /// Refused with code 2011 (`ALREADY_CONNECTED`) while connected or while
+    /// another `connect()` is in progress.
+    ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and
+    /// the subscriptions are re-sent, so a `subscribe()` afterwards follows
+    /// them. The wait fails with 2010 (`ClientClosed`) if `disconnect()` is
+    /// called, 3005 (`RECONNECT_FAILED`) if the reconnect runs out of
+    /// attempts, and `AuthError` (2002) if its credentials are rejected.
+    /// Called from a listener method, it holds up the listener until the
+    /// reconnect ends.
+    /// </summary>
     /// <exception cref="MarketDataException"></exception>
     public async Task Connect()
     {

@@ -1951,9 +1951,20 @@ class StockWebSocketClient:
         If message callbacks are registered before connect(), a background
         thread will automatically dispatch incoming messages to the callbacks.
 
+        During an automatic reconnect it opens no connection of its own: it
+        waits for that reconnect and returns once the connection is back and the
+        subscriptions are re-sent, so a subscribe() afterwards follows them.
+        Called from a callback, it holds up the callbacks until the reconnect
+        ends.
+
         Raises:
             MarketDataError: If connection fails
-            WebSocketError: Code 2011 if already connected, connecting or reconnecting
+            WebSocketError: Code 2011 if already connected or another connect is
+                in progress. While waiting on a reconnect: code 2010 if
+                disconnect() is called, code 3005 if the reconnect runs out of
+                attempts
+            AuthError: While waiting on a reconnect, if its credentials are
+                rejected
         """
         ...
 
@@ -1963,9 +1974,20 @@ class StockWebSocketClient:
         Returns an awaitable that completes when connection is established.
         Releases GIL during connection, enabling concurrent Python tasks.
 
+        During an automatic reconnect it opens no connection of its own: it
+        waits for that reconnect and returns once the connection is back and the
+        subscriptions are re-sent, so a subscribe() afterwards follows them.
+        Called from a callback, it holds up the callbacks until the reconnect
+        ends.
+
         Raises:
             MarketDataError: If connection fails
-            WebSocketError: Code 2011 if already connected, connecting or reconnecting
+            WebSocketError: Code 2011 if already connected or another connect is
+                in progress. While waiting on a reconnect: code 2010 if
+                disconnect() is called, code 3005 if the reconnect runs out of
+                attempts
+            AuthError: While waiting on a reconnect, if its credentials are
+                rejected
         """
         ...
 
@@ -2213,9 +2235,20 @@ class FutOptWebSocketClient:
     def connect(self) -> None:
         """Connect to WebSocket server (blocking).
 
+        During an automatic reconnect it opens no connection of its own: it
+        waits for that reconnect and returns once the connection is back and the
+        subscriptions are re-sent, so a subscribe() afterwards follows them.
+        Called from a callback, it holds up the callbacks until the reconnect
+        ends.
+
         Raises:
             MarketDataError: If connection fails
-            WebSocketError: Code 2011 if already connected, connecting or reconnecting
+            WebSocketError: Code 2011 if already connected or another connect is
+                in progress. While waiting on a reconnect: code 2010 if
+                disconnect() is called, code 3005 if the reconnect runs out of
+                attempts
+            AuthError: While waiting on a reconnect, if its credentials are
+                rejected
         """
         ...
 
