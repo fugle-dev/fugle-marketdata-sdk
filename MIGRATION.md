@@ -237,7 +237,7 @@ Differences from the legacy object form:
 The legacy SDKs do not have any auto-reconnect — when the WebSocket drops you
 get a `disconnect` event and that is it. This SDK **reconnects by default**:
 after an unexpected drop it retries with exponential backoff (1 s doubling up
-to 60 s) **without an attempt limit**, and subscribes again once it is back.
+to 60 s, each wait plus 0–50% random jitter) **without an attempt limit**, and subscribes again once it is back.
 Each attempt emits a `reconnect` event with its number. Only a normal closure
 by the server (code 1000) and rejected credentials end the connection for
 good; every other close reconnects (#201). See

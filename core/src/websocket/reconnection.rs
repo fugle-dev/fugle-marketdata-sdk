@@ -183,6 +183,12 @@ impl ReconnectionManager {
 
     /// Calculate next reconnection delay with exponential backoff and jitter
     ///
+    /// Attempt `n` waits `base × (1 + U[0, 0.5))`, where
+    /// `base = min(initial_delay × 2^(n-1), max_delay)`, and never longer
+    /// than `max_delay`. The jitter is random per call (#227), so clients
+    /// dropped at the same moment do not all come back at the same moment;
+    /// one client's delays still increase, since the jitter is under 100%.
+    ///
     /// Returns None if max attempts reached, Some(duration) otherwise; with
     /// `max_attempts == 0` (unlimited) it always returns Some.
     /// Increments attempt counter.
@@ -193,20 +199,20 @@ impl ReconnectionManager {
 
         self.current_attempt = self.current_attempt.saturating_add(1);
 
-        // Calculate exponential backoff: initial * 2^(attempt-1)
-        let exponential_millis = self.config.initial_delay.as_millis()
-            * 2_u128.pow((self.current_attempt - 1).min(10)); // Cap at 2^10 to avoid overflow
+        let base = self.base_delay(self.current_attempt);
+        let delay = base.saturating_add(crate::jitter::jitter(base / 2));
+        Some(delay.min(self.config.max_delay))
+    }
 
-        // Apply max_delay cap
-        let capped_millis = exponential_millis.min(self.config.max_delay.as_millis());
-
-        // Add simple deterministic jitter based on attempt number (0-15% of delay)
-        // This avoids thundering herd without requiring rand dependency
-        let jitter_percent = (self.current_attempt * 3) % 16; // 0-15%
-        let jitter = (capped_millis * jitter_percent as u128) / 100;
-        let final_millis = capped_millis.saturating_add(jitter);
-
-        Some(Duration::from_millis(final_millis as u64))
+    /// Backoff before jitter for `attempt` (1-indexed):
+    /// `initial_delay × 2^(attempt-1)`, capped at `max_delay`.
+    fn base_delay(&self, attempt: u32) -> Duration {
+        // 2^10 is past any sane cap and keeps the multiplication in range.
+        let exponent = attempt.saturating_sub(1).min(10);
+        self.config
+            .initial_delay
+            .saturating_mul(1 << exponent)
+            .min(self.config.max_delay)
     }
 
     /// Reset reconnection state
@@ -427,12 +433,58 @@ mod tests {
         let mut last = Duration::ZERO;
         for _ in 0..100 {
             last = manager.next_delay().expect("unlimited attempts never run out");
-            // max_delay caps the backoff; jitter adds at most 15% on top.
-            assert!(last <= max_delay + max_delay * 15 / 100, "{last:?}");
+            // max_delay is a hard cap, jitter included.
+            assert!(last <= max_delay, "{last:?}");
         }
         assert_eq!(manager.current_attempt(), 100);
         assert_eq!(manager.attempts_remaining(), None);
-        assert!(last >= max_delay, "backoff reaches the cap: {last:?}");
+        assert_eq!(last, max_delay, "backoff reaches the cap");
+    }
+
+    /// Clients dropped at the same moment do not share a first delay (#227).
+    /// The jitter is random, so only require that the 100 values are not all
+    /// equal; that cannot flake.
+    #[test]
+    fn test_jitter_spreads_first_delay_across_clients() {
+        let config = ReconnectionConfig::default();
+        let first: std::collections::HashSet<Duration> = (0..100)
+            .map(|_| {
+                ReconnectionManager::new(config.clone())
+                    .next_delay()
+                    .expect("unlimited attempts")
+            })
+            .collect();
+        assert!(first.len() >= 2, "every client got {first:?}");
+    }
+
+    /// Each delay lies in `[base, base × 1.5]` and within `max_delay`, and a
+    /// client's delays never decrease (#227).
+    #[test]
+    fn test_delay_within_jitter_bounds_and_non_decreasing() {
+        let config = ReconnectionConfig::default();
+        let max_delay = config.max_delay;
+        for _ in 0..100 {
+            let mut manager = ReconnectionManager::new(config.clone());
+            let mut previous = Duration::ZERO;
+            for attempt in 1..=12 {
+                let base = config
+                    .initial_delay
+                    .saturating_mul(1 << (attempt - 1))
+                    .min(max_delay);
+                let delay = manager.next_delay().expect("unlimited attempts");
+                assert!(delay >= base, "attempt {attempt}: {delay:?} < {base:?}");
+                assert!(
+                    delay <= base + base / 2,
+                    "attempt {attempt}: {delay:?} > 1.5 × {base:?}"
+                );
+                assert!(delay <= max_delay, "attempt {attempt}: {delay:?}");
+                assert!(
+                    delay >= previous,
+                    "attempt {attempt}: {delay:?} < {previous:?}"
+                );
+                previous = delay;
+            }
+        }
     }
 
     #[test]
