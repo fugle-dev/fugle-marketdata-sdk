@@ -40,6 +40,16 @@ significantly better runtime performance. The public API has been kept as
 close as practical to the legacy SDKs — most call sites compile/run without
 modification.
 
+### Supported platforms
+
+The legacy SDKs are pure Python / pure JS and install anywhere; this SDK ships
+native code for Linux (glibc and musl) x86_64/aarch64, macOS x86_64/arm64 and
+Windows x64 only, and requires Python 3.8+ / Node.js 18+. On other platforms
+(armv7, Windows arm64, 32-bit Windows, Python 3.7) pip keeps installing 2.x,
+while npm installs 3.x and fails at `require`. Pin `fugle-marketdata<3` or
+`@fugle/marketdata@<3` there; see
+[Unsupported platforms](docs/INSTALL.md#unsupported-platforms).
+
 ### Drop-in compatible (no changes needed)
 
 The following old-SDK shapes were intentionally restored so you do **not** have

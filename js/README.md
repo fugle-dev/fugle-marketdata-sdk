@@ -9,8 +9,10 @@ powered by a Rust core through NAPI-RS.
 npm install @fugle/marketdata@next   # 3.x pre-release
 ```
 
-Prebuilt native addons are published for macOS (x64, arm64), Linux glibc
-(x64, arm64) and Windows x64. npm installs the matching one automatically.
+Prebuilt native addons are published for macOS (x64, arm64), Linux glibc and
+musl (x64, arm64) and Windows x64. npm installs the matching one automatically.
+On other platforms the package installs but fails to load; see
+[Unsupported platforms](../docs/INSTALL.md#unsupported-platforms).
 
 ### From source
 

@@ -66,7 +66,7 @@ These require organization or registry admin access.
 | Repository visibility | GitHub settings | Public. npm provenance and anonymous `go get` need it. |
 | Environment `release` | GitHub settings, Environments | Used by the PyPI job. Add required reviewers if you want a manual gate. |
 | PyPI trusted publisher | pypi.org, project `fugle-marketdata`, Publishing | Owner `fugle-dev`, repository `fugle-marketdata-sdk`, workflow `release.yml`, environment `release` |
-| npm trusted publisher | npmjs.com, `@fugle/marketdata` and each `@fugle/marketdata-<platform>` package | Repository `fugle-dev/fugle-marketdata-sdk`, workflow `release.yml`. Until the platform packages exist, use the `NPM_TOKEN` secret instead. |
+| npm trusted publisher | npmjs.com, `@fugle/marketdata` and each `@fugle/marketdata-<platform>` package | Repository `fugle-dev/fugle-marketdata-sdk`, workflow `release.yml`. Until the platform packages exist, use the `NPM_TOKEN` secret instead. A platform added to `napi.targets` (for example the musl ones in #229) is a new package, and npm only accepts a trusted publisher on a package that exists: see [Adding an npm platform](#adding-an-npm-platform). |
 | `NPM_TOKEN` secret | GitHub secrets | Granular automation token with publish rights on `@fugle`. Optional once trusted publishing covers every package. |
 | `NUGET_API_KEY` secret | GitHub secrets | nuget.org API key scoped to push `Fugle.MarketData` |
 | `GO_REPO_DEPLOY_KEY` secret | GitHub secrets | Private half of a deploy key that has write access to `fugle-dev/fugle-marketdata-go` |
@@ -74,6 +74,30 @@ These require organization or registry admin access.
 
 npm validates the **calling** workflow, and PyPI does not accept reusable
 workflows, which is why both trusted publishers point at `release.yml`.
+
+### Adding an npm platform
+
+Each target in `js/package.json` `napi.targets` is published as its own
+package, `@fugle/marketdata-<platform>`. The release checks the trusted
+publisher of every package before it uploads anything. npm only lets you
+configure one on a package that already exists, so a new target fails that
+check, in a rehearsal too, until its package has been created by hand:
+
+1. Log in with an account that can publish to `@fugle` (`npm login`).
+2. Publish a placeholder under a non-default dist-tag. The main package pins
+   exact platform versions, so no user ever resolves it:
+
+   ```bash
+   mkdir placeholder && cd placeholder
+   npm init -y --scope=@fugle
+   npm pkg set name=@fugle/marketdata-linux-x64-musl version=0.0.0 \
+     description="Placeholder; installed through @fugle/marketdata"
+   npm publish --access public --tag placeholder
+   ```
+
+3. On npmjs.com, open the package → Settings → Trusted publishing and add
+   repository `fugle-dev/fugle-marketdata-sdk`, workflow `release.yml`.
+4. Re-run the rehearsal; the OIDC check lists every package as `ok`.
 
 ## Releasing the Rust crates
 
@@ -105,7 +129,11 @@ A manual run builds every platform and runs each publish job up to the
 upload: wheel checks for PyPI, `npm publish --dry-run` for every npm package,
 `dotnet pack` for NuGet plus an install-and-run smoke test of the package on
 `linux-x64` and `linux-arm64`, Go module assembly plus a static-link smoke test
-on both, and a compile-link-run smoke test of both Linux C++ tarballs.
+on both, a compile-link-run smoke test of both Linux C++ tarballs, and an
+Alpine smoke test of the musl wheel and addon (install, load, one TLS request)
+on x86_64 and aarch64. A real release runs the Alpine smoke tests too; a
+failure holds back that binding's registry (PyPI or npm) and the GitHub
+Release.
 Nothing is published, no tag is needed, and no GitHub Release is created. The
 **Rehearsal summary** job fails if any step would have failed. Registry
 credentials are not needed for a rehearsal.

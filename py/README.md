@@ -9,8 +9,11 @@ core through PyO3.
 pip install --pre fugle-marketdata   # 3.x pre-release
 ```
 
-Wheels are published for CPython 3.8+ (abi3) on Linux glibc (x86_64,
-aarch64), macOS (x86_64, arm64) and Windows x64.
+Wheels are published for CPython 3.8+ (abi3) on Linux glibc and musl
+(x86_64, aarch64), macOS (x86_64, arm64) and Windows x64. There is no source
+distribution: on other platforms pip installs the pure-Python 2.x SDK instead.
+See [Unsupported platforms](../docs/INSTALL.md#unsupported-platforms) for how
+to pin `fugle-marketdata<3` or build 3.x from source.
 
 ### Development Build
 

@@ -88,6 +88,43 @@ jobs:
           print("OK: fugle-marketdata imports and constructs clients")
           PY
 
+  # Alpine (musl) through `docker run`: JavaScript actions cannot run inside
+  # an arm64 Alpine job container. Install and construct only, like the jobs
+  # above; Release's smoke-musl job already made a TLS request with these
+  # same artifacts before they were published.
+  python-alpine:
+    name: PyPI (python:3.12-alpine, ${{ matrix.os }})
+    needs: resolve
+    if: vars.PUBLISH_PYPI == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install from PyPI, import and construct clients
+        env:
+          PY_VERSION: ${{ needs.resolve.outputs.python_version }}
+        run: |
+          docker run --rm -e PY_VERSION python:3.12-alpine sh -euc '
+            ok=0
+            for i in $(seq 1 20); do
+              # --only-binary: fail rather than fall back to an older release
+              # or a source build if the musllinux wheel is missing.
+              if pip install --no-cache-dir --root-user-action=ignore --only-binary=:all: --pre "fugle-marketdata==$PY_VERSION"; then ok=1; break; fi
+              echo "Attempt $i failed, retrying in 30s"; sleep 30
+            done
+            [ "$ok" = 1 ]
+            pip show fugle-marketdata | grep -q "^Version: $PY_VERSION$"
+            python -c "
+          from fugle_marketdata import RestClient, WebSocketClient
+          client = RestClient(api_key=\"smoke-test-token\")
+          assert client.stock is not None and client.futopt is not None
+          assert WebSocketClient(api_key=\"smoke-test-token\").stock is not None
+          print(\"OK: fugle-marketdata musllinux wheel imports and constructs clients\")
+          "
+          '
+
   nodejs:
     name: npm (${{ matrix.os }})
     needs: resolve
@@ -148,6 +185,37 @@ jobs:
             if (!ws.stock) throw new Error('missing WebSocket accessor');
             console.log('OK: @fugle/marketdata loads its native addon and constructs clients');
           "
+
+  nodejs-alpine:
+    name: npm (node:22-alpine, ${{ matrix.os }})
+    needs: resolve
+    if: vars.PUBLISH_NPM == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install from npm, require and construct clients
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          docker run --rm -e VERSION node:22-alpine sh -euc '
+            mkdir /smoke && cd /smoke && npm init -y >/dev/null
+            ok=0
+            for i in $(seq 1 20); do
+              if npm install "@fugle/marketdata@$VERSION"; then ok=1; break; fi
+              echo "Attempt $i failed, retrying in 30s"; sleep 30
+            done
+            [ "$ok" = 1 ]
+            node -e "
+              const { RestClient, WebSocketClient } = require(\"@fugle/marketdata\");
+              const client = new RestClient({ apiKey: \"smoke-test-token\" });
+              if (!client.stock || !client.futopt) throw new Error(\"missing REST accessors\");
+              if (!new WebSocketClient({ apiKey: \"smoke-test-token\" }).stock) throw new Error(\"missing WebSocket accessor\");
+              console.log(\"OK: @fugle/marketdata loads its musl addon and constructs clients\");
+            "
+          '
 
   csharp:
     name: NuGet (${{ matrix.os }})
