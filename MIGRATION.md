@@ -574,6 +574,54 @@ except MarketDataError as e:
     ...
 ```
 
+#### 15. Python WebSocket callbacks run one at a time on one thread
+
+Each client (`ws.stock`, `ws.futopt`) delivers all of its callbacks —
+`message`, `connect`, `authenticated`, `disconnect`, `reconnect`, `error`,
+`messages_dropped` — on one SDK thread, in order. A callback that blocks
+holds up every later event and message of that client until it returns.
+
+While it blocks, messages from the server wait in a queue of
+`message_buffer` messages (default 4096). With the default
+`message_overflow="drop_newest"`, once that queue is full new messages are
+**dropped**. 2.x was single-threaded too, but a blocked callback only
+delayed data; here it loses data. The common 2.x pattern of sleeping and
+retrying inside a `disconnect` callback is exactly this case: with
+auto-reconnect on (§5) the SDK is back and receiving within seconds, and
+everything past the queue's size is dropped while your callback sleeps.
+
+To see drops, listen for `messages_dropped` (`fn(dropped, total)`, at most
+once per second) or read `messages_dropped_total()`:
+
+```python
+ws.stock.on("messages_dropped", lambda dropped, total: log.warning("dropped %d (%d total)", dropped, total))
+```
+
+Keep callbacks short: hand slow work to your own thread or queue, consume
+messages with `ws.stock.messages()` instead of a `message` callback, and
+leave reconnecting to the SDK (§5). `message_overflow="unbounded"` never
+drops, at the cost of memory that grows for as long as you lag.
+
+#### 16. Python `off()` takes only the event, and `subscribed` data can be a list
+
+- **`off(event)` removes every callback for that event.** 2.x took
+  `off(event, listener)`; passing the listener here raises `TypeError`.
+  Drop the second argument.
+- **A `subscribed` message's `data` can be a list.** After an automatic
+  reconnect (§5) the SDK subscribes again with one frame per channel,
+  batching the symbols, so for a channel with more than one symbol the
+  server answers with a `subscribed` whose `data` is a list of
+  subscriptions, even if you subscribed one symbol at a time. (Subscribing with `symbols=[...]` yourself gets the same shape.)
+  Code such as `msg["data"]["id"]` then fails; handle both shapes:
+
+```python
+def on_message(msg):
+    if msg["event"] == "subscribed":
+        data = msg["data"]
+        for sub in data if isinstance(data, list) else [data]:
+            ids[sub["channel"], sub["symbol"]] = sub["id"]
+```
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you

@@ -129,6 +129,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Python: 2.x upgrade notes and lifecycle docs match the SDK** (#228).
+  `is_closed()` no longer says a closed client cannot be reused: after
+  `disconnect()` the same client can `connect()` again, as it always could.
+  The PyPI README gains an "Upgrading from 2.x" section linking the
+  migration guide, and says that a server close with code 1000 is not
+  reconnected. The migration guide gains §15 (callbacks run one at a time
+  on one thread; one that blocks holds up every event and, once
+  `message_buffer` is full, messages are dropped, reported through
+  `messages_dropped`) and §16 (`off(event)` takes no listener; a
+  `subscribed` message's `data` can be a list after an automatic
+  reconnect).
+
 - **Migration guide §5 no longer says 4xxx closes are not reconnected**
   (#230). Since #201 only a normal closure (1000) and rejected credentials
   end the connection; every other close reconnects. §5 now also explains

@@ -1724,6 +1724,10 @@ class ReconnectConfig:
     Controls automatic reconnection behavior when WebSocket connection is lost.
     Uses exponential backoff with configurable parameters.
 
+    A normal closure by the server (close code 1000) ends the connection for
+    good and is not reconnected, and neither are rejected credentials; every
+    other drop is.
+
     Example:
         ```python
         from fugle_marketdata import ReconnectConfig, WebSocketClient
@@ -2022,8 +2026,12 @@ class StockWebSocketClient:
     def is_closed(self) -> bool:
         """Check if client has been closed.
 
-        Returns true if disconnect() has been called and client is closed.
-        Once closed, the client cannot be reused - create a new instance.
+        Returns True once disconnect() has closed the connection, or once the
+        connection has ended without an automatic reconnect (for example a
+        normal closure by the server, code 1000). A later connect() on the
+        same client opens a new connection and this returns False again, so
+        the client can be reused after disconnect(). A client that was never
+        connected is not closed.
 
         Returns:
             True if closed, False otherwise
@@ -2275,6 +2283,13 @@ class FutOptWebSocketClient:
 
     def is_closed(self) -> bool:
         """Check if client has been closed.
+
+        Returns True once disconnect() has closed the connection, or once the
+        connection has ended without an automatic reconnect (for example a
+        normal closure by the server, code 1000). A later connect() on the
+        same client opens a new connection and this returns False again, so
+        the client can be reused after disconnect(). A client that was never
+        connected is not closed.
 
         Returns:
             True if closed, False otherwise

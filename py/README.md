@@ -15,6 +15,28 @@ distribution: on other platforms pip installs the pure-Python 2.x SDK instead.
 See [Unsupported platforms](../docs/INSTALL.md#unsupported-platforms) for how
 to pin `fugle-marketdata<3` or build 3.x from source.
 
+### Upgrading from 2.x
+
+Most 2.x code runs unchanged, but a few things behave differently. Read the
+[migration guide](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#migrating-from-the-legacy-fugle-marketdata-sdks)
+before upgrading; the changes most 2.x code runs into:
+
+- The WebSocket `message` callback receives a parsed `dict`, not a JSON
+  string ([§3](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#3-python-websocket-message-event-delivers-a-parsed-dict)).
+- `HealthCheckConfig` keeps its name but not its fields: `ping_interval` and
+  `max_missed_pongs` raise `TypeError`
+  ([drop-in table](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#drop-in-compatible-no-changes-needed)).
+- Auto-reconnect is on by default; reconnect code of your own that calls
+  `disconnect()` then `connect()` loops with it — keep one or the other
+  ([§5](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#5-auto-reconnect-is-on-by-default)).
+- `connect()` raises `AuthError` when the credentials are rejected
+  ([§9](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#9-python-connect-raises-on-auth-failure-vs-legacys-unauthenticated-event)).
+- A callback that blocks (for example `time.sleep()` in a `disconnect`
+  callback) holds up all events, and messages are dropped once the queue is
+  full ([§15](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
+- `off(event)` takes no listener, and a `subscribed` message's `data` can be
+  a list ([§16](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#16-python-off-takes-only-the-event-and-subscribed-data-can-be-a-list)).
+
 ### Development Build
 
 ```bash
@@ -154,7 +176,9 @@ client = RestClient(sdk_token="your-sdk-token")
 
 Auto-reconnect is on by default: after an unexpected drop the client
 reconnects with exponential backoff, without an attempt limit (waits capped
-at `max_delay_ms`), and subscribes again. Pass `reconnect` to tune it:
+at `max_delay_ms`), and subscribes again. A normal closure by the server
+(close code 1000) and rejected credentials end the connection for good and
+are not reconnected; every other close is. Pass `reconnect` to tune it:
 
 ```python
 from fugle_marketdata import WebSocketClient, ReconnectConfig
@@ -403,6 +427,13 @@ Callbacks run on the SDK's thread and must be regular functions: `on()`
 raises `TypeError` for an `async def` callback, and a callback that returns a
 coroutine is reported as a failure. Use `async for msg in stock.messages()`
 in asyncio code.
+
+All of a client's callbacks run one at a time on that one thread, so a
+callback that blocks (a `time.sleep()` or retry loop in `disconnect`, say)
+holds up every later event, and messages past `message_buffer` are dropped
+meanwhile (see [Message Queue](#message-queue) and
+[migration guide §15](../MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
+Hand slow work to your own thread.
 
 #### Message Queue
 
