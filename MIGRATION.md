@@ -238,13 +238,29 @@ The legacy SDKs do not have any auto-reconnect — when the WebSocket drops you
 get a `disconnect` event and that is it. This SDK **reconnects by default**:
 after an unexpected drop it retries with exponential backoff (1 s doubling up
 to 60 s) **without an attempt limit**, and subscribes again once it is back.
-The server closing with code 1000 or a 4xxx code (e.g. an auth failure) never
-triggers a reconnect.
+Each attempt emits a `reconnect` event with its number. Only a normal closure
+by the server (code 1000) and rejected credentials end the connection for
+good; every other close reconnects (#201). See
+[Giving up](docs/configuration.md#reconnectconfig--reconnectoptions) in the
+configuration reference for the full list.
 
-If your code reconnects on its own from a `disconnect` handler, remove that
-code or turn auto-reconnect off; otherwise both try to reconnect. Each
-attempt emits a `reconnect` event with its number, and `connect()` while one
-is in progress fails with code 2011.
+If your code reconnects on its own from a `disconnect` handler — calling
+`connect()` and then subscribing again — it keeps working (#230). A
+`connect()` made while an automatic reconnect is in progress opens no
+connection of its own: it waits for that reconnect and resolves once the
+connection is back and the stored subscriptions have been re-sent. It fails
+if the reconnect does not come back: code 2010 when `disconnect()` is
+called, code 3005 when the attempts run out, and, when the credentials are
+rejected, the server's `data` object (Node) or `AuthError` (Python). The
+`subscribe()` calls that follow repeat subscriptions the SDK has already
+re-sent, which is harmless: the SDK and the server both keep one entry per
+channel and symbol, so nothing is delivered twice and no extra subscription
+quota is used. The one visible effect is when the quota is exactly full: the
+server answers the repeated subscribe with an `error` message of code 1001,
+and the subscription stays active. (1.x code that subscribes in an
+`authenticated` handler already repeats them the same way on every
+reconnect.) Removing that code, or turning auto-reconnect off, is still the
+simpler setup.
 
 ```python
 # Turn auto-reconnect off (legacy behaviour)
@@ -379,21 +395,34 @@ client.futopt.historical.daily("TXF", date="2026-09-15", after_hours=True)
 client.futopt.historical.candles("TXF", contract_month="1!", timeframe="D")
 ```
 
-#### 11. Node WebSocket `connect()` rejects while already connected
+#### 11. Node WebSocket `connect()` rejects while already connected, and waits during a reconnect
 
 The legacy Node SDK let you call `connect()` on a connected client: it opened
 another socket, left the old one open, and registered its listeners again.
 This SDK rejects that call with an error whose `code` is `2011`
 (`Already connected; call disconnect() first`) and keeps the
-existing connection. To reconnect, `disconnect()` first — calling `connect()`
-straight after `disconnect()`, or from a `disconnect` handler when
-auto-reconnect is off (`reconnect: { enabled: false }`; it is on by default,
-see §5), is fine.
+existing connection; so does a `connect()` made while the first `connect()`
+is still in progress. To reconnect, `disconnect()` first — calling
+`connect()` straight after `disconnect()` is fine.
+
+During an automatic reconnect (on by default, see §5), `connect()` does not
+reject with 2011: it waits for the reconnect and resolves with its
+`authenticated` data once the subscriptions have been re-sent (#230). So a
+1.x `disconnect` handler that calls `connect()` keeps working with the
+default settings. It rejects if the reconnect does not come back — code
+2010 when `disconnect()` is called or the connection ends without
+reconnecting, 3005 when the attempts run out, the server's `data` object
+when the credentials are rejected — so add a `.catch`: 1.x code without one
+turns that rejection into an unhandled rejection. With auto-reconnect off
+(`reconnect: { enabled: false }`), the handler opens a new connection, as in
+1.x.
 
 ```javascript
-// with reconnect: { enabled: false }
+// default settings: waits for the automatic reconnect
 ws.stock.on('disconnect', () => {
-  ws.stock.connect().catch(console.error);
+  ws.stock.connect()
+    .then(() => ws.stock.subscribe({ channel: 'trades', symbol: '2330' }))
+    .catch(console.error);
 });
 ```
 
@@ -407,7 +436,7 @@ so 1.x listeners work unchanged:
 | `connect` | none — fires when the socket opens, before authentication |
 | `authenticated` | the server's `data` object |
 | `unauthenticated` | the server's `data` object (fires after `connect`) |
-| `connect()` | resolves with the `authenticated` `data`; rejects with the `unauthenticated` `data` object |
+| `connect()` | resolves with the `authenticated` `data` (when it waits on an automatic reconnect, that reconnect's `data`, §11); rejects with the `unauthenticated` `data` object |
 | `disconnect` | `{ code, reason }` (`code` is `null` when the connection ended without one) |
 | `ping(params)` | `params` sent as the frame's `data` |
 

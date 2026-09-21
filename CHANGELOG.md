@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **All languages: `connect()` during an automatic reconnect waits for the
+  reconnect instead of failing with 2011** (#230). 1.x / 2.x code often
+  calls `connect()` again from a `disconnect` handler; with auto-reconnect
+  on by default, that call found the reconnect under way and failed with
+  2011 — in Node, where 1.x code rarely has a `.catch`, as an unhandled
+  rejection that exited the process with code 1. Such a `connect()` now
+  opens no connection of its own and settles with the reconnect:
+
+  | `connect()` while | Before | After |
+  |---|---|---|
+  | connected | 2011 | 2011 (unchanged) |
+  | the first / another `connect()` is in progress | 2011 | 2011 (unchanged) |
+  | an automatic reconnect is under way | 2011 | waits: returns once the connection is back and the subscriptions have been re-sent (Node: resolves with the reconnect's `authenticated` data); 2010 on `disconnect()` (Node: also when the connection ends without reconnecting); 3005 when the attempts run out; `AuthError` (2002) when the credentials are rejected (Node: the server's `data` object) |
+  | closed | new connection | new connection (unchanged) |
+
+  Several callers can wait at once and all get the same result. Whether the
+  client counts as connected follows the events delivered to your code
+  (`authenticated` delivered, or `connect()` returned), so a `connect()`
+  from a `disconnect` handler waits even if core has already reconnected.
+  Python: a `connect()` called from a callback holds up that client's
+  callbacks until the reconnect ends. The `subscribe()` calls that usually
+  follow repeat subscriptions the SDK has already re-sent, which is
+  harmless ([migration guide §5](MIGRATION.md#5-auto-reconnect-is-on-by-default)).
+  The Rust sync client is unchanged and still fails with 2011.
+
 ### Added
 
 - **Python and Node.js: Linux musl (Alpine) x86_64 and aarch64** (#229).
@@ -18,6 +45,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still no sdist, so on other platforms (armv7, Windows arm64, 32-bit) pip
   keeps installing 2.x. [`docs/INSTALL.md`](docs/INSTALL.md#unsupported-platforms)
   documents this and how to pin `<3` or build from source.
+- **Rust: `WebSocketClient::wait_connected()` and
+  `MarketDataError::ReconnectFailed { attempts }` (code 3005,
+  `RECONNECT_FAILED`, kind `Network`)** (#230). `wait_connected()` waits for
+  a `connect()` or automatic reconnect under way and returns `Ok` once the
+  connection is up and the subscriptions have been re-sent; it fails at once
+  when there is nothing to wait for. It ends as the waiting `connect()` does
+  (`ConnectionAborted` on `disconnect()`, `ReconnectFailed` when the attempts
+  run out, `AuthError` on a rejection), can be awaited by several callers
+  and is cancel-safe. The enum is `#[non_exhaustive]`, so the new variant is
+  additive. Python and the C#, Go, Java and C++ bindings map
+  `ReconnectFailed` to `WebSocketError` with code 3005.
+
+### Fixed
+
+- **Python and the C#, Go, Java and C++ bindings: `connect()` between two
+  reconnect attempts opened a second connection** (#230). The check that
+  refused `connect()` during a reconnect missed the `Disconnected` state the
+  reconnect loop is in between attempts, so a `connect()` landing there
+  built a new client while the old reconnect loop kept running: two server
+  connections, the subscriptions replayed twice and every callback called
+  twice. `connect()` now joins that reconnect (see Changed).
+- **Node: 1.x reconnect code in a `disconnect` listener no longer crashes
+  the process** (#230). `connect().then(subscribe)` without a `.catch`
+  survives an automatic reconnect with the default settings (see Changed).
+
+### Documentation
+
+- **Migration guide §5 no longer says 4xxx closes are not reconnected**
+  (#230). Since #201 only a normal closure (1000) and rejected credentials
+  end the connection; every other close reconnects. §5 now also explains
+  that a `disconnect` handler that reconnects on its own keeps working,
+  and why the repeated `subscribe()` is harmless (with one extra `error`
+  1001 from the server when the subscription quota is exactly full). §11
+  and §12 cover `connect()` during a reconnect for Node; `docs/errors.md`
+  (2010 / 2011 / 3005), `docs/configuration.md` (Giving up) and the Node and
+  Python READMEs are updated to match.
 
 ## [Bindings 3.0.0-rc.8 / core 0.9.0-rc.6 / uniffi 0.2.0-rc.6] - 2026-09-20
 
