@@ -71,6 +71,21 @@ jobs:
             node_file: marketdata-js.linux-arm64-gnu.node
             arch: aarch64
             zig: true
+          # Linux musl (Alpine). zig links against its bundled musl; the
+          # addon must link libc dynamically (-crt-static, see the build
+          # step) so it shares Node's libc instead of carrying its own.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            node_file: marketdata-js.linux-x64-musl.node
+            arch: x86-64
+            zig: true
+            musl: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            node_file: marketdata-js.linux-arm64-musl.node
+            arch: aarch64
+            zig: true
+            musl: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             node_file: marketdata-js.win32-x64-msvc.node
@@ -115,11 +130,17 @@ jobs:
 
       # Only the .node binary is needed from these jobs; the JS loader and
       # typings are committed. napi_build::setup() adds nothing on Linux.
-      - name: Build native addon (cargo-zigbuild, glibc 2.17)
+      - name: Build native addon (cargo-zigbuild, glibc 2.17 / musl)
         if: matrix.zig
         shell: bash
+        # Empty on the glibc rows. Any RUSTFLAGS, even empty, overrides
+        # build.rustflags from a .cargo/config.toml (the repo has none).
+        env:
+          RUSTFLAGS: ${{ matrix.musl && '-C target-feature=-crt-static' || '' }}
         run: |
-          cargo zigbuild --release -p marketdata-js --target ${{ matrix.target }}.2.17
+          # glibc targets take a version suffix; musl targets have none.
+          ZIG_TARGET=${{ matrix.target }}${{ !matrix.musl && '.2.17' || '' }}
+          cargo zigbuild --release -p marketdata-js --target "$ZIG_TARGET"
           cp target/${{ matrix.target }}/release/libmarketdata_js.so js/${{ matrix.node_file }}
 
       - name: Verify addon
@@ -135,7 +156,15 @@ jobs:
             echo "$desc"
             [[ "$desc" == *"${{ matrix.arch }}"* ]] || { echo "::error::expected ${{ matrix.arch }} binary"; exit 1; }
           fi
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
+          if [[ "${{ matrix.musl }}" == "true" ]]; then
+            # Dynamically linked against musl's libc.so, no glibc symbol versions.
+            readelf -d "${{ matrix.node_file }}" | grep NEEDED
+            readelf -d "${{ matrix.node_file }}" | grep -q 'NEEDED.*\[libc\.so\]' \
+              || { echo "::error::expected a dynamic dependency on musl libc.so"; exit 1; }
+            if readelf -V "${{ matrix.node_file }}" | grep -q 'GLIBC_'; then
+              echo "::error::musl addon references glibc symbol versions"; exit 1
+            fi
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
             max=$(readelf -V "${{ matrix.node_file }}" | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -1)
             echo "requires $max"
             [[ "$(printf '%s\n' "$max" GLIBC_2.17 | sort -V | tail -1)" == "GLIBC_2.17" ]] \
@@ -171,4 +200,6 @@ jobs:
           echo "| macOS ARM64 | aarch64-apple-darwin | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Linux x64 | x86_64-unknown-linux-gnu | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Linux ARM64 | aarch64-unknown-linux-gnu | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux x64 (musl) | x86_64-unknown-linux-musl | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux ARM64 (musl) | aarch64-unknown-linux-musl | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows x64 | x86_64-pc-windows-msvc | ${{ needs.build.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
