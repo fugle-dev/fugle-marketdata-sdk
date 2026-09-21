@@ -164,7 +164,9 @@ impl WebSocketClient {
     ///
     /// Refused while this client is connected, connecting or
     /// auto-reconnecting; use [`reconnect`](Self::reconnect) to replace a
-    /// live connection.
+    /// live connection. Unlike the async client's `connect()`, which waits
+    /// for an automatic reconnect in progress (#230), this still refuses it
+    /// with code 2011.
     ///
     /// # Errors
     /// Returns [`MarketDataError`] on transport, protocol, deserialization,

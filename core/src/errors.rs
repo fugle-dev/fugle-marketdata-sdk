@@ -157,7 +157,9 @@ pub mod error_code {
     /// also [`MarketDataError::ConnectionAborted`](super::MarketDataError::ConnectionAborted).
     pub const CLIENT_CLOSED: i32 = 2010;
     /// [`MarketDataError::AlreadyConnected`](super::MarketDataError::AlreadyConnected):
-    /// WebSocket `connect()` called while connected, connecting or reconnecting.
+    /// WebSocket `connect()` called while connected or while another
+    /// `connect()` is establishing the connection; on the sync client, also
+    /// while auto-reconnecting.
     pub const ALREADY_CONNECTED: i32 = 2011;
     /// [`MarketDataError::TimeoutError`](super::MarketDataError::TimeoutError).
     pub const TIMEOUT: i32 = 3001;
@@ -168,7 +170,9 @@ pub mod error_code {
     /// Bindings: a WebSocket callback or listener raised an exception (or,
     /// in Node, the Promise it returned rejected). The connection stays up.
     pub const CALLBACK_FAILED: i32 = 3004;
-    /// Automatic reconnection gave up after its last attempt.
+    /// Automatic reconnection gave up: after its last attempt, or because an
+    /// attempt's credentials were rejected. Also
+    /// [`MarketDataError::ReconnectFailed`](super::MarketDataError::ReconnectFailed).
     pub const RECONNECT_FAILED: i32 = 3005;
     /// [`MarketDataError::Other`](super::MarketDataError::Other).
     pub const OTHER: i32 = 9999;
@@ -396,10 +400,21 @@ pub enum MarketDataError {
     #[error("Connection aborted: disconnect() called before the connection was established")]
     ConnectionAborted,
 
-    /// WebSocket `connect()` called while the client is connected, connecting
-    /// or reconnecting.
+    /// WebSocket `connect()` called while the client is connected, or while
+    /// another `connect()` is establishing the connection. During an
+    /// automatic reconnect the async client's `connect()` waits for it
+    /// instead (#230); the sync client's still returns this.
     #[error("Already connected; call disconnect() first")]
     AlreadyConnected,
+
+    /// Automatic reconnection gave up after `attempts` attempts, all of them
+    /// failed. Returned by a WebSocket `connect()` or `wait_connected()` that
+    /// was waiting for that reconnect (#230).
+    #[error("Reconnection failed after {attempts} attempts")]
+    ReconnectFailed {
+        /// Number of reconnect attempts made.
+        attempts: u32,
+    },
 
     /// Other unexpected errors
     #[error(transparent)]
@@ -474,7 +489,7 @@ impl MarketDataError {
     ///
     /// | `MarketDataError` variant | `ErrorKind` |
     /// |---|---|
-    /// | `ConnectionError`, `TimeoutError`, `HeartbeatTimeout` | `Network` |
+    /// | `ConnectionError`, `TimeoutError`, `HeartbeatTimeout`, `ReconnectFailed` | `Network` |
     /// | `WebSocketError { kind: Protocol \| Capacity \| Utf8 \| Other }` | `Protocol` |
     /// | `WebSocketError { kind: Tls }` | `Auth` |
     /// | `WebSocketError { kind: Io }` | `Network` |
@@ -490,7 +505,8 @@ impl MarketDataError {
         match self {
             Self::ConnectionError { .. }
             | Self::TimeoutError { .. }
-            | Self::HeartbeatTimeout { .. } => ErrorKind::Network,
+            | Self::HeartbeatTimeout { .. }
+            | Self::ReconnectFailed { .. } => ErrorKind::Network,
             Self::WebSocketError { kind, .. } => match kind {
                 WebSocketErrorKind::Protocol
                 | WebSocketErrorKind::Capacity
@@ -557,6 +573,7 @@ impl MarketDataError {
             Self::HeartbeatTimeout { .. } => error_code::HEARTBEAT_TIMEOUT,
             Self::ClientClosed | Self::ConnectionAborted => error_code::CLIENT_CLOSED,
             Self::AlreadyConnected => error_code::ALREADY_CONNECTED,
+            Self::ReconnectFailed { .. } => error_code::RECONNECT_FAILED,
             Self::Other(_) => error_code::OTHER,
         }
     }
@@ -702,6 +719,10 @@ mod tests {
 
         let err = MarketDataError::AlreadyConnected;
         assert_eq!(err.to_error_code(), 2011);
+
+        let err = MarketDataError::ReconnectFailed { attempts: 3 };
+        assert_eq!(err.to_error_code(), 3005);
+        assert_eq!(err.to_string(), "Reconnection failed after 3 attempts");
 
         let err = MarketDataError::Other(anyhow::anyhow!("test"));
         assert_eq!(err.to_error_code(), 9999);
@@ -1036,6 +1057,9 @@ mod tests {
 
         let err = MarketDataError::AlreadyConnected;
         assert_eq!(err.source_kind(), ErrorKind::Client);
+
+        let err = MarketDataError::ReconnectFailed { attempts: 1 };
+        assert_eq!(err.source_kind(), ErrorKind::Network);
     }
 
     #[test]

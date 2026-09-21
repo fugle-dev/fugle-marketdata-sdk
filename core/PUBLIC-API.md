@@ -35,6 +35,22 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — `connect()` during an automatic reconnect waits for it (#230)
+
+- `+` `aio::WebSocketClient::wait_connected(&self) -> Result<(), MarketDataError>`
+  — waits for the `connect()` or automatic reconnect in progress; `Ok`
+  after a reconnect means its subscription replay is queued. Fails with
+  `ConnectionAborted` on `disconnect()` / `force_close()`, `ReconnectFailed`
+  or `AuthError` when the reconnect gives up, and `ConnectionError` when
+  nothing is under way.
+- `+` `MarketDataError::ReconnectFailed { attempts: u32 }` — code 3005
+  (`RECONNECT_FAILED`), kind `Network`. Additive: the enum is
+  `#[non_exhaustive]`.
+- Behaviour, no signature change: the async client's `connect()` waits for
+  an automatic reconnect in progress instead of returning
+  `AlreadyConnected` (2011); still 2011 while connected or while another
+  `connect()` runs. The sync client is unchanged.
+
 ### Unreleased — top-level `message` on error frames (#209)
 
 - `+` `models::WebSocketMessage::message: Option<String>` — the server's
