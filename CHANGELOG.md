@@ -34,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   harmless ([migration guide §5](MIGRATION.md#5-auto-reconnect-is-on-by-default)).
   The Rust sync client is unchanged and still fails with 2011.
 
+- **All languages: reconnect delays carry random jitter, and `max_delay` is a
+  hard cap** (#227). The jitter was a fixed function of the attempt number
+  (0–15%), so every client waited exactly the same 1.03 s, 2.12 s, 4.36 s …
+  and clients dropped together (a server restart closing every connection
+  with 1001) reconnected and authenticated in the same millisecond. Each
+  wait is now `base × (1 + U[0, 0.5))`, drawn per client, with `base`
+  still `initial_delay` doubling up to `max_delay`: the first reconnect
+  comes after 1–1.5 s instead of 1.03 s. The wait no longer exceeds
+  `max_delay` (it could by up to 15%), so once the backoff reaches the cap
+  every attempt waits exactly `max_delay`; the jitter of the earlier
+  attempts has spread the clients out by then. No new dependency.
+
 ### Added
 
 - **Python and Node.js: Linux musl (Alpine) x86_64 and aarch64** (#229).

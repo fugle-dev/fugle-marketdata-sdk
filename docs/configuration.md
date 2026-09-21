@@ -45,10 +45,13 @@ a reconnect config only to tune it or to turn it off.
   `connect()`. Zero (or omitted) values take the defaults before
   validation, so a zero-valued record is legal.
 
-**Backoff Strategy:** Exponential backoff with jitter (0-15%). Delay doubles on
-each attempt until hitting the `max_delay_ms` cap. With the defaults the waits
-are about 1s, 2s, 4s, 9s, 18s, 33s, then about once a minute until the
-connection is back.
+**Backoff Strategy:** Exponential backoff with random jitter. The base delay
+doubles on each attempt until hitting the `max_delay_ms` cap, and each wait
+adds 0–50% of the base at random, never exceeding `max_delay_ms` (#227). With
+the defaults the waits are about 1s → 2s → 4s → 8s → 16s → 32s (each plus
+0–50%), then once a minute until the connection is back. The jitter is drawn
+per client, so clients dropped together (a server restart, say) do not all
+reconnect at the same moment.
 
 **Giving up:** with a non-zero `max_attempts`, after that many failed
 attempts; and, whatever `max_attempts`, when an attempt's credentials are
