@@ -46,20 +46,33 @@ function runChild(script, env, timeoutMs = 10000) {
  * Loopback server that acks auth and answers `subscribe` with `subscribed`
  * plus one `data` frame. The first `failAuth` auth attempts are rejected;
  * the first `slowAuth` are answered only after `authDelayMs`.
+ *
+ * Set at run time: `rejectAuth` rejects every auth from then on, and the
+ * next `refuse` new connections are closed at once. `subscribes` records each
+ * `subscribe` frame's `data` with the number of the connection it came on.
  */
 function startServer({ failAuth = 0, slowAuth = 0, authDelayMs = 300 } = {}) {
   return new Promise((resolve) => {
     const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
     wss.accepted = 0;
+    wss.subscribes = [];
+    wss.rejectAuth = false;
+    wss.refuse = 0;
     let authFailuresLeft = failAuth;
     let slowAuthsLeft = slowAuth;
     wss.on('connection', (socket) => {
+      if (wss.refuse > 0) {
+        wss.refuse -= 1;
+        socket.terminate();
+        return;
+      }
       wss.accepted += 1;
+      const conn = wss.accepted;
       socket.on('message', (raw) => {
         const frame = JSON.parse(raw.toString());
         switch (frame.event) {
           case 'auth':
-            if (authFailuresLeft > 0) {
+            if (wss.rejectAuth || authFailuresLeft > 0) {
               authFailuresLeft -= 1;
               // The server's rejection: `error` code 1000, then a Close without a code (#201).
               socket.send(JSON.stringify({ event: 'error', code: 1000, data: { message: 'Invalid API key' } }));
@@ -75,6 +88,7 @@ function startServer({ failAuth = 0, slowAuth = 0, authDelayMs = 300 } = {}) {
             }
             break;
           case 'subscribe': {
+            wss.subscribes.push({ conn, data: frame.data });
             const { channel, symbol } = frame.data;
             const id = `${channel}-${symbol}`;
             socket.send(JSON.stringify({ event: 'subscribed', data: { id, channel, symbol } }));
@@ -107,12 +121,17 @@ async function waitFor(predicate, what, timeoutMs = 5000) {
 
 const openSockets = (wss) => [...wss.clients].filter((s) => s.readyState === s.OPEN).length;
 
+/** Drop every connection without a Close frame, as a network failure does. */
+function dropConnections(wss) {
+  for (const socket of wss.clients) socket.terminate();
+}
+
 const PRODUCTS = [
-  ['stock', { channel: 'trades', symbol: '2330' }],
-  ['futopt', { channel: 'trades', symbol: 'TXF1!', afterHours: true }],
+  ['stock', { channel: 'trades', symbol: '2330' }, { channel: 'trades', symbol: '2317' }],
+  ['futopt', { channel: 'trades', symbol: 'TXF1!', afterHours: true }, { channel: 'trades', symbol: 'MXF1!', afterHours: true }],
 ];
 
-describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
+describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription, other) => {
   let wss;
   let ws;
 
@@ -305,5 +324,198 @@ describe.each(PRODUCTS)('%s connect() reuse (#44)', (product, subscription) => {
     expect(order.filter((e) => e.startsWith('re'))).toEqual(['resolved']);
     expect(order.filter((e) => e === 'disconnect')).toHaveLength(1);
     expect(isConnected).toBe(false);
+  });
+});
+
+/**
+ * `connect()` while an automatic reconnect is in progress — typically from a
+ * `disconnect` listener, as 1.x code reconnected by hand — waits for the
+ * reconnect instead of rejecting with 2011 (#230).
+ */
+describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product, subscription, other) => {
+  const AUTH = { message: 'Authenticated successfully' };
+  let wss;
+  let ws;
+
+  async function setup(reconnect = {}) {
+    wss = await startServer();
+    const { port } = wss.address();
+    const client = new WebSocketClient({
+      apiKey: 'test-key',
+      baseUrl: `ws://127.0.0.1:${port}`,
+      reconnect: { initialDelayMs: 100, ...reconnect },
+    });
+    ws = client[product];
+  }
+
+  afterEach(async () => {
+    try {
+      ws.disconnect();
+    } catch (e) {
+      // already gone
+    }
+    await closeServer(wss);
+  });
+
+  /**
+   * Connect and subscribe, run `beforeDrop`, then drop the connection.
+   * `onDisconnect` runs in the `disconnect` listener, for this drop only.
+   */
+  async function connectThenDrop(onDisconnect, beforeDrop = () => {}) {
+    let armed = true;
+    ws.on('disconnect', () => {
+      if (armed) {
+        armed = false;
+        onDisconnect();
+      }
+    });
+    await ws.connect();
+    ws.subscribe(subscription);
+    await waitFor(() => wss.subscribes.length === 1, 'subscribe');
+    beforeDrop();
+    dropConnections(wss);
+    await waitFor(() => !armed, 'disconnect event');
+  }
+
+  /** `connect()`, its rejection marked handled until the test awaits it. */
+  function join() {
+    const joined = ws.connect();
+    joined.catch(() => {});
+    return joined;
+  }
+
+  test('resolves each waiting connect() with the reconnect\'s data, after the replay', async () => {
+    await setup();
+    const authenticated = [];
+    ws.on('authenticated', (data) => authenticated.push(data));
+    let joined;
+    await connectThenDrop(() => {
+      joined = Promise.all([ws.connect(), ws.connect()]).then((results) => {
+        ws.subscribe(other);
+        return results;
+      });
+    });
+
+    expect(await joined).toEqual([AUTH, AUTH]);
+    expect(authenticated).toEqual([AUTH, AUTH]);
+    expect(ws.isConnected).toBe(true);
+
+    const onReconnect = () => wss.subscribes.filter((s) => s.conn === 2).map((s) => s.data);
+    await waitFor(() => onReconnect().length === 2, 'replay and new subscribe');
+    await sleep(200);
+    expect(wss.accepted).toBe(2);
+    // The replay alone, then the subscribe made once connect() resolved.
+    expect(onReconnect()).toEqual([
+      expect.objectContaining({ symbol: subscription.symbol }),
+      expect.objectContaining({ symbol: other.symbol }),
+    ]);
+
+    // Reconnected, as the listeners have seen: refused again.
+    await expect(ws.connect()).rejects.toMatchObject({ code: 2011 });
+  });
+
+  test('resolves at once when core reconnected while the JS thread was busy', async () => {
+    await setup();
+    // In a child process: the listener holds the child's JS thread past the
+    // reconnect, which this process's server must be free to answer. The
+    // reconnect's `authenticated` is then queued behind the listener when
+    // connect() is called.
+    const run = runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, reconnect: { initialDelayMs: 100 } })[${JSON.stringify(product)}];
+      let armed = true;
+      ws.on('disconnect', () => {
+        if (!armed) return;
+        armed = false;
+        const until = Date.now() + 1000;
+        while (Date.now() < until);
+        ws.connect().then(
+          (data) => {
+            ws.subscribe(${JSON.stringify(other)});
+            setTimeout(() => {
+              console.log('RESULT ' + JSON.stringify({ data }));
+              ws.disconnect();
+            }, 300);
+          },
+          (e) => {
+            console.log('RESULT ' + JSON.stringify({ error: e.code }));
+            ws.disconnect();
+          },
+        );
+      });
+      ws.connect().then(() => ws.subscribe(${JSON.stringify(subscription)}));
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}` },
+    );
+    await waitFor(() => wss.subscribes.length === 1, 'subscribe');
+    dropConnections(wss);
+    const { code, result, stderr } = await run;
+
+    expect({ code, stderr, result }).toMatchObject({ code: 0, result: { data: AUTH } });
+    expect(wss.accepted).toBe(2);
+    expect(wss.subscribes.filter((s) => s.conn === 2).map((s) => s.data)).toEqual([
+      expect.objectContaining({ symbol: subscription.symbol }),
+      expect.objectContaining({ symbol: other.symbol }),
+    ]);
+  });
+
+  test('keeps waiting through a failed attempt', async () => {
+    await setup({ maxAttempts: 2 });
+    let joined;
+    await connectThenDrop(
+      () => {
+        joined = join();
+      },
+      () => {
+        wss.refuse = 1;
+      },
+    );
+
+    expect(await joined).toEqual(AUTH);
+    expect(wss.accepted).toBe(2);
+  });
+
+  test('disconnect() while waiting rejects it with 2010', async () => {
+    await setup({ initialDelayMs: 2000 });
+    let joined;
+    await connectThenDrop(() => {
+      joined = join();
+    });
+
+    ws.disconnect();
+
+    await expect(joined).rejects.toMatchObject({ code: 2010, message: expect.stringMatching(/^Connection aborted/) });
+    expect(wss.accepted).toBe(1);
+  });
+
+  test('rejects with 3005 when the attempts run out', async () => {
+    await setup({ maxAttempts: 1 });
+    let joined;
+    await connectThenDrop(
+      () => {
+        joined = join();
+      },
+      () => {
+        wss.refuse = Infinity;
+      },
+    );
+
+    await expect(joined).rejects.toMatchObject({ code: 3005, sourceKind: 'network' });
+  });
+
+  test('rejects with the server\'s data when the reconnect is refused', async () => {
+    await setup();
+    let joined;
+    await connectThenDrop(
+      () => {
+        joined = join();
+      },
+      () => {
+        wss.rejectAuth = true;
+      },
+    );
+
+    await expect(joined).rejects.toEqual({ message: 'Invalid API key' });
   });
 });

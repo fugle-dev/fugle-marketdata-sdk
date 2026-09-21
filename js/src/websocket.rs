@@ -116,6 +116,12 @@ struct EventSink {
     listeners: Arc<Listeners>,
     keep_alive: KeepAlive,
     in_flight: Arc<InFlight>,
+    /// Which of `authenticated` / `disconnect` / `unauthenticated` the JS
+    /// thread delivered last (#230): the connection as the listeners have
+    /// seen it so far, one of [`DELIVERED_NONE`], [`DELIVERED_AUTH`] and
+    /// [`DELIVERED_LOST`]. Updated before the listener is called, so a
+    /// `connect()` from a `disconnect` listener joins the reconnect.
+    auth_delivered: Arc<AtomicU8>,
 }
 
 /// `message` frames queued for the JS thread whose listener has not run yet
@@ -199,6 +205,7 @@ impl EventSink {
             listeners,
             keep_alive: loop_keep_alive(env)?,
             in_flight: Arc::new(InFlight::new(in_flight_limit)),
+            auth_delivered: Arc::new(AtomicU8::new(DELIVERED_NONE)),
         })
     }
 
@@ -220,6 +227,13 @@ impl EventSink {
             let permit = self.in_flight.acquire();
             self.emit_then("message", EventArgs::Text(frame), move || drop(permit));
         }
+    }
+
+    /// Run `then` on the JS thread after every event queued so far, calling
+    /// no listener — or immediately, on this thread, if it cannot be queued.
+    fn after_queued(&self, then: impl FnOnce() + Send + 'static) {
+        // No listener is ever registered under this name.
+        self.emit_then("", EventArgs::None, then);
     }
 
     /// Wait until another `message` frame may be queued (see [`InFlight`]).
@@ -245,10 +259,16 @@ impl EventSink {
         let then_after_call = Arc::clone(&then);
         let listeners = Arc::clone(&self.listeners);
         let keep_alive = Arc::clone(&self.keep_alive);
+        let auth_delivered = Arc::clone(&self.auth_delivered);
         let status = self.dispatch.call_with_return_value(
             (),
             ThreadsafeFunctionCallMode::NonBlocking,
             move |_, env| {
+                match event {
+                    "authenticated" => auth_delivered.store(DELIVERED_AUTH, Ordering::SeqCst),
+                    "disconnect" | "unauthenticated" => auth_delivered.store(DELIVERED_LOST, Ordering::SeqCst),
+                    _ => {}
+                }
                 call_listener(&listeners, &env, event, args);
                 run_then(&then_after_call);
                 drop(keep_alive);
@@ -472,6 +492,7 @@ fn clear_exception(env: sys::napi_env) {
 }
 
 /// How a `connect()` settles (#23).
+#[derive(Clone)]
 enum AuthOutcome {
     /// Authenticated: resolve with the server's `data`.
     Authenticated(serde_json::Value),
@@ -482,6 +503,7 @@ enum AuthOutcome {
 }
 
 /// Why `connect()` failed, other than rejected credentials.
+#[derive(Clone)]
 enum Failure {
     /// An SDK error: reject with the unified error fields.
     Coded(ErrorInfo),
@@ -494,9 +516,41 @@ type AuthTx = tokio::sync::oneshot::Sender<AuthOutcome>;
 /// Signal that authentication finished (or why it failed).
 type AuthRx = tokio::sync::oneshot::Receiver<AuthOutcome>;
 
-/// The pending `connect()` settlement, shared by the worker and the event
-/// thread: whichever settles first takes it, so a Promise settles once.
-type AuthSlot = Arc<Mutex<Option<AuthTx>>>;
+/// The `connect()` calls a connection has yet to settle (#230): the one that
+/// started it, and those that joined it while it was reconnecting.
+#[derive(Default)]
+struct AuthWaiters {
+    waiting: Vec<AuthTx>,
+    /// The `data` of the authentication the stream reader last forwarded,
+    /// until the next `Unauthenticated` or `Disconnected`: set means the
+    /// connection is authenticated, whether or not the JS thread has run
+    /// the `authenticated` listener yet.
+    last_auth: Option<serde_json::Value>,
+}
+
+/// A connection's [`AuthWaiters`], shared by its worker, its stream reader
+/// and `connect()`: whichever settles takes every waiter, so each Promise
+/// settles once.
+type AuthSlot = Arc<Mutex<AuthWaiters>>;
+
+/// Lock `slot`. A poisoned lock still yields the waiters: nothing is left
+/// half-updated under it.
+fn lock_auth(slot: &AuthSlot) -> std::sync::MutexGuard<'_, AuthWaiters> {
+    slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The core client a joining `connect()` waits on before it resolves (#230):
+/// set by the worker once it has created the client. Weak, so it does not
+/// keep the client, and so its stream, alive.
+type ClientSlot = Arc<std::sync::OnceLock<std::sync::Weak<marketdata_core::aio::WebSocketClient>>>;
+
+/// A `connect()` Promise's settlement, before it is turned into JS values.
+struct PendingConnect {
+    rx: AuthRx,
+    /// Set when this `connect()` joined an automatic reconnect: on
+    /// `Authenticated`, wait for the client's `wait_connected()` too.
+    reconnect: Option<std::sync::Weak<marketdata_core::aio::WebSocketClient>>,
+}
 
 /// Who decided how the initial authentication of a connection is reported
 /// (#44): the forwarder on `Authenticated`, or the worker aborting because
@@ -507,6 +561,13 @@ type AuthDecision = Arc<AtomicU8>;
 const AUTH_PENDING: u8 = 0;
 const AUTH_REPORTED: u8 = 1;
 const AUTH_ABORTED: u8 = 2;
+
+/// [`EventSink::auth_delivered`]: nothing delivered yet, so the first
+/// `connect()` has not resolved; `authenticated` last; `disconnect` or
+/// `unauthenticated` last.
+const DELIVERED_NONE: u8 = 0;
+const DELIVERED_AUTH: u8 = 1;
+const DELIVERED_LOST: u8 = 2;
 
 /// Move `decision` from pending to `to`; false if the other side decided.
 fn decide(decision: &AtomicU8, to: u8) -> bool {
@@ -531,27 +592,44 @@ fn test_delay_after_connect() -> Option<Duration> {
     None
 }
 
-/// Settle the pending `connect()`, if it has not been settled already.
+/// Settle every pending `connect()` with `outcome`; no-op when none is.
 fn settle(slot: &AuthSlot, outcome: AuthOutcome) {
-    if let Some(tx) = slot.lock().ok().and_then(|mut guard| guard.take()) {
-        let _ = tx.send(outcome);
+    let waiting = std::mem::take(&mut lock_auth(slot).waiting);
+    for tx in waiting {
+        let _ = tx.send(outcome.clone());
     }
 }
 
 /// Promise returned by `connect()`, settled by [`AuthOutcome`]. A failure to
 /// start the worker rejects it too, so `connect()` never throws
 /// synchronously.
+///
+/// A `connect()` that joined an automatic reconnect resolves only once core's
+/// `wait_connected()` returns as well: core reports `Authenticated` before it
+/// installs the new connection's writer and queues the subscription replay,
+/// and a `subscribe()` made once the Promise resolves must follow the replay
+/// (#230). The wait only delays the resolution, unless `disconnect()` stops
+/// it (2010): otherwise the stream reader reports how the reconnect ended.
 fn auth_promise<'env>(
     env: &'env Env,
-    started: napi::Result<AuthRx>,
+    started: napi::Result<PendingConnect>,
 ) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
     env.spawn_future_with_callback(
         async move {
-            Ok(started?.await.unwrap_or_else(|_| {
+            let PendingConnect { rx, reconnect } = started?;
+            let outcome = rx.await.unwrap_or_else(|_| {
                 AuthOutcome::Failed(Failure::Plain(
                     "Worker thread terminated before authentication signal".to_string(),
                 ))
-            }))
+            });
+            if let AuthOutcome::Authenticated(_) = outcome {
+                if let Some(client) = reconnect.and_then(|client| client.upgrade()) {
+                    if let Err(marketdata_core::MarketDataError::ConnectionAborted) = client.wait_connected().await {
+                        return Ok(AuthOutcome::Failed(connect_aborted()));
+                    }
+                }
+            }
+            Ok(outcome)
         },
         |env, outcome| match outcome {
             AuthOutcome::Authenticated(data) => {
@@ -996,16 +1074,17 @@ fn ping_data(params: Option<serde_json::Value>) -> Option<serde_json::Value> {
     }
 }
 
-/// Rejection for `connect()` while a connection is open or still being
-/// established (#44): core's `AlreadyConnected`, decided here from the
-/// worker slot rather than core's client state (#119).
+/// Rejection for `connect()` while a connection is open or its first
+/// `connect()` is still in progress (#44): core's `AlreadyConnected`, decided
+/// here from the worker slot rather than core's client state (#119).
 fn already_connected() -> ErrorInfo {
     marketdata_core::MarketDataError::AlreadyConnected.info()
 }
 
 /// Rejection for a `connect()` whose connection was given up because
 /// `disconnect()` was called before the connection was established (#44):
-/// core's `ConnectionAborted` (#121).
+/// core's `ConnectionAborted` (#121). Also what a `connect()` waiting on an
+/// automatic reconnect gets when the connection ends otherwise (#230).
 fn connect_aborted() -> Failure {
     Failure::Coded(marketdata_core::MarketDataError::ConnectionAborted.info())
 }
@@ -1020,32 +1099,77 @@ struct Worker {
     /// `error` callback, a rejected `connect()`), so calling `connect()` from
     /// there is accepted rather than racing the worker's exit.
     ending: Arc<AtomicBool>,
+    /// Whether the first authentication has been reported (#44).
+    decision: AuthDecision,
+    /// The connection's pending `connect()` calls (#230).
+    auth: AuthSlot,
+    /// The sink's [`EventSink::auth_delivered`].
+    auth_delivered: Arc<AtomicU8>,
+    client: ClientSlot,
 }
 
 /// A client's current worker, shared by every `ws.stock` / `ws.futopt` wrapper.
 type WorkerSlot = Arc<Mutex<Option<Worker>>>;
 
-/// Make room in `slot` for a new worker.
+/// What `connect()` does with the client's worker slot.
+enum Claim {
+    /// Start a new worker, joining the previous one's thread (if any) first.
+    Fresh(Option<thread::JoinHandle<()>>),
+    /// Wait on the current worker's automatic reconnect (#230).
+    Join(PendingConnect),
+}
+
+/// Decide what `connect()` does with `slot`, shared by stock and futopt.
 ///
-/// Rejects while the current worker is connecting or connected. A worker
-/// that is ending (or already gone) is taken out and its handle returned: the
-/// new worker joins it before connecting, so the old connection is torn down
-/// before the new one replaces it.
-fn claim_worker_slot(
-    slot: &mut Option<Worker>,
-) -> Result<Option<thread::JoinHandle<()>>, ErrorInfo> {
+/// A worker that is ending (or already gone) is taken out and its handle
+/// returned: the new worker joins it before connecting, so the old
+/// connection is torn down before the new one replaces it.
+///
+/// A live worker's connection is judged as the JS thread has seen it (#230),
+/// so that a `connect()` from a `disconnect` listener joins the reconnect
+/// even if core has already reconnected:
+///
+/// - its first `connect()` is still in progress (no `authenticated` delivered
+///   yet), or `authenticated` was the last of `authenticated` /
+///   `unauthenticated` / `disconnect` delivered: rejected with 2011;
+/// - the reader has forwarded an `Authenticated` the JS thread has not
+///   delivered yet: resolved with its `data`;
+/// - otherwise it is reconnecting: settled with the reconnect's outcome.
+fn claim_worker_slot(slot: &mut Option<Worker>) -> Result<Claim, ErrorInfo> {
     match slot.take() {
-        None => Ok(None),
+        None => Ok(Claim::Fresh(None)),
         Some(worker)
             if worker.ending.load(Ordering::SeqCst) || worker.handle.is_finished() =>
         {
-            Ok(Some(worker.handle))
+            Ok(Claim::Fresh(Some(worker.handle)))
         }
         Some(worker) => {
+            let claim = join_reconnect(&worker);
             *slot = Some(worker);
-            Err(already_connected())
+            claim.map(Claim::Join)
         }
     }
+}
+
+/// See [`claim_worker_slot`], for a worker that is not ending.
+fn join_reconnect(worker: &Worker) -> Result<PendingConnect, ErrorInfo> {
+    if worker.decision.load(Ordering::SeqCst) == AUTH_PENDING
+        || worker.auth_delivered.load(Ordering::SeqCst) != DELIVERED_LOST
+    {
+        return Err(already_connected());
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    // Under the lock the reader updates `last_auth` in, so this either sees
+    // the authentication or is settled by it. If the connection ends
+    // meanwhile, the settlement queued when its stream closes follows this.
+    let mut waiters = lock_auth(&worker.auth);
+    match &waiters.last_auth {
+        Some(data) => {
+            let _ = tx.send(AuthOutcome::Authenticated(data.clone()));
+        }
+        None => waiters.waiting.push(tx),
+    }
+    Ok(PendingConnect { rx, reconnect: worker.client.get().cloned() })
 }
 
 /// Queue `command` for the running worker.
@@ -1516,24 +1640,40 @@ impl StockWebSocketClient {
     /// failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
     /// properties; no `[code]` prefix in the message).
     ///
-    /// Rejects with code `2011` (`Already connected`) while a connection is open or
-    /// being established (#44). Call disconnect() first to reconnect; calling
-    /// connect() right after disconnect(), or from a `disconnect` handler once
-    /// no auto-reconnect will follow, is fine.
+    /// Rejects with code `2011` (`Already connected`) while a connection is open,
+    /// or while the first `connect()` is still in progress (#44). Call
+    /// disconnect() first to reconnect; calling connect() right after
+    /// disconnect(), or from a `disconnect` handler once no auto-reconnect will
+    /// follow, is fine.
+    ///
+    /// During an automatic reconnect — for instance from a `disconnect`
+    /// handler, as 1.x code often does — it waits for the reconnect instead
+    /// of starting another connection (#230). It then resolves with the
+    /// reconnect's `authenticated` `data` once the stored subscriptions have
+    /// been re-sent, so a `subscribe()` made then follows them. It rejects
+    /// with code `2010` (`Connection aborted`) if disconnect() is called or
+    /// the connection ends without reconnecting, `3005` (`ReconnectFailed`)
+    /// when the attempts run out, and with the server's `data` object when
+    /// the reconnect's credentials are rejected.
     #[napi(ts_return_type = "Promise<WebSocketAuthData | undefined>")]
     pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
         auth_promise(env, self.start_worker(env))
     }
 
-    /// Spawn the worker thread; the receiver fires once it has authenticated.
-    fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+    /// Spawn the worker thread, or join the current one's reconnect (#230);
+    /// the receiver fires once it has authenticated.
+    fn start_worker(&self, env: &Env) -> napi::Result<PendingConnect> {
         // Held until the new worker is stored, so concurrent connect() calls
         // cannot both claim the slot (#44).
         let mut slot = self.worker.lock().map_err(|e| {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
-        let previous = claim_worker_slot(&mut slot)
-            .map_err(|info| crate::errors::js_error(env, &info))?;
+        let previous = match claim_worker_slot(&mut slot)
+            .map_err(|info| crate::errors::js_error(env, &info))?
+        {
+            Claim::Join(pending) => return Ok(pending),
+            Claim::Fresh(previous) => previous,
+        };
         let sink = EventSink::new(
             env,
             Arc::clone(&self.callbacks),
@@ -1546,7 +1686,12 @@ impl StockWebSocketClient {
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
-        let auth: AuthSlot = Arc::new(Mutex::new(Some(auth_tx)));
+        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None }));
+        let client_slot: ClientSlot = Arc::default();
+        let worker_auth = Arc::clone(&auth);
+        let worker_decision = Arc::clone(&decision);
+        let worker_client = Arc::clone(&client_slot);
+        let auth_delivered = Arc::clone(&sink.auth_delivered);
 
         // Clone data for the worker thread
         let auth_request = self.auth.clone();
@@ -1618,6 +1763,7 @@ impl StockWebSocketClient {
                 message_queue.apply(&mut config);
                 config.auth_timeout = auth_timeout;
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
+                let _ = client_slot.set(Arc::downgrade(&client));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
                 let state = client.state_handle();
@@ -1754,8 +1900,16 @@ impl StockWebSocketClient {
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
-        *slot = Some(Worker { tx: cmd_tx, handle, ending });
-        Ok(auth_rx)
+        *slot = Some(Worker {
+            tx: cmd_tx,
+            handle,
+            ending,
+            decision: worker_decision,
+            auth: worker_auth,
+            auth_delivered,
+            client: worker_client,
+        });
+        Ok(PendingConnect { rx: auth_rx, reconnect: None })
     }
 
     /// Subscribe to a channel
@@ -1972,21 +2126,27 @@ impl FutOptWebSocketClient {
     ///
     /// Returns a Promise that resolves with the server's `authenticated`
     /// `data`. See `StockWebSocketClient::connect` for the rejections,
-    /// including code `2011` (`Already connected`) (#44).
+    /// including code `2011` (`Already connected`) (#44), and for waiting on
+    /// an automatic reconnect (#230).
     #[napi(ts_return_type = "Promise<WebSocketAuthData | undefined>")]
     pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
         auth_promise(env, self.start_worker(env))
     }
 
-    /// Spawn the worker thread; the receiver fires once it has authenticated.
-    fn start_worker(&self, env: &Env) -> napi::Result<AuthRx> {
+    /// Spawn the worker thread, or join the current one's reconnect (#230);
+    /// the receiver fires once it has authenticated.
+    fn start_worker(&self, env: &Env) -> napi::Result<PendingConnect> {
         // Held until the new worker is stored, so concurrent connect() calls
         // cannot both claim the slot (#44).
         let mut slot = self.worker.lock().map_err(|e| {
             napi::Error::from_reason(format!("Lock error: {}", e))
         })?;
-        let previous = claim_worker_slot(&mut slot)
-            .map_err(|info| crate::errors::js_error(env, &info))?;
+        let previous = match claim_worker_slot(&mut slot)
+            .map_err(|info| crate::errors::js_error(env, &info))?
+        {
+            Claim::Join(pending) => return Ok(pending),
+            Claim::Fresh(previous) => previous,
+        };
         let sink = EventSink::new(
             env,
             Arc::clone(&self.callbacks),
@@ -1999,7 +2159,12 @@ impl FutOptWebSocketClient {
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
-        let auth: AuthSlot = Arc::new(Mutex::new(Some(auth_tx)));
+        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None }));
+        let client_slot: ClientSlot = Arc::default();
+        let worker_auth = Arc::clone(&auth);
+        let worker_decision = Arc::clone(&decision);
+        let worker_client = Arc::clone(&client_slot);
+        let auth_delivered = Arc::clone(&sink.auth_delivered);
 
         let auth_request = self.auth.clone();
         let base_url = self.base_url.clone();
@@ -2067,6 +2232,7 @@ impl FutOptWebSocketClient {
                 message_queue.apply(&mut config);
                 config.auth_timeout = auth_timeout;
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
+                let _ = client_slot.set(Arc::downgrade(&client));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
                 let state = client.state_handle();
@@ -2203,8 +2369,16 @@ impl FutOptWebSocketClient {
             })
             .map_err(|e| napi::Error::from_reason(format!("Failed to spawn worker thread: {}", e)))?;
 
-        *slot = Some(Worker { tx: cmd_tx, handle, ending });
-        Ok(auth_rx)
+        *slot = Some(Worker {
+            tx: cmd_tx,
+            handle,
+            ending,
+            decision: worker_decision,
+            auth: worker_auth,
+            auth_delivered,
+            client: worker_client,
+        });
+        Ok(PendingConnect { rx: auth_rx, reconnect: None })
     }
 
     /// Subscribe to a channel
@@ -2340,6 +2514,13 @@ impl FutOptWebSocketClient {
 /// an `Error` before either rejects with that error's `MarketDataError` — each
 /// after its listener has run (see [`fire_and_settle`]).
 ///
+/// A `connect()` that joined an automatic reconnect (#230) is settled the same
+/// way by the reconnect's `Authenticated` or `Unauthenticated`, but not by an
+/// `Error`: a failed attempt is followed by another. It rejects with
+/// `ReconnectFailed` (3005) when the attempts run out, and with
+/// `ConnectionAborted` (2010) on a `Disconnected` that no reconnect follows or
+/// when the stream closes.
+///
 /// A message is forwarded only between an `Authenticated` this reader
 /// reported and the next `Disconnected`: frames of a rejected or abandoned
 /// connection never reach `message`, and frames still arriving while
@@ -2358,6 +2539,9 @@ fn spawn_stream_reader(
     use marketdata_core::websocket::{ConnectionEvent, StreamItem};
 
     std::thread::spawn(move || {
+        // How a `connect()` still waiting when the stream closes settles
+        // (#230): the reconnect's end if it gave up, else as aborted.
+        let mut fallback = AuthOutcome::Failed(connect_aborted());
         let run = || {
             let mut reported = false;
             loop {
@@ -2402,6 +2586,7 @@ fn spawn_stream_reader(
                             continue; // a re-authentication after the connection was given up
                         }
                         reported = true;
+                        lock_auth(&auth).last_auth = Some(data.clone());
                         fire_and_settle(
                             &sink,
                             "authenticated",
@@ -2413,6 +2598,10 @@ fn spawn_stream_reader(
                     }
                     ConnectionEvent::Unauthenticated { data, .. } => {
                         reported = false;
+                        lock_auth(&auth).last_auth = None;
+                        // No reconnect follows rejected credentials (#201), so
+                        // connect() from the listener starts a new connection.
+                        ending.store(true, Ordering::SeqCst);
                         fire_and_settle(
                             &sink,
                             "unauthenticated",
@@ -2423,6 +2612,12 @@ fn spawn_stream_reader(
                         );
                     }
                     ConnectionEvent::Error(info) => {
+                        // Only the first connect() fails with an error; a
+                        // failed reconnect attempt leaves joiners waiting.
+                        if decision.load(Ordering::SeqCst) != AUTH_PENDING {
+                            sink.emit("error", EventArgs::Error(info));
+                            continue;
+                        }
                         let rejection = AuthOutcome::Failed(Failure::Coded(info.clone()));
                         fire_and_settle(
                             &sink,
@@ -2435,19 +2630,27 @@ fn spawn_stream_reader(
                     }
                     ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
                         reported = false;
+                        lock_auth(&auth).last_auth = None;
                         if panic_reported.load(Ordering::SeqCst) {
                             // The worker closing the connection after a panic
                             // that already reported its end (#25).
                             continue;
                         }
-                        if !will_reconnect {
-                            ending.store(true, Ordering::SeqCst);
-                            // Core's dispatch task ends without reconnecting.
-                            dispatch_ended.store(true, Ordering::SeqCst);
+                        let args = EventArgs::Json(serde_json::json!({ "code": code, "reason": reason }));
+                        if will_reconnect {
+                            sink.emit("disconnect", args);
+                            continue;
                         }
-                        sink.emit(
+                        ending.store(true, Ordering::SeqCst);
+                        // Core's dispatch task ends without reconnecting.
+                        dispatch_ended.store(true, Ordering::SeqCst);
+                        fire_and_settle(
+                            &sink,
                             "disconnect",
-                            EventArgs::Json(serde_json::json!({ "code": code, "reason": reason })),
+                            args,
+                            &auth,
+                            AuthOutcome::Failed(connect_aborted()),
+                            None,
                         );
                     }
                     ConnectionEvent::MessagesDropped { dropped, total } => {
@@ -2464,13 +2667,15 @@ fn spawn_stream_reader(
                     }
                     ConnectionEvent::ReconnectFailed { attempts } => {
                         ending.store(true, Ordering::SeqCst);
-                        sink.emit(
+                        let info = marketdata_core::MarketDataError::ReconnectFailed { attempts }.info();
+                        fallback = AuthOutcome::Failed(Failure::Coded(info.clone()));
+                        fire_and_settle(
+                            &sink,
                             "error",
-                            EventArgs::Error(ErrorInfo::new(
-                                error_code::RECONNECT_FAILED,
-                                ErrorKind::Network,
-                                format!("Reconnection failed after {} attempts", attempts),
-                            )),
+                            EventArgs::Error(info.clone()),
+                            &auth,
+                            AuthOutcome::Failed(Failure::Coded(info)),
+                            None,
                         );
                         // Core's dispatch task has ended for good.
                         dispatch_ended.store(true, Ordering::SeqCst);
@@ -2498,6 +2703,10 @@ fn spawn_stream_reader(
             // rather than leave it (and the process) running unobserved.
             dispatch_ended.store(true, Ordering::SeqCst);
         }
+        // The stream closes once the worker has dropped the core client, so
+        // every event is queued by now: a `connect()` that nothing settled
+        // settles after them (#230).
+        sink.after_queued(move || settle(&auth, fallback));
     });
 }
 
@@ -2587,10 +2796,10 @@ fn inject_test_panic(site: Option<&str>, here: &str) {
 #[inline(always)]
 fn inject_test_panic(_site: Option<&str>, _here: &str) {}
 
-/// Emit `event`, then settle the pending `connect()` with `outcome` once the
-/// listener has returned, so it runs before the Promise settles as it did in
-/// 1.x, which emitted before settling (#23). Nothing is settled if
-/// `connect()` already was.
+/// Emit `event`, then settle the pending `connect()` calls with `outcome` once
+/// the listener has returned, so it runs before the Promise settles as it did
+/// in 1.x, which emitted before settling (#23). Nothing is settled if none is
+/// pending.
 ///
 /// `ending`, when given and `connect()` is still pending, is set before the
 /// event is emitted, so calling connect() again from the listener or the
@@ -2603,7 +2812,7 @@ fn fire_and_settle(
     outcome: AuthOutcome,
     ending: Option<&AtomicBool>,
 ) {
-    let pending = auth.lock().map(|guard| guard.is_some()).unwrap_or(false);
+    let pending = !lock_auth(auth).waiting.is_empty();
     if !pending {
         sink.emit(event, data);
         return;
