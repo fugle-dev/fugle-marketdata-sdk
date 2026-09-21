@@ -35,6 +35,18 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — reconnect-conflict warning (#226)
+
+- `+` `error_code::RECONNECT_CONFLICT` (3006) — a warning reported as
+  `ConnectionEvent::Error` (kind `Client`), at most once per client, right
+  before the `Disconnected` of a `disconnect()` / `force_close()` that
+  closes a connection automatic reconnect restored less than 30 seconds
+  earlier. The close goes ahead. Additive.
+- Behaviour, no signature change: `MarketDataError::AlreadyConnected`
+  (2011) displays `Already connected; connect() is not needed while the
+  connection is open or being opened` instead of `Already connected; call
+  disconnect() first`.
+
 ### Unreleased — `WebSocketMessage.data` parsed on first use (#236)
 
 - `-` `models::WebSocketMessage::data: Option<serde_json::Value>` — the

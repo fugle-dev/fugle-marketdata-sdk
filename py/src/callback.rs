@@ -91,6 +91,9 @@ pub struct CallbackRegistry {
     /// (#25). Only a writer's panic poisons an `RwLock`.
     #[cfg(debug_assertions)]
     test_poison_lock: std::sync::atomic::AtomicBool,
+    /// The reconnect-conflict warning has been issued (#226). Kept here, not
+    /// in core, because every `connect()` builds a new core client.
+    conflict_warned: std::sync::atomic::AtomicBool,
 }
 
 impl CallbackRegistry {
@@ -103,6 +106,7 @@ impl CallbackRegistry {
             test_poison_lock: std::sync::atomic::AtomicBool::new(
                 std::env::var("FUGLE_MARKETDATA_TEST_PANIC").as_deref() == Ok("ws_callback_poison"),
             ),
+            conflict_warned: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -339,6 +343,29 @@ impl CallbackRegistry {
         let err_obj: Py<PyAny> = err.into_value(py).into_any();
         let args = pyo3::types::PyTuple::new(py, [err_obj]).expect("Failed to create tuple");
         self.invoke(py, EventType::Error, &args);
+    }
+
+    /// Issue core's reconnect-conflict report (code 3006) as a
+    /// `RuntimeWarning` instead of an `error` callback, once per client
+    /// (#226). A warning filter that turns it into an exception gets it
+    /// reported as unraisable: this runs on the SDK's thread.
+    pub fn warn_reconnect_conflict(&self, py: Python<'_>, info: &ErrorInfo) {
+        if self.conflict_warned.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let category = py.get_type::<pyo3::exceptions::PyRuntimeWarning>();
+        // `warn_explicit` with a fixed module: there is no Python frame on
+        // this thread to attribute it to, and `module="fugle_marketdata"`
+        // lets a filter select it.
+        let warned = py.import("warnings").and_then(|warnings| {
+            warnings.call_method1(
+                "warn_explicit",
+                (info.message.as_str(), category, "fugle_marketdata", 0, "fugle_marketdata"),
+            )
+        });
+        if let Err(err) = warned {
+            err.write_unraisable(py, None);
+        }
     }
 
     /// Invoke authenticated callbacks with the `data` of the server's

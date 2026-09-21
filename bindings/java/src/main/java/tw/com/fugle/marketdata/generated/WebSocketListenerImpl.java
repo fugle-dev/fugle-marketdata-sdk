@@ -319,6 +319,12 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
   
     /**
      * Called when an error occurs
+     *
+     * Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+     * once per client: `disconnect()` closed a connection that automatic
+     * reconnect had restored less than 30 seconds earlier, which is what
+     * code that also reconnects on its own does (#226). The close goes
+     * ahead; the message says how to resolve it.
      */
     @Override
     public void onError(ErrorInfo error)  {

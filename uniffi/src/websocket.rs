@@ -107,6 +107,12 @@ pub trait WebSocketListener: Send + Sync {
     fn on_message(&self, message: StreamMessage);
 
     /// Called when an error occurs
+    ///
+    /// Also carries one warning, code 3006 (`RECONNECT_CONFLICT`), at most
+    /// once per client: `disconnect()` closed a connection that automatic
+    /// reconnect had restored less than 30 seconds earlier, which is what
+    /// code that also reconnects on its own does (#226). The close goes
+    /// ahead; the message says how to resolve it.
     fn on_error(&self, error: ErrorInfo);
 
     /// Called when a reconnection attempt starts
@@ -449,6 +455,10 @@ pub struct WebSocketClient {
     /// Throttles the reports of failed listener calls (#83) across the
     /// client's connections, like the Node, Python, C# and Java bindings.
     callback_failures: CallbackFailures,
+    /// The reconnect-conflict warning (code 3006) has reached `on_error`
+    /// (#226): once per client, though each connection has its own core
+    /// client.
+    conflict_warned: Arc<AtomicBool>,
     /// Held for the duration of each `connect()`, so a concurrent one is
     /// refused rather than opening a second connection (#119).
     connect_gate: tokio::sync::Mutex<()>,
@@ -486,6 +496,7 @@ impl WebSocketClient {
             connection_config,
             messages_dropped: std::sync::Mutex::new(None),
             callback_failures: CallbackFailures::default(),
+            conflict_warned: Arc::default(),
             connect_gate: tokio::sync::Mutex::new(()),
             #[cfg(feature = "cpp")]
             sync_runtime: std::sync::Mutex::new(None),
@@ -977,6 +988,7 @@ impl WebSocketClient {
             Arc::clone(&stopping),
             delivered.clone(),
             Arc::clone(&self.callback_failures),
+            Arc::clone(&self.conflict_warned),
         );
         {
             // A `disconnect()` from here on is for this connection: it has a
@@ -1446,6 +1458,7 @@ fn spawn_stream_reader(
     stopping: Arc<AtomicBool>,
     delivered: Delivered,
     callback_failures: CallbackFailures,
+    conflict_warned: Arc<AtomicBool>,
 ) -> Option<StreamReader> {
     let (running, finished) = tokio::sync::watch::channel(());
     let handle = std::thread::Builder::new()
@@ -1470,6 +1483,9 @@ fn spawn_stream_reader(
                             _ => {}
                         }
                         delivered.observe(&event);
+                        if is_reconnect_conflict(&event) && conflict_warned.swap(true, Ordering::SeqCst) {
+                            continue;
+                        }
                         if !forward_event(event, &mut calls) {
                             break;
                         }
@@ -1588,6 +1604,13 @@ impl StreamReader {
         // No value is ever sent, so this returns once the sender is dropped.
         let _ = self.finished.changed().await;
     }
+}
+
+/// Core's reconnect-conflict warning (#226), reported through `on_error`
+/// once per client.
+fn is_reconnect_conflict(event: &ConnectionEvent) -> bool {
+    matches!(event, ConnectionEvent::Error(info)
+        if info.code == marketdata_core::error_code::RECONNECT_CONFLICT)
 }
 
 /// Forward one core event to the listener. Returns `false` after a terminal
@@ -2369,10 +2392,14 @@ mod tests {
         listener.wait_for("disconnected(false)").await;
 
         // A transport error reports `Error` before `Disconnected` (core's
-        // delivery guarantee); its text is platform-dependent.
+        // delivery guarantee); its text is platform-dependent. The
+        // disconnect() right after the reconnect adds the 3006 warning (#226).
         let (errors, lifecycle): (Vec<_>, Vec<_>) =
             listener.events().into_iter().partition(|e| e.starts_with("error("));
+        let (warnings, errors): (Vec<_>, Vec<_>) =
+            errors.into_iter().partition(|e| e.contains("automatic reconnect"));
         assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert_eq!(
             lifecycle,
             vec![
@@ -2858,6 +2885,27 @@ mod tests {
         listener.wait_authenticated(2).await;
         assert_eq!(listener.connected_count.load(Ordering::SeqCst), 2);
         client.disconnect_impl().await;
+    }
+
+    /// `disconnect()` soon after an automatic reconnect, as code that also
+    /// reconnects on its own does, reaches `on_error` as code 3006 once per
+    /// client, though each connection has its own core client (#226).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_soon_after_a_reconnect_is_reported_once_per_client() {
+        let (server, listener, client) = lost_connection(4, reconnect_every(0, 100)).await;
+        for round in 0..2 {
+            listener.wait_authenticated(2 * round + 2).await;
+            client.disconnect_impl().await;
+            if round == 0 {
+                let last = listener.last_error.lock().unwrap().clone().expect("an error");
+                assert_eq!(last.code, marketdata_core::error_code::RECONNECT_CONFLICT);
+                client.connect_impl().await.expect("connect");
+                server.drop_transport_for(2).await;
+            }
+        }
+        let warnings: Vec<_> =
+            listener.events().into_iter().filter(|e| e.contains("automatic reconnect")).collect();
+        assert_eq!(warnings.len(), 1, "{:?}", listener.events());
     }
 
     #[tokio::test(flavor = "multi_thread")]

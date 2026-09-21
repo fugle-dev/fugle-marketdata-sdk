@@ -129,6 +129,7 @@ pub const marketdata_core::error_code::HEARTBEAT_TIMEOUT: i32
 pub const marketdata_core::error_code::INVALID_PARAMETER: i32
 pub const marketdata_core::error_code::INVALID_SYMBOL: i32
 pub const marketdata_core::error_code::OTHER: i32
+pub const marketdata_core::error_code::RECONNECT_CONFLICT: i32
 pub const marketdata_core::error_code::RECONNECT_FAILED: i32
 pub const marketdata_core::error_code::RUNTIME: i32
 pub const marketdata_core::error_code::THREAD_PANIC: i32
@@ -148,6 +149,7 @@ pub const marketdata_core::errors::error_code::HEARTBEAT_TIMEOUT: i32
 pub const marketdata_core::errors::error_code::INVALID_PARAMETER: i32
 pub const marketdata_core::errors::error_code::INVALID_SYMBOL: i32
 pub const marketdata_core::errors::error_code::OTHER: i32
+pub const marketdata_core::errors::error_code::RECONNECT_CONFLICT: i32
 pub const marketdata_core::errors::error_code::RECONNECT_FAILED: i32
 pub const marketdata_core::errors::error_code::RUNTIME: i32
 pub const marketdata_core::errors::error_code::THREAD_PANIC: i32

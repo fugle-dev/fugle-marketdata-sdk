@@ -3355,7 +3355,7 @@ mod connect_during_reconnect_tests {
     use super::*;
     use crate::errors::error_code;
     use crate::websocket::channels::StockSubscription;
-    use crate::websocket::StreamItem;
+    use crate::websocket::{DisconnectIntent, StreamItem};
     use crate::AuthRequest;
     use futures_util::{SinkExt, StreamExt};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3718,5 +3718,75 @@ mod connect_during_reconnect_tests {
             .expect("returns at once")
             .expect_err("not connected");
         assert!(matches!(err, MarketDataError::ConnectionError { .. }), "{err:?}");
+    }
+
+    /// Events up to and including the next `Disconnected`.
+    fn events_until_disconnected(client: &WebSocketClient) -> Vec<ConnectionEvent> {
+        let rx = client.stream_receiver();
+        let deadline = std::time::Instant::now() + WAIT;
+        let mut events = Vec::new();
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match rx.receive_timeout(left).expect("receive") {
+                Some(StreamItem::Event(event)) => {
+                    let done = matches!(event, ConnectionEvent::Disconnected { .. });
+                    events.push(event);
+                    if done {
+                        return events;
+                    }
+                }
+                Some(_) => continue,
+                None => panic!("Disconnected not received: {events:?}"),
+            }
+        }
+    }
+
+    fn conflict_warnings(events: &[ConnectionEvent]) -> usize {
+        events
+            .iter()
+            .filter(|e| {
+                matches!(e, ConnectionEvent::Error(info)
+                    if info.code == crate::error_code::RECONNECT_CONFLICT)
+            })
+            .count()
+    }
+
+    /// Code that reconnects on its own closes the connection an automatic
+    /// reconnect just restored: warned about once, right before that
+    /// close's `Disconnected` (#226).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_soon_after_a_reconnect_warns_once() {
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(3, Duration::from_millis(100))).await;
+        server.drop_first();
+        lost(&client);
+        wait_for(&client, |e| matches!(e, ConnectionEvent::Authenticated { .. }));
+
+        client.disconnect().await.expect("disconnect");
+        let events = events_until_disconnected(&client);
+        assert_eq!(conflict_warnings(&events), 1, "{events:?}");
+        assert!(
+            matches!(
+                events.as_slice(),
+                [.., ConnectionEvent::Error(_), ConnectionEvent::Disconnected {
+                    intent: DisconnectIntent::Client,
+                    will_reconnect: false,
+                    ..
+                }]
+            ),
+            "{events:?}"
+        );
+    }
+
+    /// A connection the caller's own `connect()` opened is closed without
+    /// the warning.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn disconnect_without_a_reconnect_does_not_warn() {
+        let server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(3, Duration::from_millis(100))).await;
+
+        client.disconnect().await.expect("disconnect");
+        let events = events_until_disconnected(&client);
+        assert_eq!(conflict_warnings(&events), 0, "{events:?}");
     }
 }

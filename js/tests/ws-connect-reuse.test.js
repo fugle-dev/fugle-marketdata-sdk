@@ -519,3 +519,104 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
     await expect(joined).rejects.toEqual({ message: 'Invalid API key' });
   });
 });
+
+/**
+ * Own reconnect code alongside auto-reconnect (#226): `disconnect()` then
+ * `connect()` after a `disconnect` event closes the connection the automatic
+ * reconnect has just restored, and that close fires `disconnect` again. The
+ * SDK only warns, with a process warning (not an `error` event), once per
+ * client. Run in a child process: the addon emits on the real `process`, not
+ * Jest's sandbox copy.
+ */
+describe.each(PRODUCTS)('%s own reconnect code with auto-reconnect on (#226)', (product) => {
+  let wss;
+
+  beforeEach(async () => {
+    wss = await startServer();
+  });
+
+  afterEach(async () => {
+    await closeServer(wss);
+  });
+
+  /** Run `body` in a child with `ws`, `warnings`, `errors` and `sleep` in scope. */
+  function runWithClient(body) {
+    return runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const warnings = [];
+      process.on('warning', (w) => warnings.push({ name: w.name, code: w.code, message: w.message }));
+      const ws = new WebSocketClient({
+        apiKey: 'test-key',
+        baseUrl: process.env.URL,
+        reconnect: { initialDelayMs: 100, maxDelayMs: 100 },
+      })[${JSON.stringify(product)}];
+      const errors = [];
+      ws.on('error', (e) => errors.push(e.code));
+      (async () => {
+        ${body}
+        ws.disconnect();
+        await sleep(100);
+        const conflicts = warnings.filter((w) => w.name === 'FugleReconnectWarning');
+        console.log('RESULT ' + JSON.stringify({ conflicts, errors, ...(typeof extra === 'undefined' ? {} : extra) }));
+        process.exit(0);
+      })();
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}` },
+      15000,
+    );
+  }
+
+  it('warns once when disconnect() closes a connection the reconnect just restored', async () => {
+    const child = runWithClient(`
+        let reconnectNeeded = false;
+        ws.on('disconnect', () => { reconnectNeeded = true; });
+        await ws.connect();
+        let rounds = 0;
+        // The 2.x pattern from #226, polled instead of on a thread; the parent
+        // drops the first connection and the one opened by the first round.
+        while (rounds < 3) {
+          if (reconnectNeeded) {
+            reconnectNeeded = false;
+            // Lets the automatic reconnect (100 ms) finish first, as the 2 s of #226 did.
+            await sleep(500);
+            ws.disconnect();
+            await ws.connect();
+            rounds += 1;
+          }
+          await sleep(20);
+        }
+        const extra = { rounds };
+    `);
+    await waitFor(() => wss.accepted >= 1 && openSockets(wss) === 1, 'the first connection');
+    dropConnections(wss);
+    // Connection 3 is the first round's connect(): lose it too, so the next
+    // core client's automatic reconnect is closed the same way and the
+    // warning must not repeat.
+    await waitFor(() => wss.accepted >= 3 && openSockets(wss) === 1, 'the first round');
+    dropConnections(wss);
+    const run = await child;
+
+    expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
+    const { conflicts, errors, rounds } = run.result;
+    expect(rounds).toBe(3);
+    expect(wss.accepted).toBeGreaterThanOrEqual(5);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].code).toBe('FUGLE_RECONNECT_CONFLICT');
+    expect(conflicts[0].message).toMatch(/automatic reconnect/);
+    expect(conflicts[0].message).toMatch(/reconnect: \{ enabled: false \}/);
+    expect(errors).not.toContain(3006);
+  });
+
+  it('does not warn when disconnect() closes a connection the caller opened', async () => {
+    const run = await runWithClient(`
+        await ws.connect();
+        ws.disconnect();
+        await ws.connect();
+    `);
+
+    expect({ code: run.code, stderr: run.stderr }).toMatchObject({ code: 0 });
+    expect(run.result.conflicts).toEqual([]);
+  });
+});

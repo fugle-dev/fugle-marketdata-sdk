@@ -57,6 +57,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   harmless ([migration guide §5](MIGRATION.md#5-auto-reconnect-is-on-by-default)).
   The Rust sync client is unchanged and still fails with 2011.
 
+- **All languages: the 2011 message no longer says "call disconnect()
+  first"** (#226). It is now `Already connected; connect() is not needed
+  while the connection is open or being opened`; the code and the `Already
+  connected` prefix are unchanged. Following the old advice after an
+  automatic reconnect closes the connection the reconnect restored, and with
+  a `disconnect` handler that reconnects, loops forever.
+- **Migration guide §5: your own reconnect code or auto-reconnect, not
+  both** (#226, #228). The guide now explains how 2.x recovery code that
+  calls `disconnect()` then `connect()` loops with auto-reconnect, and asks
+  to remove that code or turn auto-reconnect off.
+
 - **All languages: reconnect delays carry random jitter, and `max_delay` is a
   hard cap** (#227). The jitter was a fixed function of the attempt number
   (0–15%), so every client waited exactly the same 1.03 s, 2.12 s, 4.36 s …
@@ -70,6 +81,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempts has spread the clients out by then. No new dependency.
 
 ### Added
+
+- **All languages: a warning when own reconnect code fights auto-reconnect**
+  (#226). When `disconnect()` or `force_close()` closes a connection that
+  automatic reconnect restored less than 30 seconds earlier, the SDK warns
+  once per client: Python with a `RuntimeWarning`, Node with a process
+  warning (`FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`), C#, Go,
+  Java and C++ with code 3006 (`RECONNECT_CONFLICT`) in their error callback,
+  Rust with a `ConnectionEvent::Error` of that code right before the close's
+  `Disconnected` (and a `tracing` warning). Only a warning: the close goes
+  ahead, and the logins go on until the code is changed
+  ([migration guide §5](MIGRATION.md#5-auto-reconnect-is-on-by-default)).
 
 - **Python and Node.js: Linux musl (Alpine) x86_64 and aarch64** (#229).
   PyPI gains `musllinux_1_2` wheels and npm gains

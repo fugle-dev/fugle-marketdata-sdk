@@ -1386,6 +1386,9 @@ fn forward_event(
                 format!("Reconnection failed after {} attempts", attempts),
             ),
         ),
+        ConnectionEvent::Error(info) if info.code == marketdata_core::error_code::RECONNECT_CONFLICT => {
+            callbacks.warn_reconnect_conflict(py, &info)
+        }
         ConnectionEvent::Error(info) => callbacks.invoke_error(py, &info),
         ConnectionEvent::MessagesDropped { dropped, total } => {
             callbacks.invoke_messages_dropped(py, dropped, total)

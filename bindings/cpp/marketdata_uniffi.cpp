@@ -225,7 +225,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_message() != 4936) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error() != 44329) {
+    if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_error() != 30858) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_reconnecting() != 12322) {

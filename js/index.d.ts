@@ -2575,10 +2575,12 @@ export declare class StockWebSocketClient {
    * properties; no `[code]` prefix in the message).
    *
    * Rejects with code `2011` (`Already connected`) while a connection is open,
-   * or while the first `connect()` is still in progress (#44). Call
-   * disconnect() first to reconnect; calling connect() right after
-   * disconnect(), or from a `disconnect` handler once no auto-reconnect will
-   * follow, is fine.
+   * or while the first `connect()` is still in progress (#44). Calling
+   * connect() right after disconnect(), or from a `disconnect` handler once
+   * no auto-reconnect will follow, is fine. Code that manages reconnects on
+   * its own should turn auto-reconnect off (`reconnect: { enabled: false }`):
+   * calling disconnect() then connect() after an automatic reconnect closes
+   * the connection it restored, over and over (#226).
    *
    * During an automatic reconnect — for instance from a `disconnect`
    * handler, as 1.x code often does — it waits for the reconnect instead
