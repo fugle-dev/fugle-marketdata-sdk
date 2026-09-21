@@ -1,0 +1,99 @@
+{
+  "config": {
+    "count": 10000,
+    "rate": 0,
+    "warmup": 1000,
+    "runs": 5,
+    "lang": "go"
+  },
+  "timestamp": "2026-09-21T19:58:42.402Z",
+  "results": {
+    "Go-new": [
+      {
+        "count": 10000,
+        "cpu_system_ms": 44.7,
+        "cpu_user_ms": 138.5,
+        "dropped": 0,
+        "elapsed_ms": 54,
+        "expected": 10000,
+        "latency_max_ms": 2,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 2,
+        "lost": 0,
+        "mem_rss_delta_mb": 5.2,
+        "msgs_per_sec": 185185,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 158730
+      },
+      {
+        "count": 10000,
+        "cpu_system_ms": 42.1,
+        "cpu_user_ms": 142.6,
+        "dropped": 0,
+        "elapsed_ms": 58,
+        "expected": 10000,
+        "latency_max_ms": 1,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.7,
+        "msgs_per_sec": 172413,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 156250
+      },
+      {
+        "count": 10000,
+        "cpu_system_ms": 41.7,
+        "cpu_user_ms": 137.2,
+        "dropped": 0,
+        "elapsed_ms": 57,
+        "expected": 10000,
+        "latency_max_ms": 1,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.5,
+        "msgs_per_sec": 175438,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 151515
+      },
+      {
+        "count": 10000,
+        "cpu_system_ms": 41.8,
+        "cpu_user_ms": 136.5,
+        "dropped": 0,
+        "elapsed_ms": 54,
+        "expected": 10000,
+        "latency_max_ms": 2,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 2,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.5,
+        "msgs_per_sec": 185185,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 156250
+      },
+      {
+        "count": 10000,
+        "cpu_system_ms": 40.7,
+        "cpu_user_ms": 134.2,
+        "dropped": 0,
+        "elapsed_ms": 56,
+        "expected": 10000,
+        "latency_max_ms": 1,
+        "latency_min_ms": 0,
+        "latency_p50_ms": 0,
+        "latency_p99_ms": 1,
+        "lost": 0,
+        "mem_rss_delta_mb": 4.7,
+        "msgs_per_sec": 178571,
+        "sdk": "rust-core-go",
+        "server_msgs_per_sec": 153846
+      }
+    ]
+  }
+}
