@@ -9,6 +9,7 @@
 //! All other errors propagate to the caller on the first attempt.
 
 use crate::errors::MarketDataError;
+use crate::jitter::jitter;
 use std::time::Duration;
 
 /// Configuration for transparent retry of REST requests.
@@ -89,27 +90,6 @@ impl RetryPolicy {
         let base = Duration::from_nanos(capped.min(u128::from(u64::MAX)) as u64);
         base + jitter(self.initial_backoff)
     }
-}
-
-/// Pseudo-random jitter in the range `[0, ceiling)`.
-///
-/// Uses a per-call `RandomState` hash of the current monotonic timestamp —
-/// good enough for backoff smoothing and avoids pulling in `rand` as a
-/// runtime dependency.
-fn jitter(ceiling: Duration) -> Duration {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
-    use std::time::Instant;
-
-    let nanos_ceil = ceiling.as_nanos().min(u128::from(u64::MAX)) as u64;
-    if nanos_ceil == 0 {
-        return Duration::ZERO;
-    }
-    let now = Instant::now().elapsed().as_nanos() as u64;
-    let mut hasher = RandomState::new().build_hasher();
-    hasher.write_u64(now);
-    let pseudo_random = hasher.finish() % nanos_ceil;
-    Duration::from_nanos(pseudo_random)
 }
 
 /// Run `op` under `policy`, retrying on retryable errors.

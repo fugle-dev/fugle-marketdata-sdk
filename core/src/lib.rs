@@ -22,6 +22,10 @@ mod tracing_compat;
 // disabled — the wrapper compiles to a single-Arc allocation.
 mod metrics_compat;
 
+// Internal: std-only backoff jitter shared by REST retry and WebSocket
+// reconnection.
+mod jitter;
+
 // Re-export error types
 pub use errors::{error_code, ErrorInfo, ErrorKind, HttpErrorContext, MarketDataError, WebSocketErrorKind};
 
