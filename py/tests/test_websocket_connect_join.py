@@ -15,17 +15,18 @@ import time
 import pytest
 
 from fugle_marketdata import AuthError, ReconnectConfig, WebSocketClient, WebSocketError
-from tests.ws_loopback import TIMEOUT_S, InProcessLoopbackServer, Recorder, disconnect_quietly
+from tests.ws_loopback import (
+    TIMEOUT_S,
+    InProcessLoopbackServer,
+    Recorder,
+    disconnect_quietly,
+    to_thread,
+)
 
 PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
 SYMBOLS = {"stock": "2330", "futopt": "TXF1!"}
 
 hard_timeout = pytest.mark.timeout(30, method="thread")
-
-
-async def to_thread(func, *args):
-    """``asyncio.to_thread``, which Python 3.8 lacks."""
-    return await asyncio.get_running_loop().run_in_executor(None, func, *args)
 
 
 @pytest.fixture
