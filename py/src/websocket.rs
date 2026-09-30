@@ -835,6 +835,8 @@ fn parse_ws_versions(
     Ok((stock, futopt))
 }
 
+use marketdata_core::websocket::StreamProduct as WsProduct;
+
 /// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
 /// endpoint rules (#252).
 fn build_stream_config(
@@ -846,8 +848,6 @@ fn build_stream_config(
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
     marketdata_core::websocket::stream_config(auth, base_url, product, stock_version, futopt_version)
 }
-
-use marketdata_core::websocket::StreamProduct as WsProduct;
 
 /// Internal WebSocket state (not Send/Sync safe, managed via Mutex)
 ///

@@ -3915,6 +3915,25 @@ impl core::marker::UnsafeUnpin for marketdata_core::websocket::connection_event:
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
 pub mod marketdata_core::websocket::factory
+#[non_exhaustive] pub enum marketdata_core::websocket::factory::StreamProduct
+pub marketdata_core::websocket::factory::StreamProduct::FutOpt
+pub marketdata_core::websocket::factory::StreamProduct::Stock
+impl core::clone::Clone for marketdata_core::websocket::factory::StreamProduct
+pub fn marketdata_core::websocket::factory::StreamProduct::clone(&self) -> marketdata_core::websocket::factory::StreamProduct
+impl core::cmp::Eq for marketdata_core::websocket::factory::StreamProduct
+impl core::cmp::PartialEq for marketdata_core::websocket::factory::StreamProduct
+pub fn marketdata_core::websocket::factory::StreamProduct::eq(&self, &marketdata_core::websocket::factory::StreamProduct) -> bool
+impl core::fmt::Debug for marketdata_core::websocket::factory::StreamProduct
+pub fn marketdata_core::websocket::factory::StreamProduct::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::StructuralPartialEq for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Freeze for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Send for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Sync for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Unpin for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::factory::StreamProduct
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::factory::StreamProduct
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::factory::StreamProduct
 pub struct marketdata_core::websocket::factory::Unset
 impl core::clone::Clone for marketdata_core::websocket::factory::Unset
 pub fn marketdata_core::websocket::factory::Unset::clone(&self) -> marketdata_core::websocket::factory::Unset
@@ -3965,6 +3984,7 @@ impl core::marker::Unpin for marketdata_core::websocket::factory::WithAuth
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::factory::WithAuth
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::factory::WithAuth
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::factory::WithAuth
+pub fn marketdata_core::websocket::factory::stream_config(&marketdata_core::AuthRequest, core::option::Option<&str>, marketdata_core::websocket::factory::StreamProduct, marketdata_core::websocket::version::StockVersion, marketdata_core::websocket::version::FutOptVersion) -> core::result::Result<marketdata_core::websocket::config::ConnectionConfig, marketdata_core::errors::MarketDataError>
 pub mod marketdata_core::websocket::health_check
 pub struct marketdata_core::websocket::health_check::HealthCheckConfig
 pub marketdata_core::websocket::health_check::HealthCheckConfig::enabled: bool
@@ -4447,6 +4467,25 @@ impl core::marker::Unpin for marketdata_core::websocket::stream::StreamItem
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::StreamItem
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::StreamItem
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::StreamItem
+#[non_exhaustive] pub enum marketdata_core::websocket::StreamProduct
+pub marketdata_core::websocket::StreamProduct::FutOpt
+pub marketdata_core::websocket::StreamProduct::Stock
+impl core::clone::Clone for marketdata_core::websocket::factory::StreamProduct
+pub fn marketdata_core::websocket::factory::StreamProduct::clone(&self) -> marketdata_core::websocket::factory::StreamProduct
+impl core::cmp::Eq for marketdata_core::websocket::factory::StreamProduct
+impl core::cmp::PartialEq for marketdata_core::websocket::factory::StreamProduct
+pub fn marketdata_core::websocket::factory::StreamProduct::eq(&self, &marketdata_core::websocket::factory::StreamProduct) -> bool
+impl core::fmt::Debug for marketdata_core::websocket::factory::StreamProduct
+pub fn marketdata_core::websocket::factory::StreamProduct::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::StructuralPartialEq for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Freeze for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Send for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Sync for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::Unpin for marketdata_core::websocket::factory::StreamProduct
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::factory::StreamProduct
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::factory::StreamProduct
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::factory::StreamProduct
 pub struct marketdata_core::websocket::ConnectionConfig
 pub marketdata_core::websocket::ConnectionConfig::auth: marketdata_core::AuthRequest
 pub marketdata_core::websocket::ConnectionConfig::auth_timeout: core::time::Duration
@@ -4760,6 +4799,7 @@ pub const marketdata_core::websocket::DEFAULT_EVENT_BUFFER: usize
 pub const marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER: usize
 pub const marketdata_core::websocket::REPORT_INTERVAL: core::time::Duration
 pub fn marketdata_core::websocket::auth_timeout_from_millis(u64) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream_config(&marketdata_core::AuthRequest, core::option::Option<&str>, marketdata_core::websocket::factory::StreamProduct, marketdata_core::websocket::version::StockVersion, marketdata_core::websocket::version::FutOptVersion) -> core::result::Result<marketdata_core::websocket::config::ConnectionConfig, marketdata_core::errors::MarketDataError>
 pub enum marketdata_core::Auth
 pub marketdata_core::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::Auth::BearerToken(alloc::string::String)

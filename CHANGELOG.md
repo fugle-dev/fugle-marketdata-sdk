@@ -31,7 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Java and C++, whose constructors do not validate the base URL (or, where
   the binding takes one, the version), it fails with the `ConfigError`
   (code 1004) `connect()` would.
-
 - **Rust core: `websocket::stream_config` and `StreamProduct`** (#252).
   `stream_config(auth, base_url, product, stock_version, futopt_version)`
   returns the `ConnectionConfig` for one product's streaming endpoint,
