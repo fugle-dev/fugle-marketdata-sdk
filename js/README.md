@@ -214,6 +214,15 @@ const rtt = await fast.stock.measureLatency();
 - `probeTimeoutMs` (number): Wait for any inbound frame after the ping
   (default: 5000, min: 1000)
 
+The 1.x fields `pingInterval` and `maxMissedPongs` do not exist in 3.0 and are
+ignored; they are not converted to the fields above. The first client
+constructed with either of them emits a process warning naming the fields it
+was given (once per process): `FugleHealthCheckWarning`, code
+`FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. "Once per process" includes worker
+threads, and the warning is emitted on the thread that constructed the client:
+if that was a worker, a `process.on('warning')` listener on the main thread
+does not see it, and no later client warns.
+
 Probing does not detect a half-open connection (the server still sends, our
 writes no longer arrive). See [docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
 for the trade-offs and the server cost of short probe intervals.
