@@ -195,3 +195,44 @@ def test_anext_outliving_its_event_loop_prints_nothing(how):
     assert done.stdout.strip() == "finished"
     assert "Traceback" not in done.stderr, done.stderr
     assert "Event loop is closed" not in done.stderr, done.stderr
+
+
+# --- #267: a wait left behind by a closed event loop ends on its own.
+
+
+@hard_timeout
+def test_waits_left_by_closed_event_loops_end(server):
+    # Each `asyncio.run` leaves an `__anext__` that nobody cancelled. Its
+    # wait on the blocking pool must end once the loop is closed, not stay
+    # until the connection does.
+    ws = product_ws(server.url, "stock")
+    try:
+        ws.connect()
+        messages = ws.messages()
+        assert next(messages)["event"] == "authenticated"
+        pending_waits = type(messages)._pending_waits
+        # The count covers the whole process: let what earlier tests left end.
+        before = pending_waits()
+        settled = time.monotonic()
+        while time.monotonic() - settled < 1.5:
+            time.sleep(0.1)
+            if pending_waits() != before:
+                before, settled = pending_waits(), time.monotonic()
+
+        async def leave_one_pending():
+            left = messages.__anext__()
+            await asyncio.sleep(0.05)
+            assert not left.done()
+            assert pending_waits() > before
+
+        for _ in range(5):
+            asyncio.run(leave_one_pending())
+        deadline = time.monotonic() + 5
+        while pending_waits() > before and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert pending_waits() == before, "waits outlived their event loops"
+        # The connection and the iterator still work.
+        ws.subscribe(SUBSCRIPTION)
+        assert messages.recv_timeout(5000)["event"] == "subscribed"
+    finally:
+        disconnect_quietly(ws)

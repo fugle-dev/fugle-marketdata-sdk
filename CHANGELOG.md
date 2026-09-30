@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python: an `__anext__` left pending by a closed event loop no longer
+  keeps a thread waiting** (#267). Its wait on the blocking pool lasted until
+  a message arrived or the connection ended, so repeated `asyncio.run` calls
+  that each left one behind piled up threads. The wait now ends within about
+  a second of the loop closing.
 - **Python: a cancelled `MessageIterator.__anext__` no longer loses a
   message** (#260). Cancelling a pending `async for` step — `asyncio.wait_for`
   timing out, a cancelled task — left its wait running for up to 100 ms, and

@@ -7,7 +7,7 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyString, PyType};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -17,6 +17,29 @@ use crate::websocket::message_to_dict;
 /// How often a waiting iterator wakes up: to notice the connection closing
 /// and, when iterating synchronously, to let Python handle signals (Ctrl+C).
 const WAKE_INTERVAL: Duration = Duration::from_millis(100);
+
+/// An `__anext__` wait checks whether its event loop was closed once per
+/// this many idle wake-ups: about once a second.
+const LOOP_CHECK_EVERY: u32 = 10;
+
+/// `__anext__` waits currently on the blocking pool, over all iterators.
+static PENDING_WAITS: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts one wait in `PENDING_WAITS` for as long as it lives.
+struct PendingWait;
+
+impl PendingWait {
+    fn new() -> Self {
+        PENDING_WAITS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for PendingWait {
+    fn drop(&mut self) {
+        PENDING_WAITS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 /// Python iterator for WebSocket messages
 ///
@@ -88,6 +111,10 @@ fn yielded(py: Python<'_>, msg: &marketdata_core::WebSocketMessage, raw: bool) -
 /// will not take (awaitable done, loop closed) hands the wake-up on with
 /// `pass_wakeup`, or the reader that should get the message would only see
 /// it at its own next wake-up.
+///
+/// An awaitable nobody cancelled stays pending once its event loop is
+/// closed, so the waiting thread also asks the loop, about once a second
+/// while no message arrives, and stops when it is closed (#267).
 struct AnextWait {
     handoff: Arc<Handoff>,
     raw: bool,
@@ -102,13 +129,25 @@ impl AnextWait {
     /// Wait off the event loop until there is something to deliver, then
     /// hand over to `Deliver` on the loop.
     fn spawn(self: Arc<Self>) {
+        let counted = PendingWait::new();
         pyo3_async_runtimes::tokio::get_runtime().spawn_blocking(move || {
+            let _counted = counted;
+            let mut idle_wakeups = 0u32;
             while !self.done.load(Ordering::SeqCst) {
                 if self.handoff.wait_readable(WAKE_INTERVAL) == Ok(false) {
+                    idle_wakeups += 1;
+                    // Woken by the timeout, not for a message: nothing to pass on.
+                    if idle_wakeups.is_multiple_of(LOOP_CHECK_EVERY)
+                        && !self.done.load(Ordering::SeqCst)
+                        && self.loop_closed()
+                    {
+                        return;
+                    }
                     continue;
                 }
                 let handoff = Arc::clone(&self.handoff);
-                let handed_over = Python::attach(|py| {
+                // `None`: the interpreter is shutting down, nobody to deliver to.
+                let handed_over = Python::try_attach(|py| {
                     let done = self.future.bind(py).call_method0(pyo3::intern!(py, "done"));
                     if !matches!(done.and_then(|done| done.is_truthy()), Ok(false)) {
                         return false;
@@ -121,12 +160,21 @@ impl AnextWait {
                         .call_method1(pyo3::intern!(py, "call_soon_threadsafe"), (Deliver(self),))
                         .is_ok()
                 });
-                if !handed_over {
+                if handed_over != Some(true) {
                     handoff.pass_wakeup();
                 }
                 return;
             }
         });
+    }
+
+    /// Also true once the interpreter is shutting down.
+    fn loop_closed(&self) -> bool {
+        Python::try_attach(|py| {
+            let closed = self.event_loop.bind(py).call_method0(pyo3::intern!(py, "is_closed"));
+            matches!(closed.and_then(|closed| closed.is_truthy()), Ok(true))
+        })
+        .unwrap_or(true)
     }
 }
 
@@ -291,7 +339,8 @@ impl MessageIterator {
     ///
     /// Note: The wait runs on tokio's blocking pool, off the event loop. A
     /// cancelled awaitable takes no message: the next read gets it. One
-    /// still pending when its event loop closes is dropped silently.
+    /// still pending when its event loop closes is dropped silently, and
+    /// its wait ends within about a second.
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let event_loop = pyo3_async_runtimes::tokio::get_current_locals(py)?.event_loop(py);
         let future = event_loop.call_method0(pyo3::intern!(py, "create_future"))?;
@@ -309,6 +358,13 @@ impl MessageIterator {
         })
         .spawn();
         Ok(future)
+    }
+
+    /// `__anext__` waits currently on the blocking pool, over all iterators.
+    /// For tests.
+    #[staticmethod]
+    fn _pending_waits() -> usize {
+        PENDING_WAITS.load(Ordering::SeqCst)
     }
 }
 
