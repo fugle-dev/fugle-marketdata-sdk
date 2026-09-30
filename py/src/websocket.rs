@@ -1981,8 +1981,8 @@ impl ProductClient {
 
     fn is_closed(&self, py: Python<'_>) -> bool {
         // `disconnect()` drops `state`, so ask the flag first: without it a
-        // closed client reports `False` here, contradicting the docstring
-        // above (#146).
+        // closed client reports `False` here, contradicting the `is_closed()`
+        // docstring on the pyclasses (#146).
         if self.closed.load(Ordering::SeqCst) {
             return true;
         }
