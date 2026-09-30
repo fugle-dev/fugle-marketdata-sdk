@@ -511,7 +511,10 @@ Iteration never yields `None` and does not end while no data arrives; it
 raises `StopIteration` / `StopAsyncIteration` once the connection is gone. A
 blocked `for` loop or `recv_timeout` still reacts to Ctrl+C, and cancelling
 an `async for` step (`asyncio.wait_for`, a cancelled task) never loses a
-message. `messages(timeout_ms=...)` is deprecated and ignored. For periodic
+message. While messages are queued, `async for` reads them without waiting on
+the event loop and lets other tasks run once every 32 messages; an
+`__anext__()` awaitable that is already done holds its message, so `cancel()`
+on it returns False. `messages(timeout_ms=...)` is deprecated and ignored. For periodic
 work while no data arrives, use `message` callbacks or `async for` alongside
 other tasks.
 

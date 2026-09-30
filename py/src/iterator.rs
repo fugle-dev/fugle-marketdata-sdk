@@ -7,7 +7,7 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyString, PyType};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,23 @@ const WAKE_INTERVAL: Duration = Duration::from_millis(100);
 /// An `__anext__` wait checks whether its event loop was closed once per
 /// this many idle wake-ups: about once a second.
 const LOOP_CHECK_EVERY: u32 = 10;
+
+/// While messages are queued, `__anext__` resolves its awaitable before
+/// returning it, which never gives the event loop a turn. One delivery in
+/// every this many goes through the loop instead, so other tasks run (#267).
+const DEFAULT_YIELD_EVERY: u32 = 32;
+
+/// Overrides `DEFAULT_YIELD_EVERY` for the iterators created while it is
+/// set: `1` sends every delivery through the loop, `0` none. For measuring
+/// (#267), not a documented setting.
+const YIELD_EVERY_ENV: &str = "FUGLE_MARKETDATA_AITER_YIELD_EVERY";
+
+fn yield_every() -> u32 {
+    std::env::var(YIELD_EVERY_ENV)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(DEFAULT_YIELD_EVERY)
+}
 
 /// `__anext__` waits currently on the blocking pool, over all iterators.
 static PENDING_WAITS: AtomicUsize = AtomicUsize::new(0);
@@ -81,12 +98,22 @@ pub struct MessageIterator {
     /// Yield the frame's text instead of a dict. The queue holds unparsed
     /// frames, so each iterator chooses for itself.
     raw: bool,
+    /// One `__anext__` delivery in this many goes through the event loop
+    /// while messages are queued; `0`: none does.
+    yield_every: u32,
+    /// Deliveries `__anext__` made in a row without the event loop.
+    direct_streak: AtomicU32,
 }
 
 impl MessageIterator {
     /// Create a new message iterator
     pub(crate) fn new(handoff: Arc<Handoff>, raw: bool) -> Self {
-        Self { handoff, raw }
+        Self {
+            handoff,
+            raw,
+            yield_every: yield_every(),
+            direct_streak: AtomicU32::new(0),
+        }
     }
 }
 
@@ -100,7 +127,8 @@ fn yielded(py: Python<'_>, msg: &marketdata_core::WebSocketMessage, raw: bool) -
     }
 }
 
-/// One `__anext__` call: the awaitable handed to Python and what resolves it.
+/// One `__anext__` call that found nothing it could take at once: the
+/// awaitable handed to Python and what resolves it.
 ///
 /// A blocking-pool thread only waits for the queue to become readable; the
 /// message is taken by `Deliver`, on the event loop's thread, after it has
@@ -337,26 +365,55 @@ impl MessageIterator {
     /// Raises:
     ///     StopAsyncIteration: When the connection is gone and every message was read
     ///
-    /// Note: The wait runs on tokio's blocking pool, off the event loop. A
-    /// cancelled awaitable takes no message: the next read gets it. One
-    /// still pending when its event loop closes is dropped silently, and
-    /// its wait ends within about a second.
+    /// Note: While messages are queued the awaitable comes back already
+    /// resolved, with no turn of the event loop; one delivery in every 32
+    /// goes through the loop so other tasks run. An already resolved
+    /// awaitable holds its message and cannot be cancelled (`cancel()`
+    /// returns False). With nothing queued the wait runs on tokio's blocking
+    /// pool, off the event loop, and a cancelled awaitable takes no message:
+    /// the next read gets it. One still pending when its event loop closes
+    /// is dropped silently, and its wait ends within about a second.
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let event_loop = pyo3_async_runtimes::tokio::get_current_locals(py)?.event_loop(py);
         let future = event_loop.call_method0(pyo3::intern!(py, "create_future"))?;
+
+        // Only counted while it decides anything, so it stays below `yield_every`.
+        let streak = self.direct_streak.load(Ordering::Relaxed);
+        let direct = self.yield_every == 0 || streak + 1 < self.yield_every;
+        if direct {
+            if let Some(msg) = self.handoff.try_receive() {
+                if self.yield_every != 0 {
+                    self.direct_streak.store(streak + 1, Ordering::Relaxed);
+                }
+                match yielded(py, &msg, self.raw) {
+                    Ok(value) => future.call_method1(pyo3::intern!(py, "set_result"), (value,))?,
+                    Err(err) => future.call_method1(pyo3::intern!(py, "set_exception"), (err,))?,
+                };
+                return Ok(future);
+            }
+        }
+        // Either way the event loop gets a turn before the next delivery.
+        self.direct_streak.store(0, Ordering::Relaxed);
+
         let done = Arc::new(AtomicBool::new(false));
         future.call_method1(
             pyo3::intern!(py, "add_done_callback"),
             (MarkDone(Arc::clone(&done)),),
         )?;
-        Arc::new(AnextWait {
+        let wait = Arc::new(AnextWait {
             handoff: Arc::clone(&self.handoff),
             raw: self.raw,
-            event_loop: event_loop.unbind(),
+            event_loop: event_loop.clone().unbind(),
             future: future.clone().unbind(),
             done,
-        })
-        .spawn();
+        });
+        if !direct && self.handoff.wait_readable(Duration::ZERO) != Ok(false) {
+            // Something to deliver and this delivery's turn to yield: let
+            // the loop run `Deliver`, with no thread in between.
+            event_loop.call_method1(pyo3::intern!(py, "call_soon"), (Deliver(wait),))?;
+        } else {
+            wait.spawn();
+        }
         Ok(future)
     }
 

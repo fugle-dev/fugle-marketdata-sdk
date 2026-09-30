@@ -197,7 +197,122 @@ def test_anext_outliving_its_event_loop_prints_nothing(how):
     assert "Event loop is closed" not in done.stderr, done.stderr
 
 
-# --- #267: a wait left behind by a closed event loop ends on its own.
+# --- #267: `__anext__` resolves its awaitable at once while messages are
+# queued, lets the event loop run once in every N such deliveries, and a wait
+# left behind by a closed event loop ends on its own.
+
+YIELD_EVERY_ENV = "FUGLE_MARKETDATA_AITER_YIELD_EVERY"
+BACKLOG_READS = 640
+
+
+@pytest.fixture
+def flood_server():
+    with LoopbackServer(flood=True) as srv:
+        yield srv
+
+
+async def _backlogged(ws):
+    """Subscribe to the flooding server and return once the queue is full."""
+    await ws.connect_async()
+    await ws.subscribe_async(SUBSCRIPTION)
+    deadline = time.monotonic() + 10
+    while ws.messages_dropped_total() == 0:
+        assert time.monotonic() < deadline, "the flood never filled the queue"
+        await asyncio.sleep(0.05)
+
+
+@hard_timeout
+@pytest.mark.parametrize(
+    "yield_every, fewest, most",
+    [
+        # One delivery in 32 goes through the loop, which takes two turns of
+        # it: one runs the delivery, the next resumes the reader. The other
+        # task runs in both, give or take the ones at either end.
+        ("32", 2 * (BACKLOG_READS // 32) - 4, 2 * (BACKLOG_READS // 32) + 4),
+        # Every delivery goes through the loop.
+        ("1", 2 * BACKLOG_READS - 4, 2 * BACKLOG_READS + 4),
+        # None does: the other task never runs while the backlog lasts.
+        ("0", 0, 0),
+    ],
+)
+async def test_backlogged_async_for_lets_other_tasks_run(flood_server, monkeypatch, yield_every, fewest, most):
+    monkeypatch.setenv(YIELD_EVERY_ENV, yield_every)
+    ws = product_ws(flood_server.url, "stock")
+    turns = 0
+
+    async def other_task():
+        nonlocal turns
+        while True:
+            turns += 1
+            await asyncio.sleep(0)
+
+    try:
+        await _backlogged(ws)
+        other = asyncio.ensure_future(other_task())
+        read = 0
+        async for _ in ws.messages():
+            read += 1
+            if read == BACKLOG_READS:
+                break
+        seen = turns
+        other.cancel()
+    finally:
+        disconnect_quietly(ws)
+    assert fewest <= seen <= most, f"the other task ran {seen} times during {BACKLOG_READS} reads"
+
+
+@hard_timeout
+async def test_backlogged_anext_is_already_resolved_and_cannot_be_cancelled(flood_server, monkeypatch):
+    # The behaviour with the fast path on (N > 1), as it is now: the message
+    # is taken when `__anext__` is called, so `cancel()` fails and the message
+    # stays in the awaitable. Code that ignores what `cancel()` returned and
+    # drops the awaitable drops that message.
+    monkeypatch.setenv(YIELD_EVERY_ENV, "32")
+    ws = product_ws(flood_server.url, "stock")
+    try:
+        await _backlogged(ws)
+        messages = ws.messages()
+        first = messages.__anext__()
+        assert first.done()
+        assert first.cancel() is False
+        assert first.result()["event"] == "authenticated"
+        # The next read carries on after the one the awaitable holds.
+        assert (await messages.__anext__())["event"] == "subscribed"
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
+async def test_backlogged_anext_through_the_loop_can_be_cancelled(flood_server, monkeypatch):
+    # With every delivery going through the loop (N = 1) nothing is taken
+    # until the loop delivers, so cancelling works as it does with no backlog.
+    monkeypatch.setenv(YIELD_EVERY_ENV, "1")
+    ws = product_ws(flood_server.url, "stock")
+    try:
+        await _backlogged(ws)
+        messages = ws.messages()
+        first = messages.__anext__()
+        assert not first.done()
+        assert first.cancel() is True
+        await asyncio.sleep(0)  # the delivery runs and finds it cancelled
+        assert (await messages.__anext__())["event"] == "authenticated"
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
+async def test_backlogged_wait_for_loses_no_message(flood_server, monkeypatch):
+    # `wait_for` wraps each step; none of the queued messages may go missing
+    # or change places: authenticated, subscribed, then data only.
+    monkeypatch.delenv(YIELD_EVERY_ENV, raising=False)  # the default
+    ws = product_ws(flood_server.url, "stock")
+    try:
+        await _backlogged(ws)
+        messages = ws.messages()
+        events = [(await asyncio.wait_for(messages.__anext__(), 5))["event"] for _ in range(200)]
+    finally:
+        disconnect_quietly(ws)
+    assert events == ["authenticated", "subscribed"] + ["data"] * 198
 
 
 @hard_timeout

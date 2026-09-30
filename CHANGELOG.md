@@ -52,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. `HealthCheckOptions` in TypeScript
   is unchanged. Node only; Python already raises `TypeError`.
 
+### Changed
+
+- **Python: `async for` over `messages()` reads a backlog without a thread
+  hop per message** (#267). While messages are queued,
+  `MessageIterator.__anext__` takes the next one on the event loop's thread
+  and returns an awaitable that is already resolved; one delivery in every
+  32 goes through the event loop so other tasks on it run. Such an awaitable
+  holds its message: `cancel()` on it returns False and the message is its
+  `result()`. With nothing queued the wait is unchanged, and cancelling it
+  still takes no message.
+
 ### Fixed
 
 - **Python: an `__anext__` left pending by a closed event loop no longer

@@ -2543,9 +2543,17 @@ class MessageIterator(Generic[_Yielded]):
         `asyncio.ensure_future`; `asyncio.create_task` rejects it. The
         awaited value is never None.
 
-        Cancelling the awaitable (`asyncio.wait_for` timing out, a cancelled
-        task) takes no message: the next read gets it. An awaitable still
-        pending when its event loop closes is dropped silently.
+        While messages are queued the awaitable is returned already
+        resolved, so `async for` reads a backlog without waiting on the event
+        loop; one delivery in every 32 goes through the loop so other tasks
+        get to run. An already resolved awaitable holds its message:
+        `cancel()` on it returns False and the message is its `result()`.
+        Awaitables of one iterator held at the same time do not get the
+        messages in the order they were created.
+
+        Cancelling a pending awaitable (`asyncio.wait_for` timing out, a
+        cancelled task) takes no message: the next read gets it. An awaitable
+        still pending when its event loop closes is dropped silently.
 
         Returns:
             Message dict (str from a `messages(raw=True)` iterator)
