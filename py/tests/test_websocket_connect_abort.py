@@ -29,13 +29,13 @@ PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt
 
 hard_timeout = pytest.mark.timeout(20, method="thread")
 
+# Core's auth timeout is 10 s; an abort must come well before it.
+ABORT_WITHIN_S = 3
+
 
 async def to_thread(func, *args):
     """``asyncio.to_thread``, which Python 3.8 lacks."""
     return await asyncio.get_running_loop().run_in_executor(None, func, *args)
-
-# Core's auth timeout is 10 s; an abort must come well before it.
-ABORT_WITHIN_S = 3
 
 
 @pytest.fixture

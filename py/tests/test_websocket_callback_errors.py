@@ -31,9 +31,10 @@ def server():
 def watch_unraisable(monkeypatch):
     """Call it to collect what reaches ``sys.unraisablehook``, as ``(exc_value, object)``.
 
-    The hook has to go in from the test body: pytest before 8.4 (the newest
-    that Python 3.8 can install) swaps in its own hook for each of setup, call
-    and teardown, which drops one installed while the fixture is set up.
+    The hook has to go in from the test body: pytest 8.3.x, the newest that
+    Python 3.8 can install, swaps in its own hook for each of setup, call and
+    teardown, which drops one installed while the fixture is set up (seen with
+    8.3.5; 9.1.1 leaves the fixture's hook in place).
     """
 
     def watch():
