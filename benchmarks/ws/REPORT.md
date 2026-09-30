@@ -658,7 +658,7 @@ $BENCH_PY_NEW py/bench-new.py --url ws://localhost:8765 --timeout 30 --mode raw
 | `java/` | New SDK (Java, UniFFI+JNA) benchmark client |
 | `cpp/` | New SDK (C++, UniFFI) benchmark client |
 | `py/run-modes.py` | Runs `py/bench-new.py` in each `--mode` plus the null client, writes `results/<date>/` and regenerates the #246 sections of this report |
-| `py/run-compare.py` | Runs one `py/bench-new.py --mode` (default `aiter`) with two interpreters, `--base` and `--head`, plus the null client, and prints the medians (with `--mode aiter-lag`, the `lag_*` figures too); writes nothing. The clients take turns going first. `--head-env NAME=V1,V2` adds a head row per value of an environment variable; `--stop-above-gate` stops before a run that would start at or above the load gate |
+| `py/run-compare.py` | Runs one `py/bench-new.py --mode` (default `aiter`) with two interpreters, `--base` and `--head`, plus the null client, and prints the medians (with `--mode aiter-lag`, the `lag_*` figures too); writes nothing. The clients take turns going first. `--stop-above-gate` stops before a run that would start at or above the load gate |
 | `ws-bench-run.js` | Runner: starts server, runs clients, compares results |
 | `package.json` | Dependencies: `ws`, `@fugle/marketdata@1.6.0` |
 | `results/` | Raw output of the runs behind each dated report |

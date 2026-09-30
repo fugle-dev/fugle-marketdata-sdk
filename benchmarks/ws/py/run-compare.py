@@ -13,9 +13,7 @@ checkout built with `maturin develop --release`):
         --base <main checkout>/py/.venv/bin/python3 --head py/.venv/bin/python3
 
 `--mode aiter-lag` adds the delay a second task on the event loop sees
-(`lag_*`, see py/bench-new.py) to the rows. `--head-env NAME=V1,V2` runs the
-head build once per value with that environment variable set, as separate
-rows.
+(`lag_*`, see py/bench-new.py) to the rows.
 
 The clients take turns going first: each round starts one client later than
 the one before, so none always runs last. A row shows how many runs it is
@@ -57,28 +55,16 @@ def main():
     parser.add_argument('--base', required=True, help='interpreter with the build to compare against')
     parser.add_argument('--head', required=True, help='interpreter with the build under test')
     parser.add_argument('--runs', type=int, default=5)
-    parser.add_argument('--head-env', metavar='NAME=V1,V2',
-                        help='run the head build once per value of this environment variable')
     parser.add_argument('--stop-above-gate', action='store_true',
                         help='stop before a run that would start above the load gate')
     args = parser.parse_args()
 
     url = f'ws://localhost:{run_modes.PORT}'
     bench = os.path.join(run_modes.WS_DIR, 'py', 'bench-new.py')
-    head = [os.path.abspath(args.head), bench, '--url', url, '--timeout', '60', '--mode', args.mode]
-    if args.head_env:
-        env_name, _, values = args.head_env.partition('=')
-        if not env_name or not all(values.split(',')):
-            parser.error('--head-env takes NAME=V1[,V2...]')
-        if len(set(values.split(','))) != len(values.split(',')):
-            parser.error('--head-env values must differ: each one is a row')
-        heads = [(f'head {value}', ['env', f'{env_name}={value}'] + head) for value in values.split(',')]
-    else:
-        heads = [('head', head)]
     clients = [
         ('null', ['node', os.path.join(run_modes.WS_DIR, 'js', 'bench-null.js'), '--url', url]),
         ('base', [os.path.abspath(args.base), bench, '--url', url, '--timeout', '60', '--mode', args.mode]),
-        *heads,
+        ('head', [os.path.abspath(args.head), bench, '--url', url, '--timeout', '60', '--mode', args.mode]),
     ]
     width = max(len(label) for label, _ in clients)
     for name, count in run_modes.SIZES:

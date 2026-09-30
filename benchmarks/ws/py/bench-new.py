@@ -30,7 +30,9 @@ Usage:
                `lag_wakeups` and `lag_p50_ms` / `lag_p99_ms` / `lag_max_ms`
                to the result. The lag is about the number of messages read
                between two turns of the loop times what the loop body takes
-               per message, so it grows with a slower body than this one
+               per message, so it grows with a slower body than this one.
+               Its `msgs_per_sec` includes what the second task costs: not
+               to be compared with the figures of `aiter`
 """
 
 import argparse
