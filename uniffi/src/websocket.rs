@@ -877,18 +877,19 @@ impl WebSocketClient {
     /// connection of its own.
     ///
     /// Decided by core's `admit()` before anything of the stored connection
-    /// is replaced (#119, #230): none stored, or a closed one, opens a new connection;
-    /// one the listener was last handed as up is refused with 2011; any other
-    /// is reconnecting, and this waits on core's `wait_connected()` without
-    /// taking the connect gate (#268), so any number of calls wait together, as on
-    /// core's client. Not core's `is_active()`: between reconnect attempts
-    /// the state is `Disconnected`, and a connect let through there would
-    /// leave the old reconnect loop running beside a new connection.
+    /// is replaced (#119, #230): none stored, or a closed one, opens a new
+    /// connection; one the listener was last handed as up is refused with
+    /// 2011; any other is reconnecting, and this waits on core's
+    /// `wait_connected()` without taking the connect gate (#268), so any
+    /// number of calls wait together, as on core's client. Not core's
+    /// `is_active()`: between reconnect attempts the state is `Disconnected`,
+    /// and a connect let through there would leave the old reconnect loop
+    /// running beside a new connection.
     ///
     /// A wait that ends with nothing left to wait for — the client closed
     /// without the reconnect giving up, or core has no reconnect under way
-    /// (`ConnectionError`) — claims the gate and opens a new
-    /// connection in place of that one.
+    /// (`ConnectionError`) — claims the gate and opens a new connection in
+    /// place of that one.
     async fn connect_with_path(&self) -> (ConnectPath, Result<(), MarketDataError>) {
         use marketdata_core::MarketDataError as CoreError;
         // Read before the first await, as in `disconnect_impl`.
@@ -3082,6 +3083,30 @@ mod tests {
         }
         assert!(client.is_connected());
         assert_eq!(listener.connected_count.load(Ordering::SeqCst), 2);
+        client.disconnect_sync();
+    }
+
+    /// A `connect_sync()` refused with 2011 keeps it as well (#119): the
+    /// connection it was refused for goes on working.
+    #[cfg(feature = "cpp")]
+    #[test]
+    fn connect_sync_that_is_refused_keeps_the_connection_running() {
+        let server_rt = tokio::runtime::Runtime::new().unwrap();
+        let server = server_rt.block_on(MockWsServer::start_with_capacity(2));
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        client.connect_sync().expect("connect_sync");
+        assert_already_connected(client.connect_sync());
+
+        client.ping_sync(Some("after-refusal".to_string())).expect("ping_sync");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !server.pings_received().iter().any(|p| p["state"] == "after-refusal") {
+            assert!(std::time::Instant::now() < deadline, "the ping never reached the server");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(client.is_connected());
+        assert_eq!(listener.connected_count.load(Ordering::SeqCst), 1);
         client.disconnect_sync();
     }
 
