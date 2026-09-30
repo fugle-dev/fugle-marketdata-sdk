@@ -13,6 +13,8 @@ checkout built with `maturin develop --release`):
         --base <main checkout>/py/.venv/bin/python3 --head py/.venv/bin/python3
 
 Run it while the load average is below 4 (REPORT.md, "Measurement Validity").
+The 1- and 5-minute load are read before every run; each summary gives the
+highest seen and says whether it passed the gate.
 """
 
 import argparse
@@ -26,6 +28,11 @@ run_modes = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(run_modes)
 
 KEYS = ('msgs_per_sec', 'latency_p50_ms', 'latency_p99_ms', 'cpu_user_ms', 'lost')
+
+
+def rate(result):
+    found = result.get('msgs_per_sec')
+    return '       -' if found is None else f'{found:>8}'
 
 
 def main():
@@ -45,12 +52,14 @@ def main():
     )
     for name, count in run_modes.SIZES:
         rows = {label: [] for label, _ in clients}
+        loads = []
         for run in range(args.runs):
             for label, cmd in clients:
                 load = os.getloadavg()
+                loads += load[:2]
                 result = run_modes.run_once(cmd, count)
                 rows[label].append(result)
-                print(f"{name} run {run + 1}/{args.runs} {label:4} {result.get('msgs_per_sec'):>8} msg/s "
+                print(f"{name} run {run + 1}/{args.runs} {label:4} {rate(result)} msg/s "
                       f"load {load[0]:.2f}/{load[1]:.2f}", flush=True)
         print(f'\n{name.upper()} burst, `{args.mode}`, median of {args.runs}:')
         for label, _ in clients:
@@ -59,10 +68,10 @@ def main():
                 found = [row[key] for row in rows[label] if row.get(key) is not None]
                 cells.append(f'{key}={statistics.median(found):,.0f}' if found else f'{key}=-')
             print(f'  {label:4} ' + '  '.join(cells))
+        loaded = max(loads) >= run_modes.LOAD_GATE
+        print(f'  highest load average before a run: {max(loads):.2f}, gate {run_modes.LOAD_GATE}: '
+              + ('ABOVE THE GATE, do not trust these figures' if loaded else 'within the gate'))
         print()
-    load = os.getloadavg()
-    if max(load[0], load[1]) >= run_modes.LOAD_GATE:
-        print(f'load average {load[0]:.2f}/{load[1]:.2f} is above {run_modes.LOAD_GATE}: do not trust these figures')
 
 
 if __name__ == '__main__':

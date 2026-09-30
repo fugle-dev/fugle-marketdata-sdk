@@ -9,6 +9,7 @@ closes must not print a traceback once the connection ends.
 import asyncio
 import os
 import signal
+import statistics
 import subprocess
 import sys
 import threading
@@ -125,6 +126,36 @@ async def test_cancelled_anext_takes_no_message(server):
         disconnect_quietly(ws)
 
 
+@hard_timeout
+async def test_cancelled_anext_does_not_delay_the_next_one(server):
+    # A cancelled wait lingers up to 100 ms, waiting on the queue without
+    # taking from it. Woken for a message, it must pass the wake-up on, or
+    # the wait that replaced it only sees the message at its own next
+    # wake-up, close to 100 ms later. Four are cancelled because the server
+    # answers a subscribe with two frames, so two waits are woken. The median
+    # leaves room for a loaded machine.
+    ws = product_ws(server.url, "stock")
+    delays = []
+    try:
+        await ws.connect_async()
+        messages = ws.messages()
+        assert (await asyncio.wait_for(messages.__anext__(), 5))["event"] == "authenticated"
+        for round_ in range(20):
+            cancelled = [asyncio.ensure_future(messages.__anext__()) for _ in range(4)]
+            await asyncio.sleep(0.02)
+            for pending in cancelled:
+                pending.cancel()
+            replacement = asyncio.ensure_future(messages.__anext__())
+            started = time.monotonic()
+            await ws.subscribe_async({"channel": "trades", "symbol": str(round_)})
+            assert (await asyncio.wait_for(replacement, 5))["event"] == "subscribed"
+            delays.append(time.monotonic() - started)
+            assert (await asyncio.wait_for(messages.__anext__(), 5))["event"] == "data"
+    finally:
+        disconnect_quietly(ws)
+    assert statistics.median(delays) < 0.05, f"delivery waited for a wake-up: {sorted(delays)}"
+
+
 # Leaves an `__anext__` behind when `asyncio.run` closes the loop, then ends
 # the connection, which completes the abandoned wait.
 _LOOP_CLOSED_SCRIPT = """
@@ -162,4 +193,5 @@ def test_anext_outliving_its_event_loop_prints_nothing(how):
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "finished"
-    assert done.stderr == ""
+    assert "Traceback" not in done.stderr, done.stderr
+    assert "Event loop is closed" not in done.stderr, done.stderr

@@ -16,7 +16,14 @@ Usage:
     raw        `raw_message` callback that does not parse: it counts the
                data frames by prefix and reports no latency
     aiter      no callback: `async for` over `messages()`, doing what `dict`
-               does per message. Measures the `__anext__` path (#260)
+               does per message. Measures the `__anext__` path (#260).
+               For comparing two builds in this mode (py/run-compare.py),
+               which the following does not affect. Not to be compared
+               directly with `dict` or the other modes: connect() and
+               subscribe() run before the event loop starts, so part of the
+               burst is already queued when iteration begins, and the
+               elapsed time is taken after asyncio.run() returns, so it
+               includes closing the loop
 """
 
 import argparse

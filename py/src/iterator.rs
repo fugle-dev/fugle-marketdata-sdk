@@ -83,6 +83,11 @@ fn yielded(py: Python<'_>, msg: &marketdata_core::WebSocketMessage, raw: bool) -
 /// message is taken by `Deliver`, on the event loop's thread, after it has
 /// seen that the awaitable is still pending. Cancelling happens on that
 /// thread too, so a cancelled wait never takes a message (#260).
+///
+/// The queue wakes one reader per message. A wait woken for a message it
+/// will not take (awaitable done, loop closed) hands the wake-up on with
+/// `pass_wakeup`, or the reader that should get the message would only see
+/// it at its own next wake-up.
 struct AnextWait {
     handoff: Arc<Handoff>,
     raw: bool,
@@ -102,14 +107,23 @@ impl AnextWait {
                 if self.handoff.wait_readable(WAKE_INTERVAL) == Ok(false) {
                     continue;
                 }
-                Python::attach(|py| {
+                let handoff = Arc::clone(&self.handoff);
+                let handed_over = Python::attach(|py| {
+                    let done = self.future.bind(py).call_method0(pyo3::intern!(py, "done"));
+                    if !matches!(done.and_then(|done| done.is_truthy()), Ok(false)) {
+                        return false;
+                    }
                     let event_loop = self.event_loop.clone_ref(py);
                     // Fails once the loop is closed. Nothing was taken from
                     // the queue and nobody awaits the result: stop quietly.
-                    let _ = event_loop
+                    event_loop
                         .bind(py)
-                        .call_method1(pyo3::intern!(py, "call_soon_threadsafe"), (Deliver(self),));
+                        .call_method1(pyo3::intern!(py, "call_soon_threadsafe"), (Deliver(self),))
+                        .is_ok()
                 });
+                if !handed_over {
+                    handoff.pass_wakeup();
+                }
                 return;
             }
         });
@@ -117,7 +131,7 @@ impl AnextWait {
 }
 
 /// Done callback of an `__anext__` awaitable.
-#[pyclass]
+#[pyclass(frozen)]
 struct MarkDone(Arc<AtomicBool>);
 
 #[pymethods]
@@ -129,7 +143,7 @@ impl MarkDone {
 
 /// Runs on the event loop: resolves a still-pending `__anext__` awaitable
 /// with the next message, or ends the iteration once the queue is closed.
-#[pyclass]
+#[pyclass(frozen)]
 struct Deliver(Arc<AnextWait>);
 
 #[pymethods]
@@ -138,11 +152,13 @@ impl Deliver {
         let wait = &self.0;
         let future = wait.future.bind(py);
         if future.call_method0(pyo3::intern!(py, "done"))?.is_truthy()? {
+            // Cancelled after the wait was woken for this message.
+            wait.handoff.pass_wakeup();
             return Ok(());
         }
         let result = match wait.handoff.try_receive() {
             Some(msg) => yielded(py, &msg, wait.raw),
-            None if wait.handoff.wait_readable(Duration::ZERO).is_err() => Err(
+            None if wait.handoff.is_finished() => Err(
                 pyo3::exceptions::PyStopAsyncIteration::new_err("Message channel closed"),
             ),
             // Another reader took it first: wait for the next one.
