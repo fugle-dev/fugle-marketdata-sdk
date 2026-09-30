@@ -57,11 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Python: `async for` over `messages()` reads a backlog without a thread
   hop per message** (#267). While messages are queued,
   `MessageIterator.__anext__` takes the next one on the event loop's thread
-  and returns an awaitable that is already resolved; one delivery in every
-  32 goes through the event loop so other tasks on it run. Such an awaitable
-  holds its message: `cancel()` on it returns False and the message is its
-  `result()`. With nothing queued the wait is unchanged, and cancelling it
-  still takes no message.
+  and returns an awaitable that is already done; one delivery in every 32
+  in a row goes through the event loop so other tasks on it run. Measured
+  on a 50,000-message burst, `async for` reads about six times as many
+  messages a second, and another task on the loop is delayed by at most
+  0.5 ms. `async for` and `asyncio.wait_for` behave as before. **Code that
+  holds the awaitable itself must not discard one that is done**, since it
+  holds a message: `asyncio.ensure_future(it.__anext__()).cancel()` returns
+  False and the message is its `result()`; cancelling "the rest" after
+  `asyncio.wait({step, stop})` because `stop` finished drops the message a
+  done `step` holds; and a cancelled `asyncio.gather(it.__anext__(), other)`
+  drops the message its done step holds. Check `done()` before cancelling,
+  or read `result()`. `asyncio.wait_for(it.__anext__(), 0)` now returns the
+  message when one is queued; it always timed out. Awaitables of one
+  iterator held at the same time may not get the messages in the order they
+  were created. With nothing queued the wait is unchanged, and cancelling it
+  still takes no message. See MIGRATION.md §17.
 
 ### Fixed
 

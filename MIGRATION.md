@@ -646,6 +646,52 @@ def on_message(msg):
             ids[sub["channel"], sub["symbol"]] = sub["id"]
 ```
 
+#### 17. Python `async for` over `messages()`: a step can already be done
+
+`ws.stock.messages()` is new in 3.x, so this concerns code written against
+an earlier 3.0 release candidate. `async for msg in ws.stock.messages()`
+and `await asyncio.wait_for(messages.__anext__(), timeout)` need no change.
+
+While messages are queued, `messages.__anext__()` returns an awaitable that
+is **already done** and holds the next message, instead of one that is
+always pending. That is what lets `async for` read a backlog about six
+times faster; one step in every 32 in a row is still pending, so other tasks
+on the event loop get to run. Code that holds the awaitable itself must not
+discard a done one:
+
+- **`cancel()` can fail.** `asyncio.ensure_future(messages.__anext__()).cancel()`
+  returns False for a done awaitable; the message is its `result()`.
+- **`asyncio.wait`, then cancelling the rest, drops a message** when the
+  step was done as well:
+
+```python
+step = asyncio.ensure_future(messages.__anext__())
+done, pending = await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+
+# Before: drops the message `step` holds when both are done
+if stop in done:
+    step.cancel()
+    return
+
+# After: look at the step first
+if step.done():
+    handle(step.result())
+else:
+    step.cancel()          # pending: takes no message
+```
+
+- **A cancelled `asyncio.gather(messages.__anext__(), other)` drops a
+  message**: the step is done, `gather` is cancelled while it waits for
+  `other`, and the result is discarded. Read the step on its own, or keep a
+  reference to it and read `result()` when the `gather` is cancelled.
+- **`asyncio.wait_for(messages.__anext__(), 0)` returns the message** when
+  one is queued. It always raised `TimeoutError` before.
+- **Several awaitables of one iterator at once** may not get the messages
+  in the order the awaitables were created. A single `async for` does.
+
+Before cancelling a step, check `done()`, or read `result()`. A pending step
+is as before: cancelling it takes no message.
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you

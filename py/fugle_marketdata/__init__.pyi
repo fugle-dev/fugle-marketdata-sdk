@@ -2543,17 +2543,34 @@ class MessageIterator(Generic[_Yielded]):
         `asyncio.ensure_future`; `asyncio.create_task` rejects it. The
         awaited value is never None.
 
-        While messages are queued the awaitable is returned already
-        resolved, so `async for` reads a backlog without waiting on the event
-        loop; one delivery in every 32 goes through the loop so other tasks
-        get to run. An already resolved awaitable holds its message:
-        `cancel()` on it returns False and the message is its `result()`.
-        Awaitables of one iterator held at the same time do not get the
-        messages in the order they were created.
+        While messages are queued the awaitable is returned already done,
+        holding the next message, so `async for` reads a backlog without
+        waiting on the event loop. One delivery in every 32 in a row is left
+        to the loop instead (that awaitable is pending), so other tasks get
+        to run.
+
+        `async for` and `asyncio.wait_for` need nothing from you. Code that
+        holds the awaitable itself must not discard one that is done:
+
+        - `asyncio.ensure_future(it.__anext__()).cancel()` returns False for
+          a done awaitable, and the message is its `result()`.
+        - After `asyncio.wait({step, stop})`, look at `step.done()` before
+          anything else; cancelling "the rest" because `stop` finished drops
+          the message a done `step` holds.
+        - `asyncio.gather(it.__anext__(), other)` that is cancelled drops
+          the message its done step holds. Read the step on its own.
+
+        Before cancelling, check `done()`, or read `result()`.
+        `asyncio.wait_for(it.__anext__(), 0)` returns the message when the
+        awaitable is done, and times out otherwise.
 
         Cancelling a pending awaitable (`asyncio.wait_for` timing out, a
         cancelled task) takes no message: the next read gets it. An awaitable
         still pending when its event loop closes is dropped silently.
+
+        A single `async for` gets the messages in order. Awaitables of one
+        iterator held at the same time may not get them in the order they
+        were created.
 
         Returns:
             Message dict (str from a `messages(raw=True)` iterator)

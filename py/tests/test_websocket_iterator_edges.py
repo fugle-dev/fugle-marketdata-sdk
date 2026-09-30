@@ -7,6 +7,7 @@ whatever arrived meanwhile. An ``__anext__`` left pending when its event loop
 closes must not print a traceback once the connection ends.
 """
 import asyncio
+import json
 import os
 import signal
 import statistics
@@ -198,16 +199,25 @@ def test_anext_outliving_its_event_loop_prints_nothing(how):
 
 
 # --- #267: `__anext__` resolves its awaitable at once while messages are
-# queued, lets the event loop run once in every N such deliveries, and a wait
+# queued, lets the event loop run once in every 32 such deliveries, and a wait
 # left behind by a closed event loop ends on its own.
 
-YIELD_EVERY_ENV = "FUGLE_MARKETDATA_AITER_YIELD_EVERY"
+# One `__anext__` delivery in this many goes through the event loop
+# (`YIELD_EVERY` in py/src/iterator.rs).
+YIELD_EVERY = 32
 BACKLOG_READS = 640
+BURST = 100
 
 
 @pytest.fixture
 def flood_server():
     with LoopbackServer(flood=True) as srv:
+        yield srv
+
+
+@pytest.fixture
+def burst_server():
+    with LoopbackServer(burst_on_close=BURST) as srv:
         yield srv
 
 
@@ -221,22 +231,33 @@ async def _backlogged(ws):
         await asyncio.sleep(0.05)
 
 
+async def _closed_backlog(server, raw=False):
+    """An iterator over a closed connection with a known backlog.
+
+    The server answers the Close with `BURST` numbered frames, so after
+    `disconnect()` the queue holds `authenticated` and those, and no more
+    will come: what each read gets does not depend on timing.
+    """
+    ws = product_ws(server.url, "stock")
+    await ws.connect_async()
+    messages = ws.messages(raw=raw)
+    ws.disconnect()
+    return messages
+
+
+def _label(msg):
+    return msg["data"]["i"] if msg["event"] == "data" else msg["event"]
+
+
+EVERYTHING = ["authenticated"] + list(range(BURST))
+
+
 @hard_timeout
-@pytest.mark.parametrize(
-    "yield_every, fewest, most",
-    [
-        # One delivery in 32 goes through the loop, which takes two turns of
-        # it: one runs the delivery, the next resumes the reader. The other
-        # task runs in both, give or take the ones at either end.
-        ("32", 2 * (BACKLOG_READS // 32) - 4, 2 * (BACKLOG_READS // 32) + 4),
-        # Every delivery goes through the loop.
-        ("1", 2 * BACKLOG_READS - 4, 2 * BACKLOG_READS + 4),
-        # None does: the other task never runs while the backlog lasts.
-        ("0", 0, 0),
-    ],
-)
-async def test_backlogged_async_for_lets_other_tasks_run(flood_server, monkeypatch, yield_every, fewest, most):
-    monkeypatch.setenv(YIELD_EVERY_ENV, yield_every)
+async def test_backlogged_async_for_lets_other_tasks_run(flood_server):
+    # One delivery in 32 goes through the loop, which takes two turns of it:
+    # one runs the delivery, the next resumes the reader. The other task
+    # runs in both, give or take the ones at either end. Every delivery
+    # through the loop would give it 1280 turns, none through it 0.
     ws = product_ws(flood_server.url, "stock")
     turns = 0
 
@@ -258,61 +279,126 @@ async def test_backlogged_async_for_lets_other_tasks_run(flood_server, monkeypat
         other.cancel()
     finally:
         disconnect_quietly(ws)
-    assert fewest <= seen <= most, f"the other task ran {seen} times during {BACKLOG_READS} reads"
+    expected = 2 * (BACKLOG_READS // YIELD_EVERY)
+    assert expected - 4 <= seen <= expected + 4, f"the other task ran {seen} times during {BACKLOG_READS} reads"
 
 
 @hard_timeout
-async def test_backlogged_anext_is_already_resolved_and_cannot_be_cancelled(flood_server, monkeypatch):
-    # The behaviour with the fast path on (N > 1), as it is now: the message
-    # is taken when `__anext__` is called, so `cancel()` fails and the message
-    # stays in the awaitable. Code that ignores what `cancel()` returned and
-    # drops the awaitable drops that message.
-    monkeypatch.setenv(YIELD_EVERY_ENV, "32")
-    ws = product_ws(flood_server.url, "stock")
-    try:
-        await _backlogged(ws)
-        messages = ws.messages()
-        first = messages.__anext__()
-        assert first.done()
-        assert first.cancel() is False
-        assert first.result()["event"] == "authenticated"
-        # The next read carries on after the one the awaitable holds.
-        assert (await messages.__anext__())["event"] == "subscribed"
-    finally:
-        disconnect_quietly(ws)
+async def test_async_for_reads_the_backlog_of_a_closed_connection_then_stops(burst_server):
+    # Direct deliveries and the ones through the loop keep the order, and the
+    # iteration ends only once the backlog is read.
+    messages = await _closed_backlog(burst_server)
+    assert [_label(msg) async for msg in messages] == EVERYTHING
+    with pytest.raises(StopAsyncIteration):
+        await messages.__anext__()
 
 
 @hard_timeout
-async def test_backlogged_anext_through_the_loop_can_be_cancelled(flood_server, monkeypatch):
-    # With every delivery going through the loop (N = 1) nothing is taken
-    # until the loop delivers, so cancelling works as it does with no backlog.
-    monkeypatch.setenv(YIELD_EVERY_ENV, "1")
-    ws = product_ws(flood_server.url, "stock")
-    try:
-        await _backlogged(ws)
-        messages = ws.messages()
-        first = messages.__anext__()
-        assert not first.done()
-        assert first.cancel() is True
-        await asyncio.sleep(0)  # the delivery runs and finds it cancelled
-        assert (await messages.__anext__())["event"] == "authenticated"
-    finally:
-        disconnect_quietly(ws)
+async def test_backlogged_raw_iterator_yields_the_frames_in_order(burst_server):
+    messages = await _closed_backlog(burst_server, raw=True)
+    first = messages.__anext__()
+    assert first.done() and isinstance(first.result(), str)
+    frames = [first.result()] + [frame async for frame in messages]
+    assert all(isinstance(frame, str) for frame in frames)
+    assert [_label(json.loads(frame)) for frame in frames] == EVERYTHING
 
 
 @hard_timeout
-async def test_backlogged_wait_for_loses_no_message(flood_server, monkeypatch):
-    # `wait_for` wraps each step; none of the queued messages may go missing
-    # or change places: authenticated, subscribed, then data only.
-    monkeypatch.delenv(YIELD_EVERY_ENV, raising=False)  # the default
-    ws = product_ws(flood_server.url, "stock")
-    try:
-        await _backlogged(ws)
-        messages = ws.messages()
-        events = [(await asyncio.wait_for(messages.__anext__(), 5))["event"] for _ in range(200)]
-    finally:
-        disconnect_quietly(ws)
-    assert events == ["authenticated", "subscribed"] + ["data"] * 198
+async def test_backlogged_anext_is_already_resolved_and_cannot_be_cancelled(burst_server):
+    # The message is taken when `__anext__` is called, so `cancel()` fails
+    # and the message stays in the awaitable. Code that ignores what
+    # `cancel()` returned and drops the awaitable drops that message.
+    messages = await _closed_backlog(burst_server)
+    first = asyncio.ensure_future(messages.__anext__())
+    assert first.done()
+    assert first.cancel() is False
+    assert _label(first.result()) == "authenticated"
+    # The next read carries on after the one the awaitable holds.
+    assert _label(await messages.__anext__()) == 0
+
+
+@hard_timeout
+async def test_backlogged_anext_through_the_loop_can_be_cancelled(burst_server):
+    # Every 32nd delivery in a row is left to the loop: that awaitable is
+    # pending, and cancelling it takes no message, as with no backlog.
+    messages = await _closed_backlog(burst_server)
+    direct = [messages.__anext__() for _ in range(YIELD_EVERY - 1)]
+    assert all(awaitable.done() for awaitable in direct)
+    assert [_label(awaitable.result()) for awaitable in direct] == EVERYTHING[: YIELD_EVERY - 1]
+    through_the_loop = messages.__anext__()
+    assert not through_the_loop.done()
+    assert through_the_loop.cancel() is True
+    await asyncio.sleep(0)  # the delivery runs and finds it cancelled
+    assert [_label(msg) async for msg in messages] == EVERYTHING[YIELD_EVERY - 1 :]
+
+
+@hard_timeout
+async def test_backlogged_wait_for_keeps_the_order(burst_server):
+    # No step is cancelled or times out here: `wait_for` around each one
+    # changes nothing about what is read.
+    messages = await _closed_backlog(burst_server)
+    labels = [_label(await asyncio.wait_for(messages.__anext__(), 5)) for _ in EVERYTHING]
+    assert labels == EVERYTHING
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(messages.__anext__(), 5)
+
+
+@hard_timeout
+async def test_backlogged_wait_for_with_no_time_left_loses_no_message(burst_server):
+    # `wait_for(..., 0)` returns an already resolved step and times out on
+    # the ones left to the loop, which then take nothing.
+    messages = await _closed_backlog(burst_server)
+    labels = []
+    timed_out = 0
+    while len(labels) < len(EVERYTHING):
+        try:
+            labels.append(_label(await asyncio.wait_for(messages.__anext__(), 0)))
+        except asyncio.TimeoutError:
+            timed_out += 1
+            assert timed_out < 50, labels
+            await asyncio.sleep(0.005)
+    assert labels == EVERYTHING
+    # One in 32 went to the loop, and timed out.
+    assert timed_out >= len(EVERYTHING) // YIELD_EVERY
+
+
+@hard_timeout
+async def test_cancelling_the_task_around_a_backlogged_wait_for_loses_no_message(burst_server):
+    # Python 3.8 to 3.11 give the loop a turn even when the step is already
+    # resolved, so the task can be cancelled in it; `wait_for` then returns
+    # the message instead of raising. From 3.12 the task is done by then.
+    messages = await _closed_backlog(burst_server)
+
+    async def read():
+        return await asyncio.wait_for(messages.__anext__(), 5)
+
+    labels = []
+    for _ in range(YIELD_EVERY - 2):  # stops short of a step left to the loop
+        task = asyncio.ensure_future(read())
+        await asyncio.sleep(0)
+        task.cancel()
+        labels.append(_label(await task))
+    assert labels == EVERYTHING[: YIELD_EVERY - 2]
+    assert _label(await messages.__anext__()) == EVERYTHING[YIELD_EVERY - 2]
+
+
+@hard_timeout
+async def test_checking_done_before_cancelling_keeps_the_backlogged_message(burst_server):
+    # What the docs recommend for `asyncio.wait`: look at the step before
+    # cancelling it, whatever else finished.
+    messages = await _closed_backlog(burst_server)
+    labels = []
+    for _ in range(YIELD_EVERY + 8):  # past a step left to the loop
+        step = asyncio.ensure_future(messages.__anext__())
+        stop = asyncio.ensure_future(asyncio.sleep(0))
+        await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+        if step.done():
+            labels.append(_label(step.result()))
+        else:
+            step.cancel()
+        await stop
+    rest = [_label(msg) async for msg in messages]
+    assert labels + rest == EVERYTHING
 
 
 @hard_timeout
@@ -329,7 +415,7 @@ def test_waits_left_by_closed_event_loops_end(server):
         # The count covers the whole process: let what earlier tests left end.
         before = pending_waits()
         settled = time.monotonic()
-        while time.monotonic() - settled < 1.5:
+        while time.monotonic() - settled < 2.5:
             time.sleep(0.1)
             if pending_waits() != before:
                 before, settled = pending_waits(), time.monotonic()

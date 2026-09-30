@@ -511,12 +511,34 @@ Iteration never yields `None` and does not end while no data arrives; it
 raises `StopIteration` / `StopAsyncIteration` once the connection is gone. A
 blocked `for` loop or `recv_timeout` still reacts to Ctrl+C, and cancelling
 an `async for` step (`asyncio.wait_for`, a cancelled task) never loses a
-message. While messages are queued, `async for` reads them without waiting on
-the event loop and lets other tasks run once every 32 messages; an
-`__anext__()` awaitable that is already done holds its message, so `cancel()`
-on it returns False. `messages(timeout_ms=...)` is deprecated and ignored. For periodic
+message. `messages(timeout_ms=...)` is deprecated and ignored. For periodic
 work while no data arrives, use `message` callbacks or `async for` alongside
 other tasks.
+
+While messages are queued, `async for` reads them without waiting on the
+event loop, and lets other tasks on the loop run once every 32 messages. It
+does so because `messages().__anext__()` then returns an awaitable that is
+already done and holds the message. `async for` and `asyncio.wait_for` work
+as before; code that handles the awaitable itself must not discard a done
+one:
+
+```python
+step = asyncio.ensure_future(messages.__anext__())
+done, _ = await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+if step.done():          # check this first, whatever else finished
+    handle(step.result())
+else:
+    step.cancel()        # pending: takes no message
+```
+
+- `step.cancel()` returns False for a done awaitable; the message is
+  `step.result()`.
+- Cancelling "the rest" after `asyncio.wait` because `stop` finished drops
+  the message a done `step` holds.
+- A cancelled `asyncio.gather(messages.__anext__(), other)` drops the
+  message its done step holds.
+- `asyncio.wait_for(messages.__anext__(), 0)` returns the message when one
+  is queued instead of always timing out.
 
 Messages go to `message` and `raw_message` callbacks when any are registered
 as they arrive, otherwise to the iterator. The iterator holds at most 4096
