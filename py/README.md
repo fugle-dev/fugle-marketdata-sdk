@@ -509,9 +509,11 @@ msg = messages.recv_timeout(5000)  # Waits up to 5000 ms, returns None on timeou
 
 Iteration never yields `None` and does not end while no data arrives; it
 raises `StopIteration` / `StopAsyncIteration` once the connection is gone. A
-blocked `for` loop still reacts to Ctrl+C. `messages(timeout_ms=...)` is
-deprecated and ignored. For periodic work while no data arrives, use
-`message` callbacks or `async for` alongside other tasks.
+blocked `for` loop or `recv_timeout` still reacts to Ctrl+C, and cancelling
+an `async for` step (`asyncio.wait_for`, a cancelled task) never loses a
+message. `messages(timeout_ms=...)` is deprecated and ignored. For periodic
+work while no data arrives, use `message` callbacks or `async for` alongside
+other tasks.
 
 Messages go to `message` and `raw_message` callbacks when any are registered
 as they arrive, otherwise to the iterator. The iterator holds at most 4096

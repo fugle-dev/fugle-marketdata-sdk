@@ -15,9 +15,19 @@ Usage:
     raw-loads  `raw_message` callback that calls json.loads, as 2.x code does
     raw        `raw_message` callback that does not parse: it counts the
                data frames by prefix and reports no latency
+    aiter      no callback: `async for` over `messages()`, doing what `dict`
+               does per message. Measures the `__anext__` path (#260).
+               For comparing two builds in this mode (py/run-compare.py),
+               which the following does not affect. Not to be compared
+               directly with `dict` or the other modes: connect() and
+               subscribe() run before the event loop starts, so part of the
+               burst is already queued when iteration begins, and the
+               elapsed time is taken after asyncio.run() returns, so it
+               includes closing the loop
 """
 
 import argparse
+import asyncio
 import json
 import os
 import resource
@@ -36,7 +46,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--url', default='ws://localhost:8765')
     p.add_argument('--timeout', type=int, default=30)
-    p.add_argument('--mode', choices=('dict', 'dict-count', 'raw-loads', 'raw'), default='dict')
+    p.add_argument('--mode', choices=('dict', 'dict-count', 'raw-loads', 'raw', 'aiter'), default='dict')
     return p.parse_args()
 
 
@@ -127,7 +137,7 @@ def main():
         stock.on('message', on_count)
     elif args.mode == 'raw-loads':
         stock.on('raw_message', on_raw_loads)
-    else:
+    elif args.mode == 'raw':
         stock.on('raw_message', on_raw)
     stock.on('error', on_error)
 
@@ -135,8 +145,23 @@ def main():
     # After connect() returns, auth is done — subscribe immediately
     stock.subscribe('trades', '2330')
 
+    async def iterate():
+        async for msg in stock.messages():
+            on_message(msg)
+            if done_event.is_set():
+                return
+
+    async def iterate_until_timeout():
+        try:
+            await asyncio.wait_for(iterate(), args.timeout)
+        except asyncio.TimeoutError:
+            pass
+
     # Wait for bench_done sentinel or timeout
-    done_event.wait(timeout=args.timeout)
+    if args.mode == 'aiter':
+        asyncio.run(iterate_until_timeout())
+    else:
+        done_event.wait(timeout=args.timeout)
 
     elapsed = (int(time.time() * 1000) - t0) if t0 is not None else 0
     end_ru = resource.getrusage(resource.RUSAGE_SELF)

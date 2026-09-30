@@ -90,6 +90,41 @@ impl Handoff {
         self.take(&mut state)
     }
 
+    /// Wait up to `timeout` for a message to be queued, without taking it.
+    ///
+    /// `Ok(true)` when one is queued, `Ok(false)` when the timeout elapsed
+    /// first, `Err(())` once the queue is closed and drained. Another reader
+    /// may take the message before the caller does.
+    pub(crate) fn wait_readable(&self, timeout: Duration) -> Result<bool, ()> {
+        let state = self.lock();
+        let (state, _) = self
+            .readable
+            .wait_timeout_while(state, timeout, |state| state.items.is_empty() && !state.closed)
+            .unwrap_or_else(PoisonError::into_inner);
+        if !state.items.is_empty() {
+            Ok(true)
+        } else if state.closed {
+            Err(())
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Hand on a wake-up that `wait_readable` gave a caller which takes
+    /// nothing: `push` wakes one reader per message, so another reader is
+    /// woken if a message is still queued.
+    pub(crate) fn pass_wakeup(&self) {
+        if !self.lock().items.is_empty() {
+            self.readable.notify_one();
+        }
+    }
+
+    /// Closed and drained: no message will be readable again.
+    pub(crate) fn is_finished(&self) -> bool {
+        let state = self.lock();
+        state.closed && state.items.is_empty()
+    }
+
     /// Next message, waiting up to `timeout` (`None`: indefinitely).
     ///
     /// `Ok(None)` when the timeout elapsed first, `Err(())` once the queue is
@@ -172,6 +207,48 @@ mod tests {
         handoff.close();
         assert!(matches!(handoff.receive(None), Ok(Some(_))));
         assert!(handoff.receive(None).is_err());
+    }
+
+    #[test]
+    fn wait_readable_reports_a_queued_message_and_leaves_it() {
+        let handoff = Handoff::new(None);
+        let stop = AtomicBool::new(false);
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Ok(false));
+        handoff.push(message(0), &stop);
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Ok(true));
+        handoff.close();
+        // Closed, not drained: the message is still there to take.
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Ok(true));
+        assert_eq!(handoff.try_receive().and_then(|m| m.id), Some("0".into()));
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Err(()));
+    }
+
+    #[test]
+    fn pass_wakeup_wakes_a_reader_only_while_a_message_is_queued() {
+        let handoff = Arc::new(Handoff::new(None));
+        let (woken_tx, woken_rx) = std::sync::mpsc::channel();
+        let reader = {
+            let handoff = Arc::clone(&handoff);
+            thread::spawn(move || {
+                let mut state = handoff.lock();
+                // Queued without a notification, as when another waiter took it.
+                state.items.push_back(message(0));
+                state = handoff.readable.wait(state).unwrap();
+                woken_tx.send(state.items.len()).unwrap();
+            })
+        };
+        // The reader holds the lock until it waits, so this runs after.
+        thread::sleep(Duration::from_millis(50));
+        handoff.pass_wakeup();
+        assert_eq!(woken_rx.recv_timeout(Duration::from_secs(5)), Ok(1));
+        reader.join().unwrap();
+
+        assert!(!handoff.is_finished());
+        handoff.close();
+        assert!(!handoff.is_finished(), "closed, but a message is still queued");
+        assert!(handoff.try_receive().is_some());
+        assert!(handoff.is_finished());
+        handoff.pass_wakeup(); // nothing queued: no-op
     }
 
     #[test]
