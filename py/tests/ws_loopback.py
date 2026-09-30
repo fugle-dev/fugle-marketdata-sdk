@@ -20,6 +20,11 @@ each ``subscribe`` with the index of the connection it came on.
 ``LoopbackServer`` runs the server in a child process; ``InProcessLoopbackServer``
 runs it on threads of the test process, which only works while the blocking
 client calls release the GIL (#39).
+
+``is_debug_build()`` tells whether the installed binding has the
+``FUGLE_MARKETDATA_TEST_PANIC`` injection sites, by triggering one: only a
+call that returns normally counts as a release build, and an exception other
+than the injected panic is raised, not taken for one.
 """
 import base64
 import hashlib
@@ -424,6 +429,8 @@ def is_debug_build():
 
     Probed with ``ws_callback_poison``, the one site that needs no
     connection: a debug build panics in ``off()``, a release build returns.
+    Any other exception is raised and nothing is cached, so the next call
+    probes again.
     """
     global _debug_build
     if _debug_build is None:
@@ -433,8 +440,14 @@ def is_debug_build():
             # The registry reads the variable when the client is created.
             product_ws("ws://127.0.0.1:9", "stock").off("reconnect")
             _debug_build = False
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except BaseException as panic:  # PanicException is a BaseException
-            _debug_build = "ws_callback_poison" in str(panic)
+            # Anything but the injected panic is a failed probe, not a release
+            # build: raise it rather than let the tests skip quietly.
+            if "ws_callback_poison" not in str(panic):
+                raise
+            _debug_build = True
         finally:
             if previous is None:
                 del os.environ[PANIC_ENV]
