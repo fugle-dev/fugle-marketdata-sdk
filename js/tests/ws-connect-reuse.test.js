@@ -525,29 +525,59 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
 
   // The reconnect authenticates, then its connection ends before the joined
   // connect() has checked that the reconnect installed it (#273). In a child
-  // process: the reconnect's `authenticated` listener holds the child's JS
-  // thread until core has closed the client, which settles the joined
-  // connect() only after that.
-  test.each([
-    ['closes with 1001 and the next attempt fails', 1001, 'refuse', { error: 3005 }],
-    ['closes with 1001 and the next attempt is rejected', 1001, 'rejectAuth', { rejection: { message: 'Invalid API key' } }],
-    ['closes with 1000, so no reconnect follows', 1000, 'refuse', { error: 2010 }],
-  ])('rejects when the reconnected connection %s before connect() settles', async (_, closeCode, next, expected) => {
-    await setup();
+  // process, whose listeners hold its JS thread until core has reached a
+  // state (`hold`), so that the joined connect() settles only after it.
+  //
+  // `closes` maps a connection's number to the code the server closes it
+  // with right after authenticating it, and what it does with the next
+  // connection: `refuse` it, `reject` its credentials, or accept it.
+  // `hold` is the state the reconnect's `authenticated` listener holds the
+  // JS thread until.
+  const joinCases = [
+    ['closes with 1001 and the next attempt fails',
+      { closes: { 2: [1001, 'refuse'] }, hold: 'closed', expected: { error: 3005, closedAtSettle: true } }],
+    ['closes with 1001 and the next attempt is rejected',
+      { closes: { 2: [1001, 'reject'] }, hold: 'closed', expected: { rejection: { message: 'Invalid API key' }, closedAtSettle: true } }],
+    ['closes with 1000, so no reconnect follows',
+      { closes: { 2: [1000, 'refuse'] }, hold: 'closed', expected: { error: 2010, closedAtSettle: true } }],
+    // The next reconnect authenticates too, and its `authenticated` is still
+    // queued when the joined connect() learns the connection has ended.
+    ['closes with 1001, and so does the next reconnect',
+      { closes: { 2: [1001, 'accept'], 3: [1001, 'refuse'] }, hold: 'closed', expected: { error: 3005, closedAtSettle: true } }],
+  ];
+
+  test.each(joinCases)('rejects when the reconnected connection %s before connect() settles', async (_, joinCase) => {
+    await joinReconnectInChild(joinCase);
+  });
+
+  test('resolves when the reconnected connection closes with 1001 and the next reconnect succeeds', async () => {
+    await joinReconnectInChild({
+      closes: { 2: [1001, 'accept'] },
+      hold: 'lost',
+      expected: { data: AUTH, closedAtSettle: false },
+      authentications: 3,
+    });
+  });
+
+  async function joinReconnectInChild({ closes, hold, expected, authentications = Object.keys(closes).length + 1 }) {
+    await setup({ maxAttempts: 1 });
     wss.on('connection', (socket) => {
-      if (wss.accepted !== 2) return;
+      const close = closes[wss.accepted];
+      if (!close) return;
+      const [code, next] = close;
       socket.on('message', (raw) => {
         if (JSON.parse(raw.toString()).event !== 'auth') return;
         // After the `authenticated` the server's own listener has sent.
         if (next === 'refuse') wss.refuse = Infinity;
-        else wss.rejectAuth = true;
-        socket.close(closeCode);
+        if (next === 'reject') wss.rejectAuth = true;
+        socket.close(code);
       });
     });
     const run = runChild(
       `
       const { WebSocketClient } = require('./');
       const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, reconnect: { initialDelayMs: 100, maxAttempts: 1 } })[${JSON.stringify(product)}];
+      const reached = { lost: () => !ws.isConnected, closed: () => ws.isClosed }[${JSON.stringify(hold)}];
       const report = (result) => {
         console.log('RESULT ' + JSON.stringify({ ...result, closedAtSettle }));
         ws.disconnect();
@@ -566,7 +596,7 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
         authenticated += 1;
         if (authenticated !== 2) return;
         const until = Date.now() + 5000;
-        while (!ws.isClosed && Date.now() < until);
+        while (!reached() && Date.now() < until);
         closedAtSettle = ws.isClosed;
       });
       ws.connect();
@@ -578,9 +608,9 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
     const { code, result, stderr } = await run;
 
     expect({ code, stderr, result }).toMatchObject({ code: 0, result: expect.anything() });
-    expect(result).toEqual({ ...expected, closedAtSettle: true });
-    expect(wss.authenticated).toBe(2);
-  });
+    expect(result).toEqual(expected);
+    expect(wss.authenticated).toBe(authentications);
+  }
 });
 
 /**

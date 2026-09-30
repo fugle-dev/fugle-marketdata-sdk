@@ -573,6 +573,10 @@ struct AuthWaiters {
     /// the end only after it was handed the reconnect's authentication
     /// (#273).
     ended: Option<AuthOutcome>,
+    /// Joined `connect()` calls waiting for [`Self::ended`]: settled only by
+    /// an outcome other than `Authenticated`, so an `authenticated` still
+    /// queued for the JS thread does not resolve them (#273).
+    waiting_for_end: Vec<AuthTx>,
 }
 
 /// A connection's [`AuthWaiters`], shared by its worker, its stream reader
@@ -646,16 +650,19 @@ fn test_delay_after_connect() -> Option<Duration> {
     None
 }
 
-/// Settle every pending `connect()` with `outcome`; no-op when none is.
-/// The first outcome other than `Authenticated` is kept as how the
-/// connection ended (see [`AuthWaiters::ended`]).
+/// Settle every pending `connect()` with `outcome`. An outcome other than
+/// `Authenticated` also settles the calls waiting for the connection's end,
+/// and the first one is kept as that end (see [`AuthWaiters::ended`]), even
+/// with no call pending.
 fn settle(slot: &AuthSlot, outcome: AuthOutcome) {
     let waiting = {
         let mut waiters = lock_auth(slot);
-        if waiters.ended.is_none() && !matches!(outcome, AuthOutcome::Authenticated(_)) {
-            waiters.ended = Some(outcome.clone());
+        let mut waiting = std::mem::take(&mut waiters.waiting);
+        if !matches!(outcome, AuthOutcome::Authenticated(_)) {
+            waiters.ended.get_or_insert_with(|| outcome.clone());
+            waiting.append(&mut waiters.waiting_for_end);
         }
-        std::mem::take(&mut waiters.waiting)
+        waiting
     };
     for tx in waiting {
         let _ = tx.send(outcome.clone());
@@ -672,7 +679,7 @@ async fn connection_end(slot: &AuthSlot) -> AuthOutcome {
             return ended.clone();
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
-        waiters.waiting.push(tx);
+        waiters.waiting_for_end.push(tx);
         rx
     };
     rx.await.unwrap_or_else(|_| AuthOutcome::Failed(connect_aborted()))
@@ -1320,6 +1327,10 @@ fn join_reconnect(worker: &Worker) -> Result<PendingConnect, ErrorInfo> {
     {
         return Err(already_connected());
     }
+    let reconnect = worker
+        .client
+        .get()
+        .map(|client| JoinedReconnect { client: client.clone(), auth: Arc::clone(&worker.auth) });
     let (tx, rx) = tokio::sync::oneshot::channel();
     // Under the lock the reader updates `last_auth` in, so this either sees
     // the authentication or is settled by it. If the connection ends
@@ -1331,10 +1342,6 @@ fn join_reconnect(worker: &Worker) -> Result<PendingConnect, ErrorInfo> {
         }
         None => waiters.waiting.push(tx),
     }
-    let reconnect = worker
-        .client
-        .get()
-        .map(|client| JoinedReconnect { client: client.clone(), auth: Arc::clone(&worker.auth) });
     Ok(PendingConnect { rx, reconnect })
 }
 
@@ -1867,7 +1874,7 @@ impl StockWebSocketClient {
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
-        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None, ended: None }));
+        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], ..AuthWaiters::default() }));
         let client_slot: ClientSlot = Arc::default();
         let worker_auth = Arc::clone(&auth);
         let worker_decision = Arc::clone(&decision);
@@ -2366,7 +2373,7 @@ impl FutOptWebSocketClient {
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
-        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None, ended: None }));
+        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], ..AuthWaiters::default() }));
         let client_slot: ClientSlot = Arc::default();
         let worker_auth = Arc::clone(&auth);
         let worker_decision = Arc::clone(&decision);
