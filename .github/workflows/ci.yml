@@ -135,18 +135,28 @@ jobs:
         run: cargo +stable generate-lockfile
       - run: cargo +1.88 build --locked --all-features -p fugle-marketdata-core -p fugle-marketdata
 
+  # 3.8 is the oldest supported version (`requires-python`, `abi3-py38`), and
+  # code that only breaks there used to reach main unseen (#253). The 3.12
+  # job keeps the bare name because "Python binding" is a required status
+  # check on main; the other versions get a suffix.
   python:
-    name: Python binding
+    name: Python binding${{ matrix.python-version != '3.12' && format(' ({0})', matrix.python-version) || '' }}
     runs-on: ubuntu-latest
+    strategy:
+      # A 3.8 failure must not cancel the required 3.12 job.
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # One cache per interpreter.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-python
+          shared-key: ci-python-${{ matrix.python-version }}
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
       - name: Build and test
         working-directory: py
         run: |

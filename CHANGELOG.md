@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through `WebSocketFactory`. The Python, Node and UniFFI bindings each
   carried a copy of this and now call core's; the URLs, error codes and
   messages they produce are unchanged.
+- **CI: the Python binding tests also run on Python 3.8 on every pull
+  request** (#253). 3.8 is the oldest supported version, but pull requests
+  only ran 3.12 and the 3.8 job was in the manually triggered `test.yml`,
+  so code that breaks only on 3.8 was not seen before merging. The new job
+  is "Python binding (3.8)" and runs the same commands as the 3.12 one.
 
 ### Fixed
 

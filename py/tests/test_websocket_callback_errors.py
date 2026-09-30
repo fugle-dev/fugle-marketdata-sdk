@@ -28,11 +28,21 @@ def server():
 
 
 @pytest.fixture
-def unraisable(monkeypatch):
-    """What reached ``sys.unraisablehook``, as ``(exc_value, object)``."""
-    seen = []
-    monkeypatch.setattr(sys, "unraisablehook", lambda hook: seen.append((hook.exc_value, hook.object)))
-    return seen
+def watch_unraisable(monkeypatch):
+    """Call it to collect what reaches ``sys.unraisablehook``, as ``(exc_value, object)``.
+
+    The hook has to go in from the test body: pytest 8.3.x, the newest that
+    Python 3.8 can install, swaps in its own hook for each of setup, call and
+    teardown, which drops one installed while the fixture is set up (seen with
+    8.3.5; 9.1.1 leaves the fixture's hook in place).
+    """
+
+    def watch():
+        seen = []
+        monkeypatch.setattr(sys, "unraisablehook", lambda hook: seen.append((hook.exc_value, hook.object)))
+        return seen
+
+    return watch
 
 
 def wait_until(predicate, what, timeout=TIMEOUT_S):
@@ -44,7 +54,8 @@ def wait_until(predicate, what, timeout=TIMEOUT_S):
 
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
-def test_raising_message_callback_is_reported_and_later_messages_arrive(server, product, unraisable):
+def test_raising_message_callback_is_reported_and_later_messages_arrive(server, product, watch_unraisable):
+    unraisable = watch_unraisable()
     ws = product_ws(server.url, product)
     received = []
     errors = []
@@ -110,7 +121,8 @@ def test_later_failures_are_reported_once_per_second_with_their_count(server):
 
 
 @hard_timeout
-def test_without_error_callback_the_failure_goes_to_unraisablehook(server, unraisable):
+def test_without_error_callback_the_failure_goes_to_unraisablehook(server, watch_unraisable):
+    unraisable = watch_unraisable()
     ws = product_ws(server.url, "stock")
     received = []
 
@@ -135,7 +147,8 @@ def test_without_error_callback_the_failure_goes_to_unraisablehook(server, unrai
 
 
 @hard_timeout
-def test_raising_error_callback_is_printed_not_re_reported(server, unraisable):
+def test_raising_error_callback_is_printed_not_re_reported(server, watch_unraisable):
+    unraisable = watch_unraisable()
     ws = product_ws(server.url, "stock")
     received = []
     error_calls = []
@@ -167,7 +180,8 @@ def test_raising_error_callback_is_printed_not_re_reported(server, unraisable):
 
 
 @hard_timeout
-def test_base_exception_is_only_printed(server, unraisable):
+def test_base_exception_is_only_printed(server, watch_unraisable):
+    unraisable = watch_unraisable()
     ws = product_ws(server.url, "stock")
     received = []
     errors = []
