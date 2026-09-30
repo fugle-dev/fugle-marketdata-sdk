@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only ran 3.12 and the 3.8 job was in the manually triggered `test.yml`,
   so code that breaks only on 3.8 was not seen before merging. The new job
   is "Python binding (3.8)" and runs the same commands as the 3.12 one.
+- **Node: a warning when `healthCheck` is given the 1.x fields
+  `pingInterval` or `maxMissedPongs`** (#262). 3.0 does not have them and
+  ignored them silently, so a client written for 1.x ran with the default
+  detection without saying so. They are still ignored and not converted,
+  and the client is built as before, but the first client constructed with
+  either emits a process warning (once per process) naming the fields it
+  was given and the ones to use instead: `FugleHealthCheckWarning`, code
+  `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. `HealthCheckOptions` in TypeScript
+  is unchanged. Node only; Python already raises `TypeError`.
 
 ### Fixed
 

@@ -279,7 +279,7 @@ impl EventSink {
                 }
                 if event == RECONNECT_CONFLICT_WARNING {
                     if let EventArgs::Text(message) = args {
-                        emit_process_warning(env.raw(), &message);
+                        emit_process_warning(env.raw(), &message, "FugleReconnectWarning", "FUGLE_RECONNECT_CONFLICT");
                     }
                 } else {
                     call_listener(&listeners, &env, event, args);
@@ -299,10 +299,9 @@ impl EventSink {
 /// never a listener's event name.
 const RECONNECT_CONFLICT_WARNING: &str = "\0reconnect-conflict";
 
-/// `process.emitWarning(message, { type: 'FugleReconnectWarning', code:
-/// 'FUGLE_RECONNECT_CONFLICT' })`. Failures are ignored, as in
-/// [`print_error`].
-fn emit_process_warning(env: sys::napi_env, message: &str) {
+/// `process.emitWarning(message, { type, code })`. Failures are ignored, as
+/// in [`print_error`].
+fn emit_process_warning(env: sys::napi_env, message: &str, warning_type: &str, code: &str) {
     let emit = || -> Option<()> {
         let mut global = std::ptr::null_mut();
         if unsafe { sys::napi_get_global(env, &mut global) } != sys::Status::napi_ok {
@@ -311,7 +310,7 @@ fn emit_process_warning(env: sys::napi_env, message: &str) {
         let process = named_property(env, global, c"process")?;
         let emit_warning = named_property(env, process, c"emitWarning")?;
         let message = unsafe { String::to_napi_value(env, message.to_string()) }.ok()?;
-        let options = serde_json::json!({ "type": "FugleReconnectWarning", "code": "FUGLE_RECONNECT_CONFLICT" });
+        let options = serde_json::json!({ "type": warning_type, "code": code });
         let options = json_to_napi(env, options).ok()?;
         let args = [message, options];
         let mut ignored = std::ptr::null_mut();
@@ -721,6 +720,10 @@ pub struct ReconnectOptions {
 ///
 /// All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000,
 /// probeEnabled=false, idleProbeAfterMs=30000, probeTimeoutMs=5000.
+///
+/// The 1.x fields `pingInterval` and `maxMissedPongs` do not exist: they are
+/// ignored, and the first client given one emits a process warning
+/// (`FugleHealthCheckWarning`, code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`).
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct HealthCheckOptions {
@@ -761,6 +764,89 @@ impl HealthCheckOptions {
             ms(self.idle_probe_after_ms),
             ms(self.probe_timeout_ms),
         )
+    }
+}
+
+/// The `healthCheck` option as passed: [`HealthCheckOptions`], plus which
+/// 1.x fields the JS object carried. `#[napi(object)]` reads only the fields
+/// it declares, so those are visible only here, during conversion (#262).
+#[derive(Default)]
+pub struct HealthCheckInput {
+    options: HealthCheckOptions,
+    /// Of [`LEGACY_HEALTH_CHECK_FIELDS`], those set to anything but
+    /// `undefined` or `null`.
+    legacy_fields: Vec<&'static str>,
+}
+
+/// `healthCheck` fields of `@fugle/marketdata` 1.x that 3.0 does not have.
+const LEGACY_HEALTH_CHECK_FIELDS: [&std::ffi::CStr; 2] = [c"pingInterval", c"maxMissedPongs"];
+
+/// Set once the legacy `healthCheck` warning has been attempted in this
+/// process, whether or not `process.emitWarning` succeeded. One flag for the
+/// whole process, worker threads included.
+static LEGACY_HEALTH_CHECK_WARNED: AtomicBool = AtomicBool::new(false);
+
+impl HealthCheckInput {
+    /// Warn, once per process, that the 1.x fields passed were ignored.
+    fn warn_legacy_fields(&self, env: &Env) {
+        if self.legacy_fields.is_empty() || LEGACY_HEALTH_CHECK_WARNED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        emit_process_warning(
+            env.raw(),
+            &legacy_health_check_message(&self.legacy_fields),
+            "FugleHealthCheckWarning",
+            "FUGLE_HEALTH_CHECK_LEGACY_OPTIONS",
+        );
+    }
+}
+
+fn legacy_health_check_message(fields: &[&str]) -> String {
+    let names: Vec<String> = fields.iter().map(|field| format!("healthCheck.{field}")).collect();
+    let (verb, was) = if names.len() == 1 { ("does", "was") } else { ("do", "were") };
+    format!(
+        "{} {verb} not exist in @fugle/marketdata 3.0 and {was} ignored. Use heartbeatTimeoutMs \
+         (how long without any inbound frame before the connection is declared dead, default 35000 ms), \
+         or probeEnabled with idleProbeAfterMs and probeTimeoutMs to have the SDK ping a silent connection.",
+        names.join(" and "),
+    )
+}
+
+impl napi::bindgen_prelude::TypeName for HealthCheckInput {
+    fn type_name() -> &'static str {
+        HealthCheckOptions::type_name()
+    }
+
+    fn value_type() -> napi::ValueType {
+        HealthCheckOptions::value_type()
+    }
+}
+
+impl napi::bindgen_prelude::ValidateNapiValue for HealthCheckInput {
+    unsafe fn validate(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<sys::napi_value> {
+        unsafe { HealthCheckOptions::validate(env, napi_val) }
+    }
+}
+
+impl napi::bindgen_prelude::FromNapiValue for HealthCheckInput {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let options = unsafe { HealthCheckOptions::from_napi_value(env, napi_val) }?;
+        let legacy_fields = LEGACY_HEALTH_CHECK_FIELDS
+            .iter()
+            .filter(|field| {
+                named_property(env, napi_val, field)
+                    .and_then(|value| type_of(env, value))
+                    .is_some_and(|kind| !matches!(kind, sys::ValueType::napi_undefined | sys::ValueType::napi_null))
+            })
+            .filter_map(|field| field.to_str().ok())
+            .collect();
+        Ok(Self { options, legacy_fields })
+    }
+}
+
+impl ToNapiValue for HealthCheckInput {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        unsafe { HealthCheckOptions::to_napi_value(env, val.options) }
     }
 }
 
@@ -811,7 +897,8 @@ pub struct WebSocketClientOptions {
     /// Reconnection configuration (optional)
     pub reconnect: Option<ReconnectOptions>,
     /// Health check configuration (optional)
-    pub health_check: Option<HealthCheckOptions>,
+    #[napi(ts_type = "HealthCheckOptions")]
+    pub health_check: Option<HealthCheckInput>,
     /// Additional root CA (PEM bytes). Appended to the OS trust store.
     pub tls_root_cert_pem: Option<napi::bindgen_prelude::Uint8Array>,
     /// Disable ALL TLS verification (chain + hostname + expiry).
@@ -1464,12 +1551,15 @@ impl WebSocketClient {
             marketdata_core::ReconnectionConfig::default()
         };
 
-        // Build health check config with validation via core
-        let health_check_cfg = options
-            .health_check
-            .unwrap_or_default()
+        // Build health check config with validation via core. 1.x fields are
+        // ignored as before, and warned about once the options are accepted
+        // (#262); nothing below fails.
+        let health_check = options.health_check.unwrap_or_default();
+        let health_check_cfg = health_check
+            .options
             .to_core()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
+        health_check.warn_legacy_fields(&env);
 
         // Build TLS config from options. Default config matches previous
         // behaviour (OS trust store, no overrides); custom CA / accept_invalid

@@ -2778,6 +2778,10 @@ export interface EtfHoldingsParams {
  *
  * All fields are optional. Defaults: enabled=true, heartbeatTimeoutMs=35000,
  * probeEnabled=false, idleProbeAfterMs=30000, probeTimeoutMs=5000.
+ *
+ * The 1.x fields `pingInterval` and `maxMissedPongs` do not exist: they are
+ * ignored, and the first client given one emits a process warning
+ * (`FugleHealthCheckWarning`, code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`).
  */
 export interface HealthCheckOptions {
   /** Whether liveness detection is active (default: true in 3.0) */
