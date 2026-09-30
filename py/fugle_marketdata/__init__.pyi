@@ -2233,7 +2233,7 @@ class StockWebSocketClient:
         ...
 
     @overload
-    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[False] = False) -> "MessageIterator[Message]":
+    def messages(self, timeout_ms: Optional[int] = None, *, raw: Literal[False] = False) -> "MessageIterator[Message]":
         """Get message iterator for consuming streaming data.
 
         Args:
@@ -2249,9 +2249,9 @@ class StockWebSocketClient:
         """
         ...
     @overload
-    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[True]) -> "MessageIterator[str]": ...
+    def messages(self, timeout_ms: Optional[int] = None, *, raw: Literal[True]) -> "MessageIterator[str]": ...
     @overload
-    def messages(self, *, timeout_ms: Optional[int] = None, raw: bool) -> "MessageIterator[Any]": ...
+    def messages(self, timeout_ms: Optional[int] = None, *, raw: bool) -> "MessageIterator[Any]": ...
 
     async def __aenter__(self) -> "StockWebSocketClient":
         """Async context manager entry - connects to WebSocket server."""
@@ -2462,7 +2462,7 @@ class FutOptWebSocketClient:
         ...
 
     @overload
-    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[False] = False) -> "MessageIterator[Message]":
+    def messages(self, timeout_ms: Optional[int] = None, *, raw: Literal[False] = False) -> "MessageIterator[Message]":
         """Get message iterator for consuming streaming data.
 
         Args:
@@ -2478,9 +2478,9 @@ class FutOptWebSocketClient:
         """
         ...
     @overload
-    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[True]) -> "MessageIterator[str]": ...
+    def messages(self, timeout_ms: Optional[int] = None, *, raw: Literal[True]) -> "MessageIterator[str]": ...
     @overload
-    def messages(self, *, timeout_ms: Optional[int] = None, raw: bool) -> "MessageIterator[Any]": ...
+    def messages(self, timeout_ms: Optional[int] = None, *, raw: bool) -> "MessageIterator[Any]": ...
 
 
 class MessageIterator(Generic[_Yielded]):
@@ -2519,7 +2519,7 @@ class MessageIterator(Generic[_Yielded]):
         so Ctrl+C interrupts the wait.
 
         Returns:
-            Message dict
+            Message dict (str from a `messages(raw=True)` iterator)
 
         Raises:
             StopIteration: When the connection is gone and every message was read
@@ -2536,7 +2536,7 @@ class MessageIterator(Generic[_Yielded]):
         Never returns None.
 
         Returns:
-            Message dict
+            Message dict (str from a `messages(raw=True)` iterator)
 
         Raises:
             StopAsyncIteration: When the connection is gone and every message was read
@@ -2547,17 +2547,27 @@ class MessageIterator(Generic[_Yielded]):
         """Try to receive a message without blocking.
 
         Returns:
-            Message dict if available, None otherwise
+            Message dict if available (str from a `messages(raw=True)`
+            iterator), None otherwise
         """
         ...
 
-    async def recv_timeout(self, timeout_ms: int) -> Optional[_Yielded]:
-        """Receive a message with timeout (async).
+    def recv_timeout(self, timeout_ms: int) -> Optional[_Yielded]:
+        """Receive a message, waiting up to `timeout_ms` (blocking).
+
+        A plain method, not a coroutine: do not `await` it. Blocks the
+        calling thread with the GIL released.
 
         Args:
-            timeout_ms: Timeout in milliseconds
+            timeout_ms: How long to wait, in milliseconds. A non-negative
+                int; a float raises TypeError.
 
         Returns:
-            Message dict if received within timeout, None on timeout
+            Message dict if received within timeout (str from a
+            `messages(raw=True)` iterator), None on timeout
+
+        Raises:
+            MarketDataError: If the connection is gone and every message was
+                read
         """
         ...

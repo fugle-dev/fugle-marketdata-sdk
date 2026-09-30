@@ -504,7 +504,7 @@ async for msg in stock.messages():
 # Manual iteration
 msg = next(messages)          # Blocking until a message arrives
 msg = messages.try_recv()     # Non-blocking, returns None if no message
-msg = messages.recv_timeout(5.0)  # Timeout in seconds
+msg = messages.recv_timeout(5000)  # Waits up to 5000 ms, returns None on timeout
 ```
 
 Iteration never yields `None` and does not end while no data arrives; it
