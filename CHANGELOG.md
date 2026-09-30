@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Java and C++, whose constructors do not validate the base URL (or, where
   the binding takes one, the version), it fails with the `ConfigError`
   (code 1004) `connect()` would.
+- **Rust core: `websocket::stream_config` and `StreamProduct`** (#252).
+  `stream_config(auth, base_url, product, stock_version, futopt_version)`
+  returns the `ConnectionConfig` for one product's streaming endpoint,
+  through `WebSocketFactory`. The Python, Node and UniFFI bindings each
+  carried a copy of this and now call core's; the URLs, error codes and
+  messages they produce are unchanged.
 - **CI: the Python binding tests also run on Python 3.8 on every pull
   request** (#253). 3.8 is the oldest supported version, but pull requests
   only ran 3.12 and the 3.8 job was in the manually triggered `test.yml`,
@@ -39,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python: `MessageIterator.recv_timeout` docs and stub match the method**
+  (#250). The README example passed `5.0` "in seconds"; the argument is an
+  int of milliseconds, so that call raised `TypeError`. The stub declared
+  the method `async`; it is a plain blocking method, and code written to
+  the stub (`await it.recv_timeout(...)`) failed at run time. The stub also
+  made `timeout_ms` of `messages()` keyword-only, where the method accepts
+  it positionally, so `messages(100)` ran but failed type checking; it now
+  passes. Further stub corrections on `MessageIterator`: `__anext__` returns
+  an awaitable rather than being a coroutine function, `__iter__` /
+  `__aiter__` return `Self`, and `recv_timeout` documents
+  `ConnectionError` (code 2001). No run-time change.
 - **Node: `on()` returns the client it was called on** (#245). It returned
   `undefined`, so 1.x code chaining on it —
   `ws.stock.on('message', cb).subscribe({ ... })` — threw `TypeError`.
