@@ -79,7 +79,7 @@ to rewrite call sites:
 | Node `on()` chaining: `ws.stock.on('message', cb).subscribe({ ... })` | ✅ `on()` returns the client it was called on |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
 | Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working |
-| `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (Python raises `TypeError`, Node ignores them). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
+| `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (Python raises `TypeError`; Node ignores them and emits a process warning once per process: `FugleHealthCheckWarning`, code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
 
 ### Breaking changes you need to adapt
 
