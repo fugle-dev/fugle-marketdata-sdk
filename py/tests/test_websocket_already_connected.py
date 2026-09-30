@@ -18,6 +18,11 @@ PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt
 hard_timeout = pytest.mark.timeout(20, method="thread")
 
 
+async def to_thread(func, *args):
+    """``asyncio.to_thread``, which Python 3.8 lacks."""
+    return await asyncio.get_running_loop().run_in_executor(None, func, *args)
+
+
 class StallingServer:
     """Accepts TCP connections and never answers the WebSocket handshake, so a
     ``connect()`` against it stays in progress until ``release()``."""
@@ -153,7 +158,7 @@ async def test_connect_async_while_connecting_raises_2011():
         ws = product_ws(stall.url, "stock")
         first = asyncio.ensure_future(ws.connect_async())
         try:
-            assert await asyncio.to_thread(stall.accepted.wait, TIMEOUT_S)
+            assert await to_thread(stall.accepted.wait, TIMEOUT_S)
             with pytest.raises(WebSocketError) as excinfo:
                 await ws.connect_async()
             assert_already_connected(excinfo)
