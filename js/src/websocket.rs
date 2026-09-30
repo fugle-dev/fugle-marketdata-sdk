@@ -779,8 +779,7 @@ pub struct HealthCheckInput {
 }
 
 /// `healthCheck` fields of `@fugle/marketdata` 1.x that 3.0 does not have.
-const LEGACY_HEALTH_CHECK_FIELDS: [(&std::ffi::CStr, &str); 2] =
-    [(c"pingInterval", "pingInterval"), (c"maxMissedPongs", "maxMissedPongs")];
+const LEGACY_HEALTH_CHECK_FIELDS: [&std::ffi::CStr; 2] = [c"pingInterval", c"maxMissedPongs"];
 
 /// Set once the legacy `healthCheck` warning has been attempted in this
 /// process, whether or not `process.emitWarning` succeeded. One flag for the
@@ -807,7 +806,7 @@ fn legacy_health_check_message(fields: &[&str]) -> String {
     let (verb, was) = if names.len() == 1 { ("does", "was") } else { ("do", "were") };
     format!(
         "{} {verb} not exist in @fugle/marketdata 3.0 and {was} ignored. Use heartbeatTimeoutMs \
-         (how long without any inbound frame before the connection is declared dead, default 35000), \
+         (how long without any inbound frame before the connection is declared dead, default 35000 ms), \
          or probeEnabled with idleProbeAfterMs and probeTimeoutMs to have the SDK ping a silent connection.",
         names.join(" and "),
     )
@@ -834,12 +833,12 @@ impl napi::bindgen_prelude::FromNapiValue for HealthCheckInput {
         let options = unsafe { HealthCheckOptions::from_napi_value(env, napi_val) }?;
         let legacy_fields = LEGACY_HEALTH_CHECK_FIELDS
             .iter()
-            .filter(|(property, _)| {
-                named_property(env, napi_val, property)
+            .filter(|field| {
+                named_property(env, napi_val, field)
                     .and_then(|value| type_of(env, value))
                     .is_some_and(|kind| !matches!(kind, sys::ValueType::napi_undefined | sys::ValueType::napi_null))
             })
-            .map(|(_, name)| *name)
+            .filter_map(|field| field.to_str().ok())
             .collect();
         Ok(Self { options, legacy_fields })
     }
