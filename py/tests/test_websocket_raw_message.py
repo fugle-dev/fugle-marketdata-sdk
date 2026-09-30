@@ -13,7 +13,6 @@ pass whatever the binding did, the second would wait for an error that
 never comes.
 """
 import json
-import os
 import sys
 import threading
 import time
@@ -23,6 +22,7 @@ import pytest
 
 from fugle_marketdata import MessageIterator, WebSocketError
 from tests.ws_loopback import (
+    PANIC_ENV,
     TIMEOUT_S,
     LoopbackServer,
     Recorder,
@@ -32,8 +32,6 @@ from tests.ws_loopback import (
 
 PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
 
-PANIC_ENV = "FUGLE_MARKETDATA_TEST_PANIC"
-
 hard_timeout = pytest.mark.timeout(20, method="thread")
 
 
@@ -41,42 +39,6 @@ hard_timeout = pytest.mark.timeout(20, method="thread")
 def server():
     with LoopbackServer() as srv:
         yield srv
-
-
-_debug_build = None
-
-
-def _is_debug_build():
-    """Whether the installed binding has the test injection sites.
-
-    Probed with ``ws_callback_poison``, the one site that needs no
-    connection: a debug build panics in ``off()``, a release build returns.
-    """
-    global _debug_build
-    if _debug_build is None:
-        previous = os.environ.get(PANIC_ENV)
-        os.environ[PANIC_ENV] = "ws_callback_poison"
-        try:
-            # The registry reads the variable when the client is created.
-            product_ws("ws://127.0.0.1:9", "stock").off("reconnect")
-            _debug_build = False
-        except BaseException as panic:  # PanicException is a BaseException
-            _debug_build = "ws_callback_poison" in str(panic)
-        finally:
-            if previous is None:
-                del os.environ[PANIC_ENV]
-            else:
-                os.environ[PANIC_ENV] = previous
-    return _debug_build
-
-
-@pytest.fixture
-def injection_sites():
-    if not _is_debug_build():
-        pytest.skip(
-            "release build: FUGLE_MARKETDATA_TEST_PANIC injection sites exist only in "
-            "debug builds (`maturin develop`), and this test proves nothing without them"
-        )
 
 
 class Frames:

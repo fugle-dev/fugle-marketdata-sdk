@@ -296,13 +296,6 @@ impl CallbackRegistry {
         }
     }
 
-    /// Invoke message callbacks with a WebSocket message dict
-    #[allow(dead_code)]
-    pub fn invoke_message(&self, py: Python<'_>, msg_dict: Py<pyo3::types::PyDict>) {
-        let args = pyo3::types::PyTuple::new(py, [msg_dict.into_any()]).expect("Failed to create tuple");
-        self.invoke(py, EventType::Message, &args);
-    }
-
     /// Invoke connect callbacks
     pub fn invoke_connect(&self, py: Python<'_>) {
         let args = pyo3::types::PyTuple::empty(py);

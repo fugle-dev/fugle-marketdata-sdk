@@ -7,6 +7,10 @@ message (the ``authenticated`` ack), reported as the event and the message
 thread. The ``error`` callbacks receive a ``WebSocketError`` with code -1, and
 ``disconnect()`` still returns. Both kinds share one reader since #68, so a
 panic stops the delivery of events and messages alike.
+
+A release build (``maturin develop --release``) has no injection sites, so
+every test here is skipped there: each would wait for a panic that never
+comes.
 """
 import asyncio
 import time
@@ -15,6 +19,7 @@ import pytest
 
 from fugle_marketdata import WebSocketError
 from tests.ws_loopback import (
+    PANIC_ENV,
     TIMEOUT_S,
     LoopbackServer,
     Recorder,
@@ -24,7 +29,7 @@ from tests.ws_loopback import (
 
 PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
 
-PANIC_ENV = "FUGLE_MARKETDATA_TEST_PANIC"
+pytestmark = pytest.mark.usefixtures("injection_sites")
 
 hard_timeout = pytest.mark.timeout(20, method="thread")
 

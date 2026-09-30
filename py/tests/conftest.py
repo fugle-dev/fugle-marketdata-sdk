@@ -4,6 +4,7 @@ import pytest
 from fugle_marketdata import RestClient, WebSocketClient
 
 from tests.rest_loopback import RestLoopbackServer
+from tests.ws_loopback import is_debug_build
 
 # Get API key from environment for integration tests
 API_KEY = os.environ.get("FUGLE_API_KEY", "test-api-key")
@@ -39,6 +40,17 @@ def rest_server():
     reach the real API (#71)."""
     with RestLoopbackServer() as srv:
         yield srv
+
+
+@pytest.fixture
+def injection_sites():
+    """Skip the test on a release build, which has no
+    ``FUGLE_MARKETDATA_TEST_PANIC`` injection sites."""
+    if not is_debug_build():
+        pytest.skip(
+            "release build: FUGLE_MARKETDATA_TEST_PANIC injection sites exist only in "
+            "debug builds (`maturin develop`), and this test needs the panic they inject"
+        )
 
 
 def pytest_collection_modifyitems(config, items):
