@@ -43,6 +43,10 @@
 //! # Ok::<(), marketdata_core::MarketDataError>(())
 //! ```
 //!
+//! [`stream_config`] is a thin wrapper over the factory for the language
+//! bindings: one call from a client's options to its [`ConnectionConfig`],
+//! with the product as a [`StreamProduct`] value rather than a method.
+//!
 //! Mirrors `fugle-marketdata-node/src/websocket/factory.ts` and
 //! `fugle-marketdata-python/fugle_marketdata/websocket/factory.py`, but
 //! the Rust shape is typestate-enforced: `stock()` / `futopt()` only
@@ -229,10 +233,156 @@ impl WebSocketFactory<WithAuth> {
     }
 }
 
+/// Which streaming endpoint a connection targets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StreamProduct {
+    /// Stock streaming (`/stock/streaming`).
+    Stock,
+    /// Futures/options streaming (`/futopt/streaming`).
+    FutOpt,
+}
+
+/// Build the [`ConnectionConfig`] for one product's streaming endpoint.
+///
+/// What the language bindings call to turn their client options into a
+/// config: `base_url` and the two versions go through [`WebSocketFactory`],
+/// so endpoint semantics stay in one place. `None` for `base_url` is the
+/// production endpoint.
+///
+/// # Errors
+///
+/// Returns [`MarketDataError::ConfigError`] if `base_url` already ends in a
+/// version segment.
+pub fn stream_config(
+    auth: &AuthRequest,
+    base_url: Option<&str>,
+    product: StreamProduct,
+    stock_version: StockVersion,
+    futopt_version: FutOptVersion,
+) -> Result<ConnectionConfig, MarketDataError> {
+    let mut factory = WebSocketFactory::new()
+        .stock_version(stock_version)
+        .futopt_version(futopt_version);
+    if let Some(base) = base_url {
+        factory = factory.base_url(base);
+    }
+    let factory = factory.auth(auth.clone());
+    let builder = match product {
+        StreamProduct::Stock => factory.stock()?,
+        StreamProduct::FutOpt => factory.futopt()?,
+    };
+    Ok(builder.build())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::urls::{FUTOPT_WS, STOCK_WS};
+
+    fn default_stream_config(
+        base_url: Option<&str>,
+        product: StreamProduct,
+    ) -> Result<ConnectionConfig, MarketDataError> {
+        stream_config(
+            &AuthRequest::with_api_key("k"),
+            base_url,
+            product,
+            StockVersion::default(),
+            FutOptVersion::default(),
+        )
+    }
+
+    #[test]
+    fn test_stream_config_defaults_to_production() {
+        let stock = default_stream_config(None, StreamProduct::Stock).unwrap();
+        assert_eq!(stock.url, STOCK_WS);
+        let futopt = default_stream_config(None, StreamProduct::FutOpt).unwrap();
+        assert_eq!(futopt.url, FUTOPT_WS);
+    }
+
+    #[test]
+    fn test_stream_config_applies_base_url_and_version_per_product() {
+        let auth = AuthRequest::with_api_key("k");
+        let base = Some("ws://localhost:8080/");
+        let pinned = |product| {
+            stream_config(
+                &auth,
+                base,
+                product,
+                StockVersion::default(),
+                FutOptVersion::V1_0,
+            )
+            .unwrap()
+            .url
+        };
+        assert_eq!(
+            pinned(StreamProduct::Stock),
+            "ws://localhost:8080/v1.0/stock/streaming"
+        );
+        assert_eq!(
+            pinned(StreamProduct::FutOpt),
+            "ws://localhost:8080/v1.0/futopt/streaming"
+        );
+        let latest = default_stream_config(base, StreamProduct::FutOpt).unwrap();
+        assert_eq!(latest.url, "ws://localhost:8080/v1.1/futopt/streaming");
+    }
+
+    #[test]
+    fn test_stream_config_matches_factory() {
+        // Same config, and same error, as driving the factory by hand, for
+        // both products.
+        fn via_factory(
+            factory: &WebSocketFactory<WithAuth>,
+            product: StreamProduct,
+        ) -> Result<ConnectionConfig, MarketDataError> {
+            Ok(match product {
+                StreamProduct::Stock => factory.stock()?,
+                StreamProduct::FutOpt => factory.futopt()?,
+            }
+            .build())
+        }
+        // `Debug` redacts `auth`, so it is compared through what goes on
+        // the wire.
+        fn wire(auth: &AuthRequest) -> serde_json::Value {
+            serde_json::to_value(auth).unwrap()
+        }
+
+        let auth = AuthRequest::with_api_key("stream-config-key");
+        let base = "wss://staging.fugle.tw/marketdata";
+        let versioned = "wss://staging.fugle.tw/marketdata/v1.0";
+        let config = |base_url, product| {
+            stream_config(
+                &auth,
+                Some(base_url),
+                product,
+                StockVersion::default(),
+                FutOptVersion::V1_0,
+            )
+        };
+        let factory = |base_url| {
+            WebSocketFactory::new()
+                .base_url(base_url)
+                .futopt_version(FutOptVersion::V1_0)
+                .auth(auth.clone())
+        };
+
+        for product in [StreamProduct::Stock, StreamProduct::FutOpt] {
+            let cfg = config(base, product).unwrap();
+            let expected = via_factory(&factory(base), product).unwrap();
+            assert_eq!(format!("{cfg:?}"), format!("{expected:?}"), "{product:?}");
+            assert_eq!(wire(&cfg.auth), wire(&expected.auth), "{product:?}");
+            assert_eq!(wire(&cfg.auth), wire(&auth), "{product:?}");
+
+            let err = config(versioned, product).unwrap_err();
+            let expected = match via_factory(&factory(versioned), product) {
+                Err(err) => err.to_string(),
+                Ok(_) => panic!("versioned base_url must be rejected for {product:?}"),
+            };
+            assert!(matches!(err, MarketDataError::ConfigError(_)), "{err:?}");
+            assert_eq!(err.to_string(), expected, "{product:?}");
+        }
+    }
 
     #[test]
     fn test_default_stock_endpoint() {

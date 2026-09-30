@@ -35,6 +35,17 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — `stream_config` for the bindings (#252)
+
+- `+` `websocket::stream_config(&AuthRequest, Option<&str>, StreamProduct,
+  StockVersion, FutOptVersion) -> Result<ConnectionConfig, MarketDataError>`
+  (also `websocket::factory::stream_config`) — the `ConnectionConfig` for
+  one product's streaming endpoint, built through `WebSocketFactory`; what
+  the Python, Node and UniFFI bindings each carried a copy of. Additive.
+- `+` `websocket::StreamProduct` (also `websocket::factory::StreamProduct`;
+  `Stock`, `FutOpt`; `#[non_exhaustive]`; `Clone`, `Copy`, `Debug`,
+  `PartialEq`, `Eq`) — the product argument of `stream_config`. Additive.
+
 ### Unreleased — reconnect-conflict warning (#226, #242)
 
 - `+` `error_code::RECONNECT_CONFLICT` (3006) — a warning reported as

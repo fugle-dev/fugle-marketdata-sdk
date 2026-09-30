@@ -930,17 +930,17 @@ impl WebSocketClient {
         // hand-rolled `format!("{base}/stock/streaming")`, which is how the
         // version segment ended up being the caller's problem.
         let (stock_version, futopt_version) = self.version.resolve()?;
-        let mut factory = marketdata_core::WebSocketFactory::new()
-            .stock_version(stock_version)
-            .futopt_version(futopt_version);
-        if let Some(ref url) = self.base_url {
-            factory = factory.base_url(url);
-        }
-        let factory = factory.auth(self.auth.clone());
-        Ok(match self.endpoint {
-            WebSocketEndpoint::Stock => factory.stock()?.build(),
-            WebSocketEndpoint::FutOpt => factory.futopt()?.build(),
-        })
+        let product = match self.endpoint {
+            WebSocketEndpoint::Stock => marketdata_core::websocket::StreamProduct::Stock,
+            WebSocketEndpoint::FutOpt => marketdata_core::websocket::StreamProduct::FutOpt,
+        };
+        Ok(marketdata_core::websocket::stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            product,
+            stock_version,
+            futopt_version,
+        )?)
     }
 
     /// Open, authenticate and store a new connection, for a `connect()` that
