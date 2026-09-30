@@ -1587,10 +1587,11 @@ fn disconnect_async_awaitable<'py>(
     })
 }
 
-/// Resolve `subscribe_async()`'s dual-shape input while the GIL is held, so
-/// its awaitable only deals with owned, Send-safe data: `(channel, symbols,
-/// modifier)`.
-fn resolve_subscribe_async_args(
+/// Resolve `subscribe()` / `subscribe_async()`'s dual-shape input into
+/// owned, Send-safe data: `(channel, symbols, modifier)`. `method` names the
+/// caller in the error for a first argument of the wrong type.
+fn resolve_subscribe_args(
+    method: &str,
     channel: &Bound<'_, PyAny>,
     symbol: Option<&str>,
     symbols: Option<Vec<String>>,
@@ -1604,7 +1605,7 @@ fn resolve_subscribe_async_args(
         Ok((s, syms, flag))
     } else {
         Err(pyo3::exceptions::PyTypeError::new_err(
-            "subscribe_async() first argument must be a dict or channel string",
+            format!("{method}() first argument must be a dict or channel string"),
         ))
     }
 }
@@ -1646,16 +1647,34 @@ fn measure_latency_async_awaitable<'py>(
     })
 }
 
-/// Stock market WebSocket client
-///
-/// Access via `ws.stock`
-///
-/// Supports both iterator-based and callback-based message consumption.
-/// A background thread delivers the connection's events and messages in
-/// order: each message goes to the `message` callbacks if any are registered
-/// when it arrives, otherwise to `messages()` iterators.
-#[pyclass]
-pub struct StockWebSocketClient {
+/// What sets one product's client apart from the other's.
+struct ProductSpec {
+    stream: WsProduct,
+    /// Name of the thread that reads the stream.
+    reader_name: &'static str,
+    /// The production endpoint, for a client built with a bad `base_url`.
+    fallback_config: fn(marketdata_core::AuthRequest) -> marketdata_core::ConnectionConfig,
+}
+
+static STOCK: ProductSpec = ProductSpec {
+    stream: WsProduct::Stock,
+    reader_name: "stock_ws_stream",
+    fallback_config: marketdata_core::ConnectionConfig::fugle_stock,
+};
+
+static FUTOPT: ProductSpec = ProductSpec {
+    stream: WsProduct::FutOpt,
+    reader_name: "futopt_ws_stream",
+    fallback_config: marketdata_core::ConnectionConfig::fugle_futopt,
+};
+
+/// What `StockWebSocketClient` and `FutOptWebSocketClient` share: the
+/// connection state and the implementation of every sync method (#281). The
+/// two pyclasses deref to it, so their `#[pymethods]` keep only the Python
+/// signatures, docstrings and each product's channel and subscription types.
+/// `pub` only because the pyclasses' `Deref` names it; the module is private.
+pub struct ProductClient {
+    product: &'static ProductSpec,
     auth: marketdata_core::AuthRequest,
     base_url: Option<String>,
     stock_version: marketdata_core::websocket::StockVersion,
@@ -1689,8 +1708,10 @@ pub struct StockWebSocketClient {
     pending: PendingSlot,
 }
 
-impl StockWebSocketClient {
+impl ProductClient {
+    #[allow(clippy::too_many_arguments)]
     fn new(
+        product: &'static ProductSpec,
         auth: marketdata_core::AuthRequest,
         base_url: Option<String>,
         stock_version: marketdata_core::websocket::StockVersion,
@@ -1702,6 +1723,7 @@ impl StockWebSocketClient {
         auth_timeout: Duration,
     ) -> Self {
         Self {
+            product,
             auth,
             base_url,
             stock_version,
@@ -1730,15 +1752,11 @@ impl StockWebSocketClient {
         let mut config = build_stream_config(
             &self.auth,
             self.base_url.as_deref(),
-            WsProduct::Stock,
+            self.product.stream,
             self.stock_version,
             self.futopt_version,
         )
-        .unwrap_or_else(|_| {
-            marketdata_core::ConnectionConfig::fugle_stock(
-                self.auth.clone(),
-            )
-        });
+        .unwrap_or_else(|_| (self.product.fallback_config)(self.auth.clone()));
         config.tls = self.tls.clone();
         self.message_queue.apply(&mut config);
         config.auth_timeout = self.auth_timeout;
@@ -1766,7 +1784,7 @@ impl StockWebSocketClient {
             config: self.build_config(),
             reconnect_config: self.reconnect_config.to_core(),
             health_check_config: self.health_check_config.to_core(),
-            reader_name: "stock_ws_stream",
+            reader_name: self.product.reader_name,
             callbacks: Arc::clone(&self.callbacks),
             state: Arc::clone(&self.state),
             parked_readers: Arc::clone(&self.parked_readers),
@@ -1779,65 +1797,19 @@ impl StockWebSocketClient {
         })
     }
 
-}
-
-#[pymethods]
-impl StockWebSocketClient {
-    /// Register a callback for an event type
-    ///
-    /// Supported events:
-    ///   - "message" / "data": Called with message dict when data received
-    ///   - "raw_message": Called with the message as the str the server sent, no dict built
-    ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
-    ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
-    ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
-    ///   - "disconnect" / "disconnected" / "close": Called when connection closed
-    ///   - "reconnect" / "reconnecting": Called when reconnecting
-    ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
-    ///
-    /// Args:
-    ///     event: Event type string
-    ///     callback: Python callable to invoke
-    ///
-    /// Example:
-    ///     ```python
-    ///     def on_message(msg):
-    ///         print(f"Symbol: {msg.get('symbol')}, Price: {msg.get('price')}")
-    ///
-    ///     ws.stock.on("message", on_message)
-    ///     ```
-    #[pyo3(signature = (event, callback))]
-    pub fn on(&self, event: &str, callback: &Bound<'_, PyAny>) -> PyResult<()> {
-        self.callbacks.register(event, callback)
+    /// Run `f` on the live core client with the GIL released; raises if not
+    /// connected.
+    fn block_on_live<F, Fut, T>(&self, py: Python<'_>, f: F) -> PyResult<T>
+    where
+        F: FnOnce(Arc<marketdata_core::aio::WebSocketClient>) -> Fut,
+        Fut: std::future::Future<Output = Result<T, marketdata_core::MarketDataError>> + Send,
+        T: Send,
+    {
+        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
+        block_on_detached(py, runtime, f(inner)).map_err(errors::to_py_err)
     }
 
-    /// Remove all callbacks for an event type
-    #[pyo3(signature = (event))]
-    pub fn off(&self, event: &str) -> PyResult<()> {
-        self.callbacks.unregister(event)
-    }
-
-    /// Connect to WebSocket server
-    ///
-    /// A background thread delivers the connection's events and messages in
-    /// order: each message goes to the `message` callbacks if any are
-    /// registered when it arrives, otherwise to `messages()` iterators.
-    ///
-    /// During an automatic reconnect it opens no connection of its own: it
-    /// waits for that reconnect and returns once the connection is back and the
-    /// subscriptions are re-sent, so a subscribe() afterwards follows them.
-    /// Called from a callback, it holds up the callbacks until the reconnect
-    /// ends.
-    ///
-    /// Raises:
-    ///     MarketDataError: If connection fails
-    ///     WebSocketError: Code 2011 if already connected or another connect is
-    ///         in progress. While waiting on a reconnect: code 2010 if
-    ///         disconnect() is called, code 3005 if the reconnect runs out of
-    ///         attempts
-    ///     AuthError: While waiting on a reconnect, if its credentials are
-    ///         rejected
-    pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
+    fn connect(&self, py: Python<'_>) -> PyResult<()> {
         // Before the admission: it runs on this runtime.
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
@@ -1869,7 +1841,7 @@ impl StockWebSocketClient {
         let stop = Arc::new(AtomicBool::new(false));
         let delivered = Delivered::default();
         let reader_thread = spawn_stream_reader(
-            "stock_ws_stream",
+            self.product.reader_name,
             ws_client.stream_receiver(),
             Arc::clone(&self.callbacks),
             Arc::clone(&handoff),
@@ -1926,9 +1898,7 @@ impl StockWebSocketClient {
         }
     }
 
-    /// Disconnect from WebSocket server
-    #[pyo3(signature = ())]
-    pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
+    fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
         let (mut target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
         // Only this connection's reader: one a `connect()` installs while
         // this call closes is not waited for (#277).
@@ -2000,9 +1970,7 @@ impl StockWebSocketClient {
         Ok(())
     }
 
-    /// Check if currently connected
-    #[pyo3(signature = ())]
-    pub fn is_connected(&self, py: Python<'_>) -> bool {
+    fn is_connected(&self, py: Python<'_>) -> bool {
         match live_handles(&self.state, &self.runtime) {
             Ok((inner, runtime)) => {
                 block_on_detached(py, runtime, async move { inner.is_connected().await })
@@ -2011,19 +1979,10 @@ impl StockWebSocketClient {
         }
     }
 
-    /// Check if client has been closed
-    ///
-    /// Returns True once disconnect() has closed a live connection or aborted
-    /// a connect() in progress, and False again once a later connect()
-    /// succeeds. This client builds a fresh core client per connect(), so it
-    /// *can* be reused — see
-    /// `test_connect_after_disconnect_succeeds`. Calling disconnect() on a
-    /// client that was never connected closes nothing and leaves this False.
-    #[pyo3(signature = ())]
-    pub fn is_closed(&self, py: Python<'_>) -> bool {
+    fn is_closed(&self, py: Python<'_>) -> bool {
         // `disconnect()` drops `state`, so ask the flag first: without it a
-        // closed client reports `False` here, contradicting the docstring
-        // above (#146).
+        // closed client reports `False` here, contradicting the `is_closed()`
+        // docstring on the pyclasses (#146).
         if self.closed.load(Ordering::SeqCst) {
             return true;
         }
@@ -2047,6 +2006,217 @@ impl StockWebSocketClient {
             // If no runtime, use sync version
             None => inner.is_closed_sync(),
         }
+    }
+
+    fn url(&self) -> PyResult<String> {
+        // `base_url` and `version` were validated in `WebSocketClient::new`,
+        // so this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            self.product.stream,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(errors::to_py_err)
+    }
+
+    fn messages_dropped_total(&self) -> u64 {
+        self.messages_dropped
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|handle| handle.total()))
+            .unwrap_or(0)
+    }
+
+    fn messages(
+        &self,
+        py: Python<'_>,
+        timeout_ms: Option<u64>,
+        raw: bool,
+    ) -> PyResult<crate::iterator::MessageIterator> {
+        warn_timeout_ms_deprecated(py, timeout_ms)?;
+        let state_guard = self.state.lock().map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
+        })?;
+
+        let state = state_guard.as_ref().ok_or_else(|| {
+            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
+        })?;
+
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff), raw))
+    }
+
+    fn local_subscriptions(&self) -> Vec<String> {
+        let state_guard = match self.state.lock() {
+            Ok(g) => g,
+            Err(_) => return vec![],
+        };
+
+        state_guard
+            .as_ref()
+            .map(|s| s.inner.subscription_keys())
+            .unwrap_or_default()
+    }
+
+    fn subscriptions(&self, py: Python<'_>) -> PyResult<()> {
+        let request = marketdata_core::WebSocketRequest::subscriptions();
+        self.block_on_live(py, move |inner| async move { inner.send(request).await })
+    }
+
+    fn ping(&self, py: Python<'_>, state: Option<String>) -> PyResult<()> {
+        let request = marketdata_core::WebSocketRequest::ping(state);
+        self.block_on_live(py, move |inner| async move { inner.send(request).await })
+    }
+
+    fn measure_latency(&self, py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<f64> {
+        let (inner, runtime) = latency_handles(&self.state, &self.runtime)?;
+        let timeout = timeout_ms.map(Duration::from_millis);
+        block_on_detached(py, runtime, async move { inner.measure_latency(timeout).await })
+            .map(|rtt| rtt.as_secs_f64() * 1000.0)
+            .map_err(errors::to_py_err)
+    }
+}
+
+/// Stock market WebSocket client
+///
+/// Access via `ws.stock`
+///
+/// Supports both iterator-based and callback-based message consumption.
+/// A background thread delivers the connection's events and messages in
+/// order: each message goes to the `message` callbacks if any are registered
+/// when it arrives, otherwise to `messages()` iterators.
+#[pyclass]
+pub struct StockWebSocketClient {
+    client: ProductClient,
+}
+
+impl StockWebSocketClient {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        auth: marketdata_core::AuthRequest,
+        base_url: Option<String>,
+        stock_version: marketdata_core::websocket::StockVersion,
+        futopt_version: marketdata_core::websocket::FutOptVersion,
+        reconnect_config: ReconnectConfig,
+        health_check_config: HealthCheckConfig,
+        tls: marketdata_core::TlsConfig,
+        message_queue: MessageQueueSettings,
+        auth_timeout: Duration,
+    ) -> Self {
+        Self {
+            client: ProductClient::new(
+                &STOCK,
+                auth,
+                base_url,
+                stock_version,
+                futopt_version,
+                reconnect_config,
+                health_check_config,
+                tls,
+                message_queue,
+                auth_timeout,
+            ),
+        }
+    }
+}
+
+/// The async methods and tests reach the shared state through this. The
+/// `#[pymethods]` call `self.client.<method>` by name: a same-named method on
+/// this type would otherwise call itself.
+impl std::ops::Deref for StockWebSocketClient {
+    type Target = ProductClient;
+
+    fn deref(&self) -> &ProductClient {
+        &self.client
+    }
+}
+
+#[pymethods]
+impl StockWebSocketClient {
+    /// Register a callback for an event type
+    ///
+    /// Supported events:
+    ///   - "message" / "data": Called with message dict when data received
+    ///   - "raw_message": Called with the message as the str the server sent, no dict built
+    ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
+    ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
+    ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
+    ///   - "disconnect" / "disconnected" / "close": Called when connection closed
+    ///   - "reconnect" / "reconnecting": Called when reconnecting
+    ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
+    ///
+    /// Args:
+    ///     event: Event type string
+    ///     callback: Python callable to invoke
+    ///
+    /// Example:
+    ///     ```python
+    ///     def on_message(msg):
+    ///         print(f"Symbol: {msg.get('symbol')}, Price: {msg.get('price')}")
+    ///
+    ///     ws.stock.on("message", on_message)
+    ///     ```
+    #[pyo3(signature = (event, callback))]
+    pub fn on(&self, event: &str, callback: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.callbacks.register(event, callback)
+    }
+
+    /// Remove all callbacks for an event type
+    #[pyo3(signature = (event))]
+    pub fn off(&self, event: &str) -> PyResult<()> {
+        self.callbacks.unregister(event)
+    }
+
+    /// Connect to WebSocket server
+    ///
+    /// A background thread delivers the connection's events and messages in
+    /// order: each message goes to the `message` callbacks if any are
+    /// registered when it arrives, otherwise to `messages()` iterators.
+    ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and the
+    /// subscriptions are re-sent, so a subscribe() afterwards follows them.
+    /// Called from a callback, it holds up the callbacks until the reconnect
+    /// ends.
+    ///
+    /// Raises:
+    ///     MarketDataError: If connection fails
+    ///     WebSocketError: Code 2011 if already connected or another connect is
+    ///         in progress. While waiting on a reconnect: code 2010 if
+    ///         disconnect() is called, code 3005 if the reconnect runs out of
+    ///         attempts
+    ///     AuthError: While waiting on a reconnect, if its credentials are
+    ///         rejected
+    pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
+        self.client.connect(py)
+    }
+
+    /// Disconnect from WebSocket server
+    #[pyo3(signature = ())]
+    pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
+        self.client.disconnect(py)
+    }
+
+    /// Check if currently connected
+    #[pyo3(signature = ())]
+    pub fn is_connected(&self, py: Python<'_>) -> bool {
+        self.client.is_connected(py)
+    }
+
+    /// Check if client has been closed
+    ///
+    /// Returns True once disconnect() has closed a live connection or aborted
+    /// a connect() in progress, and False again once a later connect()
+    /// succeeds. This client builds a fresh core client per connect(), so it
+    /// *can* be reused — see
+    /// `test_connect_after_disconnect_succeeds`. Calling disconnect() on a
+    /// client that was never connected closes nothing and leaves this False.
+    #[pyo3(signature = ())]
+    pub fn is_closed(&self, py: Python<'_>) -> bool {
+        self.client.is_closed(py)
     }
 
     /// Subscribe to a channel for one or more symbols.
@@ -2079,32 +2249,17 @@ impl StockWebSocketClient {
         symbols: Option<Vec<String>>,
         odd_lot: bool,
     ) -> PyResult<()> {
-        // Resolve dual-shape input into (channel_str, symbols, odd_lot)
         let (channel_str, target_symbols, effective_odd_lot) =
-            if let Ok(d) = channel.cast::<PyDict>() {
-                extract_subscribe_dict("subscribe", d, ODD_LOT)?
-            } else if let Ok(s) = channel.extract::<String>() {
-                let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
-                (s, syms, odd_lot)
-            } else {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "subscribe() first argument must be a dict or channel string",
-                ));
-            };
+            resolve_subscribe_args("subscribe", channel, symbol, symbols, odd_lot, ODD_LOT)?;
 
         // Checked before the connection, so an unknown channel is 1005 either way.
         let ch = channel_str
             .parse::<marketdata_core::Channel>()
             .map_err(errors::to_py_err)?;
 
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
         let sub = marketdata_core::StockSubscription::new(ch, target_symbols)
             .with_odd_lot(effective_odd_lot);
-        let result = block_on_detached(py, runtime, async move { inner.subscribe(sub).await });
-        result.map_err(errors::to_py_err)?;
-
-        Ok(())
+        self.client.block_on_live(py, move |inner| async move { inner.subscribe(sub).await })
     }
 
     /// Unsubscribe from a channel.
@@ -2153,13 +2308,8 @@ impl StockWebSocketClient {
             }
         };
 
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
-        let result =
-            block_on_detached(py, runtime, async move { inner.unsubscribe(target_ids).await });
-        result.map_err(errors::to_py_err)?;
-
-        Ok(())
+        self.client
+            .block_on_live(py, move |inner| async move { inner.unsubscribe(target_ids).await })
     }
 
     /// The endpoint this client connects to, e.g.
@@ -2168,18 +2318,7 @@ impl StockWebSocketClient {
     /// the product path. Readable before `connect()`.
     #[getter]
     pub fn url(&self) -> PyResult<String> {
-        // `base_url` and `version` were validated in `WebSocketClient::new`,
-        // so this cannot fail for a client built through it; no fallback to
-        // the production endpoint (#245).
-        build_stream_config(
-            &self.auth,
-            self.base_url.as_deref(),
-            WsProduct::Stock,
-            self.stock_version,
-            self.futopt_version,
-        )
-        .map(|config| config.url)
-        .map_err(errors::to_py_err)
+        self.client.url()
     }
 
     /// Messages dropped because they arrived while `message_buffer` unread
@@ -2190,11 +2329,7 @@ impl StockWebSocketClient {
     /// last connection's count. 0 before the first `connect()`.
     #[pyo3(signature = ())]
     pub fn messages_dropped_total(&self) -> u64 {
-        self.messages_dropped
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|handle| handle.total()))
-            .unwrap_or(0)
+        self.client.messages_dropped_total()
     }
 
     /// Get message iterator for consuming streaming data
@@ -2220,16 +2355,7 @@ impl StockWebSocketClient {
         timeout_ms: Option<u64>,
         raw: bool,
     ) -> PyResult<crate::iterator::MessageIterator> {
-        warn_timeout_ms_deprecated(py, timeout_ms)?;
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-
-        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff), raw))
+        self.client.messages(py, timeout_ms, raw)
     }
 
     /// Get the locally cached list of active subscription keys.
@@ -2240,15 +2366,7 @@ impl StockWebSocketClient {
     /// response will arrive via the registered `message` callback.
     #[pyo3(signature = ())]
     pub fn local_subscriptions(&self) -> Vec<String> {
-        let state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => return vec![],
-        };
-
-        state_guard
-            .as_ref()
-            .map(|s| s.inner.subscription_keys())
-            .unwrap_or_default()
+        self.client.local_subscriptions()
     }
 
     /// Ask the server for its current subscription list.
@@ -2261,11 +2379,7 @@ impl StockWebSocketClient {
     ///     RuntimeError: If not connected
     #[pyo3(signature = ())]
     pub fn subscriptions(&self, py: Python<'_>) -> PyResult<()> {
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
-        let request = marketdata_core::WebSocketRequest::subscriptions();
-        block_on_detached(py, runtime, async move { inner.send(request).await })
-            .map_err(errors::to_py_err)
+        self.client.subscriptions(py)
     }
 
     /// Send a `ping` frame to the server (matches the old fugle-marketdata SDK).
@@ -2280,11 +2394,7 @@ impl StockWebSocketClient {
     ///     RuntimeError: If not connected
     #[pyo3(signature = (state=None))]
     pub fn ping(&self, py: Python<'_>, state: Option<String>) -> PyResult<()> {
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
-        let request = marketdata_core::WebSocketRequest::ping(state);
-        block_on_detached(py, runtime, async move { inner.send(request).await })
-            .map_err(errors::to_py_err)
+        self.client.ping(py, state)
     }
 
     /// Measure the round trip to the server: send a ping, wait for its pong,
@@ -2304,11 +2414,7 @@ impl StockWebSocketClient {
     ///     MarketDataError: Code 1005 for a `timeout_ms` of 0
     #[pyo3(signature = (timeout_ms=None))]
     pub fn measure_latency(&self, py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<f64> {
-        let (inner, runtime) = latency_handles(&self.state, &self.runtime)?;
-        let timeout = timeout_ms.map(Duration::from_millis);
-        block_on_detached(py, runtime, async move { inner.measure_latency(timeout).await })
-            .map(|rtt| rtt.as_secs_f64() * 1000.0)
-            .map_err(errors::to_py_err)
+        self.client.measure_latency(py, timeout_ms)
     }
 
     /// Connect to WebSocket server (async version)
@@ -2382,7 +2488,7 @@ impl StockWebSocketClient {
         odd_lot: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let (channel_str, target_symbols, effective_odd_lot) =
-            resolve_subscribe_async_args(channel, symbol, symbols, odd_lot, ODD_LOT)?;
+            resolve_subscribe_args("subscribe_async", channel, symbol, symbols, odd_lot, ODD_LOT)?;
         let state_arc = Arc::clone(&self.state);
 
         future_into_py(py, async move {
@@ -2445,38 +2551,11 @@ impl StockWebSocketClient {
 /// Access via `ws.futopt`
 #[pyclass]
 pub struct FutOptWebSocketClient {
-    auth: marketdata_core::AuthRequest,
-    base_url: Option<String>,
-    stock_version: marketdata_core::websocket::StockVersion,
-    futopt_version: marketdata_core::websocket::FutOptVersion,
-    reconnect_config: ReconnectConfig,
-    health_check_config: HealthCheckConfig,
-    tls: marketdata_core::TlsConfig,
-    callbacks: Arc<CallbackRegistry>,
-    state: Arc<Mutex<Option<WebSocketState>>>,
-    runtime: Arc<Mutex<Option<SharedRuntime>>>,
-    parked_readers: Arc<ParkedReaders>,
-    message_queue: MessageQueueSettings,
-    auth_timeout: Duration,
-    /// Dropped-message count of the current or last connection; outlives the
-    /// core client, which `disconnect()` drops.
-    messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
-    /// Carries a close made soon after an automatic reconnect to the next
-    /// `connect()`, whose core client is a new one, for the 3006 warning
-    /// (#226, #242).
-    reconnect_conflict: marketdata_core::ReconnectConflictHandle,
-    /// `disconnect()` drops `state`, so "has this client been closed?" cannot
-    /// be answered from it — `is_closed()` read `None` as "not closed" and
-    /// contradicted its own docstring (#146). Set when a disconnect actually
-    /// closes something — a live client or a connect in progress (#143) —
-    /// cleared when `connect()` installs a new one.
-    closed: Arc<AtomicBool>,
-    connect_gate: ConnectGate,
-    /// The connect in progress, for `disconnect()` to abort (#143).
-    pending: PendingSlot,
+    client: ProductClient,
 }
 
 impl FutOptWebSocketClient {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         auth: marketdata_core::AuthRequest,
         base_url: Option<String>,
@@ -2489,79 +2568,30 @@ impl FutOptWebSocketClient {
         auth_timeout: Duration,
     ) -> Self {
         Self {
-            auth,
-            base_url,
-            stock_version,
-            futopt_version,
-            reconnect_config,
-            health_check_config,
-            tls,
-            callbacks: Arc::new(CallbackRegistry::new()),
-            state: Arc::new(Mutex::new(None)),
-            runtime: Arc::new(Mutex::new(None)),
-            parked_readers: Arc::new(Mutex::new(Vec::new())),
-            message_queue,
-            auth_timeout,
-            messages_dropped: Arc::new(Mutex::new(None)),
-            reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
-            closed: Arc::new(AtomicBool::new(false)),
-            connect_gate: ConnectGate::default(),
-            pending: Arc::new(Mutex::new(None)),
+            client: ProductClient::new(
+                &FUTOPT,
+                auth,
+                base_url,
+                stock_version,
+                futopt_version,
+                reconnect_config,
+                health_check_config,
+                tls,
+                message_queue,
+                auth_timeout,
+            ),
         }
     }
+}
 
-    fn build_config(&self) -> marketdata_core::ConnectionConfig {
-        // See the stock sibling: validation already happened at construction.
-        let mut config = build_stream_config(
-            &self.auth,
-            self.base_url.as_deref(),
-            WsProduct::FutOpt,
-            self.stock_version,
-            self.futopt_version,
-        )
-        .unwrap_or_else(|_| {
-            marketdata_core::ConnectionConfig::fugle_futopt(
-                self.auth.clone(),
-            )
-        });
-        config.tls = self.tls.clone();
-        self.message_queue.apply(&mut config);
-        config.auth_timeout = self.auth_timeout;
-        config
-    }
+/// The async methods and tests reach the shared state through this. The
+/// `#[pymethods]` call `self.client.<method>` by name: a same-named method on
+/// this type would otherwise call itself.
+impl std::ops::Deref for FutOptWebSocketClient {
+    type Target = ProductClient;
 
-    /// Get or create the tokio runtime
-    fn ensure_runtime(&self) -> Result<(), String> {
-        let mut runtime_guard = self.runtime.lock().map_err(|e| e.to_string())?;
-        if runtime_guard.is_none() {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
-            *runtime_guard = Some(Arc::new(rt));
-        }
-        Ok(())
-    }
-
-    /// What `connect_async()` / `__aenter__` take from this client.
-    fn async_connect(&self) -> PyResult<AsyncConnect> {
-        // `subscribe()` after an async connect runs on this runtime.
-        self.ensure_runtime().map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
-        Ok(AsyncConnect {
-            config: self.build_config(),
-            reconnect_config: self.reconnect_config.to_core(),
-            health_check_config: self.health_check_config.to_core(),
-            reader_name: "futopt_ws_stream",
-            callbacks: Arc::clone(&self.callbacks),
-            state: Arc::clone(&self.state),
-            parked_readers: Arc::clone(&self.parked_readers),
-            messages_dropped: Arc::clone(&self.messages_dropped),
-            reconnect_conflict: self.reconnect_conflict.clone(),
-            connect_gate: self.connect_gate.clone(),
-            pending: Arc::clone(&self.pending),
-            closed: Arc::clone(&self.closed),
-            test_panic: test_panic_site(),
-        })
+    fn deref(&self) -> &ProductClient {
+        &self.client
     }
 }
 
@@ -2611,173 +2641,19 @@ impl FutOptWebSocketClient {
     ///         rejected
     #[pyo3(signature = ())]
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
-        // Before the admission: it runs on this runtime.
-        self.ensure_runtime().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e)
-        })?;
-        let Some(_claim) = admit_blocking(py, &self.connect_gate, &self.state, &self.runtime)? else {
-            return Ok(());
-        };
-        // Again: the admission ran with the GIL released, where a
-        // `disconnect()` may have taken the runtime. From here to the
-        // connect below the GIL is held, so this one stays.
-        self.ensure_runtime().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e)
-        })?;
-        let test_panic = test_panic_site();
-
-        // Create WebSocket client for FutOpt endpoint with full config
-        let config = self.build_config();
-        let capacity = handoff_capacity(&config);
-        let ws_client = Arc::new(marketdata_core::aio::WebSocketClient::with_full_config(
-            config,
-            self.reconnect_config.to_core(),
-            self.health_check_config.to_core(),
-        ));
-        *self.messages_dropped.lock().map_err(lock_err)? = Some(ws_client.messages_dropped_handle());
-        // Before connect(): it warns about the previous connection's close.
-        ws_client.use_reconnect_conflict_handle(&self.reconnect_conflict);
-
-        let handoff = Arc::new(Handoff::new(capacity));
-        let stop = Arc::new(AtomicBool::new(false));
-        let delivered = Delivered::default();
-        let reader_thread = spawn_stream_reader(
-            "futopt_ws_stream",
-            ws_client.stream_receiver(),
-            Arc::clone(&self.callbacks),
-            Arc::clone(&handoff),
-            Arc::clone(&stop),
-            delivered.clone(),
-            test_panic,
-        )?;
-
-        let runtime = self.runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
-        })?;
-
-        // From here a `disconnect()` aborts this connect (#143).
-        *self.pending.lock().map_err(lock_err)? = Some(PendingConnect {
-            client: Arc::clone(&ws_client),
-            reader_thread,
-            stop: Arc::clone(&stop),
-        });
-
-        // Connect with the GIL released: the handshake and auth ack may come
-        // from a server that needs this interpreter to run (#39).
-        let (ws_client, result) = py.detach(move || {
-            let result = runtime.block_on(ws_client.connect());
-            (ws_client, result)
-        });
-
-        let outcome = settle_connect(
-            &self.pending,
-            &self.state,
-            &self.parked_readers,
-            &self.closed,
-            result,
-            |reader| WebSocketState {
-                inner: Arc::clone(&ws_client),
-                handoff,
-                stop,
-                delivered,
-                reader: Some(reader),
-            },
-        )?;
-        match outcome {
-            ConnectOutcome::Installed => Ok(()),
-            ConnectOutcome::Failed(e, reader_thread) => {
-                // Dropping the client closes the stream; the reader first
-                // delivers `unauthenticated` / `error`, so they fire before
-                // we raise.
-                drop(ws_client);
-                join_reader_thread(py, reader_thread);
-                Err(errors::to_py_err(e))
-            }
-            // The `disconnect()` that aborted this connect waits for the
-            // reader once this client is dropped.
-            ConnectOutcome::Aborted(e) => Err(errors::to_py_err(e)),
-        }
+        self.client.connect(py)
     }
 
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
-        let (mut target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
-        // Only this connection's reader: one a `connect()` installs while
-        // this call closes is not waited for (#277).
-        let (own_reader, own_stop) = match target.live.as_mut() {
-            Some(state) => (state.reader.take(), Some(Arc::clone(&state.stop))),
-            None => (None, None),
-        };
-        let own_reader = park_own_reader_thread(own_reader, own_stop, &self.parked_readers);
-        let aborted_stop = target.connecting_stop.clone();
-        let aborted_reader = park_own_reader_thread(aborted_reader, aborted_stop, &self.parked_readers);
-
-        if !target.is_empty() {
-            // Recorded before the close so `is_closed()` is true the moment
-            // `disconnect()` returns, even though `state` is gone (#146).
-            self.closed.store(true, Ordering::SeqCst);
-            if let Some(state) = &target.live {
-                // Messages before `Disconnected` still reach the callbacks,
-                // but the reader no longer waits for an iterator to make room.
-                state.stop.store(true, Ordering::SeqCst);
-            }
-            // No iterator reads an aborted connect's messages.
-            if let Some(stop) = &target.connecting_stop {
-                stop.store(true, Ordering::SeqCst);
-            }
-            // Take ownership of the runtime — see StockWebSocketClient::disconnect
-            // for the rationale (forces all spawned tasks to drop their
-            // Arc<WebSocketClient> clones so the stream can close).
-            let runtime = self.runtime.lock().map_err(lock_err)?.take();
-
-            if let Some(rt) = runtime {
-                // The close handshake waits on the server, so release the GIL (#39).
-                py.detach(move || {
-                    rt.block_on(target.disconnect());
-                    // `rt` drops first. The runtime shuts down once every
-                    // clone is gone — a connect racing this call holds its
-                    // own until it returns — which aborts all spawned tasks
-                    // and drops their futures, releasing every
-                    // Arc<WebSocketClient> clone they held. `target` drops
-                    // next → core's WebSocketClient drops → its stream
-                    // closes → the stream reader drains it and exits cleanly.
-                    drop(rt);
-                    drop(target);
-                });
-            }
-
-            // Note: do NOT manually invoke_disconnect here. Core's
-            // disconnect() emits a ConnectionEvent::Disconnected on its
-            // stream, and the stream reader dispatches it to the user
-            // callback. Calling it explicitly fires the
-            // callback twice.
-        }
-
-        // The client is gone, so the stream reader drains and exits: the
-        // `disconnect` callback has fired by the time this returns (#54).
-        // An aborted connect's reader ends once that connect drops its
-        // client too.
-        if let Some(handle) = own_reader {
-            join_reader_thread(py, handle);
-        }
-        if let Some(handle) = aborted_reader {
-            join_reader_thread(py, handle);
-        }
-        join_parked_reader_threads(py, &self.parked_readers);
-
-        Ok(())
+        self.client.disconnect(py)
     }
 
     /// Check if currently connected
     #[pyo3(signature = ())]
     pub fn is_connected(&self, py: Python<'_>) -> bool {
-        match live_handles(&self.state, &self.runtime) {
-            Ok((inner, runtime)) => {
-                block_on_detached(py, runtime, async move { inner.is_connected().await })
-            }
-            Err(_) => false,
-        }
+        self.client.is_connected(py)
     }
 
     /// Check if client has been closed
@@ -2790,32 +2666,7 @@ impl FutOptWebSocketClient {
     /// client that was never connected closes nothing and leaves this False.
     #[pyo3(signature = ())]
     pub fn is_closed(&self, py: Python<'_>) -> bool {
-        // `disconnect()` drops `state`, so ask the flag first: without it a
-        // closed client reports `False` here, contradicting the docstring
-        // above (#146).
-        if self.closed.load(Ordering::SeqCst) {
-            return true;
-        }
-
-        // State still None and never disconnected: never connected, not closed.
-        let inner = match self.state.lock() {
-            Ok(g) => match g.as_ref() {
-                Some(s) => Arc::clone(&s.inner),
-                None => return false,
-            },
-            Err(_) => return false,
-        };
-
-        let runtime = match self.runtime.lock() {
-            Ok(g) => g.clone(),
-            Err(_) => return false,
-        };
-
-        match runtime {
-            Some(runtime) => block_on_detached(py, runtime, async move { inner.is_closed().await }),
-            // If no runtime, use sync version
-            None => inner.is_closed_sync(),
-        }
+        self.client.is_closed(py)
     }
 
     /// Subscribe to a channel for one or more FutOpt symbols.
@@ -2843,31 +2694,16 @@ impl FutOptWebSocketClient {
         after_hours: bool,
     ) -> PyResult<()> {
         let (channel_str, target_symbols, effective_after_hours) =
-            if let Ok(d) = channel.cast::<PyDict>() {
-                extract_subscribe_dict("subscribe", d, AFTER_HOURS)?
-            } else if let Ok(s) = channel.extract::<String>() {
-                let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
-                (s, syms, after_hours)
-            } else {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "subscribe() first argument must be a dict or channel string",
-                ));
-            };
+            resolve_subscribe_args("subscribe", channel, symbol, symbols, after_hours, AFTER_HOURS)?;
 
         // Checked before the connection; FutOpt has no `indices` channel.
         let ch = channel_str
             .parse::<marketdata_core::FutOptChannel>()
             .map_err(errors::to_py_err)?;
 
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
         let sub = marketdata_core::FutOptSubscription::new(ch, target_symbols)
             .with_after_hours(effective_after_hours);
-        let result =
-            block_on_detached(py, runtime, async move { inner.subscribe_futopt(sub).await });
-        result.map_err(errors::to_py_err)?;
-
-        Ok(())
+        self.client.block_on_live(py, move |inner| async move { inner.subscribe_futopt(sub).await })
     }
 
     /// Unsubscribe from a channel.
@@ -2902,13 +2738,8 @@ impl FutOptWebSocketClient {
             }
         };
 
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
-        let result =
-            block_on_detached(py, runtime, async move { inner.unsubscribe(target_ids).await });
-        result.map_err(errors::to_py_err)?;
-
-        Ok(())
+        self.client
+            .block_on_live(py, move |inner| async move { inner.unsubscribe(target_ids).await })
     }
 
     /// The endpoint this client connects to, e.g.
@@ -2917,18 +2748,7 @@ impl FutOptWebSocketClient {
     /// the product path. Readable before `connect()`.
     #[getter]
     pub fn url(&self) -> PyResult<String> {
-        // `base_url` and `version` were validated in `WebSocketClient::new`,
-        // so this cannot fail for a client built through it; no fallback to
-        // the production endpoint (#245).
-        build_stream_config(
-            &self.auth,
-            self.base_url.as_deref(),
-            WsProduct::FutOpt,
-            self.stock_version,
-            self.futopt_version,
-        )
-        .map(|config| config.url)
-        .map_err(errors::to_py_err)
+        self.client.url()
     }
 
     /// Messages dropped because they arrived while `message_buffer` unread
@@ -2939,11 +2759,7 @@ impl FutOptWebSocketClient {
     /// last connection's count. 0 before the first `connect()`.
     #[pyo3(signature = ())]
     pub fn messages_dropped_total(&self) -> u64 {
-        self.messages_dropped
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|handle| handle.total()))
-            .unwrap_or(0)
+        self.client.messages_dropped_total()
     }
 
     /// Get message iterator for consuming streaming data
@@ -2969,16 +2785,7 @@ impl FutOptWebSocketClient {
         timeout_ms: Option<u64>,
         raw: bool,
     ) -> PyResult<crate::iterator::MessageIterator> {
-        warn_timeout_ms_deprecated(py, timeout_ms)?;
-        let state_guard = self.state.lock().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e))
-        })?;
-
-        let state = state_guard.as_ref().ok_or_else(|| {
-            pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
-        })?;
-
-        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff), raw))
+        self.client.messages(py, timeout_ms, raw)
     }
 
     /// Get the locally cached list of active subscription keys.
@@ -2989,15 +2796,7 @@ impl FutOptWebSocketClient {
     /// response will arrive via the registered `message` callback.
     #[pyo3(signature = ())]
     pub fn local_subscriptions(&self) -> Vec<String> {
-        let state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => return vec![],
-        };
-
-        state_guard
-            .as_ref()
-            .map(|s| s.inner.subscription_keys())
-            .unwrap_or_default()
+        self.client.local_subscriptions()
     }
 
     /// Ask the server for its current subscription list.
@@ -3010,11 +2809,7 @@ impl FutOptWebSocketClient {
     ///     RuntimeError: If not connected
     #[pyo3(signature = ())]
     pub fn subscriptions(&self, py: Python<'_>) -> PyResult<()> {
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
-        let request = marketdata_core::WebSocketRequest::subscriptions();
-        block_on_detached(py, runtime, async move { inner.send(request).await })
-            .map_err(errors::to_py_err)
+        self.client.subscriptions(py)
     }
 
     /// Send a `ping` frame to the server (matches the old fugle-marketdata SDK).
@@ -3029,11 +2824,7 @@ impl FutOptWebSocketClient {
     ///     RuntimeError: If not connected
     #[pyo3(signature = (state=None))]
     pub fn ping(&self, py: Python<'_>, state: Option<String>) -> PyResult<()> {
-        let (inner, runtime) = live_handles(&self.state, &self.runtime)?;
-
-        let request = marketdata_core::WebSocketRequest::ping(state);
-        block_on_detached(py, runtime, async move { inner.send(request).await })
-            .map_err(errors::to_py_err)
+        self.client.ping(py, state)
     }
 
     /// Measure the round trip to the server: send a ping, wait for its pong,
@@ -3053,11 +2844,7 @@ impl FutOptWebSocketClient {
     ///     MarketDataError: Code 1005 for a `timeout_ms` of 0
     #[pyo3(signature = (timeout_ms=None))]
     pub fn measure_latency(&self, py: Python<'_>, timeout_ms: Option<u64>) -> PyResult<f64> {
-        let (inner, runtime) = latency_handles(&self.state, &self.runtime)?;
-        let timeout = timeout_ms.map(Duration::from_millis);
-        block_on_detached(py, runtime, async move { inner.measure_latency(timeout).await })
-            .map(|rtt| rtt.as_secs_f64() * 1000.0)
-            .map_err(errors::to_py_err)
+        self.client.measure_latency(py, timeout_ms)
     }
 
     /// Connect to WebSocket server (async version)
@@ -3131,7 +2918,7 @@ impl FutOptWebSocketClient {
         after_hours: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let (channel_str, target_symbols, effective_after_hours) =
-            resolve_subscribe_async_args(channel, symbol, symbols, after_hours, AFTER_HOURS)?;
+            resolve_subscribe_args("subscribe_async", channel, symbol, symbols, after_hours, AFTER_HOURS)?;
         let state_arc = Arc::clone(&self.state);
 
         future_into_py(py, async move {
