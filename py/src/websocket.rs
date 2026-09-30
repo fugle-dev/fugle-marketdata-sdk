@@ -1932,8 +1932,19 @@ impl StockWebSocketClient {
     /// (host and path prefix), the version segment picked by `version`, then
     /// the product path. Readable before `connect()`.
     #[getter]
-    pub fn url(&self) -> String {
-        self.build_config().url
+    pub fn url(&self) -> PyResult<String> {
+        // `base_url` and `version` were validated in `WebSocketClient::new`,
+        // so this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            WsProduct::Stock,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(errors::to_py_err)
     }
 
     /// Messages dropped because they arrived while `message_buffer` unread
@@ -2767,8 +2778,19 @@ impl FutOptWebSocketClient {
     /// (host and path prefix), the version segment picked by `version`, then
     /// the product path. Readable before `connect()`.
     #[getter]
-    pub fn url(&self) -> String {
-        self.build_config().url
+    pub fn url(&self) -> PyResult<String> {
+        // `base_url` and `version` were validated in `WebSocketClient::new`,
+        // so this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            WsProduct::FutOpt,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(errors::to_py_err)
     }
 
     /// Messages dropped because they arrived while `message_buffer` unread
