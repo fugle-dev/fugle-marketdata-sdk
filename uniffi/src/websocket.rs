@@ -32,10 +32,11 @@
 
 use crate::errors::{ErrorInfo, MarketDataError};
 use crate::models::StreamMessage;
+use marketdata_core::aio::admission::{admit, Admission, ConnectGate, Delivered, StoredConnection};
 use marketdata_core::aio::WebSocketClient as CoreWebSocketClient;
 use marketdata_core::websocket::{ConnectionEvent, StreamItem, StreamReceiver};
 use marketdata_core::AuthRequest;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Callback interface for WebSocket events
@@ -463,7 +464,7 @@ pub struct WebSocketClient {
     /// Held by a `connect()` while it opens a connection, so a concurrent
     /// one is refused rather than opening a second connection (#119). A
     /// `connect()` that joins a reconnect does not take it (#268).
-    connect_gate: tokio::sync::Mutex<()>,
+    connect_gate: ConnectGate,
     /// Tokio runtime for sync wrappers (C++ feature). Kept alive for background tasks.
     #[cfg(feature = "cpp")]
     sync_runtime: std::sync::Mutex<Option<tokio::runtime::Runtime>>,
@@ -499,7 +500,7 @@ impl WebSocketClient {
             messages_dropped: std::sync::Mutex::new(None),
             callback_failures: CallbackFailures::default(),
             reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
-            connect_gate: tokio::sync::Mutex::new(()),
+            connect_gate: ConnectGate::default(),
             #[cfg(feature = "cpp")]
             sync_runtime: std::sync::Mutex::new(None),
         })
@@ -875,8 +876,8 @@ impl WebSocketClient {
     /// [`connect_impl`](Self::connect_impl), and whether it opened a
     /// connection of its own.
     ///
-    /// Decided before anything of the stored connection is replaced
-    /// (#119, #230): none stored, or a closed one, opens a new connection;
+    /// Decided by core's `admit()` before anything of the stored connection
+    /// is replaced (#119, #230): none stored, or a closed one, opens a new connection;
     /// one the listener was last handed as up is refused with 2011; any other
     /// is reconnecting, and this waits on core's `wait_connected()` without
     /// taking the connect gate (#268), so any number of calls wait together, as on
@@ -892,52 +893,26 @@ impl WebSocketClient {
         use marketdata_core::MarketDataError as CoreError;
         // Read before the first await, as in `disconnect_impl`.
         let caller = std::thread::current().id();
-        let already = || Err(CoreError::AlreadyConnected.into());
-        let mut gave_up: Option<Arc<CoreWebSocketClient>> = None;
-        loop {
-            // Before the gate: a call that joins never holds it, so calls
-            // made at the same moment all wait instead of one refusing the
-            // others (#268).
-            let mut stored = self.stored_connection(gave_up.as_ref());
-            let mut claim = None;
-            if matches!(stored, Stored::Replace) {
+        match admit(&self.connect_gate, || self.current_stored()).await {
+            Ok(Admission::Open(claim)) => {
+                let result = self.open_connection(caller).await;
                 // Held until the fresh connect ends.
-                let Ok(held) = self.connect_gate.try_lock() else {
-                    return (ConnectPath::Refused, already());
-                };
-                // Again under the claim: a connect that finished since the
-                // first look has stored its connection.
-                stored = self.stored_connection(gave_up.as_ref());
-                claim = Some(held);
+                drop(claim);
+                (ConnectPath::Opened, result)
             }
-            let ws = match stored {
-                Stored::Refuse => return (ConnectPath::Refused, already()),
-                Stored::Replace => {
-                    let result = self.open_connection(caller).await;
-                    drop(claim);
-                    return (ConnectPath::Opened, result);
-                }
-                Stored::Join(ws) => ws,
-            };
-            drop(claim);
-            match ws.wait_connected().await {
-                Ok(()) => return (ConnectPath::Joined, Ok(())),
-                Err(CoreError::ClientClosed | CoreError::ConnectionError { .. }) => gave_up = Some(ws),
-                Err(e) => return (ConnectPath::Joined, Err(e.into())),
-            }
+            Ok(Admission::Joined) => (ConnectPath::Joined, Ok(())),
+            Err(e @ CoreError::AlreadyConnected) => (ConnectPath::Refused, Err(e.into())),
+            // What the wait on the reconnect ended in.
+            Err(e) => (ConnectPath::Joined, Err(e.into())),
         }
     }
 
-    /// What the stored connection means for a `connect()` that gave up
-    /// waiting on `gave_up`; see [`connect_with_path`](Self::connect_with_path).
-    fn stored_connection(&self, gave_up: Option<&Arc<CoreWebSocketClient>>) -> Stored {
-        match lock_connection(&self.connection).current.clone() {
-            None => Stored::Replace,
-            Some(c) if c.ws.is_closed_sync() => Stored::Replace,
-            Some(c) if gave_up.is_some_and(|g| Arc::ptr_eq(g, &c.ws)) => Stored::Replace,
-            Some(c) if c.delivered.is_authenticated() => Stored::Refuse,
-            Some(c) => Stored::Join(c.ws),
-        }
+    /// The stored connection, as core's `admit()` reads it.
+    fn current_stored(&self) -> Option<StoredConnection> {
+        lock_connection(&self.connection)
+            .current
+            .as_ref()
+            .map(|c| StoredConnection::new(Arc::clone(&c.ws), c.delivered.clone()))
     }
 
     /// Core's connection config for this client's endpoint, before the
@@ -1562,17 +1537,6 @@ struct Connection {
     delivered: Delivered,
 }
 
-/// What the stored connection means for a `connect()`.
-enum Stored {
-    /// None, a closed one, or one whose wait ended with nothing left to wait
-    /// for: open a new connection, under the connect gate.
-    Replace,
-    /// The listener was last handed it as up: 2011.
-    Refuse,
-    /// It is reconnecting: wait on it.
-    Join(Arc<CoreWebSocketClient>),
-}
-
 /// What a `connect()` did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectPath {
@@ -1582,54 +1546,6 @@ enum ConnectPath {
     Joined,
     /// Built a new core client, whatever the outcome.
     Opened,
-}
-
-/// Whether the listener was last handed the connection as up, as a
-/// `connect()` decides between refusing and waiting on a reconnect (#230).
-///
-/// Read from what the stream reader delivered rather than core's state: an
-/// `on_disconnected` that calls `connect()` may run after core has already
-/// reconnected, and has to wait on that reconnect, not be refused.
-#[derive(Clone, Default)]
-struct Delivered(Arc<AtomicU8>);
-
-impl Delivered {
-    /// No `on_authenticated` delivered yet for this connection.
-    const PENDING: u8 = 0;
-    /// `on_authenticated` delivered, and nothing since that ends it.
-    const AUTHENTICATED: u8 = 1;
-    /// `on_unauthenticated` or `on_disconnected` delivered since.
-    const LOST: u8 = 2;
-
-    /// Record `event`. Called by the stream reader before the listener
-    /// runs, so a listener method calling `connect()` reads the event it is
-    /// handling.
-    fn observe(&self, event: &ConnectionEvent) {
-        match event {
-            ConnectionEvent::Authenticated { .. } => self.0.store(Self::AUTHENTICATED, Ordering::SeqCst),
-            ConnectionEvent::Unauthenticated { .. } | ConnectionEvent::Disconnected { .. } => {
-                self.0.store(Self::LOST, Ordering::SeqCst)
-            }
-            _ => {}
-        }
-    }
-
-    /// The connect that opened this connection succeeded: it counts as
-    /// delivered even if the reader has not got to `on_authenticated` yet, so
-    /// a second `connect()` right after is refused rather than waiting.
-    /// Unless the reader has already delivered the connection's loss.
-    fn connect_succeeded(&self) {
-        let _ = self.0.compare_exchange(
-            Self::PENDING,
-            Self::AUTHENTICATED,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-    }
-
-    fn is_authenticated(&self) -> bool {
-        self.0.load(Ordering::SeqCst) == Self::AUTHENTICATED
-    }
 }
 
 /// A connection's stream reader thread, as `disconnect()` waits for it.
