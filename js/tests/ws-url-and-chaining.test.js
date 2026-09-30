@@ -38,6 +38,21 @@ describe.each(['stock', 'futopt'])('%s on() chaining (#245)', (product) => {
     expect(typeof ws[product].on('message', () => {}).subscribe).toBe('function');
   });
 
+  test('subscribe() chained on on() before connect() does not throw TypeError', () => {
+    const ws = new WebSocketClient({ apiKey: 'test-key' });
+    const symbol = product === 'stock' ? '2330' : 'TXFC4';
+    let caught;
+    try {
+      ws[product].on('message', () => {}).subscribe({ channel: 'trades', symbol });
+    } catch (err) {
+      caught = err;
+    }
+    // Not connected, so subscribe() may refuse; what 3.0.0-rc.9 threw was
+    // `TypeError: Cannot read properties of undefined (reading 'subscribe')`.
+    expect(caught instanceof TypeError).toBe(false);
+    expect(caught === undefined ? undefined : caught.name).not.toBe('TypeError');
+  });
+
   test('an unknown event still throws', () => {
     const client = new WebSocketClient({ apiKey: 'test-key' })[product];
     expect(() => client.on('nope', () => {})).toThrow();
