@@ -2,7 +2,6 @@
 
 Refused with ``WebSocketError`` code 2011 (``ALREADY_CONNECTED``), as core and
 the other bindings do (#119, #130), and the live connection is left alone.
-Only the stock client has ``connect_async()``.
 """
 import asyncio
 import socket
@@ -137,8 +136,9 @@ def test_connect_after_disconnect_succeeds(server, product):
 
 
 @hard_timeout
-async def test_connect_async_while_connected_raises_2011(server):
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_while_connected_raises_2011(server, product):
+    ws = product_ws(server.url, product)
     try:
         await ws.connect_async()
         with pytest.raises(WebSocketError) as excinfo:
@@ -154,9 +154,10 @@ async def test_connect_async_while_connected_raises_2011(server):
 
 
 @hard_timeout
-async def test_connect_async_while_connecting_raises_2011():
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_while_connecting_raises_2011(product):
     with StallingServer() as stall:
-        ws = product_ws(stall.url, "stock")
+        ws = product_ws(stall.url, product)
         first = asyncio.ensure_future(ws.connect_async())
         try:
             assert await to_thread(stall.accepted.wait, TIMEOUT_S)

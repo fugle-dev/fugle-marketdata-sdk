@@ -9,7 +9,9 @@ from fugle_marketdata import (
     AuthError,
     WebSocketClient,
 )
-from tests.ws_loopback import REJECTED_API_KEY, LoopbackServer
+from tests.ws_loopback import REJECTED_API_KEY, LoopbackServer, disconnect_quietly, product_ws
+
+PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
 
 
 class TestWebSocketClientCreation:
@@ -36,14 +38,50 @@ class TestAsyncConnect:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)
-    async def test_connect_async_returns_awaitable(self):
+    @pytest.mark.parametrize("product", PRODUCTS)
+    async def test_connect_async_returns_awaitable(self, product):
         """connect_async() should return an awaitable that raises on rejection."""
         # A loopback server rejects the key: against production the outcome
         # and its timing depend on the network (like #71).
         with LoopbackServer() as srv:
             client = WebSocketClient(api_key=REJECTED_API_KEY, base_url=srv.url)
             with pytest.raises(AuthError):
-                await client.stock.connect_async()
+                await getattr(client, product).connect_async()
+
+
+def _public_methods(obj):
+    names = dir(type(obj))
+    public = {n for n in names if not n.startswith("_")}
+    return public | ({"__aenter__", "__aexit__"} & set(names))
+
+
+class TestProductParity:
+    """The stock and futopt clients offer the same methods."""
+
+    def test_stock_and_futopt_have_the_same_public_methods(self, mock_api_key):
+        client = WebSocketClient(api_key=mock_api_key)
+        stock, futopt = _public_methods(client.stock), _public_methods(client.futopt)
+        assert stock - futopt == set(), f"missing on futopt: {sorted(stock - futopt)}"
+        assert futopt - stock == set(), f"missing on stock: {sorted(futopt - stock)}"
+
+
+class TestAsyncContextManager:
+    """``async with ws`` connects, yields the client itself and disconnects."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(20, method="thread")
+    @pytest.mark.parametrize("product", PRODUCTS)
+    async def test_async_with_connects_yields_self_and_closes(self, product):
+        with LoopbackServer() as srv:
+            ws = product_ws(srv.url, product)
+            try:
+                async with ws as entered:
+                    assert entered is ws
+                    assert ws.is_connected()
+                assert ws.is_closed()
+                assert not ws.is_connected()
+            finally:
+                disconnect_quietly(ws)
 
 
 class TestCallbackPattern:

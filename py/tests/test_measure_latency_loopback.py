@@ -78,8 +78,9 @@ def test_measure_latency_rejects_a_zero_timeout(server):
 
 
 @hard_timeout
-async def test_measure_latency_async(server):
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_measure_latency_async(server, product):
+    ws = product_ws(server.url, product)
     try:
         await ws.connect_async()
         latency = await ws.measure_latency_async(timeout_ms=2000)

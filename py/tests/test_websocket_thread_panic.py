@@ -85,9 +85,10 @@ def test_message_thread_panic_fires_error(server, product, monkeypatch):
 
 
 @hard_timeout
-async def test_connect_async_message_thread_panic_fires_error(server, monkeypatch):
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_message_thread_panic_fires_error(server, monkeypatch, product):
     monkeypatch.setenv(PANIC_ENV, "ws_messages")
-    ws = product_ws(server.url, "stock")
+    ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     ws.on("message", lambda msg: None)
     await ws.connect_async()
