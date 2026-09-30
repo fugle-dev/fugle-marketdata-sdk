@@ -1,0 +1,11 @@
+date: 2026-09-30
+tree: feat/246-py-raw-message working tree on d3ba4d1 (#246 changes uncommitted at run time)
+build: maturin develop --release into py/.venv
+Python 3.12.2
+v24.19.0
+rustc 1.95.0 (59807616e 2026-04-14)
+ProductName:		macOS ProductVersion:		26.5.1 BuildVersion:		25F80 
+Apple M3 Pro
+load: 17.7-20.2 (1 min) throughout, from another project's processes; per-run load1/load5 are in the jsonl rows
+null-client control: 109,890 msg/s (10K) / 116,009 (50K) median, against 196K / 269K on a quiet machine (2026-09-20) -- throughput and latency of these runs are not usable
+run: python3 benchmarks/ws/py/run-modes.py  (fresh mock server per run; order null, dict, raw-loads, raw; 5 runs at 10K, then 5 at 50K)

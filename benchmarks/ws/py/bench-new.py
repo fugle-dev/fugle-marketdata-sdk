@@ -5,7 +5,13 @@ Connects to the mock server, subscribes, receives data messages, and
 reports throughput / latency / memory metrics as a single JSON line on stdout.
 
 Usage:
-    python py/bench-new.py --url ws://localhost:8765 --timeout 30
+    python py/bench-new.py --url ws://localhost:8765 --timeout 30 [--mode dict]
+
+--mode picks the message path (#246):
+    dict       `message` callback, the SDK builds the dict (default)
+    raw-loads  `raw_message` callback that calls json.loads, as 2.x code does
+    raw        `raw_message` callback that does not parse: it counts the
+               data frames by prefix and reports no latency
 """
 
 import argparse
@@ -27,6 +33,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--url', default='ws://localhost:8765')
     p.add_argument('--timeout', type=int, default=30)
+    p.add_argument('--mode', choices=('dict', 'raw-loads', 'raw'), default='dict')
     return p.parse_args()
 
 
@@ -77,12 +84,32 @@ def main():
             if serial > max_serial:
                 max_serial = serial
 
+    def on_raw_loads(raw):
+        on_message(json.loads(raw))
+
+    def on_raw(raw):
+        nonlocal received, t0, server_stats
+
+        # The mock server writes `event` first.
+        if raw.startswith('{"event":"data"'):
+            if t0 is None:
+                t0 = int(time.time() * 1000)
+            received += 1
+        elif raw.startswith('{"event":"bench_done"'):
+            server_stats = json.loads(raw).get('data', {})
+            done_event.set()
+
     def on_error(message, code):
         print(f'error: {message} (code={code})', file=sys.stderr)
 
     # Register handlers BEFORE connect() — connect() is blocking (returns
     # after auth), so 'connect' event may fire during the call.
-    stock.on('message', on_message)
+    if args.mode == 'dict':
+        stock.on('message', on_message)
+    elif args.mode == 'raw-loads':
+        stock.on('raw_message', on_raw_loads)
+    else:
+        stock.on('raw_message', on_raw)
     stock.on('error', on_error)
 
     stock.connect()
@@ -107,6 +134,7 @@ def main():
 
     result = {
         'sdk': 'rust-core-py',
+        'mode': args.mode,
         'count': received,
         'expected': server_stats.get('count') if server_stats else None,
         'lost': (server_stats.get('count', 0) - received) if server_stats else None,
