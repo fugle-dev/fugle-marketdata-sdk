@@ -14,7 +14,10 @@ A ``connect()`` that replaces a connection that was lost leaves that
 connection's reader for the next ``disconnect()`` to wait for, and its
 ``messages()`` iterators still get what core queued for them. A
 ``disconnect()`` from a callback waits for no stream reader, so two readers
-disconnecting from callbacks never wait for each other.
+disconnecting from callbacks never wait for each other. Neither does a
+``disconnect_async()`` created in a callback and waited for there, with
+``asyncio.run()`` say: it used to wait, on a runtime thread, for the very
+reader waiting for it (#280).
 """
 import asyncio
 import threading

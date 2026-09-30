@@ -1317,11 +1317,12 @@ struct ParkedReader {
 }
 
 /// Stream readers no one could wait for when their connection went: those of
-/// the connection a `disconnect()` from a callback closed and of the connect
-/// it aborted — a `connect` callback during the handshake, say — and that of
-/// a lost connection a `connect()` replaced. Each connection is
-/// closed or gone, so waiting for them always ends once their stop flag is
-/// set; the next `disconnect()` from outside a callback does both (#277).
+/// the connection a `disconnect()` or `disconnect_async()` from a callback
+/// closed and of the connect it aborted — a `connect` callback during the
+/// handshake, say — and that of a lost connection a `connect()` replaced.
+/// Each connection is closed or gone, so waiting for them always ends once
+/// their stop flag is set; the next `disconnect()` or `disconnect_async()`
+/// from outside a callback does both (#277, #280).
 type ParkedReaders = Mutex<Vec<ParkedReader>>;
 
 /// Park `handle` for the next `disconnect()`. Those parked earlier that have
@@ -1354,10 +1355,11 @@ fn take_parked_readers(parked: &ParkedReaders) -> Vec<std::thread::JoinHandle<()
 
 /// [`join_reader_thread`] on the parked readers.
 ///
-/// Not from a callback: a `disconnect()` there waits for no stream reader,
-/// since two readers disconnecting from callbacks would wait for each other.
-/// The readers stay parked for the next `disconnect()` from another thread,
-/// which waits for the remaining callbacks.
+/// Not from a callback: a `disconnect()` or `disconnect_async()` there waits
+/// for no stream reader, since two readers disconnecting from callbacks would
+/// wait for each other. The readers stay parked for the next `disconnect()`
+/// or `disconnect_async()` from another thread, which waits for the remaining
+/// callbacks.
 fn join_parked_reader_threads(py: Python<'_>, parked: &ParkedReaders) {
     if on_stream_reader() {
         return;
