@@ -40,7 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the method `async`; it is a plain blocking method, and code written to
   the stub (`await it.recv_timeout(...)`) failed at run time. The stub also
   made `timeout_ms` of `messages()` keyword-only, where the method accepts
-  it positionally. No run-time change.
+  it positionally, so `messages(100)` ran but failed type checking; it now
+  passes. Further stub corrections on `MessageIterator`: `__anext__` returns
+  an awaitable rather than being a coroutine function, `__iter__` /
+  `__aiter__` return `Self`, and `recv_timeout` documents
+  `ConnectionError` (code 2001). No run-time change.
 - **Node: `on()` returns the client it was called on** (#245). It returned
   `undefined`, so 1.x code chaining on it —
   `ws.stock.on('message', cb).subscribe({ ... })` — threw `TypeError`.
