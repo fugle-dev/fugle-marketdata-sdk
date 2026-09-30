@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was given and the ones to use instead: `FugleHealthCheckWarning`, code
   `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. `HealthCheckOptions` in TypeScript
   is unchanged. Node only; Python already raises `TypeError`.
+- **Rust core: `aio::admission`** (#271). `admit(gate, current)` decides
+  what a `connect()` does when each connection is opened on a new
+  `aio::WebSocketClient`: open one under the `ConnectGate`, wait on the
+  automatic reconnect of the stored one, or fail with 2011
+  (`AlreadyConnected`). With it come `Admission`, `StoredConnection`,
+  `Delivered`, `ConnectGate` and `ConnectClaim`. The Python and UniFFI
+  bindings each carry a copy of this decision, which is why #268 had to be
+  fixed three times; they move to core's in later changes and do not use it
+  yet. Nothing changes for callers of any binding, and `connect()` on
+  core's own clients behaves as before.
 
 ### Changed
 
