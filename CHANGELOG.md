@@ -113,6 +113,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python: the type stubs declare the WebSocket `subscribe()` flags as
+  `bool`** (#285). `.pyi` declared `odd_lot` (stock `subscribe()` and
+  `subscribe_async()`) and `after_hours` (futopt `subscribe()`) as
+  `Optional[bool] = None`, but they take a `bool` and passing `None` raises
+  `TypeError`. They are now `bool = False`; runtime behaviour is unchanged.
 - **Node.js: `connect()` during an automatic reconnect no longer resolves
   when the restored connection ends before it settles** (#273). It resolved
   with the reconnect's `authenticated` data even when that connection was
