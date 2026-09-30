@@ -1425,7 +1425,10 @@ async fn join_parked_reader_threads_async(parked: &ParkedReaders) {
 /// What `connect_async()` takes from a product client, owned so its
 /// awaitable can outlive the call.
 struct AsyncConnect {
-    /// The same config `connect()` uses, TLS settings included.
+    /// The same config `connect()` uses, TLS settings included. Should
+    /// `build_config()` fail, it falls back to the production endpoint as for
+    /// `connect()`; `connect_async()` used to raise `TypeError` on await
+    /// instead.
     config: marketdata_core::ConnectionConfig,
     reconnect_config: marketdata_core::ReconnectionConfig,
     health_check_config: marketdata_core::HealthCheckConfig,
