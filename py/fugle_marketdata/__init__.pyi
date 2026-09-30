@@ -2025,10 +2025,10 @@ class StockWebSocketClient:
 
         Returns an awaitable that completes when disconnection finishes.
 
-        Do not wait for it synchronously from a callback, for example with
-        asyncio.run(ws.stock.disconnect_async()): it does not run on the
-        callback's thread, so it waits for that thread's stream reader, which
-        is waiting for it, and never completes. Call disconnect() there.
+        Waits for the same stream readers as disconnect(). Created in a
+        callback of any client, this one or another — to wait for it with
+        asyncio.run(), say — it waits for no stream reader, as disconnect()
+        called there.
         """
         ...
 
@@ -2365,10 +2365,10 @@ class FutOptWebSocketClient:
 
         Returns an awaitable that completes when disconnection finishes.
 
-        Do not wait for it synchronously from a callback, for example with
-        asyncio.run(ws.futopt.disconnect_async()): it does not run on the
-        callback's thread, so it waits for that thread's stream reader, which
-        is waiting for it, and never completes. Call disconnect() there.
+        Waits for the same stream readers as disconnect(). Created in a
+        callback of any client, this one or another — to wait for it with
+        asyncio.run(), say — it waits for no stream reader, as disconnect()
+        called there.
         """
         ...
 
