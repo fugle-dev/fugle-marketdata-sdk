@@ -363,39 +363,99 @@ async def test_backlogged_wait_for_with_no_time_left_loses_no_message(burst_serv
 
 
 @hard_timeout
+async def test_backlogged_wait_for_with_time_left_loses_no_message(burst_server):
+    # A timeout longer than a turn of the event loop never expires on a
+    # queued message, the ones left to the loop included.
+    messages = await _closed_backlog(burst_server)
+    labels = [_label(await asyncio.wait_for(messages.__anext__(), 0.05)) for _ in EVERYTHING]
+    assert labels == EVERYTHING
+
+
+# `asyncio.wait_for` no longer takes a turn of the event loop for an
+# awaitable that is already done.
+WAIT_FOR_RETURNS_AT_ONCE = sys.version_info >= (3, 12)
+
+
+@hard_timeout
 async def test_cancelling_the_task_around_a_backlogged_wait_for_loses_no_message(burst_server):
-    # Python 3.8 to 3.11 give the loop a turn even when the step is already
-    # resolved, so the task can be cancelled in it; `wait_for` then returns
-    # the message instead of raising. From 3.12 the task is done by then.
+    # The task is cancelled one turn of the loop after it started its step.
     messages = await _closed_backlog(burst_server)
 
     async def read():
         return await asyncio.wait_for(messages.__anext__(), 5)
 
     labels = []
-    for _ in range(YIELD_EVERY - 2):  # stops short of a step left to the loop
+    cancelled_steps = []
+    steps = YIELD_EVERY + 8  # past a step left to the loop
+    for step in range(1, steps + 1):
         task = asyncio.ensure_future(read())
         await asyncio.sleep(0)
-        task.cancel()
-        labels.append(_label(await task))
-    assert labels == EVERYTHING[: YIELD_EVERY - 2]
-    assert _label(await messages.__anext__()) == EVERYTHING[YIELD_EVERY - 2]
+        if WAIT_FOR_RETURNS_AT_ONCE and step != YIELD_EVERY:
+            # The task finished in its first turn: nothing left to cancel.
+            assert task.done() and task.cancel() is False
+        else:
+            assert not task.done() and task.cancel() is True
+        try:
+            labels.append(_label(await task))
+        except asyncio.CancelledError:
+            cancelled_steps.append(step)
+    if WAIT_FOR_RETURNS_AT_ONCE:
+        # Only the step left to the loop was still pending: the cancellation
+        # reached its awaitable before the delivery ran, which then took no
+        # message. The read after it got that message.
+        assert cancelled_steps == [YIELD_EVERY]
+        assert labels == EVERYTHING[: steps - 1]
+    else:
+        # This records what the standard library does, not the SDK: up to
+        # 3.11 `wait_for` spends a turn of the loop even on an awaitable that
+        # is already done, and (from 3.8.6) when cancelled in that turn it
+        # returns the result instead of raising. The step left to the loop
+        # is delivered within that turn, so it goes the same way. No message
+        # is lost, and every cancellation is swallowed.
+        assert cancelled_steps == []
+        assert labels == EVERYTHING[:steps]
+
+
+@hard_timeout
+async def test_backlogged_wait_for_shorter_than_a_loop_turn_as_it_is_now(burst_server):
+    # A known gap, recorded as it is (#267): a delivery left to the loop
+    # resolves the awaitable one turn before the waiting task resumes. From
+    # 3.12 a `wait_for` timeout that expires within that turn cancels the
+    # task with the message already in the awaitable, and the message is
+    # lost: the 32nd, 64th and 96th deliveries here. Up to 3.11 `wait_for`
+    # looks at the awaitable first and returns the message.
+    messages = await _closed_backlog(burst_server)
+    labels = []
+    for _ in range(3 * len(EVERYTHING)):
+        try:
+            labels.append(_label(await asyncio.wait_for(messages.__anext__(), 1e-6)))
+        except asyncio.TimeoutError:
+            await asyncio.sleep(0.005)
+        if labels and labels[-1] == EVERYTHING[-1]:
+            break
+    lost = [EVERYTHING[n - 1] for n in range(YIELD_EVERY, len(EVERYTHING) + 1, YIELD_EVERY)]
+    if WAIT_FOR_RETURNS_AT_ONCE:
+        assert labels == [label for label in EVERYTHING if label not in lost]
+    else:
+        assert labels == EVERYTHING
 
 
 @hard_timeout
 async def test_checking_done_before_cancelling_keeps_the_backlogged_message(burst_server):
     # What the docs recommend for `asyncio.wait`: look at the step before
-    # cancelling it, whatever else finished.
+    # cancelling it, whatever else finished. With a backlog the step is
+    # always done by then, a step left to the loop too: it is delivered in
+    # the turn `wait` takes. Cancelling a pending step, which takes no
+    # message, is test_cancelled_anext_takes_no_message and
+    # test_backlogged_anext_through_the_loop_can_be_cancelled.
     messages = await _closed_backlog(burst_server)
     labels = []
     for _ in range(YIELD_EVERY + 8):  # past a step left to the loop
         step = asyncio.ensure_future(messages.__anext__())
         stop = asyncio.ensure_future(asyncio.sleep(0))
         await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
-        if step.done():
-            labels.append(_label(step.result()))
-        else:
-            step.cancel()
+        assert step.done()
+        labels.append(_label(step.result()))
         await stop
     rest = [_label(msg) async for msg in messages]
     assert labels + rest == EVERYTHING

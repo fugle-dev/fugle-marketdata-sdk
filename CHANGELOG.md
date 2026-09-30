@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Python: a `messages().__anext__()` awaitable can already be done, and
+  discarding a done one drops its message** (#267). `async for` over
+  `messages()` no longer makes a thread hop per message: while messages are
+  queued, `MessageIterator.__anext__` takes the next one on the event loop's
+  thread and returns an awaitable that is already done. One delivery in
+  every 32 in a row goes through the event loop instead, so other tasks on
+  it run; how long they wait is about 32 times what your loop body takes per
+  message. (On one machine, a 50,000-message burst and a loop body of about
+  5 µs per message: about six times the messages per second, and another
+  task on the loop at most 0.5 ms late.)
+  - `async for` and a plain `await` of the awaitable lose no message.
+  - **Code that holds the awaitable itself must not discard one that is
+    done.** `asyncio.ensure_future(it.__anext__()).cancel()` returns False
+    and the message is its `result()`; cancelling "the rest" after
+    `asyncio.wait({step, stop})` because `stop` finished drops the message a
+    done `step` holds; a cancelled `asyncio.gather(it.__anext__(), other)`
+    drops the message its done step holds. Check `done()` before cancelling,
+    or read `result()`.
+  - `asyncio.wait_for(it.__anext__(), timeout)` loses no message when
+    `timeout` is longer than one turn of the event loop, in practice about
+    1 ms or more; `timeout=0` now returns the message when one is queued (it
+    always timed out). With a shorter `timeout` it can lose a queued message
+    whose delivery was left to the loop (one in 32): a timeout that expires
+    in the turn between the delivery and the task resuming cancels the task
+    with the message already in the awaitable (seen on Python 3.12 with
+    `timeout=1e-6`); before, such a call only timed out.
+  - Up to Python 3.11 `wait_for` spends a turn of the loop even on a done
+    awaitable. A task cancelled in that turn gets the message back instead
+    of `CancelledError` (3.8.6 and later; run on 3.8.10 only), so
+    `task.cancel()` on a `while True: await wait_for(...)` loop may only
+    take effect at a step with nothing queued. Python 3.8.0 to 3.8.5 raise
+    `CancelledError` there and drop that message.
+  - Awaitables of one iterator held at the same time may not get the
+    messages in the order they were created.
+
+  With nothing queued the wait is unchanged, and cancelling it still takes
+  no message. See MIGRATION.md §17.
+
 ### Added
 
 - **Python WebSocket: `raw_message` event and `messages(raw=True)`** (#246).
@@ -61,28 +101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed three times; they move to core's in later changes and do not use it
   yet. Nothing changes for callers of any binding, and `connect()` on
   core's own clients behaves as before.
-
-### Changed
-
-- **Python: `async for` over `messages()` reads a backlog without a thread
-  hop per message** (#267). While messages are queued,
-  `MessageIterator.__anext__` takes the next one on the event loop's thread
-  and returns an awaitable that is already done; one delivery in every 32
-  in a row goes through the event loop so other tasks on it run. Measured
-  on a 50,000-message burst, `async for` reads about six times as many
-  messages a second, and another task on the loop is delayed by at most
-  0.5 ms. `async for` and `asyncio.wait_for` behave as before. **Code that
-  holds the awaitable itself must not discard one that is done**, since it
-  holds a message: `asyncio.ensure_future(it.__anext__()).cancel()` returns
-  False and the message is its `result()`; cancelling "the rest" after
-  `asyncio.wait({step, stop})` because `stop` finished drops the message a
-  done `step` holds; and a cancelled `asyncio.gather(it.__anext__(), other)`
-  drops the message its done step holds. Check `done()` before cancelling,
-  or read `result()`. `asyncio.wait_for(it.__anext__(), 0)` now returns the
-  message when one is queued; it always timed out. Awaitables of one
-  iterator held at the same time may not get the messages in the order they
-  were created. With nothing queued the wait is unchanged, and cancelling it
-  still takes no message. See MIGRATION.md §17.
 
 ### Fixed
 

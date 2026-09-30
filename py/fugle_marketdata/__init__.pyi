@@ -2549,8 +2549,9 @@ class MessageIterator(Generic[_Yielded]):
         to the loop instead (that awaitable is pending), so other tasks get
         to run.
 
-        `async for` and `asyncio.wait_for` need nothing from you. Code that
-        holds the awaitable itself must not discard one that is done:
+        `async for` and a plain `await` of the awaitable lose no message.
+        Code that holds the awaitable itself must not discard one that is
+        done:
 
         - `asyncio.ensure_future(it.__anext__()).cancel()` returns False for
           a done awaitable, and the message is its `result()`.
@@ -2561,8 +2562,23 @@ class MessageIterator(Generic[_Yielded]):
           the message its done step holds. Read the step on its own.
 
         Before cancelling, check `done()`, or read `result()`.
-        `asyncio.wait_for(it.__anext__(), 0)` returns the message when the
-        awaitable is done, and times out otherwise.
+
+        `asyncio.wait_for(it.__anext__(), timeout)`:
+
+        - loses no message when `timeout` is longer than one turn of the
+          event loop, in practice about 1 ms or more. `timeout=0` returns
+          the message when the awaitable is done, and times out otherwise.
+        - with a shorter `timeout`, can lose a queued message whose delivery
+          was left to the loop (one in 32): the awaitable is resolved one
+          turn before the waiting task resumes, and a timeout that expires
+          within that turn cancels the task with the message already in the
+          awaitable. Seen on Python 3.12 with `timeout=1e-6`.
+        - up to Python 3.11, spends a turn of the loop even on a done
+          awaitable. A task cancelled in that turn gets the message back
+          instead of `CancelledError` (3.8.6 and later; run on 3.8.10 only),
+          so `task.cancel()` on a `while True: await wait_for(...)` loop may
+          only take effect at a step with nothing queued. Python 3.8.0 to
+          3.8.5 raise `CancelledError` there and drop that message.
 
         Cancelling a pending awaitable (`asyncio.wait_for` timing out, a
         cancelled task) takes no message: the next read gets it. An awaitable

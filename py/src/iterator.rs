@@ -363,8 +363,10 @@ impl MessageIterator {
     /// row goes through the loop so other tasks run. A done awaitable holds
     /// its message and cannot be cancelled: `cancel()` returns False and the
     /// message is its `result()`, so check `done()` before cancelling one
-    /// (after `asyncio.wait`, around `asyncio.gather`). `async for` and
-    /// `asyncio.wait_for` need nothing. With nothing queued the wait runs on
+    /// (after `asyncio.wait`, around `asyncio.gather`). `async for` and a
+    /// plain `await` lose no message; `asyncio.wait_for` loses none with a
+    /// timeout longer than a turn of the event loop (see the stub for
+    /// shorter ones). With nothing queued the wait runs on
     /// tokio's blocking pool, off the event loop, and a cancelled awaitable
     /// takes no message: the next read gets it. One still pending when its
     /// event loop closes is dropped silently, and its wait ends within
