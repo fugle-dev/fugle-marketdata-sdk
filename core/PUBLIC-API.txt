@@ -4,6 +4,8 @@ pub mod marketdata_core::aio::admission
 pub enum marketdata_core::aio::admission::Admission
 pub marketdata_core::aio::admission::Admission::Joined
 pub marketdata_core::aio::admission::Admission::Open(marketdata_core::aio::admission::ConnectClaim)
+impl core::fmt::Debug for marketdata_core::websocket::aio::admission::Admission
+pub fn marketdata_core::websocket::aio::admission::Admission::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for marketdata_core::websocket::aio::admission::Admission
 impl core::marker::Send for marketdata_core::websocket::aio::admission::Admission
 impl core::marker::Sync for marketdata_core::websocket::aio::admission::Admission
@@ -12,6 +14,8 @@ impl core::marker::UnsafeUnpin for marketdata_core::websocket::aio::admission::A
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::aio::admission::Admission
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::admission::Admission
 pub struct marketdata_core::aio::admission::ConnectClaim(_)
+impl core::fmt::Debug for marketdata_core::aio::admission::ConnectClaim
+pub fn marketdata_core::aio::admission::ConnectClaim::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::drop::Drop for marketdata_core::aio::admission::ConnectClaim
 pub fn marketdata_core::aio::admission::ConnectClaim::drop(&mut self)
 impl core::marker::Freeze for marketdata_core::aio::admission::ConnectClaim
@@ -56,9 +60,11 @@ impl core::marker::Unpin for marketdata_core::websocket::aio::admission::Deliver
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::aio::admission::Delivered
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::aio::admission::Delivered
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::admission::Delivered
-pub struct marketdata_core::aio::admission::StoredConnection
+#[non_exhaustive] pub struct marketdata_core::aio::admission::StoredConnection
 pub marketdata_core::aio::admission::StoredConnection::client: alloc::sync::Arc<marketdata_core::websocket::aio::client::WebSocketClient>
 pub marketdata_core::aio::admission::StoredConnection::delivered: marketdata_core::websocket::aio::admission::Delivered
+impl marketdata_core::websocket::aio::admission::StoredConnection
+pub fn marketdata_core::websocket::aio::admission::StoredConnection::new(alloc::sync::Arc<marketdata_core::websocket::aio::client::WebSocketClient>, marketdata_core::websocket::aio::admission::Delivered) -> Self
 impl core::clone::Clone for marketdata_core::websocket::aio::admission::StoredConnection
 pub fn marketdata_core::websocket::aio::admission::StoredConnection::clone(&self) -> marketdata_core::websocket::aio::admission::StoredConnection
 impl core::fmt::Debug for marketdata_core::websocket::aio::admission::StoredConnection
@@ -3628,6 +3634,8 @@ pub mod marketdata_core::websocket::aio::admission
 pub enum marketdata_core::websocket::aio::admission::Admission
 pub marketdata_core::websocket::aio::admission::Admission::Joined
 pub marketdata_core::websocket::aio::admission::Admission::Open(marketdata_core::aio::admission::ConnectClaim)
+impl core::fmt::Debug for marketdata_core::websocket::aio::admission::Admission
+pub fn marketdata_core::websocket::aio::admission::Admission::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for marketdata_core::websocket::aio::admission::Admission
 impl core::marker::Send for marketdata_core::websocket::aio::admission::Admission
 impl core::marker::Sync for marketdata_core::websocket::aio::admission::Admission
@@ -3636,6 +3644,8 @@ impl core::marker::UnsafeUnpin for marketdata_core::websocket::aio::admission::A
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::aio::admission::Admission
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::admission::Admission
 pub struct marketdata_core::websocket::aio::admission::ConnectClaim(_)
+impl core::fmt::Debug for marketdata_core::aio::admission::ConnectClaim
+pub fn marketdata_core::aio::admission::ConnectClaim::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::ops::drop::Drop for marketdata_core::aio::admission::ConnectClaim
 pub fn marketdata_core::aio::admission::ConnectClaim::drop(&mut self)
 impl core::marker::Freeze for marketdata_core::aio::admission::ConnectClaim
@@ -3680,9 +3690,11 @@ impl core::marker::Unpin for marketdata_core::websocket::aio::admission::Deliver
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::aio::admission::Delivered
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::aio::admission::Delivered
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::admission::Delivered
-pub struct marketdata_core::websocket::aio::admission::StoredConnection
+#[non_exhaustive] pub struct marketdata_core::websocket::aio::admission::StoredConnection
 pub marketdata_core::websocket::aio::admission::StoredConnection::client: alloc::sync::Arc<marketdata_core::websocket::aio::client::WebSocketClient>
 pub marketdata_core::websocket::aio::admission::StoredConnection::delivered: marketdata_core::websocket::aio::admission::Delivered
+impl marketdata_core::websocket::aio::admission::StoredConnection
+pub fn marketdata_core::websocket::aio::admission::StoredConnection::new(alloc::sync::Arc<marketdata_core::websocket::aio::client::WebSocketClient>, marketdata_core::websocket::aio::admission::Delivered) -> Self
 impl core::clone::Clone for marketdata_core::websocket::aio::admission::StoredConnection
 pub fn marketdata_core::websocket::aio::admission::StoredConnection::clone(&self) -> marketdata_core::websocket::aio::admission::StoredConnection
 impl core::fmt::Debug for marketdata_core::websocket::aio::admission::StoredConnection

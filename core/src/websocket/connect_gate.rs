@@ -5,6 +5,7 @@
 //! Public as `aio::admission::ConnectGate`, for code that opens each
 //! connection on a new client and needs one gate across them (#271).
 
+use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -33,7 +34,14 @@ impl ConnectGate {
 }
 
 /// A held [`ConnectGate`]; see [`ConnectGate::try_claim`].
+#[must_use = "dropping the claim releases the gate: hold it until the connection is installed or has failed"]
 pub struct ConnectClaim(Arc<AtomicBool>);
+
+impl fmt::Debug for ConnectClaim {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConnectClaim").finish_non_exhaustive()
+    }
+}
 
 impl Drop for ConnectClaim {
     fn drop(&mut self) {

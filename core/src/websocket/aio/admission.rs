@@ -6,6 +6,28 @@
 //! on the next `connect()`, as the language bindings do. The client's own
 //! [`connect()`](WebSocketClient::connect) cannot decide this: it does not
 //! see the client before it.
+//!
+//! # Use
+//!
+//! The caller keeps one [`ConnectGate`] for all its connections, and with
+//! each stored client a [`Delivered`] it feeds:
+//!
+//! - [`Delivered::observe`] with each [`ConnectionEvent`] of that client,
+//!   before the event is handed to the callbacks.
+//! - [`Delivered::connect_succeeded`] once, after the connection is
+//!   installed (see below).
+//!
+//! A `connect()` then goes:
+//!
+//! 1. [`admit`], with a closure that reads the stored connection.
+//! 2. [`Admission::Joined`], or an error: return it. Nothing was opened and
+//!    the stored connection is as it was.
+//! 3. [`Admission::Open`]: build a new client with a new `Delivered`,
+//!    connect it, store the two in place of the old connection, call
+//!    `connect_succeeded()`. Keep the [`ConnectClaim`] until the connection
+//!    is stored, or the connect has failed; only then drop it. Dropped
+//!    earlier, a second `connect()` would open a connection beside this one
+//!    (#119).
 
 use crate::websocket::aio::WebSocketClient;
 use crate::websocket::ConnectionEvent;
@@ -68,12 +90,22 @@ impl Delivered {
 }
 
 /// The connection the caller has stored, as [`admit`] reads it.
+///
+/// `#[non_exhaustive]`: build it with [`new`](Self::new).
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct StoredConnection {
     /// The connection's client.
     pub client: Arc<WebSocketClient>,
     /// What has been delivered of it.
     pub delivered: Delivered,
+}
+
+impl StoredConnection {
+    /// `client` as stored, with the record of what has been delivered of it.
+    pub fn new(client: Arc<WebSocketClient>, delivered: Delivered) -> Self {
+        Self { client, delivered }
+    }
 }
 
 impl fmt::Debug for StoredConnection {
@@ -86,6 +118,11 @@ impl fmt::Debug for StoredConnection {
 }
 
 /// What [`admit`] decided.
+///
+/// Exhaustive on purpose, so a caller's `match` covers every outcome; a new
+/// variant would be a breaking change.
+#[derive(Debug)]
+#[must_use = "`Open` carries the claim on the gate: dropping it lets another connect open a connection beside this one"]
 pub enum Admission {
     /// Open a new connection. Hold the claim until it is stored, or has
     /// failed.
@@ -148,6 +185,12 @@ pub(crate) fn join_ended(result: Result<(), MarketDataError>) -> Result<bool, Ma
 /// The stored connection is read before the gate, so a wait never holds it:
 /// calls made at the same moment all wait, instead of one refusing the
 /// others (#268).
+///
+/// What is stored has to be a client that connected, or one whose
+/// `connect()` is under way. A wait on a client that never connected ends
+/// at once in `ConnectionError`, and the decision is made again on what is
+/// stored then; if the store keeps alternating between two such clients,
+/// neither closed nor handed over as up, this does not return.
 ///
 /// # Errors
 ///
@@ -229,7 +272,7 @@ mod tests {
 
     /// A stored connection not handed over as up: reconnecting.
     fn reconnecting(client: &Arc<WebSocketClient>) -> StoredConnection {
-        StoredConnection { client: Arc::clone(client), delivered: Delivered::default() }
+        StoredConnection::new(Arc::clone(client), Delivered::default())
     }
 
     /// A stored connection handed over as up.
@@ -360,6 +403,30 @@ mod tests {
         let reader = delivered.clone();
         reader.observe(&authenticated_event());
         assert!(delivered.is_authenticated());
+    }
+
+    // --- ConnectGate ---
+
+    #[test]
+    fn a_cloned_gate_shares_the_claim() {
+        let gate = ConnectGate::default();
+        let clone = gate.clone();
+        let claim = clone.try_claim().unwrap();
+        assert!(gate.is_busy());
+        assert!(gate.try_claim().is_none());
+        drop(claim);
+        assert!(!clone.is_busy());
+        let _claim = gate.try_claim().unwrap();
+        assert!(clone.is_busy());
+    }
+
+    #[test]
+    fn debug_of_a_claim_and_an_admission() {
+        let gate = ConnectGate::default();
+        let claim = gate.try_claim().unwrap();
+        assert_eq!(format!("{claim:?}"), "ConnectClaim { .. }");
+        assert_eq!(format!("{:?}", Admission::Open(claim)), "Open(ConnectClaim { .. })");
+        assert_eq!(format!("{:?}", Admission::Joined), "Joined");
     }
 
     // --- join_ended ---
@@ -526,7 +593,10 @@ mod tests {
                 },
             )
             .await;
-            assert!(matches!(result, Ok(Admission::Open(_))));
+            let Ok(Admission::Open(claim)) = result else { panic!("expected Open") };
+            assert!(gate.is_busy());
+            drop(claim);
+            assert!(!gate.is_busy());
         }
     }
 

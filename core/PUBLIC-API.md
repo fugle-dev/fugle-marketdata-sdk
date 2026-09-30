@@ -48,16 +48,21 @@ it yet.
   `ConnectionAborted` / `ReconnectFailed` / `AuthError` is returned as is;
   `ClientClosed` / `ConnectionError` is not, the decision is made again
   with that client treated as one to replace.
-- `+` `aio::admission::Admission` (`Open(ConnectClaim)`, `Joined`).
-- `+` `aio::admission::StoredConnection` (`client:
-  Arc<aio::WebSocketClient>`, `delivered: Delivered`; `Clone`, `Debug`) —
-  what the reader closure returns.
+- `+` `aio::admission::Admission` (`Open(ConnectClaim)`, `Joined`;
+  `Debug`; `#[must_use]`). Exhaustive on purpose — not `#[non_exhaustive]`
+  — so a caller's `match` covers every outcome: adding a variant is a
+  breaking change.
+- `+` `aio::admission::StoredConnection` (`#[non_exhaustive]`;
+  `new(Arc<aio::WebSocketClient>, Delivered)`; public fields `client`,
+  `delivered`; `Clone`, `Debug`) — what the reader closure returns. Built
+  with `new`, so a field can be added later.
 - `+` `aio::admission::Delivered` (`observe(&ConnectionEvent)`,
   `connect_succeeded()`, `is_authenticated()`; `Clone`, `Default`, `Debug`)
   — whether the caller's callbacks were last handed the connection as up.
 - `+` `aio::admission::ConnectGate` (`try_claim() -> Option<ConnectClaim>`,
   `is_busy()`; `Clone`, `Default`, `Debug`) and
-  `aio::admission::ConnectClaim` (`Drop` releases the gate) — the gate both
+  `aio::admission::ConnectClaim` (`Drop` releases the gate; `Debug`;
+  `#[must_use]`) — the gate both
   clients already used internally, now with an owned claim so it can be
   held across the caller's own connect. `connect()` on either client is
   unchanged.
