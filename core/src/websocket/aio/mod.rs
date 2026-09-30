@@ -5,6 +5,7 @@
 //! existing public API (`marketdata_core::WebSocketClient` etc.) keeps
 //! working.
 
+pub mod admission;
 pub mod client;
 pub(crate) mod connect_wait;
 pub mod dispatch;
