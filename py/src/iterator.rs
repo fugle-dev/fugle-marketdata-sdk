@@ -7,10 +7,9 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyString, PyType};
-use pyo3_async_runtimes::tokio::future_into_py;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::handoff::Handoff;
 use crate::websocket::message_to_dict;
@@ -78,14 +77,85 @@ fn yielded(py: Python<'_>, msg: &marketdata_core::WebSocketMessage, raw: bool) -
     }
 }
 
-/// Sets its flag when dropped: an `__anext__` awaitable that was cancelled
-/// or dropped stops its blocking wait at the next wake-up, before it takes a
-/// message nobody will receive.
-struct AbandonOnDrop(Arc<AtomicBool>);
+/// One `__anext__` call: the awaitable handed to Python and what resolves it.
+///
+/// A blocking-pool thread only waits for the queue to become readable; the
+/// message is taken by `Deliver`, on the event loop's thread, after it has
+/// seen that the awaitable is still pending. Cancelling happens on that
+/// thread too, so a cancelled wait never takes a message (#260).
+struct AnextWait {
+    handoff: Arc<Handoff>,
+    raw: bool,
+    event_loop: Py<PyAny>,
+    future: Py<PyAny>,
+    /// Set once the awaitable is done (resolved or cancelled): the waiting
+    /// thread stops at its next wake-up.
+    done: Arc<AtomicBool>,
+}
 
-impl Drop for AbandonOnDrop {
-    fn drop(&mut self) {
+impl AnextWait {
+    /// Wait off the event loop until there is something to deliver, then
+    /// hand over to `Deliver` on the loop.
+    fn spawn(self: Arc<Self>) {
+        pyo3_async_runtimes::tokio::get_runtime().spawn_blocking(move || {
+            while !self.done.load(Ordering::SeqCst) {
+                if self.handoff.wait_readable(WAKE_INTERVAL) == Ok(false) {
+                    continue;
+                }
+                Python::attach(|py| {
+                    let event_loop = self.event_loop.clone_ref(py);
+                    // Fails once the loop is closed. Nothing was taken from
+                    // the queue and nobody awaits the result: stop quietly.
+                    let _ = event_loop
+                        .bind(py)
+                        .call_method1(pyo3::intern!(py, "call_soon_threadsafe"), (Deliver(self),));
+                });
+                return;
+            }
+        });
+    }
+}
+
+/// Done callback of an `__anext__` awaitable.
+#[pyclass]
+struct MarkDone(Arc<AtomicBool>);
+
+#[pymethods]
+impl MarkDone {
+    fn __call__(&self, _future: &Bound<'_, PyAny>) {
         self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Runs on the event loop: resolves a still-pending `__anext__` awaitable
+/// with the next message, or ends the iteration once the queue is closed.
+#[pyclass]
+struct Deliver(Arc<AnextWait>);
+
+#[pymethods]
+impl Deliver {
+    fn __call__(&self, py: Python<'_>) -> PyResult<()> {
+        let wait = &self.0;
+        let future = wait.future.bind(py);
+        if future.call_method0(pyo3::intern!(py, "done"))?.is_truthy()? {
+            return Ok(());
+        }
+        let result = match wait.handoff.try_receive() {
+            Some(msg) => yielded(py, &msg, wait.raw),
+            None if wait.handoff.wait_readable(Duration::ZERO).is_err() => Err(
+                pyo3::exceptions::PyStopAsyncIteration::new_err("Message channel closed"),
+            ),
+            // Another reader took it first: wait for the next one.
+            None => {
+                Arc::clone(wait).spawn();
+                return Ok(());
+            }
+        };
+        match result {
+            Ok(value) => future.call_method1(pyo3::intern!(py, "set_result"), (value,))?,
+            Err(err) => future.call_method1(pyo3::intern!(py, "set_exception"), (err,))?,
+        };
+        Ok(())
     }
 }
 
@@ -153,7 +223,8 @@ impl MessageIterator {
     /// Receive a message with timeout
     ///
     /// Args:
-    ///     timeout_ms: Timeout in milliseconds
+    ///     timeout_ms: Timeout in milliseconds. A value too large for the
+    ///         clock to add waits until a message arrives.
     ///
     /// Returns:
     ///     dict: Message data if received within timeout (str from a `messages(raw=True)` iterator)
@@ -161,15 +232,28 @@ impl MessageIterator {
     ///
     /// Raises:
     ///     MarketDataError: If channel is closed
+    ///
+    /// Note: Like `__next__`, the wait wakes every 100 ms to let Python
+    /// handle signals, so Ctrl+C interrupts it. An interrupted call has taken
+    /// no message.
     fn recv_timeout(&self, py: Python<'_>, timeout_ms: u64) -> PyResult<Option<Py<PyAny>>> {
-        let handoff = Arc::clone(&self.handoff);
-        let timeout = Duration::from_millis(timeout_ms);
-        match py.detach(move || handoff.receive(Some(timeout))) {
-            Ok(Some(msg)) => Ok(Some(yielded(py, &msg, self.raw)?)),
-            Ok(None) => Ok(None),
-            Err(()) => Err(crate::errors::to_py_err(marketdata_core::MarketDataError::ConnectionError {
-                msg: "Message channel closed".to_string(),
-            })),
+        // A timeout too large for the clock means no deadline.
+        let deadline = Instant::now().checked_add(Duration::from_millis(timeout_ms));
+        loop {
+            let remaining = deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+            let slice = remaining.map_or(WAKE_INTERVAL, |remaining| remaining.min(WAKE_INTERVAL));
+            let handoff = Arc::clone(&self.handoff);
+            match py.detach(move || handoff.receive(Some(slice))) {
+                Ok(Some(msg)) => return Ok(Some(yielded(py, &msg, self.raw)?)),
+                Ok(None) if remaining.is_some_and(|remaining| remaining <= slice) => return Ok(None),
+                // Nothing yet: run pending signal handlers, then wait again.
+                Ok(None) => py.check_signals()?,
+                Err(()) => {
+                    return Err(crate::errors::to_py_err(marketdata_core::MarketDataError::ConnectionError {
+                        msg: "Message channel closed".to_string(),
+                    }))
+                }
+            }
         }
     }
 
@@ -189,42 +273,26 @@ impl MessageIterator {
     /// Raises:
     ///     StopAsyncIteration: When the connection is gone and every message was read
     ///
-    /// Note: This method releases the GIL while waiting for messages.
-    /// The wait runs on tokio's blocking pool, enabling true async concurrency.
+    /// Note: The wait runs on tokio's blocking pool, off the event loop. A
+    /// cancelled awaitable takes no message: the next read gets it. One
+    /// still pending when its event loop closes is dropped silently.
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let handoff = Arc::clone(&self.handoff);
-        let raw = self.raw;
-
-        future_into_py(py, async move {
-            let abandoned = Arc::new(AtomicBool::new(false));
-            let _abandon = AbandonOnDrop(Arc::clone(&abandoned));
-            let result = tokio::task::spawn_blocking(move || loop {
-                if abandoned.load(Ordering::SeqCst) {
-                    return Ok(None);
-                }
-                match handoff.receive(Some(WAKE_INTERVAL)) {
-                    Ok(Some(msg)) => return Ok(Some(msg)),
-                    Ok(None) => continue,
-                    Err(()) => return Err(()),
-                }
-            })
-            .await
-            .map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e))
-            })?;
-
-            match result {
-                Ok(Some(msg)) => Python::attach(|py| yielded(py, &msg, raw)),
-                // Only when abandoned, and then nobody awaits this result.
-                Ok(None) => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
-                    "Iteration abandoned",
-                )),
-                // Channel closed: end `async for`.
-                Err(()) => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
-                    "Message channel closed",
-                )),
-            }
+        let event_loop = pyo3_async_runtimes::tokio::get_current_locals(py)?.event_loop(py);
+        let future = event_loop.call_method0(pyo3::intern!(py, "create_future"))?;
+        let done = Arc::new(AtomicBool::new(false));
+        future.call_method1(
+            pyo3::intern!(py, "add_done_callback"),
+            (MarkDone(Arc::clone(&done)),),
+        )?;
+        Arc::new(AnextWait {
+            handoff: Arc::clone(&self.handoff),
+            raw: self.raw,
+            event_loop: event_loop.unbind(),
+            future: future.clone().unbind(),
+            done,
         })
+        .spawn();
+        Ok(future)
     }
 }
 

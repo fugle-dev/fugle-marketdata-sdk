@@ -90,6 +90,26 @@ impl Handoff {
         self.take(&mut state)
     }
 
+    /// Wait up to `timeout` for a message to be queued, without taking it.
+    ///
+    /// `Ok(true)` when one is queued, `Ok(false)` when the timeout elapsed
+    /// first, `Err(())` once the queue is closed and drained. Another reader
+    /// may take the message before the caller does.
+    pub(crate) fn wait_readable(&self, timeout: Duration) -> Result<bool, ()> {
+        let state = self.lock();
+        let (state, _) = self
+            .readable
+            .wait_timeout_while(state, timeout, |state| state.items.is_empty() && !state.closed)
+            .unwrap_or_else(PoisonError::into_inner);
+        if !state.items.is_empty() {
+            Ok(true)
+        } else if state.closed {
+            Err(())
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Next message, waiting up to `timeout` (`None`: indefinitely).
     ///
     /// `Ok(None)` when the timeout elapsed first, `Err(())` once the queue is
@@ -172,6 +192,20 @@ mod tests {
         handoff.close();
         assert!(matches!(handoff.receive(None), Ok(Some(_))));
         assert!(handoff.receive(None).is_err());
+    }
+
+    #[test]
+    fn wait_readable_reports_a_queued_message_and_leaves_it() {
+        let handoff = Handoff::new(None);
+        let stop = AtomicBool::new(false);
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Ok(false));
+        handoff.push(message(0), &stop);
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Ok(true));
+        handoff.close();
+        // Closed, not drained: the message is still there to take.
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Ok(true));
+        assert_eq!(handoff.try_receive().and_then(|m| m.id), Some("0".into()));
+        assert_eq!(handoff.wait_readable(Duration::from_millis(20)), Err(()));
     }
 
     #[test]

@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python: a cancelled `MessageIterator.__anext__` no longer loses a
+  message** (#260). Cancelling a pending `async for` step — `asyncio.wait_for`
+  timing out, a cancelled task — left its wait running for up to 100 ms, and
+  a message arriving in that time was taken and discarded. The message is
+  now taken on the event loop's thread, only for an awaitable that is still
+  pending, so the next read gets it. An `__anext__` left pending when its
+  event loop closed printed `RuntimeError: Event loop is closed` once the
+  connection ended; it is now dropped silently. `recv_timeout` wakes every
+  100 ms to let Python handle signals, as `__next__` does, so Ctrl+C no
+  longer waits for the timeout; and a `timeout_ms` too large for the clock
+  waits until a message arrives.
 - **Python: `MessageIterator.recv_timeout` docs and stub match the method**
   (#250). The README example passed `5.0` "in seconds"; the argument is an
   int of milliseconds, so that call raised `TypeError`. The stub declared

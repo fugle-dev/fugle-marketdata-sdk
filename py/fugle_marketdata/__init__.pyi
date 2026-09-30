@@ -2543,6 +2543,10 @@ class MessageIterator(Generic[_Yielded]):
         `asyncio.ensure_future`; `asyncio.create_task` rejects it. The
         awaited value is never None.
 
+        Cancelling the awaitable (`asyncio.wait_for` timing out, a cancelled
+        task) takes no message: the next read gets it. An awaitable still
+        pending when its event loop closes is dropped silently.
+
         Returns:
             Message dict (str from a `messages(raw=True)` iterator)
 
@@ -2564,13 +2568,15 @@ class MessageIterator(Generic[_Yielded]):
         """Receive a message, waiting up to `timeout_ms` (blocking).
 
         A plain method, not a coroutine: do not `await` it. Blocks the
-        calling thread with the GIL released. Signals are not checked during
-        the wait, so Ctrl+C takes effect only once it returns (`__next__`
-        checks every 100 ms).
+        calling thread with the GIL released. Like `__next__`, wakes every
+        100 ms to let Python handle signals, so Ctrl+C interrupts the wait;
+        an interrupted call has taken no message.
 
         Args:
             timeout_ms: How long to wait, in milliseconds. A non-negative
-                int; a float raises TypeError, a negative int OverflowError.
+                int below 2**64; a float raises TypeError, a negative int
+                or one from 2**64 up OverflowError. A value too large for
+                the clock to add waits until a message arrives.
 
         Returns:
             Message dict if received within timeout (str from a
