@@ -353,6 +353,7 @@ unsubscribe(channel, symbols, SubscribeOptions?)  # Same list and options as the
 unsubscribe_ids(ids)                         # Unsubscribe by server ids from `subscribed`
 is_connected()                               # Check connection status
 is_closed()                                  # Check if client is closed
+url()                                        # Resolved endpoint; ConfigError (1004) on an invalid base_url / version
 ```
 
 `SubscribeOptions` has `after_hours` (FutOpt only) and `intraday_odd_lot`

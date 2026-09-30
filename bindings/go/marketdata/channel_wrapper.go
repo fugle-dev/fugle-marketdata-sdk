@@ -363,6 +363,17 @@ func (sc *StreamingClient) IsClosed() bool {
 	return sc.client.IsClosed()
 }
 
+// URL returns the endpoint this client connects to, e.g.
+// wss://api.fugle.tw/marketdata/v1.0/stock/streaming: the base URL (host and
+// path prefix), the version segment, then the product path. Readable before
+// Connect().
+//
+// It returns the config error (code 1004) Connect() would when the base URL
+// is invalid.
+func (sc *StreamingClient) URL() (string, error) {
+	return sc.client.Url()
+}
+
 // MessagesDroppedTotal returns the number of messages dropped because
 // Messages() fell behind while the queue held its configured buffer of
 // unread messages (MessageOverflowDropNewest).

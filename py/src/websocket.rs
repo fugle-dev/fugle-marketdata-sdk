@@ -1927,6 +1927,26 @@ impl StockWebSocketClient {
         Ok(())
     }
 
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url`
+    /// (host and path prefix), the version segment picked by `version`, then
+    /// the product path. Readable before `connect()`.
+    #[getter]
+    pub fn url(&self) -> PyResult<String> {
+        // `base_url` and `version` were validated in `WebSocketClient::new`,
+        // so this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            WsProduct::Stock,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(errors::to_py_err)
+    }
+
     /// Messages dropped because they arrived while `message_buffer` unread
     /// messages were already held (`message_overflow="drop_newest"`).
     ///
@@ -2751,6 +2771,26 @@ impl FutOptWebSocketClient {
         result.map_err(errors::to_py_err)?;
 
         Ok(())
+    }
+
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`: `base_url`
+    /// (host and path prefix), the version segment picked by `version`, then
+    /// the product path. Readable before `connect()`.
+    #[getter]
+    pub fn url(&self) -> PyResult<String> {
+        // `base_url` and `version` were validated in `WebSocketClient::new`,
+        // so this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            WsProduct::FutOpt,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(errors::to_py_err)
     }
 
     /// Messages dropped because they arrived while `message_buffer` unread

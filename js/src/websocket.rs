@@ -9,7 +9,7 @@
 //! - Core connection events are delivered to listeners through the connection's
 //!   [`EventSink`], with the argument shapes of `@fugle/marketdata` 1.x (#23)
 
-use napi::bindgen_prelude::{Function, FunctionRef, JsValuesTupleIntoVec, PromiseRaw, ToNapiValue, Unknown};
+use napi::bindgen_prelude::{Function, FunctionRef, JsValuesTupleIntoVec, Object, PromiseRaw, This, ToNapiValue, Unknown};
 use marketdata_core::{error_code, ErrorInfo, ErrorKind};
 use napi::JsValue;
 use napi::Env;
@@ -1647,6 +1647,9 @@ impl StockWebSocketClient {
     /// `message` frames that arrive before a `message` listener is registered
     /// are dropped, not delivered to it later (#62).
     ///
+    /// Returns the client it was called on, as the 1.x `EventEmitter` did,
+    /// so calls chain: `ws.stock.on('message', cb).subscribe({ ... })` (#245).
+    ///
     /// @param event - Event type: "message", "connect", "authenticated",
     ///                "unauthenticated", "disconnect", "reconnect", "error"
     /// @param callback - Listener for that event
@@ -1660,14 +1663,17 @@ impl StockWebSocketClient {
     /// ```
     #[napi(
         ts_generic_types = "E extends WebSocketEvent",
-        ts_args_type = "event: E, callback: WebSocketEventMap[E]"
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
     )]
-    pub fn on(
+    pub fn on<'env>(
         &self,
+        this: This<'env>,
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
-    ) -> napi::Result<()> {
-        register_listener(&self.callbacks, &event, callback)
+    ) -> napi::Result<Object<'env>> {
+        register_listener(&self.callbacks, &event, callback)?;
+        Ok(this.object)
     }
 
     /// Connect to the stock WebSocket server.
@@ -2056,6 +2062,26 @@ impl StockWebSocketClient {
         request_disconnect(&self.worker)
     }
 
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `baseUrl` (host and
+    /// path prefix), the version segment picked by `version`, then the
+    /// product path. Readable before `connect()`.
+    #[napi(getter)]
+    pub fn url(&self, env: Env) -> napi::Result<String> {
+        // `baseUrl` and `version` were validated in the constructor, so
+        // this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            WsProduct::Stock,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(|e| crate::errors::to_napi_error(&env, e))
+    }
+
     /// Messages dropped because they arrived while `messageBuffer` were
     /// unread (`messageOverflow: 'dropNewest'`).
     ///
@@ -2160,17 +2186,21 @@ impl FutOptWebSocketClient {
 
     /// Register an event handler
     ///
-    /// Same events and arguments as `StockWebSocketClient::on` (#23).
+    /// Same events, arguments and return value as `StockWebSocketClient::on`
+    /// (#23, #245).
     #[napi(
         ts_generic_types = "E extends WebSocketEvent",
-        ts_args_type = "event: E, callback: WebSocketEventMap[E]"
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
     )]
-    pub fn on(
+    pub fn on<'env>(
         &self,
+        this: This<'env>,
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
-    ) -> napi::Result<()> {
-        register_listener(&self.callbacks, &event, callback)
+    ) -> napi::Result<Object<'env>> {
+        register_listener(&self.callbacks, &event, callback)?;
+        Ok(this.object)
     }
 
     /// Connect to the FutOpt WebSocket server.
@@ -2522,6 +2552,26 @@ impl FutOptWebSocketClient {
     #[napi]
     pub fn disconnect(&self) -> napi::Result<()> {
         request_disconnect(&self.worker)
+    }
+
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`: `baseUrl` (host and
+    /// path prefix), the version segment picked by `version`, then the
+    /// product path. Readable before `connect()`.
+    #[napi(getter)]
+    pub fn url(&self, env: Env) -> napi::Result<String> {
+        // `baseUrl` and `version` were validated in the constructor, so
+        // this cannot fail for a client built through it; no fallback to
+        // the production endpoint (#245).
+        build_stream_config(
+            &self.auth,
+            self.base_url.as_deref(),
+            WsProduct::FutOpt,
+            self.stock_version,
+            self.futopt_version,
+        )
+        .map(|config| config.url)
+        .map_err(|e| crate::errors::to_napi_error(&env, e))
     }
 
     /// Messages dropped because they arrived while `messageBuffer` were

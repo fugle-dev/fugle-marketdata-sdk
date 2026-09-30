@@ -469,6 +469,48 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
     }
 
   
+    /**
+     * The endpoint this client connects to, e.g.
+     * `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+     * and path prefix), the version segment picked by `version`, then the
+     * product path. Readable before `connect()`.
+     *
+     * Returns the `ConfigError` (code 1004) `connect()` would, when
+     * `base_url` or `version` is invalid.
+     */
+    @Override
+    public String url() throws MarketDataException {
+            try {
+                return FfiConverterString.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_url(
+            it, _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
 
   
     /**

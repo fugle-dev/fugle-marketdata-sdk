@@ -377,6 +377,7 @@ CompletableFuture<Void> connect()             // Connect to server
 CompletableFuture<Void> disconnect()          // Disconnect from server
 boolean isConnected()                         // Check connection status
 boolean isClosed()                            // Check if client is closed
+String url()                                  // Resolved endpoint; throws code 1004 on an invalid baseUrl
 long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
 
 // Subscription management

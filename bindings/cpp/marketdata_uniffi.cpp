@@ -210,6 +210,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync() != 38235) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_url() != 35204) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected() != 42437) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -1385,6 +1388,13 @@ void WebSocketClient::unsubscribe_sync(const std::string &channel, const std::ve
         uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_sync,
         uniffi::FfiConverterMarketDataError::lift,
         ptr, uniffi::FfiConverterString::lower(channel), uniffi::FfiConverterSequenceString::lower(symbols), uniffi::FfiConverterOptionalTypeSubscribeOptions::lower(opts));
+}
+std::string WebSocketClient::url() {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterString::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketclient_url,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr));
 }
 
 WebSocketClient::~WebSocketClient() {

@@ -1110,6 +1110,11 @@ uint64_t uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(void* pt
 uint64_t uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(void* ptr, RustBuffer ids
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_URL
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_METHOD_WEBSOCKETCLIENT_URL
+RustBuffer uniffi_marketdata_uniffi_fn_method_websocketclient_url(void* ptr, RustCallStatus *out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CLONE_WEBSOCKETLISTENER
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_FN_CLONE_WEBSOCKETLISTENER
 void* uniffi_marketdata_uniffi_fn_clone_websocketlistener(void* ptr, RustCallStatus *out_status
@@ -2079,6 +2084,12 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe(vo
 #ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_UNSUBSCRIBE_IDS
 #define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_UNSUBSCRIBE_IDS
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_URL
+#define UNIFFI_FFIDEF_UNIFFI_MARKETDATA_UNIFFI_CHECKSUM_METHOD_WEBSOCKETCLIENT_URL
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_url(void
     
 );
 #endif

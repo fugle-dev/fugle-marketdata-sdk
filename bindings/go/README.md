@@ -437,6 +437,7 @@ Connect() error                    // Connect to server
 Close()                            // Close connection (blocks until complete)
 IsConnected() bool                 // Check connection status
 IsClosed() bool                    // Check if client is closed
+URL() (string, error)              // Resolved endpoint; code 1004 on an invalid base URL
 
 // Subscription management
 // opts: WithAfterHours(true) for the FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock);

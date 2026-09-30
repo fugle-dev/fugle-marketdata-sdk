@@ -75,6 +75,8 @@ to rewrite call sites:
 | Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
+| WebSocket `ws.stock.url` / `ws.futopt.url` | ✅ the resolved endpoint, e.g. `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`; reflects `base_url` / `baseUrl` and `version`, readable before `connect()` |
+| Node `on()` chaining: `ws.stock.on('message', cb).subscribe({ ... })` | ✅ `on()` returns the client it was called on |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
 | Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working |
 | `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (Python raises `TypeError`, Node ignores them). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |

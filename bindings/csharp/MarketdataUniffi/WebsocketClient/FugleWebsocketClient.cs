@@ -76,6 +76,9 @@ namespace FugleMarketData.WebsocketClient
         /// <summary>Whether the client is currently connected to the server.</summary>
         public bool IsConnected => Inner.IsConnected;
 
+        /// <summary>The endpoint this client connects to (see <see cref="WebSocketClient.Url"/>).</summary>
+        public string Url => Inner.Url;
+
         /// <summary>
         /// Build the client over <paramref name="options"/>, whose
         /// <see cref="WebSocketClientOptions.Endpoint"/> must be

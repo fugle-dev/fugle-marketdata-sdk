@@ -178,23 +178,6 @@ enum class ErrorSourceKind: int32_t {
 
 
 /**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
-};
-
-
-/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -229,6 +212,23 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
 };
 
 namespace uniffi {
@@ -1224,6 +1224,16 @@ struct WebSocketClient
      * Same arguments and checks as `unsubscribe`.
      */
     void unsubscribe_sync(const std::string &channel, const std::vector<std::string> &symbols, std::optional<SubscribeOptions> opts);
+    /**
+     * The endpoint this client connects to, e.g.
+     * `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+     * and path prefix), the version segment picked by `version`, then the
+     * product path. Readable before `connect()`.
+     *
+     * Returns the `ConfigError` (code 1004) `connect()` would, when
+     * `base_url` or `version` is invalid.
+     */
+    std::string url();
 
     private:
     WebSocketClient(const WebSocketClient &);

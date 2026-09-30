@@ -382,6 +382,7 @@ client.connect()                           # Connect to server
 client.disconnect()                        # Disconnect from server
 client.is_connected()                      # Check connection status
 client.is_closed()                         # Check if client is closed
+client.url                                 # Resolved endpoint, e.g. wss://api.fugle.tw/marketdata/v1.0/stock/streaming
 
 client.subscribe(channel, symbol)          # Subscribe to channel
 client.unsubscribe(subscription_id)        # Unsubscribe by server ID (or ids=[...])

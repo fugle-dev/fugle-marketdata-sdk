@@ -169,6 +169,23 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     /**
+     * The endpoint this client connects to, e.g.
+     * {@code wss://api.fugle.tw/marketdata/v1.0/stock/streaming}: the base URL
+     * (host and path prefix), the version segment, then the product path.
+     * Readable before {@link #connect()}.
+     *
+     * @throws FugleException code 1004 if the base URL is invalid, as
+     *         {@code connect()} would report
+     */
+    public String url() {
+        try {
+            return webSocketClient.url();
+        } catch (Exception e) {
+            throw FugleException.unwrap(e);
+        }
+    }
+
+    /**
      * Messages dropped this connection because the message queue held
      * {@code messageBuffer} unread messages ({@link MessageOverflow#DROP_NEWEST}).
      *

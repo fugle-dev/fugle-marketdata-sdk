@@ -390,6 +390,7 @@ Task ConnectAsync()                           // Connect to server
 Task DisconnectAsync()                        // Disconnect from server
 bool IsConnected                              // Check connection status
 bool IsClosed                                 // Check if client is closed
+string Url                                    // Resolved endpoint; throws code 1004 on an invalid BaseUrl / version
 ulong MessagesDroppedTotal                    // Messages dropped this connection (see below)
 
 // afterHours: FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)

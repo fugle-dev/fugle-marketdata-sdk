@@ -730,6 +730,17 @@ impl WebSocketClient {
             .map_or(0, |handle| handle.total())
     }
 
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+    /// and path prefix), the version segment picked by `version`, then the
+    /// product path. Readable before `connect()`.
+    ///
+    /// Returns the `ConfigError` (code 1004) `connect()` would, when
+    /// `base_url` or `version` is invalid.
+    pub fn url(&self) -> Result<String, MarketDataError> {
+        Ok(self.endpoint_config()?.url)
+    }
+
     /// Check if the client is currently connected
     ///
     /// Reads core's connection state, so it is false while reconnecting and
@@ -911,26 +922,31 @@ impl WebSocketClient {
         }
     }
 
-    /// Open, authenticate and store a new connection, for a `connect()` that
-    /// holds the connect gate and was first polled on `caller`.
-    async fn open_connection(&self, caller: std::thread::ThreadId) -> Result<(), MarketDataError> {
+    /// Core's connection config for this client's endpoint, before the
+    /// client's own settings are applied; `connect()` and `url()` share it.
+    fn endpoint_config(&self) -> Result<marketdata_core::ConnectionConfig, MarketDataError> {
         // Resolve the endpoint through core's factory so `base_url` semantics
         // and the per-product version live in one place. Before 0.8.0 this
         // hand-rolled `format!("{base}/stock/streaming")`, which is how the
         // version segment ended up being the caller's problem.
         let (stock_version, futopt_version) = self.version.resolve()?;
-        let auth = self.auth.clone();
         let mut factory = marketdata_core::WebSocketFactory::new()
             .stock_version(stock_version)
             .futopt_version(futopt_version);
         if let Some(ref url) = self.base_url {
             factory = factory.base_url(url);
         }
-        let factory = factory.auth(auth);
-        let mut config = match self.endpoint {
+        let factory = factory.auth(self.auth.clone());
+        Ok(match self.endpoint {
             WebSocketEndpoint::Stock => factory.stock()?.build(),
             WebSocketEndpoint::FutOpt => factory.futopt()?.build(),
-        };
+        })
+    }
+
+    /// Open, authenticate and store a new connection, for a `connect()` that
+    /// holds the connect gate and was first polled on `caller`.
+    async fn open_connection(&self, caller: std::thread::ThreadId) -> Result<(), MarketDataError> {
+        let mut config = self.endpoint_config()?;
         // Apply TLS customization if provided (custom CA / accept_invalid_certs).
         if let Some(ref tls) = self.tls_config {
             config.tls = tls.clone();
@@ -2467,6 +2483,66 @@ mod tests {
         // A later zero record leaves an earlier value alone: 0 is "unset".
         ConnectionConfigRecord { auth_timeout_ms: 0 }.apply(&mut config);
         assert_eq!(config.auth_timeout, std::time::Duration::from_secs(15));
+    }
+
+    fn client_for_url(
+        endpoint: WebSocketEndpoint,
+        base_url: Option<&str>,
+        version: Option<StreamingVersionRecord>,
+    ) -> Arc<WebSocketClient> {
+        WebSocketClient::new_with_options(
+            "test-key".to_string(),
+            Arc::new(TestListener::new()) as Arc<dyn WebSocketListener>,
+            endpoint,
+            base_url.map(str::to_string),
+            None,
+            None,
+            None,
+            version,
+            None,
+            None,
+        )
+    }
+
+    /// `url()` is core's resolved endpoint, readable before `connect()` (#245).
+    #[test]
+    fn url_is_the_resolved_endpoint() {
+        let stock = client_for_url(WebSocketEndpoint::Stock, None, None);
+        assert_eq!(stock.url().unwrap(), marketdata_core::urls::STOCK_WS);
+        let futopt = client_for_url(WebSocketEndpoint::FutOpt, None, None);
+        assert_eq!(futopt.url().unwrap(), marketdata_core::urls::FUTOPT_WS);
+        assert!(futopt.url().unwrap().ends_with("/v1.1/futopt/streaming"));
+
+        let custom = client_for_url(
+            WebSocketEndpoint::FutOpt,
+            Some("wss://staging.fugle.tw/marketdata"),
+            Some(StreamingVersionRecord { stock: None, futopt: Some("v1.0".to_string()) }),
+        );
+        assert_eq!(
+            custom.url().unwrap(),
+            "wss://staging.fugle.tw/marketdata/v1.0/futopt/streaming"
+        );
+    }
+
+    /// An invalid `version` or `base_url` fails `url()` with the
+    /// `ConfigError` `connect()` returns (#245).
+    #[test]
+    fn url_reports_invalid_config_as_config_error() {
+        let bad_version = client_for_url(
+            WebSocketEndpoint::FutOpt,
+            None,
+            Some(StreamingVersionRecord { stock: None, futopt: Some("v9.9".to_string()) }),
+        );
+        let bad_base =
+            client_for_url(WebSocketEndpoint::Stock, Some("wss://staging.fugle.tw/marketdata/v1.0"), None);
+        for client in [bad_version, bad_base] {
+            match client.url() {
+                Err(MarketDataError::ConfigError { info, .. }) => {
+                    assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{info:?}");
+                }
+                other => panic!("expected ConfigError, got {other:?}"),
+            }
+        }
     }
 
     /// A server that never answers the auth frame: `connect()` fails with

@@ -2099,9 +2099,10 @@ export declare class FutOptWebSocketClient {
   /**
    * Register an event handler
    *
-   * Same events and arguments as `StockWebSocketClient::on` (#23).
+   * Same events, arguments and return value as `StockWebSocketClient::on`
+   * (#23, #245).
    */
-  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void
+  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
   /**
    * Connect to the FutOpt WebSocket server.
    *
@@ -2163,6 +2164,13 @@ export declare class FutOptWebSocketClient {
   subscriptions(): void
   /** Disconnect from the WebSocket server */
   disconnect(): void
+  /**
+   * The endpoint this client connects to, e.g.
+   * `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`: `baseUrl` (host and
+   * path prefix), the version segment picked by `version`, then the
+   * product path. Readable before `connect()`.
+   */
+  get url(): string
   /**
    * Messages dropped because they arrived while `messageBuffer` were
    * unread (`messageOverflow: 'dropNewest'`).
@@ -2543,6 +2551,9 @@ export declare class StockWebSocketClient {
    * `message` frames that arrive before a `message` listener is registered
    * are dropped, not delivered to it later (#62).
    *
+   * Returns the client it was called on, as the 1.x `EventEmitter` did,
+   * so calls chain: `ws.stock.on('message', cb).subscribe({ ... })` (#245).
+   *
    * @param event - Event type: "message", "connect", "authenticated",
    *                "unauthenticated", "disconnect", "reconnect", "error"
    * @param callback - Listener for that event
@@ -2555,7 +2566,7 @@ export declare class StockWebSocketClient {
    * ws.stock.on('error', (err) => console.error(err.code, err.message));
    * ```
    */
-  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void
+  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
   /**
    * Connect to the stock WebSocket server.
    *
@@ -2647,6 +2658,13 @@ export declare class StockWebSocketClient {
   subscriptions(): void
   /** Disconnect from the WebSocket server */
   disconnect(): void
+  /**
+   * The endpoint this client connects to, e.g.
+   * `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `baseUrl` (host and
+   * path prefix), the version segment picked by `version`, then the
+   * product path. Readable before `connect()`.
+   */
+  get url(): string
   /**
    * Messages dropped because they arrived while `messageBuffer` were
    * unread (`messageOverflow: 'dropNewest'`).

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **WebSocket clients: `url`, the endpoint the client connects to** (#245).
+  The old Python and Node SDKs had it and 3.0 did not: Python raised
+  `AttributeError`, Node read `undefined`. It is core's resolved endpoint —
+  `base_url`, the version segment picked by `version`, then the product
+  path, e.g. `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming` — and is
+  readable before connecting. Python `ws.stock.url` / `ws.futopt.url`, Node
+  the same; C# `Url`, Go `URL()`, Java `url()`, C++ `url()`. In C#, Go,
+  Java and C++, whose constructors do not validate the base URL (or, where
+  the binding takes one, the version), it fails with the `ConfigError`
+  (code 1004) `connect()` would.
+
+### Fixed
+
+- **Node: `on()` returns the client it was called on** (#245). It returned
+  `undefined`, so 1.x code chaining on it —
+  `ws.stock.on('message', cb).subscribe({ ... })` — threw `TypeError`.
+  `ws.stock` still returns a new wrapper on every access, so the value
+  returned is the wrapper `on()` was called on, not `=== ws.stock`.
+
 ## [Bindings 3.0.0-rc.9 / core 0.9.0-rc.7 / uniffi 0.2.0-rc.7] - 2026-09-22
 
 ### Breaking
