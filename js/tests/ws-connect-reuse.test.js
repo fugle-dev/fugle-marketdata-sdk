@@ -522,6 +522,95 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
 
     await expect(joined).rejects.toEqual({ message: 'Invalid API key' });
   });
+
+  // The reconnect authenticates, then its connection ends before the joined
+  // connect() has checked that the reconnect installed it (#273). In a child
+  // process, whose listeners hold its JS thread until core has reached a
+  // state (`hold`), so that the joined connect() settles only after it.
+  //
+  // `closes` maps a connection's number to the code the server closes it
+  // with right after authenticating it, and what it does with the next
+  // connection: `refuse` it, `reject` its credentials, or accept it.
+  // `hold` is the state the reconnect's `authenticated` listener holds the
+  // JS thread until.
+  const joinCases = [
+    ['closes with 1001 and the next attempt fails',
+      { closes: { 2: [1001, 'refuse'] }, hold: 'closed', expected: { error: 3005, closedAtSettle: true } }],
+    ['closes with 1001 and the next attempt is rejected',
+      { closes: { 2: [1001, 'reject'] }, hold: 'closed', expected: { rejection: { message: 'Invalid API key' }, closedAtSettle: true } }],
+    ['closes with 1000, so no reconnect follows',
+      { closes: { 2: [1000, 'refuse'] }, hold: 'closed', expected: { error: 2010, closedAtSettle: true } }],
+    // The next reconnect authenticates too, and its `authenticated` is still
+    // queued when the joined connect() learns the connection has ended.
+    ['closes with 1001, and so does the next reconnect',
+      { closes: { 2: [1001, 'accept'], 3: [1001, 'refuse'] }, hold: 'closed', expected: { error: 3005, closedAtSettle: true } }],
+  ];
+
+  test.each(joinCases)('rejects when the reconnected connection %s before connect() settles', async (_, joinCase) => {
+    await joinReconnectInChild(joinCase);
+  });
+
+  test('resolves when the reconnected connection closes with 1001 and the next reconnect succeeds', async () => {
+    await joinReconnectInChild({
+      closes: { 2: [1001, 'accept'] },
+      hold: 'lost',
+      expected: { data: AUTH, closedAtSettle: false },
+      authentications: 3,
+    });
+  });
+
+  async function joinReconnectInChild({ closes, hold, expected, authentications = Object.keys(closes).length + 1 }) {
+    await setup({ maxAttempts: 1 });
+    wss.on('connection', (socket) => {
+      const close = closes[wss.accepted];
+      if (!close) return;
+      const [code, next] = close;
+      socket.on('message', (raw) => {
+        if (JSON.parse(raw.toString()).event !== 'auth') return;
+        // After the `authenticated` the server's own listener has sent.
+        if (next === 'refuse') wss.refuse = Infinity;
+        if (next === 'reject') wss.rejectAuth = true;
+        socket.close(code);
+      });
+    });
+    const run = runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, reconnect: { initialDelayMs: 100, maxAttempts: 1 } })[${JSON.stringify(product)}];
+      const reached = { lost: () => !ws.isConnected, closed: () => ws.isClosed }[${JSON.stringify(hold)}];
+      const report = (result) => {
+        console.log('RESULT ' + JSON.stringify({ ...result, closedAtSettle }));
+        ws.disconnect();
+      };
+      let joined;
+      let authenticated = 0;
+      let closedAtSettle;
+      ws.on('disconnect', () => {
+        if (joined) return;
+        joined = ws.connect().then(
+          (data) => report({ data }),
+          (e) => report(e instanceof Error ? { error: e.code } : { rejection: e }),
+        );
+      });
+      ws.on('authenticated', () => {
+        authenticated += 1;
+        if (authenticated !== 2) return;
+        const until = Date.now() + 5000;
+        while (!reached() && Date.now() < until);
+        closedAtSettle = ws.isClosed;
+      });
+      ws.connect();
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}` },
+    );
+    await waitFor(() => wss.authenticated === 1, 'first authentication');
+    dropConnections(wss);
+    const { code, result, stderr } = await run;
+
+    expect({ code, stderr, result }).toMatchObject({ code: 0, result: expect.anything() });
+    expect(result).toEqual(expected);
+    expect(wss.authenticated).toBe(authentications);
+  }
 });
 
 /**

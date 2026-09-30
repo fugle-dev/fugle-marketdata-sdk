@@ -157,7 +157,9 @@ subscriptions are harmless ([migration guide §5](../MIGRATION.md#5-auto-reconne
 It rejects if the reconnect does not come back — code 2010 on `disconnect()`
 or when the connection ends without reconnecting, 3005 when the attempts run
 out, the server's `data` object when the credentials are rejected — so give
-it a `.catch`.
+it a `.catch`. The same applies when the restored connection is lost again
+before `connect()` settles and the reconnect that follows does not come back
+(#273).
 
 Reconnect code that first calls `disconnect()` — `disconnect()` then
 `connect()` some time after a `disconnect` event — does not mix with
