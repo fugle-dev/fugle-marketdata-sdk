@@ -26,6 +26,7 @@ client calls release the GIL (#39).
 call that returns normally counts as a release build, and an exception other
 than the injected panic is raised, not taken for one.
 """
+import asyncio
 import base64
 import hashlib
 import json
@@ -416,6 +417,11 @@ def disconnect_quietly(ws):
         ws.disconnect()
     except Exception:
         pass  # never connected, or already gone
+
+
+async def to_thread(func, *args):
+    """``asyncio.to_thread``, which Python 3.8 lacks."""
+    return await asyncio.get_running_loop().run_in_executor(None, func, *args)
 
 
 # Names the injection site where a debug build of the binding panics on demand.
