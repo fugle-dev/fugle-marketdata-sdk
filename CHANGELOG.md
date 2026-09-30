@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the binding takes one, the version), it fails with the `ConfigError`
   (code 1004) `connect()` would.
 
+- **Rust core: `websocket::stream_config` and `StreamProduct`** (#252).
+  `stream_config(auth, base_url, product, stock_version, futopt_version)`
+  returns the `ConnectionConfig` for one product's streaming endpoint,
+  through `WebSocketFactory`. The Python, Node and UniFFI bindings each
+  carried a copy of this and now call core's; the URLs, error codes and
+  messages they produce are unchanged.
+
 ### Fixed
 
 - **Node: `on()` returns the client it was called on** (#245). It returned

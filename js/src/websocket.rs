@@ -920,11 +920,7 @@ pub struct StreamingVersionOptions {
     pub futopt: Option<String>,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) enum WsProduct {
-    Stock,
-    FutOpt,
-}
+pub(crate) use marketdata_core::websocket::StreamProduct as WsProduct;
 
 /// Validate the `version` option into core's per-product enums.
 pub(crate) fn parse_ws_versions(
@@ -967,11 +963,8 @@ pub(crate) fn parse_ws_versions(
     Ok((stock, futopt))
 }
 
-/// Resolve a streaming endpoint through core's factory.
-///
-/// Centralised so the two call sites cannot drift on base-URL semantics —
-/// each used to hand-roll `format!("{base}/stock/streaming")`, which is
-/// exactly the duplication 0.8.0 removes.
+/// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
+/// endpoint rules (#252).
 pub(crate) fn build_stream_config(
     auth: &marketdata_core::AuthRequest,
     base_url: Option<&str>,
@@ -979,18 +972,7 @@ pub(crate) fn build_stream_config(
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
-    let mut factory = marketdata_core::WebSocketFactory::new()
-        .stock_version(stock_version)
-        .futopt_version(futopt_version);
-    if let Some(base) = base_url {
-        factory = factory.base_url(base);
-    }
-    let factory = factory.auth(auth.clone());
-    let builder = match product {
-        WsProduct::Stock => factory.stock()?,
-        WsProduct::FutOpt => factory.futopt()?,
-    };
-    Ok(builder.build())
+    marketdata_core::websocket::stream_config(auth, base_url, product, stock_version, futopt_version)
 }
 
 /// Command sent to WebSocket worker thread

@@ -835,11 +835,8 @@ fn parse_ws_versions(
     Ok((stock, futopt))
 }
 
-/// Resolve a streaming endpoint through core's factory.
-///
-/// Centralised so the three call sites (sync stock, sync futopt, async stock)
-/// cannot drift on base-URL semantics — which is exactly what happened before
-/// 0.8.0, when each one hand-rolled `format!("{base}/stock/streaming")`.
+/// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
+/// endpoint rules (#252).
 fn build_stream_config(
     auth: &marketdata_core::AuthRequest,
     base_url: Option<&str>,
@@ -847,25 +844,10 @@ fn build_stream_config(
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
-    let mut factory = marketdata_core::WebSocketFactory::new()
-        .stock_version(stock_version)
-        .futopt_version(futopt_version);
-    if let Some(base) = base_url {
-        factory = factory.base_url(base);
-    }
-    let factory = factory.auth(auth.clone());
-    let builder = match product {
-        WsProduct::Stock => factory.stock()?,
-        WsProduct::FutOpt => factory.futopt()?,
-    };
-    Ok(builder.build())
+    marketdata_core::websocket::stream_config(auth, base_url, product, stock_version, futopt_version)
 }
 
-#[derive(Clone, Copy)]
-enum WsProduct {
-    Stock,
-    FutOpt,
-}
+use marketdata_core::websocket::StreamProduct as WsProduct;
 
 /// Internal WebSocket state (not Send/Sync safe, managed via Mutex)
 ///
