@@ -1506,6 +1506,12 @@ impl StockWebSocketClient {
         let Some(_claim) = admit_blocking(py, &self.connect_gate, &self.state, &self.runtime)? else {
             return Ok(());
         };
+        // Again: the admission ran with the GIL released, where a
+        // `disconnect()` may have taken the runtime. From here to the
+        // connect below the GIL is held, so this one stays.
+        self.ensure_runtime().map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(e)
+        })?;
         let test_panic = test_panic_site();
 
         // Create WebSocket client with full config
@@ -2381,6 +2387,12 @@ impl FutOptWebSocketClient {
         let Some(_claim) = admit_blocking(py, &self.connect_gate, &self.state, &self.runtime)? else {
             return Ok(());
         };
+        // Again: the admission ran with the GIL released, where a
+        // `disconnect()` may have taken the runtime. From here to the
+        // connect below the GIL is held, so this one stays.
+        self.ensure_runtime().map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(e)
+        })?;
         let test_panic = test_panic_site();
 
         // Create WebSocket client for FutOpt endpoint with full config
