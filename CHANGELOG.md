@@ -164,6 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `disconnect()` now waits for no stream reader, so no `disconnect` callback
   is guaranteed to have fired when it returns. The next `disconnect()` called
   outside a callback waits for those readers.
+- **Python: a callback waiting for `disconnect_async()` no longer hangs**
+  (#280). A callback that ran it to completion, such as with
+  `asyncio.run()` on a coroutine awaiting it, waited forever: the
+  disconnect waited for the callback's own stream reader. Like
+  `disconnect()` there, a `disconnect_async()` called in a callback of any
+  client now waits for no stream reader; the next `disconnect()` or
+  `disconnect_async()` called outside a callback waits for them.
 - **Python: an `__anext__` left pending by a closed event loop no longer
   keeps a thread waiting** (#267). Its wait on the blocking pool lasted until
   a message arrived or the connection ended, so repeated `asyncio.run` calls

@@ -14,7 +14,10 @@ A ``connect()`` that replaces a connection that was lost leaves that
 connection's reader for the next ``disconnect()`` to wait for, and its
 ``messages()`` iterators still get what core queued for them. A
 ``disconnect()`` from a callback waits for no stream reader, so two readers
-disconnecting from callbacks never wait for each other.
+disconnecting from callbacks never wait for each other. Neither does a
+``disconnect_async()`` created in a callback and waited for there, with
+``asyncio.run()`` say: it used to wait, on a runtime thread, for the very
+reader waiting for it (#280).
 """
 import asyncio
 import threading
@@ -417,3 +420,54 @@ def test_reader_disconnecting_while_a_failed_connect_waits_for_it(server, produc
         closing.start()
         closing.join(TIMEOUT_S)
     assert not closing.is_alive()
+
+
+def disconnect_async_blocking(ws):
+    """Wait for disconnect_async() synchronously, as from a callback."""
+
+    async def close():
+        await ws.disconnect_async()
+
+    asyncio.run(close())
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+@pytest.mark.parametrize("event", ["connect", "authenticated"])
+def test_disconnect_async_waited_for_from_callback_waits_for_no_reader(server, product, event):
+    # The awaitable used to join, on a runtime thread, the reader of the
+    # connection it closed — the reader waiting for it in the callback (#280).
+    # `connect` fires during the handshake, so it aborts that connect.
+    ws = product_ws(server.url, product)
+    recorder = Recorder(ws)
+    calls = []
+    errors = []
+    returned = threading.Event()
+
+    def on_event(*args):
+        calls.append(event)
+        if len(calls) != 1:
+            return
+        try:
+            disconnect_async_blocking(ws)
+        except Exception as e:
+            errors.append(e)
+        returned.set()
+
+    ws.on(event, on_event)
+    try:
+        ws.connect()
+    except WebSocketError:
+        pass  # 2010: the callback's disconnect_async() aborted it
+    try:
+        assert returned.wait(TIMEOUT_S), "disconnect_async() waited for the reader waiting for it"
+        assert errors == []
+        assert not ws.is_connected()
+    finally:
+        # Waits for the reader the callback's disconnect_async() left: its
+        # `disconnect` callback has fired once this returns.
+        closing = threading.Thread(target=disconnect_async_blocking, args=(ws,), daemon=True)
+        closing.start()
+        closing.join(TIMEOUT_S)
+    assert not closing.is_alive()
+    assert disconnects(recorder) == 1

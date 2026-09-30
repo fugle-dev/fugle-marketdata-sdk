@@ -1317,11 +1317,12 @@ struct ParkedReader {
 }
 
 /// Stream readers no one could wait for when their connection went: those of
-/// the connection a `disconnect()` from a callback closed and of the connect
-/// it aborted — a `connect` callback during the handshake, say — and that of
-/// a lost connection a `connect()` replaced. Each connection is
-/// closed or gone, so waiting for them always ends once their stop flag is
-/// set; the next `disconnect()` from outside a callback does both (#277).
+/// the connection a `disconnect()` or `disconnect_async()` from a callback
+/// closed and of the connect it aborted — a `connect` callback during the
+/// handshake, say — and that of a lost connection a `connect()` replaced.
+/// Each connection is closed or gone, so waiting for them always ends once
+/// their stop flag is set; the next `disconnect()` or `disconnect_async()`
+/// from outside a callback does both (#277, #280).
 type ParkedReaders = Mutex<Vec<ParkedReader>>;
 
 /// Park `handle` for the next `disconnect()`. Those parked earlier that have
@@ -1354,10 +1355,11 @@ fn take_parked_readers(parked: &ParkedReaders) -> Vec<std::thread::JoinHandle<()
 
 /// [`join_reader_thread`] on the parked readers.
 ///
-/// Not from a callback: a `disconnect()` there waits for no stream reader,
-/// since two readers disconnecting from callbacks would wait for each other.
-/// The readers stay parked for the next `disconnect()` from another thread,
-/// which waits for the remaining callbacks.
+/// Not from a callback: a `disconnect()` or `disconnect_async()` there waits
+/// for no stream reader, since two readers disconnecting from callbacks would
+/// wait for each other. The readers stay parked for the next `disconnect()`
+/// or `disconnect_async()` from another thread, which waits for the remaining
+/// callbacks.
 fn join_parked_reader_threads(py: Python<'_>, parked: &ParkedReaders) {
     if on_stream_reader() {
         return;
@@ -1389,8 +1391,19 @@ fn park_own_reader_thread(
     stop: Option<Arc<AtomicBool>>,
     parked: &ParkedReaders,
 ) -> Option<std::thread::JoinHandle<()>> {
+    park_reader_if_from_callback(on_stream_reader(), handle, stop, parked)
+}
+
+/// [`park_own_reader_thread`] for a `disconnect()` whose caller was, or was
+/// not, on a stream reader.
+fn park_reader_if_from_callback(
+    from_callback: bool,
+    handle: Option<std::thread::JoinHandle<()>>,
+    stop: Option<Arc<AtomicBool>>,
+    parked: &ParkedReaders,
+) -> Option<std::thread::JoinHandle<()>> {
     match handle {
-        Some(handle) if on_stream_reader() => {
+        Some(handle) if from_callback => {
             park_reader_thread(parked, handle, stop);
             None
         }
@@ -1399,8 +1412,9 @@ fn park_own_reader_thread(
 }
 
 /// Async counterpart of [`join_reader_thread`]: joins on the blocking pool so
-/// the awaiting task does not stall a runtime worker. The awaiting task never
-/// runs on the stream reader, so no self-join check is needed.
+/// the awaiting task does not stall a runtime worker. The task runs on a
+/// runtime thread, not on its caller's, so whether that caller was a stream
+/// reader is decided before the task starts (#280).
 async fn join_reader_thread_async(handle: Option<std::thread::JoinHandle<()>>) {
     let Some(handle) = handle else { return };
     let _ = tokio::task::spawn_blocking(move || handle.join()).await;
@@ -1552,10 +1566,21 @@ fn disconnect_async_awaitable<'py>(
     closed: Arc<AtomicBool>,
     pending: PendingSlot,
 ) -> PyResult<Bound<'py, PyAny>> {
+    // Here, not in the task: the task runs on a runtime thread, while a
+    // callback awaiting it — with `asyncio.run()`, say — holds its stream
+    // reader until it completes (#280).
+    let from_callback = on_stream_reader();
     future_into_py(py, async move {
         let (mut target, aborted_reader) = take_close_target(&pending, &state_arc)?;
         // See `disconnect` (#277).
-        let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
+        let (own_reader, own_stop) = match target.live.as_mut() {
+            Some(state) => (state.reader.take(), Some(Arc::clone(&state.stop))),
+            None => (None, None),
+        };
+        let own_reader = park_reader_if_from_callback(from_callback, own_reader, own_stop, &parked_readers);
+        let aborted_stop = target.connecting_stop.clone();
+        let aborted_reader =
+            park_reader_if_from_callback(from_callback, aborted_reader, aborted_stop, &parked_readers);
 
         if !target.is_empty() {
             // See `disconnect`.
@@ -1581,7 +1606,10 @@ fn disconnect_async_awaitable<'py>(
 
         join_reader_thread_async(own_reader).await;
         join_reader_thread_async(aborted_reader).await;
-        join_parked_reader_threads_async(&parked_readers).await;
+        // See `join_parked_reader_threads`.
+        if !from_callback {
+            join_parked_reader_threads_async(&parked_readers).await;
+        }
 
         Ok(())
     })

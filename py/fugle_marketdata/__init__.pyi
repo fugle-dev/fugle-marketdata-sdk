@@ -2016,7 +2016,12 @@ class StockWebSocketClient:
         Called from a callback of any client, this one or another, it waits
         for no stream reader: no "disconnect" callback is guaranteed to have
         fired when it returns, and those readers are left to the next
-        disconnect() called outside a callback.
+        disconnect() or disconnect_async() called outside a callback.
+
+        In a callback, do not block on a disconnect that runs on another
+        thread or event loop, such as
+        asyncio.run_coroutine_threadsafe(...).result(): it still hangs, since
+        that disconnect waits for the callback's stream reader.
         """
         ...
 
@@ -2025,10 +2030,16 @@ class StockWebSocketClient:
 
         Returns an awaitable that completes when disconnection finishes.
 
-        Do not wait for it synchronously from a callback, for example with
-        asyncio.run(ws.stock.disconnect_async()): it does not run on the
-        callback's thread, so it waits for that thread's stream reader, which
-        is waiting for it, and never completes. Call disconnect() there.
+        Waits for the same stream readers as disconnect(). Created in a
+        callback of any client, this one or another — to wait for it with
+        asyncio.run(), say — it waits for no stream reader, as disconnect()
+        called there: no "disconnect" callback is guaranteed to have fired
+        when it returns.
+
+        In a callback, do not block on a disconnect_async() created on
+        another thread or event loop, such as
+        asyncio.run_coroutine_threadsafe(...).result(): it still hangs, since
+        it waits for the callback's stream reader.
         """
         ...
 
@@ -2356,7 +2367,12 @@ class FutOptWebSocketClient:
         Called from a callback of any client, this one or another, it waits
         for no stream reader: no "disconnect" callback is guaranteed to have
         fired when it returns, and those readers are left to the next
-        disconnect() called outside a callback.
+        disconnect() or disconnect_async() called outside a callback.
+
+        In a callback, do not block on a disconnect that runs on another
+        thread or event loop, such as
+        asyncio.run_coroutine_threadsafe(...).result(): it still hangs, since
+        that disconnect waits for the callback's stream reader.
         """
         ...
 
@@ -2365,10 +2381,16 @@ class FutOptWebSocketClient:
 
         Returns an awaitable that completes when disconnection finishes.
 
-        Do not wait for it synchronously from a callback, for example with
-        asyncio.run(ws.futopt.disconnect_async()): it does not run on the
-        callback's thread, so it waits for that thread's stream reader, which
-        is waiting for it, and never completes. Call disconnect() there.
+        Waits for the same stream readers as disconnect(). Created in a
+        callback of any client, this one or another — to wait for it with
+        asyncio.run(), say — it waits for no stream reader, as disconnect()
+        called there: no "disconnect" callback is guaranteed to have fired
+        when it returns.
+
+        In a callback, do not block on a disconnect_async() created on
+        another thread or event loop, such as
+        asyncio.run_coroutine_threadsafe(...).result(): it still hangs, since
+        it waits for the callback's stream reader.
         """
         ...
 
