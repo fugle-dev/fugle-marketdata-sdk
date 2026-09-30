@@ -2081,7 +2081,7 @@ class StockWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        odd_lot: Optional[bool] = None,
+        odd_lot: bool = False,
     ) -> None:
         """Subscribe to a channel for one or more symbols (blocking).
 
@@ -2112,7 +2112,7 @@ class StockWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        odd_lot: Optional[bool] = None,
+        odd_lot: bool = False,
     ) -> None:
         """Subscribe to a channel for one or more symbols (async).
 
@@ -2421,7 +2421,7 @@ class FutOptWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        after_hours: Optional[bool] = None,
+        after_hours: bool = False,
     ) -> None:
         """Subscribe to a channel for one or more FutOpt symbols (blocking).
 
