@@ -510,10 +510,53 @@ msg = messages.recv_timeout(5000)  # Waits up to 5000 ms, returns None on timeou
 Iteration never yields `None` and does not end while no data arrives; it
 raises `StopIteration` / `StopAsyncIteration` once the connection is gone. A
 blocked `for` loop or `recv_timeout` still reacts to Ctrl+C, and cancelling
-an `async for` step (`asyncio.wait_for`, a cancelled task) never loses a
-message. `messages(timeout_ms=...)` is deprecated and ignored. For periodic
+an `async for` step that is still waiting takes no message (steps that are
+already done are described below). `messages(timeout_ms=...)` is deprecated
+and ignored. For periodic
 work while no data arrives, use `message` callbacks or `async for` alongside
 other tasks.
+
+While messages are queued, `async for` reads them without waiting on the
+event loop, and lets other tasks on the loop run once every 32 messages. It
+does so because `messages().__anext__()` then returns an awaitable that is
+already done and holds the message. `async for` and a plain `await` of it
+lose no message; code that handles the awaitable itself must not discard a
+done one:
+
+```python
+step = asyncio.ensure_future(messages.__anext__())
+done, _ = await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+if step.done():          # check this first, whatever else finished
+    handle(step.result())
+else:
+    step.cancel()        # pending: takes no message
+```
+
+- `step.cancel()` returns False for a done awaitable; the message is
+  `step.result()`.
+- Cancelling "the rest" after `asyncio.wait` because `stop` finished drops
+  the message a done `step` holds.
+- A cancelled `asyncio.gather(messages.__anext__(), other)` drops the
+  message its done step holds.
+- Awaitables of one iterator held at the same time may not get the messages
+  in the order they were created. A single `async for` gets them in order.
+
+`asyncio.wait_for(messages.__anext__(), timeout)`:
+
+- loses no message when `timeout` is longer than one turn of the event loop,
+  in practice about 1 ms or more. `timeout=0` returns the message when one
+  is queued instead of always timing out.
+- with a shorter `timeout`, can lose a queued message whose delivery was left
+  to the loop (one in 32): the awaitable is resolved one turn before the
+  waiting task resumes, and a timeout that expires within that turn cancels
+  the task with the message already in the awaitable. Seen on Python 3.12
+  with `timeout=1e-6`.
+- up to Python 3.11, spends a turn of the loop even on a done awaitable. A
+  task cancelled in that turn gets the message back instead of
+  `CancelledError` (3.8.6 and later; run on 3.8.10 only), so `task.cancel()`
+  on a `while True: await wait_for(...)` loop may only take effect at a step
+  with nothing queued. Python 3.8.0 to 3.8.5 raise `CancelledError` there
+  and drop that message.
 
 Messages go to `message` and `raw_message` callbacks when any are registered
 as they arrive, otherwise to the iterator. The iterator holds at most 4096

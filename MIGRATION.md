@@ -646,6 +646,73 @@ def on_message(msg):
             ids[sub["channel"], sub["symbol"]] = sub["id"]
 ```
 
+#### 17. From an earlier 3.0 release candidate only: a Python `messages().__anext__()` awaitable can already be done
+
+This does not concern code coming from 2.x, which had no async iterator. It
+affects code written against an earlier 3.0 release candidate that handles
+the awaitable of `messages().__anext__()` itself (`asyncio.wait`,
+`asyncio.gather`, `cancel()`), or passes `asyncio.wait_for` a timeout
+shorter than about 1 ms. `async for msg in ws.stock.messages()` and a plain
+`await messages.__anext__()` need no change and lose no message.
+
+While messages are queued, `messages.__anext__()` returns an awaitable that
+is **already done** and holds the next message, instead of one that is
+always pending: reading a backlog no longer takes a thread hop per message.
+One step in every 32 in a row is still pending and is delivered by the event
+loop, so other tasks on it get to run; how long they wait is about 32 times
+what your loop body takes per message. Code that holds the awaitable itself
+must not discard a done one:
+
+- **`cancel()` can fail.** `asyncio.ensure_future(messages.__anext__()).cancel()`
+  returns False for a done awaitable; the message is its `result()`.
+- **`asyncio.wait`, then cancelling the rest, drops a message** when the
+  step was done as well:
+
+```python
+step = asyncio.ensure_future(messages.__anext__())
+done, pending = await asyncio.wait({step, stop}, return_when=asyncio.FIRST_COMPLETED)
+
+# Before: drops the message `step` holds when both are done
+if stop in done:
+    step.cancel()
+    return
+
+# After: look at the step first
+if step.done():
+    handle(step.result())
+else:
+    step.cancel()          # pending: takes no message
+```
+
+- **A cancelled `asyncio.gather(messages.__anext__(), other)` drops a
+  message**: the step is done, `gather` is cancelled while it waits for
+  `other`, and the result is discarded. Read the step on its own, or keep a
+  reference to it and read `result()` when the `gather` is cancelled.
+- **`asyncio.wait_for(messages.__anext__(), timeout)`** loses no message
+  when `timeout` is longer than one turn of the event loop, in practice
+  about 1 ms or more. `timeout=0` returns the message when one is queued; it
+  always raised `TimeoutError` before.
+- **`asyncio.wait_for` with a shorter timeout can lose a message.** A step
+  left to the loop (one in 32 of a backlog) is resolved one turn before the
+  waiting task resumes; a timeout that expires within that turn cancels the
+  task with the message already in the awaitable. Seen on Python 3.12 with
+  `timeout=1e-6`, which lost the 32nd, 64th and 96th of 100 queued
+  messages; before, such a call only timed out. Use a timeout of 1 ms or
+  more.
+- **Up to Python 3.11, `task.cancel()` can be swallowed while messages are
+  queued.** There `wait_for` spends a turn of the loop even on a done
+  awaitable, and a task cancelled in that turn gets the message back instead
+  of `CancelledError` (3.8.6 and later; run on 3.8.10 only). A
+  `while True: await asyncio.wait_for(messages.__anext__(), t)` loop stopped
+  with `task.cancel()` may therefore only stop at a step with nothing
+  queued; check a flag of your own in the loop. Python 3.8.0 to 3.8.5 raise
+  `CancelledError` there and drop that message.
+- **Several awaitables of one iterator at once** may not get the messages
+  in the order the awaitables were created. A single `async for` does.
+
+Before cancelling a step, check `done()`, or read `result()`. A pending step
+is as before: cancelling it takes no message.
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you
