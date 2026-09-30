@@ -413,6 +413,36 @@ def disconnect_quietly(ws):
         pass  # never connected, or already gone
 
 
+# Names the injection site where a debug build of the binding panics on demand.
+PANIC_ENV = "FUGLE_MARKETDATA_TEST_PANIC"
+
+_debug_build = None
+
+
+def is_debug_build():
+    """Whether the installed binding has the test injection sites.
+
+    Probed with ``ws_callback_poison``, the one site that needs no
+    connection: a debug build panics in ``off()``, a release build returns.
+    """
+    global _debug_build
+    if _debug_build is None:
+        previous = os.environ.get(PANIC_ENV)
+        os.environ[PANIC_ENV] = "ws_callback_poison"
+        try:
+            # The registry reads the variable when the client is created.
+            product_ws("ws://127.0.0.1:9", "stock").off("reconnect")
+            _debug_build = False
+        except BaseException as panic:  # PanicException is a BaseException
+            _debug_build = "ws_callback_poison" in str(panic)
+        finally:
+            if previous is None:
+                del os.environ[PANIC_ENV]
+            else:
+                os.environ[PANIC_ENV] = previous
+    return _debug_build
+
+
 if __name__ == "__main__":
     burst = next(
         (int(arg.split("=", 1)[1]) for arg in sys.argv[1:] if arg.startswith("--burst-on-close=")),
