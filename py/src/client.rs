@@ -933,7 +933,7 @@ impl StockIntradayClient {
     ///     is_normal: Filter to normal-status tickers only
     ///
     /// Returns:
-    ///     Awaitable[list[dict]]: List of ticker info dicts
+    ///     Awaitable[dict]: Response envelope with the ticker info dicts in `data`
     ///
     /// Example:
     ///     ```python
@@ -2460,7 +2460,7 @@ impl FutOptIntradayClient {
     ///     contract_type: Contract type code ("I", "R", "B", "C", "S", "E")
     ///
     /// Returns:
-    ///     Awaitable[list[dict]]: List of FutOpt ticker info dicts
+    ///     Awaitable[dict]: Response envelope with the FutOpt ticker info dicts in `data`
     ///
     /// Example:
     ///     ```python
@@ -2532,7 +2532,7 @@ impl FutOptIntradayClient {
     ///     product: Only contracts of this product (e.g. "TXF")
     ///
     /// Returns:
-    ///     Awaitable[list[dict]]: List of product info dicts
+    ///     Awaitable[dict]: Response envelope with the product info dicts in `data`
     ///
     /// Example:
     ///     ```python
