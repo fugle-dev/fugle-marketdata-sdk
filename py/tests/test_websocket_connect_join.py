@@ -28,6 +28,9 @@ SYMBOLS = {"stock": "2330", "futopt": "TXF1!"}
 
 hard_timeout = pytest.mark.timeout(30, method="thread")
 
+# Concurrent connect_async() calls in the test of #268.
+JOINS = 300
+
 
 @pytest.fixture
 def server():
@@ -396,3 +399,31 @@ async def test_concurrent_async_joins_both_return_once_reconnected(server):
         assert server.connections_accepted == 2
     finally:
         await ws.disconnect_async()
+
+
+@hard_timeout
+async def test_async_joins_started_together_do_not_refuse_one_another(server):
+    # connect_async() decides on the runtime's threads, several at a time:
+    # calls started together must not refuse one another (#268).
+    #
+    # The backoff outlasts the test's timeout, so the reconnect is under way
+    # for as long as the joins are watched and none of them may return.
+    # Nothing tells the test that a join has begun to wait, and nothing here
+    # relies on it: one that has yet to run has not returned either.
+    ws = reconnecting_ws(server.url, "stock", delay_ms=60_000)
+    recorder = Recorder(ws)
+    joins = []
+    try:
+        await ws.connect_async()
+        server.refuse_connections()
+        await to_thread(lose_connection, server, recorder)
+
+        # Enough of them that some decide at the same moment.
+        joins = [asyncio.ensure_future(ws.connect_async()) for _ in range(JOINS)]
+        returned, _ = await asyncio.wait(joins, timeout=0.3, return_when=asyncio.FIRST_COMPLETED)
+        assert not returned, f"did not wait on the reconnect: {[j.exception() or 'ok' for j in returned]}"
+        assert server.connections_accepted == 1
+    finally:
+        await ws.disconnect_async()
+        # Ends the joins; how each ends is not this test's business.
+        await asyncio.wait_for(asyncio.gather(*joins, return_exceptions=True), TIMEOUT_S)
