@@ -3,7 +3,8 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Admits one `connect()` at a time.
+/// Admits one `connect()` that opens a connection at a time. An async
+/// `connect()` that waits on a reconnect does not take it (#268).
 #[derive(Debug, Default)]
 pub(crate) struct ConnectGate {
     busy: AtomicBool,

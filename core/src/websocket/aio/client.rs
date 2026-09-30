@@ -478,19 +478,24 @@ impl WebSocketClient {
         // This covers a first `connect()`, one cancelled mid-handshake, and
         // the one `reconnect()` makes after stopping a reconnect (#230).
         let _wake = WakeOnDrop(&self.waiters);
+        // Before the gate: a call that waits on a reconnect never holds it,
+        // so calls made at the same moment all wait instead of one refusing
+        // the others (#268).
+        if let Some(join) = self.join_dispatch_task().await {
+            join?;
+            return self.wait_connected().await;
+        }
         // Held until this connection's dispatch task is running (#119).
         let Some(_claim) = self.connect_gate.try_claim() else {
             return Err(MarketDataError::AlreadyConnected);
         };
-        // A second dispatch task would orphan the first, whose later close
-        // would then be reported through the shared latch as this new
-        // connection's `Disconnected` (#41). Unless connected, it is
-        // reconnecting: wait for the outcome instead (#230).
-        if self.dispatch_task_running().await {
-            if self.is_connected().await && !self.waiters.reconnecting() {
-                return Err(MarketDataError::AlreadyConnected);
-            }
+        // Again under the claim: a `connect()` that finished since the first
+        // look has its dispatch task running.
+        if let Some(join) = self.join_dispatch_task().await {
+            // Released before the wait, which a `reconnect()` may end by
+            // connecting.
             drop(_claim);
+            join?;
             return self.wait_connected().await;
         }
         // No dispatch task, so no reconnect under way or left to report.
@@ -642,6 +647,24 @@ impl WebSocketClient {
                 Err(err)
             }
         }
+    }
+
+    /// What a `connect()` does about a running dispatch task: `None` when
+    /// there is none and a connection may be opened, `Some(Ok(()))` to wait
+    /// on its reconnect, `Some(Err(_))` when it is connected.
+    ///
+    /// A second dispatch task would orphan the first, whose later close
+    /// would then be reported through the shared latch as the new
+    /// connection's `Disconnected` (#41). Unless connected, it is
+    /// reconnecting: wait for the outcome instead (#230).
+    async fn join_dispatch_task(&self) -> Option<Result<(), MarketDataError>> {
+        if !self.dispatch_task_running().await {
+            return None;
+        }
+        if self.is_connected().await && !self.waiters.reconnecting() {
+            return Some(Err(MarketDataError::AlreadyConnected));
+        }
+        Some(Ok(()))
     }
 
     /// Wait until the client is connected.
@@ -3653,6 +3676,44 @@ mod connect_during_reconnect_tests {
 
         client.reconnect().await.expect("reconnect");
         outcome(wait).await.expect("released by the new connection");
+        client.force_close().await.expect("force_close");
+    }
+
+    /// `connect()` calls that start at the same moment during a reconnect
+    /// all wait on it: none is refused because another holds the connect
+    /// gate while it decides (#268).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_connects_during_reconnect_all_wait() {
+        const CALLERS: usize = 32;
+        const ROUNDS: usize = 20;
+        let mut server = server(Later::Serve).await;
+        let client = connected(&server, reconnection(5, Duration::from_secs(30))).await;
+        server.drop_first();
+        lost(&client);
+
+        let mut refused = Vec::new();
+        for _ in 0..ROUNDS {
+            let start = Arc::new(tokio::sync::Barrier::new(CALLERS));
+            let connects: Vec<_> = (0..CALLERS)
+                .map(|_| {
+                    let (client, start) = (Arc::clone(&client), Arc::clone(&start));
+                    tokio::spawn(async move {
+                        start.wait().await;
+                        client.connect().await
+                    })
+                })
+                .collect();
+            tokio::time::sleep(SETTLE).await;
+            for connect in connects {
+                if connect.is_finished() {
+                    refused.push(connect.await.expect("join"));
+                } else {
+                    connect.abort();
+                }
+            }
+        }
+        assert!(refused.is_empty(), "{} returned during the backoff: {:?}", refused.len(), refused.first());
+        assert_eq!(server.accepted.load(Ordering::SeqCst), 1, "no connection opened");
         client.force_close().await.expect("force_close");
     }
 

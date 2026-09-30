@@ -396,3 +396,29 @@ async def test_concurrent_async_joins_both_return_once_reconnected(server):
         assert server.connections_accepted == 2
     finally:
         await ws.disconnect_async()
+
+
+@hard_timeout
+async def test_async_joins_started_together_all_wait_on_the_reconnect(server):
+    # connect_async() decides on the runtime's threads, several at a time:
+    # calls started together must not refuse one another (#268).
+    ws = reconnecting_ws(server.url, "stock", delay_ms=5000)
+    recorder = Recorder(ws)
+    try:
+        await ws.connect_async()
+        server.refuse_connections()
+        await to_thread(lose_connection, server, recorder)
+
+        # Enough of them that some decide at the same moment.
+        joins = [asyncio.ensure_future(ws.connect_async()) for _ in range(1000)]
+        await asyncio.sleep(0.3)
+        returned = [join.exception() or "ok" for join in joins if join.done()]
+        assert returned == [], f"{len(returned)} did not wait on the reconnect"
+        assert server.connections_accepted == 1
+
+        await ws.disconnect_async()
+        outcomes = await asyncio.wait_for(asyncio.gather(*joins, return_exceptions=True), TIMEOUT_S)
+        for outcome in outcomes:
+            assert_code(outcome, WebSocketError, 2010)
+    finally:
+        await ws.disconnect_async()

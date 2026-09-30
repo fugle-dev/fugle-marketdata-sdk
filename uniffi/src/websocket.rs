@@ -460,8 +460,9 @@ pub struct WebSocketClient {
     /// `connect()`, whose core client is a new one, for the 3006 warning;
     /// core gives it once per handle (#226, #242).
     reconnect_conflict: marketdata_core::ReconnectConflictHandle,
-    /// Held for the duration of each `connect()`, so a concurrent one is
-    /// refused rather than opening a second connection (#119).
+    /// Held by a `connect()` while it opens a connection, so a concurrent
+    /// one is refused rather than opening a second connection (#119). A
+    /// `connect()` that joins a reconnect does not take it (#268).
     connect_gate: tokio::sync::Mutex<()>,
     /// Tokio runtime for sync wrappers (C++ feature). Kept alive for background tasks.
     #[cfg(feature = "cpp")]
@@ -877,15 +878,15 @@ impl WebSocketClient {
     /// Decided before anything of the stored connection is replaced
     /// (#119, #230): none stored, or a closed one, opens a new connection;
     /// one the listener was last handed as up is refused with 2011; any other
-    /// is reconnecting, and this waits on core's `wait_connected()` with the
-    /// connect gate released, so any number of calls wait together, as on
+    /// is reconnecting, and this waits on core's `wait_connected()` without
+    /// taking the connect gate (#268), so any number of calls wait together, as on
     /// core's client. Not core's `is_active()`: between reconnect attempts
     /// the state is `Disconnected`, and a connect let through there would
     /// leave the old reconnect loop running beside a new connection.
     ///
     /// A wait that ends with nothing left to wait for — the client closed
     /// without the reconnect giving up, or core has no reconnect under way
-    /// (`ConnectionError`) — claims the gate again and opens a new
+    /// (`ConnectionError`) — claims the gate and opens a new
     /// connection in place of that one.
     async fn connect_with_path(&self) -> (ConnectPath, Result<(), MarketDataError>) {
         use marketdata_core::MarketDataError as CoreError;
@@ -894,24 +895,29 @@ impl WebSocketClient {
         let already = || Err(CoreError::AlreadyConnected.into());
         let mut gave_up: Option<Arc<CoreWebSocketClient>> = None;
         loop {
-            // Held until a fresh connect ends; released for a join.
-            let Ok(claim) = self.connect_gate.try_lock() else {
-                return (ConnectPath::Refused, already());
-            };
-            let stored = lock_connection(&self.connection).current.clone();
-            let join = match stored {
-                Some(c) if c.ws.is_closed_sync() => None,
-                Some(c) if gave_up.as_ref().is_some_and(|g| Arc::ptr_eq(g, &c.ws)) => None,
-                Some(c) if c.delivered.is_authenticated() => {
+            // Before the gate: a call that joins never holds it, so calls
+            // made at the same moment all wait instead of one refusing the
+            // others (#268).
+            let mut stored = self.stored_connection(gave_up.as_ref());
+            let mut claim = None;
+            if matches!(stored, Stored::Replace) {
+                // Held until the fresh connect ends.
+                let Ok(held) = self.connect_gate.try_lock() else {
                     return (ConnectPath::Refused, already());
+                };
+                // Again under the claim: a connect that finished since the
+                // first look has stored its connection.
+                stored = self.stored_connection(gave_up.as_ref());
+                claim = Some(held);
+            }
+            let ws = match stored {
+                Stored::Refuse => return (ConnectPath::Refused, already()),
+                Stored::Replace => {
+                    let result = self.open_connection(caller).await;
+                    drop(claim);
+                    return (ConnectPath::Opened, result);
                 }
-                Some(c) => Some(c.ws),
-                None => None,
-            };
-            let Some(ws) = join else {
-                let result = self.open_connection(caller).await;
-                drop(claim);
-                return (ConnectPath::Opened, result);
+                Stored::Join(ws) => ws,
             };
             drop(claim);
             match ws.wait_connected().await {
@@ -919,6 +925,18 @@ impl WebSocketClient {
                 Err(CoreError::ClientClosed | CoreError::ConnectionError { .. }) => gave_up = Some(ws),
                 Err(e) => return (ConnectPath::Joined, Err(e.into())),
             }
+        }
+    }
+
+    /// What the stored connection means for a `connect()` that gave up
+    /// waiting on `gave_up`; see [`connect_with_path`](Self::connect_with_path).
+    fn stored_connection(&self, gave_up: Option<&Arc<CoreWebSocketClient>>) -> Stored {
+        match lock_connection(&self.connection).current.clone() {
+            None => Stored::Replace,
+            Some(c) if c.ws.is_closed_sync() => Stored::Replace,
+            Some(c) if gave_up.is_some_and(|g| Arc::ptr_eq(g, &c.ws)) => Stored::Replace,
+            Some(c) if c.delivered.is_authenticated() => Stored::Refuse,
+            Some(c) => Stored::Join(c.ws),
         }
     }
 
@@ -1542,6 +1560,17 @@ struct Connection {
     reader: Option<StreamReader>,
     /// What the stream reader has handed the listener, for `connect()`.
     delivered: Delivered,
+}
+
+/// What the stored connection means for a `connect()`.
+enum Stored {
+    /// None, a closed one, or one whose wait ended with nothing left to wait
+    /// for: open a new connection, under the connect gate.
+    Replace,
+    /// The listener was last handed it as up: 2011.
+    Refuse,
+    /// It is reconnecting: wait on it.
+    Join(Arc<CoreWebSocketClient>),
 }
 
 /// What a `connect()` did.
@@ -2955,6 +2984,40 @@ mod tests {
         assert!(client.is_connected());
         listener.wait_authenticated(2).await;
         assert_eq!(listener.connected_count.load(Ordering::SeqCst), 2);
+        client.disconnect_impl().await;
+    }
+
+    /// Calls that start at the same moment on different threads all wait:
+    /// none is refused because another holds the connect gate while it
+    /// decides (#268).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn parallel_connects_during_backoff_all_wait() {
+        const CALLERS: usize = 32;
+        const ROUNDS: usize = 20;
+        let (_server, _listener, client) = lost_connection(1, reconnect_every(0, 30_000)).await;
+
+        let mut returned = Vec::new();
+        for _ in 0..ROUNDS {
+            let start = Arc::new(tokio::sync::Barrier::new(CALLERS));
+            let connects: Vec<_> = (0..CALLERS)
+                .map(|_| {
+                    let (client, start) = (Arc::clone(&client), Arc::clone(&start));
+                    tokio::spawn(async move {
+                        start.wait().await;
+                        client.connect_impl().await
+                    })
+                })
+                .collect();
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            for connect in connects {
+                if connect.is_finished() {
+                    returned.push(connect.await.expect("join"));
+                } else {
+                    connect.abort();
+                }
+            }
+        }
+        assert!(returned.is_empty(), "{} returned during the backoff: {:?}", returned.len(), returned.first());
         client.disconnect_impl().await;
     }
 
