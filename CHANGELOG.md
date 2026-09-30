@@ -112,18 +112,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection's reader was waited for by no one. `disconnect()` and
   `disconnect_async()` now wait for the reader of the connection they close.
   A `connect()` that replaces a lost connection leaves its reader to the next
-  `disconnect()`, and that connection's `messages()` iterators still get what
-  was queued for them.
+  `disconnect()` from another thread, and until that `disconnect()` the lost
+  connection's `messages()` iterators still get what was queued for them.
 - **Python: two callbacks that each call `disconnect()` no longer wait for
   each other forever** (#277). For example, a lost connection's `disconnect`
   callback calling `connect()` and then `disconnect()`, while the new
   connection's `connect` or `authenticated` callback called `disconnect()`.
-  So could such a `connect()` whose credentials were rejected, when the new
-  connection's `unauthenticated` callback called `disconnect()`.
-  Called from a callback, `disconnect()` now waits for no stream reader, so
-  no `disconnect` callback is guaranteed to have fired when it returns; a
-  later `disconnect()` from another thread waits for all of them, as a
-  `disconnect()` from another thread always does.
+  The same happened when that `connect()` was rejected and the new
+  connection's `unauthenticated` callback called `disconnect()`. Called from
+  a callback of any client — including another client's, such as a
+  `ws.stock` callback calling `ws.futopt.disconnect()`, which used to wait —
+  `disconnect()` now waits for no stream reader, so no `disconnect` callback
+  is guaranteed to have fired when it returns. The next `disconnect()` called
+  outside a callback waits for those readers.
 - **Python: an `__anext__` left pending by a closed event loop no longer
   keeps a thread waiting** (#267). Its wait on the blocking pool lasted until
   a message arrived or the connection ended, so repeated `asyncio.run` calls

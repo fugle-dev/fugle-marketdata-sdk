@@ -928,6 +928,8 @@ fn lock_err<T>(e: std::sync::PoisonError<T>) -> PyErr {
 struct PendingConnect {
     client: Arc<marketdata_core::aio::WebSocketClient>,
     reader_thread: std::thread::JoinHandle<()>,
+    /// The reader's stop flag, for a `disconnect()` that aborts the connect.
+    stop: Arc<AtomicBool>,
 }
 
 type PendingSlot = Arc<Mutex<Option<PendingConnect>>>;
@@ -951,6 +953,8 @@ impl Drop for ClearPendingOnDrop {
 struct CloseTarget {
     live: Option<WebSocketState>,
     connecting: Option<Arc<marketdata_core::aio::WebSocketClient>>,
+    /// The stop flag of the connect in progress's reader.
+    connecting_stop: Option<Arc<AtomicBool>>,
 }
 
 impl CloseTarget {
@@ -980,8 +984,11 @@ fn take_close_target(
 ) -> PyResult<(CloseTarget, Option<std::thread::JoinHandle<()>>)> {
     let mut pending = pending.lock().map_err(lock_err)?;
     let mut state = state.lock().map_err(lock_err)?;
-    let (connecting, reader) = pending.take().map(|p| (p.client, p.reader_thread)).unzip();
-    Ok((CloseTarget { live: state.take(), connecting }, reader))
+    let (connecting, reader, connecting_stop) = match pending.take() {
+        Some(p) => (Some(p.client), Some(p.reader_thread), Some(p.stop)),
+        None => (None, None, None),
+    };
+    Ok((CloseTarget { live: state.take(), connecting, connecting_stop }, reader))
 }
 
 /// How a `connect()` ended, once its pending entry is settled.
@@ -1625,6 +1632,7 @@ impl StockWebSocketClient {
         *self.pending.lock().map_err(lock_err)? = Some(PendingConnect {
             client: Arc::clone(&ws_client),
             reader_thread,
+            stop: Arc::clone(&stop),
         });
 
         // Connect with the GIL released: the handshake and auth ack may come
@@ -1675,7 +1683,8 @@ impl StockWebSocketClient {
             None => (None, None),
         };
         let own_reader = park_own_reader_thread(own_reader, own_stop, &self.parked_readers);
-        let aborted_reader = park_own_reader_thread(aborted_reader, None, &self.parked_readers);
+        let aborted_stop = target.connecting_stop.clone();
+        let aborted_reader = park_own_reader_thread(aborted_reader, aborted_stop, &self.parked_readers);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -1685,6 +1694,10 @@ impl StockWebSocketClient {
                 // Messages before `Disconnected` still reach the callbacks,
                 // but the reader no longer waits for an iterator to make room.
                 state.stop.store(true, Ordering::SeqCst);
+            }
+            // No iterator reads an aborted connect's messages.
+            if let Some(stop) = &target.connecting_stop {
+                stop.store(true, Ordering::SeqCst);
             }
             // Take ownership of the runtime so dropping it aborts every
             // spawned task (dispatch, writer, health check). Without this,
@@ -2137,6 +2150,7 @@ impl StockWebSocketClient {
             *pending.lock().map_err(lock_err)? = Some(PendingConnect {
                 client: Arc::clone(&ws_client),
                 reader_thread,
+                stop: Arc::clone(&stop),
             });
             let _cancelled = ClearPendingOnDrop(Arc::clone(&pending));
 
@@ -2193,6 +2207,9 @@ impl StockWebSocketClient {
                 closed.store(true, Ordering::SeqCst);
                 if let Some(state) = &target.live {
                     state.stop.store(true, Ordering::SeqCst);
+                }
+                if let Some(stop) = &target.connecting_stop {
+                    stop.store(true, Ordering::SeqCst);
                 }
                 target.disconnect().await;
                 // Note: do NOT manually invoke_disconnect — core's disconnect()
@@ -2531,6 +2548,7 @@ impl FutOptWebSocketClient {
         *self.pending.lock().map_err(lock_err)? = Some(PendingConnect {
             client: Arc::clone(&ws_client),
             reader_thread,
+            stop: Arc::clone(&stop),
         });
 
         // Connect with the GIL released: the handshake and auth ack may come
@@ -2581,7 +2599,8 @@ impl FutOptWebSocketClient {
             None => (None, None),
         };
         let own_reader = park_own_reader_thread(own_reader, own_stop, &self.parked_readers);
-        let aborted_reader = park_own_reader_thread(aborted_reader, None, &self.parked_readers);
+        let aborted_stop = target.connecting_stop.clone();
+        let aborted_reader = park_own_reader_thread(aborted_reader, aborted_stop, &self.parked_readers);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -2591,6 +2610,10 @@ impl FutOptWebSocketClient {
                 // Messages before `Disconnected` still reach the callbacks,
                 // but the reader no longer waits for an iterator to make room.
                 state.stop.store(true, Ordering::SeqCst);
+            }
+            // No iterator reads an aborted connect's messages.
+            if let Some(stop) = &target.connecting_stop {
+                stop.store(true, Ordering::SeqCst);
             }
             // Take ownership of the runtime — see StockWebSocketClient::disconnect
             // for the rationale (forces all spawned tasks to drop their

@@ -263,6 +263,46 @@ def test_connect_replacing_lost_connection_keeps_its_queued_messages(product):
             disconnect_quietly(ws)
 
 
+async def connect_async_replacing_lost(ws):
+    """connect_async() once the lost connection is seen closed."""
+    deadline = time.monotonic() + TIMEOUT_S
+    while True:
+        try:
+            await ws.connect_async()
+            return
+        except WebSocketError as e:
+            if e.code != 2011 or time.monotonic() > deadline:
+                raise
+        await asyncio.sleep(0.01)
+
+
+@hard_timeout
+async def test_connect_async_replacing_lost_connection_keeps_its_queued_messages():
+    with InProcessLoopbackServer(flood=True) as srv:
+        ws = product_ws(srv.url, "stock", message_buffer=BUFFER)
+        lost_reported = threading.Event()
+        ws.on("disconnect", lambda *args: lost_reported.set())
+        await ws.connect_async()
+        try:
+            unread = ws.messages()
+            await ws.subscribe_async({"channel": "trades", "symbol": "2330"})
+            await to_thread(wait_until, lambda: ws.messages_dropped_total() > 0, "dropped messages")
+            srv.drop_connections()
+            await connect_async_replacing_lost(ws)
+            assert ws.is_connected()
+            # See the blocking version.
+            assert not await to_thread(lost_reported.wait, RETURN_WAIT_S), (
+                "the replaced connection's reader dropped the messages it held"
+            )
+            read = await asyncio.wait_for(to_thread(list, unread), TIMEOUT_S)
+            assert len(read) >= 2 * BUFFER
+        finally:
+            try:
+                await ws.disconnect_async()
+            except Exception:
+                pass
+
+
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 @pytest.mark.parametrize("new_reader_event", ["connect", "authenticated"])
