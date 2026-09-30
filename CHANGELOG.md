@@ -70,6 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a message arrived or the connection ended, so repeated `asyncio.run` calls
   that each left one behind piled up threads. The wait now ends within about
   a second of the loop closing.
+- **`connect()` calls made at the same moment during an automatic reconnect
+  all wait on it** (#268). A call that joins the reconnect briefly held the
+  gate that admits one connection attempt at a time, so another call
+  arriving in that instant was refused with 2011 (`AlreadyConnected`) although
+  the reconnect was still under way. Affected core's async
+  `WebSocketClient::connect()`, Python's `connect_async()` and the UniFFI
+  bindings' `connect()` when called from several threads or tasks at once; a
+  call that joins no longer takes the gate. A `connect()` made while the
+  first `connect()` is still in progress, or on a connected client, is
+  refused with 2011 as before. Node.js was not affected.
 - **Python: a cancelled `MessageIterator.__anext__` no longer loses a
   message** (#260). Cancelling a pending `async for` step — `asyncio.wait_for`
   timing out, a cancelled task — left its wait running for up to 100 ms, and

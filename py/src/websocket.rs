@@ -916,8 +916,9 @@ impl Delivered {
 /// Shared so blocking calls can clone it out of its lock before they block.
 type SharedRuntime = Arc<tokio::runtime::Runtime>;
 
-/// Admits one `connect()` / `connect_async()` at a time per product client
-/// (#130). Core's own gate cannot see this: each connection is opened on a
+/// Admits one `connect()` / `connect_async()` that opens a connection at a
+/// time per product client (#130); one that joins a reconnect does not take
+/// it (#268). Core's own gate cannot see this: each connection is opened on a
 /// new core client.
 #[derive(Clone, Default)]
 struct ConnectGate(Arc<AtomicBool>);
@@ -947,17 +948,44 @@ impl Drop for ConnectClaim {
 enum Claim {
     /// Open a new connection; hold the claim until it is stored.
     Fresh(ConnectClaim),
-    /// Wait on the automatic reconnect of the stored connection. The claim is
-    /// already released, so any number of `connect()` calls wait together,
-    /// as on core's client.
+    /// Wait on the automatic reconnect of the stored connection. No claim is
+    /// held, so any number of `connect()` calls wait together, as on core's
+    /// client.
     Join(Arc<marketdata_core::aio::WebSocketClient>),
 }
 
-/// Claim `gate`, or fail with core's `AlreadyConnected` (code 2011) while
-/// another connect runs or the callbacks were last handed the stored
-/// connection as up. A stored connection that is not closed and was not
-/// handed over as up is reconnecting: join it, unless it is `gave_up`, one
-/// whose wait already ended with nothing left to wait for.
+/// What the stored connection means for a `connect()`.
+enum Stored {
+    /// None, a closed one, or `gave_up`, one whose wait already ended with
+    /// nothing left to wait for: open a new connection, under the gate.
+    Replace,
+    /// The callbacks were last handed it as up: 2011.
+    Refuse,
+    /// Not closed and not handed over as up: it is reconnecting.
+    Join(Arc<marketdata_core::aio::WebSocketClient>),
+}
+
+fn stored_connection(
+    state: &Mutex<Option<WebSocketState>>,
+    gave_up: Option<&Arc<marketdata_core::aio::WebSocketClient>>,
+) -> PyResult<Stored> {
+    Ok(match state.lock().map_err(lock_err)?.as_ref() {
+        None => Stored::Replace,
+        Some(s) if s.inner.is_closed_sync() => Stored::Replace,
+        Some(s) if gave_up.is_some_and(|c| Arc::ptr_eq(c, &s.inner)) => Stored::Replace,
+        Some(s) if s.delivered.is_authenticated() => Stored::Refuse,
+        Some(s) => Stored::Join(Arc::clone(&s.inner)),
+    })
+}
+
+/// Join the stored connection's reconnect, claim `gate` to open a new
+/// connection, or fail with core's `AlreadyConnected` (code 2011): while the
+/// callbacks were last handed the stored connection as up, or while another
+/// connect that opens a connection holds the gate.
+///
+/// The stored connection is read before the gate, so a join never holds it:
+/// `connect_async()` calls made at the same moment all wait, instead of one
+/// refusing the others (#268).
 ///
 /// Not core's `is_active()`: between reconnect attempts the state is
 /// `Disconnected`, and a connect let through there would leave the old
@@ -968,14 +996,23 @@ fn claim_connect(
     gave_up: Option<&Arc<marketdata_core::aio::WebSocketClient>>,
 ) -> PyResult<Claim> {
     let already = || errors::to_py_err(marketdata_core::MarketDataError::AlreadyConnected);
-    let claim = gate.try_claim().ok_or_else(already)?;
-    let guard = state.lock().map_err(lock_err)?;
-    match guard.as_ref() {
-        None => Ok(Claim::Fresh(claim)),
-        Some(s) if s.inner.is_closed_sync() => Ok(Claim::Fresh(claim)),
-        Some(s) if gave_up.is_some_and(|c| Arc::ptr_eq(c, &s.inner)) => Ok(Claim::Fresh(claim)),
-        Some(s) if s.delivered.is_authenticated() => Err(already()),
-        Some(s) => Ok(Claim::Join(Arc::clone(&s.inner))),
+    let mut stored = stored_connection(state, gave_up)?;
+    let mut claim = None;
+    if matches!(stored, Stored::Replace) {
+        claim = Some(gate.try_claim().ok_or_else(already)?);
+        // Again under the claim: a connect that finished since the first
+        // look has stored its connection.
+        stored = stored_connection(state, gave_up)?;
+    }
+    match (stored, claim) {
+        (Stored::Join(inner), claim) => {
+            // Released before the caller waits.
+            drop(claim);
+            Ok(Claim::Join(inner))
+        }
+        (Stored::Replace, Some(claim)) => Ok(Claim::Fresh(claim)),
+        // `Replace` is only read under the claim.
+        (Stored::Refuse | Stored::Replace, _) => Err(already()),
     }
 }
 
@@ -1018,7 +1055,7 @@ fn claim_or_join(
         if join_ended(result)? {
             return Ok(None);
         }
-        // Claimed again, as a fresh connect; another caller that got there
+        // Claimed next, as a fresh connect; another caller that got there
         // first is refused as usual.
         gave_up = Some(inner);
     }
