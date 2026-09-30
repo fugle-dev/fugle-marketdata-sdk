@@ -865,6 +865,9 @@ struct WebSocketState {
     /// What the stream reader has delivered to the callbacks, for
     /// `connect()` (#230).
     delivered: Delivered,
+    /// This connection's stream reader, for the `disconnect()` that closes
+    /// it to wait for (#277).
+    reader: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Shared so blocking calls can clone it out of its lock before they block.
@@ -983,7 +986,7 @@ fn take_close_target(
 
 /// How a `connect()` ended, once its pending entry is settled.
 enum ConnectOutcome {
-    /// The connection is stored in `state`, its reader in the reader slot.
+    /// The connection is stored in `state`, with its reader.
     Installed,
     /// The connect failed on its own; the caller joins the reader.
     Failed(marketdata_core::MarketDataError, std::thread::JoinHandle<()>),
@@ -994,13 +997,16 @@ enum ConnectOutcome {
 
 /// Settle a finished connect: install the connection if it succeeded and no
 /// `disconnect()` took it meanwhile (#143).
+///
+/// A connection it replaces was lost: its client is dropped here, and its
+/// reader parked for the next `disconnect()` to wait for (#277).
 fn settle_connect(
     pending: &PendingSlot,
     state: &Mutex<Option<WebSocketState>>,
-    reader_slot: &Mutex<Option<std::thread::JoinHandle<()>>>,
+    parked: &ParkedReaders,
     closed: &AtomicBool,
     result: Result<(), marketdata_core::MarketDataError>,
-    make_state: impl FnOnce() -> WebSocketState,
+    make_state: impl FnOnce(std::thread::JoinHandle<()>) -> WebSocketState,
 ) -> PyResult<ConnectOutcome> {
     let mut pending = pending.lock().map_err(lock_err)?;
     let Some(entry) = pending.take() else {
@@ -1015,10 +1021,19 @@ fn settle_connect(
     }
     let mut state = state.lock().map_err(lock_err)?;
     closed.store(false, Ordering::SeqCst);
-    let installed = state.insert(make_state());
-    // Under the `state` lock, so a `connect()` sees it with the connection.
-    installed.delivered.connect_succeeded();
-    *reader_slot.lock().map_err(lock_err)? = Some(entry.reader_thread);
+    let replaced = state.replace(make_state(entry.reader_thread));
+    if let Some(installed) = state.as_ref() {
+        // Under the `state` lock, so a `connect()` sees it with the connection.
+        installed.delivered.connect_succeeded();
+    }
+    if let Some(mut lost) = replaced {
+        // As `disconnect()` does: the reader no longer waits for an iterator
+        // to make room, so waiting for it ends.
+        lost.stop.store(true, Ordering::SeqCst);
+        if let Some(reader) = lost.reader.take() {
+            park_reader_thread(parked, reader);
+        }
+    }
     Ok(ConnectOutcome::Installed)
 }
 
@@ -1276,39 +1291,68 @@ fn join_reader_thread(py: Python<'_>, handle: std::thread::JoinHandle<()>) {
     });
 }
 
-/// [`join_reader_thread`] on the thread stored by `connect()`.
-///
-/// A callback that disconnects runs on the stream reader and cannot wait for
-/// itself, so it puts the handle back: the `disconnect()` whose close fired
-/// that callback still finds it and waits for the remaining callbacks.
-fn join_stored_reader_thread(py: Python<'_>, slot: &Mutex<Option<std::thread::JoinHandle<()>>>) {
-    let Some(handle) = take_thread(slot) else { return };
-    if handle.thread().id() == std::thread::current().id() {
-        if let Ok(mut guard) = slot.lock() {
-            *guard = Some(handle);
-        }
-        return;
+/// Stream readers no one could wait for when their connection went: the
+/// reader of the connection a `disconnect()` from its own callback closed,
+/// and that of a lost connection a `connect()` replaced. Each connection is
+/// closed or gone, so waiting for them always ends; the next `disconnect()`
+/// does (#277).
+type ParkedReaders = Mutex<Vec<std::thread::JoinHandle<()>>>;
+
+/// Park `handle` for the next `disconnect()`, joining those parked earlier
+/// that have already ended.
+fn park_reader_thread(parked: &ParkedReaders, handle: std::thread::JoinHandle<()>) {
+    let Ok(mut guard) = parked.lock() else { return };
+    let (ended, running): (Vec<_>, Vec<_>) =
+        std::mem::take(&mut *guard).into_iter().partition(|h| h.is_finished());
+    *guard = running;
+    guard.push(handle);
+    drop(guard);
+    for handle in ended {
+        let _ = handle.join();
     }
-    join_reader_thread(py, handle);
 }
 
-/// Where a `disconnect()` leaves the reader of a connect it aborts (#143).
+/// [`join_reader_thread`] on the parked readers.
 ///
-/// As in [`join_stored_reader_thread`], a callback of that connection which
-/// disconnects — `connect` fires during the handshake — runs on the reader and
-/// cannot wait for itself, so the handle goes to `slot` for a later
-/// `disconnect()` to wait on. Call before the close wakes the connect, so the
-/// handle is there once `connect()` raises.
+/// A callback that disconnects runs on the stream reader and cannot wait for
+/// itself, so it leaves its own handle parked: a `disconnect()` from another
+/// thread still finds it and waits for the remaining callbacks.
+fn join_parked_reader_threads(py: Python<'_>, parked: &ParkedReaders) {
+    let current = std::thread::current().id();
+    let others: Vec<_> = {
+        let Ok(mut guard) = parked.lock() else { return };
+        let (own, others) =
+            std::mem::take(&mut *guard).into_iter().partition(|h| h.thread().id() == current);
+        *guard = own;
+        others
+    };
+    if others.is_empty() {
+        return;
+    }
+    py.detach(move || {
+        for handle in others {
+            let _ = handle.join();
+        }
+    });
+}
+
+/// What a `disconnect()` does with the reader of the connection it closes, or
+/// of a connect it aborts (#143).
 ///
-/// Returns the handle to join after the close: the aborted reader, or the one
-/// it displaced from `slot`.
+/// A callback of that connection which disconnects — `connect` fires during
+/// the handshake — runs on the reader and cannot wait for itself, so the
+/// handle is parked for a later `disconnect()` to wait on. Call before the
+/// close wakes the connect, so the handle is there once `connect()` raises.
+///
+/// Returns the handle to join after the close.
 fn park_own_reader_thread(
     handle: Option<std::thread::JoinHandle<()>>,
-    slot: &Mutex<Option<std::thread::JoinHandle<()>>>,
+    parked: &ParkedReaders,
 ) -> Option<std::thread::JoinHandle<()>> {
     match handle {
         Some(handle) if handle.thread().id() == std::thread::current().id() => {
-            slot.lock().ok().and_then(|mut guard| guard.replace(handle))
+            park_reader_thread(parked, handle);
+            None
         }
         other => other,
     }
@@ -1322,10 +1366,12 @@ async fn join_reader_thread_async(handle: Option<std::thread::JoinHandle<()>>) {
     let _ = tokio::task::spawn_blocking(move || handle.join()).await;
 }
 
-fn take_thread(
-    slot: &Mutex<Option<std::thread::JoinHandle<()>>>,
-) -> Option<std::thread::JoinHandle<()>> {
-    slot.lock().ok().and_then(|mut guard| guard.take())
+/// Async counterpart of [`join_parked_reader_threads`].
+async fn join_parked_reader_threads_async(parked: &ParkedReaders) {
+    let handles = parked.lock().map(|mut guard| std::mem::take(&mut *guard)).unwrap_or_default();
+    for handle in handles {
+        join_reader_thread_async(Some(handle)).await;
+    }
 }
 
 /// Stock market WebSocket client
@@ -1350,7 +1396,7 @@ pub struct StockWebSocketClient {
     state: Arc<Mutex<Option<WebSocketState>>>,
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
     // Background thread control
-    reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    parked_readers: Arc<ParkedReaders>,
     message_queue: MessageQueueSettings,
     auth_timeout: Duration,
     /// Dropped-message count of the current or last connection; outlives the
@@ -1394,7 +1440,7 @@ impl StockWebSocketClient {
             callbacks: Arc::new(CallbackRegistry::new()),
             state: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(None)),
-            reader_thread_handle: Arc::new(Mutex::new(None)),
+            parked_readers: Arc::new(Mutex::new(Vec::new())),
             message_queue,
             auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
@@ -1559,10 +1605,16 @@ impl StockWebSocketClient {
         let outcome = settle_connect(
             &self.pending,
             &self.state,
-            &self.reader_thread_handle,
+            &self.parked_readers,
             &self.closed,
             result,
-            || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop, delivered },
+            |reader| WebSocketState {
+                inner: Arc::clone(&ws_client),
+                handoff,
+                stop,
+                delivered,
+                reader: Some(reader),
+            },
         )?;
         match outcome {
             ConnectOutcome::Installed => Ok(()),
@@ -1583,8 +1635,12 @@ impl StockWebSocketClient {
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
-        let (target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
-        let aborted_reader = park_own_reader_thread(aborted_reader, &self.reader_thread_handle);
+        let (mut target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
+        // Only this connection's reader: one a `connect()` installs while
+        // this call closes is not waited for (#277).
+        let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
+        let own_reader = park_own_reader_thread(own_reader, &self.parked_readers);
+        let aborted_reader = park_own_reader_thread(aborted_reader, &self.parked_readers);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -1631,10 +1687,13 @@ impl StockWebSocketClient {
         // `disconnect` callback has fired by the time this returns (#54).
         // An aborted connect's reader ends once that connect drops its
         // client too.
-        join_stored_reader_thread(py, &self.reader_thread_handle);
+        if let Some(handle) = own_reader {
+            join_reader_thread(py, handle);
+        }
         if let Some(handle) = aborted_reader {
             join_reader_thread(py, handle);
         }
+        join_parked_reader_threads(py, &self.parked_readers);
 
         Ok(())
     }
@@ -1988,7 +2047,7 @@ impl StockWebSocketClient {
         let health_check_config = self.health_check_config.to_core();
         let callbacks = Arc::clone(&self.callbacks);
         let state_arc = Arc::clone(&self.state);
-        let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
+        let parked_readers = Arc::clone(&self.parked_readers);
         let message_queue = self.message_queue;
         let auth_timeout = self.auth_timeout;
         let messages_dropped = Arc::clone(&self.messages_dropped);
@@ -2051,10 +2110,16 @@ impl StockWebSocketClient {
             let outcome = settle_connect(
                 &pending,
                 &state_arc,
-                &reader_thread_handle,
+                &parked_readers,
                 &closed,
                 result,
-                || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop, delivered },
+                |reader| WebSocketState {
+                    inner: Arc::clone(&ws_client),
+                    handoff,
+                    stop,
+                    delivered,
+                    reader: Some(reader),
+                },
             )?;
             match outcome {
                 ConnectOutcome::Installed => Ok(()),
@@ -2079,12 +2144,14 @@ impl StockWebSocketClient {
     ///     ```
     pub fn disconnect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let state_arc = Arc::clone(&self.state);
-        let reader_thread_handle = Arc::clone(&self.reader_thread_handle);
+        let parked_readers = Arc::clone(&self.parked_readers);
         let closed = Arc::clone(&self.closed);
         let pending = Arc::clone(&self.pending);
 
         future_into_py(py, async move {
-            let (target, aborted_reader) = take_close_target(&pending, &state_arc)?;
+            let (mut target, aborted_reader) = take_close_target(&pending, &state_arc)?;
+            // See `disconnect` (#277).
+            let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
 
             if !target.is_empty() {
                 // See `disconnect`.
@@ -2105,8 +2172,9 @@ impl StockWebSocketClient {
                 drop(target);
             }
 
+            join_reader_thread_async(own_reader).await;
             join_reader_thread_async(aborted_reader).await;
-            join_reader_thread_async(take_thread(&reader_thread_handle)).await;
+            join_parked_reader_threads_async(&parked_readers).await;
 
             Ok(())
         })
@@ -2245,7 +2313,7 @@ pub struct FutOptWebSocketClient {
     callbacks: Arc<CallbackRegistry>,
     state: Arc<Mutex<Option<WebSocketState>>>,
     runtime: Arc<Mutex<Option<SharedRuntime>>>,
-    reader_thread_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    parked_readers: Arc<ParkedReaders>,
     message_queue: MessageQueueSettings,
     auth_timeout: Duration,
     /// Dropped-message count of the current or last connection; outlives the
@@ -2289,7 +2357,7 @@ impl FutOptWebSocketClient {
             callbacks: Arc::new(CallbackRegistry::new()),
             state: Arc::new(Mutex::new(None)),
             runtime: Arc::new(Mutex::new(None)),
-            reader_thread_handle: Arc::new(Mutex::new(None)),
+            parked_readers: Arc::new(Mutex::new(Vec::new())),
             message_queue,
             auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
@@ -2440,10 +2508,16 @@ impl FutOptWebSocketClient {
         let outcome = settle_connect(
             &self.pending,
             &self.state,
-            &self.reader_thread_handle,
+            &self.parked_readers,
             &self.closed,
             result,
-            || WebSocketState { inner: Arc::clone(&ws_client), handoff, stop, delivered },
+            |reader| WebSocketState {
+                inner: Arc::clone(&ws_client),
+                handoff,
+                stop,
+                delivered,
+                reader: Some(reader),
+            },
         )?;
         match outcome {
             ConnectOutcome::Installed => Ok(()),
@@ -2464,8 +2538,12 @@ impl FutOptWebSocketClient {
     /// Disconnect from WebSocket server
     #[pyo3(signature = ())]
     pub fn disconnect(&self, py: Python<'_>) -> PyResult<()> {
-        let (target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
-        let aborted_reader = park_own_reader_thread(aborted_reader, &self.reader_thread_handle);
+        let (mut target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
+        // Only this connection's reader: one a `connect()` installs while
+        // this call closes is not waited for (#277).
+        let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
+        let own_reader = park_own_reader_thread(own_reader, &self.parked_readers);
+        let aborted_reader = park_own_reader_thread(aborted_reader, &self.parked_readers);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -2508,10 +2586,13 @@ impl FutOptWebSocketClient {
         // `disconnect` callback has fired by the time this returns (#54).
         // An aborted connect's reader ends once that connect drops its
         // client too.
-        join_stored_reader_thread(py, &self.reader_thread_handle);
+        if let Some(handle) = own_reader {
+            join_reader_thread(py, handle);
+        }
         if let Some(handle) = aborted_reader {
             join_reader_thread(py, handle);
         }
+        join_parked_reader_threads(py, &self.parked_readers);
 
         Ok(())
     }

@@ -15,7 +15,9 @@ started, and read by the client before the close completes.
 For reconnect tests the in-process server counts the connections it accepts,
 can cut them without a Close frame (``drop_connections()``), refuse new ones
 (``refuse_connections``) or reject every ``auth`` (``reject_auth``), and logs
-each ``subscribe`` with the index of the connection it came on.
+each ``subscribe`` with the index of the connection it came on. It can also
+hold its answer to the next client Close (``hold_next_close()``) until the
+test releases it, keeping that ``disconnect()`` in its close meanwhile.
 
 ``LoopbackServer`` runs the server in a child process; ``InProcessLoopbackServer``
 runs it on threads of the test process, which only works while the blocking
@@ -132,6 +134,10 @@ class _Server:
         self.refuse_connections = False
         # Answer every ``auth`` with the rejection, whatever the key.
         self.reject_auth = False
+        # Hold the answer to the next client Close until ``release_close()``.
+        self._hold_close = False
+        self.close_held = threading.Event()
+        self._close_released = threading.Event()
         self._open_conns = []
         self._conns_lock = threading.Lock()
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -146,6 +152,21 @@ class _Server:
 
     def stop(self):
         self._stopped.set()
+        self._close_released.set()
+
+    def hold_next_close(self):
+        with self._conns_lock:
+            self._hold_close = True
+            self.close_held.clear()
+            self._close_released.clear()
+
+    def release_close(self):
+        self._close_released.set()
+
+    def _take_close_hold(self):
+        with self._conns_lock:
+            hold, self._hold_close = self._hold_close, False
+            return hold
 
     def _accept_loop(self):
         with self._listener:
@@ -207,6 +228,9 @@ class _Server:
                 elif opcode == OP_PING:
                     send(OP_PONG, payload)
                 elif opcode == OP_CLOSE:
+                    if self._take_close_hold():
+                        self.close_held.set()
+                        self._close_released.wait()
                     closed.set()
                     for i in range(self._burst_on_close):
                         data = {"event": "data", "data": {"i": i}, "channel": "trades"}
@@ -346,6 +370,19 @@ class InProcessLoopbackServer:
     def reject_auth(self, reject=True):
         """Reject every ``auth`` from now on."""
         self._server.reject_auth = reject
+
+    def hold_next_close(self):
+        """Answer the next client Close only once ``release_close()`` is
+        called; the client's ``disconnect()`` waits for that answer."""
+        self._server.hold_next_close()
+
+    def wait_close_held(self, timeout):
+        """Wait until a Close is being held; whether one is."""
+        return self._server.close_held.wait(timeout)
+
+    def release_close(self):
+        """Answer the held Close."""
+        self._server.release_close()
 
     def __enter__(self):
         self._server.start()
