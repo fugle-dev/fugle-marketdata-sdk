@@ -12,16 +12,22 @@ checkout built with `maturin develop --release`):
     python3 benchmarks/ws/py/run-compare.py --mode aiter \\
         --base <main checkout>/py/.venv/bin/python3 --head py/.venv/bin/python3
 
-`--head-env NAME=V1,V2` runs the head build once per value with that
-environment variable set, as separate rows (#267):
+`--mode aiter-lag` adds the delay a second task on the event loop sees
+(`lag_*`, see py/bench-new.py) to the rows. `--head-env NAME=V1,V2` runs the
+head build once per value with that environment variable set, as separate
+rows.
 
-    ... --head-env FUGLE_MARKETDATA_AITER_YIELD_EVERY=1,32,0
+The clients take turns going first: each round starts one client later than
+the one before, so none always runs last. A row shows how many runs it is
+the median of (`n=`).
 
 Run it while the load average is below 4 (REPORT.md, "Measurement Validity").
 The 1- and 5-minute load are read before every run; each summary gives the
 highest seen and says whether it passed the gate. With `--stop-above-gate`
 it stops at the first run that would start at or above the gate instead,
-after printing the medians of the runs made so far.
+after printing the medians of the runs made so far. The load average
+includes what the benchmark itself adds, so on a machine that is close to
+the gate the runs can trip it on their own.
 """
 
 import argparse
@@ -36,6 +42,8 @@ run_modes = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(run_modes)
 
 KEYS = ('msgs_per_sec', 'latency_p50_ms', 'latency_p99_ms', 'cpu_user_ms', 'lost')
+# Only in the results of `--mode aiter-lag`; fractions of a millisecond matter.
+LAG_KEYS = ('lag_wakeups', 'lag_p50_ms', 'lag_p99_ms', 'lag_max_ms')
 
 
 def rate(result):
@@ -62,6 +70,8 @@ def main():
         env_name, _, values = args.head_env.partition('=')
         if not env_name or not all(values.split(',')):
             parser.error('--head-env takes NAME=V1[,V2...]')
+        if len(set(values.split(','))) != len(values.split(',')):
+            parser.error('--head-env values must differ: each one is a row')
         heads = [(f'head {value}', ['env', f'{env_name}={value}'] + head) for value in values.split(',')]
     else:
         heads = [('head', head)]
@@ -96,6 +106,11 @@ def main():
             for key in KEYS:
                 found = [row[key] for row in rows[label] if row.get(key) is not None]
                 cells.append(f'{key}={statistics.median(found):,.0f}' if found else f'{key}=-')
+            for key in LAG_KEYS:
+                found = [row[key] for row in rows[label] if row.get(key) is not None]
+                if found:
+                    digits = 0 if key == 'lag_wakeups' else 3
+                    cells.append(f'{key}={statistics.median(found):,.{digits}f}')
             print(f'  {label:{width}} n={len(rows[label])}  ' + '  '.join(cells))
         if loads:
             loaded = max(loads) >= run_modes.LOAD_GATE

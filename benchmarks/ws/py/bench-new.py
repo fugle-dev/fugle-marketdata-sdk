@@ -24,6 +24,13 @@ Usage:
                burst is already queued when iteration begins, and the
                elapsed time is taken after asyncio.run() returns, so it
                includes closing the loop
+    aiter-lag  `aiter` with a second task on the same event loop that sleeps
+               1 ms at a time and records how late each wake-up is: what
+               the iteration costs the other tasks on the loop (#267). Adds
+               `lag_wakeups` and `lag_p50_ms` / `lag_p99_ms` / `lag_max_ms`
+               to the result. The lag is about the number of messages read
+               between two turns of the loop times what the loop body takes
+               per message, so it grows with a slower body than this one
 """
 
 import argparse
@@ -41,12 +48,15 @@ import time
 # own venv (BENCH_PY_OLD).
 from fugle_marketdata import WebSocketClient
 
+# How long the second task of `aiter-lag` sleeps between wake-ups.
+LAG_SLEEP_S = 0.001
+
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--url', default='ws://localhost:8765')
     p.add_argument('--timeout', type=int, default=30)
-    p.add_argument('--mode', choices=('dict', 'dict-count', 'raw-loads', 'raw', 'aiter'), default='dict')
+    p.add_argument('--mode', choices=('dict', 'dict-count', 'raw-loads', 'raw', 'aiter', 'aiter-lag'), default='dict')
     return p.parse_args()
 
 
@@ -151,14 +161,26 @@ def main():
             if done_event.is_set():
                 return
 
+    # How late each 1 ms sleep of the second task ended, in ms.
+    lags = []
+
+    async def measure_lag():
+        while True:
+            started = time.perf_counter()
+            await asyncio.sleep(LAG_SLEEP_S)
+            lags.append((time.perf_counter() - started - LAG_SLEEP_S) * 1000)
+
     async def iterate_until_timeout():
+        lag_task = asyncio.ensure_future(measure_lag()) if args.mode == 'aiter-lag' else None
         try:
             await asyncio.wait_for(iterate(), args.timeout)
         except asyncio.TimeoutError:
             pass
+        if lag_task is not None:
+            lag_task.cancel()
 
     # Wait for bench_done sentinel or timeout
-    if args.mode == 'aiter':
+    if args.mode in ('aiter', 'aiter-lag'):
         asyncio.run(iterate_until_timeout())
     else:
         done_event.wait(timeout=args.timeout)
@@ -195,6 +217,15 @@ def main():
         'server_msgs_per_sec': server_stats.get('server_msgs_per_sec') if server_stats else None,
         'dropped': stock.messages_dropped_total(),
     }
+
+    if args.mode == 'aiter-lag':
+        lags.sort()
+        result.update(
+            lag_wakeups=len(lags),
+            lag_p50_ms=round(percentile(lags, 50), 3) if lags else None,
+            lag_p99_ms=round(percentile(lags, 99), 3) if lags else None,
+            lag_max_ms=round(lags[-1], 3) if lags else None,
+        )
 
     print(json.dumps(result), flush=True)
 
