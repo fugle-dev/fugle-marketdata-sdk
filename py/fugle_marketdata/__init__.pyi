@@ -2006,7 +2006,14 @@ class StockWebSocketClient:
         ...
 
     def disconnect(self) -> None:
-        """Disconnect from WebSocket server (blocking)."""
+        """Disconnect from WebSocket server (blocking).
+
+        Called from another thread, it returns once every stream reader has
+        ended, so the "disconnect" callbacks have fired. Called from a
+        callback, it waits for no stream reader: no "disconnect" callback is
+        guaranteed to have fired when it returns, and a later disconnect()
+        from another thread waits for them.
+        """
         ...
 
     async def disconnect_async(self) -> None:
@@ -2298,7 +2305,14 @@ class FutOptWebSocketClient:
         ...
 
     def disconnect(self) -> None:
-        """Disconnect from WebSocket server (blocking)."""
+        """Disconnect from WebSocket server (blocking).
+
+        Called from another thread, it returns once every stream reader has
+        ended, so the "disconnect" callbacks have fired. Called from a
+        callback, it waits for no stream reader: no "disconnect" callback is
+        guaranteed to have fired when it returns, and a later disconnect()
+        from another thread waits for them.
+        """
         ...
 
     def is_connected(self) -> bool:

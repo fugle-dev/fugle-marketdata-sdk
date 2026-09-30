@@ -1027,11 +1027,10 @@ fn settle_connect(
         installed.delivered.connect_succeeded();
     }
     if let Some(mut lost) = replaced {
-        // As `disconnect()` does: the reader no longer waits for an iterator
-        // to make room, so waiting for it ends.
-        lost.stop.store(true, Ordering::SeqCst);
+        // Its stop is left unset: until a `disconnect()` waits for the reader,
+        // iterators still get what core queued for them.
         if let Some(reader) = lost.reader.take() {
-            park_reader_thread(parked, reader);
+            park_reader_thread(parked, reader, Some(Arc::clone(&lost.stop)));
         }
     }
     Ok(ConnectOutcome::Installed)
@@ -1134,6 +1133,7 @@ fn spawn_stream_reader(
     std::thread::Builder::new()
         .name(name.to_string())
         .spawn(move || {
+            ON_STREAM_READER.with(|flag| flag.set(true));
             // The kind of item being handled, to name the thread in a panic
             // report (#25).
             let handling = std::cell::Cell::new("event");
@@ -1291,46 +1291,76 @@ fn join_reader_thread(py: Python<'_>, handle: std::thread::JoinHandle<()>) {
     });
 }
 
-/// Stream readers no one could wait for when their connection went: the
-/// reader of the connection a `disconnect()` from its own callback closed,
-/// and that of a lost connection a `connect()` replaced. Each connection is
-/// closed or gone, so waiting for them always ends; the next `disconnect()`
-/// does (#277).
-type ParkedReaders = Mutex<Vec<std::thread::JoinHandle<()>>>;
+thread_local! {
+    /// Set on stream reader threads, where callbacks run.
+    static ON_STREAM_READER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
-/// Park `handle` for the next `disconnect()`, joining those parked earlier
-/// that have already ended.
-fn park_reader_thread(parked: &ParkedReaders, handle: std::thread::JoinHandle<()>) {
+/// Whether this thread is a stream reader: a `disconnect()` called here runs
+/// from a callback.
+fn on_stream_reader() -> bool {
+    ON_STREAM_READER.with(|flag| flag.get())
+}
+
+/// A stream reader no one could wait for when its connection went, and the
+/// connection's stop flag, if it has one.
+struct ParkedReader {
+    handle: std::thread::JoinHandle<()>,
+    stop: Option<Arc<AtomicBool>>,
+}
+
+/// Stream readers no one could wait for when their connection went: those of
+/// the connection a `disconnect()` from a callback closed and of the connect
+/// it aborted — a `connect` callback during the handshake, say — and that of
+/// a lost connection a `connect()` replaced. Each connection is
+/// closed or gone, so waiting for them always ends once their stop flag is
+/// set; the next `disconnect()` from outside a callback does both (#277).
+type ParkedReaders = Mutex<Vec<ParkedReader>>;
+
+/// Park `handle` for the next `disconnect()`. Those parked earlier that have
+/// ended are let go without a join: one may still be running its thread-local
+/// destructors, and this can run under the connection locks.
+fn park_reader_thread(
+    parked: &ParkedReaders,
+    handle: std::thread::JoinHandle<()>,
+    stop: Option<Arc<AtomicBool>>,
+) {
     let Ok(mut guard) = parked.lock() else { return };
-    let (ended, running): (Vec<_>, Vec<_>) =
-        std::mem::take(&mut *guard).into_iter().partition(|h| h.is_finished());
-    *guard = running;
-    guard.push(handle);
-    drop(guard);
-    for handle in ended {
-        let _ = handle.join();
-    }
+    guard.retain(|reader| !reader.handle.is_finished());
+    guard.push(ParkedReader { handle, stop });
+}
+
+/// Take the parked readers to wait for, setting their stop flags: from here
+/// they no longer wait for an iterator to make room, as after `disconnect()`.
+fn take_parked_readers(parked: &ParkedReaders) -> Vec<std::thread::JoinHandle<()>> {
+    let readers = parked.lock().map(|mut guard| std::mem::take(&mut *guard)).unwrap_or_default();
+    readers
+        .into_iter()
+        .map(|reader| {
+            if let Some(stop) = &reader.stop {
+                stop.store(true, Ordering::SeqCst);
+            }
+            reader.handle
+        })
+        .collect()
 }
 
 /// [`join_reader_thread`] on the parked readers.
 ///
-/// A callback that disconnects runs on the stream reader and cannot wait for
-/// itself, so it leaves its own handle parked: a `disconnect()` from another
-/// thread still finds it and waits for the remaining callbacks.
+/// Not from a callback: a `disconnect()` there waits for no stream reader,
+/// since two readers disconnecting from callbacks would wait for each other.
+/// The readers stay parked for the next `disconnect()` from another thread,
+/// which waits for the remaining callbacks.
 fn join_parked_reader_threads(py: Python<'_>, parked: &ParkedReaders) {
-    let current = std::thread::current().id();
-    let others: Vec<_> = {
-        let Ok(mut guard) = parked.lock() else { return };
-        let (own, others) =
-            std::mem::take(&mut *guard).into_iter().partition(|h| h.thread().id() == current);
-        *guard = own;
-        others
-    };
-    if others.is_empty() {
+    if on_stream_reader() {
+        return;
+    }
+    let handles = take_parked_readers(parked);
+    if handles.is_empty() {
         return;
     }
     py.detach(move || {
-        for handle in others {
+        for handle in handles {
             let _ = handle.join();
         }
     });
@@ -1339,19 +1369,22 @@ fn join_parked_reader_threads(py: Python<'_>, parked: &ParkedReaders) {
 /// What a `disconnect()` does with the reader of the connection it closes, or
 /// of a connect it aborts (#143).
 ///
-/// A callback of that connection which disconnects — `connect` fires during
-/// the handshake — runs on the reader and cannot wait for itself, so the
-/// handle is parked for a later `disconnect()` to wait on. Call before the
-/// close wakes the connect, so the handle is there once `connect()` raises.
+/// From a callback — which runs on a stream reader — the handle is parked for
+/// a later `disconnect()` to wait on, not joined: the reader may be this
+/// thread, or another one waiting for this thread, such as one whose
+/// `connect()` failed and waits for this connection's reader before it
+/// raises. Call before the close wakes the connect, so the handle is there
+/// once `connect()` raises.
 ///
 /// Returns the handle to join after the close.
 fn park_own_reader_thread(
     handle: Option<std::thread::JoinHandle<()>>,
+    stop: Option<Arc<AtomicBool>>,
     parked: &ParkedReaders,
 ) -> Option<std::thread::JoinHandle<()>> {
     match handle {
-        Some(handle) if handle.thread().id() == std::thread::current().id() => {
-            park_reader_thread(parked, handle);
+        Some(handle) if on_stream_reader() => {
+            park_reader_thread(parked, handle, stop);
             None
         }
         other => other,
@@ -1368,8 +1401,7 @@ async fn join_reader_thread_async(handle: Option<std::thread::JoinHandle<()>>) {
 
 /// Async counterpart of [`join_parked_reader_threads`].
 async fn join_parked_reader_threads_async(parked: &ParkedReaders) {
-    let handles = parked.lock().map(|mut guard| std::mem::take(&mut *guard)).unwrap_or_default();
-    for handle in handles {
+    for handle in take_parked_readers(parked) {
         join_reader_thread_async(Some(handle)).await;
     }
 }
@@ -1638,9 +1670,12 @@ impl StockWebSocketClient {
         let (mut target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
         // Only this connection's reader: one a `connect()` installs while
         // this call closes is not waited for (#277).
-        let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
-        let own_reader = park_own_reader_thread(own_reader, &self.parked_readers);
-        let aborted_reader = park_own_reader_thread(aborted_reader, &self.parked_readers);
+        let (own_reader, own_stop) = match target.live.as_mut() {
+            Some(state) => (state.reader.take(), Some(Arc::clone(&state.stop))),
+            None => (None, None),
+        };
+        let own_reader = park_own_reader_thread(own_reader, own_stop, &self.parked_readers);
+        let aborted_reader = park_own_reader_thread(aborted_reader, None, &self.parked_readers);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment
@@ -2541,9 +2576,12 @@ impl FutOptWebSocketClient {
         let (mut target, aborted_reader) = take_close_target(&self.pending, &self.state)?;
         // Only this connection's reader: one a `connect()` installs while
         // this call closes is not waited for (#277).
-        let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
-        let own_reader = park_own_reader_thread(own_reader, &self.parked_readers);
-        let aborted_reader = park_own_reader_thread(aborted_reader, &self.parked_readers);
+        let (own_reader, own_stop) = match target.live.as_mut() {
+            Some(state) => (state.reader.take(), Some(Arc::clone(&state.stop))),
+            None => (None, None),
+        };
+        let own_reader = park_own_reader_thread(own_reader, own_stop, &self.parked_readers);
+        let aborted_reader = park_own_reader_thread(aborted_reader, None, &self.parked_readers);
 
         if !target.is_empty() {
             // Recorded before the close so `is_closed()` is true the moment

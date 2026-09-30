@@ -460,6 +460,13 @@ meanwhile (see [Message Queue](#message-queue) and
 [migration guide §15](../MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
 Hand slow work to your own thread.
 
+Called from another thread, `disconnect()` returns once every stream reader
+of the client has ended, so the `disconnect` callbacks have fired. Called
+from a callback, it waits for no stream reader — two callbacks waiting for
+each other's would never return — so no `disconnect` callback is guaranteed
+to have fired when it returns; a later `disconnect()` from another thread
+waits for them.
+
 #### Message Queue
 
 ```python
