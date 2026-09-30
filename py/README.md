@@ -460,6 +460,20 @@ meanwhile (see [Message Queue](#message-queue) and
 [migration guide §15](../MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
 Hand slow work to your own thread.
 
+`disconnect()` returns once the stream readers of the connection it closes,
+of a connect it aborts, and of earlier connections left for it have ended,
+so their `disconnect` callbacks have fired. A connection that another
+thread's `connect()` opens meanwhile is not waited for.
+
+Called from a callback of any client — this one or another, such as a
+`ws.stock` callback calling `ws.futopt.disconnect()` — it waits for no stream
+reader, since two callbacks waiting for each other's would never return. No
+`disconnect` callback is guaranteed to have fired when it returns; those
+readers are left to the next `disconnect()` called outside a callback. Do not
+wait for `disconnect_async()` synchronously from a callback (with
+`asyncio.run(...)`, say): it waits for the callback's own reader and never
+completes.
+
 #### Message Queue
 
 ```python

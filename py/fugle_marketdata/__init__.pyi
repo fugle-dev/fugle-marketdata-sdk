@@ -2006,13 +2006,29 @@ class StockWebSocketClient:
         ...
 
     def disconnect(self) -> None:
-        """Disconnect from WebSocket server (blocking)."""
+        """Disconnect from WebSocket server (blocking).
+
+        Returns once the stream readers of the connection it closes, of a
+        connect it aborts, and of earlier connections left for it have ended,
+        so their "disconnect" callbacks have fired. A connection that another
+        thread's connect() opens meanwhile is not waited for.
+
+        Called from a callback of any client, this one or another, it waits
+        for no stream reader: no "disconnect" callback is guaranteed to have
+        fired when it returns, and those readers are left to the next
+        disconnect() called outside a callback.
+        """
         ...
 
     async def disconnect_async(self) -> None:
         """Disconnect from WebSocket server (async).
 
         Returns an awaitable that completes when disconnection finishes.
+
+        Do not wait for it synchronously from a callback, for example with
+        asyncio.run(ws.stock.disconnect_async()): it does not run on the
+        callback's thread, so it waits for that thread's stream reader, which
+        is waiting for it, and never completes. Call disconnect() there.
         """
         ...
 
@@ -2298,7 +2314,18 @@ class FutOptWebSocketClient:
         ...
 
     def disconnect(self) -> None:
-        """Disconnect from WebSocket server (blocking)."""
+        """Disconnect from WebSocket server (blocking).
+
+        Returns once the stream readers of the connection it closes, of a
+        connect it aborts, and of earlier connections left for it have ended,
+        so their "disconnect" callbacks have fired. A connection that another
+        thread's connect() opens meanwhile is not waited for.
+
+        Called from a callback of any client, this one or another, it waits
+        for no stream reader: no "disconnect" callback is guaranteed to have
+        fired when it returns, and those readers are left to the next
+        disconnect() called outside a callback.
+        """
         ...
 
     def is_connected(self) -> bool:
