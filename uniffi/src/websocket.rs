@@ -3424,8 +3424,12 @@ mod tests {
 
         // A `connect()` that starts once `disconnect()` has found nothing to
         // close, and has its handshake's reader in the slot before that
-        // `disconnect()` goes on (#278).
+        // `disconnect()` goes on (#278). The server holds the handshake until
+        // the test completes it, so the reader stays there meanwhile.
         let (connect_tx, connect_rx) = std::sync::mpsc::channel();
+        // Whether the hook saw that reader, reported here rather than
+        // panicking on the `disconnect()` thread.
+        let (hook_tx, hook_rx) = std::sync::mpsc::channel();
         let hook = {
             let client = Arc::clone(&client);
             // A runtime that outlives the connection, which runs on it.
@@ -3438,10 +3442,15 @@ mod tests {
                     }
                 });
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                let mut started = true;
                 while lock_connection(&client.connection).pending.is_none() {
-                    assert!(std::time::Instant::now() < deadline, "connect() did not start");
+                    if std::time::Instant::now() >= deadline {
+                        started = false;
+                        break;
+                    }
                     std::thread::yield_now();
                 }
+                let _ = hook_tx.send(started);
             }
         };
         let (done_tx, done_rx) = std::sync::mpsc::channel();
@@ -3455,19 +3464,24 @@ mod tests {
             }
         });
 
+        let started = hook_rx.recv_timeout(std::time::Duration::from_secs(20));
+        assert_eq!(started, Ok(true), "connect() did not start during disconnect()");
+        // While that `connect()` is still in its handshake.
+        let returned = done_rx.recv_timeout(std::time::Duration::from_secs(10)).is_ok();
+
+        // Then the handshake completes and the connection is closed before
+        // asserting, so a `disconnect()` still waiting on it ends rather
+        // than outliving the test.
         server_rt.block_on(listener.wait_for("connected"));
         server_rt.block_on(server.inject_frame(marketdata_core::models::streaming::StreamMessage::Authenticated));
-        let connected = connect_rx
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .expect("connect() returned");
-        let returned = done_rx.recv_timeout(std::time::Duration::from_secs(10)).is_ok();
-        // Closed before asserting, so a `disconnect()` still waiting on it
-        // ends rather than outliving the test.
+        let connected = connect_rx.recv_timeout(std::time::Duration::from_secs(10));
         let stored = client.is_connected();
         server_rt.block_on(client.disconnect_impl());
 
         assert!(returned, "disconnect() waited for a connection opened after it was called");
-        connected.expect("connect() started after disconnect() is not cancelled by it");
+        connected
+            .expect("connect() returned")
+            .expect("connect() started after disconnect() is not cancelled by it");
         assert!(stored);
     }
 
