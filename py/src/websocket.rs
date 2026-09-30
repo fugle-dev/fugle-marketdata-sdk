@@ -28,9 +28,11 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use marketdata_core::aio::admission::{admit, Admission, ConnectClaim, ConnectGate, Delivered, StoredConnection};
 
 use crate::callback::CallbackRegistry;
 use crate::errors;
@@ -865,218 +867,48 @@ struct WebSocketState {
     delivered: Delivered,
 }
 
-/// Whether the callbacks were last handed the connection as up, as a
-/// `connect()` decides between refusing and waiting on a reconnect (#230).
-///
-/// Read from what the stream reader delivered rather than core's state: a
-/// `disconnect` callback that calls `connect()` may run after core has
-/// already reconnected, and has to wait on that reconnect, not be refused.
-#[derive(Clone, Default)]
-struct Delivered(Arc<AtomicU8>);
-
-impl Delivered {
-    /// No `authenticated` delivered yet for this connection.
-    const PENDING: u8 = 0;
-    /// `authenticated` delivered, and nothing since that ends it.
-    const AUTHENTICATED: u8 = 1;
-    /// `unauthenticated` or `disconnect` delivered since.
-    const LOST: u8 = 2;
-
-    /// Record `event`. Called by the stream reader before the callbacks run,
-    /// so a callback calling `connect()` reads the event it is handling.
-    fn observe(&self, event: &marketdata_core::websocket::ConnectionEvent) {
-        use marketdata_core::websocket::ConnectionEvent;
-        match event {
-            ConnectionEvent::Authenticated { .. } => self.0.store(Self::AUTHENTICATED, Ordering::SeqCst),
-            ConnectionEvent::Unauthenticated { .. } | ConnectionEvent::Disconnected { .. } => {
-                self.0.store(Self::LOST, Ordering::SeqCst)
-            }
-            _ => {}
-        }
-    }
-
-    /// The connect that opened this connection succeeded: it counts as
-    /// delivered even if the reader has not got to `authenticated` yet, so a
-    /// second `connect()` right after is refused rather than waiting. Unless
-    /// the reader has already delivered the connection's loss.
-    fn connect_succeeded(&self) {
-        let _ = self.0.compare_exchange(
-            Self::PENDING,
-            Self::AUTHENTICATED,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-    }
-
-    fn is_authenticated(&self) -> bool {
-        self.0.load(Ordering::SeqCst) == Self::AUTHENTICATED
-    }
-}
-
 /// Shared so blocking calls can clone it out of its lock before they block.
 type SharedRuntime = Arc<tokio::runtime::Runtime>;
 
-/// Admits one `connect()` / `connect_async()` that opens a connection at a
-/// time per product client (#130); one that joins a reconnect does not take
-/// it (#268). Core's own gate cannot see this: each connection is opened on a
-/// new core client.
-#[derive(Clone, Default)]
-struct ConnectGate(Arc<AtomicBool>);
+/// The stored connection, as core's `admit` reads it. Called with the GIL
+/// released, so nothing here may need it: the lock is held only to clone the
+/// client and its `Delivered` out. A poisoned lock is read through, as the
+/// read cannot report a failure.
+fn read_stored(state: &Mutex<Option<WebSocketState>>) -> Option<StoredConnection> {
+    let state = state.lock().unwrap_or_else(|e| e.into_inner());
+    state
+        .as_ref()
+        .map(|s| StoredConnection::new(Arc::clone(&s.inner), s.delivered.clone()))
+}
 
-impl ConnectGate {
-    /// Claim the gate, or `None` while another connect holds it. Dropping the
-    /// claim releases it, including when `connect_async()` is cancelled.
-    fn try_claim(&self) -> Option<ConnectClaim> {
-        self.0
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .ok()
-            .map(|_| ConnectClaim(Arc::clone(&self.0)))
+/// What a `connect()` does with core's decision: `Some` to open a new
+/// connection, holding the claim until it is stored; `None` once it has
+/// joined the stored connection's reconnect, with nothing left to do.
+fn admitted(
+    admission: Result<Admission, marketdata_core::MarketDataError>,
+) -> PyResult<Option<ConnectClaim>> {
+    match admission.map_err(errors::to_py_err)? {
+        Admission::Open(claim) => Ok(Some(claim)),
+        Admission::Joined => Ok(None),
     }
 }
 
-/// A held [`ConnectGate`].
-struct ConnectClaim(Arc<AtomicBool>);
-
-impl Drop for ConnectClaim {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
-/// What a `connect()` does, decided before anything of the live connection
-/// is replaced (#119, #130, #230).
-enum Claim {
-    /// Open a new connection; hold the claim until it is stored.
-    Fresh(ConnectClaim),
-    /// Wait on the automatic reconnect of the stored connection. No claim is
-    /// held, so any number of `connect()` calls wait together, as on core's
-    /// client.
-    Join(Arc<marketdata_core::aio::WebSocketClient>),
-}
-
-/// What the stored connection means for a `connect()`.
-enum Stored {
-    /// None, a closed one, or `gave_up`, one whose wait already ended with
-    /// nothing left to wait for: open a new connection, under the gate.
-    Replace,
-    /// The callbacks were last handed it as up: 2011.
-    Refuse,
-    /// Not closed and not handed over as up: it is reconnecting.
-    Join(Arc<marketdata_core::aio::WebSocketClient>),
-}
-
-fn stored_connection(
-    state: &Mutex<Option<WebSocketState>>,
-    gave_up: Option<&Arc<marketdata_core::aio::WebSocketClient>>,
-) -> PyResult<Stored> {
-    Ok(match state.lock().map_err(lock_err)?.as_ref() {
-        None => Stored::Replace,
-        Some(s) if s.inner.is_closed_sync() => Stored::Replace,
-        Some(s) if gave_up.is_some_and(|c| Arc::ptr_eq(c, &s.inner)) => Stored::Replace,
-        Some(s) if s.delivered.is_authenticated() => Stored::Refuse,
-        Some(s) => Stored::Join(Arc::clone(&s.inner)),
-    })
-}
-
-/// Join the stored connection's reconnect, claim `gate` to open a new
-/// connection, or fail with core's `AlreadyConnected` (code 2011): while the
-/// callbacks were last handed the stored connection as up, or while another
-/// connect that opens a connection holds the gate.
-///
-/// The stored connection is read before the gate, so a join never holds it:
-/// `connect_async()` calls made at the same moment all wait, instead of one
-/// refusing the others (#268).
-///
-/// Not core's `is_active()`: between reconnect attempts the state is
-/// `Disconnected`, and a connect let through there would leave the old
-/// reconnect loop running beside a new connection (#230).
-fn claim_connect(
-    gate: &ConnectGate,
-    state: &Mutex<Option<WebSocketState>>,
-    gave_up: Option<&Arc<marketdata_core::aio::WebSocketClient>>,
-) -> PyResult<Claim> {
-    let already = || errors::to_py_err(marketdata_core::MarketDataError::AlreadyConnected);
-    let mut stored = stored_connection(state, gave_up)?;
-    let mut claim = None;
-    if matches!(stored, Stored::Replace) {
-        claim = Some(gate.try_claim().ok_or_else(already)?);
-        // Again under the claim: a connect that finished since the first
-        // look has stored its connection.
-        stored = stored_connection(state, gave_up)?;
-    }
-    match (stored, claim) {
-        (Stored::Join(inner), claim) => {
-            // Released before the caller waits.
-            drop(claim);
-            Ok(Claim::Join(inner))
-        }
-        (Stored::Replace, Some(claim)) => Ok(Claim::Fresh(claim)),
-        // `Replace` is only read under the claim.
-        (Stored::Refuse | Stored::Replace, _) => Err(already()),
-    }
-}
-
-/// The end of a join: `Ok(true)` once the reconnect is up (the stored
-/// connection is kept as is), `Ok(false)` when there is nothing left to wait
-/// for — the client closed without the reconnect giving up, or core has no
-/// reconnect under way (`ConnectionError`) — so a new connection is opened,
-/// otherwise the error: 2010 on `disconnect()`, 3005 when the attempts ran
-/// out, `AuthError` when the credentials were rejected.
-fn join_ended(result: Result<(), marketdata_core::MarketDataError>) -> PyResult<bool> {
-    use marketdata_core::MarketDataError as CoreError;
-    match result {
-        Ok(()) => Ok(true),
-        Err(CoreError::ClientClosed | CoreError::ConnectionError { .. }) => Ok(false),
-        Err(e) => Err(errors::to_py_err(e)),
-    }
-}
-
-/// [`claim_connect`] for a blocking `connect()`, which waits out a join with
-/// the GIL released. `None`: joined, nothing left to do.
-fn claim_or_join(
+/// Core's `admit` for a blocking `connect()`, which waits out a join with
+/// the GIL released.
+fn admit_blocking(
     py: Python<'_>,
     gate: &ConnectGate,
-    state: &Mutex<Option<WebSocketState>>,
+    state: &Arc<Mutex<Option<WebSocketState>>>,
     runtime: &Mutex<Option<SharedRuntime>>,
 ) -> PyResult<Option<ConnectClaim>> {
-    let mut gave_up = None;
-    loop {
-        let inner = match claim_connect(gate, state, gave_up.as_ref())? {
-            Claim::Fresh(claim) => return Ok(Some(claim)),
-            Claim::Join(inner) => inner,
-        };
-        // Only a `disconnect()` since `ensure_runtime()` takes it, and that
-        // ends the reconnect.
-        let Some(runtime) = runtime.lock().map_err(lock_err)?.clone() else {
-            return Err(errors::to_py_err(marketdata_core::MarketDataError::ConnectionAborted));
-        };
-        let waited = Arc::clone(&inner);
-        let result = block_on_detached(py, runtime, async move { waited.wait_connected().await });
-        if join_ended(result)? {
-            return Ok(None);
-        }
-        // Claimed next, as a fresh connect; another caller that got there
-        // first is refused as usual.
-        gave_up = Some(inner);
-    }
-}
-
-/// [`claim_or_join`] for `connect_async()`.
-async fn claim_or_join_async(
-    gate: &ConnectGate,
-    state: &Mutex<Option<WebSocketState>>,
-) -> PyResult<Option<ConnectClaim>> {
-    let mut gave_up = None;
-    loop {
-        let inner = match claim_connect(gate, state, gave_up.as_ref())? {
-            Claim::Fresh(claim) => return Ok(Some(claim)),
-            Claim::Join(inner) => inner,
-        };
-        if join_ended(inner.wait_connected().await)? {
-            return Ok(None);
-        }
-        gave_up = Some(inner);
-    }
+    let runtime = runtime.lock().map_err(lock_err)?.clone().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err("Runtime not initialized")
+    })?;
+    let gate = gate.clone();
+    let state = Arc::clone(state);
+    admitted(block_on_detached(py, runtime, async move {
+        admit(&gate, || read_stored(&state)).await
+    }))
 }
 
 fn lock_err<T>(e: std::sync::PoisonError<T>) -> PyErr {
@@ -1667,11 +1499,11 @@ impl StockWebSocketClient {
     ///     AuthError: While waiting on a reconnect, if its credentials are
     ///         rejected
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
-        // Before the claim: a join waits on this runtime.
+        // Before the admission: it runs on this runtime.
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
         })?;
-        let Some(_claim) = claim_or_join(py, &self.connect_gate, &self.state, &self.runtime)? else {
+        let Some(_claim) = admit_blocking(py, &self.connect_gate, &self.state, &self.runtime)? else {
             return Ok(());
         };
         let test_panic = test_panic_site();
@@ -2161,7 +1993,7 @@ impl StockWebSocketClient {
         let closed = Arc::clone(&self.closed);
 
         future_into_py(py, async move {
-            let Some(_claim) = claim_or_join_async(&connect_gate, &state_arc).await? else {
+            let Some(_claim) = admitted(admit(&connect_gate, || read_stored(&state_arc)).await)? else {
                 return Ok(());
             };
             // Create WebSocket client with full config
@@ -2542,11 +2374,11 @@ impl FutOptWebSocketClient {
     ///         rejected
     #[pyo3(signature = ())]
     pub fn connect(&self, py: Python<'_>) -> PyResult<()> {
-        // Before the claim: a join waits on this runtime.
+        // Before the admission: it runs on this runtime.
         self.ensure_runtime().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(e)
         })?;
-        let Some(_claim) = claim_or_join(py, &self.connect_gate, &self.state, &self.runtime)? else {
+        let Some(_claim) = admit_blocking(py, &self.connect_gate, &self.state, &self.runtime)? else {
             return Ok(());
         };
         let test_panic = test_panic_site();
