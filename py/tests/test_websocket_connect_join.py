@@ -23,6 +23,11 @@ SYMBOLS = {"stock": "2330", "futopt": "TXF1!"}
 hard_timeout = pytest.mark.timeout(30, method="thread")
 
 
+async def to_thread(func, *args):
+    """``asyncio.to_thread``, which Python 3.8 lacks."""
+    return await asyncio.get_running_loop().run_in_executor(None, func, *args)
+
+
 @pytest.fixture
 def server():
     with InProcessLoopbackServer() as srv:
@@ -134,13 +139,13 @@ async def test_connect_async_joins_the_reconnect(server):
     try:
         await ws.connect_async()
         ws.subscribe("trades", "2330")
-        await asyncio.to_thread(wait_until, lambda: len(server.subscribe_log) == 1, "subscribe")
+        await to_thread(wait_until, lambda: len(server.subscribe_log) == 1, "subscribe")
 
-        await asyncio.to_thread(lose_connection, server, recorder)
+        await to_thread(lose_connection, server, recorder)
         await asyncio.wait_for(ws.connect_async(), TIMEOUT_S)
         ws.subscribe("trades", "2330")
 
-        await asyncio.to_thread(wait_until, lambda: len(server.subscribe_log) == 3, "replay and subscribe")
+        await to_thread(wait_until, lambda: len(server.subscribe_log) == 3, "replay and subscribe")
         assert server.subscribe_log == [(0, "2330"), (1, "2330"), (1, "2330")]
         assert server.connections_accepted == 2
         assert ws.is_connected()
@@ -215,7 +220,7 @@ async def test_disconnect_async_during_backoff_ends_the_async_join_with_2010(ser
     try:
         await ws.connect_async()
         server.refuse_connections()
-        await asyncio.to_thread(lose_connection, server, recorder)
+        await to_thread(lose_connection, server, recorder)
 
         join = asyncio.ensure_future(ws.connect_async())
         await asyncio.sleep(0.3)
@@ -255,7 +260,7 @@ async def test_async_join_raises_3005_when_the_attempts_run_out(server):
     try:
         await ws.connect_async()
         server.refuse_connections()
-        await asyncio.to_thread(lose_connection, server, recorder)
+        await to_thread(lose_connection, server, recorder)
 
         with pytest.raises(WebSocketError) as excinfo:
             await asyncio.wait_for(ws.connect_async(), TIMEOUT_S)
@@ -290,7 +295,7 @@ async def test_async_join_raises_auth_error_when_the_reconnect_is_rejected(serve
     try:
         await ws.connect_async()
         server.reject_auth()
-        await asyncio.to_thread(lose_connection, server, recorder)
+        await to_thread(lose_connection, server, recorder)
 
         with pytest.raises(AuthError) as excinfo:
             await asyncio.wait_for(ws.connect_async(), TIMEOUT_S)
@@ -380,12 +385,12 @@ async def test_concurrent_async_joins_both_return_once_reconnected(server):
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
-        await asyncio.to_thread(lose_connection, server, recorder)
+        await to_thread(lose_connection, server, recorder)
 
         # A blocking connect() on a thread joins alongside.
         thread, outcome = connect_in_thread(ws)
         await asyncio.wait_for(asyncio.gather(ws.connect_async(), ws.connect_async()), TIMEOUT_S)
-        await asyncio.to_thread(thread.join, TIMEOUT_S)
+        await to_thread(thread.join, TIMEOUT_S)
         assert outcome == {"ok": True}
         assert server.connections_accepted == 2
     finally:

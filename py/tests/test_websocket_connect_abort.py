@@ -33,6 +33,11 @@ hard_timeout = pytest.mark.timeout(20, method="thread")
 ABORT_WITHIN_S = 3
 
 
+async def to_thread(func, *args):
+    """``asyncio.to_thread``, which Python 3.8 lacks."""
+    return await asyncio.get_running_loop().run_in_executor(None, func, *args)
+
+
 @pytest.fixture
 def server():
     with LoopbackServer() as srv:
@@ -136,7 +141,7 @@ def test_disconnect_async_during_handshake_aborts_connect_async(server):
 
     async def scenario():
         connect = asyncio.ensure_future(ws.connect_async())
-        await asyncio.to_thread(rec.wait_for, "connect", TIMEOUT_S)
+        await to_thread(rec.wait_for, "connect", TIMEOUT_S)
         await ws.disconnect_async()
         assert rec.names().count("disconnect") == 1, rec.calls
         with pytest.raises(WebSocketError) as excinfo:
@@ -159,8 +164,8 @@ def test_sync_disconnect_aborts_connect_async(server):
 
     async def scenario():
         connect = asyncio.ensure_future(ws.connect_async())
-        await asyncio.to_thread(rec.wait_for, "connect", TIMEOUT_S)
-        await asyncio.to_thread(ws.disconnect)
+        await to_thread(rec.wait_for, "connect", TIMEOUT_S)
+        await to_thread(ws.disconnect)
         with pytest.raises(WebSocketError) as excinfo:
             await asyncio.wait_for(connect, ABORT_WITHIN_S)
         return excinfo.value
@@ -181,7 +186,7 @@ def test_cancelled_connect_async_leaves_nothing_to_abort(server):
 
     async def scenario():
         connect = asyncio.ensure_future(ws.connect_async())
-        await asyncio.to_thread(rec.wait_for, "connect", TIMEOUT_S)
+        await to_thread(rec.wait_for, "connect", TIMEOUT_S)
         connect.cancel()
         with pytest.raises(asyncio.CancelledError):
             await connect
