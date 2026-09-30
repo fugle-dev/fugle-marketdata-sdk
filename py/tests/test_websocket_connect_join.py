@@ -136,21 +136,23 @@ def test_connect_in_disconnect_callback_joins_the_reconnect(server, product):
 
 
 @hard_timeout
-async def test_connect_async_joins_the_reconnect(server):
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_joins_the_reconnect(server, product):
     # Long enough a backoff that connect_async() is called within it.
-    ws = reconnecting_ws(server.url, "stock", delay_ms=1500)
+    ws = reconnecting_ws(server.url, product, delay_ms=1500)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
-        ws.subscribe("trades", "2330")
+        ws.subscribe("trades", SYMBOLS[product])
         await to_thread(wait_until, lambda: len(server.subscribe_log) == 1, "subscribe")
 
         await to_thread(lose_connection, server, recorder)
         await asyncio.wait_for(ws.connect_async(), TIMEOUT_S)
-        ws.subscribe("trades", "2330")
+        ws.subscribe("trades", SYMBOLS[product])
 
         await to_thread(wait_until, lambda: len(server.subscribe_log) == 3, "replay and subscribe")
-        assert server.subscribe_log == [(0, "2330"), (1, "2330"), (1, "2330")]
+        symbol = SYMBOLS[product]
+        assert server.subscribe_log == [(0, symbol), (1, symbol), (1, symbol)]
         assert server.connections_accepted == 2
         assert ws.is_connected()
     finally:
@@ -218,8 +220,9 @@ def test_disconnect_while_a_callback_waits_on_the_reconnect(server, product):
 
 
 @hard_timeout
-async def test_disconnect_async_during_backoff_ends_the_async_join_with_2010(server):
-    ws = reconnecting_ws(server.url, "stock", delay_ms=5000)
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_disconnect_async_during_backoff_ends_the_async_join_with_2010(server, product):
+    ws = reconnecting_ws(server.url, product, delay_ms=5000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -258,8 +261,9 @@ def test_join_raises_3005_when_the_attempts_run_out(server, product):
 
 
 @hard_timeout
-async def test_async_join_raises_3005_when_the_attempts_run_out(server):
-    ws = reconnecting_ws(server.url, "stock", max_attempts=1, delay_ms=1000)
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_async_join_raises_3005_when_the_attempts_run_out(server, product):
+    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=1000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -293,8 +297,9 @@ def test_join_raises_auth_error_when_the_reconnect_is_rejected(server, product):
 
 
 @hard_timeout
-async def test_async_join_raises_auth_error_when_the_reconnect_is_rejected(server):
-    ws = reconnecting_ws(server.url, "stock", delay_ms=1000)
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_async_join_raises_auth_error_when_the_reconnect_is_rejected(server, product):
+    ws = reconnecting_ws(server.url, product, delay_ms=1000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -331,8 +336,9 @@ def test_second_connect_is_refused_before_authenticated_is_delivered(server, pro
 
 
 @hard_timeout
-async def test_second_connect_async_is_refused_before_authenticated_is_delivered(server):
-    ws = reconnecting_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_second_connect_async_is_refused_before_authenticated_is_delivered(server, product):
+    ws = reconnecting_ws(server.url, product)
     slow_connect_callback(ws)
     try:
         await ws.connect_async()
@@ -384,8 +390,9 @@ def test_concurrent_joins_both_raise_3005_when_the_attempts_run_out(server, prod
 
 
 @hard_timeout
-async def test_concurrent_async_joins_both_return_once_reconnected(server):
-    ws = reconnecting_ws(server.url, "stock", delay_ms=1000)
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_concurrent_async_joins_both_return_once_reconnected(server, product):
+    ws = reconnecting_ws(server.url, product, delay_ms=1000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -402,7 +409,8 @@ async def test_concurrent_async_joins_both_return_once_reconnected(server):
 
 
 @hard_timeout
-async def test_async_joins_started_together_do_not_refuse_one_another(server):
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_async_joins_started_together_do_not_refuse_one_another(server, product):
     # connect_async() decides on the runtime's threads, several at a time:
     # calls started together must not refuse one another (#268).
     #
@@ -410,7 +418,7 @@ async def test_async_joins_started_together_do_not_refuse_one_another(server):
     # for as long as the joins are watched and none of them may return.
     # Nothing tells the test that a join has begun to wait, and nothing here
     # relies on it: one that has yet to run has not returned either.
-    ws = reconnecting_ws(server.url, "stock", delay_ms=60_000)
+    ws = reconnecting_ws(server.url, product, delay_ms=60_000)
     recorder = Recorder(ws)
     joins = []
     try:

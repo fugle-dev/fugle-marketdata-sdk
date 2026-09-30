@@ -212,8 +212,10 @@ def test_for_loop_over_messages_ends_after_disconnect(server, product_case):
 
 
 @hard_timeout
-async def test_async_for_over_messages_ends_after_disconnect(server):
-    ws = _product_ws(server.url, "stock")
+@pytest.mark.parametrize("product_case", PRODUCTS)
+async def test_async_for_over_messages_ends_after_disconnect(server, product_case):
+    product, _ = product_case
+    ws = _product_ws(server.url, product)
     await ws.connect_async()
     seen = []
 
@@ -256,14 +258,16 @@ def test_iteration_waits_through_quiet_periods_and_yields_only_messages(server, 
 
 
 @hard_timeout
-async def test_async_iteration_waits_through_quiet_periods_and_yields_only_messages(server):
-    ws = _product_ws(server.url, "stock")
+@pytest.mark.parametrize("product_case", PRODUCTS)
+async def test_async_iteration_waits_through_quiet_periods_and_yields_only_messages(server, product_case):
+    product, subscription = product_case
+    ws = _product_ws(server.url, product)
     await ws.connect_async()
     seen = []
 
     async def subscribe_later():
         await asyncio.sleep(0.5)
-        await ws.subscribe_async("trades", "2330")
+        await ws.subscribe_async("trades", subscription["symbol"])
 
     subscriber = asyncio.create_task(subscribe_later())
     try:

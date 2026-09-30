@@ -8,7 +8,7 @@ reader, until that connection was closed too, and the old reader was waited
 for by no one.
 
 The server holds its answer to the Close, so the ``connect()`` lands inside
-the ``disconnect()`` every time. Only the stock client has the async methods.
+the ``disconnect()`` every time.
 
 A ``connect()`` that replaces a connection that was lost leaves that
 connection's reader for the next ``disconnect()`` to wait for, and its
@@ -33,6 +33,7 @@ from tests.ws_loopback import (
 )
 
 PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
+SYMBOLS = {"stock": "2330", "futopt": "TXF1!"}
 
 hard_timeout = pytest.mark.timeout(30, method="thread")
 
@@ -101,8 +102,9 @@ def test_disconnect_does_not_wait_for_connection_opened_during_it(server, produc
 
 
 @hard_timeout
-async def test_disconnect_async_does_not_wait_for_connection_opened_during_it(server):
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_disconnect_async_does_not_wait_for_connection_opened_during_it(server, product):
+    ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     await ws.connect_async()
     server.hold_next_close()
@@ -197,8 +199,9 @@ def test_disconnect_waits_for_reader_of_replaced_lost_connection(server, product
 
 
 @hard_timeout
-async def test_disconnect_async_waits_for_reader_of_replaced_lost_connection(server):
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_disconnect_async_waits_for_reader_of_replaced_lost_connection(server, product):
+    ws = product_ws(server.url, product)
     lost = LostConnectionCallback(ws)
     await ws.connect_async()
     try:
@@ -277,15 +280,16 @@ async def connect_async_replacing_lost(ws):
 
 
 @hard_timeout
-async def test_connect_async_replacing_lost_connection_keeps_its_queued_messages():
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_replacing_lost_connection_keeps_its_queued_messages(product):
     with InProcessLoopbackServer(flood=True) as srv:
-        ws = product_ws(srv.url, "stock", message_buffer=BUFFER)
+        ws = product_ws(srv.url, product, message_buffer=BUFFER)
         lost_reported = threading.Event()
         ws.on("disconnect", lambda *args: lost_reported.set())
         await ws.connect_async()
         try:
             unread = ws.messages()
-            await ws.subscribe_async({"channel": "trades", "symbol": "2330"})
+            await ws.subscribe_async({"channel": "trades", "symbol": SYMBOLS[product]})
             await to_thread(wait_until, lambda: ws.messages_dropped_total() > 0, "dropped messages")
             srv.drop_connections()
             await connect_async_replacing_lost(ws)

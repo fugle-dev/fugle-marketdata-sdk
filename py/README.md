@@ -396,6 +396,23 @@ client.off(event)                          # Unregister callback
 
 client.messages()                          # Get message iterator
 client.messages(raw=True)                  # ... yielding each message as the str the server sent
+
+client.ping(state=None)                    # Send a ping frame
+client.measure_latency(timeout_ms=None)    # Round trip to the server, in milliseconds
+```
+
+Both clients also have async versions, which do not block the event loop:
+
+```python
+await client.connect_async()
+await client.disconnect_async()
+await client.subscribe_async(channel, symbol)  # odd_lot= (stock) / after_hours= (futopt)
+await client.measure_latency_async(timeout_ms=None)
+
+async with ws.futopt as client:            # connect_async() on entry, disconnect_async() on exit
+    await client.subscribe_async("trades", "TXFC4")
+    async for msg in client.messages():
+        print(msg)
 ```
 
 #### Event Types

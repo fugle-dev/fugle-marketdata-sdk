@@ -1829,7 +1829,7 @@ class WebSocketClient:
 
         # Or async iterator mode
         async with ws.stock as client:
-            await client.subscribe("trades", "2330")
+            await client.subscribe_async("trades", "2330")
             async for msg in client.messages():
                 print(msg)
         ```
@@ -1953,7 +1953,7 @@ class StockWebSocketClient:
     Example (async iterator mode):
         ```python
         async with ws.stock as client:
-            await client.subscribe("trades", "2330")
+            await client.subscribe_async("trades", "2330")
             async for msg in client.messages():
                 print(msg)
         ```
@@ -2273,7 +2273,8 @@ class StockWebSocketClient:
     def messages(self, timeout_ms: Optional[int] = None, *, raw: bool) -> "MessageIterator[Any]": ...
 
     async def __aenter__(self) -> "StockWebSocketClient":
-        """Async context manager entry - connects to WebSocket server."""
+        """Async context manager entry - connects to WebSocket server and
+        returns this client."""
         ...
 
     async def __aexit__(
@@ -2290,11 +2291,42 @@ class FutOptWebSocketClient:
     """FutOpt (futures and options) WebSocket client.
 
     Access via `ws.futopt`. Similar to StockWebSocketClient but for
-    futures and options market data.
+    futures and options market data. Can be used as an async context manager.
+
+    Example (async iterator mode):
+        ```python
+        async with ws.futopt as client:
+            await client.subscribe_async("trades", "TXFC4")
+            async for msg in client.messages():
+                print(msg)
+        ```
     """
 
     def connect(self) -> None:
         """Connect to WebSocket server (blocking).
+
+        During an automatic reconnect it opens no connection of its own: it
+        waits for that reconnect and returns once the connection is back and the
+        subscriptions are re-sent, so a subscribe() afterwards follows them.
+        Called from a callback, it holds up the callbacks until the reconnect
+        ends.
+
+        Raises:
+            MarketDataError: If connection fails
+            WebSocketError: Code 2011 if already connected or another connect is
+                in progress. While waiting on a reconnect: code 2010 if
+                disconnect() is called, code 3005 if the reconnect runs out of
+                attempts
+            AuthError: While waiting on a reconnect, if its credentials are
+                rejected
+        """
+        ...
+
+    async def connect_async(self) -> None:
+        """Connect to WebSocket server (async).
+
+        Returns an awaitable that completes when connection is established.
+        Releases GIL during connection, enabling concurrent Python tasks.
 
         During an automatic reconnect it opens no connection of its own: it
         waits for that reconnect and returns once the connection is back and the
@@ -2325,6 +2357,18 @@ class FutOptWebSocketClient:
         for no stream reader: no "disconnect" callback is guaranteed to have
         fired when it returns, and those readers are left to the next
         disconnect() called outside a callback.
+        """
+        ...
+
+    async def disconnect_async(self) -> None:
+        """Disconnect from WebSocket server (async).
+
+        Returns an awaitable that completes when disconnection finishes.
+
+        Do not wait for it synchronously from a callback, for example with
+        asyncio.run(ws.futopt.disconnect_async()): it does not run on the
+        callback's thread, so it waits for that thread's stream reader, which
+        is waiting for it, and never completes. Call disconnect() there.
         """
         ...
 
@@ -2390,6 +2434,21 @@ class FutOptWebSocketClient:
 
         Both ``afterHours`` (camelCase) and ``after_hours`` keys are accepted
         in dict form.
+        """
+        ...
+
+    async def subscribe_async(
+        self,
+        channel: Mapping[str, Any] | str,
+        symbol: str | None = None,
+        *,
+        symbols: list[str] | None = None,
+        after_hours: bool = False,
+    ) -> None:
+        """Subscribe to a channel for one or more FutOpt symbols (async).
+
+        Accepts the same dual-shape input as :meth:`subscribe`. See its
+        docstring for details.
         """
         ...
 
@@ -2472,6 +2531,10 @@ class FutOptWebSocketClient:
         """
         ...
 
+    async def measure_latency_async(self, timeout_ms: int | None = None) -> float:
+        """Async version of :meth:`measure_latency`."""
+        ...
+
     def on(self, event: str, callback: Callable[..., None]) -> None:
         """Register a callback for an event type.
 
@@ -2514,6 +2577,20 @@ class FutOptWebSocketClient:
     def messages(self, timeout_ms: Optional[int] = None, *, raw: Literal[True]) -> "MessageIterator[str]": ...
     @overload
     def messages(self, timeout_ms: Optional[int] = None, *, raw: bool) -> "MessageIterator[Any]": ...
+
+    async def __aenter__(self) -> "FutOptWebSocketClient":
+        """Async context manager entry - connects to WebSocket server and
+        returns this client."""
+        ...
+
+    async def __aexit__(
+        self,
+        exc_type: Any,
+        exc_val: Any,
+        exc_tb: Any,
+    ) -> None:
+        """Async context manager exit - disconnects from WebSocket server."""
+        ...
 
 
 class MessageIterator(Generic[_Yielded]):

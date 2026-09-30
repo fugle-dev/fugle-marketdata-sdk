@@ -102,7 +102,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yet. Nothing changes for callers of any binding, and `connect()` on
   core's own clients behaves as before.
 
+- **Python: `FutOptWebSocketClient` async methods** (#272).
+  `connect_async()`, `disconnect_async()`, `subscribe_async()` (with
+  `after_hours=` in place of the stock client's `odd_lot=`),
+  `measure_latency_async()` and `async with ws.futopt`, which only the stock
+  client had; asyncio code had to call the blocking `connect()` and stall the
+  event loop. They behave as the stock client's do — joining an automatic
+  reconnect (#230), concurrent calls not refusing one another (#268) — and
+  both clients run the same code for them.
+
 ### Fixed
+
+- **Python: `connect_async()` uses the TLS settings** (#272). The stock
+  client's `connect_async()` built its connection without the
+  `WebSocketClient`'s `tls_ca_file`, `tls_root_cert_pem` and
+  `tls_accept_invalid_certs`: it checked the server's certificate against
+  the system roots only, so a server with a certificate from a private CA
+  was rejected and `tls_accept_invalid_certs=True` had no effect.
+  `connect()` was not affected.
+- **Python: `async with ws.stock as client` binds the client** (#272).
+  `__aenter__` resolved to `None`, so `client` was `None`, although the stub
+  declared the client and its docstring example used it.
 
 - **Python: `disconnect()` no longer waits for a connection that a concurrent
   `connect()` opened** (#277). While `disconnect()` waited for the server to

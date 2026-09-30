@@ -31,6 +31,7 @@ from tests.ws_loopback import (
 )
 
 PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
+SYMBOLS = {"stock": "2330", "futopt": "TXF1!"}
 
 hard_timeout = pytest.mark.timeout(20, method="thread")
 
@@ -288,16 +289,17 @@ def test_messages_raw_try_recv_and_recv_timeout_yield_the_text(server, product):
 
 
 @hard_timeout
-async def test_messages_raw_async_iteration_yields_the_text(server):
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_messages_raw_async_iteration_yields_the_text(server, product):
+    ws = product_ws(server.url, product)
     await ws.connect_async()
     try:
-        ws.subscribe("trades", "2330")
+        ws.subscribe("trades", SYMBOLS[product])
         async for raw in ws.messages(raw=True):
             assert type(raw) is str
             frame = json.loads(raw)
             if frame["event"] == "data":
-                assert frame["data"]["symbol"] == "2330"
+                assert frame["data"]["symbol"] == SYMBOLS[product]
                 break
     finally:
         await ws.disconnect_async()

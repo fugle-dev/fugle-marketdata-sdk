@@ -37,10 +37,11 @@ def test_connect_sends_credential_in_its_field(product, credential, expected):
 
 
 @hard_timeout
+@pytest.mark.parametrize("product", ["stock", "futopt"])
 @pytest.mark.parametrize("credential, expected", CREDENTIALS)
-def test_connect_async_sends_credential_in_its_field(credential, expected):
+def test_connect_async_sends_credential_in_its_field(product, credential, expected):
     async def run(url):
-        ws = _client(url, credential).stock
+        ws = getattr(_client(url, credential), product)
         try:
             await ws.connect_async()
         finally:

@@ -122,6 +122,8 @@ class _Server:
         self._stopped = threading.Event()
         # ``data`` of every ``auth`` frame received, in arrival order.
         self.auth_data = []
+        # ``data`` of every ``subscribe`` frame received, in arrival order.
+        self.subscribe_data = []
         # ``data`` of every ``unsubscribe`` frame received, in arrival order.
         self.unsubscribe_data = []
         # ``data`` of every ``ping`` frame received, in arrival order.
@@ -217,6 +219,7 @@ class _Server:
                     if frame.get("event") == "ping":
                         self.ping_data.append(frame.get("data"))
                     if frame.get("event") == "subscribe":
+                        self.subscribe_data.append(frame.get("data"))
                         symbol = (frame.get("data") or {}).get("symbol")
                         self.subscribe_log.append((index, symbol))
                     for reply in self._replies(frame):
@@ -338,6 +341,11 @@ class InProcessLoopbackServer:
     def auth_data(self):
         """``data`` of every ``auth`` frame the server received."""
         return list(self._server.auth_data)
+
+    @property
+    def subscribe_data(self):
+        """``data`` of every ``subscribe`` frame the server received."""
+        return list(self._server.subscribe_data)
 
     @property
     def unsubscribe_data(self):

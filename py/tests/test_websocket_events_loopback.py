@@ -236,8 +236,9 @@ def test_message_callback_can_call_client_methods(server, product):
 
 
 @hard_timeout
-async def test_connect_async_forwards_events(server):
-    ws = product_ws(server.url, "stock")
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_forwards_events(server, product):
+    ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     await ws.connect_async()
     try:
@@ -255,8 +256,9 @@ async def test_connect_async_forwards_events(server):
 
 
 @hard_timeout
-async def test_connect_async_rejected_key_fires_unauthenticated_before_raising(server):
-    ws = product_ws(server.url, "stock", api_key=REJECTED_API_KEY)
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_rejected_key_fires_unauthenticated_before_raising(server, product):
+    ws = product_ws(server.url, product, api_key=REJECTED_API_KEY)
     recorder = Recorder(ws)
 
     with pytest.raises(AuthError):

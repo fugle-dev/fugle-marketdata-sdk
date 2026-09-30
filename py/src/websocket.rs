@@ -1413,6 +1413,239 @@ async fn join_parked_reader_threads_async(parked: &ParkedReaders) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Async methods shared by the stock and futopt clients (#272)
+//
+// Each client's `*_async` method only gathers its own handles; the awaitable
+// is built here, so both products join a reconnect (#230), admit concurrent
+// connects together (#268), wait only for their own reader (#277) and admit
+// through core (#271) in the same code.
+// ---------------------------------------------------------------------------
+
+/// What `connect_async()` takes from a product client, owned so its
+/// awaitable can outlive the call.
+struct AsyncConnect {
+    /// The same config `connect()` uses, TLS settings included. Should
+    /// `build_config()` fail, it falls back to the production endpoint as for
+    /// `connect()`; `connect_async()` used to raise `TypeError` on await
+    /// instead.
+    config: marketdata_core::ConnectionConfig,
+    reconnect_config: marketdata_core::ReconnectionConfig,
+    health_check_config: marketdata_core::HealthCheckConfig,
+    reader_name: &'static str,
+    callbacks: Arc<CallbackRegistry>,
+    state: Arc<Mutex<Option<WebSocketState>>>,
+    parked_readers: Arc<ParkedReaders>,
+    messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    reconnect_conflict: marketdata_core::ReconnectConflictHandle,
+    connect_gate: ConnectGate,
+    pending: PendingSlot,
+    closed: Arc<AtomicBool>,
+    test_panic: Option<String>,
+}
+
+impl AsyncConnect {
+    async fn run(self) -> PyResult<()> {
+        let Self {
+            config,
+            reconnect_config,
+            health_check_config,
+            reader_name,
+            callbacks,
+            state,
+            parked_readers,
+            messages_dropped,
+            reconnect_conflict,
+            connect_gate,
+            pending,
+            closed,
+            test_panic,
+        } = self;
+        let Some(_claim) = admitted(admit(&connect_gate, || read_stored(&state)).await)? else {
+            return Ok(());
+        };
+        let capacity = handoff_capacity(&config);
+        let ws_client = Arc::new(marketdata_core::aio::WebSocketClient::with_full_config(
+            config,
+            reconnect_config,
+            health_check_config,
+        ));
+        if let Ok(mut slot) = messages_dropped.lock() {
+            *slot = Some(ws_client.messages_dropped_handle());
+        }
+        // Before connect(): it warns about the previous connection's close.
+        ws_client.use_reconnect_conflict_handle(&reconnect_conflict);
+
+        let handoff = Arc::new(Handoff::new(capacity));
+        let stop = Arc::new(AtomicBool::new(false));
+        let delivered = Delivered::default();
+        let reader_thread = spawn_stream_reader(
+            reader_name,
+            ws_client.stream_receiver(),
+            callbacks,
+            Arc::clone(&handoff),
+            Arc::clone(&stop),
+            delivered.clone(),
+            test_panic,
+        )?;
+
+        // From here a `disconnect()` aborts this connect (#143).
+        *pending.lock().map_err(lock_err)? = Some(PendingConnect {
+            client: Arc::clone(&ws_client),
+            reader_thread,
+            stop: Arc::clone(&stop),
+        });
+        let _cancelled = ClearPendingOnDrop(Arc::clone(&pending));
+
+        // Connect without holding GIL
+        let result = ws_client.connect().await;
+        let outcome = settle_connect(
+            &pending,
+            &state,
+            &parked_readers,
+            &closed,
+            result,
+            |reader| WebSocketState {
+                inner: Arc::clone(&ws_client),
+                handoff,
+                stop,
+                delivered,
+                reader: Some(reader),
+            },
+        )?;
+        match outcome {
+            ConnectOutcome::Installed => Ok(()),
+            ConnectOutcome::Failed(e, reader_thread) => {
+                // See `connect`: callbacks for the failure fire before we raise.
+                drop(ws_client);
+                join_reader_thread_async(Some(reader_thread)).await;
+                Err(errors::to_py_err(e))
+            }
+            ConnectOutcome::Aborted(e) => Err(errors::to_py_err(e)),
+        }
+    }
+}
+
+/// The awaitable of `connect_async()`.
+fn connect_async_awaitable<'py>(py: Python<'py>, connect: AsyncConnect) -> PyResult<Bound<'py, PyAny>> {
+    future_into_py(py, connect.run())
+}
+
+/// The awaitable of `__aenter__`: connects, then resolves to the client, so
+/// `async with ws.stock as client` binds the client rather than `None`.
+fn aenter_awaitable<'py>(
+    py: Python<'py>,
+    connect: AsyncConnect,
+    client: Py<PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    future_into_py(py, async move {
+        connect.run().await?;
+        Ok(client)
+    })
+}
+
+/// The awaitable of `disconnect_async()`.
+fn disconnect_async_awaitable<'py>(
+    py: Python<'py>,
+    state_arc: Arc<Mutex<Option<WebSocketState>>>,
+    parked_readers: Arc<ParkedReaders>,
+    closed: Arc<AtomicBool>,
+    pending: PendingSlot,
+) -> PyResult<Bound<'py, PyAny>> {
+    future_into_py(py, async move {
+        let (mut target, aborted_reader) = take_close_target(&pending, &state_arc)?;
+        // See `disconnect` (#277).
+        let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
+
+        if !target.is_empty() {
+            // See `disconnect`.
+            closed.store(true, Ordering::SeqCst);
+            if let Some(state) = &target.live {
+                state.stop.store(true, Ordering::SeqCst);
+            }
+            if let Some(stop) = &target.connecting_stop {
+                stop.store(true, Ordering::SeqCst);
+            }
+            target.disconnect().await;
+            // Note: do NOT manually invoke_disconnect — core's disconnect()
+            // emits ConnectionEvent::Disconnected on its stream and the
+            // stream reader fires the user callback.
+            //
+            // Nothing else to release: this path runs on
+            // pyo3-async-runtimes' runtime, not `self.runtime`, and
+            // core's disconnect() has already stopped the dispatch and
+            // writer tasks, so dropping the client closes its stream
+            // (#54).
+            drop(target);
+        }
+
+        join_reader_thread_async(own_reader).await;
+        join_reader_thread_async(aborted_reader).await;
+        join_parked_reader_threads_async(&parked_readers).await;
+
+        Ok(())
+    })
+}
+
+/// Resolve `subscribe_async()`'s dual-shape input while the GIL is held, so
+/// its awaitable only deals with owned, Send-safe data: `(channel, symbols,
+/// modifier)`.
+fn resolve_subscribe_async_args(
+    channel: &Bound<'_, PyAny>,
+    symbol: Option<&str>,
+    symbols: Option<Vec<String>>,
+    flag: bool,
+    modifier: Modifier,
+) -> PyResult<(String, Vec<String>, bool)> {
+    if let Ok(d) = channel.cast::<PyDict>() {
+        extract_subscribe_dict("subscribe", d, modifier)
+    } else if let Ok(s) = channel.extract::<String>() {
+        let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
+        Ok((s, syms, flag))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "subscribe_async() first argument must be a dict or channel string",
+        ))
+    }
+}
+
+/// The connected core client for `subscribe_async()`, cloned out of the lock
+/// so no guard is held across its await.
+fn subscribe_async_client(
+    state_arc: &Mutex<Option<WebSocketState>>,
+) -> PyResult<Arc<marketdata_core::aio::WebSocketClient>> {
+    let state_guard = state_arc
+        .lock()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e)))?;
+    let state = state_guard
+        .as_ref()
+        .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first."))?;
+    Ok(Arc::clone(&state.inner))
+}
+
+/// The awaitable of `measure_latency_async()`.
+fn measure_latency_async_awaitable<'py>(
+    py: Python<'py>,
+    state_arc: Arc<Mutex<Option<WebSocketState>>>,
+    timeout_ms: Option<u64>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let timeout = timeout_ms.map(Duration::from_millis);
+    future_into_py(py, async move {
+        // Cloned out of the lock so no guard is held across the await.
+        let ws_client = state_arc
+            .lock()
+            .map_err(lock_err)?
+            .as_ref()
+            .map(|state| Arc::clone(&state.inner))
+            .ok_or_else(|| errors::to_py_err(marketdata_core::MarketDataError::ClientClosed))?;
+        ws_client
+            .measure_latency(timeout)
+            .await
+            .map(|rtt| rtt.as_secs_f64() * 1000.0)
+            .map_err(errors::to_py_err)
+    })
+}
+
 /// Stock market WebSocket client
 ///
 /// Access via `ws.stock`
@@ -1523,6 +1756,27 @@ impl StockWebSocketClient {
             *runtime_guard = Some(Arc::new(rt));
         }
         Ok(())
+    }
+
+    /// What `connect_async()` / `__aenter__` take from this client.
+    fn async_connect(&self) -> PyResult<AsyncConnect> {
+        // `subscribe()` after an async connect runs on this runtime.
+        self.ensure_runtime().map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        Ok(AsyncConnect {
+            config: self.build_config(),
+            reconnect_config: self.reconnect_config.to_core(),
+            health_check_config: self.health_check_config.to_core(),
+            reader_name: "stock_ws_stream",
+            callbacks: Arc::clone(&self.callbacks),
+            state: Arc::clone(&self.state),
+            parked_readers: Arc::clone(&self.parked_readers),
+            messages_dropped: Arc::clone(&self.messages_dropped),
+            reconnect_conflict: self.reconnect_conflict.clone(),
+            connect_gate: self.connect_gate.clone(),
+            pending: Arc::clone(&self.pending),
+            closed: Arc::clone(&self.closed),
+            test_panic: test_panic_site(),
+        })
     }
 
 }
@@ -2082,105 +2336,7 @@ impl StockWebSocketClient {
     ///     await ws.stock.connect_async()
     ///     ```
     pub fn connect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        // Ensure runtime exists
-        self.ensure_runtime().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e)
-        })?;
-
-        let auth = self.auth.clone();
-        let stock_version = self.stock_version;
-        let futopt_version = self.futopt_version;
-        let base_url = self.base_url.clone();
-        let reconnect_config = self.reconnect_config.to_core();
-        let health_check_config = self.health_check_config.to_core();
-        let callbacks = Arc::clone(&self.callbacks);
-        let state_arc = Arc::clone(&self.state);
-        let parked_readers = Arc::clone(&self.parked_readers);
-        let message_queue = self.message_queue;
-        let auth_timeout = self.auth_timeout;
-        let messages_dropped = Arc::clone(&self.messages_dropped);
-        let reconnect_conflict = self.reconnect_conflict.clone();
-        let test_panic = test_panic_site();
-        let connect_gate = self.connect_gate.clone();
-        let pending = Arc::clone(&self.pending);
-        let closed = Arc::clone(&self.closed);
-
-        future_into_py(py, async move {
-            let Some(_claim) = admitted(admit(&connect_gate, || read_stored(&state_arc)).await)? else {
-                return Ok(());
-            };
-            // Create WebSocket client with full config
-            let config = build_stream_config(
-                &auth,
-                base_url.as_deref(),
-                WsProduct::Stock,
-                stock_version,
-                futopt_version,
-            )
-            .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
-            let mut config = config;
-            message_queue.apply(&mut config);
-            config.auth_timeout = auth_timeout;
-            let capacity = handoff_capacity(&config);
-            let ws_client = Arc::new(marketdata_core::aio::WebSocketClient::with_full_config(
-                config,
-                reconnect_config,
-                health_check_config,
-            ));
-            if let Ok(mut slot) = messages_dropped.lock() {
-                *slot = Some(ws_client.messages_dropped_handle());
-            }
-            // Before connect(): it warns about the previous connection's close.
-            ws_client.use_reconnect_conflict_handle(&reconnect_conflict);
-
-            let handoff = Arc::new(Handoff::new(capacity));
-            let stop = Arc::new(AtomicBool::new(false));
-            let delivered = Delivered::default();
-            let reader_thread = spawn_stream_reader(
-                "stock_ws_stream",
-                ws_client.stream_receiver(),
-                Arc::clone(&callbacks),
-                Arc::clone(&handoff),
-                Arc::clone(&stop),
-                delivered.clone(),
-                test_panic,
-            )?;
-
-            // From here a `disconnect()` aborts this connect (#143).
-            *pending.lock().map_err(lock_err)? = Some(PendingConnect {
-                client: Arc::clone(&ws_client),
-                reader_thread,
-                stop: Arc::clone(&stop),
-            });
-            let _cancelled = ClearPendingOnDrop(Arc::clone(&pending));
-
-            // Connect without holding GIL
-            let result = ws_client.connect().await;
-            let outcome = settle_connect(
-                &pending,
-                &state_arc,
-                &parked_readers,
-                &closed,
-                result,
-                |reader| WebSocketState {
-                    inner: Arc::clone(&ws_client),
-                    handoff,
-                    stop,
-                    delivered,
-                    reader: Some(reader),
-                },
-            )?;
-            match outcome {
-                ConnectOutcome::Installed => Ok(()),
-                ConnectOutcome::Failed(e, reader_thread) => {
-                    // See `connect`: callbacks for the failure fire before we raise.
-                    drop(ws_client);
-                    join_reader_thread_async(Some(reader_thread)).await;
-                    Err(crate::errors::to_py_err(e))
-                }
-                ConnectOutcome::Aborted(e) => Err(crate::errors::to_py_err(e)),
-            }
-        })
+        connect_async_awaitable(py, self.async_connect()?)
     }
 
     /// Disconnect from WebSocket server (async version)
@@ -2192,44 +2348,13 @@ impl StockWebSocketClient {
     ///     await ws.stock.disconnect_async()
     ///     ```
     pub fn disconnect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let state_arc = Arc::clone(&self.state);
-        let parked_readers = Arc::clone(&self.parked_readers);
-        let closed = Arc::clone(&self.closed);
-        let pending = Arc::clone(&self.pending);
-
-        future_into_py(py, async move {
-            let (mut target, aborted_reader) = take_close_target(&pending, &state_arc)?;
-            // See `disconnect` (#277).
-            let own_reader = target.live.as_mut().and_then(|state| state.reader.take());
-
-            if !target.is_empty() {
-                // See `disconnect`.
-                closed.store(true, Ordering::SeqCst);
-                if let Some(state) = &target.live {
-                    state.stop.store(true, Ordering::SeqCst);
-                }
-                if let Some(stop) = &target.connecting_stop {
-                    stop.store(true, Ordering::SeqCst);
-                }
-                target.disconnect().await;
-                // Note: do NOT manually invoke_disconnect — core's disconnect()
-                // emits ConnectionEvent::Disconnected on its stream and the
-                // stream reader fires the user callback.
-                //
-                // Nothing else to release: this path runs on
-                // pyo3-async-runtimes' runtime, not `self.runtime`, and
-                // core's disconnect() has already stopped the dispatch and
-                // writer tasks, so dropping the client closes its stream
-                // (#54).
-                drop(target);
-            }
-
-            join_reader_thread_async(own_reader).await;
-            join_reader_thread_async(aborted_reader).await;
-            join_parked_reader_threads_async(&parked_readers).await;
-
-            Ok(())
-        })
+        disconnect_async_awaitable(
+            py,
+            Arc::clone(&self.state),
+            Arc::clone(&self.parked_readers),
+            Arc::clone(&self.closed),
+            Arc::clone(&self.pending),
+        )
     }
 
     /// Subscribe to a channel (async version)
@@ -2256,20 +2381,8 @@ impl StockWebSocketClient {
         symbols: Option<Vec<String>>,
         odd_lot: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        // Resolve dual-shape input synchronously (we still hold the GIL here)
-        // so the async block only deals with owned, Send-safe data.
         let (channel_str, target_symbols, effective_odd_lot) =
-            if let Ok(d) = channel.cast::<PyDict>() {
-                extract_subscribe_dict("subscribe", d, ODD_LOT)?
-            } else if let Ok(s) = channel.extract::<String>() {
-                let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
-                (s, syms, odd_lot)
-            } else {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "subscribe_async() first argument must be a dict or channel string",
-                ));
-            };
-
+            resolve_subscribe_async_args(channel, symbol, symbols, odd_lot, ODD_LOT)?;
         let state_arc = Arc::clone(&self.state);
 
         future_into_py(py, async move {
@@ -2277,22 +2390,10 @@ impl StockWebSocketClient {
             let ch = channel_str
                 .parse::<marketdata_core::Channel>()
                 .map_err(errors::to_py_err)?;
-
-            // Clone the Arc<WebSocketClient> out of mutex to avoid holding guard across await
-            let ws_client = {
-                let state_guard = state_arc.lock()
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Lock error: {}", e)))?;
-                let state = state_guard.as_ref()
-                    .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first."))?;
-                Arc::clone(&state.inner)
-            };
-
+            let ws_client = subscribe_async_client(&state_arc)?;
             let sub = marketdata_core::StockSubscription::new(ch, target_symbols)
                 .with_odd_lot(effective_odd_lot);
-            ws_client.subscribe(sub).await
-                .map_err(crate::errors::to_py_err)?;
-
-            Ok(())
+            ws_client.subscribe(sub).await.map_err(errors::to_py_err)
         })
     }
 
@@ -2307,33 +2408,22 @@ impl StockWebSocketClient {
         py: Python<'py>,
         timeout_ms: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let state_arc = Arc::clone(&self.state);
-        let timeout = timeout_ms.map(Duration::from_millis);
-        future_into_py(py, async move {
-            // Cloned out of the lock so no guard is held across the await.
-            let ws_client = state_arc
-                .lock()
-                .map_err(lock_err)?
-                .as_ref()
-                .map(|state| Arc::clone(&state.inner))
-                .ok_or_else(|| errors::to_py_err(marketdata_core::MarketDataError::ClientClosed))?;
-            ws_client
-                .measure_latency(timeout)
-                .await
-                .map(|rtt| rtt.as_secs_f64() * 1000.0)
-                .map_err(errors::to_py_err)
-        })
+        measure_latency_async_awaitable(py, Arc::clone(&self.state), timeout_ms)
     }
 
     /// Async context manager support: enter
     ///
+    /// Connects, then gives the client itself to `as`.
+    ///
     /// Example:
     ///     ```python
     ///     async with ws.stock as client:
-    ///         await client.subscribe("trades", "2330")
+    ///         await client.subscribe_async("trades", "2330")
     ///     ```
     fn __aenter__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        slf.connect_async(py)
+        let connect = slf.async_connect()?;
+        let client: Py<StockWebSocketClient> = slf.into();
+        aenter_awaitable(py, connect, client.into_any())
     }
 
     /// Async context manager support: exit
@@ -2451,6 +2541,27 @@ impl FutOptWebSocketClient {
             *runtime_guard = Some(Arc::new(rt));
         }
         Ok(())
+    }
+
+    /// What `connect_async()` / `__aenter__` take from this client.
+    fn async_connect(&self) -> PyResult<AsyncConnect> {
+        // `subscribe()` after an async connect runs on this runtime.
+        self.ensure_runtime().map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+        Ok(AsyncConnect {
+            config: self.build_config(),
+            reconnect_config: self.reconnect_config.to_core(),
+            health_check_config: self.health_check_config.to_core(),
+            reader_name: "futopt_ws_stream",
+            callbacks: Arc::clone(&self.callbacks),
+            state: Arc::clone(&self.state),
+            parked_readers: Arc::clone(&self.parked_readers),
+            messages_dropped: Arc::clone(&self.messages_dropped),
+            reconnect_conflict: self.reconnect_conflict.clone(),
+            connect_gate: self.connect_gate.clone(),
+            pending: Arc::clone(&self.pending),
+            closed: Arc::clone(&self.closed),
+            test_panic: test_panic_site(),
+        })
     }
 }
 
@@ -2947,6 +3058,134 @@ impl FutOptWebSocketClient {
         block_on_detached(py, runtime, async move { inner.measure_latency(timeout).await })
             .map(|rtt| rtt.as_secs_f64() * 1000.0)
             .map_err(errors::to_py_err)
+    }
+
+    /// Connect to WebSocket server (async version)
+    ///
+    /// Returns an awaitable that completes when connection is established.
+    /// Releases GIL during connection, enabling concurrent Python tasks.
+    ///
+    /// During an automatic reconnect it opens no connection of its own: it
+    /// waits for that reconnect and returns once the connection is back and the
+    /// subscriptions are re-sent, so a subscribe() afterwards follows them.
+    /// Called from a callback, it holds up the callbacks until the reconnect
+    /// ends.
+    ///
+    /// Raises:
+    ///     MarketDataError: If connection fails
+    ///     WebSocketError: Code 2011 if already connected or another connect is
+    ///         in progress. While waiting on a reconnect: code 2010 if
+    ///         disconnect() is called, code 3005 if the reconnect runs out of
+    ///         attempts
+    ///     AuthError: While waiting on a reconnect, if its credentials are
+    ///         rejected
+    ///
+    /// Example:
+    ///     ```python
+    ///     await ws.futopt.connect_async()
+    ///     ```
+    pub fn connect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        connect_async_awaitable(py, self.async_connect()?)
+    }
+
+    /// Disconnect from WebSocket server (async version)
+    ///
+    /// Returns an awaitable that completes when disconnection finishes.
+    ///
+    /// Example:
+    ///     ```python
+    ///     await ws.futopt.disconnect_async()
+    ///     ```
+    pub fn disconnect_async<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        disconnect_async_awaitable(
+            py,
+            Arc::clone(&self.state),
+            Arc::clone(&self.parked_readers),
+            Arc::clone(&self.closed),
+            Arc::clone(&self.pending),
+        )
+    }
+
+    /// Subscribe to a channel (async version)
+    ///
+    /// Args:
+    ///     channel: Channel name (trades, candles, books, aggregates)
+    ///     symbol: FutOpt symbol (e.g., "TXFC4")
+    ///     after_hours: Whether to subscribe to after-hours data (default: False)
+    ///
+    /// Returns:
+    ///     Awaitable that completes when subscription is confirmed
+    ///
+    /// Example:
+    ///     ```python
+    ///     await ws.futopt.subscribe_async("trades", "TXFC4")
+    ///     await ws.futopt.subscribe_async({"channel": "trades", "symbol": "TXFC4"})
+    ///     ```
+    #[pyo3(signature = (channel, symbol=None, *, symbols=None, after_hours=false))]
+    pub fn subscribe_async<'py>(
+        &self,
+        py: Python<'py>,
+        channel: &Bound<'py, PyAny>,
+        symbol: Option<&str>,
+        symbols: Option<Vec<String>>,
+        after_hours: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let (channel_str, target_symbols, effective_after_hours) =
+            resolve_subscribe_async_args(channel, symbol, symbols, after_hours, AFTER_HOURS)?;
+        let state_arc = Arc::clone(&self.state);
+
+        future_into_py(py, async move {
+            // Parsed before the connection check; raised on await.
+            let ch = channel_str
+                .parse::<marketdata_core::FutOptChannel>()
+                .map_err(errors::to_py_err)?;
+            let ws_client = subscribe_async_client(&state_arc)?;
+            let sub = marketdata_core::FutOptSubscription::new(ch, target_symbols)
+                .with_after_hours(effective_after_hours);
+            ws_client.subscribe_futopt(sub).await.map_err(errors::to_py_err)
+        })
+    }
+
+    /// Measure the round trip to the server (async version of
+    /// `measure_latency()`); resolves to milliseconds.
+    ///
+    /// Args:
+    ///     timeout_ms: How long to wait for the pong (default: 5000)
+    #[pyo3(signature = (timeout_ms=None))]
+    pub fn measure_latency_async<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_ms: Option<u64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        measure_latency_async_awaitable(py, Arc::clone(&self.state), timeout_ms)
+    }
+
+    /// Async context manager support: enter
+    ///
+    /// Connects, then gives the client itself to `as`.
+    ///
+    /// Example:
+    ///     ```python
+    ///     async with ws.futopt as client:
+    ///         await client.subscribe_async("trades", "TXFC4")
+    ///     ```
+    fn __aenter__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let connect = slf.async_connect()?;
+        let client: Py<FutOptWebSocketClient> = slf.into();
+        aenter_awaitable(py, connect, client.into_any())
+    }
+
+    /// Async context manager support: exit
+    ///
+    /// Automatically disconnects when exiting async with block.
+    fn __aexit__<'py>(
+        &self,
+        py: Python<'py>,
+        _exc_type: &Bound<'py, PyAny>,
+        _exc_value: &Bound<'py, PyAny>,
+        _traceback: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.disconnect_async(py)
     }
 }
 
