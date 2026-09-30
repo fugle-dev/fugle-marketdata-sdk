@@ -457,7 +457,7 @@ class StockIntradayClient:
         is_disposition: bool | None = None,
         is_halted: bool | None = None,
         symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Get batch ticker list for a security type.
 
         Args:
@@ -472,7 +472,7 @@ class StockIntradayClient:
             symbol: Comma-separated symbols to restrict the list to
 
         Returns:
-            List of ticker info dicts
+            Response envelope: the query fields (``date``, ``type``, ``exchange``, ...) and ``data``, the list of ticker info dicts
 
         Raises:
             MarketDataError: If the request fails
@@ -529,7 +529,7 @@ class StockIntradayClient:
         is_disposition: bool | None = None,
         is_halted: bool | None = None,
         symbol: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Blocking version of `tickers()`."""
         ...
 
@@ -1425,7 +1425,7 @@ class FutOptIntradayClient:
         contract_type: str | None = None,
         is_spread: bool | None = None,
         product: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Get batch ticker list for a FutOpt contract type.
 
         Args:
@@ -1437,7 +1437,7 @@ class FutOptIntradayClient:
             product: Only contracts of this product (e.g., "TXF")
 
         Returns:
-            List of FutOpt ticker info dicts
+            Response envelope: the query fields (``date``, ``type``, ``exchange``, ``session``, ...) and ``data``, the list of FutOpt ticker info dicts
 
         Raises:
             MarketDataError: If the request fails
@@ -1452,7 +1452,7 @@ class FutOptIntradayClient:
         exchange: str | None = None,
         after_hours: Optional[bool] = None,
         status: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Get available FutOpt products list.
 
         Args:
@@ -1463,7 +1463,7 @@ class FutOptIntradayClient:
             status: Product status, "N", "P" or "U"
 
         Returns:
-            List of product info dicts
+            Response envelope: the query fields (``date``, ``type``, ``exchange``, ``session``, ...) and ``data``, the list of product info dicts
 
         Raises:
             MarketDataError: If the request fails
@@ -1515,7 +1515,7 @@ class FutOptIntradayClient:
         contract_type: str | None = None,
         is_spread: bool | None = None,
         product: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Blocking version of `tickers()`."""
         ...
 
@@ -1527,7 +1527,7 @@ class FutOptIntradayClient:
         exchange: str | None = None,
         after_hours: Optional[bool] = None,
         status: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Blocking version of `products()`."""
         ...
 

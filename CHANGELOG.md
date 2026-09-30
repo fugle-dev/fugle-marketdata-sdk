@@ -113,6 +113,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python: the type stubs declare `tickers()` and `products()` as returning
+  a dict** (#288). `.pyi` declared stock `intraday.tickers()` and futopt
+  `intraday.tickers()` / `products()` (and their `_async` forms) as returning
+  `list[dict]`, but they return the server's envelope, a dict with the query
+  fields and the items under `data`. Runtime behaviour is unchanged.
 - **Python: the type stubs declare the WebSocket `subscribe()` flags as
   `bool`** (#285). `.pyi` declared `odd_lot` (stock `subscribe()` and
   `subscribe_async()`) and `after_hours` (futopt `subscribe()`) as
