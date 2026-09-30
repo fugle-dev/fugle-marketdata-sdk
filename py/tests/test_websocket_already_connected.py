@@ -11,16 +11,17 @@ import threading
 import pytest
 
 from fugle_marketdata import MarketDataError, WebSocketError
-from tests.ws_loopback import TIMEOUT_S, LoopbackServer, disconnect_quietly, product_ws
+from tests.ws_loopback import (
+    TIMEOUT_S,
+    LoopbackServer,
+    disconnect_quietly,
+    product_ws,
+    to_thread,
+)
 
 PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
 
 hard_timeout = pytest.mark.timeout(20, method="thread")
-
-
-async def to_thread(func, *args):
-    """``asyncio.to_thread``, which Python 3.8 lacks."""
-    return await asyncio.get_running_loop().run_in_executor(None, func, *args)
 
 
 class StallingServer:
