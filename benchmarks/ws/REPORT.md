@@ -651,14 +651,14 @@ $BENCH_PY_NEW py/bench-new.py --url ws://localhost:8765 --timeout 30 --mode raw
 | `js/bench-new.js` | New SDK (JS) benchmark client |
 | `js/bench-old.js` | Old SDK (JS, `@fugle/marketdata@1.6.0`) benchmark client |
 | `js/bench-null.js` | Null client: raw `ws`, no SDK, no parsing -- the consumer ceiling |
-| `py/bench-new.py` | New SDK (Python) benchmark client; `--mode dict\|raw-loads\|dict-count\|raw` picks the message path and the callback's work (#246); `--mode aiter` reads with `async for` instead (#260) |
+| `py/bench-new.py` | New SDK (Python) benchmark client; `--mode dict\|raw-loads\|dict-count\|raw` picks the message path and the callback's work (#246); `--mode aiter` reads with `async for` instead (#260); `--mode aiter-lag` also runs a second task on the event loop that sleeps 1 ms at a time and reports how late it woke: `lag_p50_ms` / `lag_p99_ms` / `lag_max_ms` and `lag_wakeups` (#267) |
 | `py/bench-old.py` | Old SDK (Python, `fugle-marketdata==2.7.0rc1`) benchmark client |
 | `cs/` | New SDK (C#, UniFFI) benchmark client (.NET 8 project) |
 | `go/` | New SDK (Go, UniFFI) benchmark client |
 | `java/` | New SDK (Java, UniFFI+JNA) benchmark client |
 | `cpp/` | New SDK (C++, UniFFI) benchmark client |
 | `py/run-modes.py` | Runs `py/bench-new.py` in each `--mode` plus the null client, writes `results/<date>/` and regenerates the #246 sections of this report |
-| `py/run-compare.py` | Runs one `py/bench-new.py --mode` (default `aiter`) with two interpreters, `--base` and `--head`, plus the null client, and prints the medians; writes nothing |
+| `py/run-compare.py` | Runs one `py/bench-new.py --mode` (default `aiter`) with two interpreters, `--base` and `--head`, plus the null client, and prints the medians (with `--mode aiter-lag`, the `lag_*` figures too); writes nothing. The clients take turns going first. `--stop-above-gate` stops before a run that would start at or above the load gate |
 | `ws-bench-run.js` | Runner: starts server, runs clients, compares results |
 | `package.json` | Dependencies: `ws`, `@fugle/marketdata@1.6.0` |
 | `results/` | Raw output of the runs behind each dated report |
