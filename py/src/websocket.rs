@@ -1927,6 +1927,15 @@ impl StockWebSocketClient {
         Ok(())
     }
 
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url`
+    /// (host and path prefix), the version segment picked by `version`, then
+    /// the product path. Readable before `connect()`.
+    #[getter]
+    pub fn url(&self) -> String {
+        self.build_config().url
+    }
+
     /// Messages dropped because they arrived while `message_buffer` unread
     /// messages were already held (`message_overflow="drop_newest"`).
     ///
@@ -2751,6 +2760,15 @@ impl FutOptWebSocketClient {
         result.map_err(errors::to_py_err)?;
 
         Ok(())
+    }
+
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`: `base_url`
+    /// (host and path prefix), the version segment picked by `version`, then
+    /// the product path. Readable before `connect()`.
+    #[getter]
+    pub fn url(&self) -> String {
+        self.build_config().url
     }
 
     /// Messages dropped because they arrived while `message_buffer` unread

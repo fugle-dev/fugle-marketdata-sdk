@@ -122,5 +122,16 @@ public interface WebSocketClientInterface {
      */
     public CompletableFuture<Void> unsubscribeIds(List<String> ids) ;
     
+    /**
+     * The endpoint this client connects to, e.g.
+     * `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+     * and path prefix), the version segment picked by `version`, then the
+     * product path. Readable before `connect()`.
+     *
+     * Returns the `ConfigError` (code 1004) `connect()` would, when
+     * `base_url` or `version` is invalid.
+     */
+    public String url() throws MarketDataException;
+    
 }
 

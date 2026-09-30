@@ -370,3 +370,27 @@ class TestWebSocketClientKwargsConstructor:
         """ws.futopt property still works."""
         ws = WebSocketClient(api_key="key")
         assert ws.futopt is not None
+
+
+class TestWebSocketUrl:
+    """`url` is the endpoint core resolved, readable before connect() (#245)."""
+
+    def test_defaults_to_production_endpoints(self):
+        ws = WebSocketClient(api_key="key")
+        assert ws.stock.url == "wss://api.fugle.tw/marketdata/v1.0/stock/streaming"
+        assert ws.futopt.url == "wss://api.fugle.tw/marketdata/v1.1/futopt/streaming"
+
+    def test_reflects_version(self):
+        ws = WebSocketClient(api_key="key", version={"futopt": "v1.0"})
+        assert ws.futopt.url.endswith("/v1.0/futopt/streaming")
+        assert ws.stock.url.endswith("/v1.0/stock/streaming")
+
+    def test_reflects_base_url(self):
+        ws = WebSocketClient(api_key="key", base_url="wss://custom.ws/marketdata")
+        assert ws.stock.url == "wss://custom.ws/marketdata/v1.0/stock/streaming"
+        assert ws.futopt.url == "wss://custom.ws/marketdata/v1.1/futopt/streaming"
+
+    def test_is_read_only(self):
+        ws = WebSocketClient(api_key="key")
+        with pytest.raises(AttributeError):
+            ws.stock.url = "wss://elsewhere"

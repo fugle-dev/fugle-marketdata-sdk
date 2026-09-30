@@ -1795,6 +1795,12 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_websocketclient_url(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_clone_websocketlistener(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -2510,6 +2516,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_url();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected();
@@ -3539,6 +3548,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids` checksum `5738`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_url();
+            if (checksum != 35204)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_url` checksum `35204`, library returned `{checksum}`"
                 );
             }
         }
@@ -8663,6 +8682,18 @@ public interface IWebSocketClient
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
     Task UnsubscribeIds(string[] @ids);
+
+    /// <summary>
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+    /// and path prefix), the version segment picked by `version`, then the
+    /// product path. Readable before `connect()`.
+    ///
+    /// Returns the `ConfigError` (code 1004) `connect()` would, when
+    /// `base_url` or `version` is invalid.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    string Url();
 }
 
 /// <summary>
@@ -9158,6 +9189,32 @@ public class WebSocketClient : IWebSocketClient, IDisposable
             (IntPtr future) => _UniFFILib.ffi_marketdata_uniffi_rust_future_free_void(future),
             // Error
             FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// The endpoint this client connects to, e.g.
+    /// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+    /// and path prefix), the version segment picked by `version`, then the
+    /// product path. Readable before `connect()`.
+    ///
+    /// Returns the `ConfigError` (code 1004) `connect()` would, when
+    /// `base_url` or `version` is invalid.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public string Url()
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterString.INSTANCE.Lift(
+                _UniffiHelpers.RustCallWithError(
+                    FfiConverterTypeMarketDataError.INSTANCE,
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_url(
+                            thisPtr,
+                            ref _status
+                        )
+                )
+            )
         );
     }
 

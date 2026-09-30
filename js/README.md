@@ -360,7 +360,7 @@ class WebSocketClient {
 }
 
 class StockWebSocketClient {
-  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): void;
+  on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this; // chainable
   connect(): Promise<WebSocketAuthData | undefined>;
   ping(params?: string | { state?: unknown }): void;   // fire and forget; pong via 'message'
   measureLatency(timeoutMs?: number): Promise<number>; // round trip in ms
@@ -370,6 +370,7 @@ class StockWebSocketClient {
   disconnect(): void;
   get isConnected(): boolean;
   get isClosed(): boolean;
+  get url(): string;   // resolved endpoint, e.g. wss://api.fugle.tw/marketdata/v1.0/stock/streaming
 }
 
 // FutOptWebSocketClient has the same API

@@ -1246,6 +1246,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_url()
+		})
+		if checksum != 35204 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_url: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketlistener_on_connected()
 		})
 		if checksum != 42437 {
@@ -4515,6 +4524,14 @@ type WebSocketClientInterface interface {
 	// Removes the subscriptions those ids name, so a reconnect does not
 	// restore them. An empty list is 1005 `INVALID_PARAMETER`.
 	UnsubscribeIds(ids []string) error
+	// The endpoint this client connects to, e.g.
+	// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+	// and path prefix), the version segment picked by `version`, then the
+	// product path. Readable before `connect()`.
+	//
+	// Returns the `ConfigError` (code 1004) `connect()` would, when
+	// `base_url` or `version` is invalid.
+	Url() (string, error)
 }
 
 // WebSocket client for real-time market data streaming
@@ -4976,6 +4993,30 @@ func (_self *WebSocketClient) UnsubscribeIds(ids []string) error {
 	}
 
 	return err
+}
+
+// The endpoint this client connects to, e.g.
+// `wss://api.fugle.tw/marketdata/v1.0/stock/streaming`: `base_url` (host
+// and path prefix), the version segment picked by `version`, then the
+// product path. Readable before `connect()`.
+//
+// Returns the `ConfigError` (code 1004) `connect()` would, when
+// `base_url` or `version` is invalid.
+func (_self *WebSocketClient) Url() (string, error) {
+	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
+	defer _self.ffiObject.decrementPointer()
+	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_method_websocketclient_url(
+				_pointer, _uniffiStatus),
+		}
+	})
+	if _uniffiErr != nil {
+		var _uniffiDefaultValue string
+		return _uniffiDefaultValue, _uniffiErr
+	} else {
+		return FfiConverterStringINSTANCE.Lift(_uniffiRV), nil
+	}
 }
 func (object *WebSocketClient) Destroy() {
 	runtime.SetFinalizer(object, nil)

@@ -2014,6 +2014,17 @@ class StockWebSocketClient:
         """
         ...
 
+    @property
+    def url(self) -> str:
+        """The endpoint this client connects to.
+
+        base_url (host and path prefix), the version segment picked by
+        version, then the product path, e.g.
+        wss://api.fugle.tw/marketdata/v1.0/stock/streaming. Readable before
+        connect().
+        """
+        ...
+
     def messages_dropped_total(self) -> int:
         """Messages dropped because message_buffer were unread.
 
@@ -2269,6 +2280,17 @@ class FutOptWebSocketClient:
 
         Returns:
             True if connected, False otherwise
+        """
+        ...
+
+    @property
+    def url(self) -> str:
+        """The endpoint this client connects to.
+
+        base_url (host and path prefix), the version segment picked by
+        version, then the product path, e.g.
+        wss://api.fugle.tw/marketdata/v1.1/futopt/streaming. Readable before
+        connect().
         """
         ...
 

@@ -541,6 +541,15 @@ namespace FugleMarketData
         public bool IsClosed => _inner.IsClosed();
 
         /// <summary>
+        /// The endpoint this client connects to, e.g.
+        /// <c>wss://api.fugle.tw/marketdata/v1.0/stock/streaming</c>: the base
+        /// URL (host and path prefix), the version segment picked by the
+        /// version option, then the product path. Readable before connecting.
+        /// </summary>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 if the base URL or version is invalid, as connecting would report</exception>
+        public string Url => _inner.Url();
+
+        /// <summary>
         /// Messages dropped because they arrived while the message queue was
         /// full (<see cref="MessageOverflow.DropNewest"/>).
         /// Counted from the start of the current connection (every connect or
