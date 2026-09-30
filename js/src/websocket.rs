@@ -568,6 +568,11 @@ struct AuthWaiters {
     /// connection is authenticated, whether or not the JS thread has run
     /// the `authenticated` listener yet.
     last_auth: Option<serde_json::Value>,
+    /// How the connection ended, once the stream reader has settled it with
+    /// anything but `Authenticated`: for a joined `connect()` that learns of
+    /// the end only after it was handed the reconnect's authentication
+    /// (#273).
+    ended: Option<AuthOutcome>,
 }
 
 /// A connection's [`AuthWaiters`], shared by its worker, its stream reader
@@ -591,7 +596,14 @@ struct PendingConnect {
     rx: AuthRx,
     /// Set when this `connect()` joined an automatic reconnect: on
     /// `Authenticated`, wait for the client's `wait_connected()` too.
-    reconnect: Option<std::sync::Weak<marketdata_core::aio::WebSocketClient>>,
+    reconnect: Option<JoinedReconnect>,
+}
+
+/// The automatic reconnect a `connect()` joined (#230).
+struct JoinedReconnect {
+    client: std::sync::Weak<marketdata_core::aio::WebSocketClient>,
+    /// The connection's waiters, for how it ended if the wait fails (#273).
+    auth: AuthSlot,
 }
 
 /// Who decided how the initial authentication of a connection is reported
@@ -635,11 +647,35 @@ fn test_delay_after_connect() -> Option<Duration> {
 }
 
 /// Settle every pending `connect()` with `outcome`; no-op when none is.
+/// The first outcome other than `Authenticated` is kept as how the
+/// connection ended (see [`AuthWaiters::ended`]).
 fn settle(slot: &AuthSlot, outcome: AuthOutcome) {
-    let waiting = std::mem::take(&mut lock_auth(slot).waiting);
+    let waiting = {
+        let mut waiters = lock_auth(slot);
+        if waiters.ended.is_none() && !matches!(outcome, AuthOutcome::Authenticated(_)) {
+            waiters.ended = Some(outcome.clone());
+        }
+        std::mem::take(&mut waiters.waiting)
+    };
     for tx in waiting {
         let _ = tx.send(outcome.clone());
     }
+}
+
+/// How the connection behind `slot` ended, as the stream reader settles it:
+/// at once if it has, else once it does. The reader settles every
+/// connection's end, at the latest when its stream closes, so this returns.
+async fn connection_end(slot: &AuthSlot) -> AuthOutcome {
+    let rx = {
+        let mut waiters = lock_auth(slot);
+        if let Some(ended) = &waiters.ended {
+            return ended.clone();
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        waiters.waiting.push(tx);
+        rx
+    };
+    rx.await.unwrap_or_else(|_| AuthOutcome::Failed(connect_aborted()))
 }
 
 /// Promise returned by `connect()`, settled by [`AuthOutcome`]. A failure to
@@ -651,7 +687,11 @@ fn settle(slot: &AuthSlot, outcome: AuthOutcome) {
 /// installs the new connection's writer and queues the subscription replay,
 /// and a `subscribe()` made once the Promise resolves must follow the replay
 /// (#230). The wait only delays the resolution, unless `disconnect()` stops
-/// it (2010): otherwise the stream reader reports how the reconnect ended.
+/// it (2010), or the reconnected connection ends before it is installed or
+/// before the wait starts: then the Promise settles as the stream reader
+/// settles that end (#273), as it would have without the authentication —
+/// `ReconnectFailed` (3005), the server's `data` for rejected credentials,
+/// or `ConnectionAborted` (2010) when no reconnect follows.
 fn auth_promise<'env>(
     env: &'env Env,
     started: napi::Result<PendingConnect>,
@@ -665,9 +705,19 @@ fn auth_promise<'env>(
                 ))
             });
             if let AuthOutcome::Authenticated(_) = outcome {
-                if let Some(client) = reconnect.and_then(|client| client.upgrade()) {
-                    if let Err(marketdata_core::MarketDataError::ConnectionAborted) = client.wait_connected().await {
-                        return Ok(AuthOutcome::Failed(connect_aborted()));
+                if let Some(joined) = reconnect {
+                    // The client is released before waiting on the reader:
+                    // its stream closes only once the client is dropped.
+                    let waited = match joined.client.upgrade() {
+                        Some(client) => client.wait_connected().await,
+                        None => Err(marketdata_core::MarketDataError::ClientClosed),
+                    };
+                    match waited {
+                        Ok(()) => {}
+                        Err(marketdata_core::MarketDataError::ConnectionAborted) => {
+                            return Ok(AuthOutcome::Failed(connect_aborted()));
+                        }
+                        Err(_) => return Ok(connection_end(&joined.auth).await),
                     }
                 }
             }
@@ -1281,7 +1331,11 @@ fn join_reconnect(worker: &Worker) -> Result<PendingConnect, ErrorInfo> {
         }
         None => waiters.waiting.push(tx),
     }
-    Ok(PendingConnect { rx, reconnect: worker.client.get().cloned() })
+    let reconnect = worker
+        .client
+        .get()
+        .map(|client| JoinedReconnect { client: client.clone(), auth: Arc::clone(&worker.auth) });
+    Ok(PendingConnect { rx, reconnect })
 }
 
 /// Queue `command` for the running worker.
@@ -1813,7 +1867,7 @@ impl StockWebSocketClient {
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
-        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None }));
+        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None, ended: None }));
         let client_slot: ClientSlot = Arc::default();
         let worker_auth = Arc::clone(&auth);
         let worker_decision = Arc::clone(&decision);
@@ -2312,7 +2366,7 @@ impl FutOptWebSocketClient {
         let delay_after_connect = test_delay_after_connect();
 
         let (auth_tx, auth_rx) = tokio::sync::oneshot::channel::<AuthOutcome>();
-        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None }));
+        let auth: AuthSlot = Arc::new(Mutex::new(AuthWaiters { waiting: vec![auth_tx], last_auth: None, ended: None }));
         let client_slot: ClientSlot = Arc::default();
         let worker_auth = Arc::clone(&auth);
         let worker_decision = Arc::clone(&decision);
@@ -2694,7 +2748,9 @@ impl FutOptWebSocketClient {
 /// `Error`: a failed attempt is followed by another. It rejects with
 /// `ReconnectFailed` (3005) when the attempts run out, and with
 /// `ConnectionAborted` (2010) on a `Disconnected` that no reconnect follows or
-/// when the stream closes.
+/// when the stream closes. Every outcome but `Authenticated` is also kept as
+/// how the connection ended, for a joined `connect()` whose reconnected
+/// connection ends before it resolves (#273).
 ///
 /// A message is forwarded only between an `Authenticated` this reader
 /// reported and the next `Disconnected`: frames of a rejected or abandoned
@@ -2978,8 +3034,8 @@ fn inject_test_panic(_site: Option<&str>, _here: &str) {}
 
 /// Emit `event`, then settle the pending `connect()` calls with `outcome` once
 /// the listener has returned, so it runs before the Promise settles as it did
-/// in 1.x, which emitted before settling (#23). Nothing is settled if none is
-/// pending.
+/// in 1.x, which emitted before settling (#23). A `connect()` that joins
+/// after the event is queued is settled by it too.
 ///
 /// `ending`, when given and `connect()` is still pending, is set before the
 /// event is emitted, so calling connect() again from the listener or the
@@ -2993,13 +3049,11 @@ fn fire_and_settle(
     ending: Option<&AtomicBool>,
 ) {
     let pending = !lock_auth(auth).waiting.is_empty();
-    if !pending {
-        sink.emit(event, data);
-        return;
-    }
-    if let Some(ending) = ending {
+    if let Some(ending) = ending.filter(|_| pending) {
         ending.store(true, Ordering::SeqCst);
     }
+    // Settled even with no `connect()` pending, to record how the connection
+    // ended for one that joins its wait later (#273).
     let auth = Arc::clone(auth);
     sink.emit_then(event, data, move || settle(&auth, outcome));
 }

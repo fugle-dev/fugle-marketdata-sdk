@@ -104,6 +104,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Node.js: `connect()` during an automatic reconnect no longer resolves
+  when the restored connection ends before it settles** (#273). It resolved
+  with the reconnect's `authenticated` data even when that connection was
+  lost again before its subscriptions were re-sent and nothing brought it
+  back, so the caller took a closed client for connected. It now rejects as
+  it does when the reconnect itself does not come back: 3005 when the
+  attempts run out, the server's `data` object when the credentials are
+  rejected, 2010 when no reconnect follows. A later reconnect that succeeds
+  still resolves it.
 - **Python: `disconnect()` no longer waits for a connection that a concurrent
   `connect()` opened** (#277). While `disconnect()` waited for the server to
   answer its Close, a `connect()` from another thread could open a new

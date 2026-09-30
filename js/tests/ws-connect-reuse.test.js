@@ -522,6 +522,65 @@ describe.each(PRODUCTS)('%s connect() during an auto-reconnect (#230)', (product
 
     await expect(joined).rejects.toEqual({ message: 'Invalid API key' });
   });
+
+  // The reconnect authenticates, then its connection ends before the joined
+  // connect() has checked that the reconnect installed it (#273). In a child
+  // process: the reconnect's `authenticated` listener holds the child's JS
+  // thread until core has closed the client, which settles the joined
+  // connect() only after that.
+  test.each([
+    ['closes with 1001 and the next attempt fails', 1001, 'refuse', { error: 3005 }],
+    ['closes with 1001 and the next attempt is rejected', 1001, 'rejectAuth', { rejection: { message: 'Invalid API key' } }],
+    ['closes with 1000, so no reconnect follows', 1000, 'refuse', { error: 2010 }],
+  ])('rejects when the reconnected connection %s before connect() settles', async (_, closeCode, next, expected) => {
+    await setup();
+    wss.on('connection', (socket) => {
+      if (wss.accepted !== 2) return;
+      socket.on('message', (raw) => {
+        if (JSON.parse(raw.toString()).event !== 'auth') return;
+        // After the `authenticated` the server's own listener has sent.
+        if (next === 'refuse') wss.refuse = Infinity;
+        else wss.rejectAuth = true;
+        socket.close(closeCode);
+      });
+    });
+    const run = runChild(
+      `
+      const { WebSocketClient } = require('./');
+      const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL, reconnect: { initialDelayMs: 100, maxAttempts: 1 } })[${JSON.stringify(product)}];
+      const report = (result) => {
+        console.log('RESULT ' + JSON.stringify({ ...result, closedAtSettle }));
+        ws.disconnect();
+      };
+      let joined;
+      let authenticated = 0;
+      let closedAtSettle;
+      ws.on('disconnect', () => {
+        if (joined) return;
+        joined = ws.connect().then(
+          (data) => report({ data }),
+          (e) => report(e instanceof Error ? { error: e.code } : { rejection: e }),
+        );
+      });
+      ws.on('authenticated', () => {
+        authenticated += 1;
+        if (authenticated !== 2) return;
+        const until = Date.now() + 5000;
+        while (!ws.isClosed && Date.now() < until);
+        closedAtSettle = ws.isClosed;
+      });
+      ws.connect();
+    `,
+      { URL: `ws://127.0.0.1:${wss.address().port}` },
+    );
+    await waitFor(() => wss.authenticated === 1, 'first authentication');
+    dropConnections(wss);
+    const { code, result, stderr } = await run;
+
+    expect({ code, stderr, result }).toMatchObject({ code: 0, result: expect.anything() });
+    expect(result).toEqual({ ...expected, closedAtSettle: true });
+    expect(wss.authenticated).toBe(2);
+  });
 });
 
 /**
