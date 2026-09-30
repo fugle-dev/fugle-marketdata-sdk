@@ -2,13 +2,20 @@
 
 Fugle Market Data SDK - Python bindings with full type annotations.
 """
-from typing import Any, AsyncIterator, Callable, Generic, Iterator, Literal, Mapping, Optional, List, TypeVar, overload
+from typing import Any, AsyncIterator, Callable, Generic, Iterator, Literal, Mapping, Optional, List, overload
+
+# TypeVar with a default (PEP 696); type checkers resolve this import in a
+# stub without typing_extensions being installed.
+from typing_extensions import TypeVar
 
 # A message frame, as the server sent it.
 Message = dict[str, Any]
 
 # What a MessageIterator yields: Message, or str from messages(raw=True).
-_Yielded = TypeVar("_Yielded", Message, str)
+# A bare `MessageIterator` annotation means `MessageIterator[Message]`.
+# `Message` is spelled out: mypy 1.14, the last to target Python 3.8, rejects
+# the alias as the default of a constrained TypeVar.
+_Yielded = TypeVar("_Yielded", dict[str, Any], str, default=dict[str, Any])
 
 __version__: str
 

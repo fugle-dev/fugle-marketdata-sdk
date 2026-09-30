@@ -425,7 +425,8 @@ library. With only `raw_message` callbacks registered the SDK builds no dict.
 With both, each message goes to `raw_message` first, then to `message`.
 `messages(raw=True)` is the iterator counterpart; `raw` is keyword-only and
 belongs to that iterator, so `messages()` on the same client still yields
-dicts.
+dicts. A raw and a non-raw iterator open on one client read the same queue:
+each message goes to only one of them.
 
 #### Callback Exceptions
 

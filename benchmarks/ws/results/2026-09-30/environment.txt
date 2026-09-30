@@ -9,3 +9,4 @@ Apple M3 Pro
 load: 17.7-20.2 (1 min) throughout, from another project's processes; per-run load1/load5 are in the jsonl rows
 null-client control: 109,890 msg/s (10K) / 116,009 (50K) median, against 196K / 269K on a quiet machine (2026-09-20) -- throughput and latency of these runs are not usable
 run: python3 benchmarks/ws/py/run-modes.py  (fresh mock server per run; order null, dict, raw-loads, raw; 5 runs at 10K, then 5 at 50K)
+not run: --mode dict-count was added to bench-new.py afterwards (PR #248 review), so these files have no dict-count rows

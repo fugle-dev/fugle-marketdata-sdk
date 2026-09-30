@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare the new Python SDK's message paths (#246) and update REPORT.md.
 
-Runs py/bench-new.py in each --mode (dict, raw-loads, raw) and the null
+Runs py/bench-new.py in each --mode (dict, raw-loads, dict-count, raw) and the null
 client (js/bench-null.js, the control) at 10K and 50K burst, a fresh mock
 server per run, modes interleaved. Writes the rows to
 results/<date>/{10k,50k}-py-modes.jsonl and rewrites the two generated
@@ -13,7 +13,10 @@ built with `maturin develop --release` into py/.venv, or BENCH_PY_NEW):
     python3 benchmarks/ws/py/run-modes.py
     python3 benchmarks/ws/py/run-modes.py --report-only --date 2026-09-30
 
-Run it while the load average is below 4: the report says so when it was not.
+Run it while the load average is below 4, on a clean commit, so the result
+can be reproduced from its SHA. The report says so when the load was higher,
+and when the tree had uncommitted changes (results/ and REPORT.md, which this
+script writes, do not count).
 """
 
 import argparse
@@ -30,7 +33,7 @@ REPORT = os.path.join(WS_DIR, 'REPORT.md')
 PORT = 8790
 WARMUP = 1000
 SIZES = (('10k', 10000), ('50k', 50000))
-MODES = ('dict', 'raw-loads', 'raw')
+MODES = ('dict', 'raw-loads', 'dict-count', 'raw')
 # Above this the throughput and latency of a run are not trusted (REPORT.md,
 # "Measurement Validity").
 LOAD_GATE = 4.0
@@ -100,13 +103,30 @@ def median(rows, mode, key):
     return statistics.median(found) if found else None
 
 
+PENDING = 'pending rerun'
+
+
 def spread(rows, key):
     """Widest (max - min) / min of `key` among the SDK modes, in percent."""
     widest = 0
     for mode in MODES:
         found = values(rows, mode, key)
-        widest = max(widest, (max(found) - min(found)) / min(found) * 100)
+        if found and min(found) > 0:
+            widest = max(widest, (max(found) - min(found)) / min(found) * 100)
     return widest
+
+
+def cpu_cell(rows, mode):
+    cpu = median(rows, mode, 'cpu_user_ms')
+    return PENDING if cpu is None else f'{cpu:.0f} ms'
+
+
+def delta(rows, mode, base):
+    """User CPU of `mode` against `base` in percent, None without both."""
+    cpu, reference = median(rows, mode, 'cpu_user_ms'), median(rows, base, 'cpu_user_ms')
+    if cpu is None or not reference:
+        return None
+    return (cpu / reference - 1) * 100
 
 
 def summary_block(rows, meta):
@@ -127,51 +147,83 @@ def summary_block(rows, meta):
             '[Per-run data](#per-run-data).',
             '',
         ]
+    if meta.get('dirty'):
+        out += [
+            '**The tree had uncommitted changes when these runs were made, so they',
+            'cannot be reproduced from a commit SHA; rerun on a clean commit.**',
+            '',
+        ]
     out += [
-        '`py/bench-new.py --mode` picks the path: `dict` is the `message` callback',
-        '(the binding re-parses `raw` and builds the dict); `raw-loads` is a',
-        '`raw_message` callback that calls `json.loads` itself, as 2.x code does;',
-        '`raw` is a `raw_message` callback that only looks at the frame\'s prefix,',
-        'the forward-or-store case (it reports no latency).',
+        '`py/bench-new.py --mode` picks the path and how much the callback does:',
+        '',
+        '- `dict`: `message` callback (the binding re-parses `raw` and builds the',
+        '  dict) with the full bookkeeping of the other clients: `time.time()`,',
+        '  `server_ts`, the latency list, the serial check.',
+        '- `raw-loads`: `raw_message` callback that calls `json.loads` itself, as',
+        '  2.x code does, then the same bookkeeping as `dict`.',
+        '- `dict-count`: `message` callback that only checks the event and counts.',
+        '- `raw`: `raw_message` callback that only checks the frame\'s prefix and',
+        '  counts, the forward-or-store case.',
+        '',
+        'The like-for-like pairs are `raw-loads` against `dict` and `raw` against',
+        '`dict-count`; `dict-count` and `raw` report no latency.',
         '',
         f"Run {meta['date']} on `{meta['tree']}`, {meta['runs']} runs per mode, a fresh mock server",
         'per run, modes interleaved; medians below. Raw output:',
         f"[`results/{meta['date']}/`](results/{meta['date']}/). Rerun and regenerate this section",
-        'with `python3 benchmarks/ws/py/run-modes.py`.',
+        'with `python3 benchmarks/ws/py/run-modes.py`, on a clean commit.',
         '',
     ]
     if loaded:
-        out += ['| CPU user | `dict` | `raw-loads` | `raw` | `raw` vs `dict` |',
-                '|----------|--------|-------------|-------|-----------------|']
+        out += ['| CPU user | ' + ' | '.join(f'`{mode}`' for mode in MODES) + ' |',
+                '|----------|' + '|'.join('-' * (len(mode) + 4) for mode in MODES) + '|']
         for name, _ in SIZES:
-            cpu = {mode: median(rows[name], mode, 'cpu_user_ms') for mode in MODES}
-            out.append(f"| {name.upper()} burst | {cpu['dict']:.0f} ms | {cpu['raw-loads']:.0f} ms | "
-                       f"{cpu['raw']:.0f} ms | {(cpu['raw'] / cpu['dict'] - 1) * 100:+.0f}% |")
+            out.append(f'| {name.upper()} burst | ' + ' | '.join(cpu_cell(rows[name], mode) for mode in MODES) + ' |')
     else:
         out += ['| Burst | Mode | Throughput | Latency p50 | Latency p99 | CPU user |',
                 '|-------|------|------------|-------------|-------------|----------|']
         for name, _ in SIZES:
             for mode in MODES:
+                rate = median(rows[name], mode, 'msgs_per_sec')
                 p50, p99 = median(rows[name], mode, 'latency_p50_ms'), median(rows[name], mode, 'latency_p99_ms')
                 out.append(
-                    f"| {name.upper()} | `{mode}` | {median(rows[name], mode, 'msgs_per_sec'):,.0f} msg/s | "
+                    f"| {name.upper()} | `{mode}` | {PENDING if rate is None else f'{rate:,.0f} msg/s'} | "
                     f"{'--' if p50 is None else f'{p50:.0f} ms'} | {'--' if p99 is None else f'{p99:.0f} ms'} | "
-                    f"{median(rows[name], mode, 'cpu_user_ms'):.0f} ms |")
+                    f'{cpu_cell(rows[name], mode)} |')
         out += ['', f"Null client (the consumer ceiling): {null['10k']:,.0f} msg/s at 10K, {null['50k']:,.0f} at 50K."]
 
     big = rows['50k']
-    cpu = {mode: median(big, mode, 'cpu_user_ms') for mode in MODES}
-    per_message = (cpu['dict'] - cpu['raw']) / (SIZES[1][1] + WARMUP) * 1000
+    out.append('')
+    isolated = delta(big, 'raw', 'dict-count')
+    if isolated is None:
+        out += [
+            '- **The cost of the SDK building the dict is not measured yet.** `raw`',
+            '  against `dict-count` is the pair that isolates it; `dict-count` was',
+            f'  added after these runs and has no data ({PENDING}).',
+        ]
+    else:
+        saved = median(big, 'dict-count', 'cpu_user_ms') - median(big, 'raw', 'cpu_user_ms')
+        out += [
+            f'- `raw` against `dict-count`, the same callback work with and without the',
+            f'  dict: {isolated:+.1f}% user CPU at 50K, {saved / (SIZES[1][1] + WARMUP) * 1000:.1f} µs per message. This is',
+            '  the cost of the SDK building the dict.',
+        ]
+    same_work = delta(big, 'raw-loads', 'dict')
+    if same_work is not None:
+        out += [
+            f'- `raw-loads` against `dict`, the same callback work with the parse done by',
+            f'  `json.loads` instead of the binding: {same_work:+.1f}% user CPU at 50K.',
+        ]
+    whole = delta(big, 'raw', 'dict')
+    if whole is not None:
+        out += [
+            f'- `raw` against `dict` is {whole:+.0f}% user CPU at 50K, but the two callbacks do',
+            '  different work: that is what a callback that does not parse saves in',
+            '  total, the benchmark callback\'s own bookkeeping included, not the cost',
+            '  of building the dict.',
+        ]
     lost = {row.get('lost') for row in every} | {row.get('dropped', 0) for row in every}
     out += [
-        '',
-        f"- At 50K, `raw` uses {(cpu['raw'] / cpu['dict'] - 1) * 100:+.0f}% user CPU against `dict`:"
-        f" about {per_message:.1f} µs per",
-        '  message not spent building the dict, on the one thread that also runs',
-        '  the callbacks.',
-        f"- `raw-loads` uses {(cpu['raw-loads'] / cpu['dict'] - 1) * 100:+.1f}% user CPU against `dict` at 50K: what a"
-        ' `json.loads(message)`',
-        '  handler pays after moving to `raw_message` (compare with the spread below).',
         f"- The per-run spread of CPU user is up to {spread(rows['10k'], 'cpu_user_ms'):.0f}% at 10K and"
         f" {spread(big, 'cpu_user_ms'):.0f}% at 50K;",
         '  differences inside it mean nothing.',
@@ -195,8 +247,9 @@ def runs_block(rows, meta):
     for mode in ('null',) + MODES:
         cells = []
         for name, _ in SIZES:
-            cells.append(' / '.join(f'{value:,}' for value in values(rows[name], mode, 'msgs_per_sec')))
-            cells.append(' / '.join(f'{value:.0f}' for value in values(rows[name], mode, 'cpu_user_ms')))
+            rates, cpu = values(rows[name], mode, 'msgs_per_sec'), values(rows[name], mode, 'cpu_user_ms')
+            cells.append(' / '.join(f'{value:,}' for value in rates) or PENDING)
+            cells.append(' / '.join(f'{value:.0f}' for value in cpu) or PENDING)
         label = 'null client' if mode == 'null' else f'`{mode}`'
         out.append(f'| {label} | ' + ' | '.join(cells) + ' |')
     return '\n'.join(out)
@@ -222,8 +275,9 @@ def main():
     meta_path = os.path.join(out_dir, 'py-modes-meta.json')
     if not args.report_only:
         os.makedirs(out_dir, exist_ok=True)
-        dirty = ' + uncommitted changes' if git('status', '--porcelain', '--untracked-files=no') else ''
-        meta = {'date': args.date, 'tree': git('rev-parse', '--short', 'HEAD') + dirty, 'runs': args.runs}
+        dirty = bool(git('status', '--porcelain', '--', '.', ':!benchmarks/ws/results', ':!benchmarks/ws/REPORT.md'))
+        tree = git('rev-parse', '--short', 'HEAD') + (' + uncommitted changes' if dirty else '')
+        meta = {'date': args.date, 'tree': tree, 'dirty': dirty, 'runs': args.runs}
         measure(out_dir, args.runs)
         with open(meta_path, 'w') as out:
             json.dump(meta, out, indent=2)

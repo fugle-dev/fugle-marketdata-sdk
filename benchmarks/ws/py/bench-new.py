@@ -9,6 +9,9 @@ Usage:
 
 --mode picks the message path (#246):
     dict       `message` callback, the SDK builds the dict (default)
+    dict-count `message` callback that does only what `raw` does: it checks
+               the event and counts, and reports no latency. `dict-count`
+               against `raw` isolates the cost of the SDK building the dict
     raw-loads  `raw_message` callback that calls json.loads, as 2.x code does
     raw        `raw_message` callback that does not parse: it counts the
                data frames by prefix and reports no latency
@@ -33,7 +36,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--url', default='ws://localhost:8765')
     p.add_argument('--timeout', type=int, default=30)
-    p.add_argument('--mode', choices=('dict', 'raw-loads', 'raw'), default='dict')
+    p.add_argument('--mode', choices=('dict', 'dict-count', 'raw-loads', 'raw'), default='dict')
     return p.parse_args()
 
 
@@ -87,6 +90,20 @@ def main():
     def on_raw_loads(raw):
         on_message(json.loads(raw))
 
+    # `on_count` and `on_raw` do the same work per message, on a dict and
+    # on the frame's text: no server_ts, no latency, no serial.
+    def on_count(msg):
+        nonlocal received, t0, server_stats
+
+        event = msg.get('event')
+        if event == 'data':
+            if t0 is None:
+                t0 = int(time.time() * 1000)
+            received += 1
+        elif event == 'bench_done':
+            server_stats = msg.get('data', {})
+            done_event.set()
+
     def on_raw(raw):
         nonlocal received, t0, server_stats
 
@@ -106,6 +123,8 @@ def main():
     # after auth), so 'connect' event may fire during the call.
     if args.mode == 'dict':
         stock.on('message', on_message)
+    elif args.mode == 'dict-count':
+        stock.on('message', on_count)
     elif args.mode == 'raw-loads':
         stock.on('raw_message', on_raw_loads)
     else:

@@ -92,10 +92,17 @@ impl Drop for AbandonOnDrop {
 #[pymethods]
 impl MessageIterator {
     /// `MessageIterator[str]` / `MessageIterator[Message]` in annotations:
-    /// the stubs declare the class generic over what it yields.
+    /// the stubs declare the class generic over what it yields. Returns
+    /// `types.GenericAlias(cls, item)`, so `typing.get_args` sees the
+    /// parameter; Python 3.8 has no `GenericAlias` and gets the class itself.
     #[classmethod]
-    fn __class_getitem__(cls: &Bound<'_, PyType>, _item: &Bound<'_, PyAny>) -> Py<PyType> {
-        cls.clone().unbind()
+    fn __class_getitem__<'py>(cls: &Bound<'py, PyType>, item: &Bound<'py, PyAny>) -> Bound<'py, PyAny> {
+        let alias = cls
+            .py()
+            .import("types")
+            .and_then(|types| types.getattr("GenericAlias"))
+            .and_then(|generic_alias| generic_alias.call1((cls, item)));
+        alias.unwrap_or_else(|_| cls.clone().into_any())
     }
 
     /// Return self as iterator (required for Python iteration protocol)

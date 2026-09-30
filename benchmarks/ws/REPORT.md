@@ -208,27 +208,42 @@ was 17.7-20.2 during the runs (the gate for this report is
 nothing about the SDK and are left out of the table; they are in
 [Per-run data](#per-run-data).
 
-`py/bench-new.py --mode` picks the path: `dict` is the `message` callback
-(the binding re-parses `raw` and builds the dict); `raw-loads` is a
-`raw_message` callback that calls `json.loads` itself, as 2.x code does;
-`raw` is a `raw_message` callback that only looks at the frame's prefix,
-the forward-or-store case (it reports no latency).
+**The tree had uncommitted changes when these runs were made, so they
+cannot be reproduced from a commit SHA; rerun on a clean commit.**
+
+`py/bench-new.py --mode` picks the path and how much the callback does:
+
+- `dict`: `message` callback (the binding re-parses `raw` and builds the
+  dict) with the full bookkeeping of the other clients: `time.time()`,
+  `server_ts`, the latency list, the serial check.
+- `raw-loads`: `raw_message` callback that calls `json.loads` itself, as
+  2.x code does, then the same bookkeeping as `dict`.
+- `dict-count`: `message` callback that only checks the event and counts.
+- `raw`: `raw_message` callback that only checks the frame's prefix and
+  counts, the forward-or-store case.
+
+The like-for-like pairs are `raw-loads` against `dict` and `raw` against
+`dict-count`; `dict-count` and `raw` report no latency.
 
 Run 2026-09-30 on `d3ba4d1 + uncommitted changes`, 5 runs per mode, a fresh mock server
 per run, modes interleaved; medians below. Raw output:
 [`results/2026-09-30/`](results/2026-09-30/). Rerun and regenerate this section
-with `python3 benchmarks/ws/py/run-modes.py`.
+with `python3 benchmarks/ws/py/run-modes.py`, on a clean commit.
 
-| CPU user | `dict` | `raw-loads` | `raw` | `raw` vs `dict` |
-|----------|--------|-------------|-------|-----------------|
-| 10K burst | 168 ms | 173 ms | 131 ms | -22% |
-| 50K burst | 508 ms | 507 ms | 297 ms | -42% |
+| CPU user | `dict` | `raw-loads` | `dict-count` | `raw` |
+|----------|--------|-------------|--------------|-------|
+| 10K burst | 168 ms | 173 ms | pending rerun | 131 ms |
+| 50K burst | 508 ms | 507 ms | pending rerun | 297 ms |
 
-- At 50K, `raw` uses -42% user CPU against `dict`: about 4.1 µs per
-  message not spent building the dict, on the one thread that also runs
-  the callbacks.
-- `raw-loads` uses -0.4% user CPU against `dict` at 50K: what a `json.loads(message)`
-  handler pays after moving to `raw_message` (compare with the spread below).
+- **The cost of the SDK building the dict is not measured yet.** `raw`
+  against `dict-count` is the pair that isolates it; `dict-count` was
+  added after these runs and has no data (pending rerun).
+- `raw-loads` against `dict`, the same callback work with the parse done by
+  `json.loads` instead of the binding: -0.4% user CPU at 50K.
+- `raw` against `dict` is -42% user CPU at 50K, but the two callbacks do
+  different work: that is what a callback that does not parse saves in
+  total, the benchmark callback's own bookkeeping included, not the cost
+  of building the dict.
 - The per-run spread of CPU user is up to 27% at 10K and 24% at 50K;
   differences inside it mean nothing.
 - No run lost or dropped a message (`message_overflow = unbounded`).
@@ -627,7 +642,7 @@ node ws-bench-new.js --url ws://localhost:8765 --timeout 60000
 # Run a single Python client against the server
 python3 ws-bench-new-py.py --url ws://localhost:8765 --timeout 30
 
-# The new Python client on another message path (#246): dict (default), raw-loads, raw
+# The new Python client on another message path (#246): dict (default), raw-loads, dict-count, raw
 $BENCH_PY_NEW py/bench-new.py --url ws://localhost:8765 --timeout 30 --mode raw
 ```
 
@@ -639,7 +654,7 @@ $BENCH_PY_NEW py/bench-new.py --url ws://localhost:8765 --timeout 30 --mode raw
 | `js/bench-new.js` | New SDK (JS) benchmark client |
 | `js/bench-old.js` | Old SDK (JS, `@fugle/marketdata@1.6.0`) benchmark client |
 | `js/bench-null.js` | Null client: raw `ws`, no SDK, no parsing -- the consumer ceiling |
-| `py/bench-new.py` | New SDK (Python) benchmark client; `--mode dict\|raw-loads\|raw` picks the message path (#246) |
+| `py/bench-new.py` | New SDK (Python) benchmark client; `--mode dict\|raw-loads\|dict-count\|raw` picks the message path and the callback's work (#246) |
 | `py/bench-old.py` | Old SDK (Python, `fugle-marketdata==2.7.0rc1`) benchmark client |
 | `cs/` | New SDK (C#, UniFFI) benchmark client (.NET 8 project) |
 | `go/` | New SDK (Go, UniFFI) benchmark client |
@@ -736,5 +751,6 @@ Run order, 5 runs each; 1-minute load average 17.7-20.2.
 | null client | 96,154 / 112,360 / 116,279 / 109,890 / 92,593 | 72 / 76 / 72 / 70 / 75 | 116,009 / 119,904 / 107,991 / 81,699 / 130,890 | 234 / 227 / 219 / 221 / 211 |
 | `dict` | 119,047 / 125,000 / 123,456 / 102,040 / 83,333 | 176 / 164 / 160 / 168 / 197 | 55,803 / 90,090 / 82,781 / 94,517 / 99,800 | 453 / 564 / 515 / 508 / 486 |
 | `raw-loads` | 114,942 / 123,456 / 105,263 / 100,000 / 101,010 | 188 / 186 / 169 / 170 / 173 | 77,160 / 98,425 / 89,928 / 99,009 / 88,967 | 515 / 516 / 481 / 507 / 437 |
+| `dict-count` | pending rerun | pending rerun | pending rerun | pending rerun |
 | `raw` | 93,457 / 125,000 / 94,339 / 104,166 / 108,695 | 155 / 122 / 151 / 130 / 131 | 108,695 / 95,419 / 112,107 / 115,473 / 146,627 | 297 / 292 / 306 / 300 / 266 |
 <!-- py-modes:runs:end -->
