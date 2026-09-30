@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.10 / core 0.9.0-rc.8 / uniffi 0.2.0-rc.8] - 2026-10-01
+
 ### Breaking
 
 - **Python: a `messages().__anext__()` awaitable can already be done, and
@@ -113,6 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **C#, Go, Java, C++: `disconnect()` with nothing to close no longer waits
+  for a `connect()` that starts after it** (#278). When no connection was
+  open, `disconnect()` read the in-flight connect in a second step, so a
+  `connect()` that began in between was waited on: `connect()` succeeded and
+  the earlier `disconnect()` did not return until the next `disconnect()`
+  closed that connection. It now only waits for a connection or connect that
+  exists when it is called.
 - **Python: the type stubs declare `tickers()` and `products()` as returning
   a dict** (#288). `.pyi` declared stock `intraday.tickers()` and futopt
   `intraday.tickers()` / `products()` (and their `_async` forms) as returning
