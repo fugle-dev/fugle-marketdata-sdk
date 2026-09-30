@@ -2,8 +2,11 @@
 //!
 //! Provides both sync (__iter__/__next__) and async (__aiter__/__anext__) iterator protocols.
 //! Both yield messages only and stop only once the connection is gone (#68).
+//! A `messages(raw=True)` iterator yields the text of each frame instead of a
+//! dict (#246).
 
 use pyo3::prelude::*;
+use pyo3::types::{PyString, PyType};
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,7 +23,7 @@ const WAKE_INTERVAL: Duration = Duration::from_millis(100);
 ///
 /// Implements both sync (__iter__/__next__) and async (__aiter__/__anext__) iterator protocols.
 /// Reads the messages the connection's stream reader hands over when no
-/// `message` callback is registered (#68).
+/// `message` or `raw_message` callback is registered (#68).
 ///
 /// # Example (Python)
 ///
@@ -53,12 +56,25 @@ const WAKE_INTERVAL: Duration = Duration::from_millis(100);
 #[pyclass]
 pub struct MessageIterator {
     handoff: Arc<Handoff>,
+    /// Yield the frame's text instead of a dict. The queue holds unparsed
+    /// frames, so each iterator chooses for itself.
+    raw: bool,
 }
 
 impl MessageIterator {
     /// Create a new message iterator
-    pub(crate) fn new(handoff: Arc<Handoff>) -> Self {
-        Self { handoff }
+    pub(crate) fn new(handoff: Arc<Handoff>, raw: bool) -> Self {
+        Self { handoff, raw }
+    }
+}
+
+/// What an iterator yields for `msg`: the frame's text when `raw`, with no
+/// dict built from it, else the dict.
+fn yielded(py: Python<'_>, msg: &marketdata_core::WebSocketMessage, raw: bool) -> PyResult<Py<PyAny>> {
+    if raw {
+        Ok(PyString::new(py, &msg.raw).unbind().into_any())
+    } else {
+        Ok(message_to_dict(py, msg)?.into_any())
     }
 }
 
@@ -75,6 +91,20 @@ impl Drop for AbandonOnDrop {
 
 #[pymethods]
 impl MessageIterator {
+    /// `MessageIterator[str]` / `MessageIterator[Message]` in annotations:
+    /// the stubs declare the class generic over what it yields. Returns
+    /// `types.GenericAlias(cls, item)`, so `typing.get_args` sees the
+    /// parameter; Python 3.8 has no `GenericAlias` and gets the class itself.
+    #[classmethod]
+    fn __class_getitem__<'py>(cls: &Bound<'py, PyType>, item: &Bound<'py, PyAny>) -> Bound<'py, PyAny> {
+        let alias = cls
+            .py()
+            .import("types")
+            .and_then(|types| types.getattr("GenericAlias"))
+            .and_then(|generic_alias| generic_alias.call1((cls, item)));
+        alias.unwrap_or_else(|_| cls.clone().into_any())
+    }
+
     /// Return self as iterator (required for Python iteration protocol)
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
@@ -84,6 +114,7 @@ impl MessageIterator {
     ///
     /// Returns:
     ///     dict: Message data containing event, channel, symbol, data fields
+    ///         (str: the frame as sent, from a `messages(raw=True)` iterator)
     ///
     /// Raises:
     ///     StopIteration: When the connection is gone and every message was read
@@ -95,7 +126,7 @@ impl MessageIterator {
         loop {
             let handoff = Arc::clone(&self.handoff);
             match py.detach(move || handoff.receive(Some(WAKE_INTERVAL))) {
-                Ok(Some(msg)) => return Ok(message_to_dict(py, &msg)?.into_any()),
+                Ok(Some(msg)) => return yielded(py, &msg, self.raw),
                 // Nothing yet: run pending signal handlers, then wait again.
                 Ok(None) => py.check_signals()?,
                 Err(()) => {
@@ -110,14 +141,11 @@ impl MessageIterator {
     /// Try to receive a message without blocking
     ///
     /// Returns:
-    ///     dict: Message data if available
+    ///     dict: Message data if available (str from a `messages(raw=True)` iterator)
     ///     None: If no message available
     fn try_recv(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
         match self.handoff.try_receive() {
-            Some(msg) => {
-                let dict = message_to_dict(py, &msg)?;
-                Ok(Some(dict.into_any()))
-            }
+            Some(msg) => Ok(Some(yielded(py, &msg, self.raw)?)),
             None => Ok(None),
         }
     }
@@ -128,7 +156,7 @@ impl MessageIterator {
     ///     timeout_ms: Timeout in milliseconds
     ///
     /// Returns:
-    ///     dict: Message data if received within timeout
+    ///     dict: Message data if received within timeout (str from a `messages(raw=True)` iterator)
     ///     None: If timeout elapsed with no message
     ///
     /// Raises:
@@ -137,10 +165,7 @@ impl MessageIterator {
         let handoff = Arc::clone(&self.handoff);
         let timeout = Duration::from_millis(timeout_ms);
         match py.detach(move || handoff.receive(Some(timeout))) {
-            Ok(Some(msg)) => {
-                let dict = message_to_dict(py, &msg)?;
-                Ok(Some(dict.into_any()))
-            }
+            Ok(Some(msg)) => Ok(Some(yielded(py, &msg, self.raw)?)),
             Ok(None) => Ok(None),
             Err(()) => Err(crate::errors::to_py_err(marketdata_core::MarketDataError::ConnectionError {
                 msg: "Message channel closed".to_string(),
@@ -159,6 +184,7 @@ impl MessageIterator {
     ///
     /// Returns:
     ///     dict: Message data containing event, channel, symbol, data fields
+    ///         (str: the frame as sent, from a `messages(raw=True)` iterator)
     ///
     /// Raises:
     ///     StopAsyncIteration: When the connection is gone and every message was read
@@ -167,6 +193,7 @@ impl MessageIterator {
     /// The wait runs on tokio's blocking pool, enabling true async concurrency.
     fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let handoff = Arc::clone(&self.handoff);
+        let raw = self.raw;
 
         future_into_py(py, async move {
             let abandoned = Arc::new(AtomicBool::new(false));
@@ -187,7 +214,7 @@ impl MessageIterator {
             })?;
 
             match result {
-                Ok(Some(msg)) => Python::attach(|py| Ok(message_to_dict(py, &msg)?.into_any())),
+                Ok(Some(msg)) => Python::attach(|py| yielded(py, &msg, raw)),
                 // Only when abandoned, and then nobody awaits this result.
                 Ok(None) => Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
                     "Iteration abandoned",

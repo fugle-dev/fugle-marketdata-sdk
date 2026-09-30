@@ -191,6 +191,22 @@ def on_message(msg):  # msg is already a dict
     print(msg["event"], msg.get("data"))
 ```
 
+To keep the legacy pattern, or to skip the dict altogether, register
+`raw_message` instead: it delivers each message as the `str` the server
+sent, and `json.loads` of it equals the dict `message` gets.
+
+```python
+def on_message(msg):  # legacy handler, unchanged
+    payload = json.loads(msg)
+    print(payload["event"], payload.get("data"))
+
+ws.stock.on("raw_message", on_message)
+```
+
+With only `raw_message` callbacks the SDK builds no dict. For iteration,
+`ws.stock.messages(raw=True)` yields the same strings (`for` and
+`async for`). `message` itself is unchanged and keeps delivering dicts.
+
 This is intentionally asymmetric with the JS binding (which still emits raw
 strings) — the JS side preserves the legacy `JSON.parse(msg)` pattern, while
 the Python side leans into native dict ergonomics. If you have a shared

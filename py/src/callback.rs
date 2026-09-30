@@ -1,7 +1,7 @@
 //! Python callback registration mechanism for WebSocket events
 //!
 //! Provides thread-safe callback storage and invocation for Python event handlers.
-//! Supports event types: message, connect, disconnect, reconnect, error.
+//! Supports the event types of [`EventType`].
 //!
 //! # Example (Python)
 //!
@@ -30,6 +30,8 @@ type CallbackMap = HashMap<EventType, Vec<Py<PyAny>>>;
 pub enum EventType {
     /// Data message received
     Message,
+    /// Data message received, as the text the server sent (#246)
+    RawMessage,
     /// Connection established
     Connect,
     /// Connection closed
@@ -51,6 +53,7 @@ impl EventType {
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "message" | "data" => Some(EventType::Message),
+            "raw_message" => Some(EventType::RawMessage),
             "connect" | "connected" => Some(EventType::Connect),
             "disconnect" | "disconnected" | "close" | "closed" => Some(EventType::Disconnect),
             "reconnect" | "reconnecting" => Some(EventType::Reconnect),
@@ -66,6 +69,7 @@ impl EventType {
     pub fn name(self) -> &'static str {
         match self {
             EventType::Message => "message",
+            EventType::RawMessage => "raw_message",
             EventType::Connect => "connect",
             EventType::Disconnect => "disconnect",
             EventType::Reconnect => "reconnect",
@@ -122,7 +126,7 @@ impl CallbackRegistry {
     ///
     /// # Arguments
     ///
-    /// * `event` - Event type string (message, connect, disconnect, reconnect, error)
+    /// * `event` - Event type string, as [`EventType::from_str`] accepts
     /// * `callback` - Python callable to invoke when event occurs
     ///
     /// # Returns
@@ -132,7 +136,7 @@ impl CallbackRegistry {
     pub fn register(&self, event: &str, callback: &Bound<'_, PyAny>) -> PyResult<()> {
         let event_type = EventType::from_str(event).ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err(format!(
-                "Invalid event type: '{}'. Valid types: message, connect, disconnect, reconnect, error, authenticated, unauthenticated",
+                "Invalid event type: '{}'. Valid types: message, raw_message, connect, disconnect, reconnect, error, authenticated, unauthenticated, messages_dropped",
                 event
             ))
         })?;
@@ -193,7 +197,6 @@ impl CallbackRegistry {
     }
 
     /// Get number of callbacks registered for an event type
-    #[allow(dead_code)]
     pub fn count(&self, event_type: EventType) -> usize {
         let callbacks = self.read();
         callbacks.get(&event_type).map(|v| v.len()).unwrap_or(0)
@@ -426,6 +429,11 @@ mod tests {
         assert_eq!(EventType::from_str("close"), Some(EventType::Disconnect));
         assert_eq!(EventType::from_str("reconnect"), Some(EventType::Reconnect));
         assert_eq!(EventType::from_str("error"), Some(EventType::Error));
+        assert_eq!(EventType::from_str("raw_message"), Some(EventType::RawMessage));
+        assert_eq!(EventType::RawMessage.name(), "raw_message");
+        // No alias: `raw` and `raw_data` are not events.
+        assert_eq!(EventType::from_str("raw"), None);
+        assert_eq!(EventType::from_str("raw_data"), None);
         assert_eq!(EventType::from_str("invalid"), None);
     }
 

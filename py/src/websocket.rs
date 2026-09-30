@@ -1246,9 +1246,13 @@ fn handoff_capacity(config: &marketdata_core::ConnectionConfig) -> Option<usize>
 ///
 /// A message is delivered only between an `Authenticated` this thread
 /// forwarded and the next `Disconnected`, so frames of a rejected
-/// authentication never reach `message`. Whether a `message` callback is
-/// registered is checked for each message: if one is, it gets the message;
-/// otherwise the message waits in `handoff` for a `messages()` iterator.
+/// authentication never reach `message`. Whether a `message` or
+/// `raw_message` callback is registered is checked for each message: if one
+/// is, the callbacks get the message — `raw_message` first, with the frame's
+/// text, then `message`, with the dict built only when one is registered
+/// (#246); otherwise the message waits in `handoff` for a `messages()`
+/// iterator. A message in flight while `off()` removes the last callback may
+/// reach neither.
 fn spawn_stream_reader(
     name: &str,
     stream: Arc<marketdata_core::StreamReceiver>,
@@ -1258,6 +1262,7 @@ fn spawn_stream_reader(
     delivered: Delivered,
     test_panic: Option<String>,
 ) -> PyResult<std::thread::JoinHandle<()>> {
+    use crate::callback::EventType;
     use marketdata_core::websocket::{ConnectionEvent, StreamItem};
 
     std::thread::Builder::new()
@@ -1285,15 +1290,25 @@ fn spawn_stream_reader(
                         StreamItem::Message(msg) if authenticated => {
                             handling.set("message");
                             inject_test_panic(test_panic.as_deref(), "ws_messages");
-                            if callbacks.count(crate::callback::EventType::Message) == 0 {
+                            let wants_raw = callbacks.count(EventType::RawMessage) > 0;
+                            let wants_dict = callbacks.count(EventType::Message) > 0;
+                            if !wants_raw && !wants_dict {
                                 handoff.push(msg, &stop);
                                 continue;
                             }
                             Python::attach(|py| {
-                                if let Ok(dict) = message_to_dict(py, &msg) {
-                                    let args = pyo3::types::PyTuple::new(py, [dict.into_any()])
+                                if wants_raw {
+                                    let args = pyo3::types::PyTuple::new(py, [msg.raw.as_str()])
                                         .expect("Failed to create tuple");
-                                    callbacks.invoke(py, crate::callback::EventType::Message, &args);
+                                    callbacks.invoke(py, EventType::RawMessage, &args);
+                                }
+                                if wants_dict {
+                                    inject_test_panic(test_panic.as_deref(), "ws_message_dict");
+                                    if let Ok(dict) = message_to_dict(py, &msg) {
+                                        let args = pyo3::types::PyTuple::new(py, [dict.into_any()])
+                                            .expect("Failed to create tuple");
+                                        callbacks.invoke(py, EventType::Message, &args);
+                                    }
                                 }
                             });
                         }
@@ -1349,7 +1364,8 @@ fn test_panic_site() -> Option<String> {
     None
 }
 
-/// Panic if the test asked for one at `here` (`ws_events`, `ws_messages`).
+/// Panic if the test asked for one at `here` (`ws_events`, `ws_messages`,
+/// `ws_message_dict`: about to build the dict for `message` callbacks).
 #[cfg(debug_assertions)]
 fn inject_test_panic(site: Option<&str>, here: &str) {
     if site == Some(here) {
@@ -1581,6 +1597,7 @@ impl StockWebSocketClient {
     ///
     /// Supported events:
     ///   - "message" / "data": Called with message dict when data received
+    ///   - "raw_message": Called with the message as the str the server sent, no dict built
     ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
     ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
     ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
@@ -1975,11 +1992,15 @@ impl StockWebSocketClient {
     ///
     /// Iteration yields messages only: it waits while none arrive and stops
     /// once the connection is gone. `timeout_ms` is deprecated and ignored.
-    #[pyo3(signature = (timeout_ms=None))]
+    ///
+    /// With `raw=True` the iterator yields each message as the str the
+    /// server sent instead of a dict, and no dict is built from it (#246).
+    #[pyo3(signature = (timeout_ms=None, *, raw=false))]
     pub fn messages(
         &self,
         py: Python<'_>,
         timeout_ms: Option<u64>,
+        raw: bool,
     ) -> PyResult<crate::iterator::MessageIterator> {
         warn_timeout_ms_deprecated(py, timeout_ms)?;
         let state_guard = self.state.lock().map_err(|e| {
@@ -1990,7 +2011,7 @@ impl StockWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
         })?;
 
-        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff)))
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff), raw))
     }
 
     /// Get the locally cached list of active subscription keys.
@@ -2462,6 +2483,7 @@ impl FutOptWebSocketClient {
     ///
     /// Supported events:
     ///   - "message" / "data": Called with message dict when data received
+    ///   - "raw_message": Called with the message as the str the server sent, no dict built
     ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
     ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
     ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
@@ -2821,11 +2843,15 @@ impl FutOptWebSocketClient {
     ///
     /// Iteration yields messages only: it waits while none arrive and stops
     /// once the connection is gone. `timeout_ms` is deprecated and ignored.
-    #[pyo3(signature = (timeout_ms=None))]
+    ///
+    /// With `raw=True` the iterator yields each message as the str the
+    /// server sent instead of a dict, and no dict is built from it (#246).
+    #[pyo3(signature = (timeout_ms=None, *, raw=false))]
     pub fn messages(
         &self,
         py: Python<'_>,
         timeout_ms: Option<u64>,
+        raw: bool,
     ) -> PyResult<crate::iterator::MessageIterator> {
         warn_timeout_ms_deprecated(py, timeout_ms)?;
         let state_guard = self.state.lock().map_err(|e| {
@@ -2836,7 +2862,7 @@ impl FutOptWebSocketClient {
             pyo3::exceptions::PyRuntimeError::new_err("Not connected. Call connect() first.")
         })?;
 
-        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff)))
+        Ok(crate::iterator::MessageIterator::new(Arc::clone(&state.handoff), raw))
     }
 
     /// Get the locally cached list of active subscription keys.

@@ -23,6 +23,8 @@ before upgrading; the changes most 2.x code runs into:
 
 - The WebSocket `message` callback receives a parsed `dict`, not a JSON
   string ([§3](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#3-python-websocket-message-event-delivers-a-parsed-dict)).
+  Code that calls `json.loads(message)` keeps working on the `raw_message`
+  event, which delivers the string.
 - `HealthCheckConfig` keeps its name but not its fields: `ping_interval` and
   `max_missed_pongs` raise `TypeError`
   ([drop-in table](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#drop-in-compatible-no-changes-needed)).
@@ -393,6 +395,7 @@ client.on(event, callback)                 # Register event callback (not async 
 client.off(event)                          # Unregister callback
 
 client.messages()                          # Get message iterator
+client.messages(raw=True)                  # ... yielding each message as the str the server sent
 ```
 
 #### Event Types
@@ -400,10 +403,30 @@ client.messages()                          # Get message iterator
 | Event | Callback Signature | Description |
 |-------|-------------------|-------------|
 | `message` | `fn(msg: dict)` | Incoming data message |
+| `raw_message` | `fn(raw: str)` | The same message as the text the server sent, not turned into a dict |
 | `connect` | `fn()` | Connection established |
 | `disconnect` | `fn(code: int, reason: str)` | Connection closed |
 | `error` | `fn(err: WebSocketError)` | Error occurred (`err.args == (message, code)`) |
 | `messages_dropped` | `fn(dropped: int, total: int)` | Messages dropped because you fell behind (at most once per second, and before `disconnect`) |
+
+#### Raw Messages
+
+```python
+stock.on("raw_message", lambda raw: sink.write(raw))   # raw is a str
+
+for raw in stock.messages(raw=True):                   # or: async for
+    sink.write(raw)
+```
+
+`raw_message` hands you each message as the JSON text the server sent;
+`json.loads(raw)` equals the dict `message` gets for it. Use it to forward or
+store messages, to filter before parsing, or to parse with your own JSON
+library. With only `raw_message` callbacks registered the SDK builds no dict.
+With both, each message goes to `raw_message` first, then to `message`.
+`messages(raw=True)` is the iterator counterpart; `raw` is keyword-only and
+belongs to that iterator, so `messages()` on the same client still yields
+dicts. A raw and a non-raw iterator open on one client read the same queue:
+each message goes to only one of them.
 
 #### Callback Exceptions
 
@@ -490,11 +513,11 @@ blocked `for` loop still reacts to Ctrl+C. `messages(timeout_ms=...)` is
 deprecated and ignored. For periodic work while no data arrives, use
 `message` callbacks or `async for` alongside other tasks.
 
-Messages go to `message` callbacks when any are registered as they arrive,
-otherwise to the iterator. The iterator holds at most 4096 unread messages;
-while it does, lifecycle callbacks (`disconnect`, `reconnect`, …) that follow
-those messages wait until you read or call `disconnect()`. Every wait releases
-the GIL.
+Messages go to `message` and `raw_message` callbacks when any are registered
+as they arrive, otherwise to the iterator. The iterator holds at most 4096
+unread messages; while it does, lifecycle callbacks (`disconnect`,
+`reconnect`, …) that follow those messages wait until you read or call
+`disconnect()`. Every wait releases the GIL.
 
 ## Error Handling
 

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Python WebSocket: `raw_message` event and `messages(raw=True)`** (#246).
+  `ws.stock.on("raw_message", cb)` / `ws.futopt.on(...)` call `cb` with each
+  message as the `str` the server sent; `json.loads` of it equals the dict
+  `message` gets. With only `raw_message` callbacks registered the binding
+  does not build the dict, so code that forwards or stores messages, filters
+  before parsing, or still calls `json.loads(message)` as with the 2.x SDK
+  no longer pays for a parse it does not use. `messages(raw=True)`
+  (keyword-only) is the iterator counterpart, for `for` and `async for`.
+  `message` and `messages()` are unchanged and keep delivering dicts. A
+  `raw_message` callback, like a `message` one, takes the messages from the
+  iterators; with both registered each message goes to `raw_message` first.
+  Python only.
 - **WebSocket clients: `url`, the endpoint the client connects to** (#245).
   The old Python and Node SDKs had it and 3.0 did not: Python raised
   `AttributeError`, Node read `undefined`. It is core's resolved endpoint —

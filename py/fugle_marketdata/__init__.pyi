@@ -2,10 +2,20 @@
 
 Fugle Market Data SDK - Python bindings with full type annotations.
 """
-from typing import Any, AsyncIterator, Callable, Iterator, Literal, Mapping, Optional, List
+from typing import Any, AsyncIterator, Callable, Generic, Iterator, Literal, Mapping, Optional, List, overload
+
+# TypeVar with a default (PEP 696); type checkers resolve this import in a
+# stub without typing_extensions being installed.
+from typing_extensions import TypeVar
 
 # A message frame, as the server sent it.
 Message = dict[str, Any]
+
+# What a MessageIterator yields: Message, or str from messages(raw=True).
+# A bare `MessageIterator` annotation means `MessageIterator[Message]`.
+# `Message` is spelled out: mypy 1.14, the last to target Python 3.8, rejects
+# the alias as the default of a constrained TypeVar.
+_Yielded = TypeVar("_Yielded", dict[str, Any], str, default=dict[str, Any])
 
 __version__: str
 
@@ -2188,6 +2198,11 @@ class StockWebSocketClient:
 
         Supported events:
           - "message" / "data": Called with message dict when data received
+          - "raw_message": Called with each message as the str the server sent,
+            not turned into a dict. json.loads() of it equals the dict "message" gets. With
+            only "raw_message" callbacks the SDK builds no dict. When both are
+            registered each message goes to "raw_message" first. Like
+            "message", it takes the messages from messages() iterators.
           - "connect" / "connected": Called (no args) when the WebSocket opens, before authentication
           - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
           - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
@@ -2217,18 +2232,26 @@ class StockWebSocketClient:
         """
         ...
 
-    def messages(self, *, timeout_ms: Optional[int] = None) -> "MessageIterator":
+    @overload
+    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[False] = False) -> "MessageIterator[Message]":
         """Get message iterator for consuming streaming data.
 
         Args:
             timeout_ms: Deprecated and ignored; passing it emits a
                 DeprecationWarning.
+            raw: Yield each message as the str the server sent instead of a
+                dict; the SDK builds no dict from it. Keyword-only. Each
+                iterator chooses for itself.
 
         Returns:
             MessageIterator for iterating over messages. Iteration yields
             messages only and stops once the connection is gone.
         """
         ...
+    @overload
+    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[True]) -> "MessageIterator[str]": ...
+    @overload
+    def messages(self, *, timeout_ms: Optional[int] = None, raw: bool) -> "MessageIterator[Any]": ...
 
     async def __aenter__(self) -> "StockWebSocketClient":
         """Async context manager entry - connects to WebSocket server."""
@@ -2422,6 +2445,8 @@ class FutOptWebSocketClient:
     def on(self, event: str, callback: Callable[..., None]) -> None:
         """Register a callback for an event type.
 
+        Same events as StockWebSocketClient.on(), "raw_message" included.
+
         Args:
             event: Event type string
             callback: Python callable to invoke
@@ -2436,22 +2461,33 @@ class FutOptWebSocketClient:
         """
         ...
 
-    def messages(self, *, timeout_ms: Optional[int] = None) -> "MessageIterator":
+    @overload
+    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[False] = False) -> "MessageIterator[Message]":
         """Get message iterator for consuming streaming data.
 
         Args:
             timeout_ms: Deprecated and ignored; passing it emits a
                 DeprecationWarning.
+            raw: Yield each message as the str the server sent instead of a
+                dict; the SDK builds no dict from it. Keyword-only. Each
+                iterator chooses for itself.
 
         Returns:
             MessageIterator for iterating over messages. Iteration yields
             messages only and stops once the connection is gone.
         """
         ...
+    @overload
+    def messages(self, *, timeout_ms: Optional[int] = None, raw: Literal[True]) -> "MessageIterator[str]": ...
+    @overload
+    def messages(self, *, timeout_ms: Optional[int] = None, raw: bool) -> "MessageIterator[Any]": ...
 
 
-class MessageIterator:
+class MessageIterator(Generic[_Yielded]):
     """Iterator for WebSocket messages.
+
+    Yields message dicts, or from `messages(raw=True)` each message as the
+    str the server sent.
 
     Supports both synchronous iteration (`for msg in iter`) and
     asynchronous iteration (`async for msg in iter`).
@@ -2472,11 +2508,11 @@ class MessageIterator:
     the connection is gone.
     """
 
-    def __iter__(self) -> Iterator[Message]:
+    def __iter__(self) -> Iterator[_Yielded]:
         """Return self for iteration."""
         ...
 
-    def __next__(self) -> Message:
+    def __next__(self) -> _Yielded:
         """Get next message, waiting until one arrives (blocking).
 
         Never returns None. Wakes every 100 ms to let Python handle signals,
@@ -2490,11 +2526,11 @@ class MessageIterator:
         """
         ...
 
-    def __aiter__(self) -> AsyncIterator[Message]:
+    def __aiter__(self) -> AsyncIterator[_Yielded]:
         """Return self for async iteration."""
         ...
 
-    async def __anext__(self) -> Message:
+    async def __anext__(self) -> _Yielded:
         """Get next message, waiting until one arrives (async).
 
         Never returns None.
@@ -2507,7 +2543,7 @@ class MessageIterator:
         """
         ...
 
-    def try_recv(self) -> Optional[dict[str, Any]]:
+    def try_recv(self) -> Optional[_Yielded]:
         """Try to receive a message without blocking.
 
         Returns:
@@ -2515,7 +2551,7 @@ class MessageIterator:
         """
         ...
 
-    async def recv_timeout(self, timeout_ms: int) -> Optional[dict[str, Any]]:
+    async def recv_timeout(self, timeout_ms: int) -> Optional[_Yielded]:
         """Receive a message with timeout (async).
 
         Args:
