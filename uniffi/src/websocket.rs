@@ -1212,20 +1212,27 @@ impl WebSocketClient {
         let caller = std::thread::current().id();
 
         // The connection this call closes, handed over in one step with the
-        // reader the other callers are to wait for.
-        let taken = {
+        // reader the other callers are to wait for; or, with none to close,
+        // the reader this call waits for, read in the same step so a
+        // `connect()` begun after it is not taken for one it has to wait on
+        // (#278).
+        let (taken, reader) = {
             let mut slot = lock_connection(&self.connection);
             match slot.current.take() {
                 Some(taken) => {
                     slot.closing = taken.reader.clone();
-                    Some(taken)
+                    (Some(taken), None)
                 }
                 None => {
                     // Nothing to close: a `connect()` in flight gives up its
                     // connection instead of storing it (#121), and any other
                     // caller is left the reader to wait for.
                     slot.disconnect_requested = true;
-                    None
+                    // The handshake's reader while a `connect()` runs — that
+                    // connection is closed before `connect()` returns — else
+                    // the reader of the connection another `disconnect()`
+                    // closed.
+                    (None, slot.pending.clone().or_else(|| slot.closing.clone()))
                 }
             }
         };
@@ -1233,13 +1240,8 @@ impl WebSocketClient {
         match taken {
             Some(connection) => self.close(connection, caller).await,
             None => {
-                // The handshake's reader while a `connect()` runs — that
-                // connection is closed before `connect()` returns — else the
-                // reader of the connection another `disconnect()` closed.
-                let reader = {
-                    let slot = lock_connection(&self.connection);
-                    slot.pending.clone().or_else(|| slot.closing.clone())
-                };
+                #[cfg(test)]
+                run_after_nothing_to_close();
                 Self::wait_for(reader, caller).await;
             }
         }
@@ -1686,6 +1688,22 @@ fn lock_state(
 /// assigned or taken whole.
 fn lock_connection(connection: &std::sync::Mutex<ConnectionSlot>) -> std::sync::MutexGuard<'_, ConnectionSlot> {
     connection.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Run once by a `disconnect()` polled on this thread that found no
+    /// connection to close, after it released the lock, so a test can start
+    /// a `connect()` there (#278).
+    static AFTER_NOTHING_TO_CLOSE: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn run_after_nothing_to_close() {
+    if let Some(hook) = AFTER_NOTHING_TO_CLOSE.with(|hook| hook.borrow_mut().take()) {
+        hook();
+    }
 }
 
 /// `Null` means the frame carried no `data`.
@@ -3395,6 +3413,62 @@ mod tests {
         // reader is gone (this test and `client` hold the last references).
         assert_eq!(listener.events().last().map(String::as_str), Some("disconnected(false)"));
         assert_eq!(Arc::strong_count(&listener), 2, "the stream reader is still running");
+    }
+
+    #[test]
+    fn disconnect_with_nothing_to_close_does_not_wait_for_a_later_connect() {
+        let server_rt = tokio::runtime::Runtime::new().unwrap();
+        let server = server_rt.block_on(server_holding_the_handshake());
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        // A `connect()` that starts once `disconnect()` has found nothing to
+        // close, and has its handshake's reader in the slot before that
+        // `disconnect()` goes on (#278).
+        let (connect_tx, connect_rx) = std::sync::mpsc::channel();
+        let hook = {
+            let client = Arc::clone(&client);
+            // A runtime that outlives the connection, which runs on it.
+            let runtime = server_rt.handle().clone();
+            move || {
+                std::thread::spawn({
+                    let client = Arc::clone(&client);
+                    move || {
+                        let _ = connect_tx.send(runtime.block_on(client.connect_impl()));
+                    }
+                });
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while lock_connection(&client.connection).pending.is_none() {
+                    assert!(std::time::Instant::now() < deadline, "connect() did not start");
+                    std::thread::yield_now();
+                }
+            }
+        };
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            let client = Arc::clone(&client);
+            move || {
+                AFTER_NOTHING_TO_CLOSE.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                rt.block_on(client.disconnect_impl());
+                let _ = done_tx.send(());
+            }
+        });
+
+        server_rt.block_on(listener.wait_for("connected"));
+        server_rt.block_on(server.inject_frame(marketdata_core::models::streaming::StreamMessage::Authenticated));
+        let connected = connect_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("connect() returned");
+        let returned = done_rx.recv_timeout(std::time::Duration::from_secs(10)).is_ok();
+        // Closed before asserting, so a `disconnect()` still waiting on it
+        // ends rather than outliving the test.
+        let stored = client.is_connected();
+        server_rt.block_on(client.disconnect_impl());
+
+        assert!(returned, "disconnect() waited for a connection opened after it was called");
+        connected.expect("connect() started after disconnect() is not cancelled by it");
+        assert!(stored);
     }
 
     #[tokio::test(flavor = "multi_thread")]
