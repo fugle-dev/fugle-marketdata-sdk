@@ -1005,7 +1005,11 @@ fn claim_connect(
         stored = stored_connection(state, gave_up)?;
     }
     match (stored, claim) {
-        (Stored::Join(inner), _) => Ok(Claim::Join(inner)),
+        (Stored::Join(inner), claim) => {
+            // Released before the caller waits.
+            drop(claim);
+            Ok(Claim::Join(inner))
+        }
         (Stored::Replace, Some(claim)) => Ok(Claim::Fresh(claim)),
         // `Replace` is only read under the claim.
         (Stored::Refuse | Stored::Replace, _) => Err(already()),

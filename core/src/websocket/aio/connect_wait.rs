@@ -50,6 +50,40 @@ pub(crate) struct ConnectWaiters {
     /// connection and queuing its replay.
     #[cfg(test)]
     pub(crate) replay_hold: tokio::sync::Mutex<()>,
+    /// Test hook: a `connect()` that found no dispatch task, before it
+    /// claims the connect gate.
+    #[cfg(test)]
+    pub(crate) before_claim: TestPause,
+    /// Test hook: a `connect()` that claimed the gate and found a reconnect
+    /// to wait on, once it has released the gate.
+    #[cfg(test)]
+    pub(crate) claim_released: TestPause,
+}
+
+/// Test hook: once armed, holds the first caller to reach it until the test
+/// lets it go on; later callers pass.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct TestPause(Mutex<Option<(tokio::sync::oneshot::Sender<()>, tokio::sync::oneshot::Receiver<()>)>>);
+
+#[cfg(test)]
+impl TestPause {
+    /// Arm the hook. The receiver fires when a caller is held; sending on
+    /// the sender lets it go on.
+    pub(crate) fn arm(&self) -> (tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Sender<()>) {
+        let (reached_tx, reached_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some((reached_tx, resume_rx));
+        (reached_rx, resume_tx)
+    }
+
+    pub(crate) async fn reached(&self) {
+        let armed = self.0.lock().unwrap_or_else(PoisonError::into_inner).take();
+        if let Some((reached, resume)) = armed {
+            let _ = reached.send(());
+            let _ = resume.await;
+        }
+    }
 }
 
 impl ConnectWaiters {

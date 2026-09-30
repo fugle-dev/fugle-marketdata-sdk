@@ -1,5 +1,6 @@
 //! Refusing a `connect()` while another one on the same client is still
-//! running (#119).
+//! opening a connection (#119). An async `connect()` that waits on a
+//! reconnect does not go through the gate (#268).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
