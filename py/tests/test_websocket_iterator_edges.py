@@ -23,6 +23,8 @@ from tests.ws_loopback import LoopbackServer, disconnect_quietly, product_ws
 # A hang inside native code never lets the default signal-based timeout fire.
 hard_timeout = pytest.mark.timeout(30, method="thread")
 
+PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
+
 PY_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SUBSCRIPTION = {"channel": "trades", "symbol": "2330"}
 
@@ -108,9 +110,10 @@ def test_recv_timeout_still_times_out(server):
 
 
 @hard_timeout
-async def test_cancelled_anext_takes_no_message(server):
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_cancelled_anext_takes_no_message(server, product):
     # The message arrives within the 100 ms the cancelled wait used to linger.
-    ws = product_ws(server.url, "stock")
+    ws = product_ws(server.url, product)
     try:
         await ws.connect_async()
         messages = ws.messages()
@@ -128,14 +131,15 @@ async def test_cancelled_anext_takes_no_message(server):
 
 
 @hard_timeout
-async def test_cancelled_anext_does_not_delay_the_next_one(server):
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_cancelled_anext_does_not_delay_the_next_one(server, product):
     # A cancelled wait lingers up to 100 ms, waiting on the queue without
     # taking from it. Woken for a message, it must pass the wake-up on, or
     # the wait that replaced it only sees the message at its own next
     # wake-up, close to 100 ms later. Four are cancelled because the server
     # answers a subscribe with two frames, so two waits are woken. The median
     # leaves room for a loaded machine.
-    ws = product_ws(server.url, "stock")
+    ws = product_ws(server.url, product)
     delays = []
     try:
         await ws.connect_async()

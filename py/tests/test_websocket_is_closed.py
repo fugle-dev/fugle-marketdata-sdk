@@ -56,10 +56,11 @@ def test_reconnecting_the_same_client_clears_closed(product):
 
 
 @hard_timeout
-def test_is_closed_is_true_after_disconnect_async():
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_is_closed_is_true_after_disconnect_async(product):
     """The async path drops `state` the same way, so it needs its own check."""
     with LoopbackServer() as server:
-        ws = product_ws(server.url, "stock")
+        ws = product_ws(server.url, product)
 
         async def run():
             await ws.connect_async()

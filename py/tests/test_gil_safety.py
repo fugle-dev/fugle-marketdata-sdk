@@ -11,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fugle_marketdata import AuthError, RestClient
 from tests.ws_loopback import LoopbackServer, disconnect_quietly, product_ws
 
+PRODUCTS = [pytest.param("stock", id="stock"), pytest.param("futopt", id="futopt")]
+
 
 class TestGilSafety:
     """Tests to verify GIL is released during async operations."""
@@ -72,7 +74,8 @@ class TestGilSafety:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(15)
-    async def test_websocket_iterator_concurrent_recv(self, mock_api_key):
+    @pytest.mark.parametrize("product", PRODUCTS)
+    async def test_websocket_iterator_concurrent_recv(self, mock_api_key, product):
         """WebSocket async iteration should not hold GIL.
 
         This tests that the async iterator's __anext__ releases GIL properly.
@@ -81,7 +84,7 @@ class TestGilSafety:
         # A local server in a child process, so the test needs no network and
         # the server does not compete for this process's GIL (#66).
         with LoopbackServer() as srv:
-            ws = product_ws(srv.url, "stock", api_key=mock_api_key)
+            ws = product_ws(srv.url, product, api_key=mock_api_key)
 
             async def other_work():
                 """Other async work that should run concurrently."""
@@ -99,7 +102,8 @@ class TestGilSafety:
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(15)
-    async def test_async_iterator_no_gil_hold(self, mock_api_key):
+    @pytest.mark.parametrize("product", PRODUCTS)
+    async def test_async_iterator_no_gil_hold(self, mock_api_key, product):
         """Async iterator should release GIL during message receive.
 
         This is a more direct test of the async iterator pattern.
@@ -115,7 +119,7 @@ class TestGilSafety:
 
         # Local server as above (#66).
         with LoopbackServer() as srv:
-            ws = product_ws(srv.url, "stock", api_key=mock_api_key)
+            ws = product_ws(srv.url, product, api_key=mock_api_key)
             try:
                 # Run WebSocket task alongside monitor tasks
                 await asyncio.gather(

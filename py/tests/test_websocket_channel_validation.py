@@ -46,12 +46,19 @@ def test_futopt_subscribe_rejects_indices(ws):
 
 
 @pytest.mark.asyncio
-async def test_stock_subscribe_async_raises_on_await(ws):
+@pytest.mark.parametrize(
+    "product, channel, symbol, valid",
+    [
+        pytest.param("stock", "trade", "2330", STOCK_CHANNELS, id="stock"),
+        pytest.param("futopt", "indices", "TXFC4", FUTOPT_CHANNELS, id="futopt"),
+    ],
+)
+async def test_subscribe_async_raises_on_await(ws, product, channel, symbol, valid):
     # Calling it does not raise; the error comes with the awaitable.
-    awaitable = ws.stock.subscribe_async("trade", "2330")
+    awaitable = getattr(ws, product).subscribe_async(channel, symbol)
     with pytest.raises(MarketDataError) as excinfo:
         await awaitable
-    assert_invalid_channel(excinfo, "trade", STOCK_CHANNELS)
+    assert_invalid_channel(excinfo, channel, valid)
 
 
 def test_known_channel_in_any_case_reaches_connection_check(ws):
@@ -62,6 +69,13 @@ def test_known_channel_in_any_case_reaches_connection_check(ws):
 
 
 @pytest.mark.asyncio
-async def test_known_channel_async_reaches_connection_check(ws):
+@pytest.mark.parametrize(
+    "product, channel, symbol",
+    [
+        pytest.param("stock", "Candles", "2330", id="stock"),
+        pytest.param("futopt", "BOOKS", "TXFC4", id="futopt"),
+    ],
+)
+async def test_known_channel_async_reaches_connection_check(ws, product, channel, symbol):
     with pytest.raises(RuntimeError, match="Not connected"):
-        await ws.stock.subscribe_async("Candles", "2330")
+        await getattr(ws, product).subscribe_async(channel, symbol)

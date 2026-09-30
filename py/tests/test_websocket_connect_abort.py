@@ -7,7 +7,7 @@ in a local variable only, so ``disconnect()`` found nothing to close and the
 connect went on to install a live connection (#143).
 
 The server here never answers ``auth``, so the connect stays in the handshake
-until it is aborted. Only the stock client has ``connect_async()``.
+until it is aborted.
 """
 import asyncio
 import threading
@@ -131,8 +131,9 @@ def test_client_connects_again_after_an_aborted_connect(server, product):
 
 
 @hard_timeout
-def test_disconnect_async_during_handshake_aborts_connect_async(server):
-    ws = product_ws(server.url, "stock", api_key=SILENT_API_KEY)
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_disconnect_async_during_handshake_aborts_connect_async(server, product):
+    ws = product_ws(server.url, product, api_key=SILENT_API_KEY)
     rec = Recorder(ws)
 
     async def scenario():
@@ -152,10 +153,11 @@ def test_disconnect_async_during_handshake_aborts_connect_async(server):
 
 
 @hard_timeout
-def test_sync_disconnect_aborts_connect_async(server):
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_sync_disconnect_aborts_connect_async(server, product):
     """`connect_async()` runs on pyo3-async-runtimes' runtime, not the one the
     sync `disconnect()` blocks on."""
-    ws = product_ws(server.url, "stock", api_key=SILENT_API_KEY)
+    ws = product_ws(server.url, product, api_key=SILENT_API_KEY)
     rec = Recorder(ws)
 
     async def scenario():
@@ -174,10 +176,11 @@ def test_sync_disconnect_aborts_connect_async(server):
 
 
 @hard_timeout
-def test_cancelled_connect_async_leaves_nothing_to_abort(server):
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_cancelled_connect_async_leaves_nothing_to_abort(server, product):
     """A `connect_async()` cancelled mid-handshake drops its client itself;
     a later `disconnect()` finds nothing to close."""
-    ws = product_ws(server.url, "stock", api_key=SILENT_API_KEY)
+    ws = product_ws(server.url, product, api_key=SILENT_API_KEY)
     rec = Recorder(ws)
 
     async def scenario():
