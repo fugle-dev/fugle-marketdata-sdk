@@ -12,15 +12,23 @@ checkout built with `maturin develop --release`):
     python3 benchmarks/ws/py/run-compare.py --mode aiter \\
         --base <main checkout>/py/.venv/bin/python3 --head py/.venv/bin/python3
 
+`--head-env NAME=V1,V2` runs the head build once per value with that
+environment variable set, as separate rows (#267):
+
+    ... --head-env FUGLE_MARKETDATA_AITER_YIELD_EVERY=1,32,0
+
 Run it while the load average is below 4 (REPORT.md, "Measurement Validity").
 The 1- and 5-minute load are read before every run; each summary gives the
-highest seen and says whether it passed the gate.
+highest seen and says whether it passed the gate. With `--stop-above-gate`
+it stops at the first run that would start at or above the gate instead,
+after printing the medians of the runs made so far.
 """
 
 import argparse
 import importlib.util
 import os
 import statistics
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('run_modes', os.path.join(HERE, 'run-modes.py'))
@@ -41,37 +49,61 @@ def main():
     parser.add_argument('--base', required=True, help='interpreter with the build to compare against')
     parser.add_argument('--head', required=True, help='interpreter with the build under test')
     parser.add_argument('--runs', type=int, default=5)
+    parser.add_argument('--head-env', metavar='NAME=V1,V2',
+                        help='run the head build once per value of this environment variable')
+    parser.add_argument('--stop-above-gate', action='store_true',
+                        help='stop before a run that would start above the load gate')
     args = parser.parse_args()
 
     url = f'ws://localhost:{run_modes.PORT}'
     bench = os.path.join(run_modes.WS_DIR, 'py', 'bench-new.py')
-    clients = (
+    head = [os.path.abspath(args.head), bench, '--url', url, '--timeout', '60', '--mode', args.mode]
+    if args.head_env:
+        env_name, _, values = args.head_env.partition('=')
+        if not env_name or not all(values.split(',')):
+            parser.error('--head-env takes NAME=V1[,V2...]')
+        heads = [(f'head {value}', ['env', f'{env_name}={value}'] + head) for value in values.split(',')]
+    else:
+        heads = [('head', head)]
+    clients = [
         ('null', ['node', os.path.join(run_modes.WS_DIR, 'js', 'bench-null.js'), '--url', url]),
         ('base', [os.path.abspath(args.base), bench, '--url', url, '--timeout', '60', '--mode', args.mode]),
-        ('head', [os.path.abspath(args.head), bench, '--url', url, '--timeout', '60', '--mode', args.mode]),
-    )
+        *heads,
+    ]
+    width = max(len(label) for label, _ in clients)
     for name, count in run_modes.SIZES:
         rows = {label: [] for label, _ in clients}
         loads = []
+        stopped = None
         for run in range(args.runs):
-            for label, cmd in clients:
+            # Rotated, so no client always runs last in a round.
+            for label, cmd in clients[run % len(clients):] + clients[:run % len(clients)]:
                 load = os.getloadavg()
+                if args.stop_above_gate and max(load[:2]) >= run_modes.LOAD_GATE:
+                    stopped = (f'stopped before {name} run {run + 1} {label}: load {load[0]:.2f}/{load[1]:.2f} '
+                               f'is not below the gate {run_modes.LOAD_GATE}')
+                    break
                 loads += load[:2]
                 result = run_modes.run_once(cmd, count)
                 rows[label].append(result)
-                print(f"{name} run {run + 1}/{args.runs} {label:4} {rate(result)} msg/s "
+                print(f"{name} run {run + 1}/{args.runs} {label:{width}} {rate(result)} msg/s "
                       f"load {load[0]:.2f}/{load[1]:.2f}", flush=True)
-        print(f'\n{name.upper()} burst, `{args.mode}`, median of {args.runs}:')
+            if stopped:
+                break
+        print(f'\n{name.upper()} burst, `{args.mode}`, median of the runs made (n):')
         for label, _ in clients:
             cells = []
             for key in KEYS:
                 found = [row[key] for row in rows[label] if row.get(key) is not None]
                 cells.append(f'{key}={statistics.median(found):,.0f}' if found else f'{key}=-')
-            print(f'  {label:4} ' + '  '.join(cells))
-        loaded = max(loads) >= run_modes.LOAD_GATE
-        print(f'  highest load average before a run: {max(loads):.2f}, gate {run_modes.LOAD_GATE}: '
-              + ('ABOVE THE GATE, do not trust these figures' if loaded else 'within the gate'))
+            print(f'  {label:{width}} n={len(rows[label])}  ' + '  '.join(cells))
+        if loads:
+            loaded = max(loads) >= run_modes.LOAD_GATE
+            print(f'  highest load average before a run: {max(loads):.2f}, gate {run_modes.LOAD_GATE}: '
+                  + ('ABOVE THE GATE, do not trust these figures' if loaded else 'within the gate'))
         print()
+        if stopped:
+            sys.exit(stopped)
 
 
 if __name__ == '__main__':
