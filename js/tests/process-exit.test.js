@@ -347,8 +347,9 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       expect(result.lines).toEqual(expect.arrayContaining(['DISCONNECT', 'RECONNECT']));
       expect(result.lines[result.lines.length - 1]).toMatch(/^ERROR Reconnection failed/);
       expect(result).toMatchObject({ exited: true, code: 0 });
-      // Alive for the whole backoff window after the drop.
-      expect(result.exitAt - result.lineAt.DISCONNECT).toBeGreaterThanOrEqual(BACKOFF_MS * 0.8);
+      // Alive for the whole backoff window after the drop: at least half of
+      // BACKOFF_MS, since the jitter takes up to half off (#297).
+      expect(result.exitAt - result.lineAt.DISCONNECT).toBeGreaterThanOrEqual(BACKOFF_MS * 0.4);
     });
   }, 20000);
 
