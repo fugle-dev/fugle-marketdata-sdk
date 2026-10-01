@@ -661,6 +661,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials()
+		})
+		if checksum != 19921 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_restclient_stock()
 		})
 		if checksum != 18733 {
@@ -1224,6 +1233,15 @@ func uniffiCheckChecksums() {
 		if checksum != 20069 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials()
+		})
+		if checksum != 33298 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials: UniFFI API checksum mismatch")
 		}
 	}
 	{
@@ -2473,6 +2491,15 @@ type RestClientInterface interface {
 	BaseUrl() string
 	// Access FutOpt (futures and options) endpoints
 	Futopt() *FutOptClient
+	// Replace the credential later requests send, with any of the three
+	// kinds. Sub-clients already taken from this one (`stock()`,
+	// `stock().intraday()`, ...) send it too; a request already sent keeps
+	// the credential it was sent with (#322).
+	//
+	// Exactly one credential must be non-empty, as at construction;
+	// otherwise, or if it cannot be sent in an HTTP header, this returns a
+	// `ConfigError` (code 1004) and the current credential is kept.
+	SetCredentials(credentials CredentialsRecord) error
 	// Access stock-related endpoints
 	Stock() *StockClient
 }
@@ -2508,6 +2535,25 @@ func (_self *RestClient) Futopt() *FutOptClient {
 		return C.uniffi_marketdata_uniffi_fn_method_restclient_futopt(
 			_pointer, _uniffiStatus)
 	}))
+}
+
+// Replace the credential later requests send, with any of the three
+// kinds. Sub-clients already taken from this one (`stock()`,
+// `stock().intraday()`, ...) send it too; a request already sent keeps
+// the credential it was sent with (#322).
+//
+// Exactly one credential must be non-empty, as at construction;
+// otherwise, or if it cannot be sent in an HTTP header, this returns a
+// `ConfigError` (code 1004) and the current credential is kept.
+func (_self *RestClient) SetCredentials(credentials CredentialsRecord) error {
+	_pointer := _self.ffiObject.incrementPointer("*RestClient")
+	defer _self.ffiObject.decrementPointer()
+	_, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) bool {
+		C.uniffi_marketdata_uniffi_fn_method_restclient_set_credentials(
+			_pointer, FfiConverterCredentialsRecordINSTANCE.Lower(credentials), _uniffiStatus)
+		return false
+	})
+	return _uniffiErr.AsError()
 }
 
 // Access stock-related endpoints
@@ -4525,6 +4571,18 @@ type WebSocketClientInterface interface {
 	MessagesDroppedTotal() uint64
 	Ping(state *string) error
 	QuerySubscriptions() error
+	// Replace the credential this client authenticates with from its next
+	// connection attempt on: the next `connect()` or automatic reconnect
+	// (#322). Any of the three kinds may replace any other. A connection
+	// already authenticated is not authenticated again: the server takes
+	// one auth frame per connection, so call it before a token expires.
+	// Rejected credentials still end automatic reconnection; set a new
+	// credential, then call `connect()` again.
+	//
+	// Exactly one credential must be non-empty, as in
+	// `new_with_credentials`; otherwise this returns a `ConfigError` (code
+	// 1004) and the current credential is kept.
+	SetCredentials(credentials CredentialsRecord) error
 	// Subscribe to a channel for one or more symbols.
 	//
 	// One symbol is sent as `symbol`, several as `symbols` in one frame;
@@ -4927,6 +4985,28 @@ func (_self *WebSocketClient) QuerySubscriptions() error {
 	}
 
 	return err
+}
+
+// Replace the credential this client authenticates with from its next
+// connection attempt on: the next `connect()` or automatic reconnect
+// (#322). Any of the three kinds may replace any other. A connection
+// already authenticated is not authenticated again: the server takes
+// one auth frame per connection, so call it before a token expires.
+// Rejected credentials still end automatic reconnection; set a new
+// credential, then call `connect()` again.
+//
+// Exactly one credential must be non-empty, as in
+// `new_with_credentials`; otherwise this returns a `ConfigError` (code
+// 1004) and the current credential is kept.
+func (_self *WebSocketClient) SetCredentials(credentials CredentialsRecord) error {
+	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
+	defer _self.ffiObject.decrementPointer()
+	_, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) bool {
+		C.uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials(
+			_pointer, FfiConverterCredentialsRecordINSTANCE.Lower(credentials), _uniffiStatus)
+		return false
+	})
+	return _uniffiErr.AsError()
 }
 
 // Subscribe to a channel for one or more symbols.

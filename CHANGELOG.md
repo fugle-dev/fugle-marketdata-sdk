@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **C#, Go, Java, C++: `SetCredentials` / `setCredentials` /
+  `set_credentials`** (#322), as Rust, Python and Node have below: UniFFI
+  `WebSocketClient` and `RestClient` gain `set_credentials(CredentialsRecord)`.
+  C#: `SetCredentials(apiKey:, bearerToken:, sdkToken:)` on `WebSocketClient`,
+  `RestClient`, the event-style clients and `FugleWebsocketClientFactory`
+  (both clients, built or not). Go: `SetCredentials(CredentialsRecord)` and
+  `SetCredentialsWith(WithSdkToken(...))` on `StreamingClient` and
+  `RestClient`. Java: `setCredentials(apiKey, bearerToken, sdkToken)` on
+  `FugleWebSocketClient` and `FugleRestClient`. C++: the generated
+  `set_credentials`. Go's `Messages()` still closes when an automatic
+  reconnect is rejected: create a new client to stream again.
 - **Rust, Python, Node: `set_credentials()` / `setCredentials()`** (#322).
   Replaces the credential of a live client, with any of the three kinds and
   the same rule as at construction (exactly one non-blank value, otherwise

@@ -109,6 +109,21 @@ public interface WebSocketClientInterface {
     public CompletableFuture<Void> querySubscriptions() ;
     
     /**
+     * Replace the credential this client authenticates with from its next
+     * connection attempt on: the next `connect()` or automatic reconnect
+     * (#322). Any of the three kinds may replace any other. A connection
+     * already authenticated is not authenticated again: the server takes
+     * one auth frame per connection, so call it before a token expires.
+     * Rejected credentials still end automatic reconnection; set a new
+     * credential, then call `connect()` again.
+     *
+     * Exactly one credential must be non-empty, as in
+     * `new_with_credentials`; otherwise this returns a `ConfigError` (code
+     * 1004) and the current credential is kept.
+     */
+    public void setCredentials(CredentialsRecord credentials) throws MarketDataException;
+    
+    /**
      * Subscribe to a channel for one or more symbols.
      *
      * One symbol is sent as `symbol`, several as `symbols` in one frame;

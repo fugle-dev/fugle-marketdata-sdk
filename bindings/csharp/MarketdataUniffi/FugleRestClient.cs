@@ -127,6 +127,23 @@ namespace FugleMarketData
         public string BaseUrl => _inner.BaseUrl();
 
         /// <summary>
+        /// Replace the credential later requests send, with any of the three
+        /// kinds. Clients already taken from this one (<see cref="Stock"/>,
+        /// <c>Stock.Intraday</c>, ...) send it too; a request already sent keeps
+        /// the credential it was sent with.
+        /// </summary>
+        /// <param name="apiKey">Fugle API key</param>
+        /// <param name="bearerToken">OAuth bearer token</param>
+        /// <param name="sdkToken">Fugle SDK token</param>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 unless exactly one non-empty credential is given, or if it cannot be sent in an HTTP header; the current credential is then kept</exception>
+        public void SetCredentials(string? apiKey = null, string? bearerToken = null, string? sdkToken = null) =>
+            _inner.SetCredentials(new uniffi.marketdata_uniffi.CredentialsRecord(
+                apiKey: apiKey,
+                bearerToken: bearerToken,
+                sdkToken: sdkToken
+            ));
+
+        /// <summary>
         /// Create a new REST client with SDK token authentication.
         /// </summary>
         /// <param name="sdkToken">Fugle SDK token</param>

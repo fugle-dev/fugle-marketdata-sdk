@@ -37,6 +37,12 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — mock server records auth frames (#322)
+
+- `+` `testing::MockWsServer::auth_received(&self) -> Vec<serde_json::Value>`
+  (`test-utils` feature): the `data` of every `auth` request, so a binding's
+  tests can check the credential each connection attempt sent. Additive.
+
 ### Unreleased — `set_credentials()` (#322)
 
 - `+` `websocket::credentials::CredentialsHandle` (also at

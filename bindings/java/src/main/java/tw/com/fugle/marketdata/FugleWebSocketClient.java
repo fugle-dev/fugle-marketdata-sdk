@@ -118,6 +118,28 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     /**
+     * Replace the credential this client authenticates with from its next
+     * connection attempt on: the next {@link #connect()} or automatic
+     * reconnect. Any of the three kinds may replace any other. A connection
+     * already authenticated is not authenticated again, so call it before a
+     * token expires. Rejected credentials still end automatic reconnection;
+     * set a new credential, then call {@link #connect()} again.
+     *
+     * @param apiKey Fugle API key, or null
+     * @param bearerToken OAuth bearer token, or null
+     * @param sdkToken Fugle SDK token, or null
+     * @throws FugleException code 1004 unless exactly one non-empty
+     *         credential is given; the current credential is then kept
+     */
+    public void setCredentials(String apiKey, String bearerToken, String sdkToken) {
+        try {
+            webSocketClient.setCredentials(new CredentialsRecord(apiKey, bearerToken, sdkToken));
+        } catch (Exception e) {
+            throw FugleException.unwrap(e);
+        }
+    }
+
+    /**
      * Disconnect from the WebSocket server.
      *
      * <p>The future completes once the listener has handled the connection's

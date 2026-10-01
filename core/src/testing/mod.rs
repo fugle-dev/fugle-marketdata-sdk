@@ -112,6 +112,8 @@ pub struct MockWsServer {
     auth_silent: Arc<std::sync::atomic::AtomicBool>,
     /// `ping` handling, shared with the per-client tasks.
     pings: Arc<PingControl>,
+    /// `data` of every `auth` request received, in order.
+    auth_received: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
 }
 
 /// How the mock treats `ping` requests. Like the Fugle server
@@ -170,6 +172,7 @@ impl MockWsServer {
         let auth_response = Arc::new(std::sync::Mutex::new(default_auth_response()));
         let auth_silent = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pings = Arc::new(PingControl::default());
+        let auth_received = Arc::new(std::sync::Mutex::new(Vec::new()));
 
         for _ in 0..capacity {
             let pending_sub_ids: Arc<Mutex<VecDeque<String>>> =
@@ -189,6 +192,7 @@ impl MockWsServer {
                 auth_response: Arc::clone(&auth_response),
                 auth_silent: Arc::clone(&auth_silent),
                 pings: Arc::clone(&pings),
+                auth_received: Arc::clone(&auth_received),
             });
         }
 
@@ -202,6 +206,7 @@ impl MockWsServer {
             auth_response,
             auth_silent,
             pings,
+            auth_received,
         }
     }
 
@@ -214,6 +219,12 @@ impl MockWsServer {
     /// The `data` of every `ping` request received so far, from any client.
     pub fn pings_received(&self) -> Vec<serde_json::Value> {
         self.pings.received.lock().expect("pings lock poisoned").clone()
+    }
+
+    /// The `data` of every `auth` request received so far, from any client,
+    /// answered or not — the credential each connection attempt sent.
+    pub fn auth_received(&self) -> Vec<serde_json::Value> {
+        self.auth_received.lock().expect("auth_received lock poisoned").clone()
     }
 
     /// Replace the frame every client receives in reply to its `auth`
@@ -387,6 +398,7 @@ struct AcceptSeed {
     auth_response: Arc<std::sync::Mutex<serde_json::Value>>,
     auth_silent: Arc<std::sync::atomic::AtomicBool>,
     pings: Arc<PingControl>,
+    auth_received: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
 }
 
 /// Convenience: spin up a fresh single-client [`MockWsServer`] and a
@@ -442,6 +454,7 @@ async fn run_client_loop(
         auth_response,
         auth_silent,
         pings,
+        auth_received,
     } = seed;
 
     loop {
@@ -461,6 +474,8 @@ async fn run_client_loop(
                             let event = json.get("event").and_then(|v| v.as_str()).unwrap_or("");
                             match event {
                                 "auth" => {
+                                    let data = json.get("data").cloned().unwrap_or_default();
+                                    auth_received.lock().expect("auth_received lock poisoned").push(data);
                                     if auth_silent.load(std::sync::atomic::Ordering::SeqCst) {
                                         continue;
                                     }

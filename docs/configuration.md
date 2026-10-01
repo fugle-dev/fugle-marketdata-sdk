@@ -690,9 +690,33 @@ ws.set_credentials(Auth::SdkToken(new_token))?;     // sync or aio WebSocketClie
 client.set_credentials(Auth::SdkToken(new_token))?; // RestClient and its clones
 ```
 
+```csharp
+ws.SetCredentials(sdkToken: newToken);      // WebSocketClient
+factory.SetCredentials(sdkToken: newToken); // event style: Stock and FutureOption
+client.SetCredentials(sdkToken: newToken);  // RestClient
+```
+
+```go
+err := stream.SetCredentialsWith(mkt.WithSdkToken(newToken)) // StreamingClient
+err = client.SetCredentialsWith(mkt.WithSdkToken(newToken))  // RestClient
+// or SetCredentials(CredentialsRecord{...}) on either
+```
+
+```java
+ws.setCredentials(null, null, newToken);     // FugleWebSocketClient (apiKey, bearerToken, sdkToken)
+client.setCredentials(null, null, newToken); // FugleRestClient
+```
+
+```cpp
+ws->set_credentials(CredentialsRecord{std::nullopt, std::nullopt, new_token});
+rest->set_credentials(CredentialsRecord{std::nullopt, std::nullopt, new_token});
+```
+
 In Rust a client whose reconnect was rejected is closed: build a new one,
 hand it the old one's `credentials_handle()` with `use_credentials_handle()`,
-and connect.
+and connect. In Go a rejected automatic reconnect also closes `Messages()`:
+create a new `StreamingClient` with the new credential (a rejected first
+`Connect()` does not; set the credential and connect again).
 
 ---
 

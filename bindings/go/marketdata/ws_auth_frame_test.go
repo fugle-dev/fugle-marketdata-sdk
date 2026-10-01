@@ -73,6 +73,17 @@ type authFrameServer struct {
 	// ackSubscribes answers each single-symbol subscribe with a subscribed
 	// ack whose id is "id-<channel>-<symbol>[-ah]".
 	ackSubscribes bool
+	// requiredCredential, when set, rejects every auth frame whose apikey,
+	// token or sdkToken is not it, as the server does (error 1000).
+	requiredCredential string
+}
+
+// requireCredential rejects every auth frame not carrying credential from
+// now on.
+func (s *authFrameServer) requireCredential(credential string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requiredCredential = credential
 }
 
 func newAuthFrameServer(t *testing.T) *authFrameServer {
@@ -183,7 +194,12 @@ func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			s.mu.Lock()
 			s.auth = append(s.auth, frame.Data)
+			required := s.requiredCredential
 			s.mu.Unlock()
+			if required != "" && frame.Data["apikey"] != required && frame.Data["token"] != required && frame.Data["sdkToken"] != required {
+				_ = writeFrame(conn, 0x1, []byte(`{"event":"error","code":1000,"data":{"message":"Invalid token"}}`))
+				continue
+			}
 			_ = writeFrame(conn, 0x1, []byte(`{"event":"authenticated","data":{"message":"Authenticated successfully"}}`))
 		}
 	}

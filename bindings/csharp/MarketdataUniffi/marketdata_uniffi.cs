@@ -1144,6 +1144,13 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void uniffi_marketdata_uniffi_fn_method_restclient_set_credentials(
+        IntPtr @ptr,
+        RustBuffer @credentials,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_restclient_stock(
         IntPtr @ptr,
         ref UniffiRustCallStatus _uniffi_out_err
@@ -1779,6 +1786,13 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials(
+        IntPtr @ptr,
+        RustBuffer @credentials,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(
         IntPtr @ptr,
         RustBuffer @channel,
@@ -2329,6 +2343,9 @@ static class _UniFFILib
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_restclient_futopt();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_restclient_stock();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
@@ -2516,6 +2533,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe();
@@ -2908,6 +2928,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_restclient_futopt` checksum `65348`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials();
+            if (checksum != 19921)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials` checksum `19921`, library returned `{checksum}`"
                 );
             }
         }
@@ -3537,6 +3567,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions` checksum `20069`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials();
+            if (checksum != 33298)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials` checksum `33298`, library returned `{checksum}`"
                 );
             }
         }
@@ -5235,6 +5275,19 @@ public interface IRestClient
     FutOptClient Futopt();
 
     /// <summary>
+    /// Replace the credential later requests send, with any of the three
+    /// kinds. Sub-clients already taken from this one (`stock()`,
+    /// `stock().intraday()`, ...) send it too; a request already sent keeps
+    /// the credential it was sent with (#322).
+    ///
+    /// Exactly one credential must be non-empty, as at construction;
+    /// otherwise, or if it cannot be sent in an HTTP header, this returns a
+    /// `ConfigError` (code 1004) and the current credential is kept.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    void SetCredentials(CredentialsRecord @credentials);
+
+    /// <summary>
     /// Access stock-related endpoints
     /// </summary>
     StockClient Stock();
@@ -5393,6 +5446,32 @@ public class RestClient : IRestClient, IDisposable
                             ref _status
                         )
                 )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Replace the credential later requests send, with any of the three
+    /// kinds. Sub-clients already taken from this one (`stock()`,
+    /// `stock().intraday()`, ...) send it too; a request already sent keeps
+    /// the credential it was sent with (#322).
+    ///
+    /// Exactly one credential must be non-empty, as at construction;
+    /// otherwise, or if it cannot be sent in an HTTP header, this returns a
+    /// `ConfigError` (code 1004) and the current credential is kept.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public void SetCredentials(CredentialsRecord @credentials)
+    {
+        CallWithPointer(thisPtr =>
+            _UniffiHelpers.RustCallWithError(
+                FfiConverterTypeMarketDataError.INSTANCE,
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_method_restclient_set_credentials(
+                        thisPtr,
+                        FfiConverterTypeCredentialsRecord.INSTANCE.Lower(@credentials),
+                        ref _status
+                    )
             )
         );
     }
@@ -8686,6 +8765,22 @@ public interface IWebSocketClient
     Task QuerySubscriptions();
 
     /// <summary>
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect
+    /// (#322). Any of the three kinds may replace any other. A connection
+    /// already authenticated is not authenticated again: the server takes
+    /// one auth frame per connection, so call it before a token expires.
+    /// Rejected credentials still end automatic reconnection; set a new
+    /// credential, then call `connect()` again.
+    ///
+    /// Exactly one credential must be non-empty, as in
+    /// `new_with_credentials`; otherwise this returns a `ConfigError` (code
+    /// 1004) and the current credential is kept.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    void SetCredentials(CredentialsRecord @credentials);
+
+    /// <summary>
     /// Subscribe to a channel for one or more symbols.
     ///
     /// One symbol is sent as `symbol`, several as `symbols` in one frame;
@@ -9140,6 +9235,35 @@ public class WebSocketClient : IWebSocketClient, IDisposable
             (IntPtr future) => _UniFFILib.ffi_marketdata_uniffi_rust_future_free_void(future),
             // Error
             FfiConverterTypeMarketDataError.INSTANCE
+        );
+    }
+
+    /// <summary>
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect
+    /// (#322). Any of the three kinds may replace any other. A connection
+    /// already authenticated is not authenticated again: the server takes
+    /// one auth frame per connection, so call it before a token expires.
+    /// Rejected credentials still end automatic reconnection; set a new
+    /// credential, then call `connect()` again.
+    ///
+    /// Exactly one credential must be non-empty, as in
+    /// `new_with_credentials`; otherwise this returns a `ConfigError` (code
+    /// 1004) and the current credential is kept.
+    /// </summary>
+    /// <exception cref="MarketDataException"></exception>
+    public void SetCredentials(CredentialsRecord @credentials)
+    {
+        CallWithPointer(thisPtr =>
+            _UniffiHelpers.RustCallWithError(
+                FfiConverterTypeMarketDataError.INSTANCE,
+                (ref UniffiRustCallStatus _status) =>
+                    _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials(
+                        thisPtr,
+                        FfiConverterTypeCredentialsRecord.INSTANCE.Lower(@credentials),
+                        ref _status
+                    )
+            )
         );
     }
 

@@ -54,6 +54,27 @@ public class FugleRestClient implements AutoCloseable {
         return futOptClient;
     }
 
+    /**
+     * Replace the credential later requests send, with any of the three kinds.
+     * The clients already taken from this one ({@link #stock()},
+     * {@code stock().intraday()}, ...) send it too; a request already sent
+     * keeps the credential it was sent with.
+     *
+     * @param apiKey Fugle API key, or null
+     * @param bearerToken OAuth bearer token, or null
+     * @param sdkToken Fugle SDK token, or null
+     * @throws FugleException code 1004 unless exactly one non-empty
+     *         credential is given, or if it cannot be sent in an HTTP header;
+     *         the current credential is then kept
+     */
+    public void setCredentials(String apiKey, String bearerToken, String sdkToken) {
+        try {
+            restClient.setCredentials(new CredentialsRecord(apiKey, bearerToken, sdkToken));
+        } catch (Exception e) {
+            throw FugleException.unwrap(e);
+        }
+    }
+
     @Override
     public void close() {
         restClient.close();

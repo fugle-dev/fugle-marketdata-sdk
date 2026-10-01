@@ -58,6 +58,7 @@ void * uniffi_marketdata_uniffi_fn_clone_restclient(void * ptr, RustCallStatus *
 void uniffi_marketdata_uniffi_fn_free_restclient(void * ptr, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_restclient_base_url(void * ptr, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_method_restclient_futopt(void * ptr, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_restclient_set_credentials(void * ptr, RustBuffer credentials, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_method_restclient_stock(void * ptr, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_clone_stockclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_stockclient(void * ptr, RustCallStatus *out_status);
@@ -121,6 +122,7 @@ double uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency_sync(v
 uint64_t uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_ping_sync(void * ptr, RustBuffer state, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions_sync(void * ptr, RustCallStatus *out_status);
+void uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials(void * ptr, RustBuffer credentials, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe_sync(void * ptr, RustBuffer channel, RustBuffer symbols, RustBuffer opts, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids_sync(void * ptr, RustBuffer ids, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_sync(void * ptr, RustBuffer channel, RustBuffer symbols, RustBuffer opts, RustCallStatus *out_status);
@@ -174,6 +176,7 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_trades_sy
 uint16_t uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_volumes_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_restclient_base_url();
 uint16_t uniffi_marketdata_uniffi_checksum_method_restclient_futopt();
+uint16_t uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials();
 uint16_t uniffi_marketdata_uniffi_checksum_method_restclient_stock();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockclient_base_url();
 uint16_t uniffi_marketdata_uniffi_checksum_method_stockclient_corporate_actions();
@@ -214,6 +217,7 @@ uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latenc
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_ping_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions_sync();
+uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids_sync();
 uint16_t uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_sync();

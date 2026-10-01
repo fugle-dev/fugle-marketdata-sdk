@@ -181,6 +181,27 @@ FugleRestClient client = FugleRestClient.builder()
 `tw.com.fugle.marketdata.generated.CredentialsRecord` they reach the native client in: its fields are
 the secrets themselves.
 
+### Changing credentials
+
+A token that expires (an SDK token is valid for two days) can be replaced
+without a new client. `setCredentials(apiKey, bearerToken, sdkToken)` takes
+exactly one non-blank credential (the others null), and any kind may replace another;
+otherwise it throws `FugleException` code 1004 and keeps the current
+credential.
+
+```java
+// WebSocket: from the next connection attempt on — the next connect() or
+// automatic reconnect. The live connection is not authenticated again, so
+// call it before the token expires.
+ws.setCredentials(null, null, newToken);
+
+// REST: from the next request on, clients taken before (stock(), ...) included.
+client.setCredentials(null, null, newToken);
+```
+
+Rejected credentials still end automatic reconnection; set the new
+credential, then call `connect()` again.
+
 ## Advanced: Custom TLS / self-signed servers
 
 For connecting to servers with a private CA (enterprise deployments) or
