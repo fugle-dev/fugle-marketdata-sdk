@@ -75,7 +75,7 @@ to rewrite call sites:
 | Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` (3.0 adds `intent` and `willReconnect`) | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
-| Python `ws.stock` / `ws.futopt` read once per call (`ws.stock.on(...)`, `ws.stock.connect()`, `ws.stock.subscribe(...)`) | ✅ each property returns the same client every time, as 2.x's factory did (see [§19](#19-the-legacy-clients-plumbing-is-gone-get_client-request-options)) |
+| Python `ws.stock` / `ws.futopt` read again for each call (`ws.stock.on(...)`, `ws.stock.connect()`, `ws.stock.subscribe(...)`) | ✅ each property returns the same client every time, as 2.x's factory did (see [§19](#19-the-legacy-clients-plumbing-is-gone-get_client-request-options)) |
 | Python `rest.stock.base_url` / `rest.futopt.base_url` | ✅ includes the product segment, e.g. `https://api.fugle.tw/marketdata/v1.0/stock`, as in 2.x; `rest.base_url` is the value without it |
 | WebSocket `ws.stock.url` / `ws.futopt.url` | ✅ the resolved endpoint, e.g. `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`; reflects `base_url` / `baseUrl` and `version`, readable before `connect()` |
 | Node `on()` chaining: `ws.stock.on('message', cb).subscribe({ ... })` | ✅ `on()` returns the client it was called on |
@@ -825,6 +825,10 @@ ws.stock.on("message", handle)
 ws.stock.connect()
 ws.stock.subscribe({"channel": "trades", "symbol": "2330"})
 ```
+
+Code written against a 3.0 release candidate that read `ws.stock` twice to
+get two connections (`a = ws.stock; b = ws.stock`) now gets one client
+twice. For two connections, create two `WebSocketClient`s.
 
 Every endpoint the 2.7.0 / 1.7.0 clients had a method for has one in 3.0,
 with the same name. `request()` was only needed for a path the SDK had no

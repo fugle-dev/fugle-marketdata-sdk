@@ -88,7 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is returned after, as 2.x's factory did. The rc's built a new client on
     every access, so `ws.stock.on(...)`, `ws.stock.connect()`,
     `ws.stock.subscribe(...)` reached three different clients: the handler
-    never ran and `subscribe` raised `Not connected`.
+    never ran and `subscribe` raised `Not connected`. rc code that read
+    `ws.stock` twice for two connections (`a = ws.stock; b = ws.stock`) now
+    gets one client twice; create two `WebSocketClient`s instead.
   - `rest.stock.base_url` / `rest.futopt.base_url` include the product
     segment again (`https://api.fugle.tw/marketdata/v1.0/stock`); the rc's
     returned `RestClient.base_url`, and `rest.futopt` had no `base_url`.

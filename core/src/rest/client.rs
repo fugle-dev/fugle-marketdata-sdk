@@ -818,8 +818,11 @@ mod tests {
         let client = RestClient::new(Auth::SdkToken("t".to_string()));
         assert_eq!(client.stock().resolved_base_url(), "https://api.fugle.tw/marketdata/v1.0/stock");
         assert_eq!(client.futopt().resolved_base_url(), "https://api.fugle.tw/marketdata/v1.0/futopt");
-        let custom = client.try_base_url("https://custom.api/prefix").unwrap();
-        assert_eq!(custom.stock().resolved_base_url(), "https://custom.api/prefix/v1.0/stock");
+        for url in ["https://custom.api/prefix", "https://custom.api/prefix/", "https://custom.api/prefix//"] {
+            let custom = client.clone().try_base_url(url).unwrap();
+            assert_eq!(custom.stock().resolved_base_url(), "https://custom.api/prefix/v1.0/stock", "{url}");
+            assert_eq!(custom.futopt().resolved_base_url(), "https://custom.api/prefix/v1.0/futopt", "{url}");
+        }
     }
 
     #[test]

@@ -1567,11 +1567,11 @@ class FutOptHistoricalClient:
     code (e.g. "TXF"); a contract code such as "TXFC4" returns 404.
     """
 
+    @overload
     async def candles_async(
         self,
-        symbol: Optional[str] = None,
+        symbol: str,
         *,
-        product: Optional[str] = None,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
@@ -1615,12 +1615,27 @@ class FutOptHistoricalClient:
             ```
         """
         ...
+    @overload
+    async def candles_async(
+        self,
+        *,
+        product: str,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        after_hours: Optional[bool] = None,
+        contract_month: Optional[str] = None,
+        fields: Optional[str] = None,
+        sort: Optional[str] = None,
+        strike_price: Optional[float] = None,
+        call_put: Optional[str] = None,
+    ) -> dict[str, Any]: ...
 
+    @overload
     async def daily_async(
         self,
-        symbol: Optional[str] = None,
+        symbol: str,
         *,
-        product: Optional[str] = None,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
@@ -1645,14 +1660,22 @@ class FutOptHistoricalClient:
             ```
         """
         ...
+    @overload
+    async def daily_async(
+        self,
+        *,
+        product: str,
+        date: Optional[str] = None,
+        after_hours: Optional[bool] = None,
+    ) -> dict[str, Any]: ...
 
     # ----- Sync siblings (legacy fugle-marketdata compatibility) -----
 
+    @overload
     def candles(
         self,
-        symbol: Optional[str] = None,
+        symbol: str,
         *,
-        product: Optional[str] = None,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
@@ -1665,17 +1688,40 @@ class FutOptHistoricalClient:
     ) -> dict[str, Any]:
         """Blocking version of `candles_async()`."""
         ...
+    @overload
+    def candles(
+        self,
+        *,
+        product: str,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        after_hours: Optional[bool] = None,
+        contract_month: Optional[str] = None,
+        fields: Optional[str] = None,
+        sort: Optional[str] = None,
+        strike_price: Optional[float] = None,
+        call_put: Optional[str] = None,
+    ) -> dict[str, Any]: ...
 
+    @overload
     def daily(
         self,
-        symbol: Optional[str] = None,
+        symbol: str,
         *,
-        product: Optional[str] = None,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Blocking version of `daily_async()`."""
         ...
+    @overload
+    def daily(
+        self,
+        *,
+        product: str,
+        date: Optional[str] = None,
+        after_hours: Optional[bool] = None,
+    ) -> dict[str, Any]: ...
 
 
 # WebSocket Client
