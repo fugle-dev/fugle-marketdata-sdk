@@ -67,8 +67,9 @@ while npm installs 3.x and fails at `require`. Pin `fugle-marketdata<3` or
 
 1.x also ran outside Node (it used `isomorphic-fetch` and `isomorphic-ws`).
 3.x is a native Node module: it does not run in a browser, in a front-end
-bundle (webpack, Vite), in an Electron renderer process, or in Deno or Bun
-(not tested). Keep `@fugle/marketdata@<3` there.
+bundle (webpack, Vite) or in an Electron renderer process; Deno and Bun are
+not tested, and it is not known whether it works there. Keep
+`@fugle/marketdata@<3` in those environments.
 
 2.x installed `requests`, `websocket-client`, `pyee` and `orjson` with it;
 3.x depends on nothing. Code that imports one of them without declaring it
@@ -123,7 +124,7 @@ Code that passes none of these options gets different behaviour:
 | Health check | off (2.x / 1.x pinged only when enabled) | on: no inbound frame for 35 s closes the connection, then auto-reconnect | `HealthCheckConfig(enabled=False)` / `healthCheck: { enabled: false }` |
 | Unread message queue | none, nothing dropped (2.x ran callbacks on the socket's reader thread; 1.x: plain `EventEmitter`) | `drop_newest` / `'dropNewest'`: past 4096 unread messages new ones are dropped and reported with `messages_dropped` / `messagesDropped` | `message_overflow="unbounded"` / `messageOverflow: 'unbounded'` |
 | Auth timeout | Python 5 s (`Exception('authentication timeout')`); Node none (`connect()` could stay pending) | 10 s, then `TimeoutError` / an `Error` with code 3001 | Python `auth_timeout_ms=5000`; Node cannot turn it off, raise `authTimeoutMs` |
-| REST request timeout | none | 30 s ([§7](#7-rest-has-a-default-request-timeout)) | — |
+| REST request timeout | none | 30 s for each phase: connect, send, wait for the response, read the body ([§7](#7-rest-has-a-default-request-timeout)) | — |
 
 ### Breaking changes you need to adapt
 
@@ -475,10 +476,12 @@ Other fields that changed meaning:
 #### 7. REST has a default request timeout
 
 The legacy SDKs set **no** timeout (Python's `requests.get`, Node's `fetch`),
-so a stalled connection hangs forever. This SDK gives up on a request after
-30 seconds, in every language. If you actually relied on the no-timeout
-behaviour you will see new `TimeoutError` exceptions — the fix is to retry
-at the application layer.
+so a stalled connection hangs forever. This SDK, in every language, allows
+30 seconds for each phase of a request — connecting, sending the request,
+waiting for the response, reading the body — timed separately, so a request
+that keeps making progress can take longer in total. If you actually relied
+on the no-timeout behaviour you will see new `TimeoutError` exceptions — the
+fix is to retry at the application layer.
 
 #### 8. Node REST rejects on HTTP errors instead of resolving the error body
 
@@ -990,9 +993,9 @@ Each of these breaks only code that relied on it:
   Pass `RestClient` only `api_key` / `bearer_token` / `sdk_token`,
   `base_url` and the TLS options. `WebSocketClient` also refuses a keyword
   it does not take, where 2.x passed everything on.
-- **Only the package itself can be imported.** `fugle_marketdata.rest`,
+- **None of 2.x's submodule paths exist.** `fugle_marketdata.rest`,
   `.websocket`, `.exceptions`, `.constants`, `.client_factory` and
-  `.base_url` do not exist (`ModuleNotFoundError`); import every name from
+  `.base_url` raise `ModuleNotFoundError`; import every name from
   `fugle_marketdata` (`from fugle_marketdata import FugleAPIError`). The 2.x
   internals on the WebSocket client — `ee`, `auth_status`, `config`,
   `health_check`, `ping_timer`, `check_auth_status()` — are gone too.

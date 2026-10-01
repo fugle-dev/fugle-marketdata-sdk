@@ -162,7 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   docstrings no longer call the REST methods async-only or mention a
   `quote_sync` that does not exist.
   `js/README.md`'s futures example used `TXFC4` too and now looks up the
-  nearest TXF contract the same way.
+  nearest TXF contract the same way; its Quick Start examples are wrapped in
+  `async function main()`, since CommonJS has no top-level `await`.
 - **Docs: MIGRATION errata and gaps against 2.7.0 / 1.7.0** (#314). The
   Node quickstart required `marketdata-js` (the package is
   `@fugle/marketdata`) and used top-level `await` in CommonJS; the Python
@@ -171,7 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   credential (it is `ConfigError`, code 1004). New: a table of the five
   changes most upgrades run into, [Defaults that changed](MIGRATION.md#defaults-that-changed)
   (auto-reconnect, health check, the 4096-message queue, the 10 s auth
-  timeout, the 30 s REST timeout), §20 and §21 for the smaller Python and
+  timeout, the REST timeout of 30 s per phase of a request), §20 and §21 for the smaller Python and
   Node differences (WebSocket options refused by `RestClient`, submodule
   imports, `import *` shadowing `ConnectionError` / `TimeoutError`,
   constructor errors no longer `TypeError`, renamed TypeScript types and the
