@@ -75,6 +75,8 @@ to rewrite call sites:
 | Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` (3.0 adds `intent` and `willReconnect`) | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
+| Python `ws.stock` / `ws.futopt` read again for each call (`ws.stock.on(...)`, `ws.stock.connect()`, `ws.stock.subscribe(...)`) | ✅ each property returns the same client every time, as 2.x's factory did (see [§19](#19-the-legacy-clients-plumbing-is-gone-get_client-request-options)) |
+| Python `rest.stock.base_url` / `rest.futopt.base_url` | ✅ includes the product segment, e.g. `https://api.fugle.tw/marketdata/v1.0/stock`, as in 2.x; `rest.base_url` is the value without it |
 | WebSocket `ws.stock.url` / `ws.futopt.url` | ✅ the resolved endpoint, e.g. `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`; reflects `base_url` / `baseUrl` and `version`, readable before `connect()` |
 | Node `on()` chaining: `ws.stock.on('message', cb).subscribe({ ... })` | ✅ `on()` returns the client it was called on |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
@@ -499,6 +501,8 @@ await rest.futopt.historical.candles('TXF', '2026-09-01', '2026-09-15', 'D', fal
 ```python
 client.futopt.historical.daily("TXF", date="2026-09-15", after_hours=True)
 client.futopt.historical.candles("TXF", contract_month="1!", timeframe="D")
+# 2.x's keyword, as before
+client.futopt.historical.candles(product="TXF", contract_month="1!", timeframe="D")
 ```
 
 #### 11. Node WebSocket `connect()` rejects while already connected, and waits during a reconnect
@@ -808,21 +812,23 @@ TypeScript types — so only plain JavaScript could reach them at run time:
 | `options` on `RestClient` / `WebSocketClient` | public | TS-protected; JS run time only | not exposed — keep the options you passed to the constructor |
 | `config` (Py) / `options` (Node) on the product clients `stock` / `futopt` | public; also `config` on each endpoint group | TS-protected; JS run time only | not exposed |
 
-`get_client()` returned one cached client per product. In 3.0, take
-`ws.stock` once and keep it in a variable rather than reading the property
-again for each call:
+`get_client()` returned one cached client per product. In 3.0 the
+`.stock` / `.futopt` properties take its place: in Python the first read
+builds the client and every later read returns the same object
+(`ws.stock is ws.stock`, since
+[#306](https://github.com/fugle-dev/fugle-marketdata-sdk/issues/306)); in
+Node each read returns a new wrapper over the same callbacks and connection.
+Either way, the legacy idiom of reading the property for each call works:
 
 ```python
-stock = ws.stock          # once
-stock.on("message", handle)
-stock.connect()
-stock.subscribe({"channel": "trades", "symbol": "2330"})
+ws.stock.on("message", handle)
+ws.stock.connect()
+ws.stock.subscribe({"channel": "trades", "symbol": "2330"})
 ```
 
-Until [#306](https://github.com/fugle-dev/fugle-marketdata-sdk/issues/306), each read of a Python `ws.stock` / `ws.futopt` builds a new
-client object, so `ws.stock.on(...)` followed by `ws.stock.connect()` talks to
-two different clients; after #306 every read returns the same one. Keeping the
-variable works either way.
+Code written against a 3.0 release candidate that read `ws.stock` twice to
+get two connections (`a = ws.stock; b = ws.stock`) now gets one client
+twice. For two connections, create two `WebSocketClient`s.
 
 Every endpoint the 2.7.0 / 1.7.0 clients had a method for has one in 3.0,
 with the same name. `request()` was only needed for a path the SDK had no

@@ -58,6 +58,16 @@ pub struct FutOptClient<'a> {
 }
 
 impl<'a> FutOptClient<'a> {
+    /// The prefix every FutOpt request is built on: the client's resolved
+    /// base URL plus the product segment, e.g.
+    /// `https://api.fugle.tw/marketdata/v1.0/futopt`. The legacy SDKs' product
+    /// clients exposed this value as their `base_url`. The
+    /// value without the product segment is
+    /// [`RestClient::resolved_base_url`](crate::RestClient::resolved_base_url).
+    pub fn resolved_base_url(&self) -> String {
+        self.client.endpoint_url::<&str, &str>(&["futopt"], &[])
+    }
+
     /// Access intraday (real-time) endpoints
     ///
     /// # Example
