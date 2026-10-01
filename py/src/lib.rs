@@ -148,6 +148,10 @@ fn fugle_marketdata(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConnectionError", m.py().get_type::<errors::ConnectionError>())?;
     m.add("TimeoutError", m.py().get_type::<errors::TimeoutError>())?;
     m.add("WebSocketError", m.py().get_type::<errors::WebSocketError>())?;
+    errors::install_str(m.py())?;
+    let health_check_warning = m.py().get_type::<errors::FugleHealthCheckWarning>();
+    health_check_warning.setattr("code", errors::HEALTH_CHECK_LEGACY_OPTIONS_CODE)?;
+    m.add("FugleHealthCheckWarning", health_check_warning)?;
 
     // Backward-compat alias: old fugle-marketdata SDK exposed a single `FugleAPIError`.
     // Aliasing it to MarketDataError lets `except FugleAPIError:` catch every variant

@@ -26,18 +26,21 @@ before upgrading; the changes most 2.x code runs into:
   Code that calls `json.loads(message)` keeps working on the `raw_message`
   event, which delivers the string.
 - `HealthCheckConfig` keeps its name but not its fields: `ping_interval` and
-  `max_missed_pongs` raise `TypeError`
+  `max_missed_pongs` are ignored, with a `FugleHealthCheckWarning`
   ([drop-in table](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#drop-in-compatible-no-changes-needed)).
 - Auto-reconnect is on by default; reconnect code of your own that calls
   `disconnect()` then `connect()` loops with it — keep one or the other
   ([§5](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#5-auto-reconnect-is-on-by-default)).
 - `connect()` raises `AuthError` when the credentials are rejected
-  ([§9](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#9-python-connect-raises-on-auth-failure-vs-legacys-unauthenticated-event)).
+  ([§9](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#9-python-connect-raises-autherror-on-auth-failure)).
 - A callback that blocks (for example `time.sleep()` in a `disconnect`
   callback) holds up all events, and messages are dropped once the queue is
   full ([§15](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
-- `off(event)` takes no listener, and a `subscribed` message's `data` can be
-  a list ([§16](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#16-python-off-takes-only-the-event-and-subscribed-data-can-be-a-list)).
+- `str(e)` of an exception is its message, without 2.x's `[Fugle API Error]`
+  prefix and `URL:` / `Status:` lines
+  ([§6](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#6-python-exception-hierarchy-is-finer-grained)).
+- A `subscribed` message's `data` can be a list
+  ([§16](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#16-python-subscribed-data-can-be-a-list)).
 
 ### Development Build
 
@@ -399,7 +402,7 @@ client.unsubscribe(channel=channel, symbol=symbol)  # Unsubscribe by subscribe()
 client.subscriptions()                     # List active subscriptions
 
 client.on(event, callback)                 # Register event callback (not async def)
-client.off(event)                          # Unregister callback
+client.off(event, listener=None)           # Unregister one callback, or all for the event
 
 client.messages()                          # Get message iterator
 client.messages(raw=True)                  # ... yielding each message as the str the server sent
@@ -429,8 +432,10 @@ async with ws.futopt as client:            # connect_async() on entry, disconnec
 | `message` | `fn(msg: dict)` | Incoming data message |
 | `raw_message` | `fn(raw: str)` | The same message as the text the server sent, not turned into a dict |
 | `connect` | `fn()` | Connection established |
+| `authenticated` | `fn(frame: dict)` | Credentials accepted; the server's frame as in 2.x, `{"event": "authenticated", "data": {...}}` |
+| `unauthenticated` | `fn(frame: dict)` | Credentials rejected; the server's frame as in 2.x, `{"event": "error", "code": 1000, "data": {"message": ...}}` |
 | `disconnect` | `fn(code: int, reason: str)` | Connection closed |
-| `error` | `fn(err: WebSocketError)` | Error occurred (`err.args == (message, code)`) |
+| `error` | `fn(err: WebSocketError)` | Error occurred (`err.args == (message, code)`, `str(err)` is the message) |
 | `messages_dropped` | `fn(dropped: int, total: int)` | Messages dropped because you fell behind (at most once per second, and before `disconnect`) |
 
 `disconnect`'s `code` is `None` when the connection ended without one. The
@@ -646,7 +651,7 @@ Every exception carries the same fields as the other languages:
 |---|---|---|
 | `code` | `int` | Error code (table below); also `args[1]` |
 | `source_kind` | `str` | `"network"`, `"protocol"`, `"auth"`, `"rate_limit"` or `"client"` |
-| `message` | `str` | Human-readable message; also `args[0]` and `str(e)` |
+| `message` | `str` | Human-readable message; also `args[0]` and `str(e)` (2.x's `str(e)` also had the URL, status and response: see [§6](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#6-python-exception-hierarchy-is-finer-grained)) |
 | `status` | `int \| None` | HTTP status |
 | `body` | `str \| None` | Raw HTTP response body (REST) |
 | `request_id` | `str \| None` | `x-request-id` response header |

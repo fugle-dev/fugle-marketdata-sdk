@@ -47,6 +47,8 @@ from .fugle_marketdata import (
     # exception class. Resolves to MarketDataError so `except FugleAPIError:`
     # keeps catching every error variant.
     FugleAPIError,
+    # Warning for the 2.x HealthCheckConfig fields 3.0 ignores
+    FugleHealthCheckWarning,
     # Config
     ReconnectConfig,
     HealthCheckConfig,
@@ -82,6 +84,7 @@ __all__ = [
     "TimeoutError",
     "WebSocketError",
     "FugleAPIError",
+    "FugleHealthCheckWarning",
     "ReconnectConfig",
     "HealthCheckConfig",
     "DisconnectInfo",

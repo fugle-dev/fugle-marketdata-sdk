@@ -34,6 +34,10 @@ class MarketDataError(Exception):
     """Category of the failure."""
     message: str
     """Human-readable message (also ``args[0]`` and ``str(e)``)."""
+    def __str__(self) -> str:
+        """``message``. An instance raised without one (``MarketDataError("...")``)
+        prints like any exception."""
+        ...
     status: Optional[int]
     """HTTP status, when the error came from an HTTP response."""
     body: Optional[str]
@@ -116,6 +120,16 @@ class WebSocketError(MarketDataError):
 # Aliased to MarketDataError so `except FugleAPIError:` keeps catching every
 # variant raised by this binding.
 FugleAPIError = MarketDataError
+
+class FugleHealthCheckWarning(UserWarning):
+    """Issued when ``HealthCheckConfig`` is given the 2.x fields
+    ``ping_interval`` / ``max_missed_pongs``, which 3.0 ignores.
+
+    Issued on every such call; Python's warning filters decide what is shown
+    (by default once per calling line).
+    """
+    code: str
+    """``"FUGLE_HEALTH_CHECK_LEGACY_OPTIONS"``, as on Node's warning."""
 
 # REST Client
 class RestClient:
@@ -1697,8 +1711,10 @@ class HealthCheckConfig:
 
     def __init__(
         self,
-        *,
         enabled: bool = True,
+        ping_interval: object = None,
+        max_missed_pongs: object = None,
+        *,
         heartbeat_timeout_ms: int = 35000,
         probe_enabled: bool = False,
         idle_probe_after_ms: int = 30000,
@@ -1720,6 +1736,9 @@ class HealthCheckConfig:
                 sent in every gap between heartbeats while no data flows.
             probe_timeout_ms: Wait for any inbound frame after the ping
                 (default: 5000ms, min: 1000ms)
+            ping_interval, max_missed_pongs: The 2.x fields, positional as in
+                2.x. 3.0 does not have them: a value other than None is ignored
+                with a ``FugleHealthCheckWarning``.
 
         Raises:
             ConfigError: code 1004 if heartbeat_timeout_ms < 5000,
@@ -2293,9 +2312,10 @@ class StockWebSocketClient:
             registered each message goes to "raw_message" first. Like
             "message", it takes the messages from messages() iterators.
           - "connect" / "connected": Called (no args) when the WebSocket opens, before authentication
-          - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
-          - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
-            (server error code 1000). During an auto-reconnect this is terminal: an "error" with
+          - "authenticated": Called with the server's ``authenticated`` frame when it accepts
+            credentials, a dict as in 2.x: ``{"event": "authenticated", "data": {...}}``
+          - "unauthenticated": Called with the server's rejection frame when it refuses credentials,
+            a dict as in 2.x: ``{"event": "error", "code": 1000, "data": {"message": ...}}``. During an auto-reconnect this is terminal: an "error" with
             code 3005 follows and the client stays closed. Any other auth-phase server error (1011
             auth service unavailable, 1004 no auth request received) is an "error" with code 2001
             instead, and the reconnect goes on.
@@ -2314,11 +2334,14 @@ class StockWebSocketClient:
         """
         ...
 
-    def off(self, event: str) -> None:
-        """Remove all callbacks for an event type.
+    def off(self, event: str, listener: Optional[Callable[..., Any]] = None) -> None:
+        """Remove callbacks for an event type.
 
         Args:
             event: Event type string
+            listener: The callback to remove, as in 2.x: every registration equal
+                to it is removed, one not registered is ignored. Omitted or None
+                removes every callback for ``event``.
         """
         ...
 
@@ -2648,11 +2671,14 @@ class FutOptWebSocketClient:
         """
         ...
 
-    def off(self, event: str) -> None:
-        """Remove all callbacks for an event type.
+    def off(self, event: str, listener: Optional[Callable[..., Any]] = None) -> None:
+        """Remove callbacks for an event type.
 
         Args:
             event: Event type string
+            listener: The callback to remove, as in 2.x: every registration equal
+                to it is removed, one not registered is ignored. Omitted or None
+                removes every callback for ``event``.
         """
         ...
 

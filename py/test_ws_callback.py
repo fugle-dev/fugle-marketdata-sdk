@@ -103,12 +103,12 @@ def test_basic_with_health_check():
 
     # 建立有 health check 的 client
     reconnect_cfg = ReconnectConfig(enabled=True, max_attempts=3, initial_delay_ms=1000, max_delay_ms=5000)
-    health_check_cfg = HealthCheckConfig(enabled=True, ping_interval=10000, max_missed_pongs=2)
+    health_check_cfg = HealthCheckConfig(enabled=True, heartbeat_timeout_ms=60000)
 
     print(f"  reconnect: enabled={reconnect_cfg.enabled}, max_attempts={reconnect_cfg.max_attempts}, "
           f"initial_delay={reconnect_cfg.initial_delay_ms}ms, max_delay={reconnect_cfg.max_delay_ms}ms")
-    print(f"  health_check: enabled={health_check_cfg.enabled}, interval={health_check_cfg.ping_interval}ms, "
-          f"max_missed_pongs={health_check_cfg.max_missed_pongs}")
+    print(f"  health_check: enabled={health_check_cfg.enabled}, "
+          f"heartbeat_timeout={health_check_cfg.heartbeat_timeout_ms}ms")
 
     ws = WebSocketClient(
         api_key=api_key,
@@ -208,8 +208,8 @@ def test_config_validation():
     rc = ReconnectConfig(enabled=True, max_attempts=10, initial_delay_ms=200, max_delay_ms=30000)
     print(f"  ReconnectConfig OK: max_attempts={rc.max_attempts}")
 
-    hc = HealthCheckConfig(enabled=True, ping_interval=5000, max_missed_pongs=3)
-    print(f"  HealthCheckConfig OK: ping_interval={hc.ping_interval}")
+    hc = HealthCheckConfig(enabled=True, heartbeat_timeout_ms=60000)
+    print(f"  HealthCheckConfig OK: heartbeat_timeout_ms={hc.heartbeat_timeout_ms}")
 
     # Default config
     rc_default = ReconnectConfig()
@@ -220,16 +220,15 @@ def test_config_validation():
     print(f"  ReconnectConfig default OK: enabled={rc_default.enabled}, max_attempts={rc_default.max_attempts}")
 
     hc_default = HealthCheckConfig()
-    assert hc_default.enabled is False
-    assert hc_default.ping_interval == 30000
-    assert hc_default.max_missed_pongs == 3
-    print(f"  HealthCheckConfig default OK: enabled={hc_default.enabled}, ping_interval={hc_default.ping_interval}")
+    assert hc_default.enabled is True
+    assert hc_default.heartbeat_timeout_ms == 35000
+    print(f"  HealthCheckConfig default OK: enabled={hc_default.enabled}, "
+          f"heartbeat_timeout_ms={hc_default.heartbeat_timeout_ms}")
 
     # 無效參數應該拋錯
     invalid_cases = [
         ("initial_delay_ms=0", lambda: ReconnectConfig(initial_delay_ms=0)),
-        ("ping_interval=100 (too low)", lambda: HealthCheckConfig(enabled=True, ping_interval=100)),
-        ("max_missed_pongs=0", lambda: HealthCheckConfig(enabled=True, max_missed_pongs=0)),
+        ("heartbeat_timeout_ms=100 (too low)", lambda: HealthCheckConfig(enabled=True, heartbeat_timeout_ms=100)),
     ]
 
     for desc, fn in invalid_cases:
@@ -257,7 +256,7 @@ def test_futopt_with_config():
     ws = WebSocketClient(
         api_key=api_key,
         reconnect=ReconnectConfig(enabled=True, max_attempts=3),
-        health_check=HealthCheckConfig(enabled=True, ping_interval=15000),
+        health_check=HealthCheckConfig(enabled=True, heartbeat_timeout_ms=60000),
     )
     futopt = ws.futopt
 

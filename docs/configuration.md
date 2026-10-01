@@ -247,6 +247,13 @@ heartbeat or pong — counts as a sign of life.
 JavaScript spells them `heartbeatTimeoutMs`, `probeEnabled`, `idleProbeAfterMs`
 and `probeTimeoutMs`; Java, Go and C# use the same names in their own casing.
 
+The legacy SDKs' `ping_interval` / `max_missed_pongs` (Python 2.x) and
+`pingInterval` / `maxMissedPongs` (Node 1.x) are accepted and ignored, with a
+warning (`FugleHealthCheckWarning`, code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`);
+they are not converted to the options above. Python also takes 2.x's
+positional order, `HealthCheckConfig(enabled, ping_interval, max_missed_pongs)`.
+See the [migration guide](../MIGRATION.md#drop-in-compatible-no-changes-needed).
+
 **Constraints:**
 
 - A value below its minimum is a configuration error (code 1004), whether or

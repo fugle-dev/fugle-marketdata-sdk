@@ -14,6 +14,7 @@ import pytest
 
 from fugle_marketdata import AuthError, ConnectionError, HealthCheckConfig
 from tests.ws_loopback import (
+    BARE_AUTH_API_KEY,
     LIMIT_CLOSE_REASON,
     LIMITED_API_KEY,
     REJECTED_API_KEY,
@@ -39,7 +40,7 @@ def server():
 
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
-def test_authenticated_receives_server_data(server, product):
+def test_authenticated_receives_server_frame(server, product):
     ws = product_ws(server.url, product)
     recorder = Recorder(ws)
     try:
@@ -50,7 +51,7 @@ def test_authenticated_receives_server_data(server, product):
         assert names.index("connect") < names.index("authenticated"), recorder.calls
         assert recorder.args_of("connect") == [()]
         assert recorder.args_of("authenticated") == [
-            ({"message": "Authenticated successfully"},)
+            ({"event": "authenticated", "data": {"message": "Authenticated successfully"}},)
         ]
     finally:
         disconnect_quietly(ws)
@@ -58,16 +59,33 @@ def test_authenticated_receives_server_data(server, product):
 
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
+def test_authenticated_frame_without_data_is_passed_as_sent(server, product):
+    # 2.x passed the frame whatever it held; the rc's passed None here (#304).
+    ws = product_ws(server.url, product, api_key=BARE_AUTH_API_KEY)
+    recorder = Recorder(ws)
+    try:
+        ws.connect()
+        recorder.wait_for("authenticated", TIMEOUT_S)
+        assert recorder.args_of("authenticated") == [({"event": "authenticated"},)]
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
 def test_rejected_key_fires_unauthenticated_before_raising(server, product):
+    # Both auth events get the whole frame, `event` (and `code`) included,
+    # as the 2.x SDK passed it (#304).
     ws = product_ws(server.url, product, api_key=REJECTED_API_KEY)
     recorder = Recorder(ws)
 
-    with pytest.raises(AuthError):
+    with pytest.raises(AuthError) as info:
         ws.connect()
+    assert str(info.value) == "Authentication error: Invalid authentication credentials"
 
     # No waiting: connect() raises only after the stream reader delivered.
     assert recorder.args_of("unauthenticated") == [
-        ({"message": "Invalid authentication credentials"},)
+        ({"event": "error", "code": 1000, "data": {"message": "Invalid authentication credentials"}},)
     ]
     assert recorder.args_of("connect") == [()]
     assert "authenticated" not in recorder.names()
@@ -265,7 +283,7 @@ async def test_connect_async_forwards_events(server, product):
             await asyncio.sleep(0.02)
         assert recorder.args_of("connect") == [()]
         assert recorder.args_of("authenticated") == [
-            ({"message": "Authenticated successfully"},)
+            ({"event": "authenticated", "data": {"message": "Authenticated successfully"}},)
         ]
     finally:
         await ws.disconnect_async()
@@ -283,7 +301,7 @@ async def test_connect_async_rejected_key_fires_unauthenticated_before_raising(s
         await ws.connect_async()
 
     assert recorder.args_of("unauthenticated") == [
-        ({"message": "Invalid authentication credentials"},)
+        ({"event": "error", "code": 1000, "data": {"message": "Invalid authentication credentials"}},)
     ]
 
 
@@ -575,6 +593,11 @@ def test_last_disconnect_survives_the_reconnect_then_your_disconnect_is_client(p
                 TIMEOUT_S,
                 "second authenticated",
             )
+
+            # The reconnect's `authenticated` gets the frame too (#304).
+            assert recorder.args_of("authenticated") == [
+                ({"event": "authenticated", "data": {"message": "Authenticated successfully"}},)
+            ] * 2
 
             # Reconnected, and still the record of the drop.
             assert ws.is_connected()

@@ -17,10 +17,13 @@ from fugle_marketdata import (
     ApiError,
     AuthError,
     ConnectionError,
+    HealthCheckConfig,
     MarketDataError,
     RateLimitError,
     ReconnectConfig,
+    ConfigError,
     RestClient,
+    TimeoutError as MarketDataTimeoutError,
     WebSocketClient,
     WebSocketError,
 )
@@ -95,6 +98,9 @@ def test_http_error_carries_response_details(error_client, status, exc_type, cod
     assert e.args == (prefix + body, code)
     assert e.source_kind == source_kind
     assert e.message == str(e.args[0]) == prefix + body
+    # `str(e)` is the message, not the `args` tuple (#299).
+    assert str(e) == prefix + body
+    assert repr(e) == f"{exc_type.__name__}({prefix + body!r}, {code})"
     assert e.status == status
     assert e.body == body
     assert e.request_id == "req-1"
@@ -122,6 +128,7 @@ def test_transport_error_is_connection_error_without_http_details():
     assert e.source_kind == "network"
     assert (e.status, e.body, e.request_id, e.headers) == (None, None, None, {})
     assert (e.status_code, e.response_text) == (None, None)
+    assert str(e) == e.message == e.args[0]
 
 
 @pytest.mark.timeout(20, method="thread")
@@ -140,6 +147,7 @@ def test_websocket_connect_failure_stays_websocket_error():
     assert not isinstance(e, ConnectionError)
     assert e.code == 3002
     assert e.source_kind == "network"
+    assert str(e) == e.message == e.args[0]
 
 
 def test_websocket_command_before_connect_is_runtime_error():
@@ -150,3 +158,23 @@ def test_websocket_command_before_connect_is_runtime_error():
     with pytest.raises(RuntimeError, match="Not connected") as info:
         ws.subscribe("trades", "2330")
     assert not isinstance(info.value, MarketDataError)
+
+
+def test_config_error_str_is_message():
+    with pytest.raises(ConfigError) as info:
+        HealthCheckConfig(heartbeat_timeout_ms=100)
+    e = info.value
+    assert e.args == (e.message, 1004)
+    assert str(e) == e.message
+
+
+@pytest.mark.parametrize(
+    "exc_type",
+    [MarketDataError, ApiError, RateLimitError, AuthError, ConfigError, ConnectionError, MarketDataTimeoutError, WebSocketError],
+)
+def test_str_without_sdk_fields_is_the_usual_one(exc_type):
+    """An instance the caller raised has no ``message`` attribute: ``str``
+    is ``BaseException``'s (#299)."""
+    assert str(exc_type("plain")) == "plain"
+    assert str(exc_type("a", 1)) == "('a', 1)"
+    assert exc_type.__str__ is MarketDataError.__str__
