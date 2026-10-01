@@ -84,6 +84,29 @@ describe.each([
     expect(result).toMatchObject({ code: 0, lines: ['CLIENT true', 'WRAPPER true'], stderr: '' });
   });
 
+  test('on() keeps working after the globals it uses are replaced', async () => {
+    const result = await runChild(`
+      const ws = new WebSocketClient({ apiKey: 'k' })[${JSON.stringify(product)}];
+      ws.on('message', () => {});
+      const { WeakRef: weakRef } = globalThis;
+      const { bind } = Function.prototype;
+      globalThis.WeakRef = undefined;
+      Function.prototype.bind = null;
+      let outcome;
+      try {
+        ws.on('error', () => {}).once('connect', () => {});
+        outcome = 'COUNT ' + (ws.listenerCount('message') + ws.listenerCount('error') + ws.listenerCount('connect'));
+      } catch (err) {
+        outcome = 'THREW ' + err.message;
+      }
+      // Restored before printing: Node's own code uses them.
+      globalThis.WeakRef = weakRef;
+      Function.prototype.bind = bind;
+      console.log(outcome);
+    `);
+    expect(result).toMatchObject({ code: 0, lines: ['COUNT 3'], stderr: '' });
+  });
+
   describe('with a server', () => {
     let wss;
     beforeEach(async () => { wss = await startServer(); });
@@ -103,6 +126,8 @@ describe.each([
           const client = ws[${JSON.stringify(product)}];
           await client.connect();
           console.log('INSTANCE ' + (seen instanceof ${className}));
+          // The same client's listeners, not a wrapper of its own.
+          console.log('LISTENERS ' + seen.listenerCount('authenticated'));
           // Wrappers share their state: the connection opened through another one.
           console.log('CONNECTED ' + seen.isConnected);
           client.disconnect();
@@ -110,7 +135,7 @@ describe.each([
       `, { URL: `ws://127.0.0.1:${wss.address().port}` });
       expect(result).toMatchObject({
         code: 0,
-        lines: ['WRAPPER true', 'INSTANCE true', 'CONNECTED true'],
+        lines: ['WRAPPER true', 'INSTANCE true', 'LISTENERS 1', 'CONNECTED true'],
         stderr: '',
       });
     });

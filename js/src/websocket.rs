@@ -1393,6 +1393,12 @@ struct Registration {
     /// Not a strong reference: the client holds these registrations through
     /// its `Arc<Listeners>`, and a strong reference from Rust is a GC root, so
     /// the client would never be collected once a listener was registered.
+    ///
+    /// `original` is strong, though, so a listener closure that captures the
+    /// client itself — `const s = ws.stock; s.on('message', () =>
+    /// s.subscribe(...))` — still keeps it alive until the listener is
+    /// removed; MIGRATION §12 suggests `removeAllListeners()` before
+    /// dropping such a client.
     client: WeakObject,
     /// Removed before its first call, as `EventEmitter.once` does.
     once: bool,
@@ -1461,6 +1467,52 @@ type RootFactory = Box<dyn Fn(&Env, Arc<Listeners>) -> napi::Result<sys::napi_va
 /// `napi_ref`.
 type WeakObject = Listener;
 
+/// The built-ins [`weak_object`] uses, looked up on its first call in an
+/// environment and kept in the environment's instance data: replacing
+/// `globalThis.WeakRef` or `Function.prototype.bind` afterwards does not make
+/// `on()` fail.
+struct Intrinsics {
+    weak_ref: Listener,
+    deref: Listener,
+    bind: Listener,
+}
+
+fn intrinsics(env: &Env) -> napi::Result<&'static Intrinsics> {
+    if let Some(intrinsics) = env.get_instance_data::<Intrinsics>()? {
+        return Ok(intrinsics);
+    }
+    let raw = env.raw();
+    let failed = || {
+        clear_exception(raw);
+        napi::Error::from_reason("Failed to look up WeakRef")
+    };
+    let function_ref = |value: sys::napi_value| {
+        unsafe {
+            <Function<'_, EventArgs, Unknown<'static>> as napi::bindgen_prelude::FromNapiValue>::from_napi_value(raw, value)
+        }?
+        .create_ref()
+    };
+    let mut global = std::ptr::null_mut();
+    if unsafe { sys::napi_get_global(raw, &mut global) } != sys::Status::napi_ok {
+        return Err(failed());
+    }
+    let weak_ref = named_property(raw, global, c"WeakRef").ok_or_else(failed)?;
+    let prototype = named_property(raw, weak_ref, c"prototype").ok_or_else(failed)?;
+    let deref = named_property(raw, prototype, c"deref").ok_or_else(failed)?;
+    let function = named_property(raw, global, c"Function").ok_or_else(failed)?;
+    let prototype = named_property(raw, function, c"prototype").ok_or_else(failed)?;
+    let bind = named_property(raw, prototype, c"bind").ok_or_else(failed)?;
+    let intrinsics = Intrinsics {
+        weak_ref: function_ref(weak_ref)?,
+        deref: function_ref(deref)?,
+        bind: function_ref(bind)?,
+    };
+    env.set_instance_data(intrinsics, (), |_| {})?;
+    env.get_instance_data::<Intrinsics>()?
+        .map(|intrinsics| &*intrinsics)
+        .ok_or_else(|| napi::Error::from_reason("Failed to keep WeakRef"))
+}
+
 /// Hold `object` weakly (see [`WeakObject`]).
 fn weak_object(env: &Env, object: sys::napi_value) -> napi::Result<WeakObject> {
     let raw = env.raw();
@@ -1468,19 +1520,17 @@ fn weak_object(env: &Env, object: sys::napi_value) -> napi::Result<WeakObject> {
         clear_exception(raw);
         napi::Error::from_reason("Failed to create a WeakRef")
     };
-    let mut global = std::ptr::null_mut();
-    if unsafe { sys::napi_get_global(raw, &mut global) } != sys::Status::napi_ok {
-        return Err(failed());
-    }
-    let constructor = named_property(raw, global, c"WeakRef").ok_or_else(failed)?;
+    let intrinsics = intrinsics(env)?;
+    let constructor = intrinsics.weak_ref.borrow_back(env)?;
     let mut weak = std::ptr::null_mut();
     let args = [object];
-    if unsafe { sys::napi_new_instance(raw, constructor, args.len(), args.as_ptr(), &mut weak) } != sys::Status::napi_ok {
+    if unsafe { sys::napi_new_instance(raw, constructor.raw(), args.len(), args.as_ptr(), &mut weak) } != sys::Status::napi_ok {
         return Err(failed());
     }
-    let deref = named_property(raw, weak, c"deref").ok_or_else(failed)?;
-    let bind = named_property(raw, deref, c"bind").ok_or_else(failed)?;
-    let bound = call_function(raw, deref, bind, &[weak]).map_err(|_| failed())?;
+    // `Function.prototype.bind.call(WeakRef.prototype.deref, weak)`
+    let deref = intrinsics.deref.borrow_back(env)?;
+    let bind = intrinsics.bind.borrow_back(env)?;
+    let bound = call_function(raw, deref.raw(), bind.raw(), &[weak]).map_err(|_| failed())?;
     let bound = unsafe {
         <Function<'_, EventArgs, Unknown<'static>> as napi::bindgen_prelude::FromNapiValue>::from_napi_value(raw, bound)
     }?;

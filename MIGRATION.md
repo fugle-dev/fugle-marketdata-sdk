@@ -567,6 +567,12 @@ variable if you compare them). The client is not an `EventEmitter`, though:
 `on()` / `once()` throw for an event name that is not one of the events
 above.
 
+Registering a listener does not by itself keep the client from being
+garbage-collected, but a listener holds what it captures: with
+`const s = ws.stock; s.on('message', () => s.subscribe(...))` the listener
+keeps `s`, and with it the client, alive until it is removed. Call
+`removeAllListeners()` before dropping a client whose listeners capture it.
+
 > **From an earlier 3.0 release candidate:** `on()` replaced the event's
 > previous listener. It now adds one; to replace, call
 > `removeAllListeners(event)` first.
