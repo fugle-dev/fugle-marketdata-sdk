@@ -890,7 +890,8 @@ export interface WebSocketEventMap {
    * an auto-reconnect this is terminal: an `error` with code 3005 follows
    * and the client stays closed (#201). Any other auth-phase server error
    * (1011 auth service unavailable, 1004 no auth request received) is an
-   * `error` with code 2001 instead, and the reconnect goes on.
+   * `error` with code 2001 instead (2012 for 1003, the connection limit),
+   * and the reconnect goes on.
    */
   unauthenticated: (data?: WebSocketAuthData) => void;
   /** Disconnected from WebSocket server */

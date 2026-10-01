@@ -78,8 +78,23 @@ code. Closes with 1001 (server restart, no auth request within 60 s, and
 today the connection limit), 1013 (the connection limit once the server
 change for it ships), 1006, 1008, no code, or any code the SDK does not know
 all reconnect. An auth-phase `error` with any other code (1011 auth service
-unavailable, 1004 no auth request received) is not a rejection: it is
-reported as an `error` (code 2001) and the reconnect goes on.
+unavailable, 1004 no auth request received; 1003 is the connection limit,
+below) is not a rejection: it is reported as an `error` (code 2001) and the
+reconnect goes on.
+
+**At the connection limit** the attempt fails with code 2012
+(`CONNECTION_LIMIT`; Python `ConnectionError`, C# / Go / Java / C++ the
+`ConnectionError` variant) instead of 2001 (#300). The SDK recognises it from
+a Close 1013, an auth-phase `error` with code 1003, or a Close 1001 whose
+reason is exactly `Maximum number of connections reached` (a 1001 with any
+other reason is a restart, still 2001). It is retried like any other failed
+attempt, and each failed attempt reports 2012 as an `error`. Retrying is on
+purpose: after a dropped connection the server can go on counting the old one
+until it notices it is gone, so the reconnect is refused for a while and then
+succeeds without anything changing on your side. If the limit is reached
+because too many clients share the key, that does not clear by itself; set
+`max_attempts` to give up (`ReconnectFailed`, 3005) instead of retrying at
+`max_delay_ms` until a slot frees, or react to 2012 in your `error` handler.
 
 ### Language-Specific Examples
 

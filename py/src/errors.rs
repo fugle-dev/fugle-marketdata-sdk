@@ -25,7 +25,8 @@ create_exception!(fugle_marketdata, ConfigError, MarketDataError, "Invalid confi
 // Connection errors (core `ConnectionError`, code 2001): a REST request
 // cannot reach the server, a WebSocket command is sent while not connected,
 // or the WebSocket auth handshake fails for a reason other than rejected
-// credentials. Not a `WebSocketError` (#219).
+// credentials; also core `ConnectionLimit` (code 2012, #300). Not a
+// `WebSocketError` (#219).
 create_exception!(fugle_marketdata, ConnectionError, MarketDataError, "Connection failed");
 create_exception!(fugle_marketdata, TimeoutError, MarketDataError, "Operation timed out");
 
@@ -138,7 +139,10 @@ pub fn to_py_err(err: marketdata_core::MarketDataError) -> PyErr {
         CoreError::TimeoutError { .. } | CoreError::HeartbeatTimeout { .. } => {
             TimeoutError::new_err((message.clone(), error_code))
         }
-        CoreError::ConnectionError { .. } => {
+        // The connection limit is a `ConnectionError` too, so existing
+        // `except ConnectionError` blocks still catch it; `code` 2012 tells
+        // it apart (#300).
+        CoreError::ConnectionError { .. } | CoreError::ConnectionLimit { .. } => {
             ConnectionError::new_err((message.clone(), error_code))
         }
         CoreError::WebSocketError { .. }

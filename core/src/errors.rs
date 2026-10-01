@@ -161,6 +161,10 @@ pub mod error_code {
     /// `connect()` is establishing the connection; on the sync client, also
     /// while auto-reconnecting.
     pub const ALREADY_CONNECTED: i32 = 2011;
+    /// [`MarketDataError::ConnectionLimit`](super::MarketDataError::ConnectionLimit):
+    /// the server refused a WebSocket connection because the account is at
+    /// its connection limit (#300).
+    pub const CONNECTION_LIMIT: i32 = 2012;
     /// [`MarketDataError::TimeoutError`](super::MarketDataError::TimeoutError).
     pub const TIMEOUT: i32 = 3001;
     /// [`MarketDataError::WebSocketError`](super::MarketDataError::WebSocketError).
@@ -353,6 +357,22 @@ pub enum MarketDataError {
         msg: String,
     },
 
+    /// The server refused the WebSocket connection during authentication
+    /// because the account already has as many connections as it may (#300).
+    ///
+    /// Recognised from a Close `1013`, an auth-phase `error` frame with code
+    /// `1003`, or (until the server sends those) a Close `1001` whose reason
+    /// is exactly `Maximum number of connections reached`. Automatic
+    /// reconnect keeps retrying after it like after any other failed attempt:
+    /// after a dropped connection the server can still be counting the old
+    /// one until it notices it is gone.
+    #[error("Connection limit reached: {msg}")]
+    ConnectionLimit {
+        /// Diagnostic message, naming the server's close code or error code
+        /// and its reason.
+        msg: String,
+    },
+
     /// Authentication failed
     #[error("Authentication error: {msg}")]
     AuthError {
@@ -504,7 +524,7 @@ impl MarketDataError {
     ///
     /// | `MarketDataError` variant | `ErrorKind` |
     /// |---|---|
-    /// | `ConnectionError`, `TimeoutError`, `HeartbeatTimeout`, `ReconnectFailed` | `Network` |
+    /// | `ConnectionError`, `ConnectionLimit`, `TimeoutError`, `HeartbeatTimeout`, `ReconnectFailed` | `Network` |
     /// | `WebSocketError { kind: Protocol \| Capacity \| Utf8 \| Other }` | `Protocol` |
     /// | `WebSocketError { kind: Tls }` | `Auth` |
     /// | `WebSocketError { kind: Io }` | `Network` |
@@ -519,6 +539,7 @@ impl MarketDataError {
     pub fn source_kind(&self) -> ErrorKind {
         match self {
             Self::ConnectionError { .. }
+            | Self::ConnectionLimit { .. }
             | Self::TimeoutError { .. }
             | Self::HeartbeatTimeout { .. }
             | Self::ReconnectFailed { .. } => ErrorKind::Network,
@@ -581,6 +602,7 @@ impl MarketDataError {
             Self::RuntimeError { .. } => error_code::RUNTIME,
             Self::ConfigError(_) => error_code::CONFIG,
             Self::ConnectionError { .. } => error_code::CONNECTION,
+            Self::ConnectionLimit { .. } => error_code::CONNECTION_LIMIT,
             Self::AuthError { .. } => error_code::AUTH,
             Self::ApiError { .. } => error_code::API,
             Self::TimeoutError { .. } => error_code::TIMEOUT,
@@ -615,6 +637,7 @@ impl MarketDataError {
         match self {
             // Network errors are retryable
             Self::ConnectionError { .. }
+            | Self::ConnectionLimit { .. }
             | Self::TimeoutError { .. }
             | Self::HeartbeatTimeout { .. } => true,
             // WebSocket retry verdict driven by structured kind

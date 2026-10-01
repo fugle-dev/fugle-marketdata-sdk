@@ -16,8 +16,11 @@ from fugle_marketdata import AuthError, ConnectionError, HealthCheckConfig
 from tests.ws_loopback import (
     BARE_AUTH_API_KEY,
     LIMIT_CLOSE_REASON,
+    LIMITED_1013_API_KEY,
     LIMITED_API_KEY,
     REJECTED_API_KEY,
+    RESTART_CLOSE_REASON,
+    RESTARTING_API_KEY,
     TIMEOUT_S,
     InProcessLoopbackServer,
     LoopbackServer,
@@ -101,10 +104,31 @@ def test_close_during_auth_reports_close_code_and_reason(server, product):
     with pytest.raises(ConnectionError) as info:
         ws.connect()
 
-    assert info.value.code == 2001
+    # The connection limit has its own code, still a ConnectionError (#300).
+    assert info.value.code == 2012
     assert f"Stream closed during authentication (close 1001: {LIMIT_CLOSE_REASON})" in str(
         info.value
     )
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+@pytest.mark.parametrize(
+    ("api_key", "code", "expected"),
+    [
+        (LIMITED_1013_API_KEY, 2012, "(close 1013)"),
+        (RESTARTING_API_KEY, 2001, f"(close 1001: {RESTART_CLOSE_REASON})"),
+    ],
+)
+def test_close_during_auth_code_tells_the_limit_apart(server, product, api_key, code, expected):
+    # Close 1013 is the connection limit; 1001 with another reason is not (#300).
+    ws = product_ws(server.url, product, api_key=api_key)
+
+    with pytest.raises(ConnectionError) as info:
+        ws.connect()
+
+    assert info.value.code == code
+    assert f"Stream closed during authentication {expected}" in str(info.value)
 
 
 @hard_timeout

@@ -24,6 +24,22 @@ use tungstenite::protocol::CloseFrame;
 /// reconnect loop retries (#201).
 pub(crate) const AUTH_REJECTED_CODE: i32 = 1000;
 
+/// The server's auth-phase `error` code for an account at its connection
+/// limit, sent before it closes with [`CONNECTION_LIMIT_CLOSE_CODE`]
+/// (fugle-realtime !640). Reported as
+/// [`MarketDataError::ConnectionLimit`] (#300).
+pub(crate) const CONNECTION_LIMIT_ERROR_CODE: i32 = 1003;
+
+/// The Close code (`1013`, Try Again Later) the server ends a connection
+/// over the limit with, after `error{1003}` (fugle-realtime !640).
+const CONNECTION_LIMIT_CLOSE_CODE: u16 = 1013;
+
+/// Before fugle-realtime !640 the server refuses a connection over the
+/// limit with `Close(1001, <this reason>)`, and `1001` alone also means a
+/// restart or a missing auth request, so the reason is what tells them
+/// apart. Can go once the server only sends `1013`.
+const LEGACY_CONNECTION_LIMIT_REASON: &str = "Maximum number of connections reached";
+
 /// How long a connection whose auth handshake failed or was rejected is
 /// given to send its Close frame (the reply to the server's, or its own)
 /// before it is dropped, so the server sees the close completed rather than
@@ -31,10 +47,12 @@ pub(crate) const AUTH_REJECTED_CODE: i32 = 1000;
 pub(crate) const AUTH_FAILED_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// The error for a stream that closed before the auth handshake reached an
-/// outcome. A Close frame's code and reason are part of the message: the
-/// server refuses a connection over its limit with
-/// `Close(1001, "Maximum number of connections reached")`, and that is the
-/// only place it says so (#292). Shared by the async and sync clients.
+/// outcome. A Close frame's code and reason are part of the message (#292).
+/// A connection refused for the account's connection limit — `Close(1013)`,
+/// or `Close(1001, "Maximum number of connections reached")` from a server
+/// without fugle-realtime !640 — is [`MarketDataError::ConnectionLimit`]
+/// (#300); any other is `ConnectionError`. Shared by the async and sync
+/// clients.
 ///
 /// The reason comes from the server and ends up in logs, so each control
 /// character in it (`\n`, `\r`, ESC, ...) is replaced with a space: it
@@ -55,7 +73,16 @@ pub(crate) fn closed_during_auth(frame: Option<&CloseFrame>) -> MarketDataError 
         ),
         None => "Stream closed during authentication".to_string(),
     };
-    MarketDataError::ConnectionError { msg }
+    let at_limit = frame.is_some_and(|frame| {
+        let code = u16::from(frame.code);
+        code == CONNECTION_LIMIT_CLOSE_CODE
+            || (code == 1001 && frame.reason.as_str() == LEGACY_CONNECTION_LIMIT_REASON)
+    });
+    if at_limit {
+        MarketDataError::ConnectionLimit { msg }
+    } else {
+        MarketDataError::ConnectionError { msg }
+    }
 }
 
 /// Classification of the inbound auth response.
@@ -304,8 +331,9 @@ pub(crate) fn parse_binary_frame(data: &[u8]) -> Result<WebSocketMessage, Market
 ///
 /// An `error` frame is a rejection only when its `code` is
 /// [`AUTH_REJECTED_CODE`]; any other code, or none, is a failure of this
-/// attempt (`ConnectionError` naming the code and the server's message), not
-/// of the credentials (#201).
+/// attempt, not of the credentials (#201): `ConnectionLimit` for
+/// [`CONNECTION_LIMIT_ERROR_CODE`] (#300), otherwise `ConnectionError`, each
+/// naming the code and the server's message.
 pub(crate) fn classify_auth_response(msg: &WebSocketMessage) -> AuthOutcome {
     let data = || msg.data().cloned().unwrap_or(serde_json::Value::Null);
     if msg.is_authenticated() {
@@ -317,6 +345,11 @@ pub(crate) fn classify_auth_response(msg: &WebSocketMessage) -> AuthOutcome {
     let message = msg.error_message().unwrap_or_else(|| "Unknown error".to_string());
     match msg.error_code() {
         Some(AUTH_REJECTED_CODE) => AuthOutcome::Rejected { message, data: data() },
+        Some(CONNECTION_LIMIT_ERROR_CODE) => AuthOutcome::Failed(MarketDataError::ConnectionLimit {
+            msg: format!(
+                "Authentication failed (server error {CONNECTION_LIMIT_ERROR_CODE}): {message}"
+            ),
+        }),
         Some(code) => AuthOutcome::Failed(MarketDataError::ConnectionError {
             msg: format!("Authentication failed (server error {code}): {message}"),
         }),
@@ -451,27 +484,68 @@ mod tests {
         assert!(matches!(err, MarketDataError::DeserializationError { .. }), "{err:?}");
     }
 
+    fn close_frame(code: u16, reason: &str) -> CloseFrame {
+        CloseFrame {
+            code: tungstenite::protocol::frame::coding::CloseCode::from(code),
+            reason: reason.into(),
+        }
+    }
+
     #[test]
     fn closed_during_auth_carries_close_code_and_reason() {
-        use tungstenite::protocol::frame::coding::CloseCode;
         let msg = |frame: Option<CloseFrame>| match closed_during_auth(frame.as_ref()) {
             MarketDataError::ConnectionError { msg } => msg,
             other => panic!("{other:?}"),
         };
-        let frame = |code: u16, reason: &str| CloseFrame {
-            code: CloseCode::from(code),
-            reason: reason.into(),
-        };
         assert_eq!(
-            msg(Some(frame(1001, "Maximum number of connections reached"))),
-            "Stream closed during authentication (close 1001: Maximum number of connections reached)"
+            msg(Some(close_frame(1001, "Server restarting"))),
+            "Stream closed during authentication (close 1001: Server restarting)"
         );
-        assert_eq!(msg(Some(frame(1008, ""))), "Stream closed during authentication (close 1008)");
+        assert_eq!(msg(Some(close_frame(1008, ""))), "Stream closed during authentication (close 1008)");
         assert_eq!(
-            msg(Some(frame(1001, "full\r\nERROR forged\x1b[31m"))),
+            msg(Some(close_frame(1001, "full\r\nERROR forged\x1b[31m"))),
             "Stream closed during authentication (close 1001: full  ERROR forged [31m)"
         );
         assert_eq!(msg(None), "Stream closed during authentication");
+    }
+
+    /// The connection limit is `ConnectionLimit` (2012): a Close `1013`
+    /// with any reason, or a Close `1001` with exactly the server's reason.
+    /// `1001` with another reason is a restart or a missing auth request
+    /// (#300).
+    #[test]
+    fn closed_during_auth_at_the_connection_limit() {
+        let limit = |code: u16, reason: &str| match closed_during_auth(Some(&close_frame(code, reason))) {
+            MarketDataError::ConnectionLimit { msg } => msg,
+            other => panic!("close {code} {reason:?}: expected ConnectionLimit, got {other:?}"),
+        };
+        assert_eq!(
+            limit(1001, "Maximum number of connections reached"),
+            "Stream closed during authentication (close 1001: Maximum number of connections reached)"
+        );
+        assert_eq!(limit(1013, ""), "Stream closed during authentication (close 1013)");
+        assert_eq!(
+            limit(1013, "Try again later"),
+            "Stream closed during authentication (close 1013: Try again later)"
+        );
+        for (code, reason) in [
+            (1001, ""),
+            (1001, "maximum number of connections reached"),
+            (1001, "Maximum number of connections reached."),
+            (1008, "Maximum number of connections reached"),
+        ] {
+            assert!(
+                matches!(
+                    closed_during_auth(Some(&close_frame(code, reason))),
+                    MarketDataError::ConnectionError { .. }
+                ),
+                "close {code} {reason:?}"
+            );
+        }
+        assert_eq!(
+            MarketDataError::ConnectionLimit { msg: String::new() }.to_error_code(),
+            crate::errors::error_code::CONNECTION_LIMIT
+        );
     }
 
     #[test]
@@ -532,6 +606,23 @@ mod tests {
                 }
                 other => panic!("{code}: expected Failed(ConnectionError), got {other:?}"),
             }
+        }
+    }
+
+    /// `error{1003}` is the server's connection-limit refusal
+    /// (fugle-realtime !640): a failure of the attempt like the codes above,
+    /// reported as `ConnectionLimit` (#300).
+    #[test]
+    fn classify_error_1003_is_the_connection_limit() {
+        let msg = parse_msg(
+            r#"{"event":"error","code":1003,"data":{"message":"Maximum number of connections reached"}}"#,
+        );
+        match classify_auth_response(&msg) {
+            AuthOutcome::Failed(MarketDataError::ConnectionLimit { msg }) => assert_eq!(
+                msg,
+                "Authentication failed (server error 1003): Maximum number of connections reached"
+            ),
+            other => panic!("expected Failed(ConnectionLimit), got {other:?}"),
         }
     }
 

@@ -37,6 +37,15 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — connection limit has its own error (#300)
+
+- `+` `MarketDataError::ConnectionLimit { msg: String }` — the server refused
+  a WebSocket connection during authentication because the account is at its
+  connection limit (Close 1013, auth-phase `error` 1003, or Close 1001 with
+  the reason `Maximum number of connections reached`). Was `ConnectionError`.
+  Additive: the enum is `#[non_exhaustive]`.
+- `+` `error_code::CONNECTION_LIMIT` (2012; also `errors::error_code`).
+
 ### Unreleased — auth events carry the server's frame (#304)
 
 - `~` `ConnectionEvent::Authenticated` — `+` `frame: String`, the server's
