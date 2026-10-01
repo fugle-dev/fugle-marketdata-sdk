@@ -52,6 +52,20 @@ pub(crate) fn rejected_reason(message: &str) -> String {
     format!("Credentials rejected: {message}")
 }
 
+/// The frame that decided an auth handshake, as the server sent it: the last
+/// of the handshake's `frames` (#304). Every handshake reader
+/// (`owner_thread::do_auth_handshake`, `reconnect::await_auth_response`)
+/// pushes the frame it classified and returns at once on a verdict, so the
+/// deciding frame is always last. A frame built without `raw` (through
+/// `Deserialize`) is serialized again; no frame gives an empty string.
+fn auth_frame(frames: &[WebSocketMessage]) -> String {
+    match frames.last() {
+        Some(frame) if !frame.raw.is_empty() => frame.raw.clone(),
+        Some(frame) => serde_json::to_string(frame).unwrap_or_default(),
+        None => String::new(),
+    }
+}
+
 /// How soon after an automatic reconnect a caller's close, and how soon
 /// after that close a caller's `connect()`, are taken for code that
 /// reconnects on its own as well, and warned about (#226, #242). Such code
@@ -357,7 +371,8 @@ impl StreamSender {
         state.disconnect_claimed = false;
         state.close_reported = false;
         state.open = true;
-        self.push_event(state, ConnectionEvent::Authenticated { data }, outcome);
+        let frame = auth_frame(&frames);
+        self.push_event(state, ConnectionEvent::Authenticated { data, frame }, outcome);
         for frame in frames {
             self.push_message_locked(state, frame, outcome);
         }
@@ -385,7 +400,8 @@ impl StreamSender {
         frames: Vec<WebSocketMessage>,
         outcome: &mut Outcome,
     ) {
-        self.push_event(state, ConnectionEvent::Unauthenticated { message, data }, outcome);
+        let frame = auth_frame(&frames);
+        self.push_event(state, ConnectionEvent::Unauthenticated { message, data, frame }, outcome);
         for frame in frames {
             self.push_message_locked(state, frame, outcome);
         }
@@ -929,7 +945,7 @@ mod tests {
             drain(&f.rx),
             vec![
                 "Connecting".to_string(),
-                "Authenticated { data: Null }".into(),
+                "Authenticated { data: Null, frame: \"{\\\"event\\\":\\\"data\\\",\\\"id\\\":\\\"0\\\"}\" }".into(),
                 "m0".into(),
                 "m1".into(),
                 format!("{:?}", closed(Some(1000))),
@@ -1410,9 +1426,9 @@ mod tests {
                 "Reconnecting { attempt: 1 }".to_string(),
                 "Connecting".into(),
                 "Connected".into(),
-                "Unauthenticated { message: \"nope\", data: Null }".into(),
+                "Unauthenticated { message: \"nope\", data: Null, frame: \"{\\\"event\\\":\\\"data\\\",\\\"id\\\":\\\"1\\\"}\" }".into(),
                 "m1".into(),
-                "Authenticated { data: Null }".into(),
+                "Authenticated { data: Null, frame: \"{\\\"event\\\":\\\"data\\\",\\\"id\\\":\\\"2\\\"}\" }".into(),
                 "m2".into(),
             ]
         );
@@ -1524,7 +1540,7 @@ mod tests {
         assert_eq!(
             drain(&f.rx),
             vec![
-                "Unauthenticated { message: \"no\", data: Null }".to_string(),
+                "Unauthenticated { message: \"no\", data: Null, frame: \"{\\\"event\\\":\\\"data\\\",\\\"id\\\":\\\"0\\\"}\" }".to_string(),
                 "m0".into(),
             ]
         );

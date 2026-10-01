@@ -283,7 +283,7 @@ mod tests {
     }
 
     fn authenticated_event() -> ConnectionEvent {
-        ConnectionEvent::Authenticated { data: serde_json::Value::Null }
+        ConnectionEvent::Authenticated { data: serde_json::Value::Null, frame: String::new() }
     }
 
     fn disconnected_event() -> ConnectionEvent {
@@ -378,6 +378,7 @@ mod tests {
         delivered.observe(&ConnectionEvent::Unauthenticated {
             message: "rejected".to_string(),
             data: serde_json::Value::Null,
+            frame: String::new(),
         });
         assert!(!delivered.is_authenticated());
     }
