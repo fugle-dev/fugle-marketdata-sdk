@@ -7,6 +7,7 @@ use crate::websocket::aio::reconnect::{replay_subscriptions, tls_connector_for, 
 use crate::websocket::aio::writer::{retire_writer, start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{read_state, write_state, SharedState, WsSink, WsStream};
 use crate::websocket::connect_gate::ConnectGate;
+use crate::websocket::credentials::CredentialsSlot;
 use crate::websocket::liveness::{
     latency_connection_lost, latency_frame, latency_timeout, latency_timeout_or_default,
     LatencyWaiters,
@@ -17,8 +18,8 @@ use crate::websocket::protocol::{
     frame_unsubscribe, unsubscribe_wire_ids,
 };
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, HealthCheckConfig,
-    ConnectionStream, MessagesDroppedHandle, ReconnectionConfig, ReconnectionManager, StreamReceiver,
+    ConnectionConfig, ConnectionEvent, ConnectionState, ConnectionStateHandle, CredentialsHandle,
+    HealthCheckConfig, ConnectionStream, MessagesDroppedHandle, ReconnectionConfig, ReconnectionManager, StreamReceiver,
     SubscriptionManager,
 };
 use crate::MarketDataError;
@@ -101,6 +102,8 @@ pub struct WebSocketClient {
     /// What a `connect()` / [`wait_connected`](Self::wait_connected) waiting
     /// on an automatic reconnect checks and is woken by (#230).
     waiters: Arc<ConnectWaiters>,
+    /// The credential each connection attempt sends (#322).
+    credentials: Arc<CredentialsSlot>,
 }
 
 /// How long a `connect()` aborted by `disconnect()` waits for the Close frame
@@ -172,6 +175,7 @@ impl WebSocketClient {
         );
 
         Self {
+            credentials: Arc::new(CredentialsSlot::new(config.auth.clone())),
             config,
             state: Arc::new(std::sync::RwLock::new(ConnectionState::Disconnected)),
             ws_sink: Arc::new(Mutex::new(None)),
@@ -258,6 +262,42 @@ impl WebSocketClient {
     /// warning is given once across all clients sharing the handle.
     pub fn use_reconnect_conflict_handle(&self, handle: &ReconnectConflictHandle) {
         self.stream.use_reconnect_conflict_handle(handle.clone());
+    }
+
+    /// Replace the credential later connection attempts send — the next
+    /// `connect()`, an automatic reconnect, a `reconnect()` — with `auth`,
+    /// which may be of another kind (#322). The current connection is not
+    /// authenticated again: the server does not take a second auth frame on
+    /// one connection.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection, which leaves the client closed: build a new
+    /// client, hand it [`credentials_handle`](Self::credentials_handle) with
+    /// `use_credentials_handle()`, set the new credential and connect. A
+    /// first `connect()` that was rejected leaves the client open; set the
+    /// new credential and call `connect()` again.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] for a blank credential; the
+    /// current one is then kept.
+    pub fn set_credentials(&self, auth: crate::Auth) -> Result<(), MarketDataError> {
+        self.credentials.handle().set(auth)
+    }
+
+    /// The handle holding this client's credential. Code that builds a new
+    /// client for each connection hands it to the next one with
+    /// [`use_credentials_handle`](Self::use_credentials_handle).
+    pub fn credentials_handle(&self) -> CredentialsHandle {
+        self.credentials.handle()
+    }
+
+    /// Use `handle` as this client's credential from now on, in place of
+    /// the one built from `ConnectionConfig::auth` — the client-requested
+    /// heartbeat interval included, which is the handle's from then on. Call
+    /// it before [`connect`](Self::connect).
+    pub fn use_credentials_handle(&self, handle: &CredentialsHandle) {
+        self.credentials.use_handle(handle);
     }
 
     /// Get current connection state (snapshot)
@@ -472,7 +512,9 @@ impl WebSocketClient {
         }
         // Bindings reject bad credentials at construction; this catches a
         // config built directly in Rust or through the UniFFI constructors.
-        self.config.auth.validate()?;
+        // Read once: the handshake below sends what was checked here.
+        let auth = self.credentials.current();
+        auth.validate()?;
         // Declared before the claim, so dropped after it: whatever this call
         // ends in, a `wait_connected()` looks again with the gate released.
         // This covers a first `connect()`, one cancelled mid-handshake, and
@@ -594,6 +636,7 @@ impl WebSocketClient {
             handshake = crate::websocket::aio::reconnect::authenticate(
                 &mut ws_sink,
                 &mut ws_read,
+                auth,
                 &self.config,
                 &self.stream,
             ) => Some(handshake),
@@ -1305,6 +1348,7 @@ impl WebSocketClient {
         let shutdown_requested = Arc::clone(&self.shutdown_requested);
         let shutdown_notify = Arc::clone(&self.shutdown_notify);
         let waiters = Arc::clone(&self.waiters);
+        let credentials = Arc::clone(&self.credentials);
 
         let handle = tokio::spawn(async move {
             // Dispatch → reconnect → dispatch loop (avoids recursive async which breaks Send)
@@ -1358,6 +1402,7 @@ impl WebSocketClient {
                     Arc::clone(&shutdown_requested),
                     Arc::clone(&shutdown_notify),
                     Arc::clone(&waiters),
+                    Arc::clone(&credentials),
                 )
                 .await
                 {

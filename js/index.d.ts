@@ -2120,6 +2120,23 @@ export declare class FutOptIntradayClient {
  */
 export declare class FutOptWebSocketClient {
   /**
+   * Replace the credential this client authenticates with from its next
+   * connection attempt on: the next `connect()` or automatic reconnect.
+   * Any of the three kinds may replace any other. A connection already
+   * authenticated is not authenticated again.
+   * `ws.setCredentials()` changes both `ws.stock`'s and `ws.futopt`'s.
+   *
+   * Call it before a token expires. Rejected credentials still end
+   * automatic reconnection; set a new credential, then `connect()`.
+   *
+   * @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+   * @throws {TypeError} If `credentials` is not an object of those keys
+   *   holding strings
+   * @throws {Error} code 1004 unless exactly one non-empty credential is
+   *   given; the current credential is then kept
+   */
+  setCredentials(credentials: Credentials): void
+  /**
    * Register an event handler
    *
    * Same events, arguments and return value as `StockWebSocketClient::on`
@@ -2287,6 +2304,25 @@ export declare class RestClient {
    * ```
    */
   constructor(options: RestClientOptions)
+  /**
+   * Replace the credential later requests send, with any of the three
+   * kinds. Product clients already taken from this one (`client.stock`,
+   * `client.stock.intraday`, ...) send it too; a request already sent
+   * keeps the credential it was sent with.
+   *
+   * @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+   * @throws {TypeError} If `credentials` is not an object of those keys
+   *   holding strings
+   * @throws {Error} code 1004 unless exactly one non-empty credential is
+   *   given, or if it cannot be sent in an HTTP header; the current
+   *   credential is then kept
+   *
+   * @example
+   * ```javascript
+   * client.setCredentials({ sdkToken: newToken });
+   * ```
+   */
+  setCredentials(credentials: Credentials): void
   /**
    * The prefix every request from this client is built on, fully resolved —
    * host, path prefix and version segment. Endpoints are appended to it.
@@ -2591,6 +2627,23 @@ export declare class StockTechnicalClient {
  */
 export declare class StockWebSocketClient {
   /**
+   * Replace the credential this client authenticates with from its next
+   * connection attempt on: the next `connect()` or automatic reconnect.
+   * Any of the three kinds may replace any other. A connection already
+   * authenticated is not authenticated again.
+   * `ws.setCredentials()` changes both `ws.stock`'s and `ws.futopt`'s.
+   *
+   * Call it before a token expires. Rejected credentials still end
+   * automatic reconnection; set a new credential, then `connect()`.
+   *
+   * @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+   * @throws {TypeError} If `credentials` is not an object of those keys
+   *   holding strings
+   * @throws {Error} code 1004 unless exactly one non-empty credential is
+   *   given; the current credential is then kept
+   */
+  setCredentials(credentials: Credentials): void
+  /**
    * Register an event handler
    *
    * Arguments match `@fugle/marketdata` 1.x (#23): `message(data: string)`,
@@ -2832,6 +2885,28 @@ export declare class WebSocketClient {
    */
   constructor(options: WebSocketClientOptions)
   /**
+   * Replace the credential both `ws.stock` and `ws.futopt` authenticate
+   * with from their next connection attempt on: the next `connect()` or
+   * automatic reconnect. Any of the three kinds may replace any other. A
+   * connection already authenticated is not authenticated again.
+   * `ws.stock.setCredentials()` changes the stock client's alone.
+   *
+   * Call it before a token expires. Rejected credentials still end
+   * automatic reconnection; set a new credential, then `connect()`.
+   *
+   * @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+   * @throws {TypeError} If `credentials` is not an object of those keys
+   *   holding strings
+   * @throws {Error} code 1004 unless exactly one non-empty credential is
+   *   given; the current credential is then kept
+   *
+   * @example
+   * ```javascript
+   * ws.setCredentials({ sdkToken: newToken });
+   * ```
+   */
+  setCredentials(credentials: Credentials): void
+  /**
    * Get the stock WebSocket client for real-time stock data.
    *
    * Every access returns a new JS wrapper but all wrappers share the same
@@ -2845,6 +2920,20 @@ export declare class WebSocketClient {
    * Same shared-state semantics as `stock` — see its doc comment.
    */
   get futopt(): FutOptWebSocketClient
+}
+
+/**
+ * The credential `setCredentials()` takes: exactly ONE non-empty apiKey,
+ * bearerToken, or sdkToken, as in the client options; an empty or
+ * whitespace-only value counts as not provided.
+ */
+export interface Credentials {
+  /** API key for authentication */
+  apiKey?: string
+  /** Bearer token for authentication */
+  bearerToken?: string
+  /** SDK token for authentication */
+  sdkToken?: string
 }
 
 /**

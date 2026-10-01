@@ -20,7 +20,8 @@ use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
     ReconnectionManager, SubscriptionManager,
 };
-use crate::models::WebSocketMessage;
+use crate::models::{AuthRequest, WebSocketMessage};
+use crate::websocket::credentials::CredentialsSlot;
 use crate::MarketDataError;
 use crate::tracing_compat::{debug, warn};
 use std::collections::VecDeque;
@@ -100,6 +101,8 @@ fn await_close_ack(ws: &mut SyncWs, deadline: Duration) {
 /// Shared state owned by the `WebSocketClient` and updated by the owner thread.
 pub(crate) struct OwnerShared {
     pub config: ConnectionConfig,
+    /// The credential each connection attempt sends (#322).
+    pub credentials: CredentialsSlot,
     pub tls_config: Arc<rustls::ClientConfig>,
     pub health: HealthCheckConfig,
     /// Pending `measure_latency()` calls, answered by the owner loop.
@@ -281,13 +284,14 @@ fn write_probe(ws: &mut SyncWs, deadline: Instant) -> ProbeWrite {
 /// out in one.
 pub(crate) fn do_auth_handshake(
     ws: &mut SyncWs,
+    auth: AuthRequest,
     config: &ConnectionConfig,
     stream: &StreamSender,
 ) -> AuthHandshake {
     // The drop count restarts with each connection attempt.
     stream.start_connection();
     // Send auth frame
-    let auth_json = match frame_auth(config.auth.clone()) {
+    let auth_json = match frame_auth(auth) {
         Ok(json) => json,
         Err(e) => return AuthHandshake::Failed(e),
     };
@@ -769,7 +773,9 @@ fn reconnect_and_authenticate(
     ) {
         return Err(MarketDataError::ClientClosed);
     }
-    let handshake = do_auth_handshake(&mut ws, &shared.config, &shared.stream);
+    // Read per attempt: a credential set during the backoff is the one
+    // sent (#322).
+    let handshake = do_auth_handshake(&mut ws, shared.credentials.current(), &shared.config, &shared.stream);
     if stopping() {
         return Err(MarketDataError::ClientClosed);
     }
@@ -1146,6 +1152,7 @@ mod tests {
         let config = ConnectionConfig::new("ws://127.0.0.1", AuthRequest::with_api_key("k"));
         let counter = || DropCounter::new("test", "localhost", "test");
         OwnerShared {
+            credentials: CredentialsSlot::new(config.auth.clone()),
             tls_config: crate::tls::build_rustls_config(&config.tls).expect("tls"),
             config,
             health,

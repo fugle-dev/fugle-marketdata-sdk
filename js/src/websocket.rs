@@ -918,6 +918,27 @@ impl ToNapiValue for HealthCheckInput {
     }
 }
 
+/// The credential `setCredentials()` takes: exactly ONE non-empty apiKey,
+/// bearerToken, or sdkToken, as in the client options; an empty or
+/// whitespace-only value counts as not provided.
+#[napi(object)]
+#[derive(Default)]
+pub struct Credentials {
+    /// API key for authentication
+    pub api_key: Option<String>,
+    /// Bearer token for authentication
+    pub bearer_token: Option<String>,
+    /// SDK token for authentication
+    pub sdk_token: Option<String>,
+}
+
+impl Credentials {
+    /// The core credential; `ConfigError` (1004) unless exactly one is given.
+    pub(crate) fn into_auth(self) -> Result<marketdata_core::Auth, marketdata_core::MarketDataError> {
+        marketdata_core::Auth::from_credentials(self.api_key, self.bearer_token, self.sdk_token)
+    }
+}
+
 /// REST client options
 ///
 /// Exactly ONE non-empty apiKey, bearerToken, or sdkToken must be provided;
@@ -1455,7 +1476,6 @@ impl EventCallbacks {
 }
 
 /// A client's listeners, shared by its connections' [`EventSink`]s.
-#[derive(Default)]
 struct Listeners {
     callbacks: Mutex<EventCallbacks>,
     /// Whether any `message` listener is registered. Read by the worker for
@@ -1468,6 +1488,9 @@ struct Listeners {
     /// `connect()`, and whether the 3006 warning was given, across the
     /// client's connections: each has its own core client (#226, #242).
     reconnect_conflict: marketdata_core::ReconnectConflictHandle,
+    /// The credential each of the client's connections authenticates with,
+    /// for `setCredentials()` to change between and during them (#322).
+    credentials: marketdata_core::CredentialsHandle,
     /// Makes a new wrapper of the client these listeners belong to, for
     /// [`listener_this`]. Set by the first `on()`.
     root_factory: std::sync::OnceLock<RootFactory>,
@@ -1589,6 +1612,18 @@ fn listener_this(listeners: &Arc<Listeners>, env: &Env, registration: &Registrat
 }
 
 impl Listeners {
+    fn new(credentials: marketdata_core::CredentialsHandle) -> Self {
+        Self {
+            callbacks: Mutex::default(),
+            has_message: AtomicBool::default(),
+            callback_failures: Mutex::default(),
+            reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
+            credentials,
+            root_factory: std::sync::OnceLock::new(),
+            root: Mutex::default(),
+        }
+    }
+
     /// A panic while holding the lock must not silence the events that
     /// report it (#25).
     fn lock(&self) -> std::sync::MutexGuard<'_, EventCallbacks> {
@@ -1850,6 +1885,12 @@ impl WebSocketClient {
             accept_invalid_certs: options.tls_accept_invalid_certs.unwrap_or(false),
         };
 
+        let credentials = || {
+            marketdata_core::CredentialsHandle::new(auth.clone())
+                .map_err(|e| crate::errors::to_napi_error(&env, e))
+        };
+        let (stock_credentials, futopt_credentials) = (credentials()?, credentials()?);
+
         Ok(Self {
             auth,
             base_url: options.base_url,
@@ -1860,13 +1901,41 @@ impl WebSocketClient {
             tls_config,
             message_queue,
             auth_timeout,
-            stock_callbacks: Arc::new(Listeners::default()),
+            stock_callbacks: Arc::new(Listeners::new(stock_credentials)),
             stock_worker: Arc::new(Mutex::new(None)),
             stock_connection: Arc::new(Mutex::new(None)),
-            futopt_callbacks: Arc::new(Listeners::default()),
+            futopt_callbacks: Arc::new(Listeners::new(futopt_credentials)),
             futopt_worker: Arc::new(Mutex::new(None)),
             futopt_connection: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// Replace the credential both `ws.stock` and `ws.futopt` authenticate
+    /// with from their next connection attempt on: the next `connect()` or
+    /// automatic reconnect. Any of the three kinds may replace any other. A
+    /// connection already authenticated is not authenticated again.
+    /// `ws.stock.setCredentials()` changes the stock client's alone.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection; set a new credential, then `connect()`.
+    ///
+    /// @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+    /// @throws {TypeError} If `credentials` is not an object of those keys
+    ///   holding strings
+    /// @throws {Error} code 1004 unless exactly one non-empty credential is
+    ///   given; the current credential is then kept
+    ///
+    /// @example
+    /// ```javascript
+    /// ws.setCredentials({ sdkToken: newToken });
+    /// ```
+    #[napi(ts_args_type = "credentials: Credentials")]
+    pub fn set_credentials(&self, env: Env, credentials: crate::options::Checked<Credentials>) -> napi::Result<()> {
+        let auth = credentials.0.into_auth().map_err(|e| crate::errors::to_napi_error(&env, e))?;
+        for listeners in [&self.stock_callbacks, &self.futopt_callbacks] {
+            listeners.credentials.set(auth.clone()).map_err(|e| crate::errors::to_napi_error(&env, e))?;
+        }
+        Ok(())
     }
 
     /// Get the stock WebSocket client for real-time stock data.
@@ -1987,6 +2056,26 @@ impl StockWebSocketClient {
             worker,
             connection,
         }
+    }
+
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect.
+    /// Any of the three kinds may replace any other. A connection already
+    /// authenticated is not authenticated again.
+    /// `ws.setCredentials()` changes both `ws.stock`'s and `ws.futopt`'s.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection; set a new credential, then `connect()`.
+    ///
+    /// @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+    /// @throws {TypeError} If `credentials` is not an object of those keys
+    ///   holding strings
+    /// @throws {Error} code 1004 unless exactly one non-empty credential is
+    ///   given; the current credential is then kept
+    #[napi(ts_args_type = "credentials: Credentials")]
+    pub fn set_credentials(&self, env: Env, credentials: crate::options::Checked<Credentials>) -> napi::Result<()> {
+        let auth = credentials.0.into_auth().map_err(|e| crate::errors::to_napi_error(&env, e))?;
+        self.callbacks.credentials.set(auth).map_err(|e| crate::errors::to_napi_error(&env, e))
     }
 
     /// Makes new wrappers sharing this one's state, for the listeners'
@@ -2311,6 +2400,7 @@ impl StockWebSocketClient {
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
                 // Before connect(): it warns about the previous connection's close.
                 client.use_reconnect_conflict_handle(&sink.listeners.reconnect_conflict);
+                client.use_credentials_handle(&sink.listeners.credentials);
                 let _ = client_slot.set(Arc::downgrade(&client));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).
@@ -2681,6 +2771,26 @@ impl FutOptWebSocketClient {
         }
     }
 
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect.
+    /// Any of the three kinds may replace any other. A connection already
+    /// authenticated is not authenticated again.
+    /// `ws.setCredentials()` changes both `ws.stock`'s and `ws.futopt`'s.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection; set a new credential, then `connect()`.
+    ///
+    /// @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+    /// @throws {TypeError} If `credentials` is not an object of those keys
+    ///   holding strings
+    /// @throws {Error} code 1004 unless exactly one non-empty credential is
+    ///   given; the current credential is then kept
+    #[napi(ts_args_type = "credentials: Credentials")]
+    pub fn set_credentials(&self, env: Env, credentials: crate::options::Checked<Credentials>) -> napi::Result<()> {
+        let auth = credentials.0.into_auth().map_err(|e| crate::errors::to_napi_error(&env, e))?;
+        self.callbacks.credentials.set(auth).map_err(|e| crate::errors::to_napi_error(&env, e))
+    }
+
     /// Makes new wrappers sharing this one's state, for the listeners'
     /// `this` once the wrapper they were registered on has been collected
     /// (see `listener_this`). Holds no `Listeners`, so no cycle: they are
@@ -2935,6 +3045,7 @@ impl FutOptWebSocketClient {
                 let client = Arc::new(CoreClient::with_full_config(config, reconnect_config.clone(), health_check_config));
                 // Before connect(): it warns about the previous connection's close.
                 client.use_reconnect_conflict_handle(&sink.listeners.reconnect_conflict);
+                client.use_credentials_handle(&sink.listeners.credentials);
                 let _ = client_slot.set(Arc::downgrade(&client));
                 // isConnected / isClosed read this connection's core state
                 // from here on (#67).

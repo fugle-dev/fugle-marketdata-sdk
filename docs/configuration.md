@@ -68,7 +68,9 @@ automatic reconnect waits for it instead of opening another connection —
 fails at the same time: with code 3005 after the last attempt, and after a
 rejection with `AuthError` (2002; Node rejects with the server's `data`
 object instead). `disconnect()` during the reconnect ends that wait with
-code 2010.
+code 2010. A token that expires is replaced with `set_credentials` /
+`setCredentials` before it does, so the next reconnect sends the new one; see
+[Changing credentials](#changing-credentials).
 
 **What is not retried** is a short list; every other close reconnects:
 `disconnect()` or reconnect disabled; the server closing with code 1000
@@ -648,6 +650,49 @@ var client = new RestClient(new RestClientOptions {
     SdkToken = "your-sdk-token"
 });
 ```
+
+### Changing credentials
+
+A token that expires — such as an SDK token, valid for two days — can be
+replaced without building a new client: `set_credentials` / `setCredentials`
+takes the same three options, exactly one of them, and any kind may replace
+any other (an API key by an SDK token, say). The same rule applies as at
+construction: zero, several or a blank value is a configuration error (code
+1004), and the current credential is kept.
+
+- **WebSocket**: the new credential is sent from the next connection attempt
+  on — the next `connect()`, an automatic reconnect, or (Rust) `reconnect()`. A
+  connection that is already authenticated is not authenticated again (the
+  server takes one auth frame per connection), so replace the token before
+  it expires and the next reconnect uses it. Rejected credentials still end
+  automatic reconnection (see "Giving up" under
+  [ReconnectConfig](#reconnectconfig--reconnectoptions)); after that, set the
+  new credential and call `connect()`. On the parent client it changes both
+  product clients, built or not; on `ws.stock` / `ws.futopt` only that one.
+- **REST**: the next request sends it, including from product clients taken
+  before (`client.stock.intraday`, ...). A request already sent keeps the
+  credential it was sent with.
+
+```python
+ws.set_credentials(sdk_token=new_token)       # ws.stock and ws.futopt
+ws.stock.set_credentials(sdk_token=new_token) # ws.stock only
+client.set_credentials(sdk_token=new_token)   # RestClient
+```
+
+```javascript
+ws.setCredentials({ sdkToken: newToken });       // ws.stock and ws.futopt
+ws.stock.setCredentials({ sdkToken: newToken }); // ws.stock only
+client.setCredentials({ sdkToken: newToken });   // RestClient
+```
+
+```rust,ignore
+ws.set_credentials(Auth::SdkToken(new_token))?;     // sync or aio WebSocketClient
+client.set_credentials(Auth::SdkToken(new_token))?; // RestClient and its clones
+```
+
+In Rust a client whose reconnect was rejected is closed: build a new one,
+hand it the old one's `credentials_handle()` with `use_credentials_handle()`,
+and connect.
 
 ---
 

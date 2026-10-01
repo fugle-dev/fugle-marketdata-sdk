@@ -121,6 +121,28 @@ pub enum AfterAuth {
         frame: Option<(u16, String)>,
         ended_by_close: Option<mpsc::UnboundedSender<bool>>,
     },
+    /// Accept only `credential`, in any of the auth frame's credential
+    /// fields: on a match answer `authenticated` and go on with `then`;
+    /// otherwise reject it as the server does, `error{1000}` and a Close
+    /// without a code. Each auth frame received is sent on `auth_frames`
+    /// (#322).
+    RequireCredential {
+        credential: String,
+        auth_frames: mpsc::UnboundedSender<String>,
+        then: Box<AfterAuth>,
+    },
+}
+
+/// Whether `frame` is an auth frame carrying `credential` as its API key,
+/// bearer token or SDK token.
+fn carries_credential(frame: &str, credential: &str) -> bool {
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(frame) else {
+        return false;
+    };
+    frame["event"] == "auth"
+        && ["apikey", "token", "sdkToken"]
+            .iter()
+            .any(|field| frame["data"][field] == credential)
 }
 
 /// The server's error frame: `code` at the top level, the message under
@@ -264,7 +286,23 @@ async fn serve(
     // Auth handshake: read first text frame, send "authenticated".
     // `NeverAuthenticate` swallows the frame and idles instead;
     // `RejectAuth` answers with an error frame.
-    if let Some(Ok(_first)) = stream.next().await {
+    let mut behaviour = behaviour;
+    if let Some(Ok(first)) = stream.next().await {
+        if let AfterAuth::RequireCredential { credential, auth_frames, then } = &*behaviour {
+            let first = first.to_text().unwrap_or_default().to_string();
+            let accepted = carries_credential(&first, credential);
+            let _ = auth_frames.send(first);
+            behaviour = Arc::new(if accepted {
+                (**then).clone()
+            } else {
+                AfterAuth::RejectAuth {
+                    code: 1000,
+                    message: "Invalid token".into(),
+                    close: true,
+                    ended_by_close: None,
+                }
+            });
+        }
         let answer = match &*behaviour {
             AfterAuth::NeverAuthenticate | AfterAuth::CloseInsteadOfAuth { .. } => None,
             AfterAuth::RejectAuth { code, message, .. } => Some(error_frame(*code, message)),
@@ -463,6 +501,8 @@ async fn serve(
                 let _ = ws.get_mut().shutdown().await;
             }
         }
+        // Only when no auth frame came: the client went before sending one.
+        AfterAuth::RequireCredential { .. } => {}
         AfterAuth::ServerDropAfter { delay_ms } => {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             // Reunite + close the underlying transport without
