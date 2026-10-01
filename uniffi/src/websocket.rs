@@ -432,6 +432,17 @@ pub struct StreamingVersionRecord {
     pub futopt: Option<String>,
 }
 
+/// Words a `base_url` rejection. C#, Go, Java and C++ share this message and
+/// each spell the options differently (`BaseUrl`, `WithBaseUrl`, `baseUrl`),
+/// so it keeps the record's field name and names the version option's
+/// fields rather than one language's syntax or the Rust builder call (#316).
+/// REST ignores `version_hint`.
+pub(crate) const BASE_URL_WORDING: marketdata_core::urls::BaseUrlWording<'static> =
+    marketdata_core::urls::BaseUrlWording {
+        option: "base_url",
+        version_hint: "The version comes from the streaming version option (its stock / futopt fields).",
+    };
+
 impl StreamingVersionRecord {
     fn resolve(
         &self,
@@ -996,12 +1007,13 @@ impl WebSocketClient {
             WebSocketEndpoint::Stock => marketdata_core::websocket::StreamProduct::Stock,
             WebSocketEndpoint::FutOpt => marketdata_core::websocket::StreamProduct::FutOpt,
         };
-        Ok(marketdata_core::websocket::stream_config(
+        Ok(marketdata_core::websocket::stream_config_worded(
             &self.auth,
             self.base_url.as_deref(),
             product,
             stock_version,
             futopt_version,
+            BASE_URL_WORDING,
         )?)
     }
 
@@ -2590,6 +2602,22 @@ mod tests {
                 }
                 other => panic!("expected ConfigError, got {other:?}"),
             }
+        }
+    }
+
+    /// The `base_url` rejection names the version option, not the Rust
+    /// builder call (#316).
+    #[test]
+    fn versioned_base_url_hint_names_the_version_option() {
+        let client =
+            client_for_url(WebSocketEndpoint::FutOpt, Some("wss://staging.fugle.tw/marketdata/v1.0"), None);
+        match client.url() {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert!(info.message.contains("base_url must not include"), "{info:?}");
+                assert!(info.message.ends_with(BASE_URL_WORDING.version_hint), "{info:?}");
+                assert!(!info.message.contains("futopt_version"), "{info:?}");
+            }
+            other => panic!("expected ConfigError, got {other:?}"),
         }
     }
 

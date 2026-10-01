@@ -94,6 +94,9 @@ describe('REST errors', () => {
     }
     expect(isError(err)).toBe(true);
     expect(err).toMatchObject({ code: 1004, sourceKind: 'client' });
+    // The message names Node's option, not the Rust setter (#316).
+    expect(err.message).toContain("baseUrl must not include a version segment (found '/v1.0')");
+    expect(err.message).not.toContain('base_url');
   });
 });
 
@@ -115,5 +118,21 @@ describe('WebSocket constructor errors', () => {
     expect(err).toMatchObject({ code: 1004, sourceKind: 'client' });
     expect(err.message).toContain(message);
     expect(err.message).not.toMatch(/Configuration error: Configuration error/);
+  });
+  test('a versioned baseUrl is refused in Node terms (#316)', () => {
+    let err;
+    try {
+      new WebSocketClient({ apiKey: 'test-key', baseUrl: 'wss://example.com/marketdata/v1.0' });
+    } catch (e) {
+      err = e;
+    }
+    expect(isError(err)).toBe(true);
+    expect(err).toMatchObject({ code: 1004, sourceKind: 'client' });
+    expect(err.message).toMatch(
+      /Pass the host and path prefix only: 'wss:\/\/example\.com\/marketdata'\. The version comes from the version option, e\.g\. version: \{ futopt: 'v1\.1' \}\.$/,
+    );
+    expect(err.message).toContain("baseUrl must not include a version segment (found '/v1.0')");
+    expect(err.message).not.toContain('base_url');
+    expect(err.message).not.toContain('futopt_version');
   });
 });

@@ -121,7 +121,9 @@ impl RestClient {
     /// not from an unrelated request much later.
     pub(crate) fn with_base_url(self, url: &str) -> Result<Self, MarketDataError> {
         Ok(Self {
-            inner: self.inner.try_base_url(url)?,
+            inner: self
+                .inner
+                .try_base_url_worded(url, crate::websocket::BASE_URL_WORDING)?,
         })
     }
 }

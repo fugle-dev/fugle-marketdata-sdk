@@ -66,7 +66,7 @@
 //! ```
 
 use crate::models::AuthRequest;
-use crate::urls;
+use crate::urls::{self, BaseUrlWording};
 use crate::websocket::config::{ConnectionConfig, ConnectionConfigBuilder};
 use crate::websocket::version::{FutOptVersion, StockVersion, VERSION_OPTION_HINT};
 use crate::MarketDataError;
@@ -179,7 +179,14 @@ impl<S> WebSocketFactory<S> {
         self
     }
 
-    fn endpoint_for(&self, kind: &str, version: &str) -> Result<String, MarketDataError> {
+    /// `wording` names the option in a `base_url` rejection, and the option
+    /// that owns the version, in the caller's syntax.
+    fn endpoint_for(
+        &self,
+        kind: &str,
+        version: &str,
+        wording: BaseUrlWording<'_>,
+    ) -> Result<String, MarketDataError> {
         match self.base_url.as_deref() {
             // No-override path: use the canonical full endpoints from
             // `crate::urls` when the resolved version is also the default,
@@ -193,7 +200,7 @@ impl<S> WebSocketFactory<S> {
             // Custom-base path: the SDK owns the version segment, so a base
             // that already carries one is ambiguous and gets rejected.
             Some(base) => {
-                let prefix = urls::with_version(base, version, VERSION_OPTION_HINT)?;
+                let prefix = urls::with_version_worded(base, version, wording)?;
                 Ok(format!("{prefix}/{kind}/streaming"))
             }
         }
@@ -212,8 +219,7 @@ impl WebSocketFactory<WithAuth> {
     /// Returns [`MarketDataError::ConfigError`] if [`base_url`](Self::base_url)
     /// was given a prefix that already ends in a version segment.
     pub fn stock(&self) -> Result<ConnectionConfigBuilder, MarketDataError> {
-        let url = self.endpoint_for("stock", self.stock_version.as_str())?;
-        Ok(ConnectionConfig::builder(url, self.state.0.clone()))
+        self.builder_for(StreamProduct::Stock, RUST_WORDING)
     }
 
     /// Derived futures/options streaming endpoint as a
@@ -228,10 +234,31 @@ impl WebSocketFactory<WithAuth> {
     /// Returns [`MarketDataError::ConfigError`] if [`base_url`](Self::base_url)
     /// was given a prefix that already ends in a version segment.
     pub fn futopt(&self) -> Result<ConnectionConfigBuilder, MarketDataError> {
-        let url = self.endpoint_for("futopt", self.futopt_version.as_str())?;
+        self.builder_for(StreamProduct::FutOpt, RUST_WORDING)
+    }
+
+    fn builder_for(
+        &self,
+        product: StreamProduct,
+        wording: BaseUrlWording<'_>,
+    ) -> Result<ConnectionConfigBuilder, MarketDataError> {
+        let url = match product {
+            StreamProduct::Stock => {
+                self.endpoint_for("stock", self.stock_version.as_str(), wording)?
+            }
+            StreamProduct::FutOpt => {
+                self.endpoint_for("futopt", self.futopt_version.as_str(), wording)?
+            }
+        };
         Ok(ConnectionConfig::builder(url, self.state.0.clone()))
     }
 }
+
+/// The factory's own wording: the Rust setter and builder call.
+const RUST_WORDING: BaseUrlWording<'static> = BaseUrlWording {
+    option: "base_url",
+    version_hint: VERSION_OPTION_HINT,
+};
 
 /// Which streaming endpoint a connection targets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -261,6 +288,38 @@ pub fn stream_config(
     stock_version: StockVersion,
     futopt_version: FutOptVersion,
 ) -> Result<ConnectionConfig, MarketDataError> {
+    stream_config_worded(
+        auth,
+        base_url,
+        product,
+        stock_version,
+        futopt_version,
+        RUST_WORDING,
+    )
+}
+
+/// [`stream_config`] with the `base_url` rejection worded in the binding's
+/// terms: the option's own name (`baseUrl` in Node) and the version option
+/// in its own syntax (`version={'futopt': 'v1.1'}` in Python), since
+/// `stream_config`'s are the Rust ones (#316).
+///
+/// Hidden from the docs and the public-API baseline like
+/// [`version::option`](crate::websocket::version::option): it serves the
+/// bindings, not Rust callers.
+///
+/// # Errors
+///
+/// Returns [`MarketDataError::ConfigError`] if `base_url` already ends in a
+/// version segment.
+#[doc(hidden)]
+pub fn stream_config_worded(
+    auth: &AuthRequest,
+    base_url: Option<&str>,
+    product: StreamProduct,
+    stock_version: StockVersion,
+    futopt_version: FutOptVersion,
+    wording: BaseUrlWording<'_>,
+) -> Result<ConnectionConfig, MarketDataError> {
     let mut factory = WebSocketFactory::new()
         .stock_version(stock_version)
         .futopt_version(futopt_version);
@@ -268,11 +327,7 @@ pub fn stream_config(
         factory = factory.base_url(base);
     }
     let factory = factory.auth(auth.clone());
-    let builder = match product {
-        StreamProduct::Stock => factory.stock()?,
-        StreamProduct::FutOpt => factory.futopt()?,
-    };
-    Ok(builder.build())
+    Ok(factory.builder_for(product, wording)?.build())
 }
 
 #[cfg(test)]
@@ -381,6 +436,38 @@ mod tests {
             };
             assert!(matches!(err, MarketDataError::ConfigError(_)), "{err:?}");
             assert_eq!(err.to_string(), expected, "{product:?}");
+        }
+    }
+
+    #[test]
+    fn test_stream_config_worded_names_the_binding_options() {
+        // The bindings name their own options; `base_url` and the Rust
+        // builder call would mean nothing to a Node user (#316).
+        const NODE_WORDING: BaseUrlWording<'static> = BaseUrlWording {
+            option: "baseUrl",
+            version_hint: "The version comes from version: { futopt: 'v1.1' }.",
+        };
+        for product in [StreamProduct::Stock, StreamProduct::FutOpt] {
+            let msg = stream_config_worded(
+                &AuthRequest::with_api_key("k"),
+                Some("wss://example.com/md/v1.1"),
+                product,
+                StockVersion::default(),
+                FutOptVersion::default(),
+                NODE_WORDING,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(
+                msg.contains("baseUrl must not include a version segment"),
+                "{msg}"
+            );
+            assert!(!msg.contains("base_url"), "{msg}");
+            assert!(
+                msg.ends_with(&format!("'wss://example.com/md'. {}", NODE_WORDING.version_hint)),
+                "{msg}"
+            );
+            assert!(!msg.contains("futopt_version"), "{msg}");
         }
     }
 

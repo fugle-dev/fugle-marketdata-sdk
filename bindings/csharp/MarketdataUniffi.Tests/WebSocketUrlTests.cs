@@ -48,6 +48,10 @@ public class WebSocketUrlTests
             BaseUrl = "wss://staging.fugle.tw/marketdata/v1.0",
         });
         var ex = Assert.ThrowsException<uniffi.marketdata_uniffi.MarketDataException.ConfigException>(() => client.Url);
-        Assert.AreEqual(1004, FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex).code);
+        var info = FugleMarketData.MarketDataExceptionExtensions.GetInfo(ex);
+        Assert.AreEqual(1004, info.code);
+        // Names the version option, not the Rust builder call (#316).
+        StringAssert.Contains(info.message, "streaming version option");
+        Assert.IsFalse(info.message.Contains("futopt_version"), info.message);
     }
 }
