@@ -231,7 +231,7 @@ jobs:
         run: |
           ls js/*.node
           docker run --rm -v "$PWD/js:/app:ro" -w /app node:22-alpine node -e "
-            const { RestClient, WebSocketClient } = require('./index.js');
+            const { RestClient, WebSocketClient } = require('./');
             const client = new RestClient({ apiKey: 'smoke-test-token' });
             if (!new WebSocketClient({ apiKey: 'smoke-test-token' }).stock) throw new Error('missing WebSocket accessor');
             client.stock.intraday.quote({ symbol: '2330' }).then(

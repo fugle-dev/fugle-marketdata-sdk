@@ -1996,6 +1996,12 @@ export declare class FutOptClient {
   get intraday(): FutOptIntradayClient
   /** Get historical client for historical futures/options data */
   get historical(): FutOptHistoricalClient
+  /**
+   * The fully resolved request prefix for this product client, product
+   * segment included (`…/v1.0/futopt`), for 1.x compatibility: it is what
+   * `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
+   */
+  get baseUrl(): string
 }
 
 /** FutOpt historical data client */
@@ -2120,13 +2126,37 @@ export declare class FutOptWebSocketClient {
    * (#23, #245).
    */
   on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /** Alias of `on()`, as on an EventEmitter (#307). */
+  addListener<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /**
+   * Like `on()`, but the listener is removed before its first call, as
+   * with `EventEmitter.once` (#307).
+   */
+  once<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /**
+   * Remove `callback` from `event`'s listeners: the most recently added
+   * registration of it, as an EventEmitter does (#307). Nothing happens if
+   * it is not registered.
+   */
+  off<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /** Alias of `off()`, as on an EventEmitter (#307). */
+  removeListener<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /**
+   * Remove every listener of `event`, or of every event when it is
+   * omitted (#307).
+   */
+  removeAllListeners(event?: WebSocketEvent): this
+  /** How many listeners `event` has (#307). */
+  listenerCount(event: WebSocketEvent): number
   /**
    * Connect to the FutOpt WebSocket server.
    *
    * Returns a Promise that resolves with the server's `authenticated`
    * `data`. See `StockWebSocketClient::connect` for the rejections,
-   * including code `2011` (`Already connected`) (#44), and for waiting on
-   * an automatic reconnect (#230).
+   * including code `2011` (`Already connected`) (#44), for waiting on
+   * an automatic reconnect (#230), and for the connection failures marked
+   * handled when the client has an `error` listener, for 1.x compatibility
+   * (#307; [MIGRATION §12](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#12-node-websocket-events-match-1x)).
    */
   connect(): Promise<WebSocketAuthData | undefined>
   /**
@@ -2285,7 +2315,11 @@ export declare class StockClient {
   get corporateActions(): StockCorporateActionsClient
   /** Get ownership client (ETF holdings, institutional trades, director holdings, TDCC distribution) */
   get ownership(): StockOwnershipClient
-  /** The fully resolved request prefix for this product client. */
+  /**
+   * The fully resolved request prefix for this product client, product
+   * segment included (`…/v1.0/stock`), for 1.x compatibility: it is what
+   * `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
+   */
   get baseUrl(): string
 }
 
@@ -2571,6 +2605,11 @@ export declare class StockWebSocketClient {
    * `message` frames that arrive before a `message` listener is registered
    * are dropped, not delivered to it later (#62).
    *
+   * Each call adds a listener, as on the 1.x `EventEmitter`: every
+   * listener of an event is called, in registration order, with `this`
+   * set to the client (#307). `once`, `off` / `removeListener`,
+   * `removeAllListeners` and `listenerCount` work as on an EventEmitter.
+   *
    * Returns the client it was called on, as the 1.x `EventEmitter` did,
    * so calls chain: `ws.stock.on('message', cb).subscribe({ ... })` (#245).
    *
@@ -2589,6 +2628,28 @@ export declare class StockWebSocketClient {
    * ```
    */
   on<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /** Alias of `on()`, as on an EventEmitter (#307). */
+  addListener<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /**
+   * Like `on()`, but the listener is removed before its first call, as
+   * with `EventEmitter.once` (#307).
+   */
+  once<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /**
+   * Remove `callback` from `event`'s listeners: the most recently added
+   * registration of it, as an EventEmitter does (#307). Nothing happens if
+   * it is not registered.
+   */
+  off<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /** Alias of `off()`, as on an EventEmitter (#307). */
+  removeListener<E extends WebSocketEvent>(event: E, callback: WebSocketEventMap[E]): this
+  /**
+   * Remove every listener of `event`, or of every event when it is
+   * omitted (#307).
+   */
+  removeAllListeners(event?: WebSocketEvent): this
+  /** How many listeners `event` has (#307). */
+  listenerCount(event: WebSocketEvent): number
   /**
    * Connect to the stock WebSocket server.
    *
@@ -2606,6 +2667,13 @@ export declare class StockWebSocketClient {
    * server's `data` object itself (after `unauthenticated` fires); any other
    * failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
    * properties; no `[code]` prefix in the message).
+   *
+   * For 1.x compatibility, when the client has an `error` listener, a
+   * connection failure reaching this Promise or a `.then(f)` chain on it
+   * without a rejection handler is marked handled, so 1.x's
+   * `connect().then(f)` with no `.catch` does not end the process (#307).
+   * `await`, `.catch` and `.then(f, r)` still receive it. See
+   * [MIGRATION §12](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#12-node-websocket-events-match-1x).
    *
    * Rejects with code `2011` (`Already connected`) while a connection is open,
    * or while the first `connect()` is still in progress (#44). Calling

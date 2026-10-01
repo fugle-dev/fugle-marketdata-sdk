@@ -3,7 +3,7 @@
  * Tests WebSocketClient, StockWebSocketClient, FutOptWebSocketClient
  */
 
-const { WebSocketClient, StockWebSocketClient, FutOptWebSocketClient } = require('./index.js');
+const { WebSocketClient, StockWebSocketClient, FutOptWebSocketClient } = require('./');
 
 console.log('=== JavaScript WebSocket Bindings Test ===\n');
 

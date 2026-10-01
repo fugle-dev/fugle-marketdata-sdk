@@ -14,6 +14,7 @@
 import { RestClient, WebSocketClient } from '../index';
 import type {
   RestClientOptions,
+  StockWebSocketClient,
   WebSocketClientOptions,
   WebSocketDisconnectEvent,
   WebSocketDisconnectIntent,
@@ -271,5 +272,26 @@ describe('TypeScript type inference', () => {
     expect(event.intent).toBe('network');
     expect(seen).toEqual([]);
     void bad;
+  });
+
+  it('the EventEmitter methods are typed like on() (#307)', () => {
+    const ws = new WebSocketClient({ apiKey: 'key' });
+    const onMessage = (data: string) => void data;
+    // Each returns the client, so calls chain.
+    const chained: StockWebSocketClient = ws.stock
+      .addListener('message', onMessage)
+      .once('authenticated', (data) => void data)
+      .off('message', onMessage)
+      .removeListener('message', onMessage)
+      .removeAllListeners('message')
+      .removeAllListeners();
+    const count: number = ws.futopt.listenerCount('error');
+    expect(chained.listenerCount('message')).toBe(0);
+    expect(count).toBe(0);
+
+    // @ts-expect-error a message listener takes the frame as a string
+    ws.stock.once('message', (data: number) => void data);
+    // @ts-expect-error not an event
+    ws.stock.listenerCount('nonexistent');
   });
 });

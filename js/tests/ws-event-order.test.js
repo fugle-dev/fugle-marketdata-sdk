@@ -215,19 +215,22 @@ describe.each(['stock', 'futopt'])('%s event order (#62)', (product) => {
     expect({ code, stderr, result }).toEqual({ code: 0, stderr: '', result: ['connect', 'authenticated', 'resolved'] });
   });
 
-  test('a listener replaced by on() while its events are queued never receives them', async () => {
+  test('a listener removed by off() while its events are queued never receives them', async () => {
     await setup();
     const { code, result, stderr } = await runChild(
       `
       const { WebSocketClient } = require('./');
       const ws = new WebSocketClient({ apiKey: 'test-key', baseUrl: process.env.URL })[${JSON.stringify(product)}];
       const events = [];
-      ws.on('connect', () => events.push('old connect'));
-      ws.on('authenticated', () => events.push('old authenticated'));
+      const oldConnect = () => events.push('old connect');
+      const oldAuthenticated = () => events.push('old authenticated');
+      ws.on('connect', oldConnect);
+      ws.on('authenticated', oldAuthenticated);
       const done = ws.connect().then(() => events.push('resolved'));
       // Authentication completes, and its events are queued, meanwhile.
       const until = Date.now() + 1000;
       while (Date.now() < until);
+      ws.off('connect', oldConnect).removeListener('authenticated', oldAuthenticated);
       ws.on('connect', () => events.push('new connect'));
       ws.on('authenticated', () => events.push('new authenticated'));
       done.then(() => {

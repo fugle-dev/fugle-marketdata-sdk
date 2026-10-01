@@ -498,10 +498,12 @@ impl StockClient {
         }
     }
 
-    /// The fully resolved request prefix for this product client.
+    /// The fully resolved request prefix for this product client, product
+    /// segment included (`…/v1.0/stock`), for 1.x compatibility: it is what
+    /// `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
     #[napi(getter)]
     pub fn base_url(&self) -> String {
-        self.inner.resolved_base_url().to_string()
+        self.inner.stock().resolved_base_url()
     }
 }
 
@@ -1770,6 +1772,14 @@ impl FutOptClient {
         FutOptHistoricalClient {
             inner: self.inner.clone(),
         }
+    }
+
+    /// The fully resolved request prefix for this product client, product
+    /// segment included (`…/v1.0/futopt`), for 1.x compatibility: it is what
+    /// `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
+    #[napi(getter)]
+    pub fn base_url(&self) -> String {
+        self.inner.futopt().resolved_base_url()
     }
 }
 

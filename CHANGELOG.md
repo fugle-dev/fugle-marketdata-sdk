@@ -167,6 +167,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `options` / `config` attributes, with what to write instead
   ([§19](MIGRATION.md#19-the-legacy-clients-plumbing-is-gone-get_client-request-options)).
 
+- **Node: WebSocket listeners work as on the 1.x EventEmitter again**
+  (#307). `on()` replaced the event's previous listener, so a second
+  `on('message', …)` silently disabled the first. Each `on()` now adds a
+  listener, as in 1.x; every listener of an event is called in
+  registration order with `this` set to the client (another wrapper of the
+  same client once the `ws.stock` access it was registered through has been
+  collected), a listener that throws
+  does not stop the ones after it (each failure is reported as before,
+  code 3004), and `addListener`, `once`, `off`, `removeListener`,
+  `removeAllListeners(event?)` and `listenerCount(event)` are back, typed
+  like `on()`. The client is still not an `EventEmitter` (`instanceof`,
+  `emit`, `prependListener` and the like are absent). **From an earlier
+  3.0 release candidate:** code that relied on `on()` replacing a listener
+  now gets both; call `removeAllListeners(event)` before `on()` instead.
+  There is no separate replacing method.
+- **Node: a failed `connect()` no longer ends the process under the 1.x
+  README's `connect().then(…)`** (#307). The rejection had no handler, and
+  Node ends the process on an unhandled rejection; in 1.x the Promise never
+  settled and the failure only reached `error`. When the client has an
+  `error` listener (when `connect()` is called or when it fails), the
+  rejection of a connection failure is now marked handled on `connect()`'s
+  Promise and on `.then(f)` chains without a rejection handler. `await`,
+  `.catch` and `.then(f, r)` still receive it. Not covered, and still
+  unhandled: rejected credentials (rejected in 1.x too), code 2011
+  (`connect()` while already connected, a mistake in the calling code), a
+  client without an `error` listener, an error thrown by `f`, `.finally()` /
+  `Promise.all()` / `Promise.race()` around `connect()`, an async function
+  returning its promise, and anything chained after those or after a
+  `.catch`. `connect()` now returns a `Promise` subclass (`ConnectPromise`
+  in `console.log`; `await` takes two more microtask ticks). The package's
+  `main` is now a hand-written `main.js` that loads the generated
+  `index.js`; imports of `@fugle/marketdata` (CommonJS or ESM) are
+  unchanged.
+- **Node: `client.stock.baseUrl` includes `/stock` again, and
+  `client.futopt.baseUrl` exists** (#307). 1.x returned the product
+  client's prefix, `https://api.fugle.tw/marketdata/v1.0/stock`; 3.0 had
+  dropped the product segment from `stock.baseUrl` and had no
+  `futopt.baseUrl`. Both now return `…/v1.0/stock` / `…/v1.0/futopt`. The
+  prefix without the product segment is `client.baseUrl`.
 - **Arguments the SDK would not use are refused instead of dropped**
   (#294). Before, a misspelled or misplaced argument was silently ignored
   and the call went ahead with defaults — `version: 'v1.0'` still streamed

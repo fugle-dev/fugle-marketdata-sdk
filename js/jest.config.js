@@ -19,6 +19,7 @@ module.exports = {
   // Collect coverage from source files
   collectCoverageFrom: [
     'index.js',
+    'main.js',
   ],
   // Coverage thresholds (optional, can enable later)
   // coverageThreshold: {

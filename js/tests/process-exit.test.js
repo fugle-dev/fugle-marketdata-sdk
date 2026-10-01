@@ -280,7 +280,8 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
       function cycle(n) {
         if (n === ${CYCLES}) return;
         const ws = client[${JSON.stringify(product)}];
-        ws.on('disconnect', () => {
+        // once: on() adds a listener per cycle, every one of them called (#307).
+        ws.once('disconnect', () => {
           delivered += 1;
           console.log('DELIVERED ' + delivered);
           cycle(n + 1);
