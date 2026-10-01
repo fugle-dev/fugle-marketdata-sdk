@@ -92,7 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     WebSocket-only keys and ignores them, so one options object still builds
     both clients. `null` for an option no longer throws napi's conversion
     error.
-  - **Node REST**: an argument of the wrong type (`candles('2330', 5)`,
+  - **Node REST**: a missing required first argument (`quote()`, which
+    rejected with a plain `Error`; the corporate actions take none), an
+    argument of the wrong type (`candles('2330', 5)`,
     `trades(2330)`, `etfHoldings(5)`), an integer argument that is negative,
     fractional or not finite (`sma('2330', u, u, u, -1)` used to send a
     coerced value), or a further argument — past a method's positional
@@ -112,6 +114,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `channel` takes only `id` / `ids` (`symbol` there used to be dropped).
     Node also refuses a non-string `symbol` / `id`, a non-string element of
     `symbols` / `ids` (it used to be skipped) and a further argument.
+  - In Node, a getter or Proxy trap that throws while an argument is read
+    throws its own error synchronously, as before. Only the client options
+    and their nested options have to be plain objects; a REST params object
+    or a `subscribe()` argument may be any object, as in 1.x.
   - **Python `subscribe()` / `unsubscribe()`**: `symbol` / `symbols` / the
     flag keyword passed next to a dict, and `ids=` next to an unsubscribe
     dict, raise instead of being ignored; so does a dict giving the flag

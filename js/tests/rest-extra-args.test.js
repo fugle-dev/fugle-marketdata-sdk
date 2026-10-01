@@ -110,7 +110,7 @@ describe('positional arguments of the wrong type', () => {
     ['futopt.historical.daily', (c) => c.futopt.historical.daily('TXF', undefined, 1), 'afterHours must be a boolean, got number 1'],
     ['stock.intraday.trades', (c) => c.stock.intraday.trades(2330), 'symbol must be a string or a params object, got number 2330'],
     ['stock.intraday.ticker', (c) => c.stock.intraday.ticker(['2330']), 'symbol must be a string or a params object, got array'],
-    ['futopt.intraday.products', (c) => c.futopt.intraday.products(new Date(0)), 'type must be a string or a params object, got object (Date)'],
+    ['futopt.intraday.products', (c) => c.futopt.intraday.products(true), 'type must be a string or a params object, got boolean'],
   ])('%s', async (method, call, message) => {
     let result;
     // Not a synchronous throw: the call returns a promise that rejects.
@@ -162,6 +162,100 @@ describe('positional arguments of the wrong type', () => {
   });
 });
 
+// A missing first argument rejects with a `TypeError` too, instead of a
+// plain `Error` (#294). Every method of the client is called here, so a new
+// one is covered or this fails: the corporate actions take no required
+// argument, and ownership refuses anything but a params object.
+describe('a missing first argument', () => {
+  const REQUIRED = {
+    'stock.intraday.quote': 'symbol',
+    'stock.intraday.ticker': 'symbol',
+    'stock.intraday.candles': 'symbol',
+    'stock.intraday.trades': 'symbol',
+    'stock.intraday.volumes': 'symbol',
+    'stock.intraday.tickers': 'type',
+    'stock.historical.candles': 'symbol',
+    'stock.historical.stats': 'symbol',
+    'stock.snapshot.quotes': 'market',
+    'stock.snapshot.movers': 'market',
+    'stock.snapshot.actives': 'market',
+    'stock.technical.sma': 'symbol',
+    'stock.technical.rsi': 'symbol',
+    'stock.technical.kdj': 'symbol',
+    'stock.technical.macd': 'symbol',
+    'stock.technical.bb': 'symbol',
+    'futopt.intraday.quote': 'symbol',
+    'futopt.intraday.ticker': 'symbol',
+    'futopt.intraday.candles': 'symbol',
+    'futopt.intraday.trades': 'symbol',
+    'futopt.intraday.volumes': 'symbol',
+    'futopt.intraday.tickers': 'type',
+    'futopt.intraday.products': 'type',
+    'futopt.historical.candles': 'symbol',
+    'futopt.historical.daily': 'symbol',
+  };
+  const OWNERSHIP = ['etfHoldings', 'institutionalTrades', 'directorHoldings', 'tdccDistribution'].map((m) => `stock.ownership.${m}`);
+  const OPTIONAL = ['capitalChanges', 'dividends', 'listingApplicants'].map((m) => `stock.corporateActions.${m}`);
+
+  const methodsOf = (root, prefix) =>
+    Object.entries(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(root)))
+      .filter(([name, d]) => name !== 'constructor' && typeof d.value === 'function')
+      .map(([name]) => `${prefix}.${name}`);
+  const call = (method, ...args) => {
+    const path = method.split('.');
+    const name = path.pop();
+    return path.reduce((o, k) => o[k], client)[name](...args);
+  };
+
+  test('every REST method is in one of the lists', () => {
+    const all = [];
+    for (const product of ['stock', 'futopt']) {
+      for (const [group, d] of Object.entries(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(client[product])))) {
+        // Getters returning a sub-client; `baseUrl` is a string.
+        if (typeof d.get === 'function' && typeof client[product][group] === 'object') {
+          all.push(...methodsOf(client[product][group], `${product}.${group}`));
+        }
+      }
+    }
+    expect(all.sort()).toEqual([...Object.keys(REQUIRED), ...OWNERSHIP, ...OPTIONAL].sort());
+    expect(all).toHaveLength(32);
+  });
+
+  test.each(Object.entries(REQUIRED))('%s() rejects with a TypeError', async (method, name) => {
+    for (const missing of [[], [undefined], [null]]) {
+      let result;
+      expect(() => {
+        result = call(method, ...missing);
+      }).not.toThrow();
+      const sent = urls.length;
+      const error = await result.then(
+        () => {
+          throw new Error('expected a rejection');
+        },
+        (e) => e,
+      );
+      expect(urls.length).toBe(sent);
+      const short = method.split('.').pop();
+      expect({ name: error.name, code: error.code, message: error.message }).toEqual({
+        name: 'TypeError',
+        code: undefined,
+        message: `\`${method}\`: ${name} is required, as a string or a params object, e.g. ${short}({ ${name}: ... })`,
+      });
+    }
+  });
+
+  test.each(OWNERSHIP)('%s() rejects with a TypeError', async (method) => {
+    const error = await rejected(() => call(method));
+    expect(error.name).toBe('TypeError');
+    expect(error.message).toMatch(/takes a params object/);
+  });
+
+  test.each(OPTIONAL)('%s() is a valid call', async (method) => {
+    await call(method);
+    expect(urls[urls.length - 1]).toMatch(/^\/v1\.0\/stock\/corporate-actions\//);
+  });
+});
+
 describe('still accepted', () => {
   test('undefined and null in the extra positions count as not given', async () => {
     await client.stock.intraday.trades('2330', undefined, null);
@@ -173,6 +267,20 @@ describe('still accepted', () => {
   test('every declared positional argument', async () => {
     await client.stock.historical.candles('2330', '2026-01-01', '2026-01-31', 'D');
     expect(urls[urls.length - 1]).toBe('/v1.0/stock/historical/candles/2330?from=2026-01-01&to=2026-01-31&timeframe=D');
+  });
+
+  // Unlike the client options, a params object need not be plain (#294).
+  test('a params object made with Object.create, or a class instance', async () => {
+    await client.stock.intraday.trades(Object.create({ symbol: '2330' }));
+    expect(urls[urls.length - 1]).toBe('/v1.0/stock/intraday/trades/2330');
+    class Params {
+      constructor() {
+        this.symbol = '2317';
+        this.limit = 5;
+      }
+    }
+    await client.stock.intraday.trades(new Params());
+    expect(urls[urls.length - 1]).toBe('/v1.0/stock/intraday/trades/2317?limit=5');
   });
 
   test('quote: the positional oddLot flag also applies to the params object', async () => {

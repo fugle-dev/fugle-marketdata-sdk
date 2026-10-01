@@ -71,6 +71,8 @@ describe('subscribe()', () => {
     ['stock', { channel: 'trades', symbol: '2330', intradayOddLot: true }],
     ['stock', { channel: 'trades', symbols: ['2330'], intradayOddLot: undefined }],
     ['futopt', { channel: 'books', symbol: 'TXFA6', afterHours: false }],
+    // Any object, as in 1.x: only client options have to be plain.
+    ['stock', Object.create({ channel: 'trades', symbol: '2330' })],
     // null counts as not given (#294).
     ['futopt', { channel: 'books', symbol: 'TXFA6', afterHours: null, symbols: null }],
   ])('%s %j passes the checks', (product, options) => {

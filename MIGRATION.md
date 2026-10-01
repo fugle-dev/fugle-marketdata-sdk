@@ -775,7 +775,12 @@ takes, so a typo fails at the call instead of returning default data:
   negative, fractional or not finite, or an argument the method does not
   take — after the params object, or past its positional parameters —
   rejects the promise; nothing is sent. 1.x methods took one params object,
-  so 1.x call sites are not affected unless they passed something extra.
+  so 1.x call sites are not affected unless they passed something extra. The
+  params object may still be any object (`Object.create(...)`, a class
+  instance); only the client options have to be plain objects.
+
+A getter or Proxy trap that throws while an argument is read throws its own
+error, synchronously, as before.
 
 ### New things the legacy SDKs did not have
 

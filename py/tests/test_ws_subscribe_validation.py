@@ -54,6 +54,10 @@ def ws():
         ("stock", lambda c: c.unsubscribe({"channel": "trades", "symbol": "2330", "afterHours": True}),
          "unsubscribe(dict): unknown key 'afterHours': it is a futopt option, the stock client takes "
          f"oddLot (accepted: {STOCK_KEYS})"),
+        ("stock", lambda c: c.subscribe({"channel": "trades", "symbol": "2330", 1: None}),
+         "subscribe(dict): keys must be strings"),
+        ("stock", lambda c: c.unsubscribe({"id": "abc", 1: None}),
+         "unsubscribe(dict): keys must be strings"),
         ("stock", lambda c: c.unsubscribe({"id": "abc"}, ids=["def"]),
          "unsubscribe(): pass either a dict or ids=, not both"),
     ],

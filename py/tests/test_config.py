@@ -414,6 +414,7 @@ class TestWebSocketVersionOption:
             ({"foo": "v1.0"}, "unknown product 'foo' in version mapping (known: stock, futopt)"),
             ({"futopt": 1}, "version['futopt'] must be a version string, e.g. 'v1.1', got int"),
             ({"foo": 1}, "unknown product 'foo' in version mapping (known: stock, futopt)"),
+            ({1: None}, "version keys must be product names: 'stock' or 'futopt'"),
             ({"futopt": "v9"}, "futopt streaming does not support v9 (supported: v1.0, v1.1). "
                                "Remove it from the version mapping to use v1.1."),
         ],

@@ -37,9 +37,17 @@ pub enum RestArg {
 }
 
 impl RestArg {
-    /// Unwrap a required first argument (`undefined` / `null` arrive as `None`).
-    fn required(arg: Option<Self>, name: &str) -> napi::Result<Self> {
-        arg.ok_or_else(|| napi::Error::from_reason(format!("`{name}` is required")))
+    /// Unwrap a required first argument (`undefined` / `null` arrive as
+    /// `None`); a missing one rejects with a `TypeError`, like the other
+    /// argument errors of a REST method (#294).
+    fn required(method: &str, arg: Option<Self>, name: &str) -> Result<Self, Settled> {
+        arg.ok_or_else(|| {
+            let short = method.rsplit('.').next().unwrap_or(method);
+            Settled::type_error(format!(
+                "`{method}`: {name} is required, as a string or a params object, e.g. \
+                 {short}({{ {name}: ... }})"
+            ))
+        })
     }
 }
 
@@ -55,7 +63,7 @@ impl TypeName for RestArg {
 
 impl FromNapiValue for RestArg {
     unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
-        Ok(match unsafe { crate::options::read(env, value, 0)? } {
+        Ok(match unsafe { crate::options::read(env, value, 0, false)? } {
             JsVal::String(s) => Self::Positional(s),
             JsVal::Object(_) => match unsafe { Map::from_napi_value(env, value) } {
                 Ok(params) => Self::Params(params),
@@ -75,8 +83,8 @@ fn exception_pending(env: sys::napi_env) -> bool {
     status == sys::Status::napi_ok && pending
 }
 
-/// A positional REST argument after the first. Converting fails only on a
-/// throwing Proxy trap (see [`RestArg`]); the method checks the type with [`pos_string`] / [`pos_bool`] / [`pos_u32`],
+/// A positional REST argument after the first. Converting does not fail on
+/// a value of the wrong type; the method checks the type with [`pos_string`] / [`pos_bool`] / [`pos_u32`],
 /// so a wrong one rejects the promise with a `TypeError` instead of
 /// throwing napi's error, and an integer is not coerced (`-1`, `1.5`, `NaN`)
 /// (#294). `undefined` / `null` arrive as `None`.
@@ -94,7 +102,7 @@ impl TypeName for PosArg {
 
 impl FromNapiValue for PosArg {
     unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
-        Ok(Self(unsafe { crate::options::read(env, value, 0)? }))
+        Ok(Self(unsafe { crate::options::read(env, value, 0, false)? }))
     }
 }
 
@@ -662,7 +670,7 @@ impl StockIntradayClient {
             return Ok(rejected);
         }
         let odd_lot = take!(pos_bool("stock.intraday.quote", "oddLot", odd_lot));
-        let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
+        let (symbol, effective_odd_lot) = match take!(RestArg::required("stock.intraday.quote", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(symbol) => (symbol, odd_lot),
             RestArg::Params(mut params) => {
@@ -717,7 +725,7 @@ impl StockIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.intraday.ticker", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "ticker"], params).await,
@@ -754,7 +762,7 @@ impl StockIntradayClient {
             return Ok(rejected);
         }
         let timeframe = take!(pos_string("stock.intraday.candles", "timeframe", timeframe));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.intraday.candles", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "candles"], params).await,
@@ -795,7 +803,7 @@ impl StockIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.intraday.trades", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "trades"], params).await,
@@ -830,7 +838,7 @@ impl StockIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.intraday.volumes", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "volumes"], params).await,
@@ -881,7 +889,7 @@ impl StockIntradayClient {
         let market = take!(pos_string("stock.intraday.tickers", "market", market));
         let industry = take!(pos_string("stock.intraday.tickers", "industry", industry));
         let is_normal = take!(pos_bool("stock.intraday.tickers", "isNormal", is_normal));
-        let r#type = match RestArg::required(r#type, "type")? {
+        let r#type = match take!(RestArg::required("stock.intraday.tickers", r#type, "type")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "tickers"], params).await,
@@ -953,7 +961,7 @@ impl StockHistoricalClient {
         let from = take!(pos_string("stock.historical.candles", "from", from));
         let to = take!(pos_string("stock.historical.candles", "to", to));
         let timeframe = take!(pos_string("stock.historical.candles", "timeframe", timeframe));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.historical.candles", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "candles"], params).await,
@@ -1000,7 +1008,7 @@ impl StockHistoricalClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.historical.stats", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "stats"], params).await,
@@ -1046,7 +1054,7 @@ impl StockSnapshotClient {
             return Ok(rejected);
         }
         let type_filter = take!(pos_string("stock.snapshot.quotes", "typeFilter", type_filter));
-        let market = match RestArg::required(market, "market")? {
+        let market = match take!(RestArg::required("stock.snapshot.quotes", market, "market")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "quotes"], params).await,
@@ -1097,7 +1105,7 @@ impl StockSnapshotClient {
         }
         let direction = take!(pos_string("stock.snapshot.movers", "direction", direction));
         let change = take!(pos_string("stock.snapshot.movers", "change", change));
-        let market = match RestArg::required(market, "market")? {
+        let market = match take!(RestArg::required("stock.snapshot.movers", market, "market")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "movers"], params).await,
@@ -1143,7 +1151,7 @@ impl StockSnapshotClient {
             return Ok(rejected);
         }
         let trade = take!(pos_string("stock.snapshot.actives", "trade", trade));
-        let market = match RestArg::required(market, "market")? {
+        let market = match take!(RestArg::required("stock.snapshot.actives", market, "market")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "actives"], params).await,
@@ -1209,7 +1217,7 @@ impl StockTechnicalClient {
         let to = take!(pos_string("stock.technical.sma", "to", to));
         let timeframe = take!(pos_string("stock.technical.sma", "timeframe", timeframe));
         let period = take!(pos_u32("stock.technical.sma", "period", period));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.technical.sma", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "sma"], params).await,
@@ -1275,7 +1283,7 @@ impl StockTechnicalClient {
         let to = take!(pos_string("stock.technical.rsi", "to", to));
         let timeframe = take!(pos_string("stock.technical.rsi", "timeframe", timeframe));
         let period = take!(pos_u32("stock.technical.rsi", "period", period));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.technical.rsi", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "rsi"], params).await,
@@ -1347,7 +1355,7 @@ impl StockTechnicalClient {
         let r_period = take!(pos_u32("stock.technical.kdj", "rPeriod", r_period));
         let k_period = take!(pos_u32("stock.technical.kdj", "kPeriod", k_period));
         let d_period = take!(pos_u32("stock.technical.kdj", "dPeriod", d_period));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.technical.kdj", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "kdj"], params).await,
@@ -1425,7 +1433,7 @@ impl StockTechnicalClient {
         let fast = take!(pos_u32("stock.technical.macd", "fast", fast));
         let slow = take!(pos_u32("stock.technical.macd", "slow", slow));
         let signal = take!(pos_u32("stock.technical.macd", "signal", signal));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.technical.macd", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "macd"], params).await,
@@ -1497,7 +1505,7 @@ impl StockTechnicalClient {
         let to = take!(pos_string("stock.technical.bb", "to", to));
         let timeframe = take!(pos_string("stock.technical.bb", "timeframe", timeframe));
         let period = take!(pos_u32("stock.technical.bb", "period", period));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("stock.technical.bb", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "bb"], params).await,
@@ -1799,7 +1807,7 @@ impl FutOptIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.intraday.quote", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "quote"], params).await,
@@ -1834,7 +1842,7 @@ impl FutOptIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.intraday.ticker", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "ticker"], params).await,
@@ -1871,7 +1879,7 @@ impl FutOptIntradayClient {
             return Ok(rejected);
         }
         let timeframe = take!(pos_string("futopt.intraday.candles", "timeframe", timeframe));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.intraday.candles", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "candles"], params).await,
@@ -1912,7 +1920,7 @@ impl FutOptIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.intraday.trades", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "trades"], params).await,
@@ -1947,7 +1955,7 @@ impl FutOptIntradayClient {
         ) {
             return Ok(rejected);
         }
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.intraday.volumes", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "volumes"], params).await,
@@ -1997,7 +2005,7 @@ impl FutOptIntradayClient {
         let after_hours = take!(pos_bool("futopt.intraday.tickers", "afterHours", after_hours));
         let contract_type = take!(pos_string("futopt.intraday.tickers", "contractType", contract_type));
         let is_spread = take!(pos_bool("futopt.intraday.tickers", "isSpread", is_spread));
-        let typ = match RestArg::required(typ, "type")? {
+        let typ = match take!(RestArg::required("futopt.intraday.tickers", typ, "type")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "tickers"], params).await,
@@ -2081,7 +2089,7 @@ impl FutOptIntradayClient {
             return Ok(rejected);
         }
         let contract_type = take!(pos_string("futopt.intraday.products", "contractType", contract_type));
-        let typ = match RestArg::required(typ, "type")? {
+        let typ = match take!(RestArg::required("futopt.intraday.products", typ, "type")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "products"], params).await,
@@ -2192,7 +2200,7 @@ impl FutOptHistoricalClient {
         let contract_month = take!(pos_string("futopt.historical.candles", "contractMonth", contract_month));
         let fields = take!(pos_string("futopt.historical.candles", "fields", fields));
         let sort = take!(pos_string("futopt.historical.candles", "sort", sort));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.historical.candles", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => {
@@ -2263,7 +2271,7 @@ impl FutOptHistoricalClient {
         }
         let date = take!(pos_string("futopt.historical.daily", "date", date));
         let after_hours = take!(pos_bool("futopt.historical.daily", "afterHours", after_hours));
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        let symbol = match take!(RestArg::required("futopt.historical.daily", symbol, "symbol")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => {

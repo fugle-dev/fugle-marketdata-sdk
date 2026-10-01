@@ -328,11 +328,15 @@ fn bare_version_message(bare: &str) -> String {
 // ---------------------------------------------------------------------------
 // Reading JS values
 
-/// Read `value`, descending `depth` levels into objects.
+/// Read `value`, descending `depth` levels into objects. With `plain`, an
+/// object that is not plain is read as [`JsVal::Instance`]: only the client
+/// options and their nested options have to be plain (#294); a REST params
+/// object or a `subscribe()` argument may be any object, as in 1.x
+/// (`trades(Object.create({ symbol: '2330' }))`, a class instance).
 ///
 /// # Safety
 /// `env` and `value` must be live handles on the JS thread.
-pub(crate) unsafe fn read(env: sys::napi_env, value: sys::napi_value, depth: usize) -> napi::Result<JsVal> {
+pub(crate) unsafe fn read(env: sys::napi_env, value: sys::napi_value, depth: usize, plain: bool) -> napi::Result<JsVal> {
     let mut kind = 0;
     napi::check_status!(unsafe { sys::napi_typeof(env, value, &mut kind) })?;
     Ok(match kind {
@@ -342,14 +346,14 @@ pub(crate) unsafe fn read(env: sys::napi_env, value: sys::napi_value, depth: usi
         sys::ValueType::napi_number => JsVal::Number(unsafe { f64::from_napi_value(env, value)? }),
         sys::ValueType::napi_string => JsVal::String(unsafe { String::from_napi_value(env, value)? }),
         sys::ValueType::napi_function => JsVal::Function,
-        sys::ValueType::napi_object => unsafe { read_object(env, value, depth)? },
+        sys::ValueType::napi_object => unsafe { read_object(env, value, depth, plain)? },
         sys::ValueType::napi_symbol => JsVal::Other("symbol"),
         sys::ValueType::napi_bigint => JsVal::Other("bigint"),
         _ => JsVal::Other("value"),
     })
 }
 
-unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) -> napi::Result<JsVal> {
+unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize, plain: bool) -> napi::Result<JsVal> {
     let mut hit = false;
     napi::check_status!(unsafe { sys::napi_is_array(env, value, &mut hit) })?;
     if hit {
@@ -375,8 +379,10 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
     if hit {
         return Ok(JsVal::Bytes(true));
     }
-    if let Some(name) = unsafe { instance_name(env, value)? } {
-        return Ok(JsVal::Instance(name));
+    if plain {
+        if let Some(name) = unsafe { instance_name(env, value)? } {
+            return Ok(JsVal::Instance(name));
+        }
     }
     if depth == 0 {
         return Ok(JsVal::Object(Vec::new()));
@@ -405,7 +411,7 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
         // the copy), so twice per constructor.
         let mut item = std::ptr::null_mut();
         let read_item = if unsafe { sys::napi_get_property(env, value, key, &mut item) } == sys::Status::napi_ok {
-            unsafe { read(env, item, depth - 1)? }
+            unsafe { read(env, item, depth - 1, plain)? }
         } else {
             clear_exception(env);
             JsVal::Unreadable
@@ -417,9 +423,9 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
 
 /// `None` for a plain object: its prototype is `null`, or its prototype's
 /// prototype is (`Object.prototype` of any realm, or a null-prototype
-/// object); otherwise its constructor's name, or `"unknown"`. A Proxy whose
-/// `getPrototypeOf` trap throws (or a revoked one) makes this, and so the
-/// argument's conversion, throw.
+/// object); otherwise its constructor's name, or `"unknown"`. For a Proxy,
+/// `napi_get_prototype` gives `null` without calling the `getPrototypeOf`
+/// trap, so a Proxy always counts as plain.
 unsafe fn instance_name(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Option<String>> {
     let mut proto = std::ptr::null_mut();
     napi::check_status!(unsafe { sys::napi_get_prototype(env, value, &mut proto) })?;
@@ -501,7 +507,7 @@ impl TypeName for ExtraArg {
 
 impl FromNapiValue for ExtraArg {
     unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
-        Ok(Self(unsafe { read(env, value, 0)? }.describe()))
+        Ok(Self(unsafe { read(env, value, 0, false)? }.describe()))
     }
 }
 
@@ -527,7 +533,7 @@ impl TypeName for SubscriptionArg {
 
 impl FromNapiValue for SubscriptionArg {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
-        let shape = unsafe { read(env, napi_val, 1)? };
+        let shape = unsafe { read(env, napi_val, 1, false)? };
         // `null` keys count as not given: drop them so the methods' own
         // presence checks (`id` with `channel`) agree.
         let value = unsafe { serde_json::Value::from_napi_value(env, napi_val) }.map(|mut value| {
@@ -674,21 +680,24 @@ impl<T: ValidateNapiValue> ValidateNapiValue for Checked<T> {}
 impl<T: FromNapiValue + OptionsTable> FromNapiValue for Checked<T> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
         // Two levels: the options and their nested objects.
-        let value = unsafe { read(env, napi_val, 2)? };
+        let value = unsafe { read(env, napi_val, 2, true)? };
         check_options(T::OWNER, &value, T::FIELDS).map_err(|message| type_error(env, &message))?;
         // napi's conversion refuses `null` for an `Option` field, so it reads
         // a copy holding only the given keys.
-        let given = unsafe { copy_given(env, napi_val, &value, T::FIELDS)? };
+        let given = unsafe { copy_given(env, T::OWNER, "", napi_val, &value, T::FIELDS)? };
         Ok(Self(unsafe { T::from_napi_value(env, given)? }))
     }
 }
 
 /// A new object with the keys of `source` that are given (not `undefined`
 /// or `null`), nested option objects copied the same way. Each property is
-/// read again here, so a getter runs twice (once by [`read`]); one that
-/// throws now throws its own error, as napi's conversion did.
+/// read again here, so a getter runs twice (once by [`read`]): the value read
+/// now is what napi converts, so it is checked again; a getter that throws
+/// now throws its own error, as napi's conversion did.
 unsafe fn copy_given(
     env: sys::napi_env,
+    owner: &str,
+    path: &str,
     source: sys::napi_value,
     value: &JsVal,
     fields: &[Field],
@@ -719,14 +728,28 @@ unsafe fn copy_given(
             }
             return Err(napi::Error::new(napi::Status::PendingException, format!("reading option {key:?} threw")));
         }
+        // A getter may give something else the second time: check what
+        // napi will read, as the first value was checked. `null` or
+        // `undefined` now is not given.
+        if let Some(kind) = kind.filter(|_| !unread) {
+            let depth = if matches!(kind, Kind::Version) { 1 } else { 0 };
+            let again = unsafe { read(env, raw, depth, true)? };
+            if matches!(again, JsVal::Undefined | JsVal::Null) {
+                continue;
+            }
+            // A nested object's own fields are checked as it is copied.
+            if !(matches!(kind, Kind::Object { .. }) && matches!(again, JsVal::Object(_))) {
+                check_value(owner, &format!("{path}{key}"), &again, kind).map_err(|message| type_error(env, &message))?;
+            }
+        }
         let nested: Option<&[Field]> = match kind {
             Some(Kind::Object { fields, .. }) => Some(fields),
-            // The version map's keys are checked already; copy them all.
+            // The version map was checked whole just above; copy its keys.
             Some(Kind::Version) => Some(&[]),
             _ => None,
         };
         if let (Some(nested), JsVal::Object(_)) = (nested, item) {
-            raw = unsafe { copy_given(env, raw, item, nested)? };
+            raw = unsafe { copy_given(env, owner, &format!("{path}{key}."), raw, item, nested)? };
         }
         napi::check_status!(unsafe { sys::napi_set_named_property(env, copy, name.as_ptr(), raw) })?;
     }

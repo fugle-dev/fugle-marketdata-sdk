@@ -158,14 +158,19 @@ An argument a method cannot use is a `TypeError` with only a message — no
   An `unsubscribe()` object without `channel` takes only `id` / `ids`.
   Python: also `symbol` / `symbols` / the flag keyword next to a dict, `ids=`
   next to an unsubscribe dict, or the flag under two spellings.
-- **REST methods** (Node): an argument of the wrong type, an integer
-  argument that is negative, fractional or not finite, or a further argument
+- **REST methods** (Node): a missing required first argument (`quote()`),
+  an argument of the wrong type, an integer argument that is negative, fractional or not finite, or a further argument
   the method does not take — past its positional parameters, or after the
   params object — rejects the returned promise with a `TypeError` before any
   request is sent. Only the first argument past the declared ones is
   checked (napi does not report how many were given), so one after an
   `undefined` / `null` there is not. An unknown key inside the params object
   stays code 1005 (see above).
+
+In Node, a getter or Proxy trap that throws while an argument is read throws
+its own error, synchronously. Only the client options and their nested
+options have to be plain objects; a REST params object or a `subscribe()`
+argument may be any object.
 
 ## Callback failures
 

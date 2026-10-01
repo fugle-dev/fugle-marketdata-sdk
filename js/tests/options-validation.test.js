@@ -234,6 +234,21 @@ describe('edge cases of the check', () => {
     expect(error.message).toBe('boom');
   });
 
+  test('a getter giving another value the second time is checked again', () => {
+    let reads = 0;
+    expectTypeError(
+      () =>
+        new WebSocketClient({
+          apiKey: 'k',
+          get baseUrl() {
+            reads += 1;
+            return reads === 1 ? 'wss://x.test' : 1;
+          },
+        }),
+      'WebSocketClient options: baseUrl must be a string, got number 1',
+    );
+  });
+
   test('a Proxy is read through its traps', () => {
     expect(() => new RestClient(new Proxy({ apiKey: 'k' }, {}))).not.toThrow();
     expectTypeError(
