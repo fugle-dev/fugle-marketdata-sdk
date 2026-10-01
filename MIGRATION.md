@@ -72,7 +72,7 @@ to rewrite call sites:
 | WebSocket `subscribe({ channel, symbols: [...] })` | ✅ batch supported |
 | WebSocket `unsubscribe({ id })` / `unsubscribe({ ids: [...] })` | ✅ |
 | WebSocket `on('authenticated', cb)` / `on('unauthenticated', cb)` | ✅ restored, with the server's `data` object as the argument (Node) |
-| Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
+| Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` (3.0 adds `intent` and `willReconnect`) | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
 | WebSocket `ws.stock.url` / `ws.futopt.url` | ✅ the resolved endpoint, e.g. `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`; reflects `base_url` / `baseUrl` and `version`, readable before `connect()` |
@@ -305,6 +305,33 @@ already dead. Choose one of these:
   `ReconnectConfig.disabled()` (Python), `reconnect: { enabled: false }`
   (Node), `enabled = false` in the reconnect config (C#, Go, Java, C++).
 
+**Telling a drop the SDK recovers from apart from the end** (#293). Don't
+work it out from the close code — core reconnects after most codes,
+4xxx included (#201). Ask the SDK: Node's `disconnect` event carries
+`willReconnect` (and `intent`: `'client'`, `'server'` or `'network'`);
+in Python read `ws.stock.last_disconnect` in your handler; in C#, Java and
+C++ it is the `will_reconnect` argument of `on_disconnected`, and
+`last_disconnect()` has the rest; with Go's `StreamingClient`, `Messages()`
+is closed when the connection is over and `LastDisconnect()` says why (read
+it before `Close()`). When `willReconnect` is false the
+connection is over; when it is true a `reconnect` follows. A reconnect that
+gives up ends with `error` 3005, not another `disconnect`.
+
+```javascript
+ws.stock.on('disconnect', ({ code, reason, intent, willReconnect }) => {
+  if (!willReconnect) console.log('connection over:', intent, code, reason);
+});
+```
+
+```python
+def on_disconnect(code, reason):
+    info = ws.stock.last_disconnect  # the disconnect being handled
+    if not info.will_reconnect:
+        print("connection over:", info.intent, code, reason)
+
+ws.stock.on("disconnect", on_disconnect)
+```
+
 The SDK warns once per client when it sees this pattern: `disconnect()`
 closing a connection that auto-reconnect restored less than 30 seconds
 earlier, then `connect()` on the same client less than 30 seconds after
@@ -497,7 +524,7 @@ so 1.x listeners work unchanged:
 | `authenticated` | the server's `data` object |
 | `unauthenticated` | the server's `data` object (fires after `connect`) |
 | `connect()` | resolves with the `authenticated` `data` (when it waits on an automatic reconnect, that reconnect's `data`, §11); rejects with the `unauthenticated` `data` object |
-| `disconnect` | `{ code, reason }` (`code` is `null` when the connection ended without one) |
+| `disconnect` | `{ code, reason, intent, willReconnect }` (`code` is `null` when the connection ended without one; `intent` and `willReconnect` are new in 3.0, see §5 — 1.x listeners that destructure `{ code, reason }` are unaffected) |
 | `ping(params)` | `params` sent as the frame's `data` |
 
 Two differences remain from 1.x's `error` event:

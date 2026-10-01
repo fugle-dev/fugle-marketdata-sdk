@@ -12,7 +12,12 @@
 // Run: npm run build && npm test
 
 import { RestClient, WebSocketClient } from '../index';
-import type { RestClientOptions, WebSocketClientOptions } from '../index';
+import type {
+  RestClientOptions,
+  WebSocketClientOptions,
+  WebSocketDisconnectEvent,
+  WebSocketDisconnectIntent,
+} from '../index';
 
 // Errors come from the native module's realm, so `instanceof Error` is false
 // under jest; check the brand instead (same as errors.test.js).
@@ -246,5 +251,25 @@ describe('TypeScript type inference', () => {
     expect(opts.apiKey).toBe('key');
     expect(opts.reconnect?.maxAttempts).toBe(5);
     expect(opts.healthCheck?.enabled).toBe(false);
+  });
+
+  it('disconnect handlers see intent and willReconnect (#293)', () => {
+    const ws = new WebSocketClient({ apiKey: 'key' });
+    const seen: WebSocketDisconnectIntent[] = [];
+    // The handler's parameter is inferred from the event name.
+    ws.stock.on('disconnect', ({ code, reason, intent, willReconnect }) => {
+      const c: number | null = code;
+      const r: string = reason;
+      const w: boolean = willReconnect;
+      seen.push(intent);
+      void [c, r, w];
+    });
+    const event: WebSocketDisconnectEvent = { code: null, reason: '', intent: 'network', willReconnect: true };
+    // @ts-expect-error not one of 'client' | 'server' | 'network'
+    const bad: WebSocketDisconnectIntent = 'peer';
+
+    expect(event.intent).toBe('network');
+    expect(seen).toEqual([]);
+    void bad;
   });
 });

@@ -134,6 +134,7 @@ fn fugle_marketdata(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<websocket::FutOptWebSocketClient>()?;
     m.add_class::<websocket::ReconnectConfig>()?;
     m.add_class::<websocket::HealthCheckConfig>()?;
+    m.add_class::<websocket::DisconnectInfo>()?;
 
     // Register iterator class
     m.add_class::<iterator::MessageIterator>()?;

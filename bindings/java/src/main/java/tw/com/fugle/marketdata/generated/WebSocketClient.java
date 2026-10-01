@@ -268,6 +268,50 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
 
   
     /**
+     * The last disconnect: who closed the connection and whether a
+     * reconnect follows. None before the first one (#293).
+     *
+     * Set before `on_disconnected` is called, so a listener reads the
+     * disconnect it is handling. Never cleared: `connect()`, a reconnect and
+     * `disconnect()` returning keep it, so it is a record of the last
+     * disconnect, not the connection state — ask `is_connected()` for that.
+     * A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+     * that started the reconnect. Should two connections overlap (a
+     * `disconnect()` from a listener, then `connect()` from another thread
+     * before that listener returns), it is the disconnect handed to
+     * `on_disconnected` last.
+     */
+    @Override
+    public DisconnectInfo lastDisconnect()  {
+            try {
+                return FfiConverterOptionalTypeDisconnectInfo.INSTANCE.lift(
+    callWithPointer(it -> {
+        try {
+    
+            return
+    UniffiHelpers.uniffiRustCall( _status -> {
+        return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_last_disconnect(
+            it, _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    );
+            } catch (RuntimeException _e) {
+                
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
      * Measure the round trip to the server: send a ping, wait for its pong,
      * and return the time between the two in milliseconds.
      *

@@ -784,12 +784,26 @@ export interface WebSocketAuthData {
   [key: string]: unknown;
 }
 
+/**
+ * Who closed the connection: `'client'` = your `disconnect()`; `'server'` =
+ * the server's Close frame (any code); `'network'` = transport error, EOF
+ * without a Close frame, or heartbeat timeout.
+ */
+export type WebSocketDisconnectIntent = 'client' | 'server' | 'network';
+
 /** Argument of the `disconnect` event. */
 export interface WebSocketDisconnectEvent {
   /** WebSocket close code, or `null` when the connection ended without one */
   code: number | null;
   /** Close reason */
   reason: string;
+  /** Who closed the connection */
+  intent: WebSocketDisconnectIntent;
+  /**
+   * `true`: a `reconnect` event follows (unless you call `disconnect()`
+   * first); `false`: this connection is over.
+   */
+  willReconnect: boolean;
 }
 
 /** Argument of the `reconnect` event. */

@@ -59,7 +59,9 @@ pub use params::*;
 pub use tls::TlsConfigRecord;
 
 // Re-export WebSocket types
-pub use websocket::{SubscribeOptions, WebSocketClient, WebSocketListener, WebSocketEndpoint};
+pub use websocket::{
+    DisconnectInfo, DisconnectIntent, SubscribeOptions, WebSocketClient, WebSocketEndpoint, WebSocketListener,
+};
 
 // Setup UniFFI scaffolding using proc macros
 // This replaces include_scaffolding!() and allows using derive macros for types

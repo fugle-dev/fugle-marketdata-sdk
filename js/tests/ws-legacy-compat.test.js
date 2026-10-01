@@ -184,7 +184,7 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
 
     expect(calls.find(([event]) => event === 'disconnect')).toEqual([
       'disconnect',
-      [{ code: 1000, reason: 'Normal closure' }],
+      [{ code: 1000, reason: 'Normal closure', intent: 'client', willReconnect: false }],
     ]);
   });
 
@@ -200,7 +200,8 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
     const [, [event]] = calls.find(([name]) => name === 'disconnect');
     expect(event.code).toBeNull();
     expect(typeof event.reason).toBe('string');
-    expect(Object.keys(event).sort()).toEqual(['code', 'reason']);
+    // 1.x's `{ code, reason }` plus 3.0's `intent` and `willReconnect` (#293).
+    expect(Object.keys(event).sort()).toEqual(['code', 'intent', 'reason', 'willReconnect']);
   });
 
   test('reconnect listener receives { attempt }; authenticated fires again without re-settling connect()', async () => {
@@ -213,7 +214,7 @@ describe.each(['stock', 'futopt'])('%s legacy-compatible WebSocket API (#23)', (
 
     expect(calls.find(([event]) => event === 'disconnect')).toEqual([
       'disconnect',
-      [{ code: 1001, reason: 'going away' }],
+      [{ code: 1001, reason: 'going away', intent: 'server', willReconnect: true }],
     ]);
     expect(calls.find(([event]) => event === 'reconnect')).toEqual(['reconnect', [{ attempt: 1 }]]);
     expect(ws.isConnected).toBe(true);

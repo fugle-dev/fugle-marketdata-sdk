@@ -93,6 +93,7 @@ struct AfterHoursParams;
 struct ConnectionConfigRecord;
 struct CorporateActionsParams;
 struct CredentialsRecord;
+struct DisconnectInfo;
 struct ErrorInfo;
 struct FutOptCandlesParams;
 struct FutOptDailyParams;
@@ -117,26 +118,11 @@ struct SubscribeOptions;
 struct TechnicalParams;
 struct TlsConfigRecord;
 enum class CredentialKind;
+enum class DisconnectIntent;
 enum class ErrorSourceKind;
 struct MarketDataError;
 enum class MessageOverflowRecord;
 enum class WebSocketEndpoint;
-
-
-/**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
- */
-enum class MessageOverflowRecord: int32_t {
-    /**
-     * Drop new messages and report them through `on_messages_dropped`.
-     */
-    kDropNewest = 1,
-    /**
-     * Never drop: the queue grows while `on_message` lags.
-     */
-    kUnbounded = 2
-};
 
 
 /**
@@ -174,6 +160,58 @@ enum class ErrorSourceKind: int32_t {
      * already closed, serialization failure, non-auth/non-throttle 4xx.
      */
     kClient = 5
+};
+
+
+/**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
+};
+
+
+/**
+ * Who closed the connection, in a [`DisconnectInfo`] (#293).
+ */
+enum class DisconnectIntent: int32_t {
+    /**
+     * Your `disconnect()`.
+     */
+    kClient = 1,
+    /**
+     * The server's Close frame, whatever its code.
+     */
+    kServer = 2,
+    /**
+     * Transport error, EOF without a Close frame, or heartbeat timeout.
+     */
+    kNetwork = 3
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
 };
 
 
@@ -216,19 +254,31 @@ struct ErrorInfo {
 
 
 /**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
+ * The last disconnect of a client: who closed the connection and whether a
+ * reconnect follows. Read it with `WebSocketClient::last_disconnect()`
+ * (#293).
  */
-struct MessageQueueConfigRecord {
+struct DisconnectInfo {
     /**
-     * What happens to new messages while `buffer` are unread
+     * WebSocket close code, or none when the connection ended without one
+     * (transport error, EOF, heartbeat timeout, or a server Close frame
+     * without a code).
      */
-    MessageOverflowRecord overflow;
+    std::optional<uint16_t> code;
     /**
-     * Unread messages held (default 4096; 0 means default)
+     * Close reason (may be empty).
      */
-    uint32_t buffer;
+    std::string reason;
+    /**
+     * Who closed the connection.
+     */
+    DisconnectIntent intent;
+    /**
+     * The `will_reconnect` of the matching `on_disconnected`: true if a
+     * reconnect follows (unless `disconnect()` is called first), false if
+     * this connection is over.
+     */
+    bool will_reconnect;
 };
 
 namespace uniffi {
@@ -1185,6 +1235,21 @@ struct WebSocketClient
      * right after the connection drops, without waiting for the event thread.
      */
     bool is_connected();
+    /**
+     * The last disconnect: who closed the connection and whether a
+     * reconnect follows. None before the first one (#293).
+     *
+     * Set before `on_disconnected` is called, so a listener reads the
+     * disconnect it is handling. Never cleared: `connect()`, a reconnect and
+     * `disconnect()` returning keep it, so it is a record of the last
+     * disconnect, not the connection state — ask `is_connected()` for that.
+     * A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+     * that started the reconnect. Should two connections overlap (a
+     * `disconnect()` from a listener, then `connect()` from another thread
+     * before that listener returns), it is the disconnect handed to
+     * `on_disconnected` last.
+     */
+    std::optional<DisconnectInfo> last_disconnect();
     /**
      * Measure the round trip to the server in milliseconds (blocking).
      */
@@ -2441,6 +2506,14 @@ struct FfiConverterTypeCredentialsRecord {
     static uint64_t allocation_size(const CredentialsRecord &);
 };
 
+struct FfiConverterTypeDisconnectInfo {
+    static DisconnectInfo lift(RustBuffer);
+    static RustBuffer lower(const DisconnectInfo &);
+    static DisconnectInfo read(RustStream &);
+    static void write(RustStream &, const DisconnectInfo &);
+    static uint64_t allocation_size(const DisconnectInfo &);
+};
+
 struct FfiConverterTypeErrorInfo {
     static ErrorInfo lift(RustBuffer);
     static RustBuffer lower(const ErrorInfo &);
@@ -2631,6 +2704,13 @@ struct FfiConverterCredentialKind {
     static void write(RustStream &, const CredentialKind &);
     static uint64_t allocation_size(const CredentialKind &);
 };
+struct FfiConverterDisconnectIntent {
+    static DisconnectIntent lift(RustBuffer);
+    static RustBuffer lower(const DisconnectIntent &);
+    static DisconnectIntent read(RustStream &);
+    static void write(RustStream &, const DisconnectIntent &);
+    static uint64_t allocation_size(const DisconnectIntent &);
+};
 struct FfiConverterErrorSourceKind {
     static ErrorSourceKind lift(RustBuffer);
     static RustBuffer lower(const ErrorSourceKind &);
@@ -2736,6 +2816,13 @@ struct FfiConverterOptionalTypeCorporateActionsParams {
     static std::optional<CorporateActionsParams> read(RustStream &stream);
     static void write(RustStream &stream, const std::optional<CorporateActionsParams>& value);
     static uint64_t allocation_size(const std::optional<CorporateActionsParams> &val);
+};
+struct FfiConverterOptionalTypeDisconnectInfo {
+    static std::optional<DisconnectInfo> lift(RustBuffer buf);
+    static RustBuffer lower(const std::optional<DisconnectInfo>& val);
+    static std::optional<DisconnectInfo> read(RustStream &stream);
+    static void write(RustStream &stream, const std::optional<DisconnectInfo>& value);
+    static uint64_t allocation_size(const std::optional<DisconnectInfo> &val);
 };
 struct FfiConverterOptionalTypeFutOptCandlesParams {
     static std::optional<FutOptCandlesParams> lift(RustBuffer buf);

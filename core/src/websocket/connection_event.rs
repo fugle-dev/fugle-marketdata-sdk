@@ -131,6 +131,26 @@ pub enum DisconnectIntent {
     Network,
 }
 
+impl DisconnectIntent {
+    /// Lowercase name: `"client"`, `"server"` or `"network"`.
+    ///
+    /// The spelling the bindings hand to users (Node's `intent`, Python's
+    /// `DisconnectInfo.intent`), so every language agrees on it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Client => "client",
+            Self::Server => "server",
+            Self::Network => "network",
+        }
+    }
+}
+
+impl std::fmt::Display for DisconnectIntent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// WebSocket connection state machine
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionState {
@@ -455,6 +475,14 @@ mod tests {
             crate::websocket::ReconnectionConfig::disabled()
         };
         ReconnectionManager::new(config)
+    }
+
+    #[test]
+    fn disconnect_intent_names() {
+        assert_eq!(DisconnectIntent::Client.as_str(), "client");
+        assert_eq!(DisconnectIntent::Server.as_str(), "server");
+        assert_eq!(DisconnectIntent::Network.as_str(), "network");
+        assert_eq!(DisconnectIntent::Network.to_string(), "network");
     }
 
     #[test]

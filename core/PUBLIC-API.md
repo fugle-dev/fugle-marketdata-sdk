@@ -37,6 +37,14 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — `DisconnectIntent` as a string (#293)
+
+- `+` `websocket::DisconnectIntent::as_str(self) -> &'static str` (`const`;
+  also at the crate root) — `"client"`, `"server"`, `"network"`: the
+  spelling the bindings hand to users. Additive.
+- `+` `impl Display for websocket::DisconnectIntent` — writes `as_str()`.
+  Additive.
+
 ### Unreleased — `aio::admission`: what a binding's `connect()` does (#271)
 
 All additive; also visible as `websocket::aio::admission`. No binding uses

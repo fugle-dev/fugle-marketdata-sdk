@@ -17,7 +17,9 @@ can cut them without a Close frame (``drop_connections()``), refuse new ones
 (``refuse_connections``) or reject every ``auth`` (``reject_auth``), and logs
 each ``subscribe`` with the index of the connection it came on. It can also
 hold its answer to the next client Close (``hold_next_close()``) until the
-test releases it, keeping that ``disconnect()`` in its close meanwhile.
+test releases it, keeping that ``disconnect()`` in its close meanwhile, and
+close every open connection itself with a Close frame
+(``close_connections(code, reason)``).
 
 ``LoopbackServer`` runs the server in a child process; ``InProcessLoopbackServer``
 runs it on threads of the test process, which only works while the blocking
@@ -141,6 +143,8 @@ class _Server:
         self.close_held = threading.Event()
         self._close_released = threading.Event()
         self._open_conns = []
+        # The send function of each open connection, for ``close_connections``.
+        self._senders = {}
         self._conns_lock = threading.Lock()
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
@@ -198,16 +202,36 @@ class _Server:
             except OSError:
                 pass
 
+    def close_connections(self, code=None, reason=""):
+        """Send a Close frame (with ``code`` and ``reason``, or neither) on
+        every open connection: the client sees the server close it."""
+        payload = b"" if code is None else struct.pack("!H", code) + reason.encode()
+        with self._conns_lock:
+            senders = list(self._senders.values())
+        for send in senders:
+            try:
+                send(OP_CLOSE, payload, server_close=True)
+            except OSError:
+                pass
+
     def _serve(self, conn, index=0):
         send_lock = threading.Lock()
         closed = threading.Event()
+        # Set once this side sent its Close: the client's Close is the answer.
+        server_closed = threading.Event()
 
-        def send(opcode, payload=b""):
+        def send(opcode, payload=b"", server_close=False):
             with send_lock:
+                if server_closed.is_set():
+                    return
+                if server_close:
+                    server_closed.set()
                 _send_frame(conn, opcode, payload)
 
         try:
             _handshake(conn)
+            with self._conns_lock:
+                self._senders[conn] = send
             while not self._stopped.is_set():
                 opcode, payload = _read_frame(conn)
                 if opcode == OP_TEXT:
@@ -230,6 +254,8 @@ class _Server:
                         ).start()
                 elif opcode == OP_PING:
                     send(OP_PONG, payload)
+                elif opcode == OP_CLOSE and server_closed.is_set():
+                    return
                 elif opcode == OP_CLOSE:
                     if self._take_close_hold():
                         self.close_held.set()
@@ -247,6 +273,7 @@ class _Server:
             with self._conns_lock:
                 if conn in self._open_conns:
                     self._open_conns.remove(conn)
+                self._senders.pop(conn, None)
             conn.close()
 
     def _flood_data(self, send, closed, frame):
@@ -370,6 +397,10 @@ class InProcessLoopbackServer:
     def drop_connections(self):
         """Cut every open connection without a Close frame."""
         self._server.drop_connections()
+
+    def close_connections(self, code=None, reason=""):
+        """Close every open connection from the server with a Close frame."""
+        self._server.close_connections(code, reason)
 
     def refuse_connections(self, refuse=True):
         """Close new connections at once, so reconnect attempts fail."""

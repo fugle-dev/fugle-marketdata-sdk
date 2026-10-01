@@ -460,3 +460,203 @@ def test_unbounded_message_overflow_never_drops():
     assert len(data) == burst
     assert reports == []
     assert ws.messages_dropped_total() == 0
+
+
+# --- last_disconnect: who closed the connection, and whether a reconnect
+# follows (#293). Written before the "disconnect" callbacks run, never
+# cleared, and not overwritten when a reconnect is given up (3005).
+
+
+def _reconnecting_ws(url, product, **kwargs):
+    from fugle_marketdata import ReconnectConfig, WebSocketClient
+
+    client = WebSocketClient(
+        api_key="test-key",
+        base_url=url,
+        reconnect=ReconnectConfig(max_attempts=1, initial_delay_ms=100, max_delay_ms=100),
+        **kwargs,
+    )
+    return getattr(client, product)
+
+
+def _error_codes(recorder):
+    return [args[0].code for args in recorder.args_of("error")]
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_last_disconnect_after_your_disconnect_is_client(server, product):
+    from fugle_marketdata import DisconnectInfo
+
+    ws = product_ws(server.url, product)
+    recorder = Recorder(ws)
+    seen = []
+    ws.on("disconnect", lambda code, reason: seen.append(ws.last_disconnect))
+    assert ws.last_disconnect is None
+    ws.connect()
+    recorder.wait_for("authenticated", TIMEOUT_S)
+    # A connection that is up has not disconnected yet.
+    assert ws.last_disconnect is None
+
+    ws.disconnect()
+
+    info = ws.last_disconnect
+    assert isinstance(info, DisconnectInfo)
+    assert (info.code, info.reason, info.intent, info.will_reconnect) == (
+        1000,
+        "Normal closure",
+        "client",
+        False,
+    )
+    # The callback read the disconnect it was handling.
+    assert seen == [info]
+    assert repr(info) == (
+        "DisconnectInfo(code=1000, reason='Normal closure', intent='client', will_reconnect=False)"
+    )
+    # 2-argument handlers keep working: no listener failure (3004).
+    assert 3004 not in _error_codes(recorder)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_last_disconnect_after_server_close_1000_is_server_and_final(product):
+    with InProcessLoopbackServer() as srv:
+        ws = _reconnecting_ws(srv.url, product)
+        recorder = Recorder(ws)
+        try:
+            ws.connect()
+            recorder.wait_for("authenticated", TIMEOUT_S)
+            srv.close_connections(1000, "bye")
+            recorder.wait_for("disconnect", TIMEOUT_S)
+
+            info = ws.last_disconnect
+            assert (info.code, info.reason, info.intent, info.will_reconnect) == (
+                1000,
+                "bye",
+                "server",
+                False,
+            ), recorder.calls
+            assert ws.is_closed()
+            assert 3004 not in _error_codes(recorder)
+        finally:
+            disconnect_quietly(ws)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_last_disconnect_survives_the_reconnect_then_your_disconnect_is_client(product):
+    with InProcessLoopbackServer() as srv:
+        ws = _reconnecting_ws(srv.url, product)
+        recorder = Recorder(ws)
+        try:
+            ws.connect()
+            recorder.wait_for("authenticated", TIMEOUT_S)
+            srv.close_connections(1001, "going away")
+            recorder.wait_until(
+                lambda calls: [n for n, _ in calls].count("authenticated") == 2,
+                TIMEOUT_S,
+                "second authenticated",
+            )
+
+            # Reconnected, and still the record of the drop.
+            assert ws.is_connected()
+            info = ws.last_disconnect
+            assert (info.code, info.reason, info.intent, info.will_reconnect) == (
+                1001,
+                "going away",
+                "server",
+                True,
+            ), recorder.calls
+
+            ws.disconnect()
+            assert ws.last_disconnect.intent == "client"
+            assert ws.last_disconnect.will_reconnect is False
+            assert 3004 not in _error_codes(recorder)
+        finally:
+            disconnect_quietly(ws)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_last_disconnect_is_not_overwritten_when_the_reconnect_is_given_up(product):
+    with InProcessLoopbackServer() as srv:
+        ws = _reconnecting_ws(srv.url, product)
+        recorder = Recorder(ws)
+        try:
+            ws.connect()
+            recorder.wait_for("authenticated", TIMEOUT_S)
+            srv.refuse_connections()
+            srv.drop_connections()
+            recorder.wait_until(
+                lambda calls: any(n == "error" and a[0].code == 3005 for n, a in calls),
+                TIMEOUT_S,
+                "error 3005",
+            )
+
+            info = ws.last_disconnect
+            assert (info.code, info.intent, info.will_reconnect) == (None, "network", True), (
+                recorder.calls
+            )
+            assert ws.is_closed()
+            assert 3004 not in _error_codes(recorder)
+        finally:
+            disconnect_quietly(ws)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+@pytest.mark.parametrize("reconnect", [False, True], ids=["reconnect-off", "reconnect-on"])
+def test_last_disconnect_after_heartbeat_timeout_is_network(server, product, reconnect):
+    health_check = HealthCheckConfig(heartbeat_timeout_ms=5000)
+    if reconnect:
+        ws = _reconnecting_ws(server.url, product, health_check=health_check)
+    else:
+        ws = product_ws(server.url, product, health_check=health_check)
+    recorder = Recorder(ws)
+    try:
+        ws.connect()
+        # The loopback server stays silent after the auth ack.
+        recorder.wait_for("disconnect", timeout=10)
+
+        info = ws.last_disconnect
+        assert info.code is None
+        assert info.reason.startswith("Heartbeat timeout after"), info
+        assert info.intent == "network"
+        assert info.will_reconnect is reconnect
+        # Reported by "disconnect", not by an error 3003.
+        assert 3003 not in _error_codes(recorder)
+        assert 3004 not in _error_codes(recorder)
+    finally:
+        disconnect_quietly(ws)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_last_disconnect_after_disconnect_async_is_client(server, product):
+    ws = product_ws(server.url, product)
+    recorder = Recorder(ws)
+    seen = []
+    ws.on("disconnect", lambda code, reason: seen.append(ws.last_disconnect))
+    await ws.connect_async()
+    await ws.disconnect_async()
+
+    info = ws.last_disconnect
+    assert (info.code, info.intent, info.will_reconnect) == (1000, "client", False)
+    assert seen == [info]
+    assert 3004 not in _error_codes(recorder)
+
+
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_disconnect_info_is_read_only(server, product):
+    ws = product_ws(server.url, product)
+    ws.connect()
+    ws.disconnect()
+
+    info = ws.last_disconnect
+    # Frozen and compared by value, so usable as a dict key or in a set.
+    assert hash(info) == hash(ws.last_disconnect)
+    assert {info, ws.last_disconnect} == {info}
+    with pytest.raises(AttributeError):
+        info.intent = "server"
+    with pytest.raises(AttributeError):
+        ws.last_disconnect = None

@@ -50,6 +50,8 @@ from .fugle_marketdata import (
     # Config
     ReconnectConfig,
     HealthCheckConfig,
+    # Events
+    DisconnectInfo,
 )
 
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
@@ -82,5 +84,6 @@ __all__ = [
     "FugleAPIError",
     "ReconnectConfig",
     "HealthCheckConfig",
+    "DisconnectInfo",
     "__version__",
 ]

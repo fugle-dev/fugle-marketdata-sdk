@@ -379,6 +379,7 @@ boolean isConnected()                         // Check connection status
 boolean isClosed()                            // Check if client is closed
 String url()                                  // Resolved endpoint; throws code 1004 on an invalid baseUrl
 long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
+DisconnectInfo lastDisconnect()               // Last disconnect: code(), reason(), intent() (CLIENT / SERVER / NETWORK), willReconnect(); null before the first
 
 // Subscription management
 CompletableFuture<Void> subscribe(String channel, String symbol)                                  // Subscribe one symbol

@@ -1750,6 +1750,12 @@ static class _UniFFILib
     );
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_websocketclient_last_disconnect(
+        IntPtr @ptr,
+        ref UniffiRustCallStatus _uniffi_out_err
+    );
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency(
         IntPtr @ptr,
         RustBuffer @timeoutMs
@@ -2495,6 +2501,9 @@ static class _UniFFILib
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
+
+    [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect();
 
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern ushort uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency();
@@ -3478,6 +3487,16 @@ static class _UniFFILib
             {
                 throw new UniffiContractChecksumException(
                     $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected` checksum `18665`, library returned `{checksum}`"
+                );
+            }
+        }
+        {
+            var checksum =
+                _UniFFILib.uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect();
+            if (checksum != 22054)
+            {
+                throw new UniffiContractChecksumException(
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect` checksum `22054`, library returned `{checksum}`"
                 );
             }
         }
@@ -8618,6 +8637,22 @@ public interface IWebSocketClient
     bool IsConnected();
 
     /// <summary>
+    /// The last disconnect: who closed the connection and whether a
+    /// reconnect follows. None before the first one (#293).
+    ///
+    /// Set before `on_disconnected` is called, so a listener reads the
+    /// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+    /// `disconnect()` returning keep it, so it is a record of the last
+    /// disconnect, not the connection state — ask `is_connected()` for that.
+    /// A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+    /// that started the reconnect. Should two connections overlap (a
+    /// `disconnect()` from a listener, then `connect()` from another thread
+    /// before that listener returns), it is the disconnect handed to
+    /// `on_disconnected` last.
+    /// </summary>
+    DisconnectInfo? LastDisconnect();
+
+    /// <summary>
     /// Measure the round trip to the server: send a ping, wait for its pong,
     /// and return the time between the two in milliseconds.
     ///
@@ -8949,6 +8984,35 @@ public class WebSocketClient : IWebSocketClient, IDisposable
                 _UniffiHelpers.RustCall(
                     (ref UniffiRustCallStatus _status) =>
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(
+                            thisPtr,
+                            ref _status
+                        )
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// The last disconnect: who closed the connection and whether a
+    /// reconnect follows. None before the first one (#293).
+    ///
+    /// Set before `on_disconnected` is called, so a listener reads the
+    /// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+    /// `disconnect()` returning keep it, so it is a record of the last
+    /// disconnect, not the connection state — ask `is_connected()` for that.
+    /// A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+    /// that started the reconnect. Should two connections overlap (a
+    /// `disconnect()` from a listener, then `connect()` from another thread
+    /// before that listener returns), it is the disconnect handed to
+    /// `on_disconnected` last.
+    /// </summary>
+    public DisconnectInfo? LastDisconnect()
+    {
+        return CallWithPointer(thisPtr =>
+            FfiConverterOptionalTypeDisconnectInfo.INSTANCE.Lift(
+                _UniffiHelpers.RustCall(
+                    (ref UniffiRustCallStatus _status) =>
+                        _UniFFILib.uniffi_marketdata_uniffi_fn_method_websocketclient_last_disconnect(
                             thisPtr,
                             ref _status
                         )
@@ -10543,6 +10607,82 @@ class FfiConverterTypeCredentialsRecord : FfiConverterRustBuffer<CredentialsReco
         FfiConverterOptionalString.INSTANCE.Write(value.@apiKey, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@bearerToken, stream);
         FfiConverterOptionalString.INSTANCE.Write(value.@sdkToken, stream);
+    }
+}
+
+/// <summary>
+/// The last disconnect of a client: who closed the connection and whether a
+/// reconnect follows. Read it with `WebSocketClient::last_disconnect()`
+/// (#293).
+/// </summary>
+/// <param name="code">
+/// WebSocket close code, or none when the connection ended without one
+/// (transport error, EOF, heartbeat timeout, or a server Close frame
+/// without a code).
+/// </param>
+/// <param name="reason">
+/// Close reason (may be empty).
+/// </param>
+/// <param name="intent">
+/// Who closed the connection.
+/// </param>
+/// <param name="will_reconnect">
+/// The `will_reconnect` of the matching `on_disconnected`: true if a
+/// reconnect follows (unless `disconnect()` is called first), false if
+/// this connection is over.
+/// </param>
+public record DisconnectInfo(
+    /// <summary>
+    /// WebSocket close code, or none when the connection ended without one
+    /// (transport error, EOF, heartbeat timeout, or a server Close frame
+    /// without a code).
+    /// </summary>
+    ushort? @code,
+    /// <summary>
+    /// Close reason (may be empty).
+    /// </summary>
+    string @reason,
+    /// <summary>
+    /// Who closed the connection.
+    /// </summary>
+    DisconnectIntent @intent,
+    /// <summary>
+    /// The `will_reconnect` of the matching `on_disconnected`: true if a
+    /// reconnect follows (unless `disconnect()` is called first), false if
+    /// this connection is over.
+    /// </summary>
+    bool @willReconnect
+) { }
+
+class FfiConverterTypeDisconnectInfo : FfiConverterRustBuffer<DisconnectInfo>
+{
+    public static FfiConverterTypeDisconnectInfo INSTANCE = new FfiConverterTypeDisconnectInfo();
+
+    public override DisconnectInfo Read(BigEndianStream stream)
+    {
+        return new DisconnectInfo(
+            @code: FfiConverterOptionalUInt16.INSTANCE.Read(stream),
+            @reason: FfiConverterString.INSTANCE.Read(stream),
+            @intent: FfiConverterTypeDisconnectIntent.INSTANCE.Read(stream),
+            @willReconnect: FfiConverterBoolean.INSTANCE.Read(stream)
+        );
+    }
+
+    public override int AllocationSize(DisconnectInfo value)
+    {
+        return 0
+            + FfiConverterOptionalUInt16.INSTANCE.AllocationSize(value.@code)
+            + FfiConverterString.INSTANCE.AllocationSize(value.@reason)
+            + FfiConverterTypeDisconnectIntent.INSTANCE.AllocationSize(value.@intent)
+            + FfiConverterBoolean.INSTANCE.AllocationSize(value.@willReconnect);
+    }
+
+    public override void Write(DisconnectInfo value, BigEndianStream stream)
+    {
+        FfiConverterOptionalUInt16.INSTANCE.Write(value.@code, stream);
+        FfiConverterString.INSTANCE.Write(value.@reason, stream);
+        FfiConverterTypeDisconnectIntent.INSTANCE.Write(value.@intent, stream);
+        FfiConverterBoolean.INSTANCE.Write(value.@willReconnect, stream);
     }
 }
 
@@ -12190,6 +12330,61 @@ class FfiConverterTypeCredentialKind : FfiConverterRustBuffer<CredentialKind>
 }
 
 /// <summary>
+/// Who closed the connection, in a [`DisconnectInfo`] (#293).
+/// </summary>
+public enum DisconnectIntent : int
+{
+    /// <summary>
+    /// Your `disconnect()`.
+    /// </summary>
+    Client,
+
+    /// <summary>
+    /// The server's Close frame, whatever its code.
+    /// </summary>
+    Server,
+
+    /// <summary>
+    /// Transport error, EOF without a Close frame, or heartbeat timeout.
+    /// </summary>
+    Network,
+}
+
+class FfiConverterTypeDisconnectIntent : FfiConverterRustBuffer<DisconnectIntent>
+{
+    public static FfiConverterTypeDisconnectIntent INSTANCE =
+        new FfiConverterTypeDisconnectIntent();
+
+    public override DisconnectIntent Read(BigEndianStream stream)
+    {
+        var value = stream.ReadInt() - 1;
+        if (Enum.IsDefined(typeof(DisconnectIntent), value))
+        {
+            return (DisconnectIntent)value;
+        }
+        else
+        {
+            throw new InternalException(
+                String.Format(
+                    "invalid enum value '{0}' in FfiConverterTypeDisconnectIntent.Read()",
+                    value
+                )
+            );
+        }
+    }
+
+    public override int AllocationSize(DisconnectIntent value)
+    {
+        return 4;
+    }
+
+    public override void Write(DisconnectIntent value, BigEndianStream stream)
+    {
+        stream.WriteInt((int)value + 1);
+    }
+}
+
+/// <summary>
 /// Coarse-grained classification of the source of a [`MarketDataError`].
 ///
 /// Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -13211,6 +13406,47 @@ class FfiConverterOptionalTypeCorporateActionsParams
                 (CorporateActionsParams)value,
                 stream
             );
+        }
+    }
+}
+
+class FfiConverterOptionalTypeDisconnectInfo : FfiConverterRustBuffer<DisconnectInfo?>
+{
+    public static FfiConverterOptionalTypeDisconnectInfo INSTANCE =
+        new FfiConverterOptionalTypeDisconnectInfo();
+
+    public override DisconnectInfo? Read(BigEndianStream stream)
+    {
+        if (stream.ReadByte() == 0)
+        {
+            return null;
+        }
+        return FfiConverterTypeDisconnectInfo.INSTANCE.Read(stream);
+    }
+
+    public override int AllocationSize(DisconnectInfo? value)
+    {
+        if (value == null)
+        {
+            return 1;
+        }
+        else
+        {
+            return 1
+                + FfiConverterTypeDisconnectInfo.INSTANCE.AllocationSize((DisconnectInfo)value);
+        }
+    }
+
+    public override void Write(DisconnectInfo? value, BigEndianStream stream)
+    {
+        if (value == null)
+        {
+            stream.WriteByte(0);
+        }
+        else
+        {
+            stream.WriteByte(1);
+            FfiConverterTypeDisconnectInfo.INSTANCE.Write((DisconnectInfo)value, stream);
         }
     }
 }

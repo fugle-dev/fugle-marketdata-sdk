@@ -559,6 +559,19 @@ namespace FugleMarketData
         public ulong MessagesDroppedTotal => _inner.MessagesDroppedTotal();
 
         /// <summary>
+        /// The last disconnect: who closed the connection
+        /// (<see cref="uniffi.marketdata_uniffi.DisconnectIntent"/>) and whether a
+        /// reconnect follows. Null before the first one.
+        /// Set before <see cref="IWebSocketListener.OnDisconnected"/> is called, so a
+        /// listener reads the disconnect it is handling. Never cleared: connecting,
+        /// a reconnect and <see cref="DisconnectAsync"/> keep it, so it is a record
+        /// of the last disconnect, not the connection state. A reconnect given up
+        /// (<see cref="IWebSocketListener.OnReconnectFailed"/>) leaves it at the drop
+        /// that started the reconnect.
+        /// </summary>
+        public uniffi.marketdata_uniffi.DisconnectInfo? LastDisconnect => _inner.LastDisconnect();
+
+        /// <summary>
         /// Send a ping message to the server. Fire-and-forget: the task
         /// completes once the ping is sent, and the pong (if any) arrives
         /// later via the message callback. See <see cref="MeasureLatencyAsync"/>

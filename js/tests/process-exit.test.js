@@ -195,7 +195,7 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
 
     expectChild(result, () => {
       expect(result).toMatchObject({ exited: true, code: 0 });
-      expect(result.lines).toEqual(['DISCONNECT {"code":1000,"reason":"Normal closure"}']);
+      expect(result.lines).toEqual(['DISCONNECT {"code":1000,"reason":"Normal closure","intent":"client","willReconnect":false}']);
     });
   });
 
@@ -219,7 +219,7 @@ describe.each(PRODUCTS)('%s process lifetime (#30)', (product) => {
 
     expectChild(result, () => {
       expect(result).toMatchObject({ exited: true, code: 0 });
-      expect(result.lines).toContain('DISCONNECT {"code":1001,"reason":"going away"}');
+      expect(result.lines).toContain('DISCONNECT {"code":1001,"reason":"going away","intent":"server","willReconnect":false}');
     });
   });
 

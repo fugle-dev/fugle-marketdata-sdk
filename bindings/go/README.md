@@ -455,6 +455,10 @@ Errors() <-chan error              // Receive errors
 
 // Message queue
 MessagesDroppedTotal() uint64      // Messages dropped this connection (see below)
+// Last disconnect: Code, Reason, Intent (DisconnectIntentClient / Server / Network),
+// WillReconnect; nil before the first. Once Messages() is closed, this says why
+// (call it before Close(), which destroys the client).
+LastDisconnect() *DisconnectInfo
 
 // Ping is fire-and-forget; the pong (if any) arrives via Messages()
 Ping(state *string) error

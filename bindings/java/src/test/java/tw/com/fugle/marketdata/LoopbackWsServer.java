@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -22,11 +24,14 @@ import java.util.regex.Pattern;
  * client. Each text frame from the client goes to {@code replies}, whose
  * result is sent back as text frames in order; pings are answered and a
  * Close is echoed. {@link #dropConnections()} cuts the open connections
- * without a Close frame.
+ * without a Close frame; {@link #closeConnections(int, String)} closes them
+ * with one.
  */
 final class LoopbackWsServer implements AutoCloseable {
     private final ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
     private final List<Socket> clients = new CopyOnWriteArrayList<>();
+    /** Connections {@link #closeConnections} sent a Close on: their client's Close is not answered. */
+    private final Set<Socket> serverClosed = ConcurrentHashMap.newKeySet();
     private final Function<String, List<String>> replies;
 
     LoopbackWsServer(Function<String, List<String>> replies) throws IOException {
@@ -79,7 +84,9 @@ final class LoopbackWsServer implements AutoCloseable {
                 }
                 int opcode = b0 & 0x0f;
                 if (opcode == 0x8) {
-                    writeFrame(out, 0x8, payload);
+                    if (!serverClosed.contains(client)) {
+                        writeFrame(out, 0x8, payload);
+                    }
                     return;
                 }
                 if (opcode == 0x9) {
@@ -138,6 +145,19 @@ final class LoopbackWsServer implements AutoCloseable {
         frame.write(payload);
         out.write(frame.toByteArray());
         out.flush();
+    }
+
+    /** Close every open connection from the server with a Close frame. */
+    void closeConnections(int code, String reason) throws IOException {
+        byte[] text = reason.getBytes(StandardCharsets.UTF_8);
+        byte[] payload = new byte[2 + text.length];
+        payload[0] = (byte) (code >> 8);
+        payload[1] = (byte) code;
+        System.arraycopy(text, 0, payload, 2, text.length);
+        for (Socket c : clients) {
+            serverClosed.add(c);
+            writeFrame(c.getOutputStream(), 0x8, payload);
+        }
     }
 
     /** Cut every open connection at the transport, as a network failure would. */

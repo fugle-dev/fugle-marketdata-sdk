@@ -60,13 +60,16 @@ func TestWebSocketAuthFrame_CredentialInItsField(t *testing.T) {
 // authFrameServer is a loopback WebSocket server on the standard library
 // alone: it records the `data` of every auth frame and acks it, and records
 // every other text frame as is. dropConnections cuts the open connections
-// without a Close frame.
+// without a Close frame; closeConnections closes them with one.
 type authFrameServer struct {
 	srv    *httptest.Server
 	mu     sync.Mutex
 	auth   []map[string]any
 	others []string
 	conns  []net.Conn
+	// closed holds the connections closeConnections sent a Close on, so the
+	// client's answering Close is not answered again.
+	closed map[net.Conn]bool
 	// ackSubscribes answers each single-symbol subscribe with a subscribed
 	// ack whose id is "id-<channel>-<symbol>[-ah]".
 	ackSubscribes bool
@@ -109,6 +112,25 @@ func (s *authFrameServer) dropConnections() {
 	}
 }
 
+// closeConnections sends a Close frame with code and reason on every open
+// connection: the client sees the server close it.
+func (s *authFrameServer) closeConnections(code uint16, reason string) {
+	s.mu.Lock()
+	conns := append([]net.Conn(nil), s.conns...)
+	if s.closed == nil {
+		s.closed = map[net.Conn]bool{}
+	}
+	for _, conn := range conns {
+		s.closed[conn] = true
+	}
+	s.mu.Unlock()
+	payload := binary.BigEndian.AppendUint16(nil, code)
+	payload = append(payload, reason...)
+	for _, conn := range conns {
+		_ = writeFrame(conn, 0x8, payload)
+	}
+}
+
 func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 	sum := sha1.Sum([]byte(r.Header.Get("Sec-WebSocket-Key") + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
 	conn, rw, err := w.(http.Hijacker).Hijack()
@@ -132,7 +154,12 @@ func (s *authFrameServer) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		switch opcode {
 		case 0x8: // close
-			_ = writeFrame(conn, 0x8, payload)
+			s.mu.Lock()
+			answered := s.closed[conn]
+			s.mu.Unlock()
+			if !answered {
+				_ = writeFrame(conn, 0x8, payload)
+			}
 			return
 		case 0x9: // ping
 			_ = writeFrame(conn, 0xA, payload)

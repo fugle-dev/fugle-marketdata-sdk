@@ -1183,6 +1183,15 @@ func uniffiCheckChecksums() {
 	}
 	{
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
+			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect()
+		})
+		if checksum != 22054 {
+			// If this happens try cleaning and rebuilding your project
+			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect: UniFFI API checksum mismatch")
+		}
+	}
+	{
+		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency()
 		})
 		if checksum != 53522 {
@@ -4481,6 +4490,19 @@ type WebSocketClientInterface interface {
 	// Reads core's connection state, so it is false while reconnecting and
 	// right after the connection drops, without waiting for the event thread.
 	IsConnected() bool
+	// The last disconnect: who closed the connection and whether a
+	// reconnect follows. None before the first one (#293).
+	//
+	// Set before `on_disconnected` is called, so a listener reads the
+	// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+	// `disconnect()` returning keep it, so it is a record of the last
+	// disconnect, not the connection state — ask `is_connected()` for that.
+	// A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+	// that started the reconnect. Should two connections overlap (a
+	// `disconnect()` from a listener, then `connect()` from another thread
+	// before that listener returns), it is the disconnect handed to
+	// `on_disconnected` last.
+	LastDisconnect() *DisconnectInfo
 	// Measure the round trip to the server: send a ping, wait for its pong,
 	// and return the time between the two in milliseconds.
 	//
@@ -4759,6 +4781,29 @@ func (_self *WebSocketClient) IsConnected() bool {
 	return FfiConverterBoolINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) C.int8_t {
 		return C.uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(
 			_pointer, _uniffiStatus)
+	}))
+}
+
+// The last disconnect: who closed the connection and whether a
+// reconnect follows. None before the first one (#293).
+//
+// Set before `on_disconnected` is called, so a listener reads the
+// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+// `disconnect()` returning keep it, so it is a record of the last
+// disconnect, not the connection state — ask `is_connected()` for that.
+// A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+// that started the reconnect. Should two connections overlap (a
+// `disconnect()` from a listener, then `connect()` from another thread
+// before that listener returns), it is the disconnect handed to
+// `on_disconnected` last.
+func (_self *WebSocketClient) LastDisconnect() *DisconnectInfo {
+	_pointer := _self.ffiObject.incrementPointer("*WebSocketClient")
+	defer _self.ffiObject.decrementPointer()
+	return FfiConverterOptionalDisconnectInfoINSTANCE.Lift(rustCall(func(_uniffiStatus *C.RustCallStatus) RustBufferI {
+		return GoRustBuffer{
+			inner: C.uniffi_marketdata_uniffi_fn_method_websocketclient_last_disconnect(
+				_pointer, _uniffiStatus),
+		}
 	}))
 }
 
@@ -5794,6 +5839,69 @@ func (c FfiConverterCredentialsRecord) Write(writer io.Writer, value Credentials
 type FfiDestroyerCredentialsRecord struct{}
 
 func (_ FfiDestroyerCredentialsRecord) Destroy(value CredentialsRecord) {
+	value.Destroy()
+}
+
+// The last disconnect of a client: who closed the connection and whether a
+// reconnect follows. Read it with `WebSocketClient::last_disconnect()`
+// (#293).
+type DisconnectInfo struct {
+	// WebSocket close code, or none when the connection ended without one
+	// (transport error, EOF, heartbeat timeout, or a server Close frame
+	// without a code).
+	Code *uint16
+	// Close reason (may be empty).
+	Reason string
+	// Who closed the connection.
+	Intent DisconnectIntent
+	// The `will_reconnect` of the matching `on_disconnected`: true if a
+	// reconnect follows (unless `disconnect()` is called first), false if
+	// this connection is over.
+	WillReconnect bool
+}
+
+func (r *DisconnectInfo) Destroy() {
+	FfiDestroyerOptionalUint16{}.Destroy(r.Code)
+	FfiDestroyerString{}.Destroy(r.Reason)
+	FfiDestroyerDisconnectIntent{}.Destroy(r.Intent)
+	FfiDestroyerBool{}.Destroy(r.WillReconnect)
+}
+
+type FfiConverterDisconnectInfo struct{}
+
+var FfiConverterDisconnectInfoINSTANCE = FfiConverterDisconnectInfo{}
+
+func (c FfiConverterDisconnectInfo) Lift(rb RustBufferI) DisconnectInfo {
+	return LiftFromRustBuffer[DisconnectInfo](c, rb)
+}
+
+func (c FfiConverterDisconnectInfo) Read(reader io.Reader) DisconnectInfo {
+	return DisconnectInfo{
+		FfiConverterOptionalUint16INSTANCE.Read(reader),
+		FfiConverterStringINSTANCE.Read(reader),
+		FfiConverterDisconnectIntentINSTANCE.Read(reader),
+		FfiConverterBoolINSTANCE.Read(reader),
+	}
+}
+
+func (c FfiConverterDisconnectInfo) Lower(value DisconnectInfo) C.RustBuffer {
+	return LowerIntoRustBuffer[DisconnectInfo](c, value)
+}
+
+func (c FfiConverterDisconnectInfo) LowerExternal(value DisconnectInfo) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[DisconnectInfo](c, value))
+}
+
+func (c FfiConverterDisconnectInfo) Write(writer io.Writer, value DisconnectInfo) {
+	FfiConverterOptionalUint16INSTANCE.Write(writer, value.Code)
+	FfiConverterStringINSTANCE.Write(writer, value.Reason)
+	FfiConverterDisconnectIntentINSTANCE.Write(writer, value.Intent)
+	FfiConverterBoolINSTANCE.Write(writer, value.WillReconnect)
+}
+
+type FfiDestroyerDisconnectInfo struct{}
+
+func (_ FfiDestroyerDisconnectInfo) Destroy(value DisconnectInfo) {
 	value.Destroy()
 }
 
@@ -7216,6 +7324,47 @@ type FfiDestroyerCredentialKind struct{}
 func (_ FfiDestroyerCredentialKind) Destroy(value CredentialKind) {
 }
 
+// Who closed the connection, in a [`DisconnectInfo`] (#293).
+type DisconnectIntent uint
+
+const (
+	// Your `disconnect()`.
+	DisconnectIntentClient DisconnectIntent = 1
+	// The server's Close frame, whatever its code.
+	DisconnectIntentServer DisconnectIntent = 2
+	// Transport error, EOF without a Close frame, or heartbeat timeout.
+	DisconnectIntentNetwork DisconnectIntent = 3
+)
+
+type FfiConverterDisconnectIntent struct{}
+
+var FfiConverterDisconnectIntentINSTANCE = FfiConverterDisconnectIntent{}
+
+func (c FfiConverterDisconnectIntent) Lift(rb RustBufferI) DisconnectIntent {
+	return LiftFromRustBuffer[DisconnectIntent](c, rb)
+}
+
+func (c FfiConverterDisconnectIntent) Lower(value DisconnectIntent) C.RustBuffer {
+	return LowerIntoRustBuffer[DisconnectIntent](c, value)
+}
+
+func (c FfiConverterDisconnectIntent) LowerExternal(value DisconnectIntent) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[DisconnectIntent](c, value))
+}
+func (FfiConverterDisconnectIntent) Read(reader io.Reader) DisconnectIntent {
+	id := readInt32(reader)
+	return DisconnectIntent(id)
+}
+
+func (FfiConverterDisconnectIntent) Write(writer io.Writer, value DisconnectIntent) {
+	writeInt32(writer, int32(value))
+}
+
+type FfiDestroyerDisconnectIntent struct{}
+
+func (_ FfiDestroyerDisconnectIntent) Destroy(value DisconnectIntent) {
+}
+
 // Coarse-grained classification of the source of a [`MarketDataError`].
 //
 // Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -8382,6 +8531,47 @@ type FfiDestroyerOptionalCorporateActionsParams struct{}
 func (_ FfiDestroyerOptionalCorporateActionsParams) Destroy(value *CorporateActionsParams) {
 	if value != nil {
 		FfiDestroyerCorporateActionsParams{}.Destroy(*value)
+	}
+}
+
+type FfiConverterOptionalDisconnectInfo struct{}
+
+var FfiConverterOptionalDisconnectInfoINSTANCE = FfiConverterOptionalDisconnectInfo{}
+
+func (c FfiConverterOptionalDisconnectInfo) Lift(rb RustBufferI) *DisconnectInfo {
+	return LiftFromRustBuffer[*DisconnectInfo](c, rb)
+}
+
+func (_ FfiConverterOptionalDisconnectInfo) Read(reader io.Reader) *DisconnectInfo {
+	if readInt8(reader) == 0 {
+		return nil
+	}
+	temp := FfiConverterDisconnectInfoINSTANCE.Read(reader)
+	return &temp
+}
+
+func (c FfiConverterOptionalDisconnectInfo) Lower(value *DisconnectInfo) C.RustBuffer {
+	return LowerIntoRustBuffer[*DisconnectInfo](c, value)
+}
+
+func (c FfiConverterOptionalDisconnectInfo) LowerExternal(value *DisconnectInfo) ExternalCRustBuffer {
+	return RustBufferFromC(LowerIntoRustBuffer[*DisconnectInfo](c, value))
+}
+
+func (_ FfiConverterOptionalDisconnectInfo) Write(writer io.Writer, value *DisconnectInfo) {
+	if value == nil {
+		writeInt8(writer, 0)
+	} else {
+		writeInt8(writer, 1)
+		FfiConverterDisconnectInfoINSTANCE.Write(writer, *value)
+	}
+}
+
+type FfiDestroyerOptionalDisconnectInfo struct{}
+
+func (_ FfiDestroyerOptionalDisconnectInfo) Destroy(value *DisconnectInfo) {
+	if value != nil {
+		FfiDestroyerDisconnectInfo{}.Destroy(*value)
 	}
 }
 

@@ -385,6 +385,19 @@ func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
 	return sc.client.MessagesDroppedTotal()
 }
 
+// LastDisconnect returns the last disconnect: who closed the connection
+// (DisconnectIntentClient, DisconnectIntentServer, DisconnectIntentNetwork)
+// and whether a reconnect follows. nil before the first one.
+//
+// Set before the listener hears of the disconnect, and never cleared:
+// Connect(), a reconnect and disconnecting keep it, so it is a record of the
+// last disconnect, not the connection state. A reconnect given up leaves it
+// at the drop that started the reconnect. Once Messages() is closed, this is
+// where to find why — read it before Close(), which destroys the client.
+func (sc *StreamingClient) LastDisconnect() *DisconnectInfo {
+	return sc.client.LastDisconnect()
+}
+
 // Ping sends a ping message to the server. Fire-and-forget: it returns once
 // the ping is sent, and the pong (if any) arrives later via Messages(). The
 // optional state string will be echoed back in the pong response. See

@@ -1705,7 +1705,8 @@ impl WebSocketClient {
 ///   console.log(msg);
 /// });
 /// ws.stock.on('connect', () => console.log('Stock WebSocket connected'));
-/// ws.stock.on('disconnect', (reason) => console.log('Disconnected:', reason));
+/// ws.stock.on('disconnect', ({ code, reason, intent, willReconnect }) =>
+///   console.log('Disconnected:', code, reason, intent, willReconnect));
 /// ws.stock.on('reconnect', (info) => console.log('Reconnecting:', info));
 /// ws.stock.on('error', (err) => console.error('Error:', err));
 ///
@@ -1773,7 +1774,8 @@ impl StockWebSocketClient {
     /// Arguments match `@fugle/marketdata` 1.x (#23): `message(data: string)`,
     /// `connect()` when the socket opens, `authenticated(data)` /
     /// `unauthenticated(data)` with the server's `data`,
-    /// `disconnect({ code, reason })`, `reconnect({ attempt })`, and
+    /// `disconnect({ code, reason, intent, willReconnect })` (`intent` and
+    /// `willReconnect` are 3.0 additions, #293), `reconnect({ attempt })`, and
     /// `error(Error)` with a numeric `code` when core supplied one. Without an
     /// `error` listener errors are ignored rather than thrown.
     ///
@@ -1791,7 +1793,9 @@ impl StockWebSocketClient {
     /// ```javascript
     /// ws.stock.on('message', (data) => console.log(data));
     /// ws.stock.on('connect', () => console.log('Connected'));
-    /// ws.stock.on('disconnect', ({ code, reason }) => console.log(code, reason));
+    /// ws.stock.on('disconnect', ({ code, reason, willReconnect }) => {
+    ///   if (!willReconnect) console.log('connection over:', code, reason);
+    /// });
     /// ws.stock.on('error', (err) => console.error(err.code, err.message));
     /// ```
     #[napi(
@@ -2871,7 +2875,7 @@ fn spawn_stream_reader(
                             Some(&ending),
                         );
                     }
-                    ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
+                    ConnectionEvent::Disconnected { code, reason, intent, will_reconnect } => {
                         reported = false;
                         lock_auth(&auth).last_auth = None;
                         if panic_reported.load(Ordering::SeqCst) {
@@ -2879,7 +2883,12 @@ fn spawn_stream_reader(
                             // that already reported its end (#25).
                             continue;
                         }
-                        let args = EventArgs::Json(serde_json::json!({ "code": code, "reason": reason }));
+                        let args = EventArgs::Json(serde_json::json!({
+                            "code": code,
+                            "reason": reason,
+                            "intent": intent.as_str(),
+                            "willReconnect": will_reconnect,
+                        }));
                         if will_reconnect {
                             sink.emit("disconnect", args);
                             continue;

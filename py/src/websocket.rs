@@ -533,6 +533,45 @@ impl Default for HealthCheckConfig {
     }
 }
 
+/// The last disconnect of a stream client: who closed the connection and
+/// whether a reconnect follows (#293). Read it from `last_disconnect`.
+///
+/// Attributes:
+///     code: WebSocket close code, or None when the connection ended without
+///         one (transport error, EOF, heartbeat timeout, or a server Close
+///         frame without a code)
+///     reason: Close reason (may be empty)
+///     intent: "client" (your disconnect()), "server" (the server's Close
+///         frame, any code) or "network" (transport error, EOF without a
+///         Close frame, heartbeat timeout)
+///     will_reconnect: True if a `reconnect` event follows (unless
+///         disconnect() is called first); False if this connection is over
+#[pyclass(frozen, eq, hash, get_all, skip_from_py_object)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DisconnectInfo {
+    code: Option<u16>,
+    reason: String,
+    intent: &'static str,
+    will_reconnect: bool,
+}
+
+#[pymethods]
+impl DisconnectInfo {
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let code = self.code.map_or_else(|| "None".to_string(), |code| code.to_string());
+        let reason = pyo3::types::PyString::new(py, &self.reason).repr()?;
+        let will_reconnect = if self.will_reconnect { "True" } else { "False" };
+        Ok(format!(
+            "DisconnectInfo(code={code}, reason={reason}, intent='{}', will_reconnect={will_reconnect})",
+            self.intent
+        ))
+    }
+}
+
+/// The last `DisconnectInfo`, written by the stream reader before the
+/// `disconnect` callbacks run, read by `last_disconnect` from any thread.
+type LastDisconnect = Arc<Mutex<Option<DisconnectInfo>>>;
+
 /// Python WebSocket client for Fugle market data streaming
 ///
 /// # Example (Python)
@@ -1132,6 +1171,7 @@ fn spawn_stream_reader(
     handoff: Arc<Handoff>,
     stop: Arc<AtomicBool>,
     delivered: Delivered,
+    last_disconnect: LastDisconnect,
     test_panic: Option<String>,
 ) -> PyResult<std::thread::JoinHandle<()>> {
     use crate::callback::EventType;
@@ -1158,7 +1198,9 @@ fn spawn_stream_reader(
                                 _ => {}
                             }
                             delivered.observe(&event);
-                            Python::attach(|py| forward_event(py, &callbacks, event));
+                            Python::attach(|py| {
+                                forward_event(py, &callbacks, &last_disconnect, event)
+                            });
                         }
                         StreamItem::Message(msg) if authenticated => {
                             handling.set("message");
@@ -1254,6 +1296,7 @@ fn inject_test_panic(_site: Option<&str>, _here: &str) {}
 fn forward_event(
     py: Python<'_>,
     callbacks: &CallbackRegistry,
+    last_disconnect: &Mutex<Option<DisconnectInfo>>,
     event: marketdata_core::websocket::ConnectionEvent,
 ) {
     use marketdata_core::websocket::ConnectionEvent;
@@ -1263,7 +1306,12 @@ fn forward_event(
         ConnectionEvent::Unauthenticated { data, .. } => {
             callbacks.invoke_unauthenticated(py, &data)
         }
-        ConnectionEvent::Disconnected { code, reason, .. } => {
+        ConnectionEvent::Disconnected { code, reason, intent, will_reconnect } => {
+            // Before the callbacks, so one reading `last_disconnect` sees the
+            // disconnect it is handling. The lock is released before any
+            // Python code runs.
+            *last_disconnect.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(DisconnectInfo { code, reason: reason.clone(), intent: intent.as_str(), will_reconnect });
             callbacks.invoke_disconnect(py, code, &reason)
         }
         ConnectionEvent::Reconnecting { attempt } => callbacks.invoke_reconnect(py, attempt),
@@ -1451,6 +1499,7 @@ struct AsyncConnect {
     state: Arc<Mutex<Option<WebSocketState>>>,
     parked_readers: Arc<ParkedReaders>,
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    last_disconnect: LastDisconnect,
     reconnect_conflict: marketdata_core::ReconnectConflictHandle,
     connect_gate: ConnectGate,
     pending: PendingSlot,
@@ -1469,6 +1518,7 @@ impl AsyncConnect {
             state,
             parked_readers,
             messages_dropped,
+            last_disconnect,
             reconnect_conflict,
             connect_gate,
             pending,
@@ -1500,6 +1550,7 @@ impl AsyncConnect {
             Arc::clone(&handoff),
             Arc::clone(&stop),
             delivered.clone(),
+            last_disconnect,
             test_panic,
         )?;
 
@@ -1721,6 +1772,9 @@ pub struct ProductClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
+    /// The last disconnect of any of this client's connections; never
+    /// cleared, so it outlives `disconnect()` and a reconnect (#293).
+    last_disconnect: LastDisconnect,
     /// Carries a close made soon after an automatic reconnect to the next
     /// `connect()`, whose core client is a new one, for the 3006 warning
     /// (#226, #242).
@@ -1766,6 +1820,7 @@ impl ProductClient {
             message_queue,
             auth_timeout,
             messages_dropped: Arc::new(Mutex::new(None)),
+            last_disconnect: Arc::new(Mutex::new(None)),
             reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
             closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
@@ -1817,6 +1872,7 @@ impl ProductClient {
             state: Arc::clone(&self.state),
             parked_readers: Arc::clone(&self.parked_readers),
             messages_dropped: Arc::clone(&self.messages_dropped),
+            last_disconnect: Arc::clone(&self.last_disconnect),
             reconnect_conflict: self.reconnect_conflict.clone(),
             connect_gate: self.connect_gate.clone(),
             pending: Arc::clone(&self.pending),
@@ -1875,6 +1931,7 @@ impl ProductClient {
             Arc::clone(&handoff),
             Arc::clone(&stop),
             delivered.clone(),
+            Arc::clone(&self.last_disconnect),
             test_panic,
         )?;
 
@@ -2059,6 +2116,10 @@ impl ProductClient {
             .unwrap_or(0)
     }
 
+    fn last_disconnect(&self) -> Option<DisconnectInfo> {
+        self.last_disconnect.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+
     fn messages(
         &self,
         py: Python<'_>,
@@ -2172,7 +2233,8 @@ impl StockWebSocketClient {
     ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
     ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
     ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
-    ///   - "disconnect" / "disconnected" / "close": Called when connection closed
+    ///   - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection
+    ///     closed; who closed it and whether a reconnect follows are in `last_disconnect`
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
     ///
@@ -2358,6 +2420,23 @@ impl StockWebSocketClient {
     #[pyo3(signature = ())]
     pub fn messages_dropped_total(&self) -> u64 {
         self.client.messages_dropped_total()
+    }
+
+    /// The last disconnect: who closed the connection and whether a reconnect
+    /// follows, as a `DisconnectInfo` (#293). None before the first one.
+    ///
+    /// Written before the `disconnect` callbacks run, so a callback reads the
+    /// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+    /// `disconnect()` returning keep it, so it is a record of the last
+    /// disconnect, not the connection state — ask `is_connected()` for that.
+    /// A reconnect given up (error 3005) leaves it at the drop that started
+    /// the reconnect. After a `messages()` iterator ends, this is where to
+    /// find why. Should two connections overlap (a `disconnect()` from a
+    /// callback, then `connect()` from another thread before that callback
+    /// returns), it is the disconnect handed to the callbacks last.
+    #[getter]
+    pub fn last_disconnect(&self) -> Option<DisconnectInfo> {
+        self.client.last_disconnect()
     }
 
     /// Get message iterator for consuming streaming data
@@ -2633,7 +2712,8 @@ impl FutOptWebSocketClient {
     ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
     ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
     ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
-    ///   - "disconnect" / "disconnected" / "close": Called when connection closed
+    ///   - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection
+    ///     closed; who closed it and whether a reconnect follows are in `last_disconnect`
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
     ///
@@ -2788,6 +2868,23 @@ impl FutOptWebSocketClient {
     #[pyo3(signature = ())]
     pub fn messages_dropped_total(&self) -> u64 {
         self.client.messages_dropped_total()
+    }
+
+    /// The last disconnect: who closed the connection and whether a reconnect
+    /// follows, as a `DisconnectInfo` (#293). None before the first one.
+    ///
+    /// Written before the `disconnect` callbacks run, so a callback reads the
+    /// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+    /// `disconnect()` returning keep it, so it is a record of the last
+    /// disconnect, not the connection state — ask `is_connected()` for that.
+    /// A reconnect given up (error 3005) leaves it at the drop that started
+    /// the reconnect. After a `messages()` iterator ends, this is where to
+    /// find why. Should two connections overlap (a `disconnect()` from a
+    /// callback, then `connect()` from another thread before that callback
+    /// returns), it is the disconnect handed to the callbacks last.
+    #[getter]
+    pub fn last_disconnect(&self) -> Option<DisconnectInfo> {
+        self.client.last_disconnect()
     }
 
     /// Get message iterator for consuming streaming data

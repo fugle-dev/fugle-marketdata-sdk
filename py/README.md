@@ -119,7 +119,8 @@ def on_connect():
     print("Connected!")
 
 def on_disconnect(code, reason):
-    print(f"Disconnected: {code} - {reason}")
+    info = ws.stock.last_disconnect  # who closed it, and whether a reconnect follows
+    print(f"Disconnected: {code} - {reason} ({info.intent}, will_reconnect={info.will_reconnect})")
 
 def on_error(message, code):
     print(f"Error [{code}]: {message}")
@@ -228,6 +229,12 @@ When `connect()` follows, within 30 seconds, a `disconnect()` that closed a
 connection auto-reconnect restored less than 30 seconds earlier, the SDK
 issues a `RuntimeWarning` (once per client) pointing at this. A
 `disconnect()` with no `connect()` after it is not warned about.
+
+To tell whether the SDK will reconnect after a `disconnect`, read
+`ws.stock.last_disconnect.will_reconnect` in the callback rather than the
+close code (#293): `True` means a `reconnect` follows, `False` that the
+connection is over. A reconnect that gives up ends with an `error` of code
+3005, not another `disconnect`.
 
 ### Health Check Config
 
@@ -425,6 +432,23 @@ async with ws.futopt as client:            # connect_async() on entry, disconnec
 | `disconnect` | `fn(code: int, reason: str)` | Connection closed |
 | `error` | `fn(err: WebSocketError)` | Error occurred (`err.args == (message, code)`) |
 | `messages_dropped` | `fn(dropped: int, total: int)` | Messages dropped because you fell behind (at most once per second, and before `disconnect`) |
+
+`disconnect`'s `code` is `None` when the connection ended without one. The
+rest of the story is `ws.stock.last_disconnect` / `ws.futopt.last_disconnect`
+(#293), a `DisconnectInfo` or `None` before the first disconnect:
+
+| Attribute | Value |
+|-----------|-------|
+| `code` | `int` or `None`, as passed to `disconnect` |
+| `reason` | `str`, as passed to `disconnect` |
+| `intent` | `"client"` (your `disconnect()`), `"server"` (the server's Close frame, any code) or `"network"` (transport error, EOF without a Close frame, heartbeat timeout) |
+| `will_reconnect` | `True` if a `reconnect` follows (unless you call `disconnect()` first), `False` if the connection is over |
+
+It is set before the `disconnect` callbacks run, so a callback reads the
+disconnect it is handling, and it is never cleared: it is a record of the last
+disconnect, not the connection state (ask `is_connected()` for that). After a
+`messages()` iterator ends, it tells you why. A reconnect that gives up
+(`error` 3005) leaves it at the drop that started the reconnect.
 
 #### Raw Messages
 

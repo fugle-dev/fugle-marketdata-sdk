@@ -784,12 +784,26 @@ export interface WebSocketAuthData {
   [key: string]: unknown;
 }
 
+/**
+ * Who closed the connection: `'client'` = your `disconnect()`; `'server'` =
+ * the server's Close frame (any code); `'network'` = transport error, EOF
+ * without a Close frame, or heartbeat timeout.
+ */
+export type WebSocketDisconnectIntent = 'client' | 'server' | 'network';
+
 /** Argument of the `disconnect` event. */
 export interface WebSocketDisconnectEvent {
   /** WebSocket close code, or `null` when the connection ended without one */
   code: number | null;
   /** Close reason */
   reason: string;
+  /** Who closed the connection */
+  intent: WebSocketDisconnectIntent;
+  /**
+   * `true`: a `reconnect` event follows (unless you call `disconnect()`
+   * first); `false`: this connection is over.
+   */
+  willReconnect: boolean;
 }
 
 /** Argument of the `reconnect` event. */
@@ -2525,7 +2539,8 @@ export declare class StockTechnicalClient {
  *   console.log(msg);
  * });
  * ws.stock.on('connect', () => console.log('Stock WebSocket connected'));
- * ws.stock.on('disconnect', (reason) => console.log('Disconnected:', reason));
+ * ws.stock.on('disconnect', ({ code, reason, intent, willReconnect }) =>
+ *   console.log('Disconnected:', code, reason, intent, willReconnect));
  * ws.stock.on('reconnect', (info) => console.log('Reconnecting:', info));
  * ws.stock.on('error', (err) => console.error('Error:', err));
  *
@@ -2544,7 +2559,8 @@ export declare class StockWebSocketClient {
    * Arguments match `@fugle/marketdata` 1.x (#23): `message(data: string)`,
    * `connect()` when the socket opens, `authenticated(data)` /
    * `unauthenticated(data)` with the server's `data`,
-   * `disconnect({ code, reason })`, `reconnect({ attempt })`, and
+   * `disconnect({ code, reason, intent, willReconnect })` (`intent` and
+   * `willReconnect` are 3.0 additions, #293), `reconnect({ attempt })`, and
    * `error(Error)` with a numeric `code` when core supplied one. Without an
    * `error` listener errors are ignored rather than thrown.
    *
@@ -2562,7 +2578,9 @@ export declare class StockWebSocketClient {
    * ```javascript
    * ws.stock.on('message', (data) => console.log(data));
    * ws.stock.on('connect', () => console.log('Connected'));
-   * ws.stock.on('disconnect', ({ code, reason }) => console.log(code, reason));
+   * ws.stock.on('disconnect', ({ code, reason, willReconnect }) => {
+   *   if (!willReconnect) console.log('connection over:', code, reason);
+   * });
    * ws.stock.on('error', (err) => console.error(err.code, err.message));
    * ```
    */
