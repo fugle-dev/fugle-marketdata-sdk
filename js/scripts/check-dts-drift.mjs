@@ -303,6 +303,7 @@ const INTENTIONALLY_UNMAPPED = {
   InstitutionalTradesParams: 'request param type, not a core response struct',
   ReconnectOptions: 'client config type, not a core response struct',
   RestClientOptions: 'client config type, not a core response struct',
+  Credentials: 'setCredentials() argument, not a core response struct',
   StockIntradayQuoteParams: 'request param type, not a core response struct',
   StreamingVersionOptions: 'client config type, not a core response struct',
   TdccDistributionParams: 'request param type, not a core response struct',
