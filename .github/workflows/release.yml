@@ -283,6 +283,10 @@ jobs:
           done
           for w in dist/*.whl; do
             [[ "$(basename "$w")" == fugle_marketdata-${PY_VERSION}-* ]] || { echo "::error::$w is not version $PY_VERSION"; exit 1; }
+            names=$(unzip -Z1 "$w")
+            for lic in LICENSE-MIT LICENSE-APACHE; do
+              grep -qx "fugle_marketdata-${PY_VERSION}.dist-info/licenses/$lic" <<<"$names" || { echo "::error::$w is missing dist-info/licenses/$lic"; exit 1; }
+            done
           done
           echo "| Wheel |" >> "$GITHUB_STEP_SUMMARY"; echo "|---|" >> "$GITHUB_STEP_SUMMARY"
           for w in dist/*.whl; do echo "| $(basename "$w") |" >> "$GITHUB_STEP_SUMMARY"; done

@@ -31,8 +31,8 @@ package, jump to section 2.
 This SDK aims to be a near drop-in replacement for the original Fugle market
 data SDKs:
 
-- **`fugle-marketdata`** (PyPI, currently 2.4.1) — pure-Python implementation
-- **`@fugle/marketdata`** (npm, currently 1.4.2) — pure-JS implementation
+- **`fugle-marketdata`** (PyPI, last release 2.7.0) — pure-Python implementation
+- **`@fugle/marketdata`** (npm, last release 1.7.0) — pure-JS implementation
 
 The biggest change is that this SDK is built on a shared **Rust core** with
 PyO3 + napi-rs bindings, so you get a single behaviour across languages and
@@ -781,6 +781,72 @@ takes, so a typo fails at the call instead of returning default data:
 
 A getter or Proxy trap that throws while an argument is read throws its own
 error, synchronously, as before.
+
+#### 19. The legacy clients' plumbing is gone: `get_client()`, `request()`, `options`
+
+The 2.x / 1.x factories and product clients exposed the pieces they were
+built from. 3.0 builds them in the Rust core, so these members do not exist
+and using one raises `AttributeError` (Python) or `TypeError: … is not a
+function` / `undefined` (Node). In Node 1.7.0 they were not public API —
+`getClient` is `private` and `options` / `request` are `protected` in its
+TypeScript types — so only plain JavaScript could reach them at run time:
+
+| Legacy member | Python 2.7.0 | Node 1.7.0 | In 3.0 |
+|---|---|---|---|
+| `get_client('stock' \| 'futopt')` / `getClient(...)` on `RestClient` and `WebSocketClient` | public | TS-private; JS run time only | the `.stock` / `.futopt` properties (see below) |
+| Generic `request(path, **params)` / `request(endpoint, params)` | public, on each endpoint group: `stock.{intraday,historical,snapshot,technical,ownership,corporate_actions}`, `futopt.{intraday,historical}` | TS-protected, on the product clients `stock` / `futopt`; JS run time only | call the named method (`client.stock.intraday.quote(symbol="2330")`); see below for endpoints without one |
+| `options` on `RestClient` / `WebSocketClient` | public | TS-protected; JS run time only | not exposed — keep the options you passed to the constructor |
+| `config` (Py) / `options` (Node) on the product clients `stock` / `futopt` | public; also `config` on each endpoint group | TS-protected; JS run time only | not exposed |
+
+`get_client()` returned one cached client per product. In 3.0, take
+`ws.stock` once and keep it in a variable rather than reading the property
+again for each call:
+
+```python
+stock = ws.stock          # once
+stock.on("message", handle)
+stock.connect()
+stock.subscribe({"channel": "trades", "symbol": "2330"})
+```
+
+Until [#306](https://github.com/fugle-dev/fugle-marketdata-sdk/issues/306), each read of a Python `ws.stock` / `ws.futopt` builds a new
+client object, so `ws.stock.on(...)` followed by `ws.stock.connect()` talks to
+two different clients; after #306 every read returns the same one. Keeping the
+variable works either way.
+
+Every endpoint the 2.7.0 / 1.7.0 clients had a method for has one in 3.0,
+with the same name. `request()` was only needed for a path the SDK had no
+method for. 3.0 has no generic escape hatch for that; call the REST API
+directly with the same credentials header:
+
+```python
+# Legacy
+client.stock.intraday.request("intraday/quote/2330", type="oddlot")
+
+# This SDK
+client.stock.intraday.quote(symbol="2330", type="oddlot")
+
+# A path 3.0 has no method for: plain HTTP
+import requests
+requests.get(
+    "https://api.fugle.tw/marketdata/v1.0/stock/<path>",
+    headers={"X-API-KEY": api_key},  # or Authorization: Bearer / X-SDK-TOKEN
+    params={...},
+).json()
+```
+
+```js
+// Legacy
+await client.stock.request('intraday/quote/2330', { type: 'oddlot' });
+
+// This SDK
+await client.stock.intraday.quote({ symbol: '2330', type: 'oddlot' });
+```
+
+The legacy `request()` returned the parsed body; 2.x raised `FugleAPIError`
+on HTTP ≥ 400, while 1.x resolved with the error body. The named methods
+behave as described in [§6](#6-python-exception-hierarchy-is-finer-grained)
+and [§8](#8-node-rest-rejects-on-http-errors-instead-of-resolving-the-error-body).
 
 ### New things the legacy SDKs did not have
 

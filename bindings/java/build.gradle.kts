@@ -18,10 +18,15 @@ publishing {
                 description.set("UniFFI-generated Java bindings for Fugle Market Data SDK")
                 url.set("https://github.com/fugle-dev/fugle-marketdata-sdk")
 
+                // Dual-licensed: MIT OR Apache-2.0, at the user's option.
                 licenses {
                     license {
                         name.set("MIT License")
                         url.set("https://opensource.org/licenses/MIT")
+                    }
+                    license {
+                        name.set("Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
                     }
                 }
 

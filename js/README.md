@@ -511,4 +511,4 @@ client uses the OS trust store (rustls loads it via
 
 ## License
 
-MIT
+Licensed under either of [MIT](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/LICENSE-APACHE), at your option.

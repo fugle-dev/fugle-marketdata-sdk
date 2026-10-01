@@ -457,4 +457,4 @@ Parse with your language's JSON library (e.g., `Jackson` for Java, `encoding/jso
 
 ## License
 
-MIT
+Licensed under either of [MIT](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/LICENSE-APACHE), at your option.
