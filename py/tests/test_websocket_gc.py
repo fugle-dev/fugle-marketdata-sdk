@@ -72,6 +72,26 @@ def test_closure_over_client_is_collected(product_case):
 
 
 @pytest.mark.parametrize("product_case", PRODUCTS)
+def test_closure_over_local_ws_only_is_collected(product_case):
+    # The cycle as reported: nothing but the closure over `ws` leads back
+    # to the client.
+    product, _ = product_case
+
+    def register():
+        ws = WebSocketClient(api_key="test-key")
+
+        def on_message(msg):
+            return ws, msg
+
+        getattr(ws, product).on("message", on_message)
+        return weakref.ref(on_message)
+
+    callback = register()
+    gc.collect()
+    assert callback() is None
+
+
+@pytest.mark.parametrize("product_case", PRODUCTS)
 def test_closure_over_client_is_freed_after_off(product_case):
     # Not the cycle itself: `off()` still lets go of the callback, which
     # reference counting then frees.
@@ -136,7 +156,6 @@ def test_connected_client_keeps_calling_its_callbacks(product_case):
         callback().client.disconnect()
         gc.collect()
         assert callback() is None
-
 
 
 # A deadlock here holds the GIL, which no in-process timeout gets past.

@@ -2029,6 +2029,12 @@ impl ProductClient {
     /// as with no cycle. Only Python code (`connect()`) adds a holder, which
     /// a client the GC found unreachable cannot run — but for a finalizer,
     /// between `traverse` and `clear`: `clear` then leaves the callbacks.
+    ///
+    /// That holds as long as `self.callbacks` is cloned only on a thread
+    /// attached to Python (now `async_connect` and `connect`), and no Python
+    /// code runs while its write lock is held. Otherwise the count, or a
+    /// `try_read`, could change between the passes of one collection, and
+    /// callbacks still in use could be cleared without a word.
     fn callbacks_unshared(&self) -> bool {
         Arc::strong_count(&self.callbacks) == 1
     }
