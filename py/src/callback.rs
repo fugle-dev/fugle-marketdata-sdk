@@ -18,8 +18,9 @@ use pyo3::exceptions::{PyException, PyTypeError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::PyType;
+use pyo3::{PyTraverseError, PyVisit};
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 use std::time::Instant;
 
 /// Callbacks by event type.
@@ -197,6 +198,8 @@ impl CallbackRegistry {
             if matching.is_empty() {
                 return Ok(());
             }
+            // `matching` still holds what `retain` removes, and is dropped
+            // after the lock (#313).
             let mut callbacks = self.write();
             if let Some(handlers) = callbacks.get_mut(&event_type) {
                 handlers.retain(|callback| !matching.iter().any(|m| m.as_ptr() == callback.as_ptr()));
@@ -212,7 +215,10 @@ impl CallbackRegistry {
         if self.test_poison_lock.swap(false, std::sync::atomic::Ordering::SeqCst) {
             panic!("injected test panic at ws_callback_poison");
         }
-        callbacks.remove(&event_type);
+        let removed = callbacks.remove(&event_type);
+        // Dropped after the lock, as in `clear` (#313).
+        drop(callbacks);
+        drop(removed);
 
         Ok(())
     }
@@ -237,11 +243,29 @@ impl CallbackRegistry {
         Ok(matching)
     }
 
+    /// Show the GC the registered callbacks (#313).
+    ///
+    /// `__traverse__` must not block, so a lock held elsewhere skips them
+    /// this time: the GC then treats them as alive, which is safe.
+    pub fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        let callbacks = match self.callbacks.try_read() {
+            Ok(callbacks) => callbacks,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return Ok(()),
+        };
+        for callback in callbacks.values().flatten() {
+            visit.call(callback)?;
+        }
+        Ok(())
+    }
+
     /// Clear all registered callbacks
-    #[allow(dead_code)]
+    ///
+    /// They are dropped after the lock is released: dropping one can run
+    /// Python code — a finalizer — that calls `on()` or `off()` (#313).
     pub fn clear(&self) {
-        let mut callbacks = self.write();
-        callbacks.clear();
+        let callbacks = std::mem::take(&mut *self.write());
+        drop(callbacks);
     }
 
     /// Get number of callbacks registered for an event type
