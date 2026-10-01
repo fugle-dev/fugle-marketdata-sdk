@@ -1051,8 +1051,9 @@ fn read_connection<T>(slot: &ConnectionSlot, read: impl FnOnce(&ConnectionHandle
 /// Per-product streaming version selection.
 ///
 /// The official SDK takes a free-form map and validates at runtime; expressing
-/// it as a struct lets TypeScript reject an unknown product at compile time,
-/// while the string values still need checking here.
+/// it as a struct lets TypeScript reject an unknown product at compile time.
+/// JavaScript callers get the runtime check from the constructor's options
+/// check (`options::check_options`, #294).
 #[napi(object)]
 pub struct StreamingVersionOptions {
     /// Stock streaming version. Only "v1.0" is served.
@@ -1066,45 +1067,21 @@ pub struct StreamingVersionOptions {
 
 pub(crate) use marketdata_core::websocket::StreamProduct as WsProduct;
 
-/// Validate the `version` option into core's per-product enums.
+/// The `version` option as core's per-product enums. The constructor's
+/// options check has already refused anything core would (#294).
 pub(crate) fn parse_ws_versions(
     version: &Option<StreamingVersionOptions>,
 ) -> napi::Result<(
     marketdata_core::websocket::StockVersion,
     marketdata_core::websocket::FutOptVersion,
 )> {
-    use marketdata_core::websocket::{FutOptVersion, StockVersion};
-
-    let mut stock = StockVersion::default();
-    let mut futopt = FutOptVersion::default();
-
-    if let Some(opts) = version {
-        if let Some(v) = opts.stock.as_deref() {
-            stock = match v {
-                "v1.0" => StockVersion::V1_0,
-                other => {
-                    return Err(napi::Error::from_reason(format!(
-                        "stock streaming does not support {other} (supported: v1.0). \
-                         Omit it to use v1.0."
-                    )))
-                }
-            };
-        }
-        if let Some(v) = opts.futopt.as_deref() {
-            futopt = match v {
-                "v1.0" => FutOptVersion::V1_0,
-                "v1.1" => FutOptVersion::V1_1,
-                other => {
-                    return Err(napi::Error::from_reason(format!(
-                        "futopt streaming does not support {other} (supported: v1.0, v1.1). \
-                         Omit it to use v1.1."
-                    )))
-                }
-            };
-        }
-    }
-
-    Ok((stock, futopt))
+    let entries = version.iter().flat_map(|opts| {
+        [("stock", opts.stock.as_deref()), ("futopt", opts.futopt.as_deref())]
+            .into_iter()
+            .filter_map(|(product, v)| v.map(|v| (product, v)))
+    });
+    marketdata_core::websocket::version::option::resolve(entries)
+        .map_err(|err| napi::Error::new(napi::Status::InvalidArg, crate::options::version_message(&err)))
 }
 
 /// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
@@ -1546,8 +1523,12 @@ impl WebSocketClient {
     ///   healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 }
     /// });
     /// ```
-    #[napi(constructor)]
-    pub fn new(env: Env, options: WebSocketClientOptions) -> napi::Result<Self> {
+    #[napi(constructor, ts_args_type = "options: WebSocketClientOptions")]
+    pub fn new(env: Env, options: crate::options::Checked<WebSocketClientOptions>) -> napi::Result<Self> {
+        // The JS object was checked against `options::WEBSOCKET_CLIENT_FIELDS`
+        // before this conversion (#294): unknown keys and wrong types are a
+        // `TypeError` already.
+        let options = options.0;
         use marketdata_core::{DEFAULT_MAX_ATTEMPTS, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_DELAY_MS};
         use std::time::Duration;
 

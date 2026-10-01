@@ -285,9 +285,10 @@ impl RestClient {
     ///   baseUrl: 'https://custom.api'
     /// });
     /// ```
-    #[napi(constructor)]
-    pub fn new(env: napi::Env, options: RestClientOptions) -> napi::Result<Self> {
-        Self::from_options(options).map_err(|e| e.into_napi(&env))
+    #[napi(constructor, ts_args_type = "options: RestClientOptions")]
+    pub fn new(env: napi::Env, options: crate::options::Checked<RestClientOptions>) -> napi::Result<Self> {
+        // Checked against `options::REST_CLIENT_FIELDS` first (#294).
+        Self::from_options(options.0).map_err(|e| e.into_napi(&env))
     }
 
     /// The prefix every request from this client is built on, fully resolved —

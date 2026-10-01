@@ -188,33 +188,34 @@ describe('healthCheck 1.x fields (#262)', () => {
   });
 });
 
-// What `healthCheck` itself accepts and rejects is as before #262: these are
-// the results of the build without the legacy field detection.
-describe('healthCheck of the wrong type (#262)', () => {
+// What `healthCheck` itself accepts: an object of its own fields. Anything
+// else is a `TypeError` naming the field (#294); before, napi read a
+// non-object as `{}` and threw its own conversion errors for bad fields.
+describe('healthCheck of the wrong type (#294)', () => {
   const { WebSocketClient } = require('../');
-  const conversion = (type, field, from = '') =>
-    `Failed to convert napi value ${from}into rust type \`${type}\` on HealthCheckOptions.${field} on WebSocketClientOptions.healthCheck`;
-
-  test.each([[5], ['x'], [[]], [true]])('%j is accepted as no options', (healthCheck) => {
-    expect(new WebSocketClient({ apiKey: 'test-key', healthCheck }).stock).toBeDefined();
-  });
+  const prefix = 'WebSocketClient options: ';
+  const ms = 'must be a finite, non-negative number of milliseconds';
 
   test.each([
-    [null, 'TypeError', undefined, 'Cannot convert undefined or null to object'],
-    [{ enabled: 'x' }, 'Error', 'BooleanExpected', conversion('bool', 'enabled')],
-    [{ enabled: null }, 'Error', 'BooleanExpected', conversion('bool', 'enabled')],
-    [{ probeEnabled: 1 }, 'Error', 'BooleanExpected', conversion('bool', 'probeEnabled')],
-    [{ heartbeatTimeoutMs: 'x' }, 'Error', 'NumberExpected', conversion('f64', 'heartbeatTimeoutMs', 'String ')],
-    [{ idleProbeAfterMs: {} }, 'Error', 'NumberExpected', conversion('f64', 'idleProbeAfterMs', 'Object ')],
-    [{ probeTimeoutMs: [] }, 'Error', 'NumberExpected', conversion('f64', 'probeTimeoutMs', 'Object ')],
-  ])('%j throws as before', (healthCheck, name, code, message) => {
+    [5, 'healthCheck must be an object like { enabled: true }, got number 5'],
+    ['x', 'healthCheck must be an object like { enabled: true }, got string'],
+    [[], 'healthCheck must be an object like { enabled: true }, got array'],
+    [true, 'healthCheck must be an object like { enabled: true }, got boolean'],
+    [null, 'healthCheck must be an object like { enabled: true }, got null'],
+    [{ enabled: 'x' }, 'healthCheck.enabled must be a boolean, got string'],
+    [{ enabled: null }, 'healthCheck.enabled must be a boolean, got null'],
+    [{ probeEnabled: 1 }, 'healthCheck.probeEnabled must be a boolean, got number 1'],
+    [{ heartbeatTimeoutMs: 'x' }, `healthCheck.heartbeatTimeoutMs ${ms}, got string`],
+    [{ idleProbeAfterMs: {} }, `healthCheck.idleProbeAfterMs ${ms}, got object`],
+    [{ probeTimeoutMs: [] }, `healthCheck.probeTimeoutMs ${ms}, got array`],
+  ])('%j throws a TypeError', (healthCheck, message) => {
     let error;
     try {
       new WebSocketClient({ apiKey: 'test-key', healthCheck });
     } catch (e) {
       error = e;
     }
-    expect(error).toBeDefined();
-    expect({ name: error.name, code: error.code, message: error.message }).toEqual({ name, code, message });
+    // `name`, not `instanceof`: jest's sandbox has its own `TypeError`.
+    expect({ name: error.name, message: error.message }).toEqual({ name: 'TypeError', message: prefix + message });
   });
 });

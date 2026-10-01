@@ -29,6 +29,7 @@
 
 mod client;
 mod errors;
+mod options;
 mod websocket;
 
 // Re-export NAPI-RS types
