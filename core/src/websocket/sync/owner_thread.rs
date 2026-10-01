@@ -13,8 +13,8 @@ use crate::websocket::liveness::{
 };
 use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_resubscribe, parse_binary_frame, parse_text_frame,
-    AuthHandshake, AuthOutcome, ResubscribeFrame,
+    classify_auth_response, closed_during_auth, frame_auth, frame_resubscribe, parse_binary_frame,
+    parse_text_frame, AuthHandshake, AuthOutcome, ResubscribeFrame, AUTH_FAILED_CLOSE_TIMEOUT,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
@@ -272,6 +272,13 @@ fn write_probe(ws: &mut SyncWs, deadline: Instant) -> ProbeWrite {
 /// Run the full auth handshake on a freshly-connected WebSocket. The text
 /// frames read are returned with the outcome, to be queued after the
 /// matching event (#68).
+///
+/// On a handshake that failed or was rejected the connection is closed
+/// before it is given up: a server that sent a Close gets its reply, any
+/// other gets a Close of ours, rather than a dropped socket (#292), as on the
+/// async client. [`AUTH_FAILED_CLOSE_TIMEOUT`] bounds each write syscall of
+/// that close, not the close as a whole; a Close frame is small enough to go
+/// out in one.
 pub(crate) fn do_auth_handshake(
     ws: &mut SyncWs,
     config: &ConnectionConfig,
@@ -279,7 +286,6 @@ pub(crate) fn do_auth_handshake(
 ) -> AuthHandshake {
     // The drop count restarts with each connection attempt.
     stream.start_connection();
-    let mut frames = Vec::new();
     // Send auth frame
     let auth_json = match frame_auth(config.auth.clone()) {
         Ok(json) => json,
@@ -291,10 +297,23 @@ pub(crate) fn do_auth_handshake(
         });
     }
 
+    let handshake = await_auth_response(ws, config.auth_timeout);
+    if !matches!(handshake, AuthHandshake::Authenticated { .. }) {
+        // After a received Close, `close` only flushes the queued reply.
+        set_write_timeout(ws, Some(AUTH_FAILED_CLOSE_TIMEOUT));
+        let _ = ws.close(None);
+    }
+    handshake
+}
+
+/// Read frames off `ws` until a terminal auth outcome arrives or
+/// `auth_timeout` elapses.
+fn await_auth_response(ws: &mut SyncWs, auth_timeout: Duration) -> AuthHandshake {
+    let mut frames = Vec::new();
     // Read auth response with overall wall-clock timeout
     // (`ConnectionConfig::auth_timeout`, shared with the async client).
-    set_read_timeout(ws, Some(config.auth_timeout));
-    let deadline = Instant::now() + config.auth_timeout;
+    set_read_timeout(ws, Some(auth_timeout));
+    let deadline = Instant::now() + auth_timeout;
     loop {
         if Instant::now() >= deadline {
             return AuthHandshake::Failed(MarketDataError::TimeoutError {
@@ -320,10 +339,8 @@ pub(crate) fn do_auth_handshake(
                     }
                 }
             }
-            Ok(Message::Close(_)) => {
-                return AuthHandshake::Failed(MarketDataError::ConnectionError {
-                    msg: "Stream closed during authentication".to_string(),
-                });
+            Ok(Message::Close(frame)) => {
+                return AuthHandshake::Failed(closed_during_auth(frame.as_ref()));
             }
             Ok(_) => continue,
             Err(tungstenite::Error::Io(e))
