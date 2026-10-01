@@ -96,7 +96,9 @@ class ConnectionError(MarketDataError):
     Raised when a REST request cannot reach the server (DNS resolution,
     connection refused, TLS), when a WebSocket command is sent while the
     connection is down, or when the WebSocket auth handshake fails for a
-    reason other than rejected credentials. Not a ``WebSocketError`` (#219);
+    reason other than rejected credentials. When the server refuses the
+    connection because the account is at its connection limit, ``code`` is
+    2012 instead (#300). Not a ``WebSocketError`` (#219);
     a WebSocket *connect* that cannot reach the server is ``WebSocketError``
     code 3002.
     """
@@ -2392,7 +2394,8 @@ class StockWebSocketClient:
             a dict as in 2.x: ``{"event": "error", "code": 1000, "data": {"message": ...}}``. During an auto-reconnect this is terminal: an "error" with
             code 3005 follows and the client stays closed. Any other auth-phase server error (1011
             auth service unavailable, 1004 no auth request received) is an "error" with code 2001
-            instead, and the reconnect goes on.
+            instead (2012 for the connection limit: 1003 with the message "Maximum number of
+            connections reached"), and the reconnect goes on.
           - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection closed;
             who closed it and whether a reconnect follows are in ``last_disconnect``
           - "reconnect" / "reconnecting": Called with the attempt number when reconnecting

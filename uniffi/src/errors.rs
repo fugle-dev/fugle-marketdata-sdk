@@ -179,6 +179,9 @@ impl From<CoreError> for MarketDataError {
             CoreError::RuntimeError { msg } => MarketDataError::Other { msg, info },
             CoreError::ConfigError(msg) => MarketDataError::ConfigError { msg, info },
             CoreError::ConnectionError { msg } => MarketDataError::ConnectionError { msg, info },
+            // Like `AlreadyConnected`: a new variant would change every
+            // generated binding, so `info.code` (2012) identifies it (#300).
+            CoreError::ConnectionLimit { msg } => MarketDataError::ConnectionError { msg, info },
             CoreError::AuthError { msg, .. } => MarketDataError::AuthError { msg, info },
             CoreError::ApiError { status, message, .. } => {
                 // Check if this is a rate limit error (429)
@@ -285,6 +288,23 @@ mod tests {
             }
         }
         assert_eq!(not_connected.to_string(), "Connection error: Not connected");
+    }
+
+    /// The connection limit is the `ConnectionError` variant, told apart by
+    /// `info.code` 2012 (#300).
+    #[test]
+    fn connection_limit_is_a_connection_error_with_its_own_code() {
+        let err: MarketDataError = CoreError::ConnectionLimit {
+            msg: "Stream closed during authentication (close 1013)".to_string(),
+        }
+        .into();
+        match err {
+            MarketDataError::ConnectionError { info, .. } => {
+                assert_eq!(info.code, marketdata_core::error_code::CONNECTION_LIMIT);
+                assert!(matches!(info.source_kind, ErrorSourceKind::Network));
+            }
+            other => panic!("expected ConnectionError, got {other:?}"),
+        }
     }
 
     #[test]

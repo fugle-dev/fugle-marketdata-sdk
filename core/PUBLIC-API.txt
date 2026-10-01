@@ -205,6 +205,7 @@ pub const marketdata_core::error_code::CALLBACK_FAILED: i32
 pub const marketdata_core::error_code::CLIENT_CLOSED: i32
 pub const marketdata_core::error_code::CONFIG: i32
 pub const marketdata_core::error_code::CONNECTION: i32
+pub const marketdata_core::error_code::CONNECTION_LIMIT: i32
 pub const marketdata_core::error_code::DESERIALIZATION: i32
 pub const marketdata_core::error_code::HEARTBEAT_TIMEOUT: i32
 pub const marketdata_core::error_code::INVALID_PARAMETER: i32
@@ -225,6 +226,7 @@ pub const marketdata_core::errors::error_code::CALLBACK_FAILED: i32
 pub const marketdata_core::errors::error_code::CLIENT_CLOSED: i32
 pub const marketdata_core::errors::error_code::CONFIG: i32
 pub const marketdata_core::errors::error_code::CONNECTION: i32
+pub const marketdata_core::errors::error_code::CONNECTION_LIMIT: i32
 pub const marketdata_core::errors::error_code::DESERIALIZATION: i32
 pub const marketdata_core::errors::error_code::HEARTBEAT_TIMEOUT: i32
 pub const marketdata_core::errors::error_code::INVALID_PARAMETER: i32
@@ -278,6 +280,8 @@ pub marketdata_core::errors::MarketDataError::ConfigError(alloc::string::String)
 pub marketdata_core::errors::MarketDataError::ConnectionAborted
 pub marketdata_core::errors::MarketDataError::ConnectionError
 pub marketdata_core::errors::MarketDataError::ConnectionError::msg: alloc::string::String
+pub marketdata_core::errors::MarketDataError::ConnectionLimit
+pub marketdata_core::errors::MarketDataError::ConnectionLimit::msg: alloc::string::String
 pub marketdata_core::errors::MarketDataError::DeserializationError
 pub marketdata_core::errors::MarketDataError::DeserializationError::source: serde_json::error::Error
 pub marketdata_core::errors::MarketDataError::HeartbeatTimeout
@@ -5304,6 +5308,8 @@ pub marketdata_core::MarketDataError::ConfigError(alloc::string::String)
 pub marketdata_core::MarketDataError::ConnectionAborted
 pub marketdata_core::MarketDataError::ConnectionError
 pub marketdata_core::MarketDataError::ConnectionError::msg: alloc::string::String
+pub marketdata_core::MarketDataError::ConnectionLimit
+pub marketdata_core::MarketDataError::ConnectionLimit::msg: alloc::string::String
 pub marketdata_core::MarketDataError::DeserializationError
 pub marketdata_core::MarketDataError::DeserializationError::source: serde_json::error::Error
 pub marketdata_core::MarketDataError::HeartbeatTimeout

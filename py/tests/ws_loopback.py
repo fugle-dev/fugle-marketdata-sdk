@@ -6,7 +6,8 @@ from the client (masked) and to it (unmasked), ping/pong and close.
 
 The protocol mirrors ``js/tests/ws-worker.test.js``: ``auth`` is acked with
 ``authenticated``, or answered with ``error`` for ``REJECTED_API_KEY``, or with a
-Close frame (1001, ``LIMIT_CLOSE_REASON``) for ``LIMITED_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
+Close frame (1001, ``LIMIT_CLOSE_REASON``) for ``LIMITED_API_KEY``, (1013) for
+``LIMITED_1013_API_KEY``, (1001, ``RESTART_CLOSE_REASON``) for ``RESTARTING_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
 ``data`` frame. The ``subscribed`` ack echoes ``intradayOddLot`` / ``afterHours``
 and marks them in the id, as ``<channel>-<symbol>[-odd][-ah]``. With ``flood`` it keeps sending ``data`` frames until the peer
 closes. With ``burst_on_close`` it answers the client's Close with that many
@@ -56,6 +57,28 @@ BARE_AUTH_API_KEY = "bare-auth-key"
 # server refuses a connection over its limit (#292).
 LIMITED_API_KEY = "limited-key"
 LIMIT_CLOSE_REASON = "Maximum number of connections reached"
+# The limit Close of a server with fugle-realtime !640 (#300).
+LIMITED_1013_API_KEY = "limited-1013-key"
+# `1001` with another reason: a restart, not the limit (#300).
+RESTARTING_API_KEY = "restarting-key"
+RESTART_CLOSE_REASON = "Server restarting"
+# `auth` answered with `error{1003}` then a Close: the limit as a server with
+# fugle-realtime !640 says it (Close 1013), and a failed validation, which has
+# the same code and another message (Close without a code) (#300).
+LIMIT_ERROR_API_KEY = "limit-error-key"
+VALIDATION_ERROR_API_KEY = "validation-error-key"
+VALIDATION_ERROR_MESSAGE = "apikey should not be empty"
+# What each of those keys' `auth` is answered with: (code, message, close code).
+AUTH_ERRORS = {
+    LIMIT_ERROR_API_KEY: (1003, LIMIT_CLOSE_REASON, 1013),
+    VALIDATION_ERROR_API_KEY: (1003, VALIDATION_ERROR_MESSAGE, None),
+}
+# What each of those keys' `auth` is answered with: (close code, reason).
+AUTH_CLOSES = {
+    LIMITED_API_KEY: (1001, LIMIT_CLOSE_REASON),
+    LIMITED_1013_API_KEY: (1013, ""),
+    RESTARTING_API_KEY: (1001, RESTART_CLOSE_REASON),
+}
 
 OP_TEXT = 0x1
 OP_CLOSE = 0x8
@@ -246,8 +269,18 @@ class _Server:
                     frame = json.loads(payload)
                     if frame.get("event") == "auth":
                         self.auth_data.append(frame.get("data"))
-                        if (frame.get("data") or {}).get("apikey") == LIMITED_API_KEY:
-                            send(OP_CLOSE, struct.pack("!H", 1001) + LIMIT_CLOSE_REASON.encode())
+                        apikey = (frame.get("data") or {}).get("apikey")
+                        refused = apikey in AUTH_ERRORS or apikey in AUTH_CLOSES
+                        if apikey in AUTH_ERRORS:
+                            code, message, close_code = AUTH_ERRORS[apikey]
+                            error = {"event": "error", "code": code, "data": {"message": message}}
+                            send(OP_TEXT, json.dumps(error).encode())
+                            close = b"" if close_code is None else struct.pack("!H", close_code)
+                            send(OP_CLOSE, close)
+                        elif apikey in AUTH_CLOSES:
+                            code, reason = AUTH_CLOSES[apikey]
+                            send(OP_CLOSE, struct.pack("!H", code) + reason.encode())
+                        if refused:
                             # Until the client goes: its reply Close, which needs
                             # no answer, or the end of the stream, on which
                             # _read_frame raises.

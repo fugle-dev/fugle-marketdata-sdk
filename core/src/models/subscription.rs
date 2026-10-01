@@ -467,7 +467,9 @@ impl WebSocketMessage {
     /// subscription limit exceeded, `1002` command before authentication,
     /// `1003` request validation failed, `1004` no auth request within 60 s,
     /// `1011` auth service unavailable. `1000` is the one the reconnect
-    /// policy acts on (#201).
+    /// policy acts on (#201). During authentication, `1003` with the message
+    /// `Maximum number of connections reached` is the account's connection
+    /// limit (fugle-realtime !640), reported as `ConnectionLimit` (2012, #300).
     pub fn error_code(&self) -> Option<i32> {
         if !self.is_error() {
             return None;

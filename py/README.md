@@ -685,6 +685,7 @@ keep their built-in `TypeError` / `ValueError`.
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed, ConnectionAborted | Client has been closed, or `connect()` / `connect_async()` was given up because `disconnect()` was called before the connection was established or while it waited on an automatic reconnect (raised as `WebSocketError`, message `Connection aborted: …`) |
 | 2011 | AlreadyConnected | `connect()` / `connect_async()` called while connected or while another connect is in progress; during an automatic reconnect it waits instead (raised as `WebSocketError`) |
+| 2012 | ConnectionLimit | The server refused the WebSocket connection because the account is at its connection limit (Close 1013, or `error` 1003 / Close 1001 with the message `Maximum number of connections reached`). `connect()` / `connect_async()` raise `ConnectionError`; the `error` callback receives `WebSocketError`; both with code 2012. Automatic reconnect keeps retrying (see [configuration](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/configuration.md#reconnectconfig--reconnectoptions)) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an `error`: `disconnect` fires with code `None` and the reason `Heartbeat timeout after …`, and `last_disconnect.intent` is `"network"` |
