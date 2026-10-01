@@ -1063,6 +1063,12 @@ just want a drop-in replacement.
   health-check config from a single options object.
 - **Per-binding async runtime integration** — Python uses
   `pyo3-async-runtimes`, JS uses napi-rs Promises and the tokio runtime.
+- **Changing credentials on a live client** — `set_credentials(...)`
+  (Python) / `setCredentials({...})` (Node) on `RestClient`, `WebSocketClient`
+  and its `stock` / `futopt` clients replaces an expiring token without a new
+  client: WebSocket from the next connection attempt (automatic reconnects
+  included), REST from the next request. See
+  [Changing credentials](docs/configuration.md#changing-credentials).
 
 ### Per-language quickstart
 

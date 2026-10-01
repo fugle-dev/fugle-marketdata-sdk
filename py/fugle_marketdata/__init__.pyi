@@ -265,6 +265,29 @@ class RestClient:
         """
         ...
 
+    def set_credentials(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        bearer_token: Optional[str] = None,
+        sdk_token: Optional[str] = None,
+    ) -> None:
+        """Replace the credential later requests send, with any of the three kinds.
+
+        Product clients already taken from this one (``client.stock``,
+        ``client.stock.intraday``, ...) send it too; a request already sent
+        keeps the credential it was sent with.
+
+        Provide exactly one, as in the constructor (empty or whitespace-only
+        values count as not provided).
+
+        Raises:
+            ConfigError: code 1004 if zero or multiple credentials are
+                provided, or the credential cannot be sent in an HTTP
+                header; the current credential is then kept
+        """
+        ...
+
     @property
     def stock(self) -> "StockClient":
         """Access stock market data endpoints.
@@ -2051,6 +2074,33 @@ class WebSocketClient:
         """
         ...
 
+    def set_credentials(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        bearer_token: Optional[str] = None,
+        sdk_token: Optional[str] = None,
+    ) -> None:
+        """Replace the credential both product clients authenticate with.
+
+        Applies from each one's next connection attempt on: the next
+        ``connect()`` or automatic reconnect. Any of the three kinds may
+        replace any other. A connection already
+        authenticated is not authenticated again.
+        ``ws.stock.set_credentials()`` changes the stock client's alone.
+
+        Call it before a token expires. Rejected credentials still end
+        automatic reconnection; set a new credential, then ``connect()``.
+
+        Provide exactly one, as in the constructor (empty or whitespace-only
+        values count as not provided).
+
+        Raises:
+            ConfigError: code 1004 if zero or multiple credentials are
+                provided; the current credential is then kept
+        """
+        ...
+
     @property
     def stock(self) -> "StockWebSocketClient":
         """Access stock market data WebSocket streaming.
@@ -2102,6 +2152,33 @@ class StockWebSocketClient:
                 print(msg)
         ```
     """
+
+    def set_credentials(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        bearer_token: Optional[str] = None,
+        sdk_token: Optional[str] = None,
+    ) -> None:
+        """Replace the credential this client authenticates with.
+
+        Applies from its next connection attempt on: the next ``connect()``
+        or automatic reconnect. Any of the three kinds may replace any
+        other. A connection already authenticated is not
+        authenticated again. ``ws.set_credentials()`` changes both product
+        clients'.
+
+        Call it before a token expires. Rejected credentials still end
+        automatic reconnection; set a new credential, then ``connect()``.
+
+        Provide exactly one, as in the constructor (empty or whitespace-only
+        values count as not provided).
+
+        Raises:
+            ConfigError: code 1004 if zero or multiple credentials are
+                provided; the current credential is then kept
+        """
+        ...
 
     def connect(self) -> None:
         """Connect to WebSocket server (blocking).
@@ -2485,6 +2562,33 @@ class FutOptWebSocketClient:
                 print(msg)
         ```
     """
+
+    def set_credentials(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        bearer_token: Optional[str] = None,
+        sdk_token: Optional[str] = None,
+    ) -> None:
+        """Replace the credential this client authenticates with.
+
+        Applies from its next connection attempt on: the next ``connect()``
+        or automatic reconnect. Any of the three kinds may replace any
+        other. A connection already authenticated is not
+        authenticated again. ``ws.set_credentials()`` changes both product
+        clients'.
+
+        Call it before a token expires. Rejected credentials still end
+        automatic reconnection; set a new credential, then ``connect()``.
+
+        Provide exactly one, as in the constructor (empty or whitespace-only
+        values count as not provided).
+
+        Raises:
+            ConfigError: code 1004 if zero or multiple credentials are
+                provided; the current credential is then kept
+        """
+        ...
 
     def connect(self) -> None:
         """Connect to WebSocket server (blocking).

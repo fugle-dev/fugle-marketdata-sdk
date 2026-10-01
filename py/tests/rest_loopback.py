@@ -23,16 +23,19 @@ class RestLoopbackServer:
     """Serve ``status``/``body`` on every path for a ``with`` block.
 
     ``url`` is the ``base_url`` to hand the client; ``requests`` lists the
-    paths received, in order.
+    paths received, in order, and ``headers`` their headers, as dicts with
+    lower-case names.
     """
 
     def __init__(self, status=401, body=UNAUTHORIZED):
         payload = json.dumps(body).encode()
         requests = self.requests = []
+        headers = self.headers = []
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802 - name fixed by BaseHTTPRequestHandler
                 requests.append(self.path)
+                headers.append({k.lower(): v for k, v in self.headers.items()})
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))

@@ -147,6 +147,35 @@ impl RestClient {
         Ok(Self { inner: marketdata_core::RestClient::new(auth) })
     }
 
+    /// Replace the credential later requests send, with any of the three
+    /// kinds. Product clients already taken from this one (`client.stock`,
+    /// `client.stock.intraday`, ...) send it too; a request already sent
+    /// keeps the credential it was sent with.
+    ///
+    /// Provide exactly one, as in the constructor (empty or whitespace-only
+    /// values count as not provided): api_key, bearer_token or sdk_token.
+    ///
+    /// Raises:
+    ///     MarketDataError: code 1004 if zero or multiple credentials are
+    ///         provided, or the credential cannot be sent in an HTTP header;
+    ///         the current credential is then kept
+    ///
+    /// Example:
+    ///     ```python
+    ///     client.set_credentials(sdk_token=new_token)
+    ///     ```
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None))]
+    pub fn set_credentials(
+        &self,
+        api_key: Option<String>,
+        bearer_token: Option<String>,
+        sdk_token: Option<String>,
+    ) -> PyResult<()> {
+        let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
+            .map_err(errors::to_py_err)?;
+        self.inner.set_credentials(auth).map_err(errors::to_py_err)
+    }
+
     /// Access stock market data endpoints
     ///
     /// Returns:

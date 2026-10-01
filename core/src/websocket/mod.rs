@@ -11,6 +11,7 @@ pub mod channels;
 pub mod config;
 pub(crate) mod connect_gate;
 pub mod connection_event;
+pub mod credentials;
 pub mod factory;
 pub mod health_check;
 pub(crate) mod liveness;
@@ -38,6 +39,7 @@ pub use config::{
 };
 pub use factory::{stream_config, stream_config_worded, StreamProduct, WebSocketFactory};
 pub use connection_event::{ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent};
+pub use credentials::CredentialsHandle;
 pub use health_check::HealthCheckConfig;
 pub use stream::{ConnectionStream, MessagesDroppedHandle, StreamItem, StreamReceiver};
 pub use reconnection::{ReconnectionConfig, ReconnectionManager};

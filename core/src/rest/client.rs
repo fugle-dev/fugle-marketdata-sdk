@@ -5,6 +5,7 @@ use super::retry::{self, RetryPolicy};
 use crate::errors::{HttpErrorContext, MarketDataError};
 use super::error::{dropped_before_response, status_error, transport_error};
 use crate::tls::{build_ureq_tls_config, TlsConfig};
+use std::sync::{Arc, PoisonError, RwLock};
 
 /// Idle connections kept per host.
 ///
@@ -41,11 +42,12 @@ pub(crate) type HttpResponse = ureq::http::Response<ureq::Body>;
 /// second send fails too, that error is returned.
 pub struct RestClient {
     agent: ureq::Agent,
-    /// Credential header, validated once at construction. `Err` holds the
-    /// message for a blank credential or one that is not a valid header
-    /// value; it is reported from the first request so construction stays
-    /// infallible.
-    auth_header: Result<(&'static str, ureq::http::HeaderValue), String>,
+    /// Credential header, validated at construction and by
+    /// [`set_credentials`](Self::set_credentials). `Err` holds the message
+    /// for a blank credential or one that is not a valid header value; it is
+    /// reported from the first request so construction stays infallible.
+    /// Shared by clones, so a credential set on one is sent by all (#322).
+    auth_header: Arc<RwLock<AuthHeader>>,
     base_url: String,
     /// Optional retry policy. `None` (default) means each request is
     /// attempted once and its error propagates to the caller, apart from
@@ -57,6 +59,25 @@ pub struct RestClient {
     /// Stored as a `String` rather than a `MarketDataError` because the error
     /// type isn't `Clone` and `execute` only has `&self`.
     config_error: Option<String>,
+}
+
+/// The credential's header, or the message for one that cannot be sent.
+type AuthHeader = Result<(&'static str, ureq::http::HeaderValue), String>;
+
+fn auth_header(auth: &Auth) -> AuthHeader {
+    let (name, value) = auth.header();
+    match auth.validate() {
+        Err(MarketDataError::ConfigError(message)) => Err(message),
+        Err(err) => Err(err.to_string()),
+        Ok(()) => ureq::http::HeaderValue::from_str(&value)
+            .map(|mut v| {
+                v.set_sensitive(true);
+                (name, v)
+            })
+            .map_err(|_| {
+                format!("{name} credential contains characters not allowed in an HTTP header")
+            }),
+    }
 }
 
 impl RestClient {
@@ -113,27 +134,29 @@ impl RestClient {
             .timeout_recv_body(Some(timeout))
             .build();
 
-        let (name, value) = auth.header();
-        let auth_header = match auth.validate() {
-            Err(MarketDataError::ConfigError(message)) => Err(message),
-            Err(err) => Err(err.to_string()),
-            Ok(()) => ureq::http::HeaderValue::from_str(&value)
-                .map(|mut v| {
-                    v.set_sensitive(true);
-                    (name, v)
-                })
-                .map_err(|_| {
-                    format!("{name} credential contains characters not allowed in an HTTP header")
-                }),
-        };
-
         Ok(Self {
             agent: config.into(),
-            auth_header,
+            auth_header: Arc::new(RwLock::new(auth_header(&auth))),
             base_url: crate::urls::REST_BASE.to_string(),
             retry_policy: None,
             config_error: None,
         })
+    }
+
+    /// Replace the credential that later requests send — on this client and
+    /// on every clone of it, such as the product clients taken from it — with
+    /// `auth`, which may be of another kind (#322). A request already sent
+    /// keeps the credential it was sent with.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] for a blank credential or
+    /// one that is not a valid HTTP header value; the current credential is
+    /// then kept.
+    pub fn set_credentials(&self, auth: Auth) -> Result<(), MarketDataError> {
+        let header = auth_header(&auth).map_err(MarketDataError::ConfigError)?;
+        *self.auth_header.write().unwrap_or_else(PoisonError::into_inner) = Ok(header);
+        Ok(())
     }
 
     /// Enable transparent retry of failed requests.
@@ -183,11 +206,14 @@ impl RestClient {
 
     /// One GET attempt: a fresh request per call, so retries resend it.
     fn send_get(&self, url: &str) -> Result<HttpResponse, MarketDataError> {
+        // Read once per send, so a resend carries the header of its first try.
         let (name, value) = self
             .auth_header
-            .as_ref()
-            .map_err(|message| MarketDataError::ConfigError(message.clone()))?;
-        let call = || self.agent.get(url).header(*name, value).call();
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .map_err(MarketDataError::ConfigError)?;
+        let call = || self.agent.get(url).header(name, &value).call();
         // A pooled connection the server has just closed fails before a full
         // response header arrives. GET is idempotent, so send it once more
         // on its own, whether or not a retry policy is installed and without
@@ -433,11 +459,13 @@ impl Clone for RestClient {
     /// Clone the RestClient, sharing the same connection pool
     ///
     /// Cloning is cheap because the agent shares its connection pool through an `Arc`.
-    /// Multiple cloned clients will share the same connection pool.
+    /// Multiple cloned clients will share the same connection pool, and the
+    /// same credential: [`set_credentials`](RestClient::set_credentials) on
+    /// one changes what every clone sends.
     fn clone(&self) -> Self {
         Self {
             agent: self.agent.clone(),
-            auth_header: self.auth_header.clone(),
+            auth_header: Arc::clone(&self.auth_header),
             base_url: self.base_url.clone(),
             retry_policy: self.retry_policy,
             config_error: self.config_error.clone(),

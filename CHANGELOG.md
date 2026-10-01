@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rust, Python, Node: `set_credentials()` / `setCredentials()`** (#322).
+  Replaces the credential of a live client, with any of the three kinds and
+  the same rule as at construction (exactly one non-blank value, otherwise
+  code 1004 and the current one kept). On a WebSocket client it applies from
+  the next connection attempt — `connect()`, an automatic reconnect, and in
+  Rust `reconnect()` — so a long-running client can swap an SDK token (valid two
+  days) before it expires; the live connection is not authenticated again,
+  and rejected credentials still end automatic reconnection. Python and Node
+  have it on `WebSocketClient` (both product clients) and on `ws.stock` /
+  `ws.futopt` (that one only). On a `RestClient` it applies from the next
+  request. Rust adds `CredentialsHandle` and
+  `WebSocketClient::{credentials_handle, use_credentials_handle}` to carry a
+  credential to a new client. **Behaviour change (Rust):** clones of a
+  `RestClient` now share its credential, so `set_credentials` on one changes
+  what every clone sends.
 - **Go: `StreamingClient.Disconnect()`** (#318). It closes the connection and
   the `Messages()` / `Errors()` channels but keeps the client, so
   `LastDisconnect()` reads the `DisconnectIntentClient` record, and

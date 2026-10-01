@@ -81,6 +81,7 @@ pub mod marketdata_core::aio::client
 pub struct marketdata_core::aio::client::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -95,6 +96,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -107,6 +109,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -158,6 +161,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::r
 pub struct marketdata_core::aio::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -172,6 +176,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -184,6 +189,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -3517,13 +3523,14 @@ pub fn marketdata_core::RestClient::base_url(self, &str) -> Self
 pub fn marketdata_core::RestClient::futopt(&self) -> marketdata_core::rest::futopt::FutOptClient<'_>
 pub fn marketdata_core::RestClient::new(marketdata_core::Auth) -> Self
 pub fn marketdata_core::RestClient::resolved_base_url(&self) -> &str
+pub fn marketdata_core::RestClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::RestClient::stock(&self) -> marketdata_core::rest::StockClient<'_>
 pub fn marketdata_core::RestClient::try_base_url(self, &str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::RestClient::with_retry(self, marketdata_core::RetryPolicy) -> Self
 pub fn marketdata_core::RestClient::with_tls(marketdata_core::Auth, marketdata_core::tls::TlsConfig) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::RestClient
 pub fn marketdata_core::RestClient::clone(&self) -> Self
-impl !core::marker::Freeze for marketdata_core::RestClient
+impl core::marker::Freeze for marketdata_core::RestClient
 impl core::marker::Send for marketdata_core::RestClient
 impl core::marker::Sync for marketdata_core::RestClient
 impl core::marker::Unpin for marketdata_core::RestClient
@@ -3718,6 +3725,7 @@ pub mod marketdata_core::websocket::aio::client
 pub struct marketdata_core::websocket::aio::client::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3732,6 +3740,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -3744,6 +3753,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -3795,6 +3805,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::aio::r
 pub struct marketdata_core::websocket::aio::WebSocketClient
 impl marketdata_core::websocket::aio::client::WebSocketClient
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -3809,6 +3820,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::new(marketdata_
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::reconnect_conflict_handle(&self) -> marketdata_core::ReconnectConflictHandle
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::state_async(&self) -> marketdata_core::websocket::connection_event::ConnectionState
@@ -3821,6 +3833,7 @@ pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_co
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::use_reconnect_conflict_handle(&self, &marketdata_core::ReconnectConflictHandle)
 pub async fn marketdata_core::websocket::aio::client::WebSocketClient::wait_connected(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::aio::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
@@ -4081,6 +4094,22 @@ impl core::marker::Unpin for marketdata_core::websocket::connection_event::Conne
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::connection_event::ConnectionStateHandle
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::connection_event::ConnectionStateHandle
+pub mod marketdata_core::websocket::credentials
+pub struct marketdata_core::websocket::credentials::CredentialsHandle
+impl marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::new(marketdata_core::AuthRequest) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::set(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+impl core::clone::Clone for marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::clone(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
+impl core::fmt::Debug for marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Send for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Sync for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Unpin for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::credentials::CredentialsHandle
 pub mod marketdata_core::websocket::factory
 #[non_exhaustive] pub enum marketdata_core::websocket::factory::StreamProduct
 pub marketdata_core::websocket::factory::StreamProduct::FutOpt
@@ -4355,6 +4384,7 @@ pub mod marketdata_core::websocket::sync::client
 pub struct marketdata_core::websocket::sync::client::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -4367,6 +4397,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropp
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
@@ -4376,6 +4407,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_c
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -4392,6 +4424,7 @@ pub const marketdata_core::websocket::sync::client::DEFAULT_SHUTDOWN_TIMEOUT: co
 pub struct marketdata_core::websocket::sync::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -4404,6 +4437,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropp
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
@@ -4413,6 +4447,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_c
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -4738,6 +4773,21 @@ impl core::marker::Unpin for marketdata_core::websocket::stream::ConnectionStrea
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::ConnectionStream
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::ConnectionStream
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+pub struct marketdata_core::websocket::CredentialsHandle
+impl marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::new(marketdata_core::AuthRequest) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::set(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+impl core::clone::Clone for marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::clone(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
+impl core::fmt::Debug for marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Send for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Sync for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Unpin for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::credentials::CredentialsHandle
 pub struct marketdata_core::websocket::HealthCheckConfig
 pub marketdata_core::websocket::HealthCheckConfig::enabled: bool
 pub marketdata_core::websocket::HealthCheckConfig::heartbeat_timeout: core::time::Duration
@@ -4910,6 +4960,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::subscr
 pub struct marketdata_core::websocket::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -4922,6 +4973,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropp
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
@@ -4931,6 +4983,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_c
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self
@@ -5749,6 +5802,21 @@ impl core::marker::Unpin for marketdata_core::websocket::stream::ConnectionStrea
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::stream::ConnectionStream
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::stream::ConnectionStream
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::stream::ConnectionStream
+pub struct marketdata_core::CredentialsHandle
+impl marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::new(marketdata_core::AuthRequest) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::set(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+impl core::clone::Clone for marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::clone(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
+impl core::fmt::Debug for marketdata_core::websocket::credentials::CredentialsHandle
+pub fn marketdata_core::websocket::credentials::CredentialsHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Send for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Sync for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::Unpin for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::marker::UnsafeUnpin for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::credentials::CredentialsHandle
+impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::credentials::CredentialsHandle
 pub struct marketdata_core::DataPayload
 pub marketdata_core::DataPayload::data: serde_json::value::Value
 impl core::clone::Clone for marketdata_core::models::streaming::DataPayload
@@ -6464,13 +6532,14 @@ pub fn marketdata_core::RestClient::base_url(self, &str) -> Self
 pub fn marketdata_core::RestClient::futopt(&self) -> marketdata_core::rest::futopt::FutOptClient<'_>
 pub fn marketdata_core::RestClient::new(marketdata_core::Auth) -> Self
 pub fn marketdata_core::RestClient::resolved_base_url(&self) -> &str
+pub fn marketdata_core::RestClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::RestClient::stock(&self) -> marketdata_core::rest::StockClient<'_>
 pub fn marketdata_core::RestClient::try_base_url(self, &str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::RestClient::with_retry(self, marketdata_core::RetryPolicy) -> Self
 pub fn marketdata_core::RestClient::with_tls(marketdata_core::Auth, marketdata_core::tls::TlsConfig) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::RestClient
 pub fn marketdata_core::RestClient::clone(&self) -> Self
-impl !core::marker::Freeze for marketdata_core::RestClient
+impl core::marker::Freeze for marketdata_core::RestClient
 impl core::marker::Send for marketdata_core::RestClient
 impl core::marker::Sync for marketdata_core::RestClient
 impl core::marker::Unpin for marketdata_core::RestClient
@@ -6922,6 +6991,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::VolumesResponse
 pub struct marketdata_core::WebSocketClient
 impl marketdata_core::websocket::sync::client::WebSocketClient
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::connect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::credentials_handle(&self) -> marketdata_core::websocket::credentials::CredentialsHandle
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::disconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::events_dropped_total(&self) -> u64
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::force_close(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
@@ -6934,6 +7004,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::messages_dropp
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::new(marketdata_core::websocket::config::ConnectionConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::reconnect(&self) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::send(&self, marketdata_core::WebSocketRequest) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::set_credentials(&self, marketdata_core::Auth) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::shutdown_with_timeout(&self, core::time::Duration) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::state(&self) -> marketdata_core::websocket::connection_event::ConnectionState
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::stream_receiver(&self) -> alloc::sync::Arc<marketdata_core::websocket::stream::StreamReceiver>
@@ -6943,6 +7014,7 @@ pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_c
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscription_keys(&self) -> alloc::vec::Vec<alloc::string::String>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::subscriptions(&self) -> alloc::vec::Vec<marketdata_core::models::SubscribeRequest>
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::unsubscribe(&self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> core::result::Result<(), marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::sync::client::WebSocketClient::use_credentials_handle(&self, &marketdata_core::websocket::credentials::CredentialsHandle)
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_full_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_health_check_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::health_check::HealthCheckConfig) -> Self
 pub fn marketdata_core::websocket::sync::client::WebSocketClient::with_reconnection_config(marketdata_core::websocket::config::ConnectionConfig, marketdata_core::websocket::reconnection::ReconnectionConfig) -> Self

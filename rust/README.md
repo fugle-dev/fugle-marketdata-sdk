@@ -231,6 +231,36 @@ let _ = AuthRequest::with_token("your-bearer-token");
 let _ = AuthRequest::with_sdk_token("your-sdk-token");
 ```
 
+### Changing credentials
+
+A token that expires can be replaced on a live client with
+`set_credentials`, which takes an `Auth` of any kind and refuses a blank one
+with `ConfigError` (1004). On a `WebSocketClient` (sync or `aio`) it applies
+from the next connection attempt — the next `connect()`, an automatic
+reconnect, a `reconnect()` — and the current connection is not authenticated
+again; on a `RestClient` it applies to the next request of the client and of
+every clone of it.
+
+```rust,no_run
+use fugle_marketdata::{Auth, AuthRequest, ConnectionConfig, RestClient, WebSocketClient};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let ws = WebSocketClient::new(ConnectionConfig::fugle_stock(AuthRequest::with_sdk_token("token-1")));
+ws.connect()?;
+// Before token-1 expires: the next reconnect authenticates with token-2.
+ws.set_credentials(Auth::SdkToken("token-2".into()))?;
+
+let rest = RestClient::new(Auth::SdkToken("token-1".into()));
+rest.set_credentials(Auth::SdkToken("token-2".into()))?;
+# Ok(())
+# }
+```
+
+Rejected credentials still end automatic reconnection and leave the client
+closed. To go on, build a new client, hand it the old one's
+`credentials_handle()` with `use_credentials_handle()`, set the new
+credential and connect.
+
 ## Configuration
 
 ### Reconnection

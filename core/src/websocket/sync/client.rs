@@ -18,8 +18,9 @@ use crate::websocket::sync::owner_thread::{
     do_auth_handshake, do_blocking_connect, replay_subscriptions, run_supervisor, OwnerShared,
     WRITE_QUEUE_CAPACITY,
 };
+use crate::websocket::credentials::CredentialsSlot;
 use crate::websocket::{
-    ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
+    ConnectionConfig, CredentialsHandle, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
     MessagesDroppedHandle, ReconnectionConfig, ReconnectionManager, StreamReceiver,
     SubscriptionManager,
 };
@@ -96,6 +97,7 @@ impl WebSocketClient {
         );
 
         let shared = Arc::new(OwnerShared {
+            credentials: CredentialsSlot::new(config.auth.clone()),
             config,
             tls_config,
             health: health_check_config,
@@ -119,6 +121,42 @@ impl WebSocketClient {
             supervisor_exit_rx: Mutex::new(None),
             connect_gate: ConnectGate::default(),
         }
+    }
+
+    /// Replace the credential later connection attempts send — the next
+    /// `connect()`, an automatic reconnect, a `reconnect()` — with `auth`,
+    /// which may be of another kind (#322). The current connection is not
+    /// authenticated again: the server does not take a second auth frame on
+    /// one connection.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection, which leaves the client closed: build a new
+    /// client, hand it [`credentials_handle`](Self::credentials_handle) with
+    /// `use_credentials_handle()`, set the new credential and connect. A
+    /// first `connect()` that was rejected leaves the client open; set the
+    /// new credential and call `connect()` again.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] for a blank credential; the
+    /// current one is then kept.
+    pub fn set_credentials(&self, auth: crate::Auth) -> Result<(), MarketDataError> {
+        self.shared.credentials.handle().set(auth)
+    }
+
+    /// The handle holding this client's credential. Code that builds a new
+    /// client for each connection hands it to the next one with
+    /// [`use_credentials_handle`](Self::use_credentials_handle).
+    pub fn credentials_handle(&self) -> CredentialsHandle {
+        self.shared.credentials.handle()
+    }
+
+    /// Use `handle` as this client's credential from now on, in place of
+    /// the one built from `ConnectionConfig::auth` — the client-requested
+    /// heartbeat interval included, which is the handle's from then on. Call
+    /// it before [`connect`](Self::connect).
+    pub fn use_credentials_handle(&self, handle: &CredentialsHandle) {
+        self.shared.credentials.use_handle(handle);
     }
 
     /// Current connection state (snapshot).
@@ -182,7 +220,9 @@ impl WebSocketClient {
         }
         // Bindings reject bad credentials at construction; this catches a
         // config built directly in Rust or through the UniFFI constructors.
-        self.shared.config.auth.validate()?;
+        // Read once: the handshake below sends what was checked here.
+        let auth = self.shared.credentials.current();
+        auth.validate()?;
         // Held until this connection's supervisor is running (#119).
         let Some(_claim) = self.connect_gate.try_claim() else {
             return Err(MarketDataError::AlreadyConnected);
@@ -211,7 +251,7 @@ impl WebSocketClient {
         });
 
         self.set_state(ConnectionState::Authenticating);
-        let (data, frames) = match do_auth_handshake(&mut ws, &self.shared.config, &self.shared.stream) {
+        let (data, frames) = match do_auth_handshake(&mut ws, auth, &self.shared.config, &self.shared.stream) {
             AuthHandshake::Authenticated { data, frames } => (data, frames),
             AuthHandshake::Rejected { message, data, frames } => {
                 self.set_state(ConnectionState::Disconnected);

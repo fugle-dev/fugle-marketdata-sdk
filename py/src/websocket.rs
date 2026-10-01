@@ -722,6 +722,10 @@ pub struct WebSocketClient {
     /// `Python` token (#313).
     stock: OnceLock<Py<StockWebSocketClient>>,
     futopt: OnceLock<Py<FutOptWebSocketClient>>,
+    /// What `ws.stock` / `ws.futopt` authenticate with, made here so
+    /// `set_credentials()` reaches a product client not built yet (#322).
+    stock_credentials: marketdata_core::CredentialsHandle,
+    futopt_credentials: marketdata_core::CredentialsHandle,
 }
 
 #[pymethods]
@@ -839,8 +843,12 @@ impl WebSocketClient {
             .map_err(|e| pyo3::exceptions::PyTypeError::new_err(format!("{e}")))?;
         }
 
+        let stock_credentials =
+            marketdata_core::CredentialsHandle::new(auth.clone()).map_err(crate::errors::to_py_err)?;
+        let futopt_credentials =
+            marketdata_core::CredentialsHandle::new(auth.clone()).map_err(crate::errors::to_py_err)?;
+
         Ok(Self {
-            auth,
             base_url,
             stock_version,
             futopt_version,
@@ -851,7 +859,47 @@ impl WebSocketClient {
             auth_timeout,
             stock: OnceLock::new(),
             futopt: OnceLock::new(),
+            stock_credentials,
+            futopt_credentials,
+            auth,
         })
+    }
+
+    /// Replace the credential both product clients authenticate with from
+    /// their next connection attempt on: the next `connect()` or automatic
+    /// reconnect. Any of the three kinds may replace any other. A connection already authenticated is not authenticated
+    /// again. `ws.stock.set_credentials()` changes the stock client's alone.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection; set a new credential, then `connect()`.
+    ///
+    /// Provide exactly one, as in the constructor (empty or whitespace-only
+    /// values count as not provided):
+    ///   - api_key: Your Fugle API key
+    ///   - bearer_token: Bearer token for authentication
+    ///   - sdk_token: SDK token for authentication
+    ///
+    /// Raises:
+    ///     ConfigError: code 1004 if zero or multiple credentials are
+    ///         provided; the current credential is then kept
+    ///
+    /// Example:
+    ///     ```python
+    ///     ws.set_credentials(sdk_token=new_token)
+    ///     ```
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None))]
+    pub fn set_credentials(
+        &self,
+        api_key: Option<String>,
+        bearer_token: Option<String>,
+        sdk_token: Option<String>,
+    ) -> PyResult<()> {
+        let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
+            .map_err(crate::errors::to_py_err)?;
+        for handle in [&self.stock_credentials, &self.futopt_credentials] {
+            handle.set(auth.clone()).map_err(crate::errors::to_py_err)?;
+        }
+        Ok(())
     }
 
     /// Access stock market data WebSocket streaming
@@ -883,6 +931,7 @@ impl WebSocketClient {
                 self.tls.clone(),
                 self.message_queue,
                 self.auth_timeout,
+                self.stock_credentials.clone(),
             ),
         )?;
         let _ = self.stock.set(client);
@@ -918,6 +967,7 @@ impl WebSocketClient {
                 self.tls.clone(),
                 self.message_queue,
                 self.auth_timeout,
+                self.futopt_credentials.clone(),
             ),
         )?;
         let _ = self.futopt.set(client);
@@ -1702,6 +1752,7 @@ struct AsyncConnect {
     messages_dropped: Arc<Mutex<Option<marketdata_core::MessagesDroppedHandle>>>,
     last_disconnect: LastDisconnect,
     reconnect_conflict: marketdata_core::ReconnectConflictHandle,
+    credentials: marketdata_core::CredentialsHandle,
     connect_gate: ConnectGate,
     pending: PendingSlot,
     closed: Arc<AtomicBool>,
@@ -1721,6 +1772,7 @@ impl AsyncConnect {
             messages_dropped,
             last_disconnect,
             reconnect_conflict,
+            credentials,
             connect_gate,
             pending,
             closed,
@@ -1740,6 +1792,7 @@ impl AsyncConnect {
         }
         // Before connect(): it warns about the previous connection's close.
         ws_client.use_reconnect_conflict_handle(&reconnect_conflict);
+        ws_client.use_credentials_handle(&credentials);
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
@@ -1989,6 +2042,10 @@ pub struct ProductClient {
     /// `connect()`, whose core client is a new one, for the 3006 warning
     /// (#226, #242).
     reconnect_conflict: marketdata_core::ReconnectConflictHandle,
+    /// The credential every core client this one builds authenticates with,
+    /// for `set_credentials()` to change between and during connections
+    /// (#322).
+    credentials: marketdata_core::CredentialsHandle,
     /// `disconnect()` drops `state`, so "has this client been closed?" cannot
     /// be answered from it — `is_closed()` read `None` as "not closed" and
     /// contradicted its own docstring (#146). Set when a disconnect actually
@@ -2013,6 +2070,7 @@ impl ProductClient {
         tls: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
         auth_timeout: Duration,
+        credentials: marketdata_core::CredentialsHandle,
     ) -> Self {
         Self {
             product,
@@ -2032,6 +2090,7 @@ impl ProductClient {
             messages_dropped: Arc::new(Mutex::new(None)),
             last_disconnect: Arc::new(Mutex::new(None)),
             reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
+            credentials,
             closed: Arc::new(AtomicBool::new(false)),
             connect_gate: ConnectGate::default(),
             pending: Arc::new(Mutex::new(None)),
@@ -2065,6 +2124,17 @@ impl ProductClient {
         if self.callbacks_unshared() {
             self.callbacks.clear();
         }
+    }
+
+    fn set_credentials(
+        &self,
+        api_key: Option<String>,
+        bearer_token: Option<String>,
+        sdk_token: Option<String>,
+    ) -> PyResult<()> {
+        let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)
+            .map_err(crate::errors::to_py_err)?;
+        self.credentials.set(auth).map_err(crate::errors::to_py_err)
     }
 
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
@@ -2113,6 +2183,7 @@ impl ProductClient {
             messages_dropped: Arc::clone(&self.messages_dropped),
             last_disconnect: Arc::clone(&self.last_disconnect),
             reconnect_conflict: self.reconnect_conflict.clone(),
+            credentials: self.credentials.clone(),
             connect_gate: self.connect_gate.clone(),
             pending: Arc::clone(&self.pending),
             closed: Arc::clone(&self.closed),
@@ -2159,6 +2230,7 @@ impl ProductClient {
         *self.messages_dropped.lock().map_err(lock_err)? = Some(ws_client.messages_dropped_handle());
         // Before connect(): it warns about the previous connection's close.
         ws_client.use_reconnect_conflict_handle(&self.reconnect_conflict);
+        ws_client.use_credentials_handle(&self.credentials);
 
         let handoff = Arc::new(Handoff::new(capacity));
         let stop = Arc::new(AtomicBool::new(false));
@@ -2433,6 +2505,7 @@ impl StockWebSocketClient {
         tls: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
         auth_timeout: Duration,
+        credentials: marketdata_core::CredentialsHandle,
     ) -> Self {
         Self {
             client: ProductClient::new(
@@ -2446,6 +2519,7 @@ impl StockWebSocketClient {
                 tls,
                 message_queue,
                 auth_timeout,
+                credentials,
             ),
         }
     }
@@ -2464,6 +2538,31 @@ impl std::ops::Deref for StockWebSocketClient {
 
 #[pymethods]
 impl StockWebSocketClient {
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect.
+    /// Any of the three kinds may replace any other. A connection already
+    /// authenticated is not authenticated again.
+    /// `ws.set_credentials()` changes both product clients'.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection; set a new credential, then `connect()`.
+    ///
+    /// Provide exactly one, as in the constructor (empty or whitespace-only
+    /// values count as not provided): api_key, bearer_token or sdk_token.
+    ///
+    /// Raises:
+    ///     ConfigError: code 1004 if zero or multiple credentials are
+    ///         provided; the current credential is then kept
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None))]
+    pub fn set_credentials(
+        &self,
+        api_key: Option<String>,
+        bearer_token: Option<String>,
+        sdk_token: Option<String>,
+    ) -> PyResult<()> {
+        self.client.set_credentials(api_key, bearer_token, sdk_token)
+    }
+
     // See `ProductClient::traverse` (#313).
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
@@ -2936,6 +3035,7 @@ impl FutOptWebSocketClient {
         tls: marketdata_core::TlsConfig,
         message_queue: MessageQueueSettings,
         auth_timeout: Duration,
+        credentials: marketdata_core::CredentialsHandle,
     ) -> Self {
         Self {
             client: ProductClient::new(
@@ -2949,6 +3049,7 @@ impl FutOptWebSocketClient {
                 tls,
                 message_queue,
                 auth_timeout,
+                credentials,
             ),
         }
     }
@@ -2967,6 +3068,31 @@ impl std::ops::Deref for FutOptWebSocketClient {
 
 #[pymethods]
 impl FutOptWebSocketClient {
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect.
+    /// Any of the three kinds may replace any other. A connection already
+    /// authenticated is not authenticated again.
+    /// `ws.set_credentials()` changes both product clients'.
+    ///
+    /// Call it before a token expires. Rejected credentials still end
+    /// automatic reconnection; set a new credential, then `connect()`.
+    ///
+    /// Provide exactly one, as in the constructor (empty or whitespace-only
+    /// values count as not provided): api_key, bearer_token or sdk_token.
+    ///
+    /// Raises:
+    ///     ConfigError: code 1004 if zero or multiple credentials are
+    ///         provided; the current credential is then kept
+    #[pyo3(signature = (*, api_key=None, bearer_token=None, sdk_token=None))]
+    pub fn set_credentials(
+        &self,
+        api_key: Option<String>,
+        bearer_token: Option<String>,
+        sdk_token: Option<String>,
+    ) -> PyResult<()> {
+        self.client.set_credentials(api_key, bearer_token, sdk_token)
+    }
+
     // See `ProductClient::traverse` (#313).
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
@@ -3469,6 +3595,10 @@ mod tests {
         assert_eq!(cfg.url, marketdata_core::urls::FUTOPT_WS);
     }
 
+    fn test_credentials() -> marketdata_core::CredentialsHandle {
+        marketdata_core::CredentialsHandle::new(marketdata_core::AuthRequest::with_api_key("test-key")).unwrap()
+    }
+
     #[test]
     fn test_websocket_client_creation_with_api_key() {
         // WebSocketClient::new requires Python bindings, test the internal child client instead
@@ -3482,6 +3612,7 @@ mod tests {
             marketdata_core::TlsConfig::default(),
             MessageQueueSettings::parse(None, None).unwrap(),
             marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
+            test_credentials(),
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
@@ -3499,6 +3630,7 @@ mod tests {
             marketdata_core::TlsConfig::default(),
             MessageQueueSettings::parse(None, None).unwrap(),
             marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
+            test_credentials(),
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());
@@ -3529,6 +3661,7 @@ mod tests {
             marketdata_core::TlsConfig::default(),
             MessageQueueSettings::parse(None, None).unwrap(),
             marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
+            test_credentials(),
         );
         let state = client.state.lock().unwrap();
         assert!(state.is_none());

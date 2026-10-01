@@ -140,6 +140,50 @@ fn sends_auth_header_and_accepts_gzip() {
 }
 
 #[test]
+fn set_credentials_changes_the_header_of_later_requests_on_every_clone() {
+    let srv = server(vec![Some(raw("200 OK", QUOTE))]);
+    let c = RestClient::new(Auth::ApiKey("k-123".into())).base_url(&srv.base);
+    let clone = c.clone();
+    quote(&c).unwrap();
+
+    c.set_credentials(Auth::SdkToken("s-789".into())).unwrap();
+    quote(&c).unwrap();
+    quote(&clone).unwrap();
+
+    let heads: Vec<String> =
+        srv.heads.lock().unwrap().iter().map(|h| h.to_ascii_lowercase()).collect();
+    assert!(heads[0].contains("x-api-key: k-123"), "{}", heads[0]);
+    for head in &heads[1..] {
+        assert!(head.contains("x-sdk-token: s-789"), "{head}");
+        assert!(!head.contains("x-api-key"), "{head}");
+    }
+}
+
+#[test]
+fn set_credentials_refuses_a_bad_credential_and_keeps_the_held_one() {
+    let srv = server(vec![Some(raw("200 OK", QUOTE))]);
+    let c = RestClient::new(Auth::BearerToken("t-456".into())).base_url(&srv.base);
+
+    for auth in [Auth::SdkToken("  ".into()), Auth::ApiKey("bad\nkey".into())] {
+        assert!(matches!(c.set_credentials(auth), Err(MarketDataError::ConfigError(_))));
+    }
+    quote(&c).unwrap();
+
+    let head = srv.heads.lock().unwrap()[0].to_ascii_lowercase();
+    assert!(head.contains("authorization: bearer t-456"), "{head}");
+}
+
+#[test]
+fn set_credentials_repairs_a_client_built_with_a_blank_credential() {
+    let srv = server(vec![Some(raw("200 OK", QUOTE))]);
+    let c = RestClient::new(Auth::ApiKey(String::new())).base_url(&srv.base);
+    assert!(matches!(quote(&c), Err(MarketDataError::ConfigError(_))));
+
+    c.set_credentials(Auth::ApiKey("k-123".into())).unwrap();
+    quote(&c).unwrap();
+}
+
+#[test]
 fn credential_with_invalid_header_characters_is_config_error() {
     let srv = server(vec![Some(raw("200 OK", QUOTE))]);
     let c = RestClient::new(Auth::ApiKey("bad\nkey".into())).base_url(&srv.base);

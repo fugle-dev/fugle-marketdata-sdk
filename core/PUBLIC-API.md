@@ -37,6 +37,26 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — `set_credentials()` (#322)
+
+- `+` `websocket::credentials::CredentialsHandle` (also at
+  `marketdata_core::CredentialsHandle` and `websocket::CredentialsHandle`):
+  `new(AuthRequest) -> Result<Self, MarketDataError>` (checked, so no handle
+  holds a blank credential), `set(Auth) -> Result<(), MarketDataError>`,
+  `Clone` sharing one credential, redacting `Debug`. Additive.
+- `+` `WebSocketClient::{set_credentials, credentials_handle,
+  use_credentials_handle}` on both the sync and the `aio` client: later
+  connection attempts (connect, automatic reconnect, `reconnect()`) send the
+  credential held by the handle; a live connection is not authenticated
+  again. Additive.
+- `+` `RestClient::set_credentials(&self, Auth) -> Result<(), MarketDataError>`.
+  Additive.
+- `~` `RestClient`'s `Clone` now shares the credential: a credential set on
+  one clone is sent by all. Before, the credential could not change after
+  construction, so no existing code sees a difference. The auto-trait
+  listing changes from `!Freeze` to `Freeze` (the header moved behind an
+  `Arc`).
+
 ### Unreleased — product clients' resolved base URL (#306)
 
 - `+` `rest::StockClient::resolved_base_url(&self) -> String` — the

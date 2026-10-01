@@ -130,6 +130,27 @@ const client = new RestClient({ bearerToken: 'your-bearer-token' });
 const client = new RestClient({ sdkToken: 'your-sdk-token' });
 ```
 
+### Changing credentials
+
+A token that expires can be replaced without building a new client.
+`setCredentials` takes an object with the same keys, exactly one of them, and
+any kind may replace another; zero, several or a blank value throws code
+1004 and keeps the current credential.
+
+```javascript
+// WebSocket: from the next connection attempt on — the next connect() or
+// automatic reconnect. The live connection is not authenticated again, so
+// call it before the token expires.
+ws.setCredentials({ sdkToken: newToken });       // ws.stock and ws.futopt
+ws.stock.setCredentials({ sdkToken: newToken }); // ws.stock only
+
+// REST: from the next request on, product clients taken before included.
+client.setCredentials({ sdkToken: newToken });
+```
+
+Rejected credentials still end automatic reconnection; set the new
+credential, then call `connect()` again.
+
 ## Configuration
 
 ### Reconnection Options

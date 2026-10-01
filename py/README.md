@@ -179,6 +179,27 @@ client = RestClient(bearer_token="your-bearer-token")
 client = RestClient(sdk_token="your-sdk-token")
 ```
 
+### Changing credentials
+
+A token that expires can be replaced without building a new client.
+`set_credentials` takes the same keyword arguments, exactly one of them, and
+any kind may replace another; zero, several or a blank value raises
+`ConfigError` (code 1004) and keeps the current credential.
+
+```python
+# WebSocket: from the next connection attempt on — the next connect() or
+# automatic reconnect. The live connection is not authenticated again, so
+# call it before the token expires.
+ws.set_credentials(sdk_token=new_token)        # ws.stock and ws.futopt
+ws.stock.set_credentials(sdk_token=new_token)  # ws.stock only
+
+# REST: from the next request on, product clients taken before included.
+client.set_credentials(sdk_token=new_token)
+```
+
+Rejected credentials still end automatic reconnection; set the new
+credential, then call `connect()` again.
+
 ## Configuration
 
 ### Reconnection Config

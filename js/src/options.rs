@@ -164,6 +164,13 @@ pub(crate) const WEBSOCKET_CLIENT_FIELDS: &[Field] = &[
     field("authTimeoutMs", Kind::Millis),
 ];
 
+/// `setCredentials(credentials)` on either client.
+pub(crate) const CREDENTIALS_FIELDS: &[Field] = &[
+    field("apiKey", Kind::Str),
+    field("bearerToken", Kind::Str),
+    field("sdkToken", Kind::Str),
+];
+
 /// `new RestClient(options)`. The WebSocket-only keys are accepted and not
 /// read, so one options object can build both clients: 1.x documented
 /// `version` (and took `healthCheck`) on the same object.
@@ -655,6 +662,11 @@ pub(crate) trait OptionsTable {
 impl OptionsTable for crate::websocket::WebSocketClientOptions {
     const OWNER: &'static str = "WebSocketClient options";
     const FIELDS: &'static [Field] = WEBSOCKET_CLIENT_FIELDS;
+}
+
+impl OptionsTable for crate::websocket::Credentials {
+    const OWNER: &'static str = "setCredentials() credentials";
+    const FIELDS: &'static [Field] = CREDENTIALS_FIELDS;
 }
 
 impl OptionsTable for crate::websocket::RestClientOptions {

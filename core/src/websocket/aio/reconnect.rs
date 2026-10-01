@@ -4,6 +4,7 @@ use crate::websocket::aio::connect_wait::{ConnectWaiters, ReconnectEnd};
 use crate::websocket::aio::writer::{start_writer, WriteFailure, WriterGeneration};
 use crate::websocket::aio::{SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::ConnectionClose;
+use crate::websocket::credentials::CredentialsSlot;
 use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
     classify_auth_response, closed_during_auth, frame_auth, frame_resubscribe, AuthHandshake,
@@ -13,7 +14,7 @@ use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
     SubscriptionManager,
 };
-use crate::MarketDataError;
+use crate::{AuthRequest, MarketDataError};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -59,7 +60,7 @@ pub(crate) async fn replay_subscriptions(
     first_err.map_or(Ok(()), Err)
 }
 
-/// Send the auth frame, then read frames off `ws_read` until a terminal
+/// Send the auth frame for `auth`, then read frames off `ws_read` until a terminal
 /// auth outcome arrives or `config.auth_timeout` elapses. The text frames read are
 /// returned with the outcome, to be queued after the matching event (#68).
 /// Shared by
@@ -73,12 +74,13 @@ pub(crate) async fn replay_subscriptions(
 pub(crate) async fn authenticate(
     ws_sink: &mut WsSink,
     ws_read: &mut WsStream,
+    auth: AuthRequest,
     config: &ConnectionConfig,
     stream: &StreamSender,
 ) -> AuthHandshake {
     // The drop count restarts with each connection attempt.
     stream.start_connection();
-    let auth_json = match frame_auth(config.auth.clone()) {
+    let auth_json = match frame_auth(auth) {
         Ok(json) => json,
         Err(e) => return AuthHandshake::Failed(e),
     };
@@ -173,6 +175,7 @@ pub(crate) async fn try_reconnect(
     shutdown_requested: Arc<AtomicBool>,
     shutdown_notify: Arc<Notify>,
     waiters: Arc<ConnectWaiters>,
+    credentials: Arc<CredentialsSlot>,
 ) -> Option<(WsStream, oneshot::Receiver<WriteFailure>)> {
     let stopping = || shutdown_requested.load(Ordering::SeqCst);
     // Registered before the flag is first read: shutdown sets the flag
@@ -244,8 +247,11 @@ pub(crate) async fn try_reconnect(
                 // attempt where it stands; `disconnect()` reports the
                 // stopped reconnect itself (#98).
                 let connected = tokio::select! {
+                    // Read per attempt: a credential set during the
+                    // backoff is the one sent (#322).
                     result = try_connect(
                         config.clone(),
+                        credentials.current(),
                         Arc::clone(&state),
                         stream.clone(),
                         &shutdown_requested,
@@ -364,6 +370,7 @@ pub(crate) async fn try_reconnect(
 /// and returned as `AuthError`, on which the caller stops (#201).
 pub(crate) async fn try_connect(
     config: ConnectionConfig,
+    auth: AuthRequest,
     state: SharedState,
     stream: StreamSender,
     shutdown_requested: &AtomicBool,
@@ -429,6 +436,7 @@ pub(crate) async fn try_connect(
     let handshake = authenticate(
         &mut new_ws_sink,
         &mut ws_read,
+        auth,
         &config,
         &stream,
     )
@@ -520,7 +528,8 @@ mod tests {
         let state: SharedState =
             Arc::new(std::sync::RwLock::new(ConnectionState::Reconnecting { attempt: 1 }));
         let shutdown = AtomicBool::new(false);
-        let result = try_connect(config, Arc::clone(&state), tx, &shutdown).await;
+        let auth = config.auth.clone();
+        let result = try_connect(config, auth, Arc::clone(&state), tx, &shutdown).await;
         (result, state, rx)
     }
 

@@ -415,6 +415,35 @@ impl RestClient {
         Self::from_options(options.0).map_err(|e| e.into_napi(&env))
     }
 
+    /// Replace the credential later requests send, with any of the three
+    /// kinds. Product clients already taken from this one (`client.stock`,
+    /// `client.stock.intraday`, ...) send it too; a request already sent
+    /// keeps the credential it was sent with.
+    ///
+    /// @param credentials - Exactly one of apiKey, bearerToken, sdkToken
+    /// @throws {TypeError} If `credentials` is not an object of those keys
+    ///   holding strings
+    /// @throws {Error} code 1004 unless exactly one non-empty credential is
+    ///   given, or if it cannot be sent in an HTTP header; the current
+    ///   credential is then kept
+    ///
+    /// @example
+    /// ```javascript
+    /// client.setCredentials({ sdkToken: newToken });
+    /// ```
+    #[napi(ts_args_type = "credentials: Credentials")]
+    pub fn set_credentials(
+        &self,
+        env: napi::Env,
+        credentials: crate::options::Checked<crate::websocket::Credentials>,
+    ) -> napi::Result<()> {
+        credentials
+            .0
+            .into_auth()
+            .and_then(|auth| self.inner.set_credentials(auth))
+            .map_err(|e| crate::errors::to_napi_error(&env, e))
+    }
+
     /// The prefix every request from this client is built on, fully resolved —
     /// host, path prefix and version segment. Endpoints are appended to it.
     ///

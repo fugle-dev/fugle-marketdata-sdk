@@ -16,7 +16,8 @@ started, and read by the client before the close completes.
 
 For reconnect tests the in-process server counts the connections it accepts,
 can cut them without a Close frame (``drop_connections()``), refuse new ones
-(``refuse_connections``) or reject every ``auth`` (``reject_auth``), and logs
+(``refuse_connections``), reject every ``auth`` (``reject_auth``) or every
+``auth`` not carrying one credential (``require_credential``), and logs
 each ``subscribe`` with the index of the connection it came on. It can also
 hold its answer to the next client Close (``hold_next_close()``) until the
 test releases it, keeping that ``disconnect()`` in its close meanwhile, and
@@ -169,6 +170,9 @@ class _Server:
         self.refuse_connections = False
         # Answer every ``auth`` with the rejection, whatever the key.
         self.reject_auth = False
+        # When set, reject every ``auth`` whose ``apikey``, ``token`` or
+        # ``sdkToken`` is not this value.
+        self.required_credential = None
         # Hold the answer to the next client Close until ``release_close()``.
         self._hold_close = False
         self.close_held = threading.Event()
@@ -339,7 +343,13 @@ class _Server:
         if event == "auth":
             if (frame.get("data") or {}).get("apikey") == SILENT_API_KEY:
                 return []
-            if self.reject_auth or (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
+            data = frame.get("data") or {}
+            unaccepted = self.required_credential is not None and self.required_credential not in (
+                data.get("apikey"),
+                data.get("token"),
+                data.get("sdkToken"),
+            )
+            if self.reject_auth or unaccepted or data.get("apikey") == REJECTED_API_KEY:
                 # The server's rejection shape: `code` 1000 at the top level (#201).
                 return [{"event": "error", "code": 1000, "data": {"message": "Invalid authentication credentials"}}]
             if (frame.get("data") or {}).get("apikey") == BARE_AUTH_API_KEY:
@@ -460,6 +470,11 @@ class InProcessLoopbackServer:
     def reject_auth(self, reject=True):
         """Reject every ``auth`` from now on."""
         self._server.reject_auth = reject
+
+    def require_credential(self, credential):
+        """Reject every ``auth`` not carrying ``credential`` from now on;
+        ``None`` accepts any again."""
+        self._server.required_credential = credential
 
     def hold_next_close(self):
         """Answer the next client Close only once ``release_close()`` is
