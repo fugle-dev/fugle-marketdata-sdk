@@ -29,7 +29,7 @@ a reconnect config only to tune it or to turn it off.
 |--------|------|---------|-----|-----|-------------|
 | `enabled` | bool | true | - | - | Whether auto-reconnect is active (Go: use `WithoutReconnect()`) |
 | `max_attempts` | u32/int/number | 0 (unlimited) | 0 | - | Maximum reconnection attempts before giving up; 0 means never give up |
-| `initial_delay_ms` | u64/int/number | 1000 | 100 | - | Initial backoff delay in milliseconds |
+| `initial_delay_ms` | u64/int/number | 1000 | 100 | - | Initial backoff delay in milliseconds; the first wait is in (initial/2, initial] after jitter |
 | `max_delay_ms` | u64/int/number | 60000 | >= initial_delay_ms | - | Maximum backoff delay cap in milliseconds |
 
 **Constraints:**

@@ -18,6 +18,11 @@ pub const DEFAULT_INITIAL_DELAY_MS: u64 = 1000;
 pub const DEFAULT_MAX_DELAY_MS: u64 = 60000;
 
 /// Minimum allowed initial delay to prevent connection storms
+///
+/// The floor applies to the configured value; the jitter takes up to half of
+/// it off, so the first wait is in `(initial_delay / 2, initial_delay]`
+/// (#297). The wait itself is not clamped to this floor: clamping would put
+/// every client that hits it back on the same moment.
 pub const MIN_INITIAL_DELAY_MS: u64 = 100;
 
 /// Upper bound (exclusive) of the jitter taken off each reconnect wait, in
@@ -195,7 +200,9 @@ impl ReconnectionManager {
     /// Calculate next reconnection delay with exponential backoff and jitter
     ///
     /// Attempt `n` waits `base × (1 − U[0, 0.5))`, where
-    /// `base = min(initial_delay × 2^(n-1), max_delay)`: a wait in
+    /// `base = min(initial_delay × 2^min(n-1, 10), max_delay)` (the exponent
+    /// stops at 10: with `max_delay` over `1024 × initial_delay`, the base
+    /// stays at `initial_delay × 1024`): a wait in
     /// `(base / 2, base]`, so never longer than `max_delay`. The jitter takes
     /// time off the base rather than adding to it (#297): added jitter was
     /// cut off by the `max_delay` cap, and every client then retried exactly
