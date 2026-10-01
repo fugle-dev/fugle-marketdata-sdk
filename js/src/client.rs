@@ -503,7 +503,7 @@ impl StockClient {
     /// `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
     #[napi(getter)]
     pub fn base_url(&self) -> String {
-        product_base_url(&self.inner, "stock")
+        self.inner.stock().resolved_base_url()
     }
 }
 
@@ -1779,13 +1779,8 @@ impl FutOptClient {
     /// `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
     #[napi(getter)]
     pub fn base_url(&self) -> String {
-        product_base_url(&self.inner, "futopt")
+        self.inner.futopt().resolved_base_url()
     }
-}
-
-/// `baseUrl` of a product client: the resolved prefix plus the product segment.
-fn product_base_url(inner: &marketdata_core::RestClient, product: &str) -> String {
-    format!("{}/{}", inner.resolved_base_url().trim_end_matches('/'), product)
 }
 
 /// FutOpt intraday data client
