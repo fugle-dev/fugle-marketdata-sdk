@@ -436,7 +436,7 @@ pub struct StreamingVersionRecord {
 /// each spell the options differently (`BaseUrl`, `WithBaseUrl`, `baseUrl`),
 /// so it keeps the record's field name and names the version option's
 /// fields rather than one language's syntax or the Rust builder call (#316).
-/// REST uses `option`.
+/// REST ignores `version_hint`.
 pub(crate) const BASE_URL_WORDING: marketdata_core::urls::BaseUrlWording<'static> =
     marketdata_core::urls::BaseUrlWording {
         option: "base_url",
@@ -1007,7 +1007,7 @@ impl WebSocketClient {
             WebSocketEndpoint::Stock => marketdata_core::websocket::StreamProduct::Stock,
             WebSocketEndpoint::FutOpt => marketdata_core::websocket::StreamProduct::FutOpt,
         };
-        Ok(marketdata_core::websocket::stream_config(
+        Ok(marketdata_core::websocket::stream_config_worded(
             &self.auth,
             self.base_url.as_deref(),
             product,

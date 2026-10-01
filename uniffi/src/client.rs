@@ -123,7 +123,7 @@ impl RestClient {
         Ok(Self {
             inner: self
                 .inner
-                .try_base_url_worded(url, crate::websocket::BASE_URL_WORDING.option)?,
+                .try_base_url_worded(url, crate::websocket::BASE_URL_WORDING)?,
         })
     }
 }

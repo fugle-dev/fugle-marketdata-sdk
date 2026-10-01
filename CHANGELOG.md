@@ -7,17 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking
-
-- **Rust core: `websocket::stream_config` takes a last
-  `wording: urls::BaseUrlWording` argument** (#316): the option name the
-  refusal of a `base_url` carrying a version segment starts with, and the
-  sentence it ends with, so each binding words it in its own terms. It is
-  the call the bindings build their endpoints with. The new
-  `RestClient::try_base_url_worded(url, option)` does the same for REST.
-  `RestClient::base_url` / `try_base_url` and `WebSocketFactory` keep the
-  Rust wording.
-
 ### Added
 
 - **Go: `StreamingClient.Disconnect()`** (#318). It closes the connection and
@@ -36,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stock` / `futopt` fields in C#, Go, Java and C++, which share one
   message. In Node the message, for `RestClient` and `WebSocketClient`
   alike, starts with `baseUrl` instead of `base_url`; the other languages
-  keep `base_url`. The exception type and error code are unchanged.
+  keep `base_url`. The exception type and error code are unchanged, and so
+  is the message from the Rust API.
 - **Go: `LastDisconnect()` no longer panics after `Close()`** (#318).
   `Close()` keeps the last record before releasing the client:
   `LastDisconnect()` after it returns that record, or nil if there was none,

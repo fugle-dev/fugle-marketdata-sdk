@@ -277,16 +277,42 @@ pub enum StreamProduct {
 /// so endpoint semantics stay in one place. `None` for `base_url` is the
 /// production endpoint.
 ///
-/// `wording` words the `base_url` rejection in the binding's terms: the
-/// option's own name (`baseUrl` in Node) and the version option in its own
-/// syntax (`version={'futopt': 'v1.1'}` in Python), since the factory's are
-/// the Rust ones (#316).
-///
 /// # Errors
 ///
 /// Returns [`MarketDataError::ConfigError`] if `base_url` already ends in a
 /// version segment.
 pub fn stream_config(
+    auth: &AuthRequest,
+    base_url: Option<&str>,
+    product: StreamProduct,
+    stock_version: StockVersion,
+    futopt_version: FutOptVersion,
+) -> Result<ConnectionConfig, MarketDataError> {
+    stream_config_worded(
+        auth,
+        base_url,
+        product,
+        stock_version,
+        futopt_version,
+        RUST_WORDING,
+    )
+}
+
+/// [`stream_config`] with the `base_url` rejection worded in the binding's
+/// terms: the option's own name (`baseUrl` in Node) and the version option
+/// in its own syntax (`version={'futopt': 'v1.1'}` in Python), since
+/// `stream_config`'s are the Rust ones (#316).
+///
+/// Hidden from the docs and the public-API baseline like
+/// [`version::option`](crate::websocket::version::option): it serves the
+/// bindings, not Rust callers.
+///
+/// # Errors
+///
+/// Returns [`MarketDataError::ConfigError`] if `base_url` already ends in a
+/// version segment.
+#[doc(hidden)]
+pub fn stream_config_worded(
     auth: &AuthRequest,
     base_url: Option<&str>,
     product: StreamProduct,
@@ -319,10 +345,6 @@ mod tests {
             product,
             StockVersion::default(),
             FutOptVersion::default(),
-            BaseUrlWording {
-                option: "base_url",
-                version_hint: "",
-            },
         )
     }
 
@@ -345,10 +367,6 @@ mod tests {
                 product,
                 StockVersion::default(),
                 FutOptVersion::V1_0,
-                BaseUrlWording {
-                    option: "base_url",
-                    version_hint: "",
-                },
             )
             .unwrap()
             .url
@@ -395,7 +413,6 @@ mod tests {
                 product,
                 StockVersion::default(),
                 FutOptVersion::V1_0,
-                RUST_WORDING,
             )
         };
         let factory = |base_url| {
@@ -423,22 +440,21 @@ mod tests {
     }
 
     #[test]
-    fn test_stream_config_rejection_is_worded_by_the_binding() {
+    fn test_stream_config_worded_names_the_binding_options() {
         // The bindings name their own options; `base_url` and the Rust
         // builder call would mean nothing to a Node user (#316).
-        let hint = "The version comes from version: { futopt: 'v1.1' }.";
-        let wording = BaseUrlWording {
+        const NODE_WORDING: BaseUrlWording<'static> = BaseUrlWording {
             option: "baseUrl",
-            version_hint: hint,
+            version_hint: "The version comes from version: { futopt: 'v1.1' }.",
         };
         for product in [StreamProduct::Stock, StreamProduct::FutOpt] {
-            let msg = stream_config(
+            let msg = stream_config_worded(
                 &AuthRequest::with_api_key("k"),
                 Some("wss://example.com/md/v1.1"),
                 product,
                 StockVersion::default(),
                 FutOptVersion::default(),
-                wording,
+                NODE_WORDING,
             )
             .unwrap_err()
             .to_string();
@@ -448,7 +464,7 @@ mod tests {
             );
             assert!(!msg.contains("base_url"), "{msg}");
             assert!(
-                msg.ends_with(&format!("'wss://example.com/md'. {hint}")),
+                msg.ends_with(&format!("'wss://example.com/md'. {}", NODE_WORDING.version_hint)),
                 "{msg}"
             );
             assert!(!msg.contains("futopt_version"), "{msg}");

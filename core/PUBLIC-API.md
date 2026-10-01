@@ -37,25 +37,6 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
-### Unreleased — `base_url` rejection worded by the binding (#316)
-
-- `+` `urls::BaseUrlWording<'a> { option: &'a str, version_hint: &'a str }`
-  (`Clone`, `Copy`, `Debug`, `PartialEq`, `Eq`) — how a binding words the
-  rejection of a base URL that ends in a version segment: the option's own
-  name (`baseUrl` in Node), and the sentence that ends the message, naming
-  the version option in the binding's syntax (`""` ends it at the corrected
-  prefix). Additive.
-- `~` `websocket::stream_config` (also `websocket::factory::stream_config`)
-  gains a last `wording: BaseUrlWording<'_>` argument. The rejection used to
-  start with `base_url` and end with the Rust builder call
-  (`.futopt_version(FutOptVersion::V1_1)`), which Python and Node users saw.
-  Breaking for callers of `stream_config` (the bindings).
-- `+` `RestClient::try_base_url_worded(self, &str, option: &str)` —
-  `try_base_url` with the rejection naming `option` instead of `base_url`.
-  Additive.
-- `RestClient::base_url` / `try_base_url`, `urls::with_version` and
-  `WebSocketFactory` keep the Rust wording.
-
 ### Unreleased — product clients' resolved base URL (#306)
 
 - `+` `rest::StockClient::resolved_base_url(&self) -> String` — the

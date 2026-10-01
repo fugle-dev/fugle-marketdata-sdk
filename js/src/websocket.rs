@@ -1096,15 +1096,15 @@ pub(crate) fn parse_ws_versions(
 }
 
 /// Words a `baseUrl` rejection in Node's terms: the option's own name and the
-/// version option in Node syntax, not the Rust ones (#316). REST uses
-/// `option`.
+/// version option in Node syntax, not the Rust ones (#316). REST ignores
+/// `version_hint`.
 pub(crate) const BASE_URL_WORDING: marketdata_core::urls::BaseUrlWording<'static> =
     marketdata_core::urls::BaseUrlWording {
         option: "baseUrl",
         version_hint: "The version comes from the version option, e.g. version: { futopt: 'v1.1' }.",
     };
 
-/// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
+/// Forwards to [`marketdata_core::websocket::stream_config_worded`], which owns the
 /// endpoint rules (#252).
 pub(crate) fn build_stream_config(
     auth: &marketdata_core::AuthRequest,
@@ -1113,7 +1113,7 @@ pub(crate) fn build_stream_config(
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
-    marketdata_core::websocket::stream_config(
+    marketdata_core::websocket::stream_config_worded(
         auth,
         base_url,
         product,

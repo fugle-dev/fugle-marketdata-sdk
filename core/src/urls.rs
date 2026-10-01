@@ -97,6 +97,9 @@ fn trailing_version_segment(s: &str) -> Option<&str> {
 /// `hint` is appended to the rejection message to point at whichever option
 /// owns the version for this transport — pass `""` when there isn't one.
 ///
+/// The message is in Rust's terms: it names the option `base_url`. The
+/// bindings word it in their own through [`BaseUrlWording`] (#316).
+///
 /// # Errors
 ///
 /// Returns [`MarketDataError::ConfigError`] if `base` already ends in a
@@ -118,8 +121,11 @@ pub fn with_version(base: &str, version: &str, hint: &str) -> Result<String, Mar
 /// version segment, so the message names its own option rather than the
 /// Rust one (#316).
 ///
-/// Taken by [`websocket::stream_config`](crate::websocket::stream_config)
+/// Taken by [`websocket::stream_config_worded`](crate::websocket::stream_config_worded)
 /// and [`RestClient::try_base_url_worded`](crate::RestClient::try_base_url_worded).
+/// Hidden from the docs and the public-API baseline like
+/// [`rest::params`](crate::rest::params): it serves the bindings.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BaseUrlWording<'a> {
     /// The option's name in the binding: `base_url` in Python, `baseUrl` in
