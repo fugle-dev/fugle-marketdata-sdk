@@ -457,6 +457,13 @@ client.ping(state=None)                    # Send a ping frame
 client.measure_latency(timeout_ms=None)    # Round trip to the server, in milliseconds
 ```
 
+Call `disconnect()` before letting go of a client: dropping it does not
+close the connection. While connected, the client's background thread keeps
+its callbacks alive and keeps calling them, so a callback that refers to the
+client (a closure over `ws`, say) keeps the client alive as well. Once
+`disconnect()` has returned, the garbage collector frees such a client (after
+a `disconnect()` from a callback, once that thread has finished).
+
 Both clients also have async versions, which do not block the event loop:
 
 ```python

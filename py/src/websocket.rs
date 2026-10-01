@@ -25,12 +25,12 @@
 //! ```
 
 use pyo3::prelude::*;
-use pyo3::sync::PyOnceLock;
 use pyo3::types::PyDict;
+use pyo3::{PyTraverseError, PyVisit};
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use marketdata_core::aio::admission::{admit, Admission, ConnectClaim, ConnectGate, Delivered, StoredConnection};
@@ -718,8 +718,10 @@ pub struct WebSocketClient {
     /// `ws.stock` / `ws.futopt`, built on first read and returned on every
     /// read after, as 2.x's factory did (#306): `ws.stock.on(...)` then
     /// `ws.stock.connect()` must reach the same client.
-    stock: PyOnceLock<Py<StockWebSocketClient>>,
-    futopt: PyOnceLock<Py<FutOptWebSocketClient>>,
+    /// A `std` cell, not `PyOnceLock`: `__traverse__` reads them without a
+    /// `Python` token (#313).
+    stock: OnceLock<Py<StockWebSocketClient>>,
+    futopt: OnceLock<Py<FutOptWebSocketClient>>,
 }
 
 #[pymethods]
@@ -847,8 +849,8 @@ impl WebSocketClient {
             tls,
             message_queue,
             auth_timeout,
-            stock: PyOnceLock::new(),
-            futopt: PyOnceLock::new(),
+            stock: OnceLock::new(),
+            futopt: OnceLock::new(),
         })
     }
 
@@ -860,14 +862,15 @@ impl WebSocketClient {
     ///     StockWebSocketClient for stock streaming with inherited config
     #[getter]
     pub fn stock(&self, py: Python<'_>) -> PyResult<Py<StockWebSocketClient>> {
-        if let Some(client) = self.stock.get(py) {
+        if let Some(client) = self.stock.get() {
             return Ok(client.clone_ref(py));
         }
         // Built outside the cell rather than in `get_or_try_init`: `Py::new`
         // allocates, which can run the cyclic GC, and a finalizer that reads
         // `ws.stock` would then initialize the cell re-entrantly — which
-        // `PyOnceLock` documents as a deadlock or a panic. Racing builders
-        // each make one; the first `set` wins and every caller returns it.
+        // `OnceLock` leaves unspecified (a deadlock or a panic). Racing
+        // builders each make one; the first `set` wins and every caller
+        // returns it.
         let client = Py::new(
             py,
             StockWebSocketClient::new(
@@ -882,8 +885,8 @@ impl WebSocketClient {
                 self.auth_timeout,
             ),
         )?;
-        let _ = self.stock.set(py, client);
-        Ok(self.stock.get(py).expect("set above").clone_ref(py))
+        let _ = self.stock.set(client);
+        Ok(self.stock.get().expect("set above").clone_ref(py))
     }
 
     /// Access futures and options WebSocket streaming
@@ -894,14 +897,15 @@ impl WebSocketClient {
     ///     FutOptWebSocketClient for FutOpt streaming with inherited config
     #[getter]
     pub fn futopt(&self, py: Python<'_>) -> PyResult<Py<FutOptWebSocketClient>> {
-        if let Some(client) = self.futopt.get(py) {
+        if let Some(client) = self.futopt.get() {
             return Ok(client.clone_ref(py));
         }
         // Built outside the cell rather than in `get_or_try_init`: `Py::new`
         // allocates, which can run the cyclic GC, and a finalizer that reads
         // `ws.futopt` would then initialize the cell re-entrantly — which
-        // `PyOnceLock` documents as a deadlock or a panic. Racing builders
-        // each make one; the first `set` wins and every caller returns it.
+        // `OnceLock` leaves unspecified (a deadlock or a panic). Racing
+        // builders each make one; the first `set` wins and every caller
+        // returns it.
         let client = Py::new(
             py,
             FutOptWebSocketClient::new(
@@ -916,8 +920,21 @@ impl WebSocketClient {
                 self.auth_timeout,
             ),
         )?;
-        let _ = self.futopt.set(py, client);
-        Ok(self.futopt.get(py).expect("set above").clone_ref(py))
+        let _ = self.futopt.set(client);
+        Ok(self.futopt.get().expect("set above").clone_ref(py))
+    }
+
+    // A callback closing over this client makes a cycle through `ws.stock`
+    // or `ws.futopt`; the GC collects it once it sees these (#313).
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(self.stock.get())?;
+        visit.call(self.futopt.get())
+    }
+
+    fn __clear__(&mut self) {
+        self.stock.take();
+        self.futopt.take();
     }
 }
 
@@ -2021,6 +2038,35 @@ impl ProductClient {
         }
     }
 
+    /// Whether the GC may see, and clear, the callbacks (#313): only while
+    /// nothing else holds them. A stream reader or a connect in progress does
+    /// — it calls them, so they stay alive as long as the connection does,
+    /// as with no cycle. Only Python code (`connect()`) adds a holder, which
+    /// a client the GC found unreachable cannot run — but for a finalizer,
+    /// between `traverse` and `clear`: `clear` then leaves the callbacks.
+    ///
+    /// That holds as long as `self.callbacks` is cloned only on a thread
+    /// attached to Python (now `async_connect` and `connect`), and no Python
+    /// code runs while its write lock is held. Otherwise the count, or a
+    /// `try_read`, could change between the passes of one collection, and
+    /// callbacks still in use could be cleared without a word.
+    fn callbacks_unshared(&self) -> bool {
+        Arc::strong_count(&self.callbacks) == 1
+    }
+
+    fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        if self.callbacks_unshared() {
+            self.callbacks.traverse(visit)?;
+        }
+        Ok(())
+    }
+
+    fn clear(&self) {
+        if self.callbacks_unshared() {
+            self.callbacks.clear();
+        }
+    }
+
     fn build_config(&self) -> marketdata_core::ConnectionConfig {
         // `base_url` was already validated in `WebSocketClient::new`, so the
         // only way this can fail is a caller constructing the product client
@@ -2418,6 +2464,16 @@ impl std::ops::Deref for StockWebSocketClient {
 
 #[pymethods]
 impl StockWebSocketClient {
+    // See `ProductClient::traverse` (#313).
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        self.client.traverse(&visit)
+    }
+
+    fn __clear__(&self) {
+        self.client.clear();
+    }
+
     /// Register a callback for an event type
     ///
     /// Supported events:
@@ -2911,6 +2967,16 @@ impl std::ops::Deref for FutOptWebSocketClient {
 
 #[pymethods]
 impl FutOptWebSocketClient {
+    // See `ProductClient::traverse` (#313).
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        self.client.traverse(&visit)
+    }
+
+    fn __clear__(&self) {
+        self.client.clear();
+    }
+
     /// Register a callback for an event type
     ///
     /// Supported events:

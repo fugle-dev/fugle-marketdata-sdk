@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closed the connection with no reconnect to follow. It used to connect and
   drop every message, since there was no open channel to deliver them to.
   Create a new client to stream again.
+- **Python: a WebSocket client whose callback refers back to it is freed by
+  the garbage collector** (#313). A callback that closes over a local `ws`
+  (`ws` → `ws.stock` → the callback → `ws`) made a cycle the GC could not
+  see, so the client and its callbacks were never freed; `ws.stock` being
+  cached since #306 made it more common. Once `disconnect()` has returned,
+  `gc.collect()` now frees it (after a `disconnect()` from a callback, once
+  the callback has returned and the background thread has ended). A
+  connected client is kept, as before: its background thread keeps calling
+  the callbacks until `disconnect()`, which the README now recommends
+  before letting go of a client.
+- **Python: `off(event)` no longer deadlocks when a removed callback's
+  finalizer calls `on()` or `off()`** (#313). The callbacks are now let go
+  of after the registry's lock is released.
 
 ## [Bindings 3.0.0-rc.11 / core 0.9.0-rc.9 / uniffi 0.2.0-rc.9] - 2026-10-01
 
