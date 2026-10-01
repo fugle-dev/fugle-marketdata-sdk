@@ -30,16 +30,23 @@ npm run build
 ```javascript
 const { RestClient } = require('@fugle/marketdata');
 
-// Create client with API key
-const client = new RestClient({ apiKey: 'your-api-key' });
+async function main() {
+  // Create client with API key
+  const client = new RestClient({ apiKey: 'your-api-key' });
 
-// REST methods return Promises
-const quote = await client.stock.intraday.quote({ symbol: '2330' });
-console.log('TSMC Price:', quote.closePrice);
+  // REST methods return Promises
+  const quote = await client.stock.intraday.quote({ symbol: '2330' });
+  console.log('TSMC Price:', quote.closePrice);
 
-// Get futures quote
-const futoptQuote = await client.futopt.intraday.quote('TXFC4');
-console.log('TXF Price:', futoptQuote.closePrice);
+  // Get futures quote: contract symbols expire, so look up the TAIEX futures
+  // (TXF) contracts listed today and take the nearest month
+  const txf = await client.futopt.intraday.tickers({ type: 'FUTURE', product: 'TXF', isSpread: false });
+  const front = txf.data.reduce((a, b) => (b.settlementDate < a.settlementDate ? b : a)).symbol;
+  const futoptQuote = await client.futopt.intraday.quote(front);
+  console.log(`${front} Price:`, futoptQuote.closePrice);
+}
+
+main().catch(console.error);
 ```
 
 ### WebSocket Streaming
@@ -81,15 +88,19 @@ ws.stock.on('error', (err) => {
 // (what was thrown) — the first at once, then at most once per second.
 // Without an `error` listener it is printed with console.error.
 
-// Connect: resolves with the server's authenticated data, or rejects with
-// the server's data object when the credentials are rejected
-await ws.stock.connect();
-ws.stock.subscribe({ channel: 'trades', symbol: '2330' });
+async function main() {
+  // Connect: resolves with the server's authenticated data, or rejects with
+  // the server's data object when the credentials are rejected
+  await ws.stock.connect();
+  ws.stock.subscribe({ channel: 'trades', symbol: '2330' });
 
-// Disconnect after 30 seconds
-setTimeout(() => {
-  ws.stock.disconnect();
-}, 30000);
+  // Disconnect after 30 seconds
+  setTimeout(() => {
+    ws.stock.disconnect();
+  }, 30000);
+}
+
+main().catch(console.error);
 ```
 
 ### TypeScript

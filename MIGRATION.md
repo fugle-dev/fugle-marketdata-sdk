@@ -40,6 +40,21 @@ significantly better runtime performance. The public API has been kept as
 close as practical to the legacy SDKs — most call sites compile/run without
 modification.
 
+### The five changes most upgrades run into
+
+| | Python 2.x → 3.0 | Node 1.x → 3.0 |
+|---|---|---|
+| 1. Auto-reconnect is on | Your own `disconnect()` + `connect()` recovery code loops with it; keep one ([§5](#5-auto-reconnect-is-on-by-default)) | Same; a `disconnect` handler that only calls `connect()` keeps working ([§5](#5-auto-reconnect-is-on-by-default), [§11](#11-node-websocket-connect-rejects-while-already-connected-and-waits-during-a-reconnect)) |
+| 2. Errors look different | `str(e)` is just the message; a missing credential raises `ConfigError`, not `TypeError` ([§6](#6-python-exception-hierarchy-is-finer-grained), [§20](#20-python-smaller-differences-from-2x)) | REST rejects on HTTP 4xx/5xx instead of resolving the error body ([§8](#8-node-rest-rejects-on-http-errors-instead-of-resolving-the-error-body)) |
+| 3. Messages | The `message` callback gets a `dict`; `raw_message` gets the `str` ([§3](#3-python-websocket-message-event-delivers-a-parsed-dict)) | Unchanged strings, but a slow listener now loses messages past 4096 unread ([defaults](#defaults-that-changed)) |
+| 4. Slow callbacks drop data | Callbacks share one thread; one that blocks makes the queue overflow ([§15](#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)) | See row 3: `messageOverflow: 'unbounded'` restores 1.x's never-drop |
+| 5. Health check | `HealthCheckConfig` keeps its name, not its fields; detection is on by default ([drop-in table](#drop-in-compatible-no-changes-needed)) | `healthCheck.pingInterval` / `maxMissedPongs` are ignored with a warning; detection is on by default |
+
+Every other difference is below: the drop-in table lists what keeps working,
+the numbered sections what does not, and
+[Defaults that changed](#defaults-that-changed) what behaves differently
+without any code change.
+
 ### Supported platforms
 
 The legacy SDKs are pure Python / pure JS and install anywhere; this SDK ships
@@ -49,6 +64,16 @@ Windows x64 only, and requires Python 3.8+ / Node.js 18+. On other platforms
 while npm installs 3.x and fails at `require`. Pin `fugle-marketdata<3` or
 `@fugle/marketdata@<3` there; see
 [Unsupported platforms](docs/INSTALL.md#unsupported-platforms).
+
+1.x also ran outside Node (it used `isomorphic-fetch` and `isomorphic-ws`).
+3.x is a native Node module: it does not run in a browser, in a front-end
+bundle (webpack, Vite) or in an Electron renderer process; Deno and Bun are
+not tested, and it is not known whether it works there. Keep
+`@fugle/marketdata@<3` in those environments.
+
+2.x installed `requests`, `websocket-client`, `pyee` and `orjson` with it;
+3.x depends on nothing. Code that imports one of them without declaring it
+fails in a fresh environment: add it to your own requirements.
 
 ### Drop-in compatible (no changes needed)
 
@@ -61,7 +86,7 @@ to rewrite call sites:
 | Constructor (Py) | `RestClient(api_key=...)`, `WebSocketClient(api_key=...)` |
 | Constructor (Node) | `new RestClient({ apiKey })`, `new WebSocketClient({ apiKey })` |
 | Auth methods | `apiKey` / `bearerToken` / `sdkToken` (exactly one required) |
-| REST namespaces | `client.stock.{intraday,historical,snapshot,technical,corporateActions}`, `client.futopt.{intraday,historical}` |
+| REST namespaces | `client.stock.{intraday,historical,snapshot,technical,ownership}` plus `corporate_actions` (Python) / `corporateActions` (Node), `client.futopt.{intraday,historical}` |
 | `stock.intraday.tickers(type=...)` | ✅ restored — was missing in early Rust SDK |
 | `futopt.intraday.tickers(type=...)` | ✅ restored |
 | `futopt.intraday.products(type=...)` | ✅ restored on Python (Node already had it) |
@@ -74,7 +99,7 @@ to rewrite call sites:
 | WebSocket `on('authenticated', cb)` / `on('unauthenticated', cb)` | ✅ restored, each with its legacy argument: the server's `data` object (Node, as 1.x); the whole frame as a dict, `{"event": "authenticated", "data": {...}}` / `{"event": "error", "code": 1000, "data": {...}}` (Python, as 2.x) |
 | Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` (3.0 adds `intent` and `willReconnect`) | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
-| WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
+| WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works. Python takes a `str` only: 2.x sent any JSON value, 3.0 raises `TypeError` for a dict or number |
 | Node `client.stock.baseUrl` / `client.futopt.baseUrl` | ✅ the request prefix with the product segment, e.g. `https://api.fugle.tw/marketdata/v1.0/stock`, as in 1.x; `client.baseUrl` (new) is the prefix without it |
 | Python `ws.stock` / `ws.futopt` read again for each call (`ws.stock.on(...)`, `ws.stock.connect()`, `ws.stock.subscribe(...)`) | ✅ each property returns the same client every time, as 2.x's factory did (see [§19](#19-the-legacy-clients-plumbing-is-gone-get_client-request-options)) |
 | Python `rest.stock.base_url` / `rest.futopt.base_url` | ✅ includes the product segment, e.g. `https://api.fugle.tw/marketdata/v1.0/stock`, as in 2.x; `rest.base_url` is the value without it |
@@ -88,6 +113,18 @@ to rewrite call sites:
 | Python `ws.stock.on(event, f)` twice with the same `f` | ✅ registered once, as in 2.x: `f` runs once per event |
 | Python WebSocket `error` callback `on_error(err)` | ✅ one argument as in 2.x, now a `WebSocketError` (2.x passed the websocket-client exception); `str(err)` is its message |
 | `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (both ignore them and warn: Node with a process warning once per process, Python with a `FugleHealthCheckWarning` — a `UserWarning`, shown once per calling line under the default warning filters; both carry code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. Python also keeps 2.x's positional order, `HealthCheckConfig(enabled, ping_interval, max_missed_pongs)`). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
+
+### Defaults that changed
+
+Code that passes none of these options gets different behaviour:
+
+| Setting | Legacy | 3.0 default | To get the legacy behaviour |
+|---|---|---|---|
+| Auto-reconnect | none | on, no attempt limit, 1 s doubling to 60 s ([§5](#5-auto-reconnect-is-on-by-default)) | `ReconnectConfig.disabled()` / `reconnect: { enabled: false }` |
+| Health check | off (2.x / 1.x pinged only when enabled) | on: no inbound frame for 35 s closes the connection, then auto-reconnect | `HealthCheckConfig(enabled=False)` / `healthCheck: { enabled: false }` |
+| Unread message queue | none, nothing dropped (2.x ran callbacks on the socket's reader thread; 1.x: plain `EventEmitter`) | `drop_newest` / `'dropNewest'`: past 4096 unread messages new ones are dropped and reported with `messages_dropped` / `messagesDropped` | `message_overflow="unbounded"` / `messageOverflow: 'unbounded'` |
+| Auth timeout | Python 5 s (`Exception('authentication timeout')`); Node none (`connect()` could stay pending) | 10 s, then `TimeoutError` / an `Error` with code 3001 | Python `auth_timeout_ms=5000`; Node cannot turn it off, raise `authTimeoutMs` |
+| REST request timeout | none | 30 s for each phase: connect, send, wait for the response, read the body ([§7](#7-rest-has-a-default-request-timeout)) | — |
 
 ### Breaking changes you need to adapt
 
@@ -114,12 +151,8 @@ quote = client.stock.intraday.quote("2330")
 quote = await client.stock.intraday.quote_async("2330")
 ```
 
-The async sibling exists for every REST method:
-`quote_async`, `ticker_async`, `candles_async`, `trades_async`,
-`volumes_async`, `tickers_async`, `stats_async`, `quotes_async`,
-`movers_async`, `actives_async`, `sma_async`, `rsi_async`, `kdj_async`,
-`macd_async`, `bb_async`, `capital_changes_async`, `dividends_async`,
-`listing_applicants_async`, `products_async`, `daily_async`.
+Every REST method `name` has an `name_async` sibling taking the same
+arguments (`quote_async`, `etf_holdings_async`, `daily_async`, ...).
 
 #### 2. Python REST: keywords are checked, and the legacy spellings work
 
@@ -139,9 +172,9 @@ client.stock.intraday.trades(symbol="2330", limit=5, isTrial=True)
 client.stock.intraday.ticker(symbol="2330", type="oddlot")
 
 # This SDK's spelling
-await client.stock.historical.candles("2330", from_date="2024-01-01", to_date="2024-02-01")
-await client.stock.intraday.trades("2330", limit=5, is_trial=True)
-await client.stock.intraday.ticker("2330", odd_lot=True)
+client.stock.historical.candles("2330", from_date="2024-01-01", to_date="2024-02-01")
+client.stock.intraday.trades("2330", limit=5, is_trial=True)
+client.stock.intraday.ticker("2330", odd_lot=True)
 ```
 
 Two differences from the legacy pass-through, both on purpose:
@@ -155,6 +188,10 @@ Two differences from the legacy pass-through, both on purpose:
 
 Type checkers (mypy, pyright) only know the snake_case keywords; the other
 spellings are a runtime compatibility layer.
+
+Values are checked by type too, where 2.x sent whatever it got through
+`urlencode`: `timeframe` must be a `str` (`timeframe=5` raises `TypeError`;
+write `"5"`) and `limit` / `offset` an `int` (`limit="5"` raises).
 
 #### 2a. Python WebSocket `subscribe` / `unsubscribe` accept dict OR positional
 
@@ -192,7 +229,7 @@ for. A key set to `None` counts as not given. An unsubscribe dict without
 
 #### 3. Python WebSocket `message` event delivers a parsed dict
 
-In the legacy Python SDK, the `message` event hands you the raw JSON bytes
+In the legacy Python SDK, the `message` event hands you the raw JSON `str`
 and you call `json.loads` yourself. This SDK delivers the **already-parsed
 dict** directly.
 
@@ -263,8 +300,8 @@ Differences from the legacy object form:
   the API names; one parameter under two spellings rejects.
 - A key set to `null` is dropped, like `undefined`. The legacy SDK sent it as
   a bare key with no value (`?offset`).
-- Query params keep the order they appear in the object. The legacy SDK sorted
-  them alphabetically.
+- Query params are not sent in any particular order (the legacy SDK sorted
+  them alphabetically). The server does not depend on the order.
 
 #### 5. Auto-reconnect is on by default
 
@@ -394,8 +431,10 @@ into the more specific subclasses for cleaner handling. Every exception has
 in for HTTP errors:
 
 ```python
+from fugle_marketdata import ApiError, MarketDataError, RateLimitError
+
 try:
-    quote = await client.stock.intraday.quote("INVALID")
+    quote = client.stock.intraday.quote("INVALID")
 except RateLimitError as e:
     backoff(e.headers.get("retry-after"))
 except ApiError as e:
@@ -414,13 +453,35 @@ message nor anywhere else (`e.url` and `e.params` are always `None`); the
 status and body are in `e.status` and `e.body`. Log monitors that match the
 `[Fugle API Error]` prefix or the `URL:` line need updating.
 
+Other fields that changed meaning:
+
+- **`e.message`** was the `message` of the server's JSON (`Resource Not
+  Found`). It is now the SDK's description, the same text as `str(e)`
+  (`API error (status 404): {"statusCode":404,"message":"Resource Not
+  Found"}`). The server's own text is `json.loads(e.body)["message"]`.
+- **A response that is not valid JSON** raised `FugleAPIError("Failed to
+  parse JSON response")` with `status_code` and `response_text`. It is now a
+  `MarketDataError` with code 9999 whose message is the parser's, and
+  `status` / `body` are `None`.
+- **`FugleAPIError(...)` cannot be constructed with 2.x's keywords** (`url=`,
+  `status_code=`, `response_text=`, `params=`): `MarketDataError() takes no
+  keyword arguments`. Tests and mocks that build one need another exception
+  or a stub.
+- **A missing or extra credential** raised `TypeError` in 2.x
+  (`One of the "apiKey", ... options must be specified`). It is now
+  `ConfigError` (code 1004), which is not a `TypeError`; `except TypeError:`
+  around the constructor needs `except ConfigError:`. A credential that is
+  only whitespace counts as missing.
+
 #### 7. REST has a default request timeout
 
-The legacy Python SDK calls `requests.get` with **no** timeout, so a stalled
-connection hangs forever. This SDK has a default timeout enforced by the
-Rust core. If you actually relied on the no-timeout behaviour you will see
-new `TimeoutError` exceptions — the fix is to retry at the application
-layer.
+The legacy SDKs set **no** timeout (Python's `requests.get`, Node's `fetch`),
+so a stalled connection hangs forever. This SDK, in every language, allows
+30 seconds for each phase of a request — connecting, sending the request,
+waiting for the response, reading the body — timed separately, so a request
+that keeps making progress can take longer in total. If you actually relied
+on the no-timeout behaviour you will see new `TimeoutError` exceptions — the
+fix is to retry at the application layer.
 
 #### 8. Node REST rejects on HTTP errors instead of resolving the error body
 
@@ -619,7 +680,17 @@ Three differences remain from 1.x's `error` event:
   `error` listener, e.g. `if (err.code === 3004) process.exit(1)`.
 
 This SDK also has a `reconnect` event (1.x had no auto-reconnect), receiving
-`{ attempt }`.
+`{ attempt }`, and a `messagesDropped` event, receiving `{ dropped, total }`,
+for messages dropped while 4096 were unread (see
+[Defaults that changed](#defaults-that-changed)).
+
+The `disconnect` argument is a plain object, not the socket's `CloseEvent`:
+`wasClean`, `type` and `target` are gone (`intent` tells who closed it), and
+`code` is `null` where 1.x's socket reported 1006, a connection that ended
+without a Close frame. 1.x passed a second argument,
+`{ reason: 'health-check-timeout' }`, when its health check closed the
+connection; 3.0 passes none, and a heartbeat timeout is `intent:
+'network'` with the reason `Heartbeat timeout after …`.
 
 ```javascript
 ws.stock.on('authenticated', (data) => console.log(data.message));
@@ -912,6 +983,69 @@ on HTTP ≥ 400, while 1.x resolved with the error body. The named methods
 behave as described in [§6](#6-python-exception-hierarchy-is-finer-grained)
 and [§8](#8-node-rest-rejects-on-http-errors-instead-of-resolving-the-error-body).
 
+#### 20. Python: smaller differences from 2.x
+
+Each of these breaks only code that relied on it:
+
+- **`RestClient(**options)` refuses the WebSocket options.** 2.x ignored
+  `health_check`, `version` and any other keyword, so one options dict could
+  build both clients; 3.0 raises `TypeError: unexpected keyword argument`.
+  Pass `RestClient` only `api_key` / `bearer_token` / `sdk_token`,
+  `base_url` and the TLS options. `WebSocketClient` also refuses a keyword
+  it does not take, where 2.x passed everything on.
+- **None of 2.x's submodule paths exist.** `fugle_marketdata.rest`,
+  `.websocket`, `.exceptions`, `.constants`, `.client_factory` and
+  `.base_url` raise `ModuleNotFoundError`; import every name from
+  `fugle_marketdata` (`from fugle_marketdata import FugleAPIError`). The 2.x
+  internals on the WebSocket client — `ee`, `auth_status`, `config`,
+  `health_check`, `ping_timer`, `check_auth_status()` — are gone too.
+- **`from fugle_marketdata import *` brings in `ConnectionError` and
+  `TimeoutError`**, the SDK's, which hide Python's built-ins of the same
+  name in that module: an `except TimeoutError:` there no longer catches
+  `socket.timeout` or `asyncio.TimeoutError`. Import the names you use.
+- **`on()` refuses an unknown event name** with `ValueError` listing the
+  events; 2.x's `pyee` accepted any name and never called it.
+- **A command while not connected raises `RuntimeError`** (`Not connected.
+  Call connect() first.`) — `subscribe()`, `unsubscribe()`, `ping()`,
+  `subscriptions()` before `connect()` or after `disconnect()`. 2.x raised
+  websocket-client's `WebSocketConnectionClosedException`.
+- **`connect()` on a connected client raises `WebSocketError` 2011**, as
+  in Node (§11). 2.x returned at once without an error, keeping the one
+  connection.
+- **`disconnect` callbacks get two arguments, `(code, reason)`.** 2.x passed
+  a third, `{"reason": "health-check-timeout"}`, when its health check
+  closed the connection; read `ws.stock.last_disconnect.intent` instead
+  (`"network"`, with the reason `Heartbeat timeout after …`).
+- **`authenticated` fires before the auth frame reaches `message`**; 2.x
+  delivered the frame to `message` first.
+
+#### 21. Node: smaller differences from 1.x
+
+- **Constructor errors are `Error`, not `TypeError`.** No credential, more
+  than one, or a `baseUrl` with a version segment threw `TypeError` in 1.x
+  (from the `stock` / `futopt` getter, for `baseUrl`). 3.0 throws an `Error`
+  with `code` 1004 from the constructor, and its message starts with
+  `Configuration error:`; `instanceof TypeError` checks miss it. A
+  credential that is only whitespace counts as missing. (A misspelled or
+  unknown option is a `TypeError`, §18.)
+- **TypeScript type names changed, and `lib/**` is gone.** 1.x's root types
+  `HealthCheckConfig`, `WebSocketProduct`, `WebSocketVersion`,
+  `WebSocketVersionMap`, `WebSocketVersionOption` and the
+  `WebSocketFutOpt*` message types do not exist; use `HealthCheckOptions`,
+  `'stock' | 'futopt'`, `StreamingVersionOptions` and `WebSocketMessage`.
+  Imports from `@fugle/marketdata/lib/...` fail: the package ships no `lib/`.
+  The `Rest*Params` types are exported from the package root under their
+  1.x names, except ownership's (`EtfHoldingsParams`,
+  `InstitutionalTradesParams`, `DirectorHoldingsParams`,
+  `TdccDistributionParams`). The response types are renamed after the
+  method: `RestStockIntradayQuoteResponse` is `QuoteResponse`,
+  `RestStockHistoricalCandlesResponse` is `HistoricalCandlesResponse`,
+  `RestFutOptIntradayQuoteResponse` is `FutOptQuoteResponse`, and so on.
+- **`client.stock` is a new object on each access**, on `RestClient` as on
+  `WebSocketClient` (§12): `client.stock === client.stock` is `false`.
+  Keep one in a variable to compare it, use it as a `WeakMap` key, or
+  attach properties to it.
+
 ### New things the legacy SDKs did not have
 
 These are additive and do not break anything; you can ignore them if you
@@ -919,6 +1053,12 @@ just want a drop-in replacement.
 
 - **`indices` channel** on stock WebSocket — receive index ticks alongside
   trades / books / candles / aggregates.
+- **Connection state and latency** — `is_connected()` / `is_closed()` /
+  `measure_latency()` (Python), `isConnected` / `isClosed` /
+  `measureLatency()` (Node), and the dropped-message count
+  `messages_dropped_total()` / `messagesDroppedTotal`.
+- **`reconnect` and `messages_dropped` / `messagesDropped` events**, and
+  Python's `raw_message` event and `messages()` iterator.
 - **`with_full_config`** core constructor — fully tunable reconnect +
   health-check config from a single options object.
 - **Per-binding async runtime integration** — Python uses
@@ -929,18 +1069,16 @@ just want a drop-in replacement.
 #### Python
 
 ```python
-import asyncio
-from fugle_marketdata import RestClient, WebSocketClient
+from fugle_marketdata import RestClient
 
-async def main():
-    client = RestClient(api_key="your-api-key")
-    quote = await client.stock.intraday.quote("2330")
-    print(quote["lastPrice"])
-
-asyncio.run(main())
+client = RestClient(api_key="your-api-key")
+quote = client.stock.intraday.quote("2330")
+print(quote["lastPrice"])
+# in asyncio code: quote = await client.stock.intraday.quote_async("2330")
 ```
 
 ```python
+import time
 from fugle_marketdata import WebSocketClient
 
 ws = WebSocketClient(api_key="your-api-key")
@@ -950,25 +1088,33 @@ ws.stock.on("message", lambda msg: print(msg["event"], msg.get("data")))
 
 ws.stock.connect()
 ws.stock.subscribe(channel="trades", symbols=["2330", "2317"])
+time.sleep(10)
+ws.stock.disconnect()
 ```
 
 #### Node.js
 
 ```javascript
-const { RestClient, WebSocketClient } = require('marketdata-js');
+const { RestClient, WebSocketClient } = require('@fugle/marketdata');
 
-const rest = new RestClient({ apiKey: 'your-api-key' });
-const quote = await rest.stock.intraday.quote('2330');
-console.log(quote.lastPrice);
+async function main() {
+  const rest = new RestClient({ apiKey: 'your-api-key' });
+  const quote = await rest.stock.intraday.quote('2330');
+  console.log(quote.lastPrice);
 
-const ws = new WebSocketClient({ apiKey: 'your-api-key' });
-ws.stock.on('authenticated', () => console.log('auth ok'));
-ws.stock.on('message', (raw) => {
-  const msg = JSON.parse(raw);
-  console.log(msg.event, msg.data);
-});
-ws.stock.connect();
-ws.stock.subscribe({ channel: 'trades', symbols: ['2330', '2317'] });
+  const ws = new WebSocketClient({ apiKey: 'your-api-key' });
+  ws.stock.on('authenticated', () => console.log('auth ok'));
+  ws.stock.on('message', (raw) => {
+    const msg = JSON.parse(raw);
+    console.log(msg.event, msg.data);
+  });
+  ws.stock.on('error', (err) => console.error(err.code, err.message));
+  await ws.stock.connect();
+  ws.stock.subscribe({ channel: 'trades', symbols: ['2330', '2317'] });
+  setTimeout(() => ws.stock.disconnect(), 10000);
+}
+
+main().catch(console.error);
 ```
 
 ---
@@ -1178,9 +1324,11 @@ var client2 = new RestClient("your-api-key");
 
 ## Common Issues
 
-### "ValueError: Provide exactly one of: apiKey, bearerToken, sdkToken"
+### "ConfigError: Configuration error: Provide exactly one non-empty credential: API key, bearer token, or SDK token"
 
-**Cause:** You provided zero or multiple authentication methods.
+**Cause:** You provided zero or multiple authentication methods, or one that
+is only whitespace. Python raises `ConfigError` (code 1004; 2.x raised
+`TypeError`), Node an `Error` with `code` 1004 (1.x threw `TypeError`).
 
 **Solution:** Pass exactly one of `api_key`, `bearer_token`, or `sdk_token`:
 
@@ -1211,7 +1359,10 @@ client = RestClient(api_key="key", bearer_token="token")
 
 ### Health Check Not Running
 
-**Cause:** Default changed from `enabled: true` to `enabled: false` in v0.3.0.
+**Cause:** v0.3.0 changed the default to `enabled: false`. 3.0 turned it
+on again (passive, 35 s; see
+[Defaults that changed](#defaults-that-changed)), so this only applies to
+the 0.x releases.
 
 **Solution:** Explicitly enable health checks if needed:
 
