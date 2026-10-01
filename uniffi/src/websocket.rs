@@ -432,11 +432,16 @@ pub struct StreamingVersionRecord {
     pub futopt: Option<String>,
 }
 
-/// Ends a `base_url` rejection. C#, Go, Java and C++ each name the version
-/// option differently, so this names its fields rather than one language's
-/// syntax, and not the Rust builder call (#316).
-const BASE_URL_VERSION_HINT: &str =
-    "The version comes from the streaming version option (its stock / futopt fields).";
+/// Words a `base_url` rejection. C#, Go, Java and C++ share this message and
+/// each spell the options differently (`BaseUrl`, `WithBaseUrl`, `baseUrl`),
+/// so it keeps the record's field name and names the version option's
+/// fields rather than one language's syntax or the Rust builder call (#316).
+/// REST uses `option`.
+pub(crate) const BASE_URL_WORDING: marketdata_core::urls::BaseUrlWording<'static> =
+    marketdata_core::urls::BaseUrlWording {
+        option: "base_url",
+        version_hint: "The version comes from the streaming version option (its stock / futopt fields).",
+    };
 
 impl StreamingVersionRecord {
     fn resolve(
@@ -1008,7 +1013,7 @@ impl WebSocketClient {
             product,
             stock_version,
             futopt_version,
-            BASE_URL_VERSION_HINT,
+            BASE_URL_WORDING,
         )?)
     }
 
@@ -2608,7 +2613,8 @@ mod tests {
             client_for_url(WebSocketEndpoint::FutOpt, Some("wss://staging.fugle.tw/marketdata/v1.0"), None);
         match client.url() {
             Err(MarketDataError::ConfigError { info, .. }) => {
-                assert!(info.message.ends_with(BASE_URL_VERSION_HINT), "{info:?}");
+                assert!(info.message.contains("base_url must not include"), "{info:?}");
+                assert!(info.message.ends_with(BASE_URL_WORDING.version_hint), "{info:?}");
                 assert!(!info.message.contains("futopt_version"), "{info:?}");
             }
             other => panic!("expected ConfigError, got {other:?}"),

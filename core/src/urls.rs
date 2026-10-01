@@ -104,17 +104,50 @@ fn trailing_version_segment(s: &str) -> Option<&str> {
 /// because letting two options decide the same path segment is what forces
 /// precedence rules.
 pub fn with_version(base: &str, version: &str, hint: &str) -> Result<String, MarketDataError> {
+    with_version_worded(
+        base,
+        version,
+        BaseUrlWording {
+            option: "base_url",
+            version_hint: hint,
+        },
+    )
+}
+
+/// How a binding words the rejection of a base URL that already ends in a
+/// version segment, so the message names its own option rather than the
+/// Rust one (#316).
+///
+/// Taken by [`websocket::stream_config`](crate::websocket::stream_config)
+/// and [`RestClient::try_base_url_worded`](crate::RestClient::try_base_url_worded).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BaseUrlWording<'a> {
+    /// The option's name in the binding: `base_url` in Python, `baseUrl` in
+    /// Node. The message starts with it.
+    pub option: &'a str,
+    /// The sentence that ends the message, naming the option that owns the
+    /// version in the binding's syntax; `""` ends it at the corrected prefix.
+    pub version_hint: &'a str,
+}
+
+/// [`with_version`] with the rejection worded for a binding.
+pub(crate) fn with_version_worded(
+    base: &str,
+    version: &str,
+    wording: BaseUrlWording<'_>,
+) -> Result<String, MarketDataError> {
     let trimmed = base.trim_end_matches('/');
 
     if let Some(existing) = trailing_version_segment(trimmed) {
         let prefix = &trimmed[..trimmed.len() - existing.len()];
+        let BaseUrlWording { option, version_hint } = wording;
         return Err(MarketDataError::ConfigError(format!(
-            "base_url must not include a version segment (found '{existing}'). \
+            "{option} must not include a version segment (found '{existing}'). \
              Pass the host and path prefix only: '{prefix}'.{}",
-            if hint.is_empty() {
+            if version_hint.is_empty() {
                 String::new()
             } else {
-                format!(" {hint}")
+                format!(" {version_hint}")
             }
         )));
     }
@@ -209,6 +242,20 @@ mod tests {
         let err = with_version("wss://example.com/md/v1.0", "v1.0", "Use the version option.")
             .expect_err("must reject");
         assert!(err.to_string().ends_with("Use the version option."));
+    }
+
+    #[test]
+    fn test_with_version_worded_names_the_binding_option() {
+        let wording = BaseUrlWording {
+            option: "baseUrl",
+            version_hint: "Use version: { futopt: 'v1.1' }.",
+        };
+        let msg = with_version_worded("wss://example.com/md/v1.0", "v1.0", wording)
+            .expect_err("must reject")
+            .to_string();
+        assert!(msg.contains("baseUrl must not include a version segment"), "{msg}");
+        assert!(!msg.contains("base_url"), "{msg}");
+        assert!(msg.ends_with("'wss://example.com/md'. Use version: { futopt: 'v1.1' }."), "{msg}");
     }
 
     #[test]

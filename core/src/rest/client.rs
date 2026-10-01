@@ -245,8 +245,16 @@ impl RestClient {
     /// 0.6.0 through 0.7.x required `url` to *include* `/v1.0`. That form now
     /// fails. See `MIGRATION-0.8.md`.
     #[must_use]
-    pub fn base_url(mut self, url: &str) -> Self {
-        match crate::urls::with_version(url, crate::urls::API_VERSION, "") {
+    pub fn base_url(self, url: &str) -> Self {
+        self.base_url_worded(url, "base_url")
+    }
+
+    fn base_url_worded(mut self, url: &str, option: &str) -> Self {
+        let wording = crate::urls::BaseUrlWording {
+            option,
+            version_hint: "",
+        };
+        match crate::urls::with_version_worded(url, crate::urls::API_VERSION, wording) {
             Ok(resolved) => {
                 self.base_url = resolved;
                 self.config_error = None;
@@ -268,7 +276,20 @@ impl RestClient {
     /// Returns [`MarketDataError::ConfigError`] if `url` already ends in a
     /// version segment.
     pub fn try_base_url(self, url: &str) -> Result<Self, MarketDataError> {
-        let client = self.base_url(url);
+        self.try_base_url_worded(url, "base_url")
+    }
+
+    /// Same as [`try_base_url`](Self::try_base_url), with the rejection
+    /// naming the option as the binding spells it (`baseUrl` in Node) rather
+    /// than `base_url` (#316). REST serves a single version, so there is no
+    /// version option to point at.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] if `url` already ends in a
+    /// version segment.
+    pub fn try_base_url_worded(self, url: &str, option: &str) -> Result<Self, MarketDataError> {
+        let client = self.base_url_worded(url, option);
         match &client.config_error {
             Some(message) => Err(MarketDataError::ConfigError(message.clone())),
             None => Ok(client),
@@ -861,6 +882,26 @@ mod tests {
             msg.contains("'https://api.fugle.tw/marketdata'"),
             "names the prefix to use instead: {msg}"
         );
+    }
+
+    #[test]
+    fn test_try_base_url_worded_names_the_binding_option() {
+        // Node's option is `baseUrl`; the message names it, not the Rust
+        // setter (#316).
+        let msg = RestClient::new(Auth::SdkToken("t".to_string()))
+            .try_base_url_worded("https://api.fugle.tw/marketdata/v1.0", "baseUrl")
+            .err()
+            .expect("a versioned base_url must be rejected")
+            .to_string();
+        assert!(
+            msg.contains("baseUrl must not include a version segment (found '/v1.0')"),
+            "{msg}"
+        );
+        assert!(!msg.contains("base_url"), "{msg}");
+        let ok = RestClient::new(Auth::SdkToken("t".to_string()))
+            .try_base_url_worded("https://staging.fugle.tw/marketdata", "baseUrl")
+            .unwrap();
+        assert_eq!(ok.resolved_base_url(), "https://staging.fugle.tw/marketdata/v1.0");
     }
 
     #[test]

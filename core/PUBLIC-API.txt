@@ -3519,6 +3519,7 @@ pub fn marketdata_core::RestClient::new(marketdata_core::Auth) -> Self
 pub fn marketdata_core::RestClient::resolved_base_url(&self) -> &str
 pub fn marketdata_core::RestClient::stock(&self) -> marketdata_core::rest::StockClient<'_>
 pub fn marketdata_core::RestClient::try_base_url(self, &str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::RestClient::try_base_url_worded(self, &str, &str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::RestClient::with_retry(self, marketdata_core::RetryPolicy) -> Self
 pub fn marketdata_core::RestClient::with_tls(marketdata_core::Auth, marketdata_core::tls::TlsConfig) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::RestClient
@@ -3628,6 +3629,25 @@ impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::tls::TlsConfig
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::tls::TlsConfig
 pub fn marketdata_core::tls::build_rustls_config(&marketdata_core::tls::TlsConfig) -> core::result::Result<alloc::sync::Arc<rustls::client::client_conn::ClientConfig>, marketdata_core::errors::MarketDataError>
 pub mod marketdata_core::urls
+pub struct marketdata_core::urls::BaseUrlWording<'a>
+pub marketdata_core::urls::BaseUrlWording::option: &'a str
+pub marketdata_core::urls::BaseUrlWording::version_hint: &'a str
+impl<'a> core::clone::Clone for marketdata_core::urls::BaseUrlWording<'a>
+pub fn marketdata_core::urls::BaseUrlWording<'a>::clone(&self) -> marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::cmp::Eq for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::cmp::PartialEq for marketdata_core::urls::BaseUrlWording<'a>
+pub fn marketdata_core::urls::BaseUrlWording<'a>::eq(&self, &marketdata_core::urls::BaseUrlWording<'a>) -> bool
+impl<'a> core::fmt::Debug for marketdata_core::urls::BaseUrlWording<'a>
+pub fn marketdata_core::urls::BaseUrlWording<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::marker::StructuralPartialEq for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::marker::Freeze for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::marker::Send for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::marker::Sync for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::marker::Unpin for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::marker::UnsafeUnpin for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for marketdata_core::urls::BaseUrlWording<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for marketdata_core::urls::BaseUrlWording<'a>
 pub const marketdata_core::urls::API_VERSION: &str
 pub const marketdata_core::urls::FUTOPT_WS: &str
 pub const marketdata_core::urls::REST_BASE: &str
@@ -4151,7 +4171,7 @@ impl core::marker::Unpin for marketdata_core::websocket::factory::WithAuth
 impl core::marker::UnsafeUnpin for marketdata_core::websocket::factory::WithAuth
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::websocket::factory::WithAuth
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::factory::WithAuth
-pub fn marketdata_core::websocket::factory::stream_config(&marketdata_core::AuthRequest, core::option::Option<&str>, marketdata_core::websocket::factory::StreamProduct, marketdata_core::websocket::version::StockVersion, marketdata_core::websocket::version::FutOptVersion, &str) -> core::result::Result<marketdata_core::websocket::config::ConnectionConfig, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::factory::stream_config(&marketdata_core::AuthRequest, core::option::Option<&str>, marketdata_core::websocket::factory::StreamProduct, marketdata_core::websocket::version::StockVersion, marketdata_core::websocket::version::FutOptVersion, marketdata_core::urls::BaseUrlWording<'_>) -> core::result::Result<marketdata_core::websocket::config::ConnectionConfig, marketdata_core::errors::MarketDataError>
 pub mod marketdata_core::websocket::health_check
 pub struct marketdata_core::websocket::health_check::HealthCheckConfig
 pub marketdata_core::websocket::health_check::HealthCheckConfig::enabled: bool
@@ -4972,7 +4992,7 @@ pub const marketdata_core::websocket::DEFAULT_EVENT_BUFFER: usize
 pub const marketdata_core::websocket::DEFAULT_MESSAGE_BUFFER: usize
 pub const marketdata_core::websocket::REPORT_INTERVAL: core::time::Duration
 pub fn marketdata_core::websocket::auth_timeout_from_millis(u64) -> core::result::Result<core::time::Duration, marketdata_core::errors::MarketDataError>
-pub fn marketdata_core::websocket::stream_config(&marketdata_core::AuthRequest, core::option::Option<&str>, marketdata_core::websocket::factory::StreamProduct, marketdata_core::websocket::version::StockVersion, marketdata_core::websocket::version::FutOptVersion, &str) -> core::result::Result<marketdata_core::websocket::config::ConnectionConfig, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::websocket::stream_config(&marketdata_core::AuthRequest, core::option::Option<&str>, marketdata_core::websocket::factory::StreamProduct, marketdata_core::websocket::version::StockVersion, marketdata_core::websocket::version::FutOptVersion, marketdata_core::urls::BaseUrlWording<'_>) -> core::result::Result<marketdata_core::websocket::config::ConnectionConfig, marketdata_core::errors::MarketDataError>
 pub enum marketdata_core::Auth
 pub marketdata_core::Auth::ApiKey(alloc::string::String)
 pub marketdata_core::Auth::BearerToken(alloc::string::String)
@@ -6466,6 +6486,7 @@ pub fn marketdata_core::RestClient::new(marketdata_core::Auth) -> Self
 pub fn marketdata_core::RestClient::resolved_base_url(&self) -> &str
 pub fn marketdata_core::RestClient::stock(&self) -> marketdata_core::rest::StockClient<'_>
 pub fn marketdata_core::RestClient::try_base_url(self, &str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
+pub fn marketdata_core::RestClient::try_base_url_worded(self, &str, &str) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::RestClient::with_retry(self, marketdata_core::RetryPolicy) -> Self
 pub fn marketdata_core::RestClient::with_tls(marketdata_core::Auth, marketdata_core::tls::TlsConfig) -> core::result::Result<Self, marketdata_core::errors::MarketDataError>
 impl core::clone::Clone for marketdata_core::RestClient

@@ -94,7 +94,8 @@ impl RestClient {
             // `try_base_url` rather than `base_url`: a Python caller expects a
             // bad kwarg to raise at construction, matching the official SDK's
             // TypeError, not to surface later from an unrelated request.
-            inner = inner.try_base_url(&url).map_err(|e| {
+            let option = crate::websocket::BASE_URL_WORDING.option;
+            inner = inner.try_base_url_worded(&url, option).map_err(|e| {
                 pyo3::exceptions::PyTypeError::new_err(format!("{e}"))
             })?;
         }

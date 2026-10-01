@@ -9,22 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **Rust core: `websocket::stream_config` takes a last `version_hint`
-  argument** (#316): the sentence that ends the refusal of a `base_url`
-  carrying a version segment, so each binding names its own version
-  option. It is the call the bindings build their endpoints with; pass
-  `""` to end the message at the corrected prefix. `WebSocketFactory`
-  still ends the message with the Rust call.
+- **Rust core: `websocket::stream_config` takes a last
+  `wording: urls::BaseUrlWording` argument** (#316): the option name the
+  refusal of a `base_url` carrying a version segment starts with, and the
+  sentence it ends with, so each binding words it in its own terms. It is
+  the call the bindings build their endpoints with. The new
+  `RestClient::try_base_url_worded(url, option)` does the same for REST.
+  `RestClient::base_url` / `try_base_url` and `WebSocketFactory` keep the
+  Rust wording.
 
 ### Fixed
 
 - **Python, Node, C#, Go, Java, C++: a `base_url` that ends in a version
-  segment is refused with a hint in the caller's own terms** (#316). The
+  segment is refused in the caller's own terms** (#316). The WebSocket
   message ended with the Rust call `.futopt_version(FutOptVersion::V1_1)`;
   it now ends with `version={'futopt': 'v1.1'}` in Python,
   `version: { futopt: 'v1.1' }` in Node, and the version option's
   `stock` / `futopt` fields in C#, Go, Java and C++, which share one
-  message. The exception type and
+  message. In Node the message, for `RestClient` and `WebSocketClient`
+  alike, starts with `baseUrl` instead of `base_url`; the other languages
+  keep `base_url`. The exception type and
   error code are unchanged.
 
 ## [Bindings 3.0.0-rc.11 / core 0.9.0-rc.9 / uniffi 0.2.0-rc.9] - 2026-10-01

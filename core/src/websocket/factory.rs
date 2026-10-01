@@ -66,7 +66,7 @@
 //! ```
 
 use crate::models::AuthRequest;
-use crate::urls;
+use crate::urls::{self, BaseUrlWording};
 use crate::websocket::config::{ConnectionConfig, ConnectionConfigBuilder};
 use crate::websocket::version::{FutOptVersion, StockVersion, VERSION_OPTION_HINT};
 use crate::MarketDataError;
@@ -179,13 +179,13 @@ impl<S> WebSocketFactory<S> {
         self
     }
 
-    /// `hint` closes a `base_url` rejection by naming the option that owns
-    /// the version, in the caller's syntax.
+    /// `wording` names the option in a `base_url` rejection, and the option
+    /// that owns the version, in the caller's syntax.
     fn endpoint_for(
         &self,
         kind: &str,
         version: &str,
-        hint: &str,
+        wording: BaseUrlWording<'_>,
     ) -> Result<String, MarketDataError> {
         match self.base_url.as_deref() {
             // No-override path: use the canonical full endpoints from
@@ -200,7 +200,7 @@ impl<S> WebSocketFactory<S> {
             // Custom-base path: the SDK owns the version segment, so a base
             // that already carries one is ambiguous and gets rejected.
             Some(base) => {
-                let prefix = urls::with_version(base, version, hint)?;
+                let prefix = urls::with_version_worded(base, version, wording)?;
                 Ok(format!("{prefix}/{kind}/streaming"))
             }
         }
@@ -219,7 +219,7 @@ impl WebSocketFactory<WithAuth> {
     /// Returns [`MarketDataError::ConfigError`] if [`base_url`](Self::base_url)
     /// was given a prefix that already ends in a version segment.
     pub fn stock(&self) -> Result<ConnectionConfigBuilder, MarketDataError> {
-        self.builder_for(StreamProduct::Stock, VERSION_OPTION_HINT)
+        self.builder_for(StreamProduct::Stock, RUST_WORDING)
     }
 
     /// Derived futures/options streaming endpoint as a
@@ -234,25 +234,31 @@ impl WebSocketFactory<WithAuth> {
     /// Returns [`MarketDataError::ConfigError`] if [`base_url`](Self::base_url)
     /// was given a prefix that already ends in a version segment.
     pub fn futopt(&self) -> Result<ConnectionConfigBuilder, MarketDataError> {
-        self.builder_for(StreamProduct::FutOpt, VERSION_OPTION_HINT)
+        self.builder_for(StreamProduct::FutOpt, RUST_WORDING)
     }
 
     fn builder_for(
         &self,
         product: StreamProduct,
-        hint: &str,
+        wording: BaseUrlWording<'_>,
     ) -> Result<ConnectionConfigBuilder, MarketDataError> {
         let url = match product {
             StreamProduct::Stock => {
-                self.endpoint_for("stock", self.stock_version.as_str(), hint)?
+                self.endpoint_for("stock", self.stock_version.as_str(), wording)?
             }
             StreamProduct::FutOpt => {
-                self.endpoint_for("futopt", self.futopt_version.as_str(), hint)?
+                self.endpoint_for("futopt", self.futopt_version.as_str(), wording)?
             }
         };
         Ok(ConnectionConfig::builder(url, self.state.0.clone()))
     }
 }
+
+/// The factory's own wording: the Rust setter and builder call.
+const RUST_WORDING: BaseUrlWording<'static> = BaseUrlWording {
+    option: "base_url",
+    version_hint: VERSION_OPTION_HINT,
+};
 
 /// Which streaming endpoint a connection targets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,10 +277,10 @@ pub enum StreamProduct {
 /// so endpoint semantics stay in one place. `None` for `base_url` is the
 /// production endpoint.
 ///
-/// `version_hint` closes the `base_url` rejection and names the binding's own
-/// version option in its own syntax (`version={'futopt': 'v1.1'}` for
-/// Python), since the factory's hint is the Rust builder call (#316). Pass
-/// `""` to end the message at the corrected prefix.
+/// `wording` words the `base_url` rejection in the binding's terms: the
+/// option's own name (`baseUrl` in Node) and the version option in its own
+/// syntax (`version={'futopt': 'v1.1'}` in Python), since the factory's are
+/// the Rust ones (#316).
 ///
 /// # Errors
 ///
@@ -286,7 +292,7 @@ pub fn stream_config(
     product: StreamProduct,
     stock_version: StockVersion,
     futopt_version: FutOptVersion,
-    version_hint: &str,
+    wording: BaseUrlWording<'_>,
 ) -> Result<ConnectionConfig, MarketDataError> {
     let mut factory = WebSocketFactory::new()
         .stock_version(stock_version)
@@ -295,7 +301,7 @@ pub fn stream_config(
         factory = factory.base_url(base);
     }
     let factory = factory.auth(auth.clone());
-    Ok(factory.builder_for(product, version_hint)?.build())
+    Ok(factory.builder_for(product, wording)?.build())
 }
 
 #[cfg(test)]
@@ -313,7 +319,10 @@ mod tests {
             product,
             StockVersion::default(),
             FutOptVersion::default(),
-            "",
+            BaseUrlWording {
+                option: "base_url",
+                version_hint: "",
+            },
         )
     }
 
@@ -336,7 +345,10 @@ mod tests {
                 product,
                 StockVersion::default(),
                 FutOptVersion::V1_0,
-                "",
+                BaseUrlWording {
+                    option: "base_url",
+                    version_hint: "",
+                },
             )
             .unwrap()
             .url
@@ -383,7 +395,7 @@ mod tests {
                 product,
                 StockVersion::default(),
                 FutOptVersion::V1_0,
-                VERSION_OPTION_HINT,
+                RUST_WORDING,
             )
         };
         let factory = |base_url| {
@@ -411,10 +423,14 @@ mod tests {
     }
 
     #[test]
-    fn test_stream_config_rejection_ends_with_the_binding_hint() {
-        // The bindings name their own version option; the Rust builder call
-        // would mean nothing to a Python or Node user (#316).
-        let hint = "The version comes from version={'futopt': 'v1.1'}.";
+    fn test_stream_config_rejection_is_worded_by_the_binding() {
+        // The bindings name their own options; `base_url` and the Rust
+        // builder call would mean nothing to a Node user (#316).
+        let hint = "The version comes from version: { futopt: 'v1.1' }.";
+        let wording = BaseUrlWording {
+            option: "baseUrl",
+            version_hint: hint,
+        };
         for product in [StreamProduct::Stock, StreamProduct::FutOpt] {
             let msg = stream_config(
                 &AuthRequest::with_api_key("k"),
@@ -422,10 +438,15 @@ mod tests {
                 product,
                 StockVersion::default(),
                 FutOptVersion::default(),
-                hint,
+                wording,
             )
             .unwrap_err()
             .to_string();
+            assert!(
+                msg.contains("baseUrl must not include a version segment"),
+                "{msg}"
+            );
+            assert!(!msg.contains("base_url"), "{msg}");
             assert!(
                 msg.ends_with(&format!("'wss://example.com/md'. {hint}")),
                 "{msg}"

@@ -382,7 +382,7 @@ impl RestClient {
             // `tryBaseUrl` semantics: a JS caller expects a bad option to throw
             // from `new RestClient(...)`, matching the official SDK's TypeError,
             // not to surface later from an unrelated request.
-            inner = inner.try_base_url(&url)?;
+            inner = inner.try_base_url_worded(&url, crate::websocket::BASE_URL_WORDING.option)?;
         }
 
         Ok(Self { inner })

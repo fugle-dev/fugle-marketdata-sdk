@@ -268,6 +268,12 @@ class TestRestClientKwargsConstructor:
         client = RestClient(api_key="key", base_url="https://custom.api")
         assert client is not None
 
+    def test_versioned_base_url_names_the_python_option(self):
+        # The message names Python's keyword (#316).
+        with pytest.raises(TypeError) as exc_info:
+            RestClient(api_key="key", base_url="https://custom.api/marketdata/v1.0")
+        assert "base_url must not include a version segment (found '/v1.0')" in str(exc_info.value)
+
     def test_no_auth_raises_error(self):
         """Must provide at least one auth method."""
         with pytest.raises(MarketDataError) as exc_info:
@@ -433,6 +439,7 @@ class TestWebSocketUrl:
         with pytest.raises(TypeError) as exc_info:
             WebSocketClient(api_key="key", base_url="wss://custom.ws/marketdata/v1.0")
         message = str(exc_info.value)
+        assert "base_url must not include a version segment" in message
         assert message.endswith(
             "Pass the host and path prefix only: 'wss://custom.ws/marketdata'. "
             "The version comes from the version option, e.g. version={'futopt': 'v1.1'}."
