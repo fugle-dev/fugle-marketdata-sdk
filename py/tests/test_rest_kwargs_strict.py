@@ -232,8 +232,13 @@ def test_a_wrongly_typed_alias_value_fails_like_the_typed_keyword(client, server
         client.stock.intraday.trades("2330", isTrial="yes")
     with pytest.raises(TypeError, match="argument 'rPeriod': 'str' object cannot be interpreted as an integer"):
         client.stock.technical.kdj("2330", rPeriod="9")
-    with pytest.raises(TypeError, match="argument 'rPeriod': out of range"):
+    # The out-of-range text is Rust's `TryFromIntError`, which changed in
+    # Rust 1.99; compare with the typed keyword instead of pinning it.
+    with pytest.raises(OverflowError) as typed:
+        client.stock.technical.kdj("2330", r_period=-1)
+    with pytest.raises(TypeError, match="argument 'rPeriod': ") as alias:
         client.stock.technical.kdj("2330", rPeriod=-1)
+    assert str(alias.value).endswith(str(typed.value).split(": ", 1)[-1])
     assert server[1] == []
 
 
