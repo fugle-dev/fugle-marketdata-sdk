@@ -109,6 +109,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Exception` on rejected credentials too; the difference is the class
   (`AuthError`) and its text.
 
+- **Packages ship their license texts, and say the same license everywhere**
+  (#300). The wheel's `dist-info/` had no `licenses/` and the npm packages
+  had no license file at all (1.7.0 shipped `LICENSE`). The wheel now carries
+  `LICENSE-MIT` and `LICENSE-APACHE` under `dist-info/licenses/`
+  (`License-File` in its metadata), and so do `@fugle/marketdata` and each
+  `@fugle/marketdata-<platform>` package. npm's `license` field, the Maven
+  POM and every package's README said `MIT`; they now say
+  `MIT OR Apache-2.0`, as the wheel, the NuGet package and the crates
+  already did (the POM lists both licenses). Release checks fail if a wheel
+  or an npm package would ship without the two files. 2.x and 1.x were
+  MIT; MIT is still one of the two choices.
+
+- **Python: no PyPy classifier** (#300). Only `cp38-abi3` wheels are
+  published, so PyPy cannot install 3.0 — pip falls back to 2.7.0. The
+  classifier claimed otherwise.
+
+- **MIGRATION lists the legacy members 3.0 does not have** (#300):
+  `get_client()` / `getClient()`, the generic `request()`, and the
+  `options` / `config` attributes, with what to write instead
+  ([§19](MIGRATION.md#19-the-legacy-clients-plumbing-is-gone-get_client-request-options)).
+
 - **Arguments the SDK would not use are refused instead of dropped**
   (#294). Before, a misspelled or misplaced argument was silently ignored
   and the call went ahead with defaults — `version: 'v1.0'` still streamed

@@ -119,6 +119,13 @@ jobs:
           # napi artifacts also copies every binary into js/; the main
           # package's `files` glob would otherwise ship all of them.
           rm -f ./*.node
+          # The platform packages carry the compiled code, so they need the
+          # license texts too. napi writes `files` with the .node only, and npm
+          # never auto-includes LICENSE-MIT / LICENSE-APACHE, so add them.
+          for dir in npm/*/; do
+            cp LICENSE-MIT LICENSE-APACHE "$dir"
+            node -e "const f='./$dir/package.json',p=require(f);p.files=[...new Set([...(p.files||[]),'LICENSE-MIT','LICENSE-APACHE'])];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          done
 
       - name: Verify packages
         working-directory: js
@@ -139,6 +146,13 @@ jobs:
           done
           [[ "$FOUND" == "$EXPECTED" ]] || { echo "::error::Found $FOUND platform packages, package.json lists $EXPECTED"; exit 1; }
           ls ./*.node 2>/dev/null && { echo "::error::Stray .node files in js/"; exit 1; } || true
+          # What npm would actually pack, not what is on disk: `files` decides.
+          for dir in npm/*/ .; do
+            packed=$(cd "$dir" && npm pack --dry-run --json --ignore-scripts | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0))[0].files.map(f => f.path).join('\n'))")
+            for lic in LICENSE-MIT LICENSE-APACHE; do
+              grep -qx "$lic" <<<"$packed" || { echo "::error::$dir would be packed without $lic"; exit 1; }
+            done
+          done
 
       # Runs in a rehearsal too. `npm publish --dry-run` only packs — it never
       # contacts the registry — so a rehearsal cannot tell whether trusted
