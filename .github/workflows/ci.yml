@@ -94,10 +94,16 @@ jobs:
       - run: pip install pyyaml==6.0.3
       - run: python3 scripts/test_check_ci_coverage.py
       - run: python3 scripts/check-ci-coverage.py
-      # py/ and js/ ship copies of the root license files (neither PEP 639
-      # nor npm `files` can reach outside the package directory).
+      # Each published package ships copies of the root license files: crates
+      # package only their own directory, and neither PEP 639 nor npm `files`
+      # can reach outside it.
       - name: Packaged license copies match the repo root
-        run: for f in LICENSE-MIT LICENSE-APACHE; do cmp "$f" "py/$f" && cmp "$f" "js/$f"; done
+        run: |
+          for dir in core rust py js; do
+            for f in LICENSE-MIT LICENSE-APACHE; do
+              cmp "$f" "$dir/$f" || { echo "::error::$dir/$f differs from $f"; exit 1; }
+            done
+          done
 
   # Release artifacts (wheels, npm addons, NuGet, Go static libraries) are
   # built from Cargo.lock, so a vulnerable locked dependency ships to users.

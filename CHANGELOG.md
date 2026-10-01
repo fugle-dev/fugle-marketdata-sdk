@@ -70,10 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had no license file at all (1.7.0 shipped `LICENSE`). The wheel now carries
   `LICENSE-MIT` and `LICENSE-APACHE` under `dist-info/licenses/`
   (`License-File` in its metadata), and so do `@fugle/marketdata` and each
-  `@fugle/marketdata-<platform>` package. npm's `license` field and both
-  READMEs said `MIT`; they now say `MIT OR Apache-2.0`, as the wheel and the
-  crates already did. 2.x and 1.x were MIT; MIT is still one of the two
-  choices.
+  `@fugle/marketdata-<platform>` package. npm's `license` field, the Maven
+  POM and every package's README said `MIT`; they now say
+  `MIT OR Apache-2.0`, as the wheel, the NuGet package and the crates
+  already did (the POM lists both licenses). Release checks fail if a wheel
+  or an npm package would ship without the two files. 2.x and 1.x were
+  MIT; MIT is still one of the two choices.
 
 - **Python: no PyPy classifier** (#300). Only `cp38-abi3` wheels are
   published, so PyPy cannot install 3.0 — pip falls back to 2.7.0. The

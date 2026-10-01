@@ -142,13 +142,17 @@ jobs:
             echo "| $name | $ver | $bins |" >> "$GITHUB_STEP_SUMMARY"
             [[ "$ver" == "$VERSION" ]] || { echo "::error::$name version $ver != $VERSION"; exit 1; }
             [[ "$bins" == "1" ]] || { echo "::error::$name has $bins .node files, expected 1"; exit 1; }
-            for lic in LICENSE-MIT LICENSE-APACHE; do
-              [[ -f "$dir$lic" ]] || { echo "::error::$name is missing $lic"; exit 1; }
-            done
             FOUND=$((FOUND + 1))
           done
           [[ "$FOUND" == "$EXPECTED" ]] || { echo "::error::Found $FOUND platform packages, package.json lists $EXPECTED"; exit 1; }
           ls ./*.node 2>/dev/null && { echo "::error::Stray .node files in js/"; exit 1; } || true
+          # What npm would actually pack, not what is on disk: `files` decides.
+          for dir in npm/*/ .; do
+            packed=$(cd "$dir" && npm pack --dry-run --json --ignore-scripts | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0))[0].files.map(f => f.path).join('\n'))")
+            for lic in LICENSE-MIT LICENSE-APACHE; do
+              grep -qx "$lic" <<<"$packed" || { echo "::error::$dir would be packed without $lic"; exit 1; }
+            done
+          done
 
       # Runs in a rehearsal too. `npm publish --dry-run` only packs — it never
       # contacts the registry — so a rehearsal cannot tell whether trusted
