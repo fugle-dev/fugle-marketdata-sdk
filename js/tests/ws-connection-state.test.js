@@ -137,7 +137,13 @@ describe.each(['stock', 'futopt'])('%s isConnected / isClosed follow core connec
     await sleep(700);
 
     expect(disconnects[0].isClosed).toBe(false);
-    expect(disconnects[1]).toEqual({ code: 1000, reason: 'Normal closure', isClosed: true });
+    expect(disconnects[1]).toEqual({
+      code: 1000,
+      reason: 'Normal closure',
+      intent: 'client',
+      willReconnect: false,
+      isClosed: true,
+    });
     expect(disconnects).toHaveLength(2);
     expect(reconnects).toEqual([{ attempt: 1 }]);
     expect(ws.isClosed).toBe(true);

@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **WebSocket: who closed the connection, and whether a reconnect follows**
+  (#293). Core's `Disconnected` event already carried `intent` and
+  `will_reconnect`; the bindings now hand them on. All additive: 1.x
+  handlers that take `{ code, reason }` / `(code, reason)` keep working.
+  - **Node**: the `disconnect` event object adds `intent` (`'client'` = your
+    `disconnect()`, `'server'` = the server's Close frame, any code,
+    `'network'` = transport error, EOF without a Close frame, heartbeat
+    timeout, or a panic of the SDK's worker thread) and `willReconnect` (`true`: a `reconnect` event follows unless
+    you call `disconnect()` first; `false`: this connection is over). New
+    type `WebSocketDisconnectIntent`. Code that deep-compares the event object
+    sees the two new keys.
+  - **Python**: `ws.stock.last_disconnect` / `ws.futopt.last_disconnect`, a
+    read-only `DisconnectInfo` (`code`, `reason`, `intent`,
+    `will_reconnect`; frozen, compares and hashes by value) or `None` before the first
+    disconnect. It is written before the `disconnect` callbacks run, so a
+    `(code, reason)` callback reads the disconnect it is handling; it is
+    never cleared (`connect()`, a reconnect and `disconnect()` keep it), so
+    after a `messages()` iterator ends it says why. A reconnect given up
+    (`error` 3005) leaves it at the drop that started the reconnect.
+  - **UniFFI (C#, Go, Java, C++)**: `WebSocketClient::last_disconnect()` →
+    `Option<DisconnectInfo>` (record: `code`, `reason`, `intent:
+    DisconnectIntent { Client, Server, Network }`, `will_reconnect`), same
+    semantics as Python; set before `on_disconnected`, which keeps its
+    `(will_reconnect)` signature. The wrappers expose it as C#
+    `WebSocketClient.LastDisconnect` (`FugleMarketData.WebSocketClient`), Go
+    `StreamingClient.LastDisconnect()` and Java
+    `FugleWebSocketClient.lastDisconnect()`. The generated interfaces gain the
+    method too — Java `WebSocketClientInterface.lastDisconnect()`, C#
+    `IWebSocketClient.LastDisconnect()` — so code that implements them itself
+    (a mock, say) has to add it.
+  - **core**: `DisconnectIntent::as_str()` (`"client"`, `"server"`,
+    `"network"`) and `Display`, the spelling every binding uses.
+  - A heartbeat timeout is still reported by `disconnect` (intent `network`,
+    code none, reason `Heartbeat timeout after …`), not by an `error` 3003.
+  - A wrapper that decides from `code` whether the SDK will reconnect can
+    read `willReconnect` / `will_reconnect` instead; note that core
+    reconnects after a 4xxx close (#201).
+
 ### Fixed
 
 - **A Close frame received during authentication is reported with its code

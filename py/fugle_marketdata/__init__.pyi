@@ -1798,6 +1798,49 @@ class ReconnectConfig:
         ...
 
 
+class DisconnectInfo:
+    """The last disconnect of a stream client: who closed the connection and
+    whether a reconnect follows. Read it from ``ws.stock.last_disconnect`` /
+    ``ws.futopt.last_disconnect``; not constructed by user code.
+
+    Example::
+
+        def on_disconnect(code, reason):
+            info = ws.stock.last_disconnect
+            if not info.will_reconnect:
+                print("connection over:", info.intent, code, reason)
+
+        ws.stock.on("disconnect", on_disconnect)
+
+    Compares equal, and hashes alike, when all four attributes are equal.
+    """
+
+    @property
+    def code(self) -> Optional[int]:
+        """WebSocket close code, or None when the connection ended without one
+        (transport error, EOF, heartbeat timeout, or a server Close frame
+        without a code)."""
+        ...
+
+    @property
+    def reason(self) -> str:
+        """Close reason (may be empty)."""
+        ...
+
+    @property
+    def intent(self) -> Literal["client", "server", "network"]:
+        """Who closed the connection: "client" = your disconnect(); "server" =
+        the server's Close frame (any code); "network" = transport error, EOF
+        without a Close frame, or heartbeat timeout."""
+        ...
+
+    @property
+    def will_reconnect(self) -> bool:
+        """True if a "reconnect" event follows (unless disconnect() is called
+        first); False if this connection is over."""
+        ...
+
+
 class WebSocketClient:
     """WebSocket client for Fugle market data streaming.
 
@@ -2071,6 +2114,23 @@ class StockWebSocketClient:
         """
         ...
 
+    @property
+    def last_disconnect(self) -> Optional[DisconnectInfo]:
+        """The last disconnect: who closed the connection and whether a
+        reconnect follows. None before the first one.
+
+        Written before the "disconnect" callbacks run, so a callback reads the
+        disconnect it is handling. Never cleared: connect(), a reconnect and
+        disconnect() returning keep it, so it is a record of the last
+        disconnect, not the connection state; ask is_connected() for that. A
+        reconnect given up (error 3005) leaves it at the drop that started the
+        reconnect. After a messages() iterator ends, this is where to find why.
+        Should two connections overlap (a disconnect() from a callback, then
+        connect() from another thread before that callback returns), it is the
+        disconnect handed to the callbacks last.
+        """
+        ...
+
     def is_closed(self) -> bool:
         """Check if client has been closed.
 
@@ -2237,7 +2297,8 @@ class StockWebSocketClient:
             code 3005 follows and the client stays closed. Any other auth-phase server error (1011
             auth service unavailable, 1004 no auth request received) is an "error" with code 2001
             instead, and the reconnect goes on.
-          - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection closed
+          - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection closed;
+            who closed it and whether a reconnect follows are in ``last_disconnect``
           - "reconnect" / "reconnecting": Called with the attempt number when reconnecting
           - "error": Called with a WebSocketError instance when an error occurs
           - "messages_dropped": Called with (dropped, total) when messages were
@@ -2419,6 +2480,23 @@ class FutOptWebSocketClient:
         Counted from the start of the current connection (every connect() or
         reconnect restarts it); after disconnect() it still reads the last
         connection's count. 0 before the first connect().
+        """
+        ...
+
+    @property
+    def last_disconnect(self) -> Optional[DisconnectInfo]:
+        """The last disconnect: who closed the connection and whether a
+        reconnect follows. None before the first one.
+
+        Written before the "disconnect" callbacks run, so a callback reads the
+        disconnect it is handling. Never cleared: connect(), a reconnect and
+        disconnect() returning keep it, so it is a record of the last
+        disconnect, not the connection state; ask is_connected() for that. A
+        reconnect given up (error 3005) leaves it at the drop that started the
+        reconnect. After a messages() iterator ends, this is where to find why.
+        Should two connections overlap (a disconnect() from a callback, then
+        connect() from another thread before that callback returns), it is the
+        disconnect handed to the callbacks last.
         """
         ...
 

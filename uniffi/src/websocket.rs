@@ -362,6 +362,50 @@ impl ConnectionConfigRecord {
     }
 }
 
+/// Who closed the connection, in a [`DisconnectInfo`] (#293).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum DisconnectIntent {
+    /// Your `disconnect()`.
+    Client,
+    /// The server's Close frame, whatever its code.
+    Server,
+    /// Transport error, EOF without a Close frame, or heartbeat timeout.
+    Network,
+}
+
+impl From<marketdata_core::websocket::DisconnectIntent> for DisconnectIntent {
+    fn from(intent: marketdata_core::websocket::DisconnectIntent) -> Self {
+        match intent {
+            marketdata_core::websocket::DisconnectIntent::Client => Self::Client,
+            marketdata_core::websocket::DisconnectIntent::Server => Self::Server,
+            marketdata_core::websocket::DisconnectIntent::Network => Self::Network,
+        }
+    }
+}
+
+/// The last disconnect of a client: who closed the connection and whether a
+/// reconnect follows. Read it with `WebSocketClient::last_disconnect()`
+/// (#293).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DisconnectInfo {
+    /// WebSocket close code, or none when the connection ended without one
+    /// (transport error, EOF, heartbeat timeout, or a server Close frame
+    /// without a code).
+    pub code: Option<u16>,
+    /// Close reason (may be empty).
+    pub reason: String,
+    /// Who closed the connection.
+    pub intent: DisconnectIntent,
+    /// The `will_reconnect` of the matching `on_disconnected`: true if a
+    /// reconnect follows (unless `disconnect()` is called first), false if
+    /// this connection is over.
+    pub will_reconnect: bool,
+}
+
+/// The last [`DisconnectInfo`], written by the stream reader before
+/// `on_disconnected` and read by `last_disconnect()` from any thread.
+type LastDisconnect = Arc<std::sync::Mutex<Option<DisconnectInfo>>>;
+
 /// Endpoint type for WebSocket connection
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum WebSocketEndpoint {
@@ -454,6 +498,9 @@ pub struct WebSocketClient {
     /// Dropped-message count of the current or last connection; outlives the
     /// core client, which `disconnect()` drops.
     messages_dropped: std::sync::Mutex<Option<marketdata_core::MessagesDroppedHandle>>,
+    /// The last disconnect of any of this client's connections; never
+    /// cleared, so it outlives `disconnect()` and a reconnect (#293).
+    last_disconnect: LastDisconnect,
     /// Throttles the reports of failed listener calls (#83) across the
     /// client's connections, like the Node, Python, C# and Java bindings.
     callback_failures: CallbackFailures,
@@ -498,6 +545,7 @@ impl WebSocketClient {
             message_queue,
             connection_config,
             messages_dropped: std::sync::Mutex::new(None),
+            last_disconnect: LastDisconnect::default(),
             callback_failures: CallbackFailures::default(),
             reconnect_conflict: marketdata_core::ReconnectConflictHandle::default(),
             connect_gate: ConnectGate::default(),
@@ -730,6 +778,25 @@ impl WebSocketClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .map_or(0, |handle| handle.total())
+    }
+
+    /// The last disconnect: who closed the connection and whether a
+    /// reconnect follows. None before the first one (#293).
+    ///
+    /// Set before `on_disconnected` is called, so a listener reads the
+    /// disconnect it is handling. Never cleared: `connect()`, a reconnect and
+    /// `disconnect()` returning keep it, so it is a record of the last
+    /// disconnect, not the connection state — ask `is_connected()` for that.
+    /// A reconnect given up (`on_reconnect_failed`) leaves it at the drop
+    /// that started the reconnect. Should two connections overlap (a
+    /// `disconnect()` from a listener, then `connect()` from another thread
+    /// before that listener returns), it is the disconnect handed to
+    /// `on_disconnected` last.
+    pub fn last_disconnect(&self) -> Option<DisconnectInfo> {
+        self.last_disconnect
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The endpoint this client connects to, e.g.
@@ -1001,6 +1068,7 @@ impl WebSocketClient {
             Arc::clone(&stopping),
             delivered.clone(),
             Arc::clone(&self.callback_failures),
+            Arc::clone(&self.last_disconnect),
         );
         {
             // A `disconnect()` from here on is for this connection: it has a
@@ -1059,8 +1127,9 @@ impl WebSocketClient {
         // `on_disconnected` comes from core's `Disconnected` event, which
         // `ws.disconnect()` emits.
         let _ = ws.disconnect().await;
-        // Mid-reconnect core emits no `Disconnected`: the reader ends when
-        // the stream closes, once the client is dropped.
+        // Mid-reconnect too, core emits a final `Disconnected { intent:
+        // Client, will_reconnect: false }` (#98), which ends the reader;
+        // dropping the client closes the stream, so it ends regardless.
         drop(ws);
 
         Self::wait_for(reader, caller).await;
@@ -1464,14 +1533,16 @@ impl WebSocketClient {
 ///
 /// Exits after a terminal event (`Disconnected { will_reconnect: false }` or
 /// `ReconnectFailed`) — core emits nothing after those — or once the stream
-/// closes, which covers a failed `connect()` and a `disconnect()` issued
-/// mid-reconnect (both drop every sender without a terminal event).
+/// closes, which covers a failed `connect()` (it drops every sender without
+/// a terminal event). A `disconnect()` issued mid-reconnect ends with core's
+/// final `Disconnected { intent: Client, will_reconnect: false }` (#98).
 fn spawn_stream_reader(
     stream: Arc<StreamReceiver>,
     listener: Arc<dyn WebSocketListener>,
     stopping: Arc<AtomicBool>,
     delivered: Delivered,
     callback_failures: CallbackFailures,
+    last_disconnect: LastDisconnect,
 ) -> Option<StreamReader> {
     let (running, finished) = tokio::sync::watch::channel(());
     let handle = std::thread::Builder::new()
@@ -1496,7 +1567,7 @@ fn spawn_stream_reader(
                             _ => {}
                         }
                         delivered.observe(&event);
-                        if !forward_event(event, &mut calls) {
+                        if !forward_event(event, &mut calls, &last_disconnect) {
                             break;
                         }
                     }
@@ -1568,9 +1639,13 @@ impl StreamReader {
     }
 }
 
-/// Forward one core event to the listener. Returns `false` after a terminal
-/// event.
-fn forward_event(event: ConnectionEvent, calls: &mut ListenerCalls<'_>) -> bool {
+/// Forward one core event to the listener, recording a disconnect in
+/// `last_disconnect` first. Returns `false` after a terminal event.
+fn forward_event(
+    event: ConnectionEvent,
+    calls: &mut ListenerCalls<'_>,
+    last_disconnect: &std::sync::Mutex<Option<DisconnectInfo>>,
+) -> bool {
     match event {
         ConnectionEvent::Connected => calls.call("on_connected", |l| l.on_connected()),
         ConnectionEvent::Authenticated { data } => {
@@ -1579,7 +1654,11 @@ fn forward_event(event: ConnectionEvent, calls: &mut ListenerCalls<'_>) -> bool 
         ConnectionEvent::Unauthenticated { data, .. } => {
             calls.call("on_unauthenticated", |l| l.on_unauthenticated(json_or_none(data)))
         }
-        ConnectionEvent::Disconnected { will_reconnect, .. } => {
+        ConnectionEvent::Disconnected { code, reason, intent, will_reconnect } => {
+            // Released before the listener runs, so it can read
+            // `last_disconnect()` from inside `on_disconnected`.
+            *last_disconnect.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(DisconnectInfo { code, reason, intent: intent.into(), will_reconnect });
             calls.call("on_disconnected", |l| l.on_disconnected(will_reconnect));
             return will_reconnect;
         }
@@ -1793,6 +1872,8 @@ mod tests {
         client: std::sync::OnceLock<std::sync::Weak<WebSocketClient>>,
         /// `is_connected()` as `on_disconnected` read it, per call.
         connected_on_disconnect: Mutex<Vec<bool>>,
+        /// `last_disconnect()` as `on_disconnected` read it, per call.
+        last_disconnect_on_disconnect: Mutex<Vec<Option<DisconnectInfo>>>,
         /// Milliseconds `on_disconnected` blocks before recording.
         disconnected_delay_ms: std::sync::atomic::AtomicU64,
         /// Set when `on_disconnected` starts, before that delay.
@@ -1828,6 +1909,7 @@ mod tests {
                 message_delay_ms: std::sync::atomic::AtomicU64::new(0),
                 client: std::sync::OnceLock::new(),
                 connected_on_disconnect: Mutex::new(Vec::new()),
+                last_disconnect_on_disconnect: Mutex::new(Vec::new()),
                 disconnected_delay_ms: std::sync::atomic::AtomicU64::new(0),
                 disconnected_entered: std::sync::atomic::AtomicBool::new(false),
                 disconnect_on_message: std::sync::atomic::AtomicBool::new(false),
@@ -1936,6 +2018,7 @@ mod tests {
         fn on_disconnected(&self, will_reconnect: bool) {
             if let Some(client) = self.client.get().and_then(std::sync::Weak::upgrade) {
                 self.connected_on_disconnect.lock().unwrap().push(client.is_connected());
+                self.last_disconnect_on_disconnect.lock().unwrap().push(client.last_disconnect());
             }
             self.disconnected_entered.store(true, Ordering::SeqCst);
             let delay = self.disconnected_delay_ms.load(Ordering::SeqCst);
@@ -3237,6 +3320,131 @@ mod tests {
         }
     }
 
+    fn no_reconnect() -> Option<ReconnectConfigRecord> {
+        Some(ReconnectConfigRecord { enabled: Some(false), ..Default::default() })
+    }
+
+    fn one_fast_reconnect() -> Option<ReconnectConfigRecord> {
+        Some(ReconnectConfigRecord {
+            enabled: Some(true),
+            max_attempts: 1,
+            initial_delay_ms: 100,
+            max_delay_ms: 100,
+        })
+    }
+
+    fn disconnect_info(
+        code: Option<u16>,
+        reason: &str,
+        intent: DisconnectIntent,
+        will_reconnect: bool,
+    ) -> DisconnectInfo {
+        DisconnectInfo { code, reason: reason.to_string(), intent, will_reconnect }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn last_disconnect_after_your_disconnect_is_client_and_read_inside_on_disconnected() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), no_reconnect());
+        let _ = listener.client.set(Arc::downgrade(&client));
+        assert_eq!(client.last_disconnect(), None, "none before connect()");
+
+        client.connect_impl().await.expect("connect");
+        listener.wait_authenticated(1).await;
+        assert_eq!(client.last_disconnect(), None, "none while the first connection is up");
+        client.disconnect_impl().await;
+
+        let expected = disconnect_info(Some(1000), "Normal closure", DisconnectIntent::Client, false);
+        assert_eq!(client.last_disconnect(), Some(expected.clone()));
+        // Set before on_disconnected, so the listener read this disconnect.
+        assert_eq!(*listener.last_disconnect_on_disconnect.lock().unwrap(), vec![Some(expected)]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn last_disconnect_after_server_close_1000_is_server_and_final() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), one_fast_reconnect());
+
+        client.connect_impl().await.expect("connect");
+        listener.wait_authenticated(1).await;
+        server.close(1000, "bye").await;
+        listener.wait_for("disconnected(false)").await;
+
+        assert_eq!(
+            client.last_disconnect(),
+            Some(disconnect_info(Some(1000), "bye", DisconnectIntent::Server, false))
+        );
+        assert!(client.is_closed());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn last_disconnect_survives_the_reconnect_then_your_disconnect_is_client() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), one_fast_reconnect());
+
+        client.connect_impl().await.expect("connect");
+        listener.wait_authenticated(1).await;
+        server.close_for(0, 1001, "going away").await;
+        listener.wait_authenticated(2).await;
+
+        // Reconnected, and still the record of the drop.
+        assert!(client.is_connected());
+        assert_eq!(
+            client.last_disconnect(),
+            Some(disconnect_info(Some(1001), "going away", DisconnectIntent::Server, true))
+        );
+
+        client.disconnect_impl().await;
+        assert_eq!(
+            client.last_disconnect(),
+            Some(disconnect_info(Some(1000), "Normal closure", DisconnectIntent::Client, false))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn last_disconnect_is_not_overwritten_when_the_reconnect_is_given_up() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), one_fast_reconnect());
+
+        client.connect_impl().await.expect("connect");
+        listener.wait_authenticated(1).await;
+        // Dropping the mock cuts the transport and stops accepting: the one
+        // attempt fails.
+        drop(server);
+        listener.wait_for("reconnect_failed(1)").await;
+
+        let info = client.last_disconnect().expect("the drop");
+        assert_eq!((info.code, info.intent, info.will_reconnect), (None, DisconnectIntent::Network, true));
+        assert!(client.is_closed());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn last_disconnect_after_transport_drop_is_network() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), no_reconnect());
+
+        client.connect_impl().await.expect("connect");
+        listener.wait_authenticated(1).await;
+        server.drop_transport().await;
+        listener.wait_for("disconnected(false)").await;
+
+        let info = client.last_disconnect().expect("the drop");
+        assert_eq!((info.code, info.intent, info.will_reconnect), (None, DisconnectIntent::Network, false));
+    }
+
+    #[test]
+    fn disconnect_intent_follows_core() {
+        use marketdata_core::websocket::DisconnectIntent as Core;
+        assert_eq!(DisconnectIntent::from(Core::Client), DisconnectIntent::Client);
+        assert_eq!(DisconnectIntent::from(Core::Server), DisconnectIntent::Server);
+        assert_eq!(DisconnectIntent::from(Core::Network), DisconnectIntent::Network);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn is_closed_after_server_close_without_reconnect() {
         // Used to read a flag only `disconnect()` set (#95).
@@ -3685,7 +3893,7 @@ mod tests {
         for _ in 0..3 {
             calls.call("on_message", |l| l.on_message(stream_message()));
         }
-        assert!(forward_event(ConnectionEvent::Connected, &mut calls));
+        assert!(forward_event(ConnectionEvent::Connected, &mut calls, &LastDisconnect::default()));
 
         assert_eq!(listener.messages.load(Ordering::SeqCst), 3);
         assert_eq!(listener.connected.load(Ordering::SeqCst), 1);
@@ -3727,7 +3935,7 @@ mod tests {
             marketdata_core::ErrorKind::Network,
             "down",
         );
-        assert!(forward_event(ConnectionEvent::Error(info), &mut calls));
+        assert!(forward_event(ConnectionEvent::Error(info), &mut calls, &LastDisconnect::default()));
 
         // One report of the on_message failure, one SDK error; neither
         // failing on_error call led to another.

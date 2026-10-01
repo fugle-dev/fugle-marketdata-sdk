@@ -64,8 +64,11 @@ ws.stock.on('authenticated', (data) => {
   console.log('Authenticated:', data.message);
 });
 
-ws.stock.on('disconnect', ({ code, reason }) => {
-  console.log('Disconnected:', code, reason);
+ws.stock.on('disconnect', ({ code, reason, intent, willReconnect }) => {
+  // intent: 'client' (your disconnect()), 'server' (the server's Close frame)
+  // or 'network' (transport error, heartbeat timeout).
+  // willReconnect: true if a 'reconnect' event follows; false if it is over.
+  console.log('Disconnected:', code, reason, intent, willReconnect);
 });
 
 ws.stock.on('error', (err) => {
@@ -170,6 +173,11 @@ or turn auto-reconnect off. When `connect()` follows, within 30 seconds, a
 30 seconds earlier, the SDK emits a process warning (once per client)
 pointing at this: `FugleReconnectWarning`, code `FUGLE_RECONNECT_CONFLICT`.
 A `disconnect()` with no `connect()` after it is not warned about.
+
+To tell whether the SDK will reconnect after a `disconnect`, read the event's
+`willReconnect` rather than its `code` (#293): `true` means a `reconnect`
+event follows, `false` that the connection is over. A reconnect that gives up
+ends with an `error` of code 3005, not another `disconnect`.
 
 ### Health Check Options
 
@@ -485,7 +493,7 @@ client uses the OS trust store (rustls loads it via
 | 2011 | AlreadyConnected | WebSocket `connect()` called while connected or while the first `connect()` is in progress (during an automatic reconnect it waits instead) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
-| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an `error`: `disconnect` fires with `code: null`, `intent: 'network'` and the reason `Heartbeat timeout after …` |
 | 3004 | CallbackFailed | A WebSocket listener threw, or its Promise rejected (`error` event) |
 | 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` event); a `connect()` waiting on the reconnect rejects with it after the last attempt |
 | 9999 | Other | Unexpected error |

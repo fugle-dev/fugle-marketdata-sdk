@@ -202,6 +202,25 @@ public class FugleWebSocketClient implements AutoCloseable {
     }
 
     /**
+     * The last disconnect: who closed the connection ({@link DisconnectIntent})
+     * and whether a reconnect follows. {@code null} before the first one.
+     *
+     * <p>Set before {@code onDisconnected} is called, so a listener reads the
+     * disconnect it is handling. Never cleared: {@link #connect()}, a reconnect
+     * and {@link #disconnect()} keep it, so it is a record of the last
+     * disconnect, not the connection state. A reconnect given up
+     * ({@code onReconnectFailed}) leaves it at the drop that started the
+     * reconnect.
+     */
+    public DisconnectInfo lastDisconnect() {
+        try {
+            return webSocketClient.lastDisconnect();
+        } catch (Exception e) {
+            throw FugleException.unwrap(e);
+        }
+    }
+
+    /**
      * Send a ping message to the server. Fire-and-forget: the returned future
      * completes once the ping is sent, and the pong (if any) arrives later
      * via the message callback or pull queue. See {@link #measureLatency()}

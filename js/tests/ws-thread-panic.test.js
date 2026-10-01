@@ -135,7 +135,9 @@ describe.each(PRODUCTS)('%s thread panic supervision (#25)', (product, subscript
     expect(events.error).toHaveLength(1);
     expect(events.error[0]).toMatchObject({ isError: true, code: -1, sourceKind: 'protocol' });
     expect(events.error[0].message).toMatch(/^WebSocket worker thread panicked: injected test panic at ws_worker/);
-    expect(events.disconnect).toEqual([{ code: null, reason: events.error[0].message }]);
+    expect(events.disconnect).toEqual([
+      { code: null, reason: events.error[0].message, intent: 'network', willReconnect: false },
+    ]);
     expect(afterPanic).toEqual({ isConnected: false, isClosed: true, subscribeThrew: true });
   });
 

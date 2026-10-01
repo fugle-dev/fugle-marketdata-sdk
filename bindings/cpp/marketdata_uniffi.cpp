@@ -189,6 +189,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected() != 18665) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect() != 22054) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency_sync() != 46118) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -1340,6 +1343,13 @@ bool WebSocketClient::is_connected() {
         nullptr,
         ptr));
 }
+std::optional<DisconnectInfo> WebSocketClient::last_disconnect() {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    return uniffi::FfiConverterOptionalTypeDisconnectInfo::lift(uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketclient_last_disconnect,
+        nullptr,
+        ptr));
+}
 double WebSocketClient::measure_latency_sync(std::optional<uint64_t> timeout_ms) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterDouble::lift(uniffi::rust_call(
@@ -1659,6 +1669,9 @@ void *WebSocketListenerImpl::_uniffi_internal_clone_pointer() const {
         this->instance
     );
 }
+
+
+
 
 
 
@@ -2217,6 +2230,51 @@ uint64_t FfiConverterTypeCredentialsRecord::allocation_size(const CredentialsRec
         FfiConverterOptionalString::allocation_size(val.api_key) +
         FfiConverterOptionalString::allocation_size(val.bearer_token) +
         FfiConverterOptionalString::allocation_size(val.sdk_token);
+    
+}
+
+
+DisconnectInfo FfiConverterTypeDisconnectInfo::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterTypeDisconnectInfo::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterTypeDisconnectInfo::lower(const DisconnectInfo &val) {
+    auto buf = rustbuffer_alloc(allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterTypeDisconnectInfo::write(stream, val);
+
+    return std::move(buf);
+}
+
+DisconnectInfo FfiConverterTypeDisconnectInfo::read(RustStream &stream) {
+    return {
+        FfiConverterOptionalUInt16::read(stream),
+        FfiConverterString::read(stream),
+        FfiConverterDisconnectIntent::read(stream),
+        FfiConverterBool::read(stream)
+    };
+}
+
+void FfiConverterTypeDisconnectInfo::write(RustStream &stream, const DisconnectInfo &val) {
+    FfiConverterOptionalUInt16::write(stream, val.code);
+    FfiConverterString::write(stream, val.reason);
+    FfiConverterDisconnectIntent::write(stream, val.intent);
+    FfiConverterBool::write(stream, val.will_reconnect);
+}
+
+uint64_t FfiConverterTypeDisconnectInfo::allocation_size(const DisconnectInfo &val) {
+    
+    return 
+        FfiConverterOptionalUInt16::allocation_size(val.code) +
+        FfiConverterString::allocation_size(val.reason) +
+        FfiConverterDisconnectIntent::allocation_size(val.intent) +
+        FfiConverterBool::allocation_size(val.will_reconnect);
     
 }
 
@@ -3325,6 +3383,69 @@ uint64_t FfiConverterCredentialKind::allocation_size(const CredentialKind &) {
 }
 
 
+DisconnectIntent FfiConverterDisconnectIntent::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterDisconnectIntent::read(stream);
+
+    rustbuffer_free(buf);
+
+    return std::move(ret);
+}
+
+RustBuffer FfiConverterDisconnectIntent::lower(const DisconnectIntent &val) {
+    auto buf = rustbuffer_alloc(FfiConverterDisconnectIntent::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterDisconnectIntent::write(stream, val);
+
+    return std::move(buf);
+}
+
+DisconnectIntent FfiConverterDisconnectIntent::read(RustStream &stream) {
+    int32_t variant;
+    stream >> variant;
+
+    switch (variant) {
+        
+    case 1:
+        return DisconnectIntent::kClient;
+        
+    case 2:
+        return DisconnectIntent::kServer;
+        
+    case 3:
+        return DisconnectIntent::kNetwork;
+        
+    default:
+        throw std::runtime_error("No matching DisconnectIntent variant");
+    }
+}
+
+void FfiConverterDisconnectIntent::write(RustStream &stream, const DisconnectIntent &val) {
+    switch (val) {
+        
+    case DisconnectIntent::kClient:
+        stream << static_cast<int32_t>(1);
+        break;
+        
+    case DisconnectIntent::kServer:
+        stream << static_cast<int32_t>(2);
+        break;
+        
+    case DisconnectIntent::kNetwork:
+        stream << static_cast<int32_t>(3);
+        break;
+        
+    default:
+        throw std::runtime_error("No matching DisconnectIntent variant");
+    }
+}
+
+uint64_t FfiConverterDisconnectIntent::allocation_size(const DisconnectIntent &) {
+    return static_cast<uint64_t>(sizeof(int32_t));
+}
+
+
 ErrorSourceKind FfiConverterErrorSourceKind::lift(RustBuffer buf) {
     auto stream = RustStream(&buf);
     auto ret = FfiConverterErrorSourceKind::read(stream);
@@ -4295,6 +4416,53 @@ uint64_t FfiConverterOptionalTypeCorporateActionsParams::allocation_size(const s
 
     if (val) {
         ret += FfiConverterTypeCorporateActionsParams::allocation_size(val.value());
+    }
+
+    return ret;
+}
+
+std::optional<DisconnectInfo> FfiConverterOptionalTypeDisconnectInfo::lift(RustBuffer buf) {
+    auto stream = RustStream(&buf);
+    auto ret = FfiConverterOptionalTypeDisconnectInfo::read(stream);
+
+    rustbuffer_free(buf);
+
+    return ret;
+}
+
+RustBuffer FfiConverterOptionalTypeDisconnectInfo::lower(const std::optional<DisconnectInfo>& val) {
+    auto buf = rustbuffer_alloc(FfiConverterOptionalTypeDisconnectInfo::allocation_size(val));
+    auto stream = RustStream(&buf);
+
+    FfiConverterOptionalTypeDisconnectInfo::write(stream, val);
+
+    return buf;
+}
+
+std::optional<DisconnectInfo> FfiConverterOptionalTypeDisconnectInfo::read(RustStream &stream) {
+    char has_value;
+
+    stream.get(has_value);
+    if (has_value) {
+        return std::make_optional(FfiConverterTypeDisconnectInfo::read(stream));
+    } else {
+        return std::nullopt;
+    }
+}
+
+void FfiConverterOptionalTypeDisconnectInfo::write(RustStream &stream, const std::optional<DisconnectInfo>& value) {
+    stream.put(static_cast<uint8_t>(!!value));
+
+    if (value) {
+        FfiConverterTypeDisconnectInfo::write(stream, value.value());
+    }
+}
+
+uint64_t FfiConverterOptionalTypeDisconnectInfo::allocation_size(const std::optional<DisconnectInfo> &val) {
+    uint64_t ret = 1;
+
+    if (val) {
+        ret += FfiConverterTypeDisconnectInfo::allocation_size(val.value());
     }
 
     return ret;

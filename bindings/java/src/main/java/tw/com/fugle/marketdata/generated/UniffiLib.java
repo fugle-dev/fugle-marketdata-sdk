@@ -124,6 +124,7 @@ interface UniffiLib extends Library {
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_disconnect(Pointer ptr);
     Byte uniffi_marketdata_uniffi_fn_method_websocketclient_is_closed(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Byte uniffi_marketdata_uniffi_fn_method_websocketclient_is_connected(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
+    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_websocketclient_last_disconnect(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_measure_latency(Pointer ptr, RustBuffer.ByValue timeoutMs);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_ping(Pointer ptr, RustBuffer.ByValue state);
@@ -300,6 +301,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_disconnect();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_is_closed();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_is_connected();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketclient_last_disconnect();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_measure_latency();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_ping();

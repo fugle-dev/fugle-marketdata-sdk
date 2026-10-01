@@ -455,6 +455,12 @@ Errors() <-chan error              // Receive errors
 
 // Message queue
 MessagesDroppedTotal() uint64      // Messages dropped this connection (see below)
+// Last disconnect: Code, Reason, Intent (DisconnectIntentClient / Server / Network),
+// WillReconnect; nil before the first. Once Messages() is closed, this says why
+// (call it before Close(), which destroys the client). Disconnecting from a
+// listener and connecting at once: the old connection's last one can land
+// after the new one's; for the state use IsConnected().
+LastDisconnect() *DisconnectInfo
 
 // Ping is fire-and-forget; the pong (if any) arrives via Messages()
 Ping(state *string) error
@@ -640,7 +646,7 @@ SDK or a `*StreamError` read from `StreamingClient.Errors()`:
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
-| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not sent to `Errors()`: the connection drops (and reconnects if enabled) and `LastDisconnect()` has intent `DisconnectIntentNetwork`, no code and the reason `Heartbeat timeout after …` |
 | 9999 | Other | Unexpected error |
 
 ## Examples

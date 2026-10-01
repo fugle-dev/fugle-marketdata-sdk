@@ -4035,12 +4035,16 @@ pub enum marketdata_core::websocket::connection_event::DisconnectIntent
 pub marketdata_core::websocket::connection_event::DisconnectIntent::Client
 pub marketdata_core::websocket::connection_event::DisconnectIntent::Network
 pub marketdata_core::websocket::connection_event::DisconnectIntent::Server
+impl marketdata_core::websocket::connection_event::DisconnectIntent
+pub const fn marketdata_core::websocket::connection_event::DisconnectIntent::as_str(self) -> &'static str
 impl core::clone::Clone for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::clone(&self) -> marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::cmp::Eq for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::cmp::PartialEq for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::eq(&self, &marketdata_core::websocket::connection_event::DisconnectIntent) -> bool
 impl core::fmt::Debug for marketdata_core::websocket::connection_event::DisconnectIntent
+pub fn marketdata_core::websocket::connection_event::DisconnectIntent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::marker::StructuralPartialEq for marketdata_core::websocket::connection_event::DisconnectIntent
@@ -4525,12 +4529,16 @@ pub enum marketdata_core::websocket::DisconnectIntent
 pub marketdata_core::websocket::DisconnectIntent::Client
 pub marketdata_core::websocket::DisconnectIntent::Network
 pub marketdata_core::websocket::DisconnectIntent::Server
+impl marketdata_core::websocket::connection_event::DisconnectIntent
+pub const fn marketdata_core::websocket::connection_event::DisconnectIntent::as_str(self) -> &'static str
 impl core::clone::Clone for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::clone(&self) -> marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::cmp::Eq for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::cmp::PartialEq for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::eq(&self, &marketdata_core::websocket::connection_event::DisconnectIntent) -> bool
 impl core::fmt::Debug for marketdata_core::websocket::connection_event::DisconnectIntent
+pub fn marketdata_core::websocket::connection_event::DisconnectIntent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::marker::StructuralPartialEq for marketdata_core::websocket::connection_event::DisconnectIntent
@@ -5130,12 +5138,16 @@ pub enum marketdata_core::DisconnectIntent
 pub marketdata_core::DisconnectIntent::Client
 pub marketdata_core::DisconnectIntent::Network
 pub marketdata_core::DisconnectIntent::Server
+impl marketdata_core::websocket::connection_event::DisconnectIntent
+pub const fn marketdata_core::websocket::connection_event::DisconnectIntent::as_str(self) -> &'static str
 impl core::clone::Clone for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::clone(&self) -> marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::cmp::Eq for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::cmp::PartialEq for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::eq(&self, &marketdata_core::websocket::connection_event::DisconnectIntent) -> bool
 impl core::fmt::Debug for marketdata_core::websocket::connection_event::DisconnectIntent
+pub fn marketdata_core::websocket::connection_event::DisconnectIntent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for marketdata_core::websocket::connection_event::DisconnectIntent
 pub fn marketdata_core::websocket::connection_event::DisconnectIntent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for marketdata_core::websocket::connection_event::DisconnectIntent
 impl core::marker::StructuralPartialEq for marketdata_core::websocket::connection_event::DisconnectIntent

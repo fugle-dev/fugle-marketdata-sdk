@@ -62,6 +62,17 @@ internal sealed class WebSocketLoopbackServer : IDisposable
         }
     }
 
+    /// <summary>Close every open connection from the server side with a Close frame.</summary>
+    public async Task CloseConnections(WebSocketCloseStatus status, string reason)
+    {
+        foreach (var socket in _connections.Values)
+        {
+            // Connections that ended normally stay in the map.
+            if (socket.State != WebSocketState.Open) continue;
+            await socket.CloseOutputAsync(status, reason, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Cut every open connection at the transport, as a network failure would.</summary>
     public void DropConnections()
     {
