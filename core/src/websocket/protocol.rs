@@ -24,9 +24,10 @@ use tungstenite::protocol::CloseFrame;
 /// reconnect loop retries (#201).
 pub(crate) const AUTH_REJECTED_CODE: i32 = 1000;
 
-/// How long a connection whose auth handshake failed is given to send its
-/// Close frame (the reply to the server's, or its own) before it is dropped,
-/// so the server sees the close completed rather than `1006` (#292).
+/// How long a connection whose auth handshake failed or was rejected is
+/// given to send its Close frame (the reply to the server's, or its own)
+/// before it is dropped, so the server sees the close completed rather than
+/// `1006` (#292).
 pub(crate) const AUTH_FAILED_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// The error for a stream that closed before the auth handshake reached an

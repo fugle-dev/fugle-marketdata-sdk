@@ -273,10 +273,12 @@ fn write_probe(ws: &mut SyncWs, deadline: Instant) -> ProbeWrite {
 /// frames read are returned with the outcome, to be queued after the
 /// matching event (#68).
 ///
-/// On a failed handshake the connection is closed, within
-/// [`AUTH_FAILED_CLOSE_TIMEOUT`], before it is given up: a server that sent a
-/// Close gets its reply, any other gets a Close of ours, rather than a
-/// dropped socket (#292), as on the async client.
+/// On a handshake that failed or was rejected the connection is closed
+/// before it is given up: a server that sent a Close gets its reply, any
+/// other gets a Close of ours, rather than a dropped socket (#292), as on the
+/// async client. [`AUTH_FAILED_CLOSE_TIMEOUT`] bounds each write syscall of
+/// that close, not the close as a whole; a Close frame is small enough to go
+/// out in one.
 pub(crate) fn do_auth_handshake(
     ws: &mut SyncWs,
     config: &ConnectionConfig,
@@ -296,7 +298,7 @@ pub(crate) fn do_auth_handshake(
     }
 
     let handshake = await_auth_response(ws, config.auth_timeout);
-    if let AuthHandshake::Failed(_) = handshake {
+    if !matches!(handshake, AuthHandshake::Authenticated { .. }) {
         // After a received Close, `close` only flushes the queued reply.
         set_write_timeout(ws, Some(AUTH_FAILED_CLOSE_TIMEOUT));
         let _ = ws.close(None);

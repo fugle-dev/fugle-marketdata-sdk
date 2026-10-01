@@ -90,11 +90,14 @@ pub enum AfterAuth {
     /// place of `authenticated`. With `close`, follow it with a Close frame
     /// without a code, as the server does for `1000` and `1004`
     /// (`ws-exception.filter.ts`); otherwise idle until the client gives the
-    /// connection up (#201).
+    /// connection up (#201). Either way, report on `ended_by_close`, if
+    /// given, whether the client went by a Close or by the end of the stream
+    /// (#292).
     RejectAuth {
         code: i32,
         message: String,
         close: bool,
+        ended_by_close: Option<mpsc::UnboundedSender<bool>>,
     },
     /// After a brief delay, send an `error` frame with `code` and then a
     /// Close frame without a code: the server's `error{1000}` +
@@ -229,6 +232,21 @@ fn subscribed_ack(frame: &str, id_prefix: &str) -> Option<String> {
     Some(serde_json::json!({"event": "subscribed", "data": data}).to_string())
 }
 
+/// Read until the client goes: `true` on its Close, `false` on the end of the
+/// stream (a client that drops the socket without one).
+async fn until_client_goes<S>(stream: &mut S) -> bool
+where
+    S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    loop {
+        match stream.next().await {
+            Some(Ok(Message::Close(_))) => return true,
+            Some(Ok(_)) => continue,
+            _ => return false,
+        }
+    }
+}
+
 async fn serve(
     stream: tokio::net::TcpStream,
     behaviour: Arc<AfterAuth>,
@@ -258,13 +276,18 @@ async fn serve(
     }
 
     match (*behaviour).clone() {
-        AfterAuth::RejectAuth { close: true, .. } => {
-            // `client.close()`: a Close frame without a code.
-            let _ = sink.send(Message::Close(None)).await;
-            while let Some(Ok(msg)) = stream.next().await {
-                if let Message::Close(_) = msg {
-                    break;
-                }
+        AfterAuth::RejectAuth { close, ended_by_close, .. } => {
+            if close {
+                // `client.close()`: a Close frame without a code.
+                let _ = sink.send(Message::Close(None)).await;
+            }
+            let by_close = until_client_goes(&mut stream).await;
+            if by_close && !close {
+                // Flush tungstenite's queued ack of the client's Close.
+                let _ = sink.close().await;
+            }
+            if let Some(ended_by_close) = ended_by_close {
+                let _ = ended_by_close.send(by_close);
             }
         }
         AfterAuth::ErrorThenClose { delay_ms, code, message } => {
@@ -283,15 +306,7 @@ async fn serve(
                 reason: reason.into(),
             });
             let _ = sink.send(Message::Close(frame)).await;
-            // Until the client's reply Close, or the end of the stream (a
-            // client that drops the socket without one).
-            let by_close = loop {
-                match stream.next().await {
-                    Some(Ok(Message::Close(_))) => break true,
-                    Some(Ok(_)) => continue,
-                    _ => break false,
-                }
-            };
+            let by_close = until_client_goes(&mut stream).await;
             if let Some(ended_by_close) = ended_by_close {
                 let _ = ended_by_close.send(by_close);
             }
@@ -305,7 +320,7 @@ async fn serve(
                 }
             }
         }
-        AfterAuth::Idle | AfterAuth::NeverAuthenticate | AfterAuth::RejectAuth { .. } => loop {
+        AfterAuth::Idle | AfterAuth::NeverAuthenticate => loop {
             match stream.next().await {
                 Some(Ok(Message::Close(_))) => {
                     // tungstenite already queued the RFC-6455 Close

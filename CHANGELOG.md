@@ -23,10 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaced with spaces.
   - The async client reports the failure as soon as the Close arrives,
     rather than once the stream ends or the auth timeout elapses.
-  - On a failed auth handshake both clients now close the connection
-    (replying to the server's Close, or sending their own) within 500 ms
-    before giving it up, so the server sees the close completed rather than
-    a dropped connection (1006).
+  - When the auth handshake fails or the credentials are rejected, both
+    clients now close the connection (replying to the server's Close, or
+    sending their own) within 500 ms before giving it up, so the server sees
+    the close completed rather than a dropped connection (1006).
 
 ## [Bindings 3.0.0-rc.10 / core 0.9.0-rc.8 / uniffi 0.2.0-rc.8] - 2026-10-01
 

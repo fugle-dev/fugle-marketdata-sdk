@@ -11,7 +11,8 @@
 //!   carries the close code and reason; a Close without a code leaves the
 //!   message as it was;
 //! - the client answers the server's Close with its own before giving the
-//!   connection up, so the server sees the close completed, not `1006`;
+//!   connection up, so the server sees the close completed, not `1006`; it
+//!   closes a connection whose credentials were rejected the same way;
 //! - during auto-reconnect, the failed attempts' `Error` events carry the
 //!   same message, and the attempts are still retried until the policy's
 //!   limit (`ReconnectFailed { attempts: 2 }`).
@@ -57,6 +58,21 @@ fn bare_close(ended_by_close: Option<mpsc::UnboundedSender<bool>>) -> AfterAuth 
         frame: None,
         ended_by_close,
     }
+}
+
+/// The server's rejection of the credentials (`error` 1000) and no Close,
+/// reporting on `ended_by_close` whether the client sent one.
+fn rejected(ended_by_close: Option<mpsc::UnboundedSender<bool>>) -> AfterAuth {
+    AfterAuth::RejectAuth {
+        code: 1000,
+        message: "Invalid authentication credentials".to_string(),
+        close: false,
+        ended_by_close,
+    }
+}
+
+fn assert_rejected(result: &Result<(), MarketDataError>) {
+    assert!(matches!(result, Err(MarketDataError::AuthError { .. })), "{result:?}");
 }
 
 /// Serve one connection with `behaviour` and run `connect` against its URL.
@@ -173,6 +189,13 @@ mod aio {
         assert!(by_close, "the client dropped the socket without a reply Close");
     }
 
+    #[tokio::test]
+    async fn rejected_auth_closes_the_connection() {
+        let (result, by_close) = connect_once(rejected, connect).await;
+        assert_rejected(&result);
+        assert!(by_close, "the client dropped the socket without a Close");
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn reconnect_reports_close_during_auth_and_retries() {
         let server = common::spawn_sequence(drop_then_limit_closes()).await;
@@ -212,6 +235,13 @@ mod sync {
         let (result, by_close) = connect_once(bare_close, connect).await;
         assert_closed_during_auth(&result, WITHOUT_FRAME);
         assert!(by_close, "the client dropped the socket without a reply Close");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn rejected_auth_closes_the_connection() {
+        let (result, by_close) = connect_once(rejected, connect).await;
+        assert_rejected(&result);
+        assert!(by_close, "the client dropped the socket without a Close");
     }
 
     #[tokio::test(flavor = "multi_thread")]

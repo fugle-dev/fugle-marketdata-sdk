@@ -66,9 +66,9 @@ pub(crate) async fn replay_subscriptions(
 /// `WebSocketClient::connect` and `try_connect` so the auth protocol cannot
 /// drift between fresh-connect and reconnect.
 ///
-/// On a failed handshake the connection is closed, within
-/// [`AUTH_FAILED_CLOSE_TIMEOUT`], before it is given up: a server that sent a
-/// Close gets its reply, any other gets a Close of ours, rather than a
+/// On a handshake that failed or was rejected the connection is closed,
+/// within [`AUTH_FAILED_CLOSE_TIMEOUT`], before it is given up: a server that
+/// sent a Close gets its reply, any other gets a Close of ours, rather than a
 /// dropped socket (#292).
 pub(crate) async fn authenticate(
     ws_sink: &mut WsSink,
@@ -86,7 +86,7 @@ pub(crate) async fn authenticate(
         return AuthHandshake::Failed(e.into());
     }
     let handshake = await_auth_response(ws_read, config.auth_timeout).await;
-    if let AuthHandshake::Failed(_) = handshake {
+    if !matches!(handshake, AuthHandshake::Authenticated { .. }) {
         let _ = timeout(AUTH_FAILED_CLOSE_TIMEOUT, ws_sink.close()).await;
     }
     handshake
