@@ -245,8 +245,23 @@ impl RestClient {
     /// 0.6.0 through 0.7.x required `url` to *include* `/v1.0`. That form now
     /// fails. See `MIGRATION-0.8.md`.
     #[must_use]
-    pub fn base_url(mut self, url: &str) -> Self {
-        match crate::urls::with_version(url, crate::urls::API_VERSION, "") {
+    pub fn base_url(self, url: &str) -> Self {
+        self.base_url_worded(
+            url,
+            crate::urls::BaseUrlWording {
+                option: "base_url",
+                version_hint: "",
+            },
+        )
+    }
+
+    fn base_url_worded(mut self, url: &str, wording: crate::urls::BaseUrlWording<'_>) -> Self {
+        // REST serves a single version: there is no version option to point at.
+        let wording = crate::urls::BaseUrlWording {
+            version_hint: "",
+            ..wording
+        };
+        match crate::urls::with_version_worded(url, crate::urls::API_VERSION, wording) {
             Ok(resolved) => {
                 self.base_url = resolved;
                 self.config_error = None;
@@ -269,6 +284,31 @@ impl RestClient {
     /// version segment.
     pub fn try_base_url(self, url: &str) -> Result<Self, MarketDataError> {
         let client = self.base_url(url);
+        Self::reject_parked(client)
+    }
+
+    /// Same as [`try_base_url`](Self::try_base_url), with the rejection
+    /// naming the option as the binding spells it (`baseUrl` in Node) rather
+    /// than `base_url` (#316). `wording.version_hint` is ignored: REST serves
+    /// a single version, so there is no version option to point at.
+    ///
+    /// Hidden from the docs and the public-API baseline like
+    /// [`get_json`](Self::get_json): it serves the bindings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MarketDataError::ConfigError`] if `url` already ends in a
+    /// version segment.
+    #[doc(hidden)]
+    pub fn try_base_url_worded(
+        self,
+        url: &str,
+        wording: crate::urls::BaseUrlWording<'_>,
+    ) -> Result<Self, MarketDataError> {
+        Self::reject_parked(self.base_url_worded(url, wording))
+    }
+
+    fn reject_parked(client: Self) -> Result<Self, MarketDataError> {
         match &client.config_error {
             Some(message) => Err(MarketDataError::ConfigError(message.clone())),
             None => Ok(client),
@@ -861,6 +901,31 @@ mod tests {
             msg.contains("'https://api.fugle.tw/marketdata'"),
             "names the prefix to use instead: {msg}"
         );
+    }
+
+    #[test]
+    fn test_try_base_url_worded_names_the_binding_option() {
+        // Node's option is `baseUrl`; the message names it, not the Rust
+        // setter. The WebSocket version hint has no place in REST (#316).
+        const NODE_WORDING: crate::urls::BaseUrlWording<'static> = crate::urls::BaseUrlWording {
+            option: "baseUrl",
+            version_hint: "The version comes from version: { futopt: 'v1.1' }.",
+        };
+        let msg = RestClient::new(Auth::SdkToken("t".to_string()))
+            .try_base_url_worded("https://api.fugle.tw/marketdata/v1.0", NODE_WORDING)
+            .err()
+            .expect("a versioned base_url must be rejected")
+            .to_string();
+        assert!(
+            msg.contains("baseUrl must not include a version segment (found '/v1.0')"),
+            "{msg}"
+        );
+        assert!(!msg.contains("base_url"), "{msg}");
+        assert!(msg.ends_with("'https://api.fugle.tw/marketdata'."), "{msg}");
+        let ok = RestClient::new(Auth::SdkToken("t".to_string()))
+            .try_base_url_worded("https://staging.fugle.tw/marketdata", NODE_WORDING)
+            .unwrap();
+        assert_eq!(ok.resolved_base_url(), "https://staging.fugle.tw/marketdata/v1.0");
     }
 
     #[test]

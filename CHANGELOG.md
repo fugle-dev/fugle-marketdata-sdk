@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python, Node, C#, Go, Java, C++: a `base_url` that ends in a version
+  segment is refused in the caller's own terms** (#316). The WebSocket
+  message ended with the Rust call `.futopt_version(FutOptVersion::V1_1)`;
+  it now ends with `version={'futopt': 'v1.1'}` in Python,
+  `version: { futopt: 'v1.1' }` in Node, and the version option's
+  `stock` / `futopt` fields in C#, Go, Java and C++, which share one
+  message. In Node the message, for `RestClient` and `WebSocketClient`
+  alike, starts with `baseUrl` instead of `base_url`; the other languages
+  keep `base_url`. The exception type and error code are unchanged, and so
+  is the message from the Rust API.
 - **Go: `LastDisconnect()` no longer panics after `Close()`** (#318).
   `Close()` keeps the last record before releasing the client:
   `LastDisconnect()` after it returns that record, or nil if there was none,

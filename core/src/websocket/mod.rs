@@ -36,7 +36,7 @@ pub use config::{
     auth_timeout_from_millis, ConnectionConfig, ConnectionConfigBuilder, MessageOverflow,
     DEFAULT_AUTH_TIMEOUT, DEFAULT_EVENT_BUFFER, DEFAULT_MESSAGE_BUFFER,
 };
-pub use factory::{stream_config, StreamProduct, WebSocketFactory};
+pub use factory::{stream_config, stream_config_worded, StreamProduct, WebSocketFactory};
 pub use connection_event::{ConnectionEvent, ConnectionState, ConnectionStateHandle, DisconnectIntent};
 pub use health_check::HealthCheckConfig;
 pub use stream::{ConnectionStream, MessagesDroppedHandle, StreamItem, StreamReceiver};

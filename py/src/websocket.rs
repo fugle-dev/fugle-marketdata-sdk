@@ -1045,7 +1045,15 @@ fn bare_version_message(bare: &str) -> String {
 
 use marketdata_core::websocket::StreamProduct as WsProduct;
 
-/// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
+/// Words a `base_url` rejection in Python's terms: the version option in
+/// Python syntax, not the Rust builder call (#316). REST ignores `version_hint`.
+pub(crate) const BASE_URL_WORDING: marketdata_core::urls::BaseUrlWording<'static> =
+    marketdata_core::urls::BaseUrlWording {
+        option: "base_url",
+        version_hint: "The version comes from the version option, e.g. version={'futopt': 'v1.1'}.",
+    };
+
+/// Forwards to [`marketdata_core::websocket::stream_config_worded`], which owns the
 /// endpoint rules (#252).
 fn build_stream_config(
     auth: &marketdata_core::AuthRequest,
@@ -1054,7 +1062,14 @@ fn build_stream_config(
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
-    marketdata_core::websocket::stream_config(auth, base_url, product, stock_version, futopt_version)
+    marketdata_core::websocket::stream_config_worded(
+        auth,
+        base_url,
+        product,
+        stock_version,
+        futopt_version,
+        BASE_URL_WORDING,
+    )
 }
 
 /// Internal WebSocket state (not Send/Sync safe, managed via Mutex)
@@ -3375,7 +3390,10 @@ mod tests {
             Default::default(),
         )
         .expect_err("a versioned base_url must be rejected");
-        assert!(err.to_string().contains("must not include a version segment"));
+        let msg = err.to_string();
+        assert!(msg.contains("must not include a version segment"), "{msg}");
+        assert!(msg.contains("base_url must not include"), "{msg}");
+        assert!(msg.ends_with(BASE_URL_WORDING.version_hint), "{msg}");
     }
 
     #[test]
