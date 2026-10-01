@@ -87,6 +87,12 @@ describe('further arguments after the params object', () => {
   });
 });
 
+test('corporateActions: a fourth argument', async () => {
+  const error = await rejected(() => client.stock.corporateActions.dividends('2026-01-01', '2026-02-01', undefined, 'x'));
+  expect(error.name).toBe('TypeError');
+  expect(error.message).toMatch(/^`stock\.corporateActions\.dividends` takes at most 2 positional arguments \(startDate, endDate\), got a further string one/);
+});
+
 describe('still accepted', () => {
   test('undefined and null in the extra positions count as not given', async () => {
     await client.stock.intraday.trades('2330', undefined, null);

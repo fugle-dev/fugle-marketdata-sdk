@@ -70,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the call went ahead with defaults — `version: 'v1.0'` still streamed
   futopt v1.1. Each case below is now a `TypeError` with only a message (no
   `code`; see [errors.md](docs/errors.md#arguments-of-the-wrong-shape)),
-  except where noted; `undefined` counts as not given.
+  except where noted; `undefined` counts as not given (and so does `null`
+  in an argument position a method does not declare).
   - **Node `WebSocketClient` / `RestClient` options**: an unknown key (top
     level, or in `reconnect` / `healthCheck` / `version`), a value of the
     wrong type, a nested option that is not an object (`version: 'v1.0'`,
@@ -96,18 +97,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`afterHours` on stock, `intradayOddLot` / `oddLot` on futopt), or a
     flag that is not a boolean. Node also refuses a non-string `symbol` /
     `id`, a non-string element of `symbols` / `ids` (it used to be skipped)
-    and a further argument. Python refuses `symbol` / `symbols` / the flag
+    and a further argument, and an `unsubscribe()` object without `channel`
+    takes only `id` / `ids` (`symbol` there used to be dropped). Python refuses `symbol` / `symbols` / the flag
     keyword passed next to a dict, and `ids=` next to an unsubscribe dict
     (both used to be ignored), and its stock dict also takes the server's
     `intradayOddLot` spelling of `oddLot`.
   - **Python `version`**: a bare string or another non-dict now says which
     dict to write, worded like Node; still a `TypeError`.
-  - **Node error types**: errors for wrong argument types that napi used to
-    raise as `Error` with `code` `'StringExpected'` / `'BooleanExpected'` /
-    `'NumberExpected'` / `'InvalidArg'`, and an unsupported `version` (was
-    `'GenericFailure'`), are now `TypeError` without `code` and with a
+  - **Node error types**: in constructor options, `version` and the
+    `subscribe()` / `unsubscribe()` argument, a value of the wrong type used to
+    be napi's `Error` with `code` `'StringExpected'` / `'BooleanExpected'` /
+    `'NumberExpected'` / `'InvalidArg'`, and an unsupported `version` was
+    `'GenericFailure'`; these are now `TypeError` without `code`, with a
     message naming the field. Code matching those `code` strings or messages
-    needs updating.
+    there needs updating. A REST method's positional argument of the wrong
+    type (`candles('2330', 5)`) is still napi's `Error` as before.
 
 - **A Close frame received during authentication is reported with its code
   and reason** (#292). When the server refuses a connection with a Close

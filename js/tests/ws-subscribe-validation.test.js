@@ -25,6 +25,7 @@ const typeError = (message) => ({ name: 'TypeError', message });
 const notConnected = { name: 'Error', message: 'Not connected. Call connect() first.' };
 
 const STOCK_KEYS = 'channel, symbol, symbols, intradayOddLot';
+const ID_FORM = '(without channel the object takes id or ids; to unsubscribe by channel and symbol, add channel)';
 const FUTOPT_KEYS = 'channel, symbol, symbols, afterHours';
 
 describe('subscribe()', () => {
@@ -48,6 +49,19 @@ describe('subscribe()', () => {
     expect(thrown(() => ws[product].subscribe(options))).toEqual(typeError(message));
   });
 
+  test.each([
+    ['no argument', () => ws.stock.subscribe(), 'got undefined'],
+    ['a function', () => ws.stock.subscribe(() => {}), 'got function'],
+  ])('%s', (_label, call, tail) => {
+    expect(thrown(call)).toEqual(typeError(`subscribe() takes an object like { channel: 'trades', symbol: '2330' }, ${tail}`));
+  });
+
+  test('a function value is named by its key', () => {
+    expect(thrown(() => ws.stock.subscribe({ channel: 'trades', symbol: '2330', onData: () => {} }))).toEqual(
+      typeError(`subscribe(): unknown key 'onData' (accepted: ${STOCK_KEYS})`),
+    );
+  });
+
   test('a further argument', () => {
     expect(thrown(() => ws.stock.subscribe({ channel: 'trades', symbol: '2330' }, { intradayOddLot: true }))).toEqual(
       typeError('subscribe() takes one argument, got a further object one'),
@@ -66,7 +80,10 @@ describe('subscribe()', () => {
 describe('unsubscribe()', () => {
   const stockAll = `${STOCK_KEYS}, id, ids`;
   test.each([
-    ['stock', { id: 'abc', foo: 1 }, `unsubscribe(): unknown key 'foo' (accepted: ${stockAll})`],
+    ['stock', { id: 'abc', foo: 1 }, `unsubscribe(): unknown key 'foo' ${ID_FORM}`],
+    ['stock', { id: 'abc', symbol: '2330' }, `unsubscribe(): unknown key 'symbol' ${ID_FORM}`],
+    ['futopt', { ids: ['abc'], afterHours: true }, `unsubscribe(): unknown key 'afterHours' ${ID_FORM}`],
+    ['stock', { channel: 'trades', symbol: '2330', foo: 1 }, `unsubscribe(): unknown key 'foo' (accepted: ${stockAll})`],
     ['stock', { channel: 'trades', symbol: '2330', afterHours: true },
       `unsubscribe(): unknown key 'afterHours': it is a futopt option, the stock client takes intradayOddLot (accepted: ${stockAll})`],
     ['futopt', { channel: 'trades', symbol: 'TXFA6', afterHours: 'yes' }, 'unsubscribe(): afterHours must be a boolean, got string'],

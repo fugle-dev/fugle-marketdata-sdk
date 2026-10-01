@@ -103,9 +103,11 @@ fn unused_args(
     later: &[(&str, bool)],
     extra: Option<ExtraArg>,
 ) -> Option<Settled> {
-    let spec = EndpointSpec::for_path(path)
-        .unwrap_or_else(|| panic!("{} has no entry in core::rest::params", path.join("/")));
-    let keys = accepted_keys(spec);
+    let keys = || {
+        let spec = EndpointSpec::for_path(path)
+            .unwrap_or_else(|| panic!("{} has no entry in core::rest::params", path.join("/")));
+        accepted_keys(spec)
+    };
     if matches!(first.1, Some(RestArg::Params(_))) {
         let further = match (later.iter().find(|(_, set)| *set), extra) {
             (Some((name, _)), _) => format!("`{name}` as a further argument"),
@@ -114,7 +116,8 @@ fn unused_args(
         };
         return Some(Settled::type_error(format!(
             "`{method}` got a params object and {further}; the object form takes no other \
-             arguments. Put every parameter in the object; accepted keys: {keys}"
+             arguments. Put every parameter in the object; accepted keys: {}",
+            keys()
         )));
     }
     let ExtraArg(kind) = extra?;
@@ -128,6 +131,7 @@ fn unused_args(
         if names.len() == 1 { "" } else { "s" },
         names.join(", "),
         first.0,
+        keys = keys(),
     )))
 }
 
@@ -1468,6 +1472,7 @@ impl StockCorporateActionsClient {
         start_date: Option<RestArg>,
         end_date: Option<String>,
         legacy_third_arg: Option<Value>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("capitalChanges", &start_date, &end_date, &legacy_third_arg)?;
         if let Some(rejected) = unused_args(
@@ -1475,7 +1480,7 @@ impl StockCorporateActionsClient {
             &["stock", "corporate-actions", "capital-changes"],
             ("startDate", &start_date),
             &[("endDate", end_date.is_some())],
-            None,
+            extra,
         ) {
             return Ok(rejected);
         }
@@ -1519,6 +1524,7 @@ impl StockCorporateActionsClient {
         start_date: Option<RestArg>,
         end_date: Option<String>,
         legacy_third_arg: Option<Value>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("dividends", &start_date, &end_date, &legacy_third_arg)?;
         if let Some(rejected) = unused_args(
@@ -1526,7 +1532,7 @@ impl StockCorporateActionsClient {
             &["stock", "corporate-actions", "dividends"],
             ("startDate", &start_date),
             &[("endDate", end_date.is_some())],
-            None,
+            extra,
         ) {
             return Ok(rejected);
         }
@@ -1570,6 +1576,7 @@ impl StockCorporateActionsClient {
         start_date: Option<RestArg>,
         end_date: Option<String>,
         legacy_third_arg: Option<Value>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("listingApplicants", &start_date, &end_date, &legacy_third_arg)?;
         if let Some(rejected) = unused_args(
@@ -1577,7 +1584,7 @@ impl StockCorporateActionsClient {
             &["stock", "corporate-actions", "listing-applicants"],
             ("startDate", &start_date),
             &[("endDate", end_date.is_some())],
-            None,
+            extra,
         ) {
             return Ok(rejected);
         }

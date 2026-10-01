@@ -32,7 +32,8 @@ pub(crate) enum JsVal {
     Bytes(bool),
     Array,
     Function,
-    /// A plain object with its own enumerable string keys, in order. Read
+    /// A plain object with its enumerable string keys (inherited ones too, as
+    /// napi reads them), in order. Read
     /// only to the depth the tables reach; deeper objects are left empty.
     Object(Vec<(String, JsVal)>),
     /// Anything else (symbol, bigint, external).
@@ -80,7 +81,8 @@ pub(crate) enum Kind {
     Bool,
     /// A non-negative integer that fits a `u32`.
     U32,
-    /// A finite, non-negative number of milliseconds; fractions are kept.
+    /// A finite, non-negative number of milliseconds; a fraction is accepted
+    /// (and truncated where it is read).
     Millis,
     /// A `Uint8Array` / `Buffer`.
     Bytes,
@@ -258,7 +260,8 @@ fn check_version(owner: &str, value: &JsVal) -> Result<(), String> {
     let mut given = Vec::new();
     for (product, requested) in entries {
         match requested {
-            JsVal::Undefined => {}
+            // Left to napi's conversion, which throws the getter's error.
+            JsVal::Undefined | JsVal::Unreadable => {}
             JsVal::String(v) => given.push((product.as_str(), v.as_str())),
             other => {
                 // An unknown product is the clearer error, whatever its value.
@@ -362,7 +365,8 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
         sys::napi_get_all_property_names(
             env,
             value,
-            sys::KeyCollectionMode::own_only,
+            // Inherited enumerable keys too: napi's conversion reads them.
+            sys::KeyCollectionMode::include_prototypes,
             sys::KeyFilter::enumerable | sys::KeyFilter::skip_symbols,
             sys::KeyConversion::numbers_to_strings,
             &mut keys,
@@ -442,7 +446,10 @@ impl FromNapiValue for ExtraArg {
 /// The argument of `subscribe()` / `unsubscribe()`: the JSON the methods
 /// read, and its shape for [`check_subscription`].
 pub struct SubscriptionArg {
-    pub(crate) value: serde_json::Value,
+    /// Kept as a `Result` so a value serde cannot represent (`undefined`, a
+    /// function) is reported by the shape check, as a `TypeError` naming
+    /// it, before the conversion's own error.
+    pub(crate) value: napi::Result<serde_json::Value>,
     pub(crate) shape: JsVal,
 }
 
@@ -459,7 +466,7 @@ impl TypeName for SubscriptionArg {
 impl FromNapiValue for SubscriptionArg {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
         let shape = unsafe { read(env, napi_val, 1)? };
-        let value = unsafe { serde_json::Value::from_napi_value(env, napi_val)? };
+        let value = unsafe { serde_json::Value::from_napi_value(env, napi_val) };
         Ok(Self { value, shape })
     }
 }
@@ -498,25 +505,39 @@ pub(crate) fn check_subscription(
             ))
         }
     };
-    let mut accepted: Vec<&str> = SUBSCRIBE_KEYS.iter().copied().chain([modifier]).collect();
-    if unsubscribe {
-        accepted.extend(ID_KEYS);
-    }
+    let given = |key: &str| entries.iter().any(|(k, v)| k == key && !matches!(v, JsVal::Undefined));
+    // `unsubscribe()` without `channel` names server ids and takes nothing
+    // else; with `channel` it takes the `subscribe()` keys (and `id` / `ids`,
+    // which the method refuses together with `channel` as 1005).
+    let id_form = unsubscribe && !given("channel");
+    let accepted: Vec<&str> = if id_form {
+        ID_KEYS.to_vec()
+    } else {
+        let mut keys: Vec<&str> = SUBSCRIBE_KEYS.iter().copied().chain([modifier]).collect();
+        if unsubscribe {
+            keys.extend(ID_KEYS);
+        }
+        keys
+    };
     for (key, value) in entries {
         if matches!(value, JsVal::Undefined) {
             continue;
         }
-        let expected = match key.as_str() {
-            "channel" | "symbol" | "id" if accepted.contains(&key.as_str()) => {
-                matches!(value, JsVal::String(_)).then_some(()).ok_or("a string")
-            }
-            "symbols" | "ids" if accepted.contains(&key.as_str()) => {
-                matches!(value, JsVal::Array).then_some(()).ok_or("an array of strings")
-            }
-            k if k == modifier => matches!(value, JsVal::Bool(_)).then_some(()).ok_or("a boolean"),
-            _ => return Err(format!("{call}(): {}", subscribe_keys::unknown_key(product, key, &accepted))),
+        if !accepted.contains(&key.as_str()) {
+            let reason = if id_form {
+                subscribe_keys::unknown_id_key(key)
+            } else {
+                subscribe_keys::unknown_key(product, key, &accepted)
+            };
+            return Err(format!("{call}(): {reason}"));
+        }
+        let (fits, expected) = match key.as_str() {
+            "channel" | "symbol" | "id" => (matches!(value, JsVal::String(_)), "a string"),
+            "symbols" | "ids" => (matches!(value, JsVal::Array), "an array of strings"),
+            // An unreadable value is left to the conversion, as in the options.
+            _ => (matches!(value, JsVal::Bool(_)), "a boolean"),
         };
-        if let Err(expected) = expected {
+        if !fits && !matches!(value, JsVal::Unreadable) {
             return Err(format!("{call}(): {key} must be {expected}, got {}", value.describe()));
         }
     }
@@ -769,10 +790,28 @@ mod tests {
         assert!(sub("unsubscribe", Stock, &s("abc")).is_ok());
         assert!(sub("unsubscribe", Stock, &obj(&[("id", s("abc"))])).is_ok());
         assert!(sub("unsubscribe", FutOpt, &obj(&[("ids", JsVal::Array)])).is_ok());
+        assert_eq!(
+            err(sub("subscribe", Stock, &JsVal::Undefined)),
+            "subscribe() takes an object like { channel: 'trades', symbol: '2330' }, got undefined"
+        );
+        assert!(err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("onData", JsVal::Function)])))
+            .starts_with("subscribe(): unknown key 'onData'"));
         // Left to the method's own 1005.
         assert!(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("id", s("abc"))])).is_ok());
+        let id_form = "(without channel the object takes id or ids; to unsubscribe by channel and symbol, add channel)";
         assert_eq!(
             err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("foo", JsVal::Null)]))),
+            format!("unsubscribe(): unknown key 'foo' {id_form}")
+        );
+        // The subscribe keys need `channel`: without it they were dropped.
+        assert_eq!(
+            err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("symbol", s("2330"))]))),
+            format!("unsubscribe(): unknown key 'symbol' {id_form}")
+        );
+        assert!(err(sub("unsubscribe", FutOpt, &obj(&[("ids", JsVal::Array), ("afterHours", JsVal::Bool(true))])))
+            .starts_with("unsubscribe(): unknown key 'afterHours' (without channel"));
+        assert_eq!(
+            err(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", s("2330")), ("foo", JsVal::Null)]))),
             "unsubscribe(): unknown key 'foo' (accepted: channel, symbol, symbols, intradayOddLot, id, ids)"
         );
         assert!(err(sub("unsubscribe", FutOpt, &obj(&[("channel", s("trades")), ("intradayOddLot", JsVal::Bool(true))])))

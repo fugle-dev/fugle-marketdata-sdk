@@ -12,6 +12,7 @@ from fugle_marketdata import WebSocketClient
 
 STOCK_KEYS = "channel, symbol, symbols, oddLot, odd_lot, intradayOddLot"
 FUTOPT_KEYS = "channel, symbol, symbols, afterHours, after_hours"
+ID_FORM = "(without channel the object takes id or ids; to unsubscribe by channel and symbol, add channel)"
 
 
 @pytest.fixture
@@ -43,7 +44,13 @@ def ws():
         ("futopt", lambda c: c.subscribe({"channel": "trades", "symbol": "TXFA6"}, symbols=["TXFB6"]),
          "subscribe(): pass either a dict or the channel with symbol / symbols / after_hours, not both"),
         ("stock", lambda c: c.unsubscribe({"id": "abc", "foo": 1}),
-         "unsubscribe(dict): unknown key 'foo' (accepted: id, ids)"),
+         f"unsubscribe(dict): unknown key 'foo' {ID_FORM}"),
+        ("futopt", lambda c: c.unsubscribe({"id": "abc", "oddLot": True}),
+         f"unsubscribe(dict): unknown key 'oddLot' {ID_FORM}"),
+        ("stock", lambda c: c.unsubscribe({"symbol": "2330"}),
+         f"unsubscribe(dict): unknown key 'symbol' {ID_FORM}"),
+        ("futopt", lambda c: c.subscribe_async({"channel": "trades", "symbol": "TXFA6", "foo": 1}),
+         f"subscribe_async(dict): unknown key 'foo' (accepted: {FUTOPT_KEYS})"),
         ("stock", lambda c: c.unsubscribe({"channel": "trades", "symbol": "2330", "afterHours": True}),
          "unsubscribe(dict): unknown key 'afterHours': it is a futopt option, the stock client takes "
          f"intradayOddLot (accepted: {STOCK_KEYS})"),

@@ -61,6 +61,17 @@ pub fn unknown_key(product: StreamProduct, key: &str, accepted: &[&str]) -> Stri
     }
 }
 
+/// Why `key` is refused by an `unsubscribe()` object without `channel`,
+/// which names server ids: `unknown key 'symbol' (without channel the
+/// object takes id or ids; to unsubscribe by channel and symbol, add channel)`.
+pub fn unknown_id_key(key: &str) -> String {
+    format!(
+        "unknown key '{key}' (without channel the object takes {}; to unsubscribe by channel \
+         and symbol, add channel)",
+        ID_KEYS.join(" or ")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,6 +89,15 @@ mod tests {
             "unknown key 'odd_lot': it is a stock option, the futopt client takes afterHours (accepted: channel)"
         );
         assert_eq!(unknown_key(StreamProduct::Stock, "foo", &["channel"]), "unknown key 'foo' (accepted: channel)");
+    }
+
+    #[test]
+    fn test_unknown_id_key() {
+        assert_eq!(
+            unknown_id_key("symbol"),
+            "unknown key 'symbol' (without channel the object takes id or ids; to unsubscribe by \
+             channel and symbol, add channel)"
+        );
     }
 
     #[test]

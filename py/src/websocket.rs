@@ -203,13 +203,19 @@ fn extract_subscribe_dict(
 
 /// Extract a list of subscription IDs from an unsubscribe dict.
 /// Accepts `{"id": "..."}` or `{"ids": [...]}`.
-fn extract_unsubscribe_dict(d: &Bound<'_, PyDict>, modifier: Modifier) -> PyResult<Vec<String>> {
-    check_dict_keys(
-        "unsubscribe",
-        d,
-        &marketdata_core::websocket::subscribe_keys::ID_KEYS,
-        modifier.product,
-    )?;
+fn extract_unsubscribe_dict(d: &Bound<'_, PyDict>) -> PyResult<Vec<String>> {
+    // Without `channel` the dict names server ids and takes nothing else.
+    for key in d.keys() {
+        let key: String = key.extract().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("unsubscribe(dict): keys must be strings")
+        })?;
+        if !marketdata_core::websocket::subscribe_keys::ID_KEYS.contains(&key.as_str()) {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "unsubscribe(dict): {}",
+                marketdata_core::websocket::subscribe_keys::unknown_id_key(&key)
+            )));
+        }
+    }
     match (d.get_item("id")?, d.get_item("ids")?) {
         (Some(s), None) => Ok(vec![s.extract::<String>()?]),
         (None, Some(list)) => {
@@ -318,7 +324,7 @@ fn resolve_unsubscribe_target(
             let (channel, symbols, flag) = extract_subscribe_dict("unsubscribe", d, modifier)?;
             return Ok(UnsubscribeTarget::Channel(channel, symbols, flag));
         }
-        extract_unsubscribe_dict(d, modifier).map(UnsubscribeTarget::Ids)
+        extract_unsubscribe_dict(d).map(UnsubscribeTarget::Ids)
     } else if let Ok(s) = arg.extract::<String>() {
         resolve_unsubscribe_args(Some(s.as_str()), ids).map(UnsubscribeTarget::Ids)
     } else {
@@ -919,7 +925,17 @@ fn parse_ws_versions(
             PyTypeError::new_err("version keys must be product names: 'stock' or 'futopt'")
         })?;
         let requested: String = value.extract().map_err(|_| {
-            PyTypeError::new_err(format!("version['{product}'] must be a version string, e.g. 'v1.1'"))
+            // An unknown product is the clearer error, whatever its value.
+            if !option::product_names().contains(&product.as_str()) {
+                return PyTypeError::new_err(format!(
+                    "unknown product '{product}' in version mapping (known: {})",
+                    option::product_names().join(", ")
+                ));
+            }
+            PyTypeError::new_err(format!(
+                "version['{product}'] must be a version string, e.g. 'v1.1', got {}",
+                value.get_type().name().map(|n| n.to_string()).unwrap_or_else(|_| "?".into())
+            ))
         })?;
         entries.push((product, requested));
     }
@@ -1762,7 +1778,7 @@ fn resolve_subscribe_args(
                 modifier.kwarg
             )));
         }
-        extract_subscribe_dict("subscribe", d, modifier)
+        extract_subscribe_dict(method, d, modifier)
     } else if let Ok(s) = channel.extract::<String>() {
         let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
         Ok((s, syms, flag.unwrap_or(false)))

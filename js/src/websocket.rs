@@ -2098,7 +2098,7 @@ impl StockWebSocketClient {
     pub fn subscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
         crate::options::check_subscription("subscribe", WsProduct::Stock, &options.shape, extra)
             .map_err(|message| crate::options::type_error(env.raw(), &message))?;
-        let options = options.value;
+        let options = options.value?;
         let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
@@ -2124,7 +2124,7 @@ impl StockWebSocketClient {
     pub fn unsubscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
         crate::options::check_subscription("unsubscribe", WsProduct::Stock, &options.shape, extra)
             .map_err(|message| crate::options::type_error(env.raw(), &message))?;
-        let options = options.value;
+        let options = options.value?;
         // Accept legacy positional string for backward compat with the previous
         // `unsubscribe(id: string)` signature.
         let target_ids = match unsubscribe_ids(&env, &options)? {
@@ -2598,7 +2598,7 @@ impl FutOptWebSocketClient {
     pub fn subscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
         crate::options::check_subscription("subscribe", WsProduct::FutOpt, &options.shape, extra)
             .map_err(|message| crate::options::type_error(env.raw(), &message))?;
-        let options = options.value;
+        let options = options.value?;
         let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
@@ -2623,7 +2623,7 @@ impl FutOptWebSocketClient {
     pub fn unsubscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
         crate::options::check_subscription("unsubscribe", WsProduct::FutOpt, &options.shape, extra)
             .map_err(|message| crate::options::type_error(env.raw(), &message))?;
-        let options = options.value;
+        let options = options.value?;
         let target_ids = match unsubscribe_ids(&env, &options)? {
             Some(ids) => ids,
             None => {

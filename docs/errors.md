@@ -151,12 +151,14 @@ An argument a method cannot use is a `TypeError` with only a message — no
 - **WebSocket `subscribe()` / `unsubscribe()`**: a key the call does not
   take — the other product's session flag included (`afterHours` on stock,
   `intradayOddLot` / `oddLot` on futopt) — or a flag that is not a boolean.
+  An `unsubscribe()` object without `channel` takes only `id` / `ids`.
   Python: also `symbol` / `symbols` / the flag keyword next to a dict, or
   `ids=` next to an unsubscribe dict.
 - **REST methods** (Node): a further argument the method does not take —
   past its positional parameters, or after the params object — rejects the
-  returned promise with a `TypeError` before any request is sent. An unknown
-  key inside the params object stays code 1005 (see above).
+  returned promise with a `TypeError` before any request is sent;
+  `undefined` or `null` there counts as not given. An unknown key inside the
+  params object stays code 1005 (see above).
 
 ## Callback failures
 
