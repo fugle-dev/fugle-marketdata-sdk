@@ -56,6 +56,11 @@ pub struct Kwargs<'py> {
     method: &'static str,
     spec: &'static EndpointSpec,
     given: HashMap<&'static str, Given<'py>>,
+    /// The path parameter under one of its aliases (`product` on the futopt
+    /// historical endpoints, which 2.x's `candles(product=...)` used). The
+    /// canonical name is the method's positional argument, so it never
+    /// arrives here.
+    path: Option<Given<'py>>,
 }
 
 impl<'py> Kwargs<'py> {
@@ -66,10 +71,19 @@ impl<'py> Kwargs<'py> {
             .unwrap_or_else(|| panic!("{method} has no entry in core::rest::params"));
         let mut given: HashMap<&'static str, Given<'py>> = HashMap::new();
         let Some(extra) = extra else {
-            return Ok(Self { method, spec, given });
+            return Ok(Self { method, spec, given, path: None });
         };
+        let mut path: Option<Given<'py>> = None;
         for (key, value) in extra.iter() {
             let key: String = key.extract()?;
+            if spec.path_param_aliases.contains(&key.as_str()) {
+                if let Some(earlier) = &path {
+                    let canonical = spec.path_param.unwrap_or("symbol");
+                    return Err(multiple(method, canonical, &earlier.key, &key));
+                }
+                path = Some(Given { key, as_flag: false, value });
+                continue;
+            }
             let resolved = spec
                 .resolve(&key)
                 // 2.x accepted `from_` for the reserved word; the table only
@@ -86,7 +100,32 @@ impl<'py> Kwargs<'py> {
             }
             given.insert(canonical, Given { key, as_flag: resolved.as_flag, value });
         }
-        Ok(Self { method, spec, given })
+        Ok(Self { method, spec, given, path })
+    }
+
+    /// Merge into the positional path argument (`symbol`), which is optional
+    /// in the signature only so that an alias (`product=`) can stand in for
+    /// it. Missing under every spelling raises `TypeError`, as a missing
+    /// positional would.
+    pub fn take_path(&mut self, typed: Option<String>) -> PyResult<String> {
+        let canonical = self.spec.path_param.unwrap_or("symbol");
+        match (typed, self.path.take()) {
+            (Some(_), Some(given)) => Err(multiple(self.method, canonical, canonical, &given.key)),
+            (Some(value), None) => Ok(value),
+            (None, Some(given)) => given
+                .value
+                .extract::<String>()
+                .map_err(|err| self.bad_value(&given.key, &given.value, err)),
+            (None, None) => {
+                let mut spellings = vec![format!("'{canonical}'")];
+                spellings.extend(self.spec.path_param_aliases.iter().map(|a| format!("'{a}'")));
+                Err(PyTypeError::new_err(format!(
+                    "{}() missing required argument: {}",
+                    self.method,
+                    spellings.join(" or ")
+                )))
+            }
+        }
     }
 
     /// Merge into a typed `Option<String>` argument.
@@ -156,7 +195,7 @@ impl<'py> Kwargs<'py> {
     /// Everything resolved must have been taken by the method; a leftover
     /// means the table lists a parameter this method has no keyword for.
     pub fn finish(self) -> PyResult<()> {
-        match self.given.into_values().next() {
+        match self.path.into_iter().chain(self.given.into_values()).next() {
             None => Ok(()),
             Some(given) => Err(PyTypeError::new_err(format!(
                 "{}() does not support '{}' yet",
@@ -199,7 +238,7 @@ fn unknown(method: &str, spec: &EndpointSpec, key: &str) -> PyErr {
         }
         None => String::new(),
     };
-    let mut accepted: Vec<String> = Vec::new();
+    let mut accepted: Vec<String> = spec.path_param_aliases.iter().map(|a| a.to_string()).collect();
     for p in spec.params {
         let typed = py_name(p);
         accepted.push(typed.to_string());

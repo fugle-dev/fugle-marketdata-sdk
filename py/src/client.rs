@@ -247,10 +247,12 @@ impl StockClient {
     }
 
     /// The prefix every request from this product client is built on, fully
-    /// resolved — host, path prefix and version segment.
+    /// resolved — host, path prefix, version segment and product, e.g.
+    /// `https://api.fugle.tw/marketdata/v1.0/stock`, as in 2.x. The value
+    /// without the product segment is `RestClient.base_url`.
     #[getter]
-    pub fn base_url(&self) -> &str {
-        self.inner.resolved_base_url()
+    pub fn base_url(&self) -> String {
+        self.inner.stock().resolved_base_url()
     }
 }
 
@@ -2393,6 +2395,14 @@ impl FutOptClient {
             inner: self.inner.clone(),
         }
     }
+    /// The prefix every request from this product client is built on, fully
+    /// resolved — host, path prefix, version segment and product, e.g.
+    /// `https://api.fugle.tw/marketdata/v1.0/futopt`, as in 2.x. The value
+    /// without the product segment is `RestClient.base_url`.
+    #[getter]
+    pub fn base_url(&self) -> String {
+        self.inner.futopt().resolved_base_url()
+    }
 }
 
 /// FutOpt intraday (real-time) endpoints client
@@ -3052,7 +3062,8 @@ impl FutOptHistoricalClient {
     /// Get historical candles for a FutOpt product
     ///
     /// Args:
-    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404.
+    ///         2.x's `product=` keyword is accepted in its place
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
     ///     timeframe: Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
@@ -3074,12 +3085,12 @@ impl FutOptHistoricalClient {
     ///         timeframe="D"
     ///     )
     ///     ```
-    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol=None, *, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles_async<'py>(
         &self,
         py: Python<'py>,
-        symbol: String,
+        symbol: Option<String>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
@@ -3092,6 +3103,7 @@ impl FutOptHistoricalClient {
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.candles", &_extra)?;
+        let symbol = kw.take_path(symbol)?;
         let from_date = kw.take_string("from", from_date)?;
         let to_date = kw.take_string("to", to_date)?;
         let timeframe = kw.take_string("timeframe", timeframe)?;
@@ -3119,12 +3131,12 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `candles()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, *, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
+    #[pyo3(signature = (symbol=None, *, from_date=None, to_date=None, timeframe=None, after_hours=None, contract_month=None, fields=None, sort=None, strike_price=None, call_put=None, **_extra))]
     #[allow(clippy::too_many_arguments, reason = "mirrors the Python keyword signature")]
     pub fn candles(
         &self,
         py: Python<'_>,
-        symbol: String,
+        symbol: Option<String>,
         from_date: Option<String>,
         to_date: Option<String>,
         timeframe: Option<String>,
@@ -3137,6 +3149,7 @@ impl FutOptHistoricalClient {
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.candles", &_extra)?;
+        let symbol = kw.take_path(symbol)?;
         let from_date = kw.take_string("from", from_date)?;
         let to_date = kw.take_string("to", to_date)?;
         let timeframe = kw.take_string("timeframe", timeframe)?;
@@ -3159,7 +3172,8 @@ impl FutOptHistoricalClient {
     /// Get one trading day's daily quotes for every contract month of a FutOpt product
     ///
     /// Args:
-    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404.
+    ///         2.x's `product=` keyword is accepted in its place
     ///     date: Trading date (YYYY-MM-DD); the server defaults to today
     ///     after_hours: Query the after-hours session (default: False)
     ///
@@ -3173,17 +3187,18 @@ impl FutOptHistoricalClient {
     ///     ```python
     ///     daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
     ///     ```
-    #[pyo3(signature = (symbol, *, date=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol=None, *, date=None, after_hours=None, **_extra))]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
-        symbol: String,
+        symbol: Option<String>,
         date: Option<String>,
         after_hours: Option<bool>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         reject_daily_range_kwargs(&_extra)?;
         let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.daily", &_extra)?;
+        let symbol = kw.take_path(symbol)?;
         let date = kw.take_string("date", date)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
         kw.finish()?;
@@ -3201,17 +3216,18 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol, *, date=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (symbol=None, *, date=None, after_hours=None, **_extra))]
     pub fn daily(
         &self,
         py: Python<'_>,
-        symbol: String,
+        symbol: Option<String>,
         date: Option<String>,
         after_hours: Option<bool>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         reject_daily_range_kwargs(&_extra)?;
         let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.daily", &_extra)?;
+        let symbol = kw.take_path(symbol)?;
         let date = kw.take_string("date", date)?;
         let after_hours = kw.take_flag("after_hours", after_hours)?;
         kw.finish()?;

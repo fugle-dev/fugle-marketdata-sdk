@@ -59,7 +59,8 @@ def _rest_methods():
 
 def _stub_signatures():
     """``{(class name, method name): [(param name, kind, has default), ...]}``
-    from the stub, ``self`` dropped and ``**kwargs`` ignored."""
+    from the stub, ``self`` dropped and ``**kwargs`` ignored. An ``@overload``ed
+    method maps to one such list per overload, in ``OVERLOADS``."""
     tree = ast.parse(STUB.read_text(), str(STUB))
     out = {}
     for node in tree.body:
@@ -82,6 +83,8 @@ def _stub_signatures():
                 params.append((a.vararg.arg, "var_positional", False))
             for arg, default in zip(a.kwonlyargs, a.kw_defaults):
                 params.append((arg.arg, "keyword_only", default is not None))
+            if any(isinstance(d, ast.Name) and d.id == "overload" for d in fn.decorator_list):
+                OVERLOADS.setdefault((node.name, fn.name), []).append(params)
             out[(node.name, fn.name)] = params
     return out
 
@@ -102,6 +105,7 @@ def _runtime_signature(method):
 
 
 METHODS = _rest_methods()
+OVERLOADS = {}
 STUBS = _stub_signatures()
 
 
@@ -122,6 +126,20 @@ def test_reflection_reaches_every_rest_client():
 def test_implementation_matches_stub(cls, name, method):
     assert (cls, name) in STUBS, f"{cls}.{name} is not in __init__.pyi"
     runtime = _runtime_signature(method)
+    if (cls, name) in OVERLOADS:
+        # Each overload is one way to call the method (futopt historical:
+        # positional ``symbol`` or keyword ``product``, #306). Its positional
+        # parameters lead the runtime's in order; every keyword is a runtime
+        # parameter or an alias the runtime binds.
+        runtime_positional = [n for n, kind, _ in runtime if kind == "positional"]
+        runtime_names = {n for n, _, _ in runtime}
+        for overload in OVERLOADS[(cls, name)]:
+            positional = [n for n, kind, _ in overload if kind == "positional"]
+            assert positional == runtime_positional[: len(positional)], overload
+            for keyword, kind, _ in overload:
+                if kind == "keyword_only" and keyword not in runtime_names:
+                    assert _accepts_keyword(method, runtime, keyword), f"{keyword} is not a runtime alias"
+        return
     stub = STUBS[(cls, name)]
     # The stub may spell out keyword-only aliases the runtime takes through
     # ``**_extra`` (ownership's ``from_``/``to``); each must bind there.
@@ -162,8 +180,12 @@ def test_optional_parameters_are_keyword_only(cls, name, method):
     """No optional parameter sits in a positional slot unless core marks it
     required: the wrong positional slot would otherwise not be an error.
     ``from_core`` mirrors the ``required(...)`` entries of
-    ``core/src/rest/params.rs``."""
+    ``core/src/rest/params.rs``, plus the path parameter where the table
+    gives it an alias: ``symbol`` defaults to ``None`` there only so that
+    ``product=`` can stand in for it, and is still required (#306)."""
     from_core = {
+        ("FutOptHistoricalClient", "candles"): {"symbol"},
+        ("FutOptHistoricalClient", "daily"): {"symbol"},
         ("StockSnapshotClient", "movers"): {"direction", "change"},
         ("StockSnapshotClient", "actives"): {"trade"},
         ("StockTechnicalClient", "sma"): {"period"},

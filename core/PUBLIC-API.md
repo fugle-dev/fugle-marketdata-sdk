@@ -37,6 +37,15 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — product clients' resolved base URL (#306)
+
+- `+` `rest::StockClient::resolved_base_url(&self) -> String` — the
+  client's resolved base URL plus `/stock`. Additive.
+- `+` `rest::futopt::FutOptClient::resolved_base_url(&self) -> String` —
+  the same with `/futopt` (also at `marketdata_core::FutOptClient`).
+  Additive. Python's `rest.stock.base_url` / `rest.futopt.base_url` read
+  these, as 2.x's product clients did.
+
 ### Unreleased — connection limit has its own error (#300)
 
 - `+` `MarketDataError::ConnectionLimit { msg: String }` — the server refused
