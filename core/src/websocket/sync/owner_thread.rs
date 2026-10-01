@@ -13,8 +13,8 @@ use crate::websocket::liveness::{
 };
 use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_resubscribe, parse_binary_frame, parse_text_frame,
-    AuthHandshake, AuthOutcome, ResubscribeFrame,
+    classify_auth_response, closed_during_auth, frame_auth, frame_resubscribe, parse_binary_frame,
+    parse_text_frame, AuthHandshake, AuthOutcome, ResubscribeFrame,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, HealthCheckConfig,
@@ -320,10 +320,8 @@ pub(crate) fn do_auth_handshake(
                     }
                 }
             }
-            Ok(Message::Close(_)) => {
-                return AuthHandshake::Failed(MarketDataError::ConnectionError {
-                    msg: "Stream closed during authentication".to_string(),
-                });
+            Ok(Message::Close(frame)) => {
+                return AuthHandshake::Failed(closed_during_auth(frame.as_ref()));
             }
             Ok(_) => continue,
             Err(tungstenite::Error::Io(e))

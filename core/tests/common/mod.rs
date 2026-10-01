@@ -108,6 +108,11 @@ pub enum AfterAuth {
     /// before it (#201 regression: no `error{1000}`, so the client
     /// reconnects).
     CloseWithoutCodeAfter { delay_ms: u64 },
+    /// Answer the auth frame with a Close frame instead: with `frame`, its
+    /// code and reason, as the server does when the connection limit is
+    /// reached (`1001 Maximum number of connections reached`); with `None`,
+    /// a Close without a code. Then wait for the client's Close (#292).
+    CloseInsteadOfAuth { frame: Option<(u16, String)> },
 }
 
 /// The server's error frame: `code` at the top level, the message under
@@ -238,7 +243,7 @@ async fn serve(
     // `RejectAuth` answers with an error frame.
     if let Some(Ok(_first)) = stream.next().await {
         let answer = match &*behaviour {
-            AfterAuth::NeverAuthenticate => None,
+            AfterAuth::NeverAuthenticate | AfterAuth::CloseInsteadOfAuth { .. } => None,
             AfterAuth::RejectAuth { code, message, .. } => Some(error_frame(*code, message)),
             _ => Some(r#"{"event":"authenticated"}"#.to_string()),
         };
@@ -261,6 +266,18 @@ async fn serve(
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             let _ = sink.send(Message::Text(error_frame(code, &message).into())).await;
             let _ = sink.send(Message::Close(None)).await;
+            while let Some(Ok(msg)) = stream.next().await {
+                if let Message::Close(_) = msg {
+                    break;
+                }
+            }
+        }
+        AfterAuth::CloseInsteadOfAuth { frame } => {
+            let frame = frame.map(|(code, reason)| CloseFrame {
+                code: CloseCode::from(code),
+                reason: reason.into(),
+            });
+            let _ = sink.send(Message::Close(frame)).await;
             while let Some(Ok(msg)) = stream.next().await {
                 if let Message::Close(_) = msg {
                     break;

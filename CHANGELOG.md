@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Close frame received during authentication is reported with its code
+  and reason** (#292). When the server refuses a connection with a Close
+  frame in place of the auth answer — as it does when the API key already
+  has its maximum number of connections — the `ConnectionError` (2001) said
+  only `Stream closed during authentication`. It now reads, for example,
+  `Stream closed during authentication (close 1001: Maximum number of
+  connections reached)`, both from `connect()` and in the `error` event of
+  an auto-reconnect attempt. A Close without a code, or a stream that ends
+  without one, keeps the old message. The error code is unchanged and such
+  an attempt is still retried; code that compares the whole message should
+  match its start instead.
+
 ## [Bindings 3.0.0-rc.10 / core 0.9.0-rc.8 / uniffi 0.2.0-rc.8] - 2026-10-01
 
 ### Breaking

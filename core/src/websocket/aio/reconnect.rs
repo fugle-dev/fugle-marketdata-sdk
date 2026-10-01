@@ -6,8 +6,8 @@ use crate::websocket::aio::{SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::ConnectionClose;
 use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_resubscribe, AuthHandshake, AuthOutcome,
-    ResubscribeFrame,
+    classify_auth_response, closed_during_auth, frame_auth, frame_resubscribe, AuthHandshake,
+    AuthOutcome, ResubscribeFrame,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
@@ -109,13 +109,15 @@ pub(crate) async fn await_auth_response(
                         }
                     }
                 }
+                // No auth outcome can follow a Close (#292).
+                Ok(Message::Close(frame)) => {
+                    return AuthHandshake::Failed(closed_during_auth(frame.as_ref()))
+                }
                 Err(e) => return AuthHandshake::Failed(MarketDataError::from(e)),
                 _ => {}
             }
         }
-        AuthHandshake::Failed(MarketDataError::ConnectionError {
-            msg: "Stream closed during authentication".to_string(),
-        })
+        AuthHandshake::Failed(closed_during_auth(None))
     })
     .await;
     result.unwrap_or_else(|_| {
