@@ -162,8 +162,12 @@ def test_optional_parameters_are_keyword_only(cls, name, method):
     """No optional parameter sits in a positional slot unless core marks it
     required: the wrong positional slot would otherwise not be an error.
     ``from_core`` mirrors the ``required(...)`` entries of
-    ``core/src/rest/params.rs``."""
+    ``core/src/rest/params.rs``, plus the path parameter where the table
+    gives it an alias: ``symbol`` defaults to ``None`` there only so that
+    ``product=`` can stand in for it, and is still required (#306)."""
     from_core = {
+        ("FutOptHistoricalClient", "candles"): {"symbol"},
+        ("FutOptHistoricalClient", "daily"): {"symbol"},
         ("StockSnapshotClient", "movers"): {"direction", "change"},
         ("StockSnapshotClient", "actives"): {"trade"},
         ("StockTechnicalClient", "sma"): {"period"},

@@ -337,7 +337,7 @@ impl RestClient {
     }
 
     /// Build `{base}/{segment}/...?{key}={value}&...`, encoding every part.
-    fn endpoint_url<K, V>(&self, path: &[&str], query: &[(K, V)]) -> String
+    pub(crate) fn endpoint_url<K, V>(&self, path: &[&str], query: &[(K, V)]) -> String
     where
         K: AsRef<str>,
         V: AsRef<str>,
@@ -411,6 +411,16 @@ pub struct StockClient<'a> {
 }
 
 impl<'a> StockClient<'a> {
+    /// The prefix every stock request is built on: the client's resolved
+    /// base URL plus the product segment, e.g.
+    /// `https://api.fugle.tw/marketdata/v1.0/stock`. The legacy SDKs' product
+    /// clients exposed this value as their `base_url`. The
+    /// value without the product segment is
+    /// [`RestClient::resolved_base_url`].
+    pub fn resolved_base_url(&self) -> String {
+        self.client.endpoint_url::<&str, &str>(&["stock"], &[])
+    }
+
     /// Access intraday (real-time) endpoints
     ///
     /// # Example
@@ -801,6 +811,15 @@ mod tests {
         let client = RestClient::new(Auth::SdkToken("t".to_string()));
         let url = client.endpoint_url::<&str, &str>(&["stock", "corporate-actions", "dividends"], &[]);
         assert_eq!(url, "https://api.fugle.tw/marketdata/v1.0/stock/corporate-actions/dividends");
+    }
+
+    #[test]
+    fn test_product_base_url_includes_product_segment() {
+        let client = RestClient::new(Auth::SdkToken("t".to_string()));
+        assert_eq!(client.stock().resolved_base_url(), "https://api.fugle.tw/marketdata/v1.0/stock");
+        assert_eq!(client.futopt().resolved_base_url(), "https://api.fugle.tw/marketdata/v1.0/futopt");
+        let custom = client.try_base_url("https://custom.api/prefix").unwrap();
+        assert_eq!(custom.stock().resolved_base_url(), "https://custom.api/prefix/v1.0/stock");
     }
 
     #[test]

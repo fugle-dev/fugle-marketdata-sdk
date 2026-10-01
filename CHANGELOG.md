@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Core: `StockClient::resolved_base_url()` / `FutOptClient::resolved_base_url()`**
+  (#306) — the client's resolved base URL plus the product segment
+  (`https://api.fugle.tw/marketdata/v1.0/stock`); Python's
+  `rest.stock.base_url` / `rest.futopt.base_url` read it.
 - **WebSocket: who closed the connection, and whether a reconnect follows**
   (#293). Core's `Disconnected` event already carried `intent` and
   `will_reconnect`; the bindings now hand them on. All additive: 1.x
@@ -79,6 +83,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python: 2.x factory code runs again** (#306).
+  - `ws.stock` / `ws.futopt` are built on first access and the same client
+    is returned after, as 2.x's factory did. The rc's built a new client on
+    every access, so `ws.stock.on(...)`, `ws.stock.connect()`,
+    `ws.stock.subscribe(...)` reached three different clients: the handler
+    never ran and `subscribe` raised `Not connected`.
+  - `rest.stock.base_url` / `rest.futopt.base_url` include the product
+    segment again (`https://api.fugle.tw/marketdata/v1.0/stock`); the rc's
+    returned `RestClient.base_url`, and `rest.futopt` had no `base_url`.
+  - `futopt.historical.candles(product="TXF", ...)`, 2.x's spelling, works
+    (also on `candles_async`, `daily` and `daily_async`); it raised
+    `TypeError`. Passing both `symbol` and `product` raises `TypeError`.
 - **Python: `str(e)` of an SDK exception is its message** (#299), as the
   README said, not the `(message, code)` tuple:
   `Authentication error: Invalid authentication credentials` rather than

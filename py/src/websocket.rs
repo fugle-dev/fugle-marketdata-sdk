@@ -25,6 +25,7 @@
 //! ```
 
 use pyo3::prelude::*;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::panic::AssertUnwindSafe;
@@ -714,6 +715,11 @@ pub struct WebSocketClient {
     message_queue: MessageQueueSettings,
     /// `auth_timeout_ms`, validated in the constructor (#199).
     auth_timeout: Duration,
+    /// `ws.stock` / `ws.futopt`, built on first read and returned on every
+    /// read after, as 2.x's factory did (#306): `ws.stock.on(...)` then
+    /// `ws.stock.connect()` must reach the same client.
+    stock: PyOnceLock<Py<StockWebSocketClient>>,
+    futopt: PyOnceLock<Py<FutOptWebSocketClient>>,
 }
 
 #[pymethods]
@@ -841,45 +847,65 @@ impl WebSocketClient {
             tls,
             message_queue,
             auth_timeout,
+            stock: PyOnceLock::new(),
+            futopt: PyOnceLock::new(),
         })
     }
 
     /// Access stock market data WebSocket streaming
     ///
+    /// Built on first access; every later access returns the same client.
+    ///
     /// Returns:
     ///     StockWebSocketClient for stock streaming with inherited config
     #[getter]
-    pub fn stock(&self) -> StockWebSocketClient {
-        StockWebSocketClient::new(
-            self.auth.clone(),
-            self.base_url.clone(),
-            self.stock_version,
-            self.futopt_version,
-            self.reconnect_config.clone(),
-            self.health_check_config.clone(),
-            self.tls.clone(),
-            self.message_queue,
-            self.auth_timeout,
-        )
+    pub fn stock(&self, py: Python<'_>) -> PyResult<Py<StockWebSocketClient>> {
+        self.stock
+            .get_or_try_init(py, || {
+                Py::new(
+                    py,
+                    StockWebSocketClient::new(
+                        self.auth.clone(),
+                        self.base_url.clone(),
+                        self.stock_version,
+                        self.futopt_version,
+                        self.reconnect_config.clone(),
+                        self.health_check_config.clone(),
+                        self.tls.clone(),
+                        self.message_queue,
+                        self.auth_timeout,
+                    ),
+                )
+            })
+            .map(|client| client.clone_ref(py))
     }
 
     /// Access futures and options WebSocket streaming
     ///
+    /// Built on first access; every later access returns the same client.
+    ///
     /// Returns:
     ///     FutOptWebSocketClient for FutOpt streaming with inherited config
     #[getter]
-    pub fn futopt(&self) -> FutOptWebSocketClient {
-        FutOptWebSocketClient::new(
-            self.auth.clone(),
-            self.base_url.clone(),
-            self.stock_version,
-            self.futopt_version,
-            self.reconnect_config.clone(),
-            self.health_check_config.clone(),
-            self.tls.clone(),
-            self.message_queue,
-            self.auth_timeout,
-        )
+    pub fn futopt(&self, py: Python<'_>) -> PyResult<Py<FutOptWebSocketClient>> {
+        self.futopt
+            .get_or_try_init(py, || {
+                Py::new(
+                    py,
+                    FutOptWebSocketClient::new(
+                        self.auth.clone(),
+                        self.base_url.clone(),
+                        self.stock_version,
+                        self.futopt_version,
+                        self.reconnect_config.clone(),
+                        self.health_check_config.clone(),
+                        self.tls.clone(),
+                        self.message_queue,
+                        self.auth_timeout,
+                    ),
+                )
+            })
+            .map(|client| client.clone_ref(py))
     }
 }
 

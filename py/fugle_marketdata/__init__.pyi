@@ -325,7 +325,11 @@ class StockClient:
 
     @property
     def base_url(self) -> str:
-        """The fully resolved request prefix for this product client."""
+        """The fully resolved request prefix for this product client,
+        product segment included, e.g.
+        ``https://api.fugle.tw/marketdata/v1.0/stock`` (as in 2.x). The value
+        without the product segment is ``RestClient.base_url``.
+        """
         ...
 
     @property
@@ -1321,6 +1325,15 @@ class FutOptClient:
         """
         ...
 
+    @property
+    def base_url(self) -> str:
+        """The fully resolved request prefix for this product client,
+        product segment included, e.g.
+        ``https://api.fugle.tw/marketdata/v1.0/futopt`` (as in 2.x). The value
+        without the product segment is ``RestClient.base_url``.
+        """
+        ...
+
 
 class FutOptIntradayClient:
     """FutOpt intraday (real-time) endpoints client.
@@ -1556,8 +1569,9 @@ class FutOptHistoricalClient:
 
     async def candles_async(
         self,
-        symbol: str,
+        symbol: Optional[str] = None,
         *,
+        product: Optional[str] = None,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
@@ -1571,7 +1585,8 @@ class FutOptHistoricalClient:
         """Get historical candles for a FutOpt product.
 
         Args:
-            symbol: Product code (e.g., "TXF")
+            symbol: Product code (e.g., "TXF"); 2.x's ``product=`` keyword is
+                accepted in its place
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
             timeframe: Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
@@ -1603,15 +1618,17 @@ class FutOptHistoricalClient:
 
     async def daily_async(
         self,
-        symbol: str,
+        symbol: Optional[str] = None,
         *,
+        product: Optional[str] = None,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Get one trading day's daily quotes for every contract month of a FutOpt product.
 
         Args:
-            symbol: Product code (e.g., "TXF")
+            symbol: Product code (e.g., "TXF"); ``product=`` is accepted in
+                its place
             date: Trading date (YYYY-MM-DD); the server defaults to today
             after_hours: Query the after-hours session
 
@@ -1633,8 +1650,9 @@ class FutOptHistoricalClient:
 
     def candles(
         self,
-        symbol: str,
+        symbol: Optional[str] = None,
         *,
+        product: Optional[str] = None,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         timeframe: Optional[str] = None,
@@ -1650,8 +1668,9 @@ class FutOptHistoricalClient:
 
     def daily(
         self,
-        symbol: str,
+        symbol: Optional[str] = None,
         *,
+        product: Optional[str] = None,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
     ) -> dict[str, Any]:
@@ -1982,6 +2001,10 @@ class WebSocketClient:
     def stock(self) -> "StockWebSocketClient":
         """Access stock market data WebSocket streaming.
 
+        Built on first access; every later access returns the same client,
+        so ``ws.stock.on(...)`` followed by ``ws.stock.connect()`` drives one
+        connection, as in 2.x.
+
         Returns:
             StockWebSocketClient for stock streaming
         """
@@ -1990,6 +2013,10 @@ class WebSocketClient:
     @property
     def futopt(self) -> "FutOptWebSocketClient":
         """Access futures and options WebSocket streaming.
+
+        Built on first access; every later access returns the same client,
+        so ``ws.futopt.on(...)`` followed by ``ws.futopt.connect()`` drives one
+        connection, as in 2.x.
 
         Returns:
             FutOptWebSocketClient for FutOpt streaming

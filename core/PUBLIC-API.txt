@@ -3042,6 +3042,7 @@ pub struct marketdata_core::rest::futopt::FutOptClient<'a>
 impl<'a> marketdata_core::rest::futopt::FutOptClient<'a>
 pub fn marketdata_core::rest::futopt::FutOptClient<'a>::historical(&self) -> marketdata_core::rest::futopt::FutOptHistoricalClient<'a>
 pub fn marketdata_core::rest::futopt::FutOptClient<'a>::intraday(&self) -> marketdata_core::rest::futopt::FutOptIntradayClient<'a>
+pub fn marketdata_core::rest::futopt::FutOptClient<'a>::resolved_base_url(&self) -> alloc::string::String
 impl<'a> core::marker::Freeze for marketdata_core::rest::futopt::FutOptClient<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::futopt::FutOptClient<'a>
 impl<'a> core::marker::Sync for marketdata_core::rest::futopt::FutOptClient<'a>
@@ -3467,6 +3468,7 @@ pub struct marketdata_core::rest::FutOptClient<'a>
 impl<'a> marketdata_core::rest::futopt::FutOptClient<'a>
 pub fn marketdata_core::rest::futopt::FutOptClient<'a>::historical(&self) -> marketdata_core::rest::futopt::FutOptHistoricalClient<'a>
 pub fn marketdata_core::rest::futopt::FutOptClient<'a>::intraday(&self) -> marketdata_core::rest::futopt::FutOptIntradayClient<'a>
+pub fn marketdata_core::rest::futopt::FutOptClient<'a>::resolved_base_url(&self) -> alloc::string::String
 impl<'a> core::marker::Freeze for marketdata_core::rest::futopt::FutOptClient<'a>
 impl<'a> core::marker::Send for marketdata_core::rest::futopt::FutOptClient<'a>
 impl<'a> core::marker::Sync for marketdata_core::rest::futopt::FutOptClient<'a>
@@ -3564,6 +3566,7 @@ pub fn marketdata_core::rest::StockClient<'a>::corporate_actions(&self) -> marke
 pub fn marketdata_core::rest::StockClient<'a>::historical(&self) -> marketdata_core::rest::client::HistoricalClient<'a>
 pub fn marketdata_core::rest::StockClient<'a>::intraday(&self) -> marketdata_core::rest::IntradayClient<'a>
 pub fn marketdata_core::rest::StockClient<'a>::ownership(&self) -> marketdata_core::rest::client::OwnershipClient<'a>
+pub fn marketdata_core::rest::StockClient<'a>::resolved_base_url(&self) -> alloc::string::String
 pub fn marketdata_core::rest::StockClient<'a>::snapshot(&self) -> marketdata_core::rest::stock::snapshot::SnapshotClient<'a>
 pub fn marketdata_core::rest::StockClient<'a>::technical(&self) -> marketdata_core::rest::stock::technical::TechnicalClient<'a>
 impl<'a> core::marker::Freeze for marketdata_core::rest::StockClient<'a>
