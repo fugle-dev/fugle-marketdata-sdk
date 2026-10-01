@@ -32,8 +32,12 @@ func TestWebSocketConnect_AlreadyConnectedIsRefused(t *testing.T) {
 		t.Fatalf("server saw %d auth frames, want 1", n)
 	}
 
+	// Through the inner client on purpose: this checks that core connects
+	// again after a disconnect (#119). StreamingClient.Disconnect() closes
+	// Messages(), after which StreamingClient.Connect() is refused with 2010
+	// (#318), so the public API can't reach this path.
 	client.client.Disconnect()
-	if err := client.Connect(); err != nil {
+	if err := client.client.Connect(); err != nil {
 		t.Fatalf("Connect after Disconnect: %v", err)
 	}
 	if !client.IsConnected() {
