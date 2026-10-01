@@ -34,7 +34,7 @@ describe.each(['stock', 'futopt'])('%s close during auth (#292)', (product) => {
   let wss;
 
   afterEach(async () => {
-    await closeServer(wss);
+    if (wss) await closeServer(wss);
   });
 
   test('connect() rejects with the close code and reason', async () => {

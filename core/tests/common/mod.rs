@@ -111,8 +111,13 @@ pub enum AfterAuth {
     /// Answer the auth frame with a Close frame instead: with `frame`, its
     /// code and reason, as the server does when the connection limit is
     /// reached (`1001 Maximum number of connections reached`); with `None`,
-    /// a Close without a code. Then wait for the client's Close (#292).
-    CloseInsteadOfAuth { frame: Option<(u16, String)> },
+    /// a Close without a code. Then wait for the client to go, by its reply
+    /// Close or by the end of the stream, and report on `ended_by_close`, if
+    /// given, which it was (#292).
+    CloseInsteadOfAuth {
+        frame: Option<(u16, String)>,
+        ended_by_close: Option<mpsc::UnboundedSender<bool>>,
+    },
 }
 
 /// The server's error frame: `code` at the top level, the message under
@@ -272,16 +277,23 @@ async fn serve(
                 }
             }
         }
-        AfterAuth::CloseInsteadOfAuth { frame } => {
+        AfterAuth::CloseInsteadOfAuth { frame, ended_by_close } => {
             let frame = frame.map(|(code, reason)| CloseFrame {
                 code: CloseCode::from(code),
                 reason: reason.into(),
             });
             let _ = sink.send(Message::Close(frame)).await;
-            while let Some(Ok(msg)) = stream.next().await {
-                if let Message::Close(_) = msg {
-                    break;
+            // Until the client's reply Close, or the end of the stream (a
+            // client that drops the socket without one).
+            let by_close = loop {
+                match stream.next().await {
+                    Some(Ok(Message::Close(_))) => break true,
+                    Some(Ok(_)) => continue,
+                    _ => break false,
                 }
+            };
+            if let Some(ended_by_close) = ended_by_close {
+                let _ = ended_by_close.send(by_close);
             }
         }
         AfterAuth::CloseWithoutCodeAfter { delay_ms } => {

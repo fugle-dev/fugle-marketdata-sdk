@@ -221,7 +221,9 @@ class _Server:
                         self.auth_data.append(frame.get("data"))
                         if (frame.get("data") or {}).get("apikey") == LIMITED_API_KEY:
                             send(OP_CLOSE, struct.pack("!H", 1001) + LIMIT_CLOSE_REASON.encode())
-                            # Wait for the client's Close, which needs no answer.
+                            # Until the client goes: its reply Close, which needs
+                            # no answer, or the end of the stream, on which
+                            # _read_frame raises.
                             while _read_frame(conn)[0] != OP_CLOSE:
                                 pass
                             return

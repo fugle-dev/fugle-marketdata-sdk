@@ -10,6 +10,8 @@
 //! - `connect()` fails with `ConnectionError` (2001, retryable) whose message
 //!   carries the close code and reason; a Close without a code leaves the
 //!   message as it was;
+//! - the client answers the server's Close with its own before giving the
+//!   connection up, so the server sees the close completed, not `1006`;
 //! - during auto-reconnect, the failed attempts' `Error` events carry the
 //!   same message, and the attempts are still retried until the policy's
 //!   limit (`ReconnectFailed { attempts: 2 }`).
@@ -24,6 +26,7 @@ use marketdata_core::error_code;
 use marketdata_core::websocket::ConnectionEvent;
 use marketdata_core::{AuthRequest, ConnectionConfig, MarketDataError, ReconnectionConfig};
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 const REASON: &str = "Maximum number of connections reached";
 const WITH_REASON: &str =
@@ -39,14 +42,41 @@ fn config(url: &str) -> ConnectionConfig {
         .build()
 }
 
-fn limit_close() -> AfterAuth {
+/// The limit Close, reporting on `ended_by_close` whether the client replied.
+fn limit_close(ended_by_close: Option<mpsc::UnboundedSender<bool>>) -> AfterAuth {
     AfterAuth::CloseInsteadOfAuth {
         frame: Some((1001, REASON.to_string())),
+        ended_by_close,
     }
 }
 
-fn bare_close() -> AfterAuth {
-    AfterAuth::CloseInsteadOfAuth { frame: None }
+/// A Close without a code, reporting on `ended_by_close` whether the client
+/// replied.
+fn bare_close(ended_by_close: Option<mpsc::UnboundedSender<bool>>) -> AfterAuth {
+    AfterAuth::CloseInsteadOfAuth {
+        frame: None,
+        ended_by_close,
+    }
+}
+
+/// Serve one connection with `behaviour` and run `connect` against its URL.
+/// Returns the result and whether the client answered the server's Close
+/// with its own (`false` if it dropped the socket without one).
+async fn connect_once<F>(
+    behaviour: fn(Option<mpsc::UnboundedSender<bool>>) -> AfterAuth,
+    connect: impl FnOnce(String) -> F,
+) -> (Result<(), MarketDataError>, bool)
+where
+    F: std::future::Future<Output = Result<(), MarketDataError>>,
+{
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let server = common::spawn(behaviour(Some(tx))).await;
+    let result = connect(server.url.clone()).await;
+    let by_close = tokio::time::timeout(WAIT, rx.recv())
+        .await
+        .expect("server saw the connection end")
+        .expect("server reported");
+    (result, by_close)
 }
 
 /// Two attempts after a short backoff.
@@ -59,8 +89,8 @@ fn two_attempts() -> ReconnectionConfig {
 fn drop_then_limit_closes() -> Vec<AfterAuth> {
     vec![
         AfterAuth::ServerDropAfter { delay_ms: 50 },
-        limit_close(),
-        limit_close(),
+        limit_close(None),
+        limit_close(None),
     ]
 }
 
@@ -123,23 +153,24 @@ mod aio {
     use super::*;
     use marketdata_core::aio::WebSocketClient;
 
-    async fn connect_once(behaviour: AfterAuth) -> Result<(), MarketDataError> {
-        let server = common::spawn(behaviour).await;
-        let client = WebSocketClient::with_reconnection_config(
-            config(&server.url),
-            ReconnectionConfig::disabled(),
-        );
+    async fn connect(url: String) -> Result<(), MarketDataError> {
+        let client =
+            WebSocketClient::with_reconnection_config(config(&url), ReconnectionConfig::disabled());
         client.connect().await
     }
 
     #[tokio::test]
     async fn close_during_auth_reports_code_and_reason() {
-        assert_closed_during_auth(&connect_once(limit_close()).await, WITH_REASON);
+        let (result, by_close) = connect_once(limit_close, connect).await;
+        assert_closed_during_auth(&result, WITH_REASON);
+        assert!(by_close, "the client dropped the socket without a reply Close");
     }
 
     #[tokio::test]
     async fn close_without_code_during_auth_keeps_message() {
-        assert_closed_during_auth(&connect_once(bare_close()).await, WITHOUT_FRAME);
+        let (result, by_close) = connect_once(bare_close, connect).await;
+        assert_closed_during_auth(&result, WITHOUT_FRAME);
+        assert!(by_close, "the client dropped the socket without a reply Close");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -160,11 +191,9 @@ mod sync {
     use super::*;
     use marketdata_core::WebSocketClient;
 
-    async fn connect_once(behaviour: AfterAuth) -> Result<(), MarketDataError> {
-        let server = common::spawn(behaviour).await;
-        let config = config(&server.url);
+    async fn connect(url: String) -> Result<(), MarketDataError> {
         tokio::task::spawn_blocking(move || {
-            WebSocketClient::with_reconnection_config(config, ReconnectionConfig::disabled())
+            WebSocketClient::with_reconnection_config(config(&url), ReconnectionConfig::disabled())
                 .connect()
         })
         .await
@@ -173,12 +202,16 @@ mod sync {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn close_during_auth_reports_code_and_reason() {
-        assert_closed_during_auth(&connect_once(limit_close()).await, WITH_REASON);
+        let (result, by_close) = connect_once(limit_close, connect).await;
+        assert_closed_during_auth(&result, WITH_REASON);
+        assert!(by_close, "the client dropped the socket without a reply Close");
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn close_without_code_during_auth_keeps_message() {
-        assert_closed_during_auth(&connect_once(bare_close()).await, WITHOUT_FRAME);
+        let (result, by_close) = connect_once(bare_close, connect).await;
+        assert_closed_during_auth(&result, WITHOUT_FRAME);
+        assert!(by_close, "the client dropped the socket without a reply Close");
     }
 
     #[tokio::test(flavor = "multi_thread")]
