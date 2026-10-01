@@ -205,7 +205,7 @@ describe('edge cases of the check', () => {
   test('an object inheriting from another object is not a plain object', () => {
     expectTypeError(
       () => new RestClient(Object.create({ apiKey: 'k' })),
-      "RestClient options must be an object like { apiKey: '<key>' }, got object (Object).",
+      "RestClient options must be an object like { apiKey: '<key>' }, got an object inheriting from another object (spread it into a plain object: { ...value }).",
     );
   });
 

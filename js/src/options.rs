@@ -63,6 +63,11 @@ impl JsVal {
             Self::Function => "function".into(),
             Self::Object(_) => "object".into(),
             Self::Other(kind) => (*kind).into(),
+            // `Object.create(defaults)`: plain-looking, but its keys live on
+            // another object.
+            Self::Instance(name) if name == "Object" => {
+                "an object inheriting from another object (spread it into a plain object: { ...value })".into()
+            }
             Self::Instance(name) => format!("object ({name})"),
             Self::Unreadable => "a value whose getter threw".into(),
         }
@@ -410,9 +415,11 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
     Ok(JsVal::Object(entries))
 }
 
-/// `None` for a plain object (prototype `Object.prototype` or `null`; also
-/// an object two levels above `null`, which only `Object.create` makes);
-/// otherwise its constructor's name, or `"unknown"`.
+/// `None` for a plain object: its prototype is `null`, or its prototype's
+/// prototype is (`Object.prototype` of any realm, or a null-prototype
+/// object); otherwise its constructor's name, or `"unknown"`. A Proxy whose
+/// `getPrototypeOf` trap throws (or a revoked one) makes this, and so the
+/// argument's conversion, throw.
 unsafe fn instance_name(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Option<String>> {
     let mut proto = std::ptr::null_mut();
     napi::check_status!(unsafe { sys::napi_get_prototype(env, value, &mut proto) })?;

@@ -25,9 +25,10 @@ use serde_json::{Map, Value};
 
 /// The first argument of a REST method: positional, or the legacy params object.
 ///
-/// Converting never fails: a value of another type is kept as `Invalid` and
-/// rejects the call's promise with a `TypeError`, like every other argument
-/// error of a REST method (#294).
+/// A value of another type does not fail the conversion: it is kept as
+/// `Invalid` and rejects the call's promise with a `TypeError`, like every
+/// other argument error of a REST method (#294). Only a getter or Proxy trap
+/// that throws while the value is read throws, with its own error.
 pub enum RestArg {
     Positional(String),
     Params(Map<String, Value>),
@@ -58,6 +59,9 @@ impl FromNapiValue for RestArg {
             JsVal::String(s) => Self::Positional(s),
             JsVal::Object(_) => match unsafe { Map::from_napi_value(env, value) } {
                 Ok(params) => Self::Params(params),
+                // A getter that threw: its own error, thrown now, as for a
+                // constructor option.
+                Err(err) if exception_pending(env) => return Err(err),
                 Err(err) => Self::Invalid(format!("an object that cannot be sent ({})", err.reason)),
             },
             other => Self::Invalid(other.describe()),
@@ -65,8 +69,14 @@ impl FromNapiValue for RestArg {
     }
 }
 
-/// A positional REST argument after the first. Converting never fails; the
-/// method checks the type with [`pos_string`] / [`pos_bool`] / [`pos_u32`],
+fn exception_pending(env: sys::napi_env) -> bool {
+    let mut pending = false;
+    let status = unsafe { sys::napi_is_exception_pending(env, &mut pending) };
+    status == sys::Status::napi_ok && pending
+}
+
+/// A positional REST argument after the first. Converting fails only on a
+/// throwing Proxy trap (see [`RestArg`]); the method checks the type with [`pos_string`] / [`pos_bool`] / [`pos_u32`],
 /// so a wrong one rejects the promise with a `TypeError` instead of
 /// throwing napi's error, and an integer is not coerced (`-1`, `1.5`, `NaN`)
 /// (#294). `undefined` / `null` arrive as `None`.
@@ -1540,10 +1550,11 @@ fn reject_legacy_date_args(
     method: &str,
     first: &Option<RestArg>,
     second: &Option<PosArg>,
-    third: &Option<Value>,
+    third: &Option<PosArg>,
 ) -> napi::Result<()> {
-    let is_set = |value: &Option<Value>| !matches!(value, None | Some(Value::Null));
-    if is_set(third) {
+    // `undefined` / `null` arrive as `None`; any other value, whatever its
+    // type, is the old third argument.
+    if third.is_some() {
         return Err(napi::Error::from_reason(format!(
             "`{method}` no longer takes `date` as its first argument: the server rejects it \
              (capital-changes and listing-applicants respond 400, dividends ignores it). \
@@ -1579,7 +1590,7 @@ impl StockCorporateActionsClient {
         &self,
         start_date: Option<RestArg>,
         end_date: Option<PosArg>,
-        legacy_third_arg: Option<Value>,
+        legacy_third_arg: Option<PosArg>,
         extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("capitalChanges", &start_date, &end_date, &legacy_third_arg)?;
@@ -1633,7 +1644,7 @@ impl StockCorporateActionsClient {
         &self,
         start_date: Option<RestArg>,
         end_date: Option<PosArg>,
-        legacy_third_arg: Option<Value>,
+        legacy_third_arg: Option<PosArg>,
         extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("dividends", &start_date, &end_date, &legacy_third_arg)?;
@@ -1687,7 +1698,7 @@ impl StockCorporateActionsClient {
         &self,
         start_date: Option<RestArg>,
         end_date: Option<PosArg>,
-        legacy_third_arg: Option<Value>,
+        legacy_third_arg: Option<PosArg>,
         extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("listingApplicants", &start_date, &end_date, &legacy_third_arg)?;

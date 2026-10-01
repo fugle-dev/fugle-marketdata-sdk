@@ -759,14 +759,16 @@ takes, so a typo fails at the call instead of returning default data:
   level (`reconnect: { maxRetries: 3 }`), a value of the wrong type, a
   nested option that is not a plain object, or a bare `version` string
   (`version: 'v1.0'` — write `version: { futopt: 'v1.0' }`, as 1.7.0 already
-  required). `undefined` and `null` count as not given, except
+  required). An object made with `Object.create(defaults)` is not plain;
+  spread it instead (`{ ...defaults, apiKey }`). `undefined` and `null` count as not given, except
   `version: null`. `RestClient` still accepts the WebSocket-only keys, so one
   options object builds both clients, and `healthCheck.pingInterval` /
   `maxMissedPongs` are still only warned about.
 - **`subscribe()` / `unsubscribe()`**: a key other than `channel`,
   `symbol`, `symbols` and the product's flag (`intradayOddLot` for stock,
   `afterHours` for futopt), a flag that is not a boolean, a non-string
-  symbol, or a second argument. 1.x sent such keys to the server as they
+  symbol, or a second argument. `unsubscribe()` also takes `id` / `ids`, and
+  without `channel` only those two. 1.x sent such keys to the server as they
   were; `{ channel, symbol, afterHours: true }` on the stock client quietly
   subscribed board-lot data.
 - **REST methods**: an argument of the wrong type, an integer that is

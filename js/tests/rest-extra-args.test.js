@@ -132,6 +132,25 @@ describe('positional arguments of the wrong type', () => {
     });
   });
 
+  test('corporateActions: an old third argument of any type rejects, not throws', async () => {
+    let result;
+    expect(() => {
+      result = client.stock.corporateActions.dividends('2026-01-01', '2026-02-01', () => {});
+    }).not.toThrow();
+    const error = await result.catch((e) => e);
+    expect(error.message).toMatch(/^`dividends` no longer takes `date` as its first argument/);
+  });
+
+  test("a params object's throwing getter throws its own error", () => {
+    expect(() =>
+      client.stock.intraday.quote({
+        get symbol() {
+          throw new Error('getter');
+        },
+      }),
+    ).toThrow('getter');
+  });
+
   test('ownership: a non-object rejects too', async () => {
     const error = await rejected(() => client.stock.ownership.etfHoldings(5));
     expect(error.name).toBe('TypeError');

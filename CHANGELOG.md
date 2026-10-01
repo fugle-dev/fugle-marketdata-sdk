@@ -76,14 +76,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     level, or in `reconnect` / `healthCheck` / `version`), a value of the
     wrong type, an options argument or nested option that is not a plain
     object (`version: 'v1.0'`, `reconnect: 'x'`, a `Map`, a class instance;
-    prototype other than `Object.prototype` or `null`), or an integer option
+    prototype other than `Object.prototype` or `null` — so
+    `Object.create(defaults)`, whose keys napi used to read through the
+    prototype, now has to be spread: `{ ...defaults, apiKey }`), or an
+    integer option
     napi used to coerce (`messageBuffer: -1` / `1.5`,
     `reconnect.maxAttempts: NaN`). A bare `version` string gets 1.x's
     message naming the map to write (`Use version: { futopt: 'v1.1' }.`).
     Kept: a millisecond option only has to be a number — a negative, NaN or
     infinite one is still core's 1004, like any value out of range
-    (`healthCheck.heartbeatTimeoutMs: Infinity`, which used to turn the
-    timeout off, is now 1004 too); `healthCheck`'s 1.x `pingInterval` /
+    (`Infinity` for any of them — `reconnect.maxDelayMs`,
+    `healthCheck.heartbeatTimeoutMs`, `idleProbeAfterMs`, `probeTimeoutMs` —
+    used to pass as "no limit" and is now 1004 too); `healthCheck`'s 1.x `pingInterval` /
     `maxMissedPongs` are only warned about (#262); `RestClient` accepts the
     WebSocket-only keys and ignores them, so one options object still builds
     both clients. `null` for an option no longer throws napi's conversion

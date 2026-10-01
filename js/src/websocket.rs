@@ -1552,7 +1552,7 @@ impl WebSocketClient {
         let auth_timeout = match options.auth_timeout_ms {
             None => marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
             Some(ms) => marketdata_core::websocket::auth_timeout_from_millis(
-                if ms.is_finite() && ms >= 1.0 { ms as u64 } else { 0 },
+                crate::options::millis(ms),
             )
             .map_err(|e| crate::errors::to_napi_error(&env, e))?,
         };
