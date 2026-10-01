@@ -161,6 +161,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GitHub with absolute URLs, which also work on PyPI. The package and stub
   docstrings no longer call the REST methods async-only or mention a
   `quote_sync` that does not exist.
+  `js/README.md`'s futures example used `TXFC4` too and now looks up the
+  nearest TXF contract the same way.
 - **Docs: MIGRATION errata and gaps against 2.7.0 / 1.7.0** (#314). The
   Node quickstart required `marketdata-js` (the package is
   `@fugle/marketdata`) and used top-level `await` in CommonJS; the Python

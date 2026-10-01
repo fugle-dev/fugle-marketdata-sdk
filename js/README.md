@@ -37,9 +37,12 @@ const client = new RestClient({ apiKey: 'your-api-key' });
 const quote = await client.stock.intraday.quote({ symbol: '2330' });
 console.log('TSMC Price:', quote.closePrice);
 
-// Get futures quote
-const futoptQuote = await client.futopt.intraday.quote('TXFC4');
-console.log('TXF Price:', futoptQuote.closePrice);
+// Get futures quote: contract symbols expire, so look up the TAIEX futures
+// (TXF) contracts listed today and take the nearest month
+const txf = await client.futopt.intraday.tickers({ type: 'FUTURE', product: 'TXF', isSpread: false });
+const front = txf.data.reduce((a, b) => (b.settlementDate < a.settlementDate ? b : a)).symbol;
+const futoptQuote = await client.futopt.intraday.quote(front);
+console.log(`${front} Price:`, futoptQuote.closePrice);
 ```
 
 ### WebSocket Streaming
