@@ -434,7 +434,8 @@ client, err := mkt.NewFugleWebSocketClient(listener,
 ```go
 // Connection management
 Connect() error                    // Connect to server
-Close()                            // Close connection (blocks until complete)
+Disconnect()                       // Close connection and channels, keep the client readable
+Close() error                      // Disconnect and release the client; calling again does nothing
 IsConnected() bool                 // Check connection status
 IsClosed() bool                    // Check if client is closed
 URL() (string, error)              // Resolved endpoint; code 1004 on an invalid base URL
@@ -456,8 +457,8 @@ Errors() <-chan error              // Receive errors
 // Message queue
 MessagesDroppedTotal() uint64      // Messages dropped this connection (see below)
 // Last disconnect: Code, Reason, Intent (DisconnectIntentClient / Server / Network),
-// WillReconnect; nil before the first. Once Messages() is closed, this says why
-// (call it before Close(), which destroys the client). Disconnecting from a
+// WillReconnect; nil before the first. Once Messages() is closed, this says why.
+// After Close() it returns the last record Close() kept, or nil. Disconnecting from a
 // listener and connecting at once: the old connection's last one can land
 // after the new one's; for the state use IsConnected().
 LastDisconnect() *DisconnectInfo
@@ -545,7 +546,7 @@ messages are unread (`Messages()` is behind), new messages are dropped
 instead of blocking the connection. Drops are reported on `Errors()`, at
 most once per second, and `MessagesDroppedTotal()` returns this
 connection's total (reset on each `Connect()`/reconnect, still readable
-after `Close()`). `MessageOverflowUnbounded` never drops; memory grows for
+after `Disconnect()`). `MessageOverflowUnbounded` never drops; memory grows for
 as long as the caller lags.
 
 With `StreamingClient`, read `Errors()` alongside `Messages()` (as in the

@@ -379,7 +379,7 @@ boolean isConnected()                         // Check connection status
 boolean isClosed()                            // Check if client is closed
 String url()                                  // Resolved endpoint; throws code 1004 on an invalid baseUrl
 long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
-DisconnectInfo lastDisconnect()               // Last disconnect: code(), reason(), intent() (CLIENT / SERVER / NETWORK), willReconnect(); null before the first
+DisconnectInfo lastDisconnect()               // Last disconnect: code(), reason(), intent() (CLIENT / SERVER / NETWORK), willReconnect(); null before the first; throws FugleException after close() (read it after disconnect())
                                               // (disconnect() from a listener then connect() at once: the old connection's
                                               // last one can land after the new one's; for the state use isConnected())
 

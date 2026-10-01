@@ -567,7 +567,9 @@ namespace FugleMarketData
         /// a reconnect and <see cref="DisconnectAsync"/> keep it, so it is a record
         /// of the last disconnect, not the connection state. A reconnect given up
         /// (<see cref="IWebSocketListener.OnReconnectFailed"/>) leaves it at the drop
-        /// that started the reconnect.
+        /// that started the reconnect. After <see cref="Dispose"/> it throws
+        /// <see cref="ObjectDisposedException"/>: to read a disconnect you made, call
+        /// <see cref="DisconnectAsync"/> and read it before disposing.
         /// </summary>
         public uniffi.marketdata_uniffi.DisconnectInfo? LastDisconnect => _inner.LastDisconnect();
 
