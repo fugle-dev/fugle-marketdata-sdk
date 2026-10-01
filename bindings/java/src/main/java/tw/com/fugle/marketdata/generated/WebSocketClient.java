@@ -427,6 +427,51 @@ public class WebSocketClient implements AutoCloseable, WebSocketClientInterface 
 
   
     /**
+     * Replace the credential this client authenticates with from its next
+     * connection attempt on: the next `connect()` or automatic reconnect
+     * (#322). Any of the three kinds may replace any other. A connection
+     * already authenticated is not authenticated again: the server takes
+     * one auth frame per connection, so call it before a token expires.
+     * Rejected credentials still end automatic reconnection; set a new
+     * credential, then call `connect()` again.
+     *
+     * Exactly one credential must be non-empty, as in
+     * `new_with_credentials`; otherwise this returns a `ConfigError` (code
+     * 1004) and the current credential is kept.
+     */
+    @Override
+    public void setCredentials(CredentialsRecord credentials) throws MarketDataException {
+            try {
+                
+    callWithPointer(it -> {
+        try {
+    
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials(
+            it, FfiConverterTypeCredentialsRecord.INSTANCE.lower(credentials), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    ;
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
      * Subscribe to a channel for one or more symbols.
      *
      * One symbol is sent as `symbol`, several as `symbols` in one frame;

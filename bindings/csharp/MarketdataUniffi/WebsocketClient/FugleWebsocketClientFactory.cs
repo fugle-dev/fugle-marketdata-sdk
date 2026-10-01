@@ -22,6 +22,14 @@ namespace FugleMarketData.WebsocketClient
         private readonly Lazy<FugleWebsocketStockClient> _stock;
         private readonly Lazy<FugleWebsocketFutOptClient> _futOpt;
         private bool _disposed;
+        /// <summary>
+        /// Guards <see cref="_template"/> and the clients built from it, so a
+        /// <see cref="SetCredentials"/> reaches a client being built.
+        /// </summary>
+        private readonly object _lock = new();
+        private WebSocketClientOptions _template;
+        private FugleWebsocketStockClient? _builtStock;
+        private FugleWebsocketFutOptClient? _builtFutOpt;
 
         /// <summary>The Stock client, built on first access.</summary>
         /// <exception cref="ObjectDisposedException">After <see cref="Dispose"/></exception>
@@ -71,16 +79,67 @@ namespace FugleMarketData.WebsocketClient
 
         private FugleWebsocketClientFactory(WebSocketClientOptions template)
         {
+            _template = template;
             _stock = new Lazy<FugleWebsocketStockClient>(() =>
-                new FugleWebsocketStockClient(WithEndpoint(template, WebSocketEndpoint.Stock)));
+            {
+                lock (_lock)
+                {
+                    // A client built after Dispose would never be released.
+                    ThrowIfDisposed();
+                    return _builtStock = new FugleWebsocketStockClient(WithEndpoint(_template, WebSocketEndpoint.Stock));
+                }
+            });
             _futOpt = new Lazy<FugleWebsocketFutOptClient>(() =>
-                new FugleWebsocketFutOptClient(WithEndpoint(template, WebSocketEndpoint.FutOpt)));
+            {
+                lock (_lock)
+                {
+                    ThrowIfDisposed();
+                    return _builtFutOpt = new FugleWebsocketFutOptClient(WithEndpoint(_template, WebSocketEndpoint.FutOpt));
+                }
+            });
+        }
+
+        /// <summary>
+        /// Replace the credential of both clients, built or not, from their
+        /// next connection attempt on: the next <c>Connect</c> or automatic
+        /// reconnect. Any of the three kinds may replace any other. Call it
+        /// before a token expires (an SDK token is valid for two days): a live
+        /// connection is not authenticated again. Rejected credentials still end
+        /// automatic reconnection; set a new credential, then call <c>Connect</c>
+        /// again. <c>Stock.SetCredentials</c> changes the Stock client's alone;
+        /// a later call here replaces what was set on either client that way, as
+        /// <c>ws.set_credentials()</c> does in Python and Node.
+        /// </summary>
+        /// <param name="apiKey">Fugle API key</param>
+        /// <param name="bearerToken">OAuth bearer token</param>
+        /// <param name="sdkToken">Fugle SDK token</param>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 unless exactly one non-empty credential is given; the current credential is then kept</exception>
+        /// <exception cref="ObjectDisposedException">After <see cref="Dispose"/></exception>
+        public void SetCredentials(string? apiKey = null, string? bearerToken = null, string? sdkToken = null)
+        {
+            ThrowIfDisposed();
+            uniffi.marketdata_uniffi.MarketdataUniffiMethods.ValidateCredentials(apiKey, bearerToken, sdkToken);
+            lock (_lock)
+            {
+                ThrowIfDisposed();
+                _template = new WebSocketClientOptions
+                {
+                    ApiKey = apiKey,
+                    BearerToken = bearerToken,
+                    SdkToken = sdkToken,
+                    BaseUrl = _template.BaseUrl,
+                    Versions = _template.Versions,
+                };
+                _builtStock?.SetCredentials(apiKey, bearerToken, sdkToken);
+                _builtFutOpt?.SetCredentials(apiKey, bearerToken, sdkToken);
+            }
         }
 
         private static WebSocketClientOptions WithEndpoint(WebSocketClientOptions template, WebSocketEndpoint endpoint) =>
             new WebSocketClientOptions
             {
                 ApiKey = template.ApiKey,
+                BearerToken = template.BearerToken,
                 SdkToken = template.SdkToken,
                 BaseUrl = template.BaseUrl,
                 Versions = template.Versions,
@@ -90,10 +149,14 @@ namespace FugleMarketData.WebsocketClient
         /// <summary>Dispose the clients built so far.</summary>
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-            if (_stock.IsValueCreated) _stock.Value.Dispose();
-            if (_futOpt.IsValueCreated) _futOpt.Value.Dispose();
+            // Under the lock, so a SetCredentials never reaches a disposed client.
+            lock (_lock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                if (_stock.IsValueCreated) _stock.Value.Dispose();
+                if (_futOpt.IsValueCreated) _futOpt.Value.Dispose();
+            }
         }
     }
 }

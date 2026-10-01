@@ -36,6 +36,7 @@ internal sealed class LoopbackServer : IDisposable
                 catch { return; }
 
                 Requests.Enqueue(ctx.Request.RawUrl ?? string.Empty);
+                Headers.Enqueue(ctx.Request.Headers);
 
                 try
                 {
@@ -58,6 +59,9 @@ internal sealed class LoopbackServer : IDisposable
 
     /// <summary>Every request's raw URL (path + query string), in arrival order.</summary>
     public ConcurrentQueue<string> Requests { get; } = new();
+
+    /// <summary>Every request's headers, in arrival order.</summary>
+    public ConcurrentQueue<System.Collections.Specialized.NameValueCollection> Headers { get; } = new();
 
     /// <summary>A client pointed at this server.</summary>
     public FugleMarketData.RestClient NewClient(string apiKey = "test-key") =>

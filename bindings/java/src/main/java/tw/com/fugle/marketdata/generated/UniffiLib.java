@@ -43,6 +43,7 @@ interface UniffiLib extends Library {
     void uniffi_marketdata_uniffi_fn_free_restclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_restclient_base_url(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_method_restclient_futopt(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
+    void uniffi_marketdata_uniffi_fn_method_restclient_set_credentials(Pointer ptr, RustBuffer.ByValue credentials, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_method_restclient_stock(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Pointer uniffi_marketdata_uniffi_fn_clone_stockclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_stockclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
@@ -129,6 +130,7 @@ interface UniffiLib extends Library {
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_messages_dropped_total(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_ping(Pointer ptr, RustBuffer.ByValue state);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions(Pointer ptr);
+    void uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials(Pointer ptr, RustBuffer.ByValue credentials, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_subscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbols, RustBuffer.ByValue opts);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe(Pointer ptr, RustBuffer.ByValue channel, RustBuffer.ByValue symbols, RustBuffer.ByValue opts);
     Long uniffi_marketdata_uniffi_fn_method_websocketclient_unsubscribe_ids(Pointer ptr, RustBuffer.ByValue ids);
@@ -243,6 +245,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_volumes_sync();
     Short uniffi_marketdata_uniffi_checksum_method_restclient_base_url();
     Short uniffi_marketdata_uniffi_checksum_method_restclient_futopt();
+    Short uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials();
     Short uniffi_marketdata_uniffi_checksum_method_restclient_stock();
     Short uniffi_marketdata_uniffi_checksum_method_stockclient_base_url();
     Short uniffi_marketdata_uniffi_checksum_method_stockclient_corporate_actions();
@@ -306,6 +309,7 @@ interface UniffiLib extends Library {
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_messages_dropped_total();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_ping();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions();
+    Short uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe();
     Short uniffi_marketdata_uniffi_checksum_method_websocketclient_unsubscribe_ids();

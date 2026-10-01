@@ -52,6 +52,13 @@ internal sealed class WebSocketLoopbackServer : IDisposable
     /// </summary>
     public bool RejectAuth { get; init; }
 
+    /// <summary>
+    /// When set, reject every <c>auth</c> frame whose <c>apikey</c>,
+    /// <c>token</c> or <c>sdkToken</c> is not this value, as
+    /// <see cref="RejectAuth"/> does.
+    /// </summary>
+    public string? RequiredCredential { get; set; }
+
     /// <summary>Send a text frame to every open connection.</summary>
     public async Task SendToAll(string text)
     {
@@ -132,8 +139,12 @@ internal sealed class WebSocketLoopbackServer : IDisposable
                 }
                 else
                 {
-                    AuthData.Enqueue(frame.RootElement.GetProperty("data").GetRawText());
-                    var ack = Encoding.UTF8.GetBytes(RejectAuth
+                    var data = frame.RootElement.GetProperty("data");
+                    AuthData.Enqueue(data.GetRawText());
+                    var required = RequiredCredential;
+                    var unaccepted = required != null && !new[] { "apikey", "token", "sdkToken" }.Any(
+                        field => data.TryGetProperty(field, out var value) && value.GetString() == required);
+                    var ack = Encoding.UTF8.GetBytes(RejectAuth || unaccepted
                         ? "{\"event\":\"error\",\"code\":1000,\"data\":{\"message\":\"Invalid token\"}}"
                         : "{\"event\":\"authenticated\",\"data\":{\"message\":\"Authenticated successfully\"}}");
                     await socket.SendAsync(ack, WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);

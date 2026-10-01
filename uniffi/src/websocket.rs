@@ -156,6 +156,13 @@ pub struct CredentialsRecord {
     pub sdk_token: Option<String>,
 }
 
+impl CredentialsRecord {
+    /// Core's credential: `ConfigError` (1004) unless exactly one is set.
+    pub(crate) fn into_auth(self) -> Result<marketdata_core::Auth, marketdata_core::MarketDataError> {
+        marketdata_core::Auth::from_credentials(self.api_key, self.bearer_token, self.sdk_token)
+    }
+}
+
 impl std::fmt::Debug for CredentialsRecord {
     /// Prints `Some(***)` for a set credential, like `AuthRequest`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -490,8 +497,15 @@ pub struct WebSocketClient {
     /// each other, under one lock (#126, #121).
     connection: std::sync::Mutex<ConnectionSlot>,
     listener: Arc<dyn WebSocketListener>,
-    /// Sent in the auth frame; its field follows the credential kind (#91).
+    /// The constructor's credential, which builds the endpoint config. The
+    /// one sent in the auth frame, in the field of its kind (#91), is the
+    /// `credentials` handle's once it holds one.
     auth: AuthRequest,
+    /// What each core client this one builds authenticates with, for
+    /// `set_credentials()` to change between and during connections (#322).
+    /// `None` while the constructor's credential is invalid: `connect()` then
+    /// fails with `ConfigError`, so no connection can miss a later handle.
+    credentials: std::sync::Mutex<Option<marketdata_core::CredentialsHandle>>,
     base_url: Option<String>,
     version: StreamingVersionRecord,
     endpoint: WebSocketEndpoint,
@@ -546,6 +560,7 @@ impl WebSocketClient {
         Arc::new(Self {
             connection: std::sync::Mutex::new(ConnectionSlot::default()),
             listener,
+            credentials: std::sync::Mutex::new(marketdata_core::CredentialsHandle::new(auth.clone()).ok()),
             auth,
             base_url,
             version,
@@ -760,8 +775,7 @@ impl WebSocketClient {
         message_queue: Option<MessageQueueConfigRecord>,
         connection: Option<ConnectionConfigRecord>,
     ) -> Result<Arc<Self>, MarketDataError> {
-        let CredentialsRecord { api_key, bearer_token, sdk_token } = credentials;
-        let auth = marketdata_core::Auth::from_credentials(api_key, bearer_token, sdk_token)?;
+        let auth = credentials.into_auth()?;
         let reconnect_config = reconnect_config.map(|c| c.to_core()).transpose()?;
         let health_check_config = health_check_config.map(|c| c.to_core()).transpose()?;
         Ok(Self::new_internal(
@@ -776,6 +790,27 @@ impl WebSocketClient {
             message_queue,
             connection,
         ))
+    }
+
+    /// Replace the credential this client authenticates with from its next
+    /// connection attempt on: the next `connect()` or automatic reconnect
+    /// (#322). Any of the three kinds may replace any other. A connection
+    /// already authenticated is not authenticated again: the server takes
+    /// one auth frame per connection, so call it before a token expires.
+    /// Rejected credentials still end automatic reconnection; set a new
+    /// credential, then call `connect()` again.
+    ///
+    /// Exactly one credential must be non-empty, as in
+    /// `new_with_credentials`; otherwise this returns a `ConfigError` (code
+    /// 1004) and the current credential is kept.
+    pub fn set_credentials(&self, credentials: CredentialsRecord) -> Result<(), MarketDataError> {
+        let auth = credentials.into_auth()?;
+        let mut slot = lock_credentials(&self.credentials);
+        match slot.as_ref() {
+            Some(handle) => handle.set(auth)?,
+            None => *slot = Some(marketdata_core::CredentialsHandle::new(AuthRequest::from(auth))?),
+        }
+        Ok(())
     }
 
     /// Messages dropped because they arrived while the message queue held
@@ -1066,6 +1101,9 @@ impl WebSocketClient {
         *lock_state(&self.state) = Some(core_ws.state_handle());
         // Before connect(): it warns about the previous connection's close.
         core_ws.use_reconnect_conflict_handle(&self.reconnect_conflict);
+        if let Some(credentials) = lock_credentials(&self.credentials).as_ref() {
+            core_ws.use_credentials_handle(credentials);
+        }
 
         // Forward core's stream: messages and lifecycle events in the order
         // core produced them (#68). The thread starts before `connect()` so
@@ -1767,6 +1805,13 @@ fn panic_detail(payload: &(dyn std::any::Any + Send)) -> String {
         Some(foreign) => foreign.to_string(),
         None => detail,
     }
+}
+
+/// The credentials slot; a panic while holding it leaves a usable value.
+fn lock_credentials(
+    slot: &std::sync::Mutex<Option<marketdata_core::CredentialsHandle>>,
+) -> std::sync::MutexGuard<'_, Option<marketdata_core::CredentialsHandle>> {
+    slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Lock `state`, recovering from poison: it only holds a handle.
@@ -2480,6 +2525,140 @@ mod tests {
                 "disconnected(false)".to_string(),
             ]
         );
+    }
+
+    fn credentials(api_key: Option<&str>, bearer_token: Option<&str>, sdk_token: Option<&str>) -> CredentialsRecord {
+        CredentialsRecord {
+            api_key: api_key.map(str::to_string),
+            bearer_token: bearer_token.map(str::to_string),
+            sdk_token: sdk_token.map(str::to_string),
+        }
+    }
+
+    fn assert_config_error(result: Result<(), MarketDataError>) {
+        match result {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{info:?}");
+            }
+            other => panic!("expected ConfigError, got {other:?}"),
+        }
+    }
+
+    /// The automatic reconnect after a drop sends the credential set before
+    /// it, in the field of its kind (#322).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reconnect_sends_the_credential_set_before_it() {
+        let server = MockWsServer::start_with_capacity(2).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord {
+                enabled: Some(true),
+                max_attempts: 3,
+                initial_delay_ms: 100,
+                max_delay_ms: 200,
+            }),
+        );
+
+        client.connect_impl().await.expect("connect");
+        client.set_credentials(credentials(None, None, Some("new-token"))).expect("set");
+        // The live connection is not authenticated again.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(server.auth_received().len(), 1);
+
+        server.drop_transport_for(0).await;
+        listener.wait_authenticated(2).await;
+        client.disconnect_impl().await;
+
+        assert_eq!(
+            server.auth_received(),
+            vec![serde_json::json!({"apikey": "test-key"}), serde_json::json!({"sdkToken": "new-token"})]
+        );
+    }
+
+    /// A rejected automatic reconnect ends the reconnect; once a new
+    /// credential is set, `connect()` builds a new connection that sends it
+    /// (#322).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_after_a_rejected_reconnect_sends_the_new_credential() {
+        let server = MockWsServer::start_with_capacity(3).await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(
+            &server,
+            Arc::clone(&listener),
+            Some(ReconnectConfigRecord {
+                enabled: Some(true),
+                max_attempts: 3,
+                initial_delay_ms: 100,
+                max_delay_ms: 200,
+            }),
+        );
+        client.connect_impl().await.expect("connect");
+
+        server.set_auth_response(serde_json::json!({
+            "event": "error", "code": 1000, "data": {"message": "Invalid token"}
+        }));
+        server.drop_transport_for(0).await;
+        listener.wait_for("reconnect_failed(1)").await;
+
+        server.set_auth_response(serde_json::json!({ "event": "authenticated" }));
+        client.set_credentials(credentials(None, None, Some("new-token"))).expect("set");
+        client.connect_impl().await.expect("connect with the new credential");
+        client.disconnect_impl().await;
+
+        assert_eq!(
+            server.auth_received().last(),
+            Some(&serde_json::json!({"sdkToken": "new-token"})),
+            "{:?}",
+            server.auth_received()
+        );
+    }
+
+    /// Anything but exactly one non-blank credential is 1004, and the next
+    /// connection still sends the current one (#322).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invalid_credentials_are_a_config_error_and_keep_the_current_one() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = mock_client(&server, Arc::clone(&listener), None);
+
+        for bad in [
+            credentials(None, None, None),
+            credentials(Some("a"), None, Some("b")),
+            credentials(None, Some("   "), None),
+        ] {
+            assert_config_error(client.set_credentials(bad));
+        }
+        client.connect_impl().await.expect("connect");
+        client.disconnect_impl().await;
+
+        assert_eq!(server.auth_received(), vec![serde_json::json!({"apikey": "test-key"})]);
+    }
+
+    /// A client built with a blank key cannot connect (1004); once a valid
+    /// credential is set it connects with it (#322).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn set_credentials_repairs_a_client_built_with_a_blank_key() {
+        let server = MockWsServer::start().await;
+        let listener = Arc::new(TestListener::new());
+        let client = WebSocketClient::new_with_full_config(
+            "  ".to_string(),
+            Arc::clone(&listener) as Arc<dyn WebSocketListener>,
+            WebSocketEndpoint::Stock,
+            Some(format!("ws://{}/marketdata", server.address())),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_config_error(client.connect_impl().await);
+
+        client.set_credentials(credentials(None, Some("token"), None)).expect("set");
+        client.connect_impl().await.expect("connect");
+        client.disconnect_impl().await;
+
+        assert_eq!(server.auth_received(), vec![serde_json::json!({"token": "token"})]);
     }
 
     fn probe_record(idle_probe_after_ms: u64, probe_timeout_ms: u64) -> HealthCheckConfigRecord {

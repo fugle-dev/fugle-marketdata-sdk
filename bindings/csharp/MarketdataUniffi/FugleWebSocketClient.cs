@@ -438,6 +438,25 @@ namespace FugleMarketData
         public Task ConnectAsync() => _inner.Connect();
 
         /// <summary>
+        /// Replace the credential this client authenticates with from its next
+        /// connection attempt on: the next <see cref="ConnectAsync"/> or automatic
+        /// reconnect. Any of the three kinds may replace any other. A connection
+        /// already authenticated is not authenticated again, so call it before a
+        /// token expires. Rejected credentials still end automatic reconnection;
+        /// set a new credential, then call <see cref="ConnectAsync"/> again.
+        /// </summary>
+        /// <param name="apiKey">Fugle API key</param>
+        /// <param name="bearerToken">OAuth bearer token</param>
+        /// <param name="sdkToken">Fugle SDK token</param>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 unless exactly one non-empty credential is given; the current credential is then kept</exception>
+        public void SetCredentials(string? apiKey = null, string? bearerToken = null, string? sdkToken = null) =>
+            _inner.SetCredentials(new uniffi.marketdata_uniffi.CredentialsRecord(
+                apiKey: apiKey,
+                bearerToken: bearerToken,
+                sdkToken: sdkToken
+            ));
+
+        /// <summary>
         /// Disconnect from the WebSocket server.
         /// </summary>
         /// <returns>

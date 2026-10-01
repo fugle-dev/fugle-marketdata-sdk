@@ -180,6 +180,48 @@ public class RestClient implements AutoCloseable, RestClientInterface {
 
   
     /**
+     * Replace the credential later requests send, with any of the three
+     * kinds. Sub-clients already taken from this one (`stock()`,
+     * `stock().intraday()`, ...) send it too; a request already sent keeps
+     * the credential it was sent with (#322).
+     *
+     * Exactly one credential must be non-empty, as at construction;
+     * otherwise, or if it cannot be sent in an HTTP header, this returns a
+     * `ConfigError` (code 1004) and the current credential is kept.
+     */
+    @Override
+    public void setCredentials(CredentialsRecord credentials) throws MarketDataException {
+            try {
+                
+    callWithPointer(it -> {
+        try {
+    
+    UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
+        UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_restclient_set_credentials(
+            it, FfiConverterTypeCredentialsRecord.INSTANCE.lower(credentials), _status);
+    });
+    
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    })
+    ;
+            } catch (RuntimeException _e) {
+                
+                if (MarketDataException.class.isInstance(_e.getCause())) {
+                    throw (MarketDataException)_e.getCause();
+                }
+                
+                if (InternalException.class.isInstance(_e.getCause())) {
+                    throw (InternalException)_e.getCause();
+                }
+                throw _e;
+            }
+    }
+    
+
+  
+    /**
      * Access stock-related endpoints
      */
     @Override

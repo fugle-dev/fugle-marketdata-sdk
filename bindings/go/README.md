@@ -306,6 +306,31 @@ client, err := mkt.NewRestClientWithBearerToken("your-bearer-token")
 client, err := mkt.NewRestClientWithSdkToken("your-sdk-token")
 ```
 
+### Changing credentials
+
+A token that expires (an SDK token is valid for two days) can be replaced
+without a new client. `SetCredentialsWith` takes the constructor's credential
+options (any other option is a ConfigError, code 1004); `SetCredentials` takes a
+`CredentialsRecord`. Exactly one non-empty credential must be given, and any
+kind may replace another; otherwise it returns a ConfigError (code 1004) and
+keeps the current credential.
+
+```go
+// WebSocket: from the next connection attempt on — the next Connect() or
+// automatic reconnect. The live connection is not authenticated again, so
+// call it before the token expires.
+err := stream.SetCredentialsWith(mkt.WithSdkToken(newToken))
+
+// REST: from the next request on, clients taken before (Stock(), ...) included.
+err = client.SetCredentialsWith(mkt.WithSdkToken(newToken))
+```
+
+A first `Connect()` whose credential is rejected leaves the client usable:
+set the new credential and call `Connect()` again. A rejection during an
+automatic reconnect ends it, and with it `Messages()`: create a new
+`StreamingClient` with the new credential to stream again. After `Close()`,
+`SetCredentials` returns ClientClosed (code 2010).
+
 ## Advanced: Custom TLS / self-signed servers
 
 For connecting to servers with a private CA (enterprise deployments) or

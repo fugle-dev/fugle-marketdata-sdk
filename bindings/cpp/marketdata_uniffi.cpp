@@ -84,6 +84,9 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_restclient_futopt() != 65348) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
+    if (uniffi_marketdata_uniffi_checksum_method_restclient_set_credentials() != 19921) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
     if (uniffi_marketdata_uniffi_checksum_method_restclient_stock() != 18733) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
@@ -202,6 +205,9 @@ void ensure_initialized() {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_query_subscriptions_sync() != 55765) {
+        throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
+    }
+    if (uniffi_marketdata_uniffi_checksum_method_websocketclient_set_credentials() != 33298) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_websocketclient_subscribe_sync() != 22113) {
@@ -806,6 +812,13 @@ std::shared_ptr<FutOptClient> RestClient::futopt() {
         nullptr,
         ptr));
 }
+void RestClient::set_credentials(const CredentialsRecord &credentials) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_restclient_set_credentials,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterTypeCredentialsRecord::lower(credentials));
+}
 std::shared_ptr<StockClient> RestClient::stock() {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterStockClient::lift(uniffi::rust_call(
@@ -1377,6 +1390,13 @@ void WebSocketClient::query_subscriptions_sync() {
         uniffi_marketdata_uniffi_fn_method_websocketclient_query_subscriptions_sync,
         uniffi::FfiConverterMarketDataError::lift,
         ptr);
+}
+void WebSocketClient::set_credentials(const CredentialsRecord &credentials) {
+    auto ptr = this->_uniffi_internal_clone_pointer();
+    uniffi::rust_call(
+        uniffi_marketdata_uniffi_fn_method_websocketclient_set_credentials,
+        uniffi::FfiConverterMarketDataError::lift,
+        ptr, uniffi::FfiConverterTypeCredentialsRecord::lower(credentials));
 }
 void WebSocketClient::subscribe_sync(const std::string &channel, const std::vector<std::string> &symbols, std::optional<SubscribeOptions> opts) {
     auto ptr = this->_uniffi_internal_clone_pointer();

@@ -354,6 +354,20 @@ unsubscribe_ids(ids)                         # Unsubscribe by server ids from `s
 is_connected()                               # Check connection status
 is_closed()                                  # Check if client is closed
 url()                                        # Resolved endpoint; ConfigError (1004) on an invalid base_url / version
+set_credentials(CredentialsRecord)           # Credential for the next connect / automatic reconnect
+```
+
+`set_credentials` (also on `RestClient`, for the next request) replaces an
+expiring token without a new client, with any of the three kinds; exactly one
+must be non-empty, otherwise it returns `ConfigError` (1004) and keeps the
+current credential. A live connection is not authenticated again, so call it
+before the token expires. Rejected credentials still end automatic
+reconnection; set the new credential, then call `connect()` again. In C++,
+where the generated classes are used directly:
+
+```cpp
+ws->set_credentials(CredentialsRecord{std::nullopt, std::nullopt, new_token});
+rest->set_credentials(CredentialsRecord{std::nullopt, std::nullopt, new_token});
 ```
 
 `SubscribeOptions` has `after_hours` (FutOpt only) and `intraday_odd_lot`

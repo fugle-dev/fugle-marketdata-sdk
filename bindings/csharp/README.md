@@ -226,6 +226,31 @@ The WebSocket client takes the same three credentials through
 the raw `uniffi.marketdata_uniffi.CredentialsRecord` the credentials are passed
 in: a C# record's `ToString()` prints every field, secrets included.
 
+### Changing credentials
+
+A token that expires (an SDK token is valid for two days) can be replaced
+without a new client. `SetCredentials` takes the same three credentials as
+named arguments, exactly one of them, and any kind may replace another; zero,
+several or a blank value throws `MarketDataException` code 1004 and keeps the
+current credential.
+
+```csharp
+// WebSocket: from the next connection attempt on — the next ConnectAsync() or
+// automatic reconnect. The live connection is not authenticated again, so call
+// it before the token expires.
+ws.SetCredentials(sdkToken: newToken);
+
+// Event style: both clients, built or not, replacing what was set on either
+// alone; factory.Stock.SetCredentials(...) changes the Stock client's alone.
+factory.SetCredentials(sdkToken: newToken);
+
+// REST: from the next request on, clients taken before (client.Stock, ...) included.
+client.SetCredentials(sdkToken: newToken);
+```
+
+Rejected credentials still end automatic reconnection; set the new
+credential, then call `ConnectAsync()` (`Connect()` in event style) again.
+
 ## Migrating from FubonNeo
 
 FubonNeo 2.3.0 ships a `FugleMarketData` REST client. Its client tree,

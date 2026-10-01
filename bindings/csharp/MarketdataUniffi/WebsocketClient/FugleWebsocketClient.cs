@@ -124,6 +124,19 @@ namespace FugleMarketData.WebsocketClient
             return Inner.DisconnectAsync();
         }
 
+        /// <summary>
+        /// Replace the credential this client authenticates with from its next
+        /// connection attempt on: the next <see cref="Connect"/> or automatic
+        /// reconnect (see <see cref="WebSocketClient.SetCredentials"/>). Call it
+        /// before a token expires: the live connection is not authenticated again.
+        /// </summary>
+        /// <param name="apiKey">Fugle API key</param>
+        /// <param name="bearerToken">OAuth bearer token</param>
+        /// <param name="sdkToken">Fugle SDK token</param>
+        /// <exception cref="uniffi.marketdata_uniffi.MarketDataException">Code 1004 unless exactly one non-empty credential is given; the current credential is then kept</exception>
+        public void SetCredentials(string? apiKey = null, string? bearerToken = null, string? sdkToken = null) =>
+            Inner.SetCredentials(apiKey, bearerToken, sdkToken);
+
         /// <summary>Send a ping; the pong arrives through <see cref="OnMessage"/>.</summary>
         public Task Ping(string pingMsg = "ping") => Inner.PingAsync(pingMsg);
 

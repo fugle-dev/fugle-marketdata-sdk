@@ -130,6 +130,21 @@ impl RestClient {
 
 #[uniffi::export]
 impl RestClient {
+    /// Replace the credential later requests send, with any of the three
+    /// kinds. Sub-clients already taken from this one (`stock()`,
+    /// `stock().intraday()`, ...) send it too; a request already sent keeps
+    /// the credential it was sent with (#322).
+    ///
+    /// Exactly one credential must be non-empty, as at construction;
+    /// otherwise, or if it cannot be sent in an HTTP header, this returns a
+    /// `ConfigError` (code 1004) and the current credential is kept.
+    pub fn set_credentials(
+        &self,
+        credentials: crate::websocket::CredentialsRecord,
+    ) -> Result<(), MarketDataError> {
+        Ok(self.inner.set_credentials(credentials.into_auth()?)?)
+    }
+
     /// The prefix every request from this client is built on, fully resolved —
     /// host, path prefix and version segment.
     ///
@@ -1307,6 +1322,25 @@ mod tests {
         let client = RestClient::new(Auth::SdkToken("test-token".to_string()));
         let _ = client.stock();
         let _ = client.futopt();
+    }
+
+    #[test]
+    fn set_credentials_refuses_a_bad_credential() {
+        let client = RestClient::new(Auth::SdkToken("test-token".to_string()));
+        let record = |api_key: Option<&str>, sdk_token: Option<&str>| crate::websocket::CredentialsRecord {
+            api_key: api_key.map(str::to_string),
+            bearer_token: None,
+            sdk_token: sdk_token.map(str::to_string),
+        };
+        for bad in [record(None, None), record(Some("a"), Some("b")), record(Some("bad\nkey"), None)] {
+            match client.set_credentials(bad) {
+                Err(MarketDataError::ConfigError { info, .. }) => {
+                    assert_eq!(info.code, marketdata_core::error_code::CONFIG, "{info:?}");
+                }
+                other => panic!("expected ConfigError, got {other:?}"),
+            }
+        }
+        client.set_credentials(record(Some("key"), None)).expect("a valid credential");
     }
 
     #[test]

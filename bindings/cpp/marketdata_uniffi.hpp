@@ -126,6 +126,25 @@ enum class WebSocketEndpoint;
 
 
 /**
+ * Who closed the connection, in a [`DisconnectInfo`] (#293).
+ */
+enum class DisconnectIntent: int32_t {
+    /**
+     * Your `disconnect()`.
+     */
+    kClient = 1,
+    /**
+     * The server's Close frame, whatever its code.
+     */
+    kServer = 2,
+    /**
+     * Transport error, EOF without a Close frame, or heartbeat timeout.
+     */
+    kNetwork = 3
+};
+
+
+/**
  * Coarse-grained classification of the source of a [`MarketDataError`].
  *
  * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -180,42 +199,6 @@ enum class MessageOverflowRecord: int32_t {
 
 
 /**
- * Who closed the connection, in a [`DisconnectInfo`] (#293).
- */
-enum class DisconnectIntent: int32_t {
-    /**
-     * Your `disconnect()`.
-     */
-    kClient = 1,
-    /**
-     * The server's Close frame, whatever its code.
-     */
-    kServer = 2,
-    /**
-     * Transport error, EOF without a Close frame, or heartbeat timeout.
-     */
-    kNetwork = 3
-};
-
-
-/**
- * Message queue configuration record for FFI
- *
- * `buffer` is 0 for the default (4096).
- */
-struct MessageQueueConfigRecord {
-    /**
-     * What happens to new messages while `buffer` are unread
-     */
-    MessageOverflowRecord overflow;
-    /**
-     * Unread messages held (default 4096; 0 means default)
-     */
-    uint32_t buffer;
-};
-
-
-/**
  * The cross-language view of an error: the fields every binding exposes
  * under the same names. Mirrors `marketdata_core::ErrorInfo`.
  */
@@ -250,6 +233,23 @@ struct ErrorInfo {
      * HTTP response headers (REST only; empty otherwise).
      */
     std::unordered_map<std::string, std::string> headers;
+};
+
+
+/**
+ * Message queue configuration record for FFI
+ *
+ * `buffer` is 0 for the default (4096).
+ */
+struct MessageQueueConfigRecord {
+    /**
+     * What happens to new messages while `buffer` are unread
+     */
+    MessageOverflowRecord overflow;
+    /**
+     * Unread messages held (default 4096; 0 means default)
+     */
+    uint32_t buffer;
 };
 
 
@@ -692,6 +692,17 @@ struct RestClient
      * Access FutOpt (futures and options) endpoints
      */
     std::shared_ptr<FutOptClient> futopt();
+    /**
+     * Replace the credential later requests send, with any of the three
+     * kinds. Sub-clients already taken from this one (`stock()`,
+     * `stock().intraday()`, ...) send it too; a request already sent keeps
+     * the credential it was sent with (#322).
+     *
+     * Exactly one credential must be non-empty, as at construction;
+     * otherwise, or if it cannot be sent in an HTTP header, this returns a
+     * `ConfigError` (code 1004) and the current credential is kept.
+     */
+    void set_credentials(const CredentialsRecord &credentials);
     /**
      * Access stock-related endpoints
      */
@@ -1271,6 +1282,20 @@ struct WebSocketClient
      * Query server subscriptions (blocking).
      */
     void query_subscriptions_sync();
+    /**
+     * Replace the credential this client authenticates with from its next
+     * connection attempt on: the next `connect()` or automatic reconnect
+     * (#322). Any of the three kinds may replace any other. A connection
+     * already authenticated is not authenticated again: the server takes
+     * one auth frame per connection, so call it before a token expires.
+     * Rejected credentials still end automatic reconnection; set a new
+     * credential, then call `connect()` again.
+     *
+     * Exactly one credential must be non-empty, as in
+     * `new_with_credentials`; otherwise this returns a `ConfigError` (code
+     * 1004) and the current credential is kept.
+     */
+    void set_credentials(const CredentialsRecord &credentials);
     /**
      * Subscribe to a channel for one or more symbols (blocking).
      *
