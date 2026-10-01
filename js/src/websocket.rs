@@ -1052,8 +1052,8 @@ fn read_connection<T>(slot: &ConnectionSlot, read: impl FnOnce(&ConnectionHandle
 ///
 /// The official SDK takes a free-form map and validates at runtime; expressing
 /// it as a struct lets TypeScript reject an unknown product at compile time.
-/// JavaScript callers get the runtime check from the constructor's options
-/// check (`options::check_options`, #294).
+/// At runtime an unknown product, a non-string value or a version the
+/// product does not serve throws a `TypeError`.
 #[napi(object)]
 pub struct StreamingVersionOptions {
     /// Stock streaming version. Only "v1.0" is served.
@@ -1343,7 +1343,7 @@ async fn measure_latency(slot: &WorkerSlot, timeout_ms: Option<f64>) -> napi::Re
         None => None,
         Some(ms) if ms.is_finite() && ms >= 0.0 => Some(Duration::from_millis(ms as u64)),
         Some(_) => {
-            return Ok(Settled(Err(marketdata_core::MarketDataError::InvalidParameter {
+            return Ok(Settled::from(Err(marketdata_core::MarketDataError::InvalidParameter {
                 name: "timeoutMs".to_string(),
                 reason: "must be a positive number".to_string(),
             })));
@@ -1351,11 +1351,11 @@ async fn measure_latency(slot: &WorkerSlot, timeout_ms: Option<f64>) -> napi::Re
     };
     let (reply, rx) = tokio::sync::oneshot::channel();
     if send_command(slot, WsCommand::MeasureLatency { timeout, reply }, "measureLatency").is_err() {
-        return Ok(Settled(Err(marketdata_core::MarketDataError::ClientClosed)));
+        return Ok(Settled::from(Err(marketdata_core::MarketDataError::ClientClosed)));
     }
     // The worker ended without answering: its connection is gone.
     let result = rx.await.unwrap_or(Err(marketdata_core::MarketDataError::ClientClosed));
-    Ok(Settled(result.map(|rtt| serde_json::Value::from(rtt.as_secs_f64() * 1000.0))))
+    Ok(Settled::from(result.map(|rtt| serde_json::Value::from(rtt.as_secs_f64() * 1000.0))))
 }
 
 /// Mark the worker as ending and ask it to disconnect; no-op without one.

@@ -45,7 +45,7 @@ pub(crate) enum JsVal {
 
 impl JsVal {
     /// The type as an error message names it.
-    fn describe(&self) -> String {
+    pub(crate) fn describe(&self) -> String {
         match self {
             Self::Undefined => "undefined".into(),
             Self::Null => "null".into(),

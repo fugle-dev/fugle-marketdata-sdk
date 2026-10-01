@@ -75,7 +75,9 @@ describe('stock.ownership', () => {
 
   test.each(Object.entries(ENDPOINTS))('%s forwards from / to / sort', async (name, path) => {
     await client.stock.ownership[name]({ symbol: '2330', from: '2026-07-01', to: '2026-07-31', sort: 'desc' });
-    expect(paths[paths.length - 1]).toBe(`/v1.0/stock/ownership/${path}/2330?from=2026-07-01&to=2026-07-31&sort=desc`);
+    const url = new URL(paths[paths.length - 1], 'http://localhost');
+    expect(url.pathname).toBe(`/v1.0/stock/ownership/${path}/2330`);
+    expect(Object.fromEntries(url.searchParams)).toEqual({ from: '2026-07-01', to: '2026-07-31', sort: 'desc' });
   });
 
   test.each(Object.entries(ENDPOINTS))('%s sends sort=asc and sort=desc', async (name, path) => {
@@ -107,5 +109,28 @@ describe('stock.ownership', () => {
   test('decodes tdccDistribution', async () => {
     const data = await client.stock.ownership.tdccDistribution({ symbol: '2330' });
     expect(data.data[0].distributions[0]).toEqual({ range: '1-999', holders: 1500000, shares: 250000000, proportion: 0.96 });
+  });
+
+  // The object goes through core's parameter table like every other object
+  // form (#294); before, napi read only the declared keys and dropped the rest.
+  test.each(Object.keys(ENDPOINTS))('%s refuses an unknown key without sending', async (name) => {
+    const sent = paths.length;
+    const error = await client.stock.ownership[name]({ symbol: '2330', fromDate: '2026-07-01' }).catch((e) => e);
+    expect(error.code).toBe(1005);
+    expect(error.message).toContain('does not accept `fromDate`');
+    expect(paths.length).toBe(sent);
+  });
+
+  test.each(Object.keys(ENDPOINTS))('%s refuses a non-object and a further argument', async (name) => {
+    const sent = paths.length;
+    const positional = await client.stock.ownership[name]('2330').catch((e) => e);
+    expect({ name: positional.name, message: positional.message }).toEqual({
+      name: 'TypeError',
+      message: `\`stock.ownership.${name}\` takes a params object, e.g. ${name}({ symbol: '2330' })`,
+    });
+    const extra = await client.stock.ownership[name]({ symbol: '2330' }, 'x').catch((e) => e);
+    expect(extra.name).toBe('TypeError');
+    expect(extra.message).toMatch(new RegExp(`^\`stock\\.ownership\\.${name}\` got a params object and a further string argument`));
+    expect(paths.length).toBe(sent);
   });
 });

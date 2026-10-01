@@ -2777,7 +2777,10 @@ export declare class WebSocketClient {
   get futopt(): FutOptWebSocketClient
 }
 
-/** `stock.ownership.directorHoldings` params (object form, matching the official SDK) */
+/**
+ * `stock.ownership.directorHoldings` params (object form, matching the official SDK).
+ * Any other key is refused.
+ */
 export interface DirectorHoldingsParams {
   symbol: string
   from?: string
@@ -2785,7 +2788,10 @@ export interface DirectorHoldingsParams {
   sort?: string
 }
 
-/** `stock.ownership.etfHoldings` params (object form, matching the official SDK) */
+/**
+ * `stock.ownership.etfHoldings` params (object form, matching the official SDK).
+ * Any other key is refused.
+ */
 export interface EtfHoldingsParams {
   symbol: string
   from?: string
@@ -2838,7 +2844,10 @@ export interface HealthCheckOptions {
   probeTimeoutMs?: number
 }
 
-/** `stock.ownership.institutionalTrades` params (object form, matching the official SDK) */
+/**
+ * `stock.ownership.institutionalTrades` params (object form, matching the official SDK).
+ * Any other key is refused.
+ */
 export interface InstitutionalTradesParams {
   symbol: string
   from?: string
@@ -2903,8 +2912,9 @@ export interface RestClientOptions {
  * Per-product streaming version selection.
  *
  * The official SDK takes a free-form map and validates at runtime; expressing
- * it as a struct lets TypeScript reject an unknown product at compile time,
- * while the string values still need checking here.
+ * it as a struct lets TypeScript reject an unknown product at compile time.
+ * At runtime an unknown product, a non-string value or a version the
+ * product does not serve throws a `TypeError`.
  */
 export interface StreamingVersionOptions {
   /** Stock streaming version. Only "v1.0" is served. */
@@ -2918,7 +2928,10 @@ export interface StreamingVersionOptions {
   futopt?: string
 }
 
-/** `stock.ownership.tdccDistribution` params (object form, matching the official SDK) */
+/**
+ * `stock.ownership.tdccDistribution` params (object form, matching the official SDK).
+ * Any other key is refused.
+ */
 export interface TdccDistributionParams {
   symbol: string
   from?: string

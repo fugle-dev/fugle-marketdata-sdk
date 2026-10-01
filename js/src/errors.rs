@@ -87,8 +87,27 @@ impl BuildError {
 }
 
 /// The outcome of a REST call, converted on the JS thread: the JSON value,
-/// or a rejection with [`error_value`].
-pub struct Settled(pub Result<Value, MarketDataError>);
+/// or a rejection with [`error_value`] (or a `TypeError` for arguments a
+/// method does not take, #294).
+pub struct Settled(Result<Value, Rejection>);
+
+enum Rejection {
+    Core(MarketDataError),
+    Type(String),
+}
+
+impl From<Result<Value, MarketDataError>> for Settled {
+    fn from(result: Result<Value, MarketDataError>) -> Self {
+        Self(result.map_err(Rejection::Core))
+    }
+}
+
+impl Settled {
+    /// Reject with a JS `TypeError` carrying `message`.
+    pub fn type_error(message: String) -> Self {
+        Self(Err(Rejection::Type(message)))
+    }
+}
 
 impl TypeName for Settled {
     fn type_name() -> &'static str {
@@ -104,7 +123,8 @@ impl ToNapiValue for Settled {
     unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
         match val.0 {
             Ok(value) => unsafe { Value::to_napi_value(env, value) },
-            Err(err) => Err(js_error(&Env::from_raw(env), &err.info())),
+            Err(Rejection::Core(err)) => Err(js_error(&Env::from_raw(env), &err.info())),
+            Err(Rejection::Type(message)) => Err(crate::options::type_error(env, &message)),
         }
     }
 }
