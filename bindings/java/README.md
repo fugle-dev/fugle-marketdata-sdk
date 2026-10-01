@@ -380,6 +380,8 @@ boolean isClosed()                            // Check if client is closed
 String url()                                  // Resolved endpoint; throws code 1004 on an invalid baseUrl
 long messagesDroppedTotal()                   // Messages dropped this connection (DROP_NEWEST only)
 DisconnectInfo lastDisconnect()               // Last disconnect: code(), reason(), intent() (CLIENT / SERVER / NETWORK), willReconnect(); null before the first
+                                              // (disconnect() from a listener then connect() at once: the old connection's
+                                              // last one can land after the new one's; for the state use isConnected())
 
 // Subscription management
 CompletableFuture<Void> subscribe(String channel, String symbol)                                  // Subscribe one symbol
@@ -480,7 +482,7 @@ not raised from an SDK error. `WebSocketListener.onError` receives the same
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
-| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an error: `onDisconnected` reports it, and `lastDisconnect()` has intent `NETWORK`, no code and the reason `Heartbeat timeout after …` |
 | 3004 | CallbackFailed | A listener method threw (`onError` only) |
 | 9999 | Other | Unexpected error |
 

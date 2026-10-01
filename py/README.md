@@ -449,6 +449,10 @@ disconnect it is handling, and it is never cleared: it is a record of the last
 disconnect, not the connection state (ask `is_connected()` for that). After a
 `messages()` iterator ends, it tells you why. A reconnect that gives up
 (`error` 3005) leaves it at the drop that started the reconnect.
+If you call `disconnect()` in a callback and `connect()` right after, the old
+connection's last disconnect can be written after the new connection's, as it
+is handed to the callbacks after it; for the connection state use
+`is_connected()`.
 
 #### Raw Messages
 
@@ -678,7 +682,7 @@ keep their built-in `TypeError` / `ValueError`.
 | 2011 | AlreadyConnected | `connect()` / `connect_async()` called while connected or while another connect is in progress; during an automatic reconnect it waits instead (raised as `WebSocketError`) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
-| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an `error`: `disconnect` fires with code `None` and the reason `Heartbeat timeout after …`, and `last_disconnect.intent` is `"network"` |
 | 3004 | CallbackFailed | A WebSocket callback raised an exception (`error` callback only) |
 | 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` callback); a `connect()` / `connect_async()` waiting on the reconnect raises it (`WebSocketError`) after the last attempt |
 | 9999 | Other | Unexpected error |

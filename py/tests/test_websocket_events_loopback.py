@@ -638,7 +638,13 @@ async def test_last_disconnect_after_disconnect_async_is_client(server, product)
     seen = []
     ws.on("disconnect", lambda code, reason: seen.append(ws.last_disconnect))
     await ws.connect_async()
-    await ws.disconnect_async()
+    try:
+        deadline = time.monotonic() + TIMEOUT_S
+        while "authenticated" not in recorder.names() and time.monotonic() < deadline:
+            await asyncio.sleep(0.02)
+        assert "authenticated" in recorder.names(), recorder.calls
+    finally:
+        await ws.disconnect_async()
 
     info = ws.last_disconnect
     assert (info.code, info.intent, info.will_reconnect) == (1000, "client", False)
@@ -646,17 +652,21 @@ async def test_last_disconnect_after_disconnect_async_is_client(server, product)
     assert 3004 not in _error_codes(recorder)
 
 
+@hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_disconnect_info_is_read_only(server, product):
     ws = product_ws(server.url, product)
-    ws.connect()
-    ws.disconnect()
+    try:
+        ws.connect()
+        ws.disconnect()
 
-    info = ws.last_disconnect
-    # Frozen and compared by value, so usable as a dict key or in a set.
-    assert hash(info) == hash(ws.last_disconnect)
-    assert {info, ws.last_disconnect} == {info}
-    with pytest.raises(AttributeError):
-        info.intent = "server"
-    with pytest.raises(AttributeError):
-        ws.last_disconnect = None
+        info = ws.last_disconnect
+        # Frozen and compared by value, so usable as a dict key or in a set.
+        assert hash(info) == hash(ws.last_disconnect)
+        assert {info, ws.last_disconnect} == {info}
+        with pytest.raises(AttributeError):
+            info.intent = "server"
+        with pytest.raises(AttributeError):
+            ws.last_disconnect = None
+    finally:
+        disconnect_quietly(ws)

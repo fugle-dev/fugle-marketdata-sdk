@@ -493,7 +493,7 @@ client uses the OS trust store (rustls loads it via
 | 2011 | AlreadyConnected | WebSocket `connect()` called while connected or while the first `connect()` is in progress (during an automatic reconnect it waits instead) |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
-| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an `error`: `disconnect` fires with `code: null`, `intent: 'network'` and the reason `Heartbeat timeout after …` |
 | 3004 | CallbackFailed | A WebSocket listener threw, or its Promise rejected (`error` event) |
 | 3005 | ReconnectFailed | Reconnection gave up: after the last attempt, or because an attempt's credentials were rejected (`error` event); a `connect()` waiting on the reconnect rejects with it after the last attempt |
 | 9999 | Other | Unexpected error |

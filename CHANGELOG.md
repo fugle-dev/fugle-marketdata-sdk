@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Node**: the `disconnect` event object adds `intent` (`'client'` = your
     `disconnect()`, `'server'` = the server's Close frame, any code,
     `'network'` = transport error, EOF without a Close frame, heartbeat
-    timeout) and `willReconnect` (`true`: a `reconnect` event follows unless
+    timeout, or a panic of the SDK's worker thread) and `willReconnect` (`true`: a `reconnect` event follows unless
     you call `disconnect()` first; `false`: this connection is over). New
     type `WebSocketDisconnectIntent`. Code that deep-compares the event object
     sees the two new keys.
@@ -33,8 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     DisconnectIntent { Client, Server, Network }`, `will_reconnect`), same
     semantics as Python; set before `on_disconnected`, which keeps its
     `(will_reconnect)` signature. The wrappers expose it as C#
-    `FugleWebSocketClient.LastDisconnect`, Go `StreamingClient.LastDisconnect()`
-    and Java `FugleWebSocketClient.lastDisconnect()`.
+    `WebSocketClient.LastDisconnect` (`FugleMarketData.WebSocketClient`), Go
+    `StreamingClient.LastDisconnect()` and Java
+    `FugleWebSocketClient.lastDisconnect()`. The generated interfaces gain the
+    method too — Java `WebSocketClientInterface.lastDisconnect()`, C#
+    `IWebSocketClient.LastDisconnect()` — so code that implements them itself
+    (a mock, say) has to add it.
   - **core**: `DisconnectIntent::as_str()` (`"client"`, `"server"`,
     `"network"`) and `Display`, the spelling every binding uses.
   - A heartbeat timeout is still reported by `disconnect` (intent `network`,

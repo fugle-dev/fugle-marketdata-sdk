@@ -393,6 +393,8 @@ bool IsClosed                                 // Check if client is closed
 string Url                                    // Resolved endpoint; throws code 1004 on an invalid BaseUrl / version
 ulong MessagesDroppedTotal                    // Messages dropped this connection (see below)
 DisconnectInfo? LastDisconnect                // Last disconnect: Code, Reason, Intent (Client / Server / Network), WillReconnect; null before the first
+                                              // (DisconnectAsync from a listener then ConnectAsync at once: the old connection's
+                                              // last one can land after the new one's; for the state use IsConnected)
 
 // afterHours: FutOpt after-hours session (FutOpt endpoint only; 1005 on Stock)
 Task SubscribeAsync(string channel, string symbol, bool? afterHours = null)    // Subscribe to channel
@@ -702,7 +704,7 @@ catch (MarketDataException ex)
 | 2010 | ClientClosed | Client has been closed |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
-| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window |
+| 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an error: `OnDisconnected` reports it, and `LastDisconnect` has intent Network, no code and the reason `Heartbeat timeout after …` |
 | 3004 | CallbackFailed | A listener method threw (`OnError` only) |
 | 9999 | Other | Unexpected error |
 

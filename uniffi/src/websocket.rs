@@ -1127,8 +1127,9 @@ impl WebSocketClient {
         // `on_disconnected` comes from core's `Disconnected` event, which
         // `ws.disconnect()` emits.
         let _ = ws.disconnect().await;
-        // Mid-reconnect core emits no `Disconnected`: the reader ends when
-        // the stream closes, once the client is dropped.
+        // Mid-reconnect too, core emits a final `Disconnected { intent:
+        // Client, will_reconnect: false }` (#98), which ends the reader;
+        // dropping the client closes the stream, so it ends regardless.
         drop(ws);
 
         Self::wait_for(reader, caller).await;
@@ -1532,8 +1533,9 @@ impl WebSocketClient {
 ///
 /// Exits after a terminal event (`Disconnected { will_reconnect: false }` or
 /// `ReconnectFailed`) — core emits nothing after those — or once the stream
-/// closes, which covers a failed `connect()` and a `disconnect()` issued
-/// mid-reconnect (both drop every sender without a terminal event).
+/// closes, which covers a failed `connect()` (it drops every sender without
+/// a terminal event). A `disconnect()` issued mid-reconnect ends with core's
+/// final `Disconnected { intent: Client, will_reconnect: false }` (#98).
 fn spawn_stream_reader(
     stream: Arc<StreamReceiver>,
     listener: Arc<dyn WebSocketListener>,

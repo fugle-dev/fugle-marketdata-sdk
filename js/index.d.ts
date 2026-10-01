@@ -787,7 +787,8 @@ export interface WebSocketAuthData {
 /**
  * Who closed the connection: `'client'` = your `disconnect()`; `'server'` =
  * the server's Close frame (any code); `'network'` = transport error, EOF
- * without a Close frame, or heartbeat timeout.
+ * without a Close frame, heartbeat timeout, or a panic of the SDK's worker
+ * thread (error -1, then a final disconnect).
  */
 export type WebSocketDisconnectIntent = 'client' | 'server' | 'network';
 
@@ -2560,7 +2561,8 @@ export declare class StockWebSocketClient {
    * `connect()` when the socket opens, `authenticated(data)` /
    * `unauthenticated(data)` with the server's `data`,
    * `disconnect({ code, reason, intent, willReconnect })` (`intent` and
-   * `willReconnect` are 3.0 additions, #293), `reconnect({ attempt })`, and
+   * `willReconnect` are 3.0 additions, #293; a panic of the SDK's worker
+   * thread is reported as intent `network`), `reconnect({ attempt })`, and
    * `error(Error)` with a numeric `code` when core supplied one. Without an
    * `error` listener errors are ignored rather than thrown.
    *

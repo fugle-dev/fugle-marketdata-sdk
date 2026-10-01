@@ -1775,7 +1775,8 @@ impl StockWebSocketClient {
     /// `connect()` when the socket opens, `authenticated(data)` /
     /// `unauthenticated(data)` with the server's `data`,
     /// `disconnect({ code, reason, intent, willReconnect })` (`intent` and
-    /// `willReconnect` are 3.0 additions, #293), `reconnect({ attempt })`, and
+    /// `willReconnect` are 3.0 additions, #293; a panic of the SDK's worker
+    /// thread is reported as intent `network`), `reconnect({ attempt })`, and
     /// `error(Error)` with a numeric `code` when core supplied one. Without an
     /// `error` listener errors are ignored rather than thrown.
     ///
@@ -3016,9 +3017,16 @@ fn report_panic(ctx: &PanicContext<'_>, thread: &str, payload: &(dyn std::any::A
     }
     ctx.sink.emit("error", error);
     if !ctx.state.is_closed() {
+        // Neither you nor the server ended it, and the worker closes the
+        // connection without reconnecting (#293).
         ctx.sink.emit(
             "disconnect",
-            EventArgs::Json(serde_json::json!({ "code": null, "reason": reason })),
+            EventArgs::Json(serde_json::json!({
+                "code": null,
+                "reason": reason,
+                "intent": "network",
+                "willReconnect": false,
+            })),
         );
     }
 }
