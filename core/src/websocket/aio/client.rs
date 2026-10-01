@@ -1455,10 +1455,12 @@ mod tests {
         let _connected = ConnectionEvent::Connected;
         let _authenticated = ConnectionEvent::Authenticated {
             data: serde_json::Value::Null,
+            frame: String::new(),
         };
         let _unauthenticated = ConnectionEvent::Unauthenticated {
             message: "Invalid credentials".to_string(),
             data: serde_json::Value::Null,
+            frame: String::new(),
         };
         let _disconnected = ConnectionEvent::Disconnected {
             code: Some(1000),
@@ -1976,6 +1978,7 @@ mod tests {
         assert_eq!(client.events_dropped_total(), 0);
         client.stream.emit(ConnectionEvent::Authenticated {
             data: serde_json::Value::Null,
+            frame: String::new(),
         });
         assert_eq!(client.events_dropped_total(), 1);
 

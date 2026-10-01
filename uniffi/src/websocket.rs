@@ -1648,7 +1648,7 @@ fn forward_event(
 ) -> bool {
     match event {
         ConnectionEvent::Connected => calls.call("on_connected", |l| l.on_connected()),
-        ConnectionEvent::Authenticated { data } => {
+        ConnectionEvent::Authenticated { data, .. } => {
             calls.call("on_authenticated", |l| l.on_authenticated(json_or_none(data)))
         }
         ConnectionEvent::Unauthenticated { data, .. } => {

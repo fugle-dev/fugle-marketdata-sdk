@@ -71,7 +71,7 @@ to rewrite call sites:
 | WebSocket `subscribe({ channel, symbol })` | ✅ |
 | WebSocket `subscribe({ channel, symbols: [...] })` | ✅ batch supported |
 | WebSocket `unsubscribe({ id })` / `unsubscribe({ ids: [...] })` | ✅ |
-| WebSocket `on('authenticated', cb)` / `on('unauthenticated', cb)` | ✅ restored, with the server's `data` object as the argument (Node) |
+| WebSocket `on('authenticated', cb)` / `on('unauthenticated', cb)` | ✅ restored, each with its legacy argument: the server's `data` object (Node, as 1.x); the whole frame as a dict, `{"event": "authenticated", "data": {...}}` / `{"event": "error", "code": 1000, "data": {...}}` (Python, as 2.x) |
 | Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` (3.0 adds `intent` and `willReconnect`) | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
@@ -81,8 +81,11 @@ to rewrite call sites:
 | Node listeners as on the 1.x `EventEmitter`: several per event, `once`, `off` / `removeListener`, `removeAllListeners`, `listenerCount`, `addListener` | ✅ every listener of an event is called, in registration order, with `this` set to the client — see [§12](#12-node-websocket-events-match-1x) |
 | Node `ws.stock.connect().then(...)` with no `.catch`, as in the 1.x README | ✅ with an `error` listener, a failed connection does not end the process — see [§12](#12-node-websocket-events-match-1x) |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
-| Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working |
-| `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (Python raises `TypeError`; Node ignores them and emits a process warning once per process: `FugleHealthCheckWarning`, code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
+| Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working; `str(e)` is the message, in a different format from 2.x (see [§6](#6-python-exception-hierarchy-is-finer-grained)) |
+| Python `ws.stock.off(event, listener)` | ✅ removes every registration `==` to `listener` (one not registered is ignored); `off(event)` removes every callback for the event. 2.x documented this call but it raised `AttributeError` |
+| Python `ws.stock.on(event, f)` twice with the same `f` | ✅ registered once, as in 2.x: `f` runs once per event |
+| Python WebSocket `error` callback `on_error(err)` | ✅ one argument as in 2.x, now a `WebSocketError` (2.x passed the websocket-client exception); `str(err)` is its message |
+| `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (both ignore them and warn: Node with a process warning once per process, Python with a `FugleHealthCheckWarning` — a `UserWarning`, shown once per calling line under the default warning filters; both carry code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. Python also keeps 2.x's positional order, `HealthCheckConfig(enabled, ping_interval, max_missed_pongs)`). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
 
 ### Breaking changes you need to adapt
 
@@ -399,6 +402,16 @@ except MarketDataError as e:
     raise
 ```
 
+`str(e)` is `e.message`, the same text as `args[0]`. It is not 2.x's format:
+2.x's `FugleAPIError` printed several lines — `[Fugle API Error] <message>`,
+then `URL: ...`, `Status: ...`, `Params: ...` and the first 200 characters
+of the response — and `args` was that one string. 3.0 prints only the
+message, e.g. `Authentication error: {"message":"Unauthorized","statusCode":401}`,
+and `args` is `(message, code)`. The request URL and params are not in the
+message nor anywhere else (`e.url` and `e.params` are always `None`); the
+status and body are in `e.status` and `e.body`. Log monitors that match the
+`[Fugle API Error]` prefix or the `URL:` line need updating.
+
 #### 7. REST has a default request timeout
 
 The legacy Python SDK calls `requests.get` with **no** timeout, so a stalled
@@ -438,18 +451,18 @@ try {
 }
 ```
 
-#### 9. Python `connect()` raises on auth failure (vs legacy's `unauthenticated` event)
+#### 9. Python `connect()` raises `AuthError` on auth failure
 
 Both this SDK and the legacy SDK block in `connect()` until the server has
-either accepted or rejected authentication. The difference is **how a
-rejection is reported**:
+either accepted or rejected authentication, fire `unauthenticated` for a
+rejection, and then raise. What is raised differs:
 
-- **Legacy**: `connect()` returns normally; you find out about rejection by
-  listening for the `unauthenticated` event.
-- **This SDK**: `connect()` **raises an exception** (`AuthError` or
-  `MarketDataError`) when the server rejects credentials. The
-  `unauthenticated` event still fires for callers that want to listen for
-  it, but you should also wrap the `connect()` call in `try/except`.
+- **Legacy (2.x)**: a plain `Exception('Invalid authentication credentials')`
+  (or `Exception('authentication timeout')`), so `str(e)` was that text.
+- **This SDK**: `AuthError` (code 2002) for rejected credentials, a
+  `MarketDataError` subclass for the other failures. `except Exception:`
+  still catches it; `str(e)` is `Authentication error: Invalid authentication
+  credentials`, so code that compares the text needs updating.
 
 ```python
 # Recommended in this SDK
@@ -703,11 +716,8 @@ messages with `ws.stock.messages()` instead of a `message` callback, and
 leave reconnecting to the SDK (§5). `message_overflow="unbounded"` never
 drops, at the cost of memory that grows for as long as you lag.
 
-#### 16. Python `off()` takes only the event, and `subscribed` data can be a list
+#### 16. Python `subscribed` data can be a list
 
-- **`off(event)` removes every callback for that event.** 2.x took
-  `off(event, listener)`; passing the listener here raises `TypeError`.
-  Drop the second argument.
 - **A `subscribed` message's `data` can be a list.** After an automatic
   reconnect (§5) the SDK subscribes again with one frame per channel,
   batching the symbols, so for a channel with more than one symbol the
@@ -923,7 +933,7 @@ from fugle_marketdata import WebSocketClient
 
 ws = WebSocketClient(api_key="your-api-key")
 
-ws.stock.on("authenticated", lambda: print("auth ok"))
+ws.stock.on("authenticated", lambda frame: print("auth ok"))
 ws.stock.on("message", lambda msg: print(msg["event"], msg.get("data")))
 
 ws.stock.connect()

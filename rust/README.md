@@ -187,7 +187,7 @@ while let Ok(item) = stream.receive() {
     let StreamItem::Event(event) = item else { continue };
     match event {
         ConnectionEvent::Connected => println!("socket open, authenticating"),
-        ConnectionEvent::Authenticated { data } => println!("authenticated: {data}"),
+        ConnectionEvent::Authenticated { data, .. } => println!("authenticated: {data}"),
         ConnectionEvent::Unauthenticated { message, .. } => eprintln!("rejected: {message}"),
         ConnectionEvent::Disconnected { code, reason, will_reconnect, .. } => {
             println!("closed {code:?}: {reason}");

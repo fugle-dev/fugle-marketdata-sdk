@@ -37,6 +37,14 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — auth events carry the server's frame (#304)
+
+- `~` `ConnectionEvent::Authenticated` — `+` `frame: String`, the server's
+  `authenticated` frame as it arrived (JSON text).
+- `~` `ConnectionEvent::Unauthenticated` — `+` `frame: String`, the
+  rejection frame as it arrived. Python hands these to its callbacks, as 2.x
+  did.
+
 ### Unreleased — `DisconnectIntent` as a string (#293)
 
 - `+` `websocket::DisconnectIntent::as_str(self) -> &'static str` (`const`;

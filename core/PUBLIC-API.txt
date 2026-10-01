@@ -3972,6 +3972,7 @@ pub mod marketdata_core::websocket::connection_event
 #[non_exhaustive] pub enum marketdata_core::websocket::connection_event::ConnectionEvent
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated::data: serde_json::value::Value
+pub marketdata_core::websocket::connection_event::ConnectionEvent::Authenticated::frame: alloc::string::String
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Connected
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Connecting
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Disconnected
@@ -3991,6 +3992,7 @@ pub marketdata_core::websocket::connection_event::ConnectionEvent::Reconnecting
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Reconnecting::attempt: u32
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated::data: serde_json::value::Value
+pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated::frame: alloc::string::String
 pub marketdata_core::websocket::connection_event::ConnectionEvent::Unauthenticated::message: alloc::string::String
 impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionEvent
 pub fn marketdata_core::websocket::connection_event::ConnectionEvent::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionEvent
@@ -4466,6 +4468,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::websocket::versio
 #[non_exhaustive] pub enum marketdata_core::websocket::ConnectionEvent
 pub marketdata_core::websocket::ConnectionEvent::Authenticated
 pub marketdata_core::websocket::ConnectionEvent::Authenticated::data: serde_json::value::Value
+pub marketdata_core::websocket::ConnectionEvent::Authenticated::frame: alloc::string::String
 pub marketdata_core::websocket::ConnectionEvent::Connected
 pub marketdata_core::websocket::ConnectionEvent::Connecting
 pub marketdata_core::websocket::ConnectionEvent::Disconnected
@@ -4485,6 +4488,7 @@ pub marketdata_core::websocket::ConnectionEvent::Reconnecting
 pub marketdata_core::websocket::ConnectionEvent::Reconnecting::attempt: u32
 pub marketdata_core::websocket::ConnectionEvent::Unauthenticated
 pub marketdata_core::websocket::ConnectionEvent::Unauthenticated::data: serde_json::value::Value
+pub marketdata_core::websocket::ConnectionEvent::Unauthenticated::frame: alloc::string::String
 pub marketdata_core::websocket::ConnectionEvent::Unauthenticated::message: alloc::string::String
 impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionEvent
 pub fn marketdata_core::websocket::connection_event::ConnectionEvent::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionEvent
@@ -5041,6 +5045,7 @@ impl core::panic::unwind_safe::UnwindSafe for marketdata_core::ChannelData
 #[non_exhaustive] pub enum marketdata_core::ConnectionEvent
 pub marketdata_core::ConnectionEvent::Authenticated
 pub marketdata_core::ConnectionEvent::Authenticated::data: serde_json::value::Value
+pub marketdata_core::ConnectionEvent::Authenticated::frame: alloc::string::String
 pub marketdata_core::ConnectionEvent::Connected
 pub marketdata_core::ConnectionEvent::Connecting
 pub marketdata_core::ConnectionEvent::Disconnected
@@ -5060,6 +5065,7 @@ pub marketdata_core::ConnectionEvent::Reconnecting
 pub marketdata_core::ConnectionEvent::Reconnecting::attempt: u32
 pub marketdata_core::ConnectionEvent::Unauthenticated
 pub marketdata_core::ConnectionEvent::Unauthenticated::data: serde_json::value::Value
+pub marketdata_core::ConnectionEvent::Unauthenticated::frame: alloc::string::String
 pub marketdata_core::ConnectionEvent::Unauthenticated::message: alloc::string::String
 impl core::clone::Clone for marketdata_core::websocket::connection_event::ConnectionEvent
 pub fn marketdata_core::websocket::connection_event::ConnectionEvent::clone(&self) -> marketdata_core::websocket::connection_event::ConnectionEvent

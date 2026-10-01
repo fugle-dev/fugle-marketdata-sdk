@@ -161,6 +161,13 @@ impl CallbackRegistry {
             ));
         }
 
+        // Registered once per event, as 2.x's `pyee` kept its listeners
+        // keyed by the function: a second `on()` of an equal callback (a
+        // setup that runs again) does not make it run twice (#304).
+        if !self.registered_equal_to(event_type, callback)?.is_empty() {
+            return Ok(());
+        }
+
         // Store as Py<PyAny> for thread-safe access
         let py_callback: Py<PyAny> = callback.clone().unbind();
 
@@ -173,11 +180,32 @@ impl CallbackRegistry {
         Ok(())
     }
 
-    /// Unregister all callbacks for an event type
-    pub fn unregister(&self, event: &str) -> PyResult<()> {
+    /// Unregister the callback for an event type equal to `listener`, or all
+    /// of them when `listener` is `None`. A `listener` that is not registered
+    /// is ignored.
+    ///
+    /// Equality is Python's `==`, as in [`Self::register`], so a bound
+    /// method passed again still matches. 2.x documented `off(event,
+    /// listener)` but it raised `AttributeError` (its `pyee` has no `off`).
+    pub fn unregister(&self, event: &str, listener: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
         let event_type = EventType::from_str(event).ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid event type: '{}'", event))
         })?;
+
+        if let Some(listener) = listener.filter(|listener| !listener.is_none()) {
+            let matching = self.registered_equal_to(event_type, listener)?;
+            if matching.is_empty() {
+                return Ok(());
+            }
+            let mut callbacks = self.write();
+            if let Some(handlers) = callbacks.get_mut(&event_type) {
+                handlers.retain(|callback| !matching.iter().any(|m| m.as_ptr() == callback.as_ptr()));
+                if handlers.is_empty() {
+                    callbacks.remove(&event_type);
+                }
+            }
+            return Ok(());
+        }
 
         let mut callbacks = self.write();
         #[cfg(debug_assertions)]
@@ -187,6 +215,26 @@ impl CallbackRegistry {
         callbacks.remove(&event_type);
 
         Ok(())
+    }
+
+    /// The callbacks registered for `event_type` that are `==` to `callback`.
+    ///
+    /// `__eq__` is Python code, so it runs on a snapshot, without the lock;
+    /// an error it raises is returned. Concurrent `on()` / `off()` of equal
+    /// callbacks on other threads are not ordered against this.
+    fn registered_equal_to(&self, event_type: EventType, callback: &Bound<'_, PyAny>) -> PyResult<Vec<Py<PyAny>>> {
+        let py = callback.py();
+        let registered: Vec<Py<PyAny>> = match self.read().get(&event_type) {
+            Some(handlers) => handlers.iter().map(|handler| handler.clone_ref(py)).collect(),
+            None => return Ok(Vec::new()),
+        };
+        let mut matching = Vec::new();
+        for handler in registered {
+            if handler.bind(py).eq(callback)? {
+                matching.push(handler);
+            }
+        }
+        Ok(matching)
     }
 
     /// Clear all registered callbacks
@@ -357,21 +405,36 @@ impl CallbackRegistry {
         }
     }
 
-    /// Invoke authenticated callbacks with the `data` of the server's
-    /// authenticated frame (`dict`, or `None` when the frame has none).
-    pub fn invoke_authenticated(&self, py: Python<'_>, data: &serde_json::Value) {
-        self.invoke_with_data(py, EventType::Authenticated, data);
+    /// Invoke authenticated callbacks with the server's `authenticated`
+    /// frame as a dict, `event` included, as the 2.x SDK passed it (#304).
+    pub fn invoke_authenticated(&self, py: Python<'_>, frame: &str, data: serde_json::Value) {
+        let fallback = || serde_json::json!({ "event": "authenticated", "data": data });
+        self.invoke_with_frame(py, EventType::Authenticated, frame, fallback);
     }
 
-    /// Invoke unauthenticated callbacks with the `data` of the server's
-    /// rejection frame (`dict`, or `None` when the frame has none).
-    pub fn invoke_unauthenticated(&self, py: Python<'_>, data: &serde_json::Value) {
-        self.invoke_with_data(py, EventType::Unauthenticated, data);
+    /// Invoke unauthenticated callbacks with the server's rejection frame as
+    /// a dict (`{"event": "error", "code": 1000, "data": {...}}`), as the
+    /// 2.x SDK passed it (#304).
+    pub fn invoke_unauthenticated(&self, py: Python<'_>, frame: &str, data: serde_json::Value) {
+        let fallback = || serde_json::json!({ "event": "error", "code": 1000, "data": data });
+        self.invoke_with_frame(py, EventType::Unauthenticated, frame, fallback);
     }
 
-    fn invoke_with_data(&self, py: Python<'_>, event_type: EventType, data: &serde_json::Value) {
-        let data_obj = crate::types::json_value_to_py(py, data).unwrap_or_else(|_| py.None());
-        let args = pyo3::types::PyTuple::new(py, [data_obj]).expect("Failed to create tuple");
+    /// `frame` is the server's text; an event that was not built from a
+    /// frame (empty `frame`, only in core's tests) gets `fallback()`.
+    fn invoke_with_frame(
+        &self,
+        py: Python<'_>,
+        event_type: EventType,
+        frame: &str,
+        fallback: impl FnOnce() -> serde_json::Value,
+    ) {
+        if self.count(event_type) == 0 {
+            return;
+        }
+        let value = serde_json::from_str::<serde_json::Value>(frame).unwrap_or_else(|_| fallback());
+        let frame_obj = crate::types::json_value_to_py(py, &value).unwrap_or_else(|_| py.None());
+        let args = pyo3::types::PyTuple::new(py, [frame_obj]).expect("Failed to create tuple");
         self.invoke(py, event_type, &args);
     }
 }

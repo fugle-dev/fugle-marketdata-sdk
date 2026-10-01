@@ -262,6 +262,7 @@ fn assert_connect_sequence(events: &[ConnectionEvent]) {
             ConnectionEvent::Connected,
             ConnectionEvent::Authenticated {
                 data: json!({ "message": "Authenticated successfully" }),
+                frame: authenticated_frame().to_string(),
             },
         ]
     );
@@ -276,6 +277,7 @@ fn assert_rejection_sequence(events: &[ConnectionEvent]) {
             ConnectionEvent::Unauthenticated {
                 message: "Invalid token".to_string(),
                 data: json!({ "message": "Invalid token" }),
+                frame: rejection_frame().to_string(),
             },
         ]
     );
@@ -379,6 +381,7 @@ fn assert_reconnect_rejected(events: &[ConnectionEvent], after: &[ConnectionEven
             ConnectionEvent::Unauthenticated {
                 message: REJECTED.to_string(),
                 data: json!({ "message": REJECTED }),
+                frame: json!({ "event": "error", "code": 1000, "data": { "message": REJECTED } }).to_string(),
             },
             ConnectionEvent::ReconnectFailed { attempts: 1 },
         ],
@@ -480,7 +483,10 @@ fn assert_close_without_code_reconnects(events: &[ConnectionEvent]) {
             ConnectionEvent::Reconnecting { attempt: 1 },
             ConnectionEvent::Connecting,
             ConnectionEvent::Connected,
-            ConnectionEvent::Authenticated { data: serde_json::Value::Null },
+            ConnectionEvent::Authenticated {
+                data: serde_json::Value::Null,
+                frame: r#"{"event":"authenticated"}"#.to_string(),
+            },
         ],
         "unexpected reconnect lifecycle: {events:?}"
     );

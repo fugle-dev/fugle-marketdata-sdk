@@ -3,7 +3,7 @@
 //! Maps MarketDataError variants to Python exceptions with error_code attribute.
 
 use pyo3::prelude::*;
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{PyException, PyUserWarning};
 use pyo3::create_exception;
 
 // Create a custom Python exception hierarchy for market data errors
@@ -32,6 +32,60 @@ create_exception!(fugle_marketdata, TimeoutError, MarketDataError, "Operation ti
 // WebSocket errors
 create_exception!(fugle_marketdata, WebSocketError, MarketDataError, "WebSocket operation failed");
 
+// Issued when `HealthCheckConfig` is given the 2.x fields `ping_interval` /
+// `max_missed_pongs`, which 3.0 ignores (#304). A `UserWarning`, so it is
+// shown by default; `code` matches Node's process warning.
+create_exception!(
+    fugle_marketdata,
+    FugleHealthCheckWarning,
+    PyUserWarning,
+    "HealthCheckConfig was given 2.x fields that 3.0 ignores"
+);
+
+/// The `code` attribute of [`FugleHealthCheckWarning`], as on Node's
+/// `FugleHealthCheckWarning`.
+pub const HEALTH_CHECK_LEGACY_OPTIONS_CODE: &str = "FUGLE_HEALTH_CHECK_LEGACY_OPTIONS";
+
+/// Warn that the 2.x `HealthCheckConfig` fields in `fields` were ignored.
+/// Every call warns; Python's warning filters decide what is shown (by
+/// default once per calling line). A filter that turns it into an error
+/// makes this return that error.
+pub fn warn_legacy_health_check_fields(py: Python<'_>, fields: &[&str]) -> PyResult<()> {
+    if fields.is_empty() {
+        return Ok(());
+    }
+    let (verb, was) = if fields.len() == 1 { ("does", "was") } else { ("do", "were") };
+    let message = format!(
+        "HealthCheckConfig {} {verb} not exist in fugle-marketdata 3.0 and {was} ignored. Use \
+         heartbeat_timeout_ms (how long without any inbound frame before the connection is declared \
+         dead, default 35000 ms), or probe_enabled with idle_probe_after_ms and probe_timeout_ms to \
+         have the SDK ping a silent connection.",
+        fields.join(" and "),
+    );
+    let message = std::ffi::CString::new(message).expect("no NUL in the message");
+    PyErr::warn(py, &py.get_type::<FugleHealthCheckWarning>(), &message, 1)
+}
+
+/// Give `MarketDataError` (and so every subclass) a `__str__` that returns
+/// `message`, the way the docs describe it: the instances are built with
+/// `args == (message, code)`, so `BaseException.__str__` would print that
+/// tuple (#299). An instance without a `str` `message` (one the caller
+/// raised as `MarketDataError("...")`) keeps `BaseException.__str__`.
+pub fn install_str(py: Python<'_>) -> PyResult<()> {
+    // `py.run` into a scratch namespace rather than `PyModule::from_code`,
+    // which would leave a module in `sys.modules`.
+    let namespace = pyo3::types::PyDict::new(py);
+    py.run(
+        c"def __str__(self):\n    message = getattr(self, 'message', None)\n    if isinstance(message, str):\n        return message\n    return BaseException.__str__(self)\n",
+        Some(&namespace),
+        None,
+    )?;
+    let str_fn = namespace.get_item("__str__")?.expect("defined just above");
+    str_fn.setattr("__qualname__", "MarketDataError.__str__")?;
+    str_fn.setattr("__module__", "fugle_marketdata")?;
+    py.get_type::<MarketDataError>().setattr("__str__", str_fn)
+}
+
 /// Convert marketdata_core error to PyErr with specific exception types
 ///
 /// Maps MarketDataError variants to specific Python exception types:
@@ -48,7 +102,7 @@ create_exception!(fugle_marketdata, WebSocketError, MarketDataError, "WebSocket 
 ///
 /// - `code` — numeric error code (int); also `args[1]`
 /// - `source_kind` — `"network"`, `"protocol"`, `"auth"`, `"rate_limit"` or `"client"`
-/// - `message` — human-readable message (str); also `args[0]` and `str(e)`
+/// - `message` — human-readable message (str); also `args[0]` and `str(e)` (#299)
 /// - `status` — HTTP status (int) when the error came from an HTTP response, else None
 /// - `body` — raw HTTP response body (str, REST only), else None
 /// - `request_id` — server-assigned request id (`x-request-id`), else None

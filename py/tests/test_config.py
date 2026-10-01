@@ -7,8 +7,11 @@ Tests:
 - RestClient kwargs constructor and auth validation
 - WebSocketClient kwargs constructor with config params
 """
+import warnings
+
 import pytest
 from fugle_marketdata import (
+    FugleHealthCheckWarning,
     RestClient,
     WebSocketClient,
     ReconnectConfig,
@@ -97,17 +100,52 @@ class TestHealthCheckConfig:
             HealthCheckConfig(enabled=False, heartbeat_timeout_ms=100)
         assert_config_error(exc_info)
 
-    def test_rejects_official_sdk_field_names(self):
-        """`ping_interval` / `max_missed_pongs` have no counterpart here.
+    def test_legacy_fields_warn_and_are_ignored(self):
+        """The 2.x `ping_interval` / `max_missed_pongs` are ignored with a
+        `FugleHealthCheckWarning` naming them, not a `TypeError` (#304)."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            config = HealthCheckConfig(enabled=True, ping_interval=15000, max_missed_pongs=3)
+        assert [w.category for w in caught] == [FugleHealthCheckWarning]
+        message = str(caught[0].message)
+        assert message.startswith(
+            "HealthCheckConfig ping_interval and max_missed_pongs do not exist in "
+            "fugle-marketdata 3.0 and were ignored."
+        ), message
+        assert caught[0].filename == __file__
+        assert FugleHealthCheckWarning.code == "FUGLE_HEALTH_CHECK_LEGACY_OPTIONS"
+        assert issubclass(FugleHealthCheckWarning, UserWarning)
+        default = HealthCheckConfig()
+        assert config.heartbeat_timeout_ms == default.heartbeat_timeout_ms
+        assert config.probe_enabled is default.probe_enabled
 
-        Accepting them silently would be worse than rejecting: a caller
-        porting config from the Node or Python SDK would believe they had
-        tuned the health check when nothing had changed.
-        """
-        with pytest.raises(TypeError):
-            HealthCheckConfig(ping_interval=15000)
-        with pytest.raises(TypeError):
+    def test_one_legacy_field_is_named_alone(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             HealthCheckConfig(max_missed_pongs=3)
+        assert [str(w.message).split(" was ignored")[0] for w in caught] == [
+            "HealthCheckConfig max_missed_pongs does not exist in fugle-marketdata 3.0 and"
+        ]
+
+    def test_legacy_positional_call_still_works(self):
+        """2.x took `(enabled, ping_interval, max_missed_pongs)` positionally."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            config = HealthCheckConfig(False, 30000, 2)
+        assert config.enabled is False
+        assert [w.category for w in caught] == [FugleHealthCheckWarning]
+
+    def test_legacy_fields_set_to_none_do_not_warn(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            HealthCheckConfig(ping_interval=None, max_missed_pongs=None)
+            HealthCheckConfig(True)
+
+    def test_legacy_warning_as_error_raises(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FugleHealthCheckWarning)
+            with pytest.raises(FugleHealthCheckWarning):
+                HealthCheckConfig(ping_interval=15000)
 
     def test_fields_are_readable(self):
         """All fields can be read after construction."""

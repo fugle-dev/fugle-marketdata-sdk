@@ -33,8 +33,8 @@
 //! 2. Before `connect()` returns, the stream already holds
 //!    [`Connecting`](ConnectionEvent::Connecting) →
 //!    [`Connected`](ConnectionEvent::Connected) (transport established) →
-//!    exactly one of [`Authenticated { data }`](ConnectionEvent::Authenticated),
-//!    [`Unauthenticated { message, data }`](ConnectionEvent::Unauthenticated) or
+//!    exactly one of [`Authenticated { data, frame }`](ConnectionEvent::Authenticated),
+//!    [`Unauthenticated { message, data, frame }`](ConnectionEvent::Unauthenticated) or
 //!    [`Error`](ConnectionEvent::Error). `Unauthenticated` means exactly one
 //!    thing: the server answered the auth frame with `error` code `1000`,
 //!    credentials rejected; `connect()` then fails with `AuthError` (2002).
@@ -274,6 +274,11 @@ pub enum ConnectionEvent {
         /// `data` of the server's `authenticated` frame, or
         /// [`Null`](serde_json::Value::Null) when the frame has none.
         data: serde_json::Value,
+        /// The `authenticated` frame exactly as the server sent it (JSON
+        /// text, `event` included), for bindings whose 1.x/2.x SDK handed
+        /// the whole frame to the callback (Python, #304). Empty when the
+        /// event was not built from a frame.
+        frame: String,
     },
     /// Server rejected the credentials: it answered the auth frame with an
     /// `error` frame of code `1000` (parallels the 1.x SDKs'
@@ -292,6 +297,11 @@ pub enum ConnectionEvent {
         /// `data` of the server's rejection frame, or
         /// [`Null`](serde_json::Value::Null) when the frame has none.
         data: serde_json::Value,
+        /// The rejection frame exactly as the server sent it (JSON text,
+        /// `event` and `code` included), as for
+        /// [`Authenticated`](Self::Authenticated). Empty when the event was
+        /// not built from a frame.
+        frame: String,
     },
     /// Connection closed.
     ///
