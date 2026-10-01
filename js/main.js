@@ -42,24 +42,29 @@ const { StockWebSocketClient, FutOptWebSocketClient } = module.exports
 //      connect() rejects: the `error` event comes first. In 1.x an `error`
 //      with no listener threw from the EventEmitter, so a program without one
 //      did not survive the failure either.
-//   4. It is an `Error`. Rejected credentials reject with the server's `data`
-//      object, as in 1.x, which did not catch that rejection either.
+//   4. It is an `Error`, and not `2011`. Rejected credentials reject with
+//      the server's `data` object, as in 1.x, which did not catch that
+//      rejection either. `2011` (already connected) means connect() was
+//      called on a connection that is open or being opened: a mistake in the
+//      caller's code, not a connection that failed, so it is left to surface.
 //
 // What is deliberately not swallowed:
 //   - an error thrown by `f` in `.then(f)`: a different value, the caller's
 //     bug, unhandled as usual;
-//   - anything without an `error` listener, and rejected credentials (3, 4);
+//   - anything without an `error` listener, rejected credentials and `2011`
+//     (3, 4);
 //   - `await connect()`, `.catch(r)`, `.then(f, r)`: the caller handles the
 //     rejection — they all still receive it, as 3.0 documents;
-//   - `.finally()`, `Promise.all([connect()])`, `Promise.race(...)` and the
-//     like, and anything chained after them or after `.catch(r)` /
-//     `.then(f, r)` (say a `.catch(r)` that rethrows): they reject unhandled
-//     unless the caller catches them (rule 2). 1.x code did not chain those
-//     on a Promise that, on failure, never settled.
+//   - `.finally()`, `Promise.all([connect()])`, `Promise.race(...)`, an
+//     async function that returns connect()'s promise, and the like, and
+//     anything chained after them or after `.catch(r)` / `.then(f, r)` (say a
+//     `.catch(r)` that rethrows): they reject unhandled unless the caller
+//     catches them (rule 2). 1.x code did not chain those on a Promise that,
+//     on failure, never settled.
 //
 // The failures this covers are also reported through the `error` event,
-// except `2010` (connect() aborted by disconnect()) and `2011` (already
-// connected), which only reject; neither ended a 1.x program either.
+// except `2010` (connect() aborted by disconnect()), which only rejects; in
+// 1.x a connect() cut short that way did not end the program either.
 
 /** Connect failures whose rejection is swallowed (rule 1). */
 const swallowed = new WeakSet()
@@ -69,6 +74,10 @@ const noop = () => {}
 // Marks `promise` handled without passing it through ConnectPromise#then.
 const markHandled = (promise) => Promise.prototype.then.call(promise, undefined, noop)
 const isError = (value) => Object.prototype.toString.call(value) === '[object Error]'
+/** `Already connected` (rule 4). */
+const ALREADY_CONNECTED = 2011
+/** Marks a connect() already wrapped, so loading this twice wraps it once. */
+const WRAPPED = Symbol.for('@fugle/marketdata.connectPromise')
 
 class ConnectPromise extends Promise {
   then(onFulfilled, onRejected) {
@@ -88,6 +97,9 @@ class ConnectPromise extends Promise {
 
 for (const Client of [StockWebSocketClient, FutOptWebSocketClient]) {
   const nativeConnect = Client.prototype.connect
+  // `index.js` is cached apart from this file, e.g. when a test runner resets
+  // the module registry but not native addons: wrap the native connect only.
+  if (nativeConnect[WRAPPED]) continue
   Client.prototype.connect = function connect() {
     const client = this
     // Rule 3: a listener present now counts, even if it is gone by then.
@@ -97,7 +109,11 @@ for (const Client of [StockWebSocketClient, FutOptWebSocketClient]) {
       pending.then(resolve, (reason) => {
         reject(reason)
         // Rules 3 and 4.
-        if (isError(reason) && (hadErrorListener || client.listenerCount('error') > 0)) {
+        if (
+          isError(reason) &&
+          reason.code !== ALREADY_CONNECTED &&
+          (hadErrorListener || client.listenerCount('error') > 0)
+        ) {
           swallowed.add(reason)
           markHandled(promise)
         }
@@ -106,4 +122,5 @@ for (const Client of [StockWebSocketClient, FutOptWebSocketClient]) {
     chained.add(promise)
     return promise
   }
+  Client.prototype.connect[WRAPPED] = true
 }

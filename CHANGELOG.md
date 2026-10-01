@@ -90,7 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#307). `on()` replaced the event's previous listener, so a second
   `on('message', …)` silently disabled the first. Each `on()` now adds a
   listener, as in 1.x; every listener of an event is called in
-  registration order with `this` set to the client, a listener that throws
+  registration order with `this` set to the client (another wrapper of the
+  same client once the `ws.stock` access it was registered through has been
+  collected), a listener that throws
   does not stop the ones after it (each failure is reported as before,
   code 3004), and `addListener`, `once`, `off`, `removeListener`,
   `removeAllListeners(event?)` and `listenerCount(event)` are back, typed
@@ -107,11 +109,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejection of a connection failure is now marked handled on `connect()`'s
   Promise and on `.then(f)` chains without a rejection handler. `await`,
   `.catch` and `.then(f, r)` still receive it. Not covered, and still
-  unhandled: rejected credentials (rejected in 1.x too), a client without an
-  `error` listener, an error thrown by `f`, `.finally()` / `Promise.all()` /
-  `Promise.race()` around `connect()`, and anything chained after those or
-  after a `.catch`. The
-  package's `main` is now a hand-written `main.js` that loads the generated
+  unhandled: rejected credentials (rejected in 1.x too), code 2011
+  (`connect()` while already connected, a mistake in the calling code), a
+  client without an `error` listener, an error thrown by `f`, `.finally()` /
+  `Promise.all()` / `Promise.race()` around `connect()`, an async function
+  returning its promise, and anything chained after those or after a
+  `.catch`. `connect()` now returns a `Promise` subclass (`ConnectPromise`
+  in `console.log`; `await` takes two more microtask ticks). The package's
+  `main` is now a hand-written `main.js` that loads the generated
   `index.js`; imports of `@fugle/marketdata` (CommonJS or ESM) are
   unchanged.
 - **Node: `client.stock.baseUrl` includes `/stock` again, and

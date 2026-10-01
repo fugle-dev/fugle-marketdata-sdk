@@ -13,7 +13,7 @@
  *   node test_legacy_readme.js                # all sections
  */
 
-const { RestClient, WebSocketClient } = require('./index.js');
+const { RestClient, WebSocketClient } = require('./');
 
 const API_KEY = process.env.FUGLE_API_KEY;
 if (!API_KEY) {

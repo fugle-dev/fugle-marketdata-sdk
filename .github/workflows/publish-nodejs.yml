@@ -152,6 +152,12 @@ jobs:
             for lic in LICENSE-MIT LICENSE-APACHE; do
               grep -qx "$lic" <<<"$packed" || { echo "::error::$dir would be packed without $lic"; exit 1; }
             done
+            # The main package's entry point (`main`), which loads index.js (#307).
+            if [[ "$dir" == "." ]]; then
+              for entry in main.js index.js index.d.ts; do
+                grep -qx "$entry" <<<"$packed" || { echo "::error::the main package would be packed without $entry"; exit 1; }
+              done
+            fi
           done
 
       # Runs in a rehearsal too. `npm publish --dry-run` only packs — it never

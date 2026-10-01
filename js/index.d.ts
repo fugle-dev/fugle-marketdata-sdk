@@ -2151,8 +2151,10 @@ export declare class FutOptWebSocketClient {
    *
    * Returns a Promise that resolves with the server's `authenticated`
    * `data`. See `StockWebSocketClient::connect` for the rejections,
-   * including code `2011` (`Already connected`) (#44), and for waiting on
-   * an automatic reconnect (#230).
+   * including code `2011` (`Already connected`) (#44), for waiting on
+   * an automatic reconnect (#230), and for the connection failures marked
+   * handled when the client has an `error` listener, for 1.x compatibility
+   * (#307; [MIGRATION §12](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#12-node-websocket-events-match-1x)).
    */
   connect(): Promise<WebSocketAuthData | undefined>
   /**
@@ -2663,6 +2665,13 @@ export declare class StockWebSocketClient {
    * server's `data` object itself (after `unauthenticated` fires); any other
    * failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
    * properties; no `[code]` prefix in the message).
+   *
+   * For 1.x compatibility, when the client has an `error` listener, a
+   * connection failure reaching this Promise or a `.then(f)` chain on it
+   * without a rejection handler is marked handled, so 1.x's
+   * `connect().then(f)` with no `.catch` does not end the process (#307).
+   * `await`, `.catch` and `.then(f, r)` still receive it. See
+   * [MIGRATION §12](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#12-node-websocket-events-match-1x).
    *
    * Rejects with code `2011` (`Already connected`) while a connection is open,
    * or while the first `connect()` is still in progress (#44). Calling

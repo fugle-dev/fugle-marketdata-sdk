@@ -543,7 +543,12 @@ Listeners are kept as the 1.x `EventEmitter` kept them (#307): each `on()`
 (or `addListener()`) adds one, every listener of an event is called in
 registration order with `this` set to the client, and `once`, `off` /
 `removeListener`, `removeAllListeners(event?)` and `listenerCount(event)`
-work as on an EventEmitter. The client is not an `EventEmitter`, though:
+work as on an EventEmitter. Unlike 1.x, each access to `ws.stock` /
+`ws.futopt` returns a new wrapper of the same client: listeners, connection
+and methods are shared, so a listener registered through one access is called
+however the client is reached later, and `this.subscribe(...)` works, but
+`this` is not `===` to the `ws.stock` of another access (keep one in a
+variable if you compare them). The client is not an `EventEmitter`, though:
 `instanceof EventEmitter` is `false`; `emit`, `prependListener`,
 `listeners`, `eventNames` and `setMaxListeners` do not exist; and
 `on()` / `once()` throw for an event name that is not one of the events
@@ -560,10 +565,17 @@ before it fails (#307): in 1.x that Promise never settled and the failure
 only reached `error`. This covers `connect()` alone and `.then(f)` chains
 without a rejection handler; `await`, `.catch` and `.then(f, r)` still
 receive the rejection. It does not cover rejected credentials (1.x rejected
-those too), a client without an `error` listener, an error thrown by `f`,
-`.finally()`, `Promise.all()` and `Promise.race()` around `connect()`, or
-anything chained after those or after a `.catch`: those still reject
-unhandled, so give them a `.catch`.
+those too), code 2011 (`connect()` on a connection already open or being
+opened, §11 — a mistake in the calling code), a client without an `error`
+listener, an error thrown by `f`, `.finally()`, `Promise.all()` and
+`Promise.race()` around `connect()`, an async function that returns
+`connect()`'s promise, or anything chained after those or after a `.catch`:
+those still reject unhandled, so give them a `.catch`.
+
+To do this, `connect()` returns a subclass of `Promise`: `console.log` shows
+it as `ConnectPromise`, and `await ws.stock.connect()` takes two more
+microtask ticks than awaiting a plain `Promise`. It is still a `Promise`
+(`instanceof Promise` is `true`).
 
 Three differences remain from 1.x's `error` event:
 

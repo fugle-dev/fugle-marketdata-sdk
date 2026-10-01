@@ -346,8 +346,9 @@ fn call_listener(listeners: &Arc<Listeners>, env: &Env, event: &'static str, arg
         }
     };
     for registration in registrations {
-        let Ok(listener) = registration.bound.borrow_back(env) else { continue };
-        match call_function(raw, listener.raw(), &values) {
+        let Ok(listener) = registration.original.borrow_back(env) else { continue };
+        let this = listener_this(listeners, env, &registration);
+        match call_function(raw, this, listener.raw(), &values) {
             Ok(returned) => on_rejection(listeners, env, event, returned),
             Err(thrown) => report_listener_failure(listeners, env, event, "threw", thrown),
         }
@@ -431,8 +432,9 @@ fn report_listener_failure(
         return;
     }
     for registration in registrations {
-        let Ok(function) = registration.bound.borrow_back(env) else { continue };
-        match call_function(raw, function.raw(), &[error]) {
+        let Ok(function) = registration.original.borrow_back(env) else { continue };
+        let this = listener_this(listeners, env, &registration);
+        match call_function(raw, this, function.raw(), &[error]) {
             // A rejection from an `error` listener is only printed.
             Ok(returned) => on_rejection(listeners, env, "error", returned),
             Err(thrown) => {
@@ -442,16 +444,17 @@ fn report_listener_failure(
     }
 }
 
-/// Call `function` with `this` undefined: its return value, or the value it
-/// threw (cleared from the environment).
+/// Call `function` with `this` set to `recv`: its return value, or the value
+/// it threw (cleared from the environment).
 fn call_function(
     env: sys::napi_env,
+    recv: sys::napi_value,
     function: sys::napi_value,
     args: &[sys::napi_value],
 ) -> Result<sys::napi_value, sys::napi_value> {
     let mut returned = std::ptr::null_mut();
     let status = unsafe {
-        sys::napi_call_function(env, undefined(env), function, args.len(), args.as_ptr(), &mut returned)
+        sys::napi_call_function(env, recv, function, args.len(), args.as_ptr(), &mut returned)
     };
     if status == sys::Status::napi_ok {
         return Ok(returned);
@@ -1380,17 +1383,17 @@ fn request_disconnect(slot: &WorkerSlot) -> napi::Result<()> {
 
 /// One `on()` / `once()` registration (#307).
 struct Registration {
-    /// The function as registered: what `off()` compares against.
+    /// The function as registered: called, and what `off()` compares against.
     original: Listener,
-    /// `original` bound to the client `on()` was called on. For 1.x
-    /// compatibility the listener runs with `this` set to it, as an
-    /// EventEmitter's do.
+    /// The client `on()` was called on, held weakly (see [`weak_object`]).
+    /// For 1.x compatibility the listener runs with `this` set to it, as an
+    /// EventEmitter's do; see [`listener_this`] for when it has been
+    /// collected.
     ///
-    /// A strong reference, so the client stays reachable while the listener
-    /// is registered: `ws.stock` returns a new wrapper on every access, and a
-    /// weak one would leave `this` undefined once that wrapper is collected.
-    /// A listener closure that uses the client holds it the same way.
-    bound: Listener,
+    /// Not a strong reference: the client holds these registrations through
+    /// its `Arc<Listeners>`, and a strong reference from Rust is a GC root, so
+    /// the client would never be collected once a listener was registered.
+    client: WeakObject,
     /// Removed before its first call, as `EventEmitter.once` does.
     once: bool,
 }
@@ -1443,6 +1446,80 @@ struct Listeners {
     /// `connect()`, and whether the 3006 warning was given, across the
     /// client's connections: each has its own core client (#226, #242).
     reconnect_conflict: marketdata_core::ReconnectConflictHandle,
+    /// Makes a new wrapper of the client these listeners belong to, for
+    /// [`listener_this`]. Set by the first `on()`.
+    root_factory: std::sync::OnceLock<RootFactory>,
+    /// The wrapper [`listener_this`] last made, held weakly.
+    root: Mutex<Option<WeakObject>>,
+}
+
+/// A new `ws.stock` / `ws.futopt` wrapper sharing the given listeners.
+type RootFactory = Box<dyn Fn(&Env, Arc<Listeners>) -> napi::Result<sys::napi_value> + Send + Sync>;
+
+/// A JS object held weakly: a `WeakRef`'s `deref`, bound to it. A function
+/// reference, so it may be dropped on any thread, unlike a raw weak
+/// `napi_ref`.
+type WeakObject = Listener;
+
+/// Hold `object` weakly (see [`WeakObject`]).
+fn weak_object(env: &Env, object: sys::napi_value) -> napi::Result<WeakObject> {
+    let raw = env.raw();
+    let failed = || {
+        clear_exception(raw);
+        napi::Error::from_reason("Failed to create a WeakRef")
+    };
+    let mut global = std::ptr::null_mut();
+    if unsafe { sys::napi_get_global(raw, &mut global) } != sys::Status::napi_ok {
+        return Err(failed());
+    }
+    let constructor = named_property(raw, global, c"WeakRef").ok_or_else(failed)?;
+    let mut weak = std::ptr::null_mut();
+    let args = [object];
+    if unsafe { sys::napi_new_instance(raw, constructor, args.len(), args.as_ptr(), &mut weak) } != sys::Status::napi_ok {
+        return Err(failed());
+    }
+    let deref = named_property(raw, weak, c"deref").ok_or_else(failed)?;
+    let bind = named_property(raw, deref, c"bind").ok_or_else(failed)?;
+    let bound = call_function(raw, deref, bind, &[weak]).map_err(|_| failed())?;
+    let bound = unsafe {
+        <Function<'_, EventArgs, Unknown<'static>> as napi::bindgen_prelude::FromNapiValue>::from_napi_value(raw, bound)
+    }?;
+    bound.create_ref()
+}
+
+/// The object `weak` holds, unless it has been collected.
+fn deref_object(env: &Env, weak: &WeakObject) -> Option<sys::napi_value> {
+    let raw = env.raw();
+    let deref = weak.borrow_back(env).ok()?;
+    let object = call_function(raw, undefined(raw), deref.raw(), &[]).ok()?;
+    (type_of(raw, object) == Some(sys::ValueType::napi_object)).then_some(object)
+}
+
+/// `this` for `registration`'s listener: the client `on()` was called on, or,
+/// once that wrapper has been collected, another wrapper of the same client
+/// — the one made last time, or a new one. Wrappers share their state, so
+/// `this.subscribe(...)` works the same on either. `undefined` only if no
+/// wrapper can be made.
+fn listener_this(listeners: &Arc<Listeners>, env: &Env, registration: &Registration) -> sys::napi_value {
+    if let Some(client) = deref_object(env, &registration.client) {
+        return client;
+    }
+    let raw = env.raw();
+    let mut root = listeners.root.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(client) = root.as_ref().and_then(|weak| deref_object(env, weak)) {
+        return client;
+    }
+    let Some(factory) = listeners.root_factory.get() else { return undefined(raw) };
+    match factory(env, Arc::clone(listeners)) {
+        Ok(client) => {
+            *root = weak_object(env, client).ok();
+            client
+        }
+        Err(_) => {
+            clear_exception(raw);
+            undefined(raw)
+        }
+    }
 }
 
 impl Listeners {
@@ -1481,7 +1558,8 @@ impl Listeners {
 
 /// `on()` / `addListener()` / `once()`, shared by the stock and futopt
 /// clients: adds `callback` to `event`'s listeners, called with `this` set to
-/// `client`.
+/// `client` (see [`listener_this`]). `root` makes the client's
+/// [`RootFactory`] on first use.
 fn add_listener(
     listeners: &Listeners,
     env: &Env,
@@ -1489,25 +1567,14 @@ fn add_listener(
     event: &str,
     callback: Function<'_, EventArgs, Unknown<'static>>,
     once: bool,
+    root: impl FnOnce() -> RootFactory,
 ) -> napi::Result<()> {
-    let raw = env.raw();
-    let bind = named_property(raw, callback.raw(), c"bind")
-        .ok_or_else(|| napi::Error::from_reason("listener has no bind()"))?;
-    let mut bound = std::ptr::null_mut();
-    let args = [client.raw()];
-    let status = unsafe { sys::napi_call_function(raw, callback.raw(), bind, args.len(), args.as_ptr(), &mut bound) };
-    if status != sys::Status::napi_ok {
-        clear_exception(raw);
-        return Err(napi::Error::from_reason("Failed to bind the listener"));
-    }
-    let bound = unsafe {
-        <Function<'_, EventArgs, Unknown<'static>> as napi::bindgen_prelude::FromNapiValue>::from_napi_value(raw, bound)
-    }?;
     let registration = Arc::new(Registration {
         original: callback.create_ref()?,
-        bound: bound.create_ref()?,
+        client: weak_object(env, client.raw())?,
         once,
     });
+    listeners.root_factory.get_or_init(root);
     let mut callbacks = listeners.lock();
     let slot = callbacks.slot(event).ok_or_else(|| {
         napi::Error::from_reason(format!(
@@ -1856,6 +1923,41 @@ impl StockWebSocketClient {
         }
     }
 
+    /// Makes new wrappers sharing this one's state, for the listeners'
+    /// `this` once the wrapper they were registered on has been collected
+    /// (see `listener_this`). Holds no `Listeners`, so no cycle: they are
+    /// passed in.
+    fn root_factory(&self) -> RootFactory {
+        let auth = self.auth.clone();
+        let base_url = self.base_url.clone();
+        let stock_version = self.stock_version;
+        let futopt_version = self.futopt_version;
+        let reconnect_config = self.reconnect_config.clone();
+        let health_check_config = self.health_check_config.clone();
+        let tls_config = self.tls_config.clone();
+        let message_queue = self.message_queue;
+        let auth_timeout = self.auth_timeout;
+        let worker = Arc::clone(&self.worker);
+        let connection = Arc::clone(&self.connection);
+        Box::new(move |env, callbacks| {
+            let client = Self::from_shared(
+                auth.clone(),
+                base_url.clone(),
+                stock_version,
+                futopt_version,
+                reconnect_config.clone(),
+                health_check_config.clone(),
+                tls_config.clone(),
+                message_queue,
+                auth_timeout,
+                callbacks,
+                Arc::clone(&worker),
+                Arc::clone(&connection),
+            );
+            unsafe { Self::to_napi_value(env.raw(), client) }
+        })
+    }
+
     /// Register an event handler
     ///
     /// Arguments match `@fugle/marketdata` 1.x (#23): `message(data: string)`,
@@ -1903,7 +2005,7 @@ impl StockWebSocketClient {
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false, || self.root_factory())?;
         Ok(this.object)
     }
 
@@ -1920,7 +2022,7 @@ impl StockWebSocketClient {
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false, || self.root_factory())?;
         Ok(this.object)
     }
 
@@ -1938,7 +2040,7 @@ impl StockWebSocketClient {
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        add_listener(&self.callbacks, env, &this.object, &event, callback, true)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, true, || self.root_factory())?;
         Ok(this.object)
     }
 
@@ -2008,6 +2110,13 @@ impl StockWebSocketClient {
     /// server's `data` object itself (after `unauthenticated` fires); any other
     /// failure rejects with a `MarketDataError` (`code`, `sourceKind`, … as
     /// properties; no `[code]` prefix in the message).
+    ///
+    /// For 1.x compatibility, when the client has an `error` listener, a
+    /// connection failure reaching this Promise or a `.then(f)` chain on it
+    /// without a rejection handler is marked handled, so 1.x's
+    /// `connect().then(f)` with no `.catch` does not end the process (#307).
+    /// `await`, `.catch` and `.then(f, r)` still receive it. See
+    /// [MIGRATION §12](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#12-node-websocket-events-match-1x).
     ///
     /// Rejects with code `2011` (`Already connected`) while a connection is open,
     /// or while the first `connect()` is still in progress (#44). Calling
@@ -2506,6 +2615,41 @@ impl FutOptWebSocketClient {
         }
     }
 
+    /// Makes new wrappers sharing this one's state, for the listeners'
+    /// `this` once the wrapper they were registered on has been collected
+    /// (see `listener_this`). Holds no `Listeners`, so no cycle: they are
+    /// passed in.
+    fn root_factory(&self) -> RootFactory {
+        let auth = self.auth.clone();
+        let base_url = self.base_url.clone();
+        let stock_version = self.stock_version;
+        let futopt_version = self.futopt_version;
+        let reconnect_config = self.reconnect_config.clone();
+        let health_check_config = self.health_check_config.clone();
+        let tls_config = self.tls_config.clone();
+        let message_queue = self.message_queue;
+        let auth_timeout = self.auth_timeout;
+        let worker = Arc::clone(&self.worker);
+        let connection = Arc::clone(&self.connection);
+        Box::new(move |env, callbacks| {
+            let client = Self::from_shared(
+                auth.clone(),
+                base_url.clone(),
+                stock_version,
+                futopt_version,
+                reconnect_config.clone(),
+                health_check_config.clone(),
+                tls_config.clone(),
+                message_queue,
+                auth_timeout,
+                callbacks,
+                Arc::clone(&worker),
+                Arc::clone(&connection),
+            );
+            unsafe { Self::to_napi_value(env.raw(), client) }
+        })
+    }
+
     /// Register an event handler
     ///
     /// Same events, arguments and return value as `StockWebSocketClient::on`
@@ -2522,7 +2666,7 @@ impl FutOptWebSocketClient {
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false, || self.root_factory())?;
         Ok(this.object)
     }
 
@@ -2539,7 +2683,7 @@ impl FutOptWebSocketClient {
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false, || self.root_factory())?;
         Ok(this.object)
     }
 
@@ -2557,7 +2701,7 @@ impl FutOptWebSocketClient {
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        add_listener(&self.callbacks, env, &this.object, &event, callback, true)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, true, || self.root_factory())?;
         Ok(this.object)
     }
 
@@ -2615,8 +2759,10 @@ impl FutOptWebSocketClient {
     ///
     /// Returns a Promise that resolves with the server's `authenticated`
     /// `data`. See `StockWebSocketClient::connect` for the rejections,
-    /// including code `2011` (`Already connected`) (#44), and for waiting on
-    /// an automatic reconnect (#230).
+    /// including code `2011` (`Already connected`) (#44), for waiting on
+    /// an automatic reconnect (#230), and for the connection failures marked
+    /// handled when the client has an `error` listener, for 1.x compatibility
+    /// (#307; [MIGRATION §12](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#12-node-websocket-events-match-1x)).
     #[napi(ts_return_type = "Promise<WebSocketAuthData | undefined>")]
     pub fn connect<'env>(&self, env: &'env Env) -> napi::Result<PromiseRaw<'env, Unknown<'env>>> {
         auth_promise(env, self.start_worker(env))
