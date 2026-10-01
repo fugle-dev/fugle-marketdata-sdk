@@ -124,8 +124,9 @@ mod aio {
     #[tokio::test(flavor = "multi_thread")]
     async fn automatic_reconnect_sends_the_new_credential_of_another_kind() {
         let (tx, mut auth) = mpsc::unbounded_channel();
+        let close = Arc::new(tokio::sync::Notify::new());
         let server = common::spawn_sequence(vec![
-            require(A, &tx, AfterAuth::ServerDropAfter { delay_ms: 300 }),
+            require(A, &tx, AfterAuth::ServerCloseOnNotify { notify: Arc::clone(&close), delay_ms: 0 }),
             require(B, &tx, AfterAuth::Idle),
         ])
         .await;
@@ -134,6 +135,8 @@ mod aio {
         assert_eq!(next_auth(&mut auth).await["apikey"], A);
 
         client.set_credentials(Auth::SdkToken(B.into())).expect("set B");
+        // The server closes only now, so the reconnect cannot start first.
+        close.notify_one();
 
         let rx = common::EventReceiver::of_async(&client);
         let events = tokio::task::spawn_blocking(move || until_reauthenticated(&rx))
@@ -280,8 +283,9 @@ mod sync {
     #[tokio::test(flavor = "multi_thread")]
     async fn automatic_reconnect_sends_the_new_credential_of_another_kind() {
         let (tx, mut auth) = mpsc::unbounded_channel();
+        let close = Arc::new(tokio::sync::Notify::new());
         let server = common::spawn_sequence(vec![
-            require(A, &tx, AfterAuth::ServerDropAfter { delay_ms: 300 }),
+            require(A, &tx, AfterAuth::ServerCloseOnNotify { notify: Arc::clone(&close), delay_ms: 0 }),
             require(B, &tx, AfterAuth::Idle),
         ])
         .await;
@@ -294,6 +298,8 @@ mod sync {
         assert_eq!(next_auth(&mut auth).await["apikey"], A);
 
         client.set_credentials(Auth::SdkToken(B.into())).expect("set B");
+        // The server closes only now, so the reconnect cannot start first.
+        close.notify_one();
 
         let rx = common::EventReceiver::of_sync(&client);
         let events = blocking(move || until_reauthenticated(&rx)).await;

@@ -156,7 +156,7 @@ impl RestClient {
     /// values count as not provided): api_key, bearer_token or sdk_token.
     ///
     /// Raises:
-    ///     MarketDataError: code 1004 if zero or multiple credentials are
+    ///     ConfigError: code 1004 if zero or multiple credentials are
     ///         provided, or the credential cannot be sent in an HTTP header;
     ///         the current credential is then kept
     ///

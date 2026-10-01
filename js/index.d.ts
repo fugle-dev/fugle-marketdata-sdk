@@ -2887,9 +2887,9 @@ export declare class WebSocketClient {
   /**
    * Replace the credential both `ws.stock` and `ws.futopt` authenticate
    * with from their next connection attempt on: the next `connect()` or
-   * automatic reconnect. Any of the three kinds may replace any other. A connection already authenticated is not
-   * authenticated again. `ws.stock.setCredentials()` changes the stock
-   * client's alone.
+   * automatic reconnect. Any of the three kinds may replace any other. A
+   * connection already authenticated is not authenticated again.
+   * `ws.stock.setCredentials()` changes the stock client's alone.
    *
    * Call it before a token expires. Rejected credentials still end
    * automatic reconnection; set a new credential, then `connect()`.
