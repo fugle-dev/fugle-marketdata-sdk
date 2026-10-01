@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Python (vs 3.0 release candidates): the `authenticated` and
+  `unauthenticated` callbacks receive the server's whole frame, as 2.x did**
+  (#304). The rc's passed only the frame's `data`; 2.x (and now 3.0) pass
+  `{"event": "authenticated", "data": {...}}` and, for rejected credentials,
+  `{"event": "error", "code": 1000, "data": {"message": ...}}`. A handler
+  written against an rc reads `frame["data"]` instead of its argument.
+  Node keeps 1.x's argument, the `data` object. The frames reach `message`
+  and `messages()` as before.
+- **Core: `ConnectionEvent::Authenticated` and `Unauthenticated` carry
+  `frame`**, the server's auth frame as JSON text (#304). Code that builds
+  these variants, or matches them without `..`, adds the field.
+
 ### Changed
 
 - **All languages: reconnect jitter now shortens the wait, so it survives
@@ -64,6 +78,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     reconnects after a 4xxx close (#201).
 
 ### Fixed
+
+- **Python: `str(e)` of an SDK exception is its message** (#299), as the
+  README said, not the `(message, code)` tuple:
+  `Authentication error: Invalid authentication credentials` rather than
+  `('Authentication error: Invalid authentication credentials', 2002)`.
+  `args`, `repr()` and the error fields are unchanged; the WebSocket `error`
+  callback's `WebSocketError` prints the same way. 2.x's `str(e)` was
+  several lines with the URL, status, params and response; MIGRATION §6
+  lists the differences.
+- **Python: 2.x callback and config code runs again** (#304).
+  - `HealthCheckConfig(ping_interval=..., max_missed_pongs=...)` no longer
+    raises `TypeError`: the fields are ignored with a
+    `FugleHealthCheckWarning` (new, a `UserWarning` with `code`
+    `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`, as Node's) naming them, issued on
+    every such call and shown as Python's warning filters decide. 2.x's
+    positional order `HealthCheckConfig(enabled, ping_interval,
+    max_missed_pongs)` works too.
+  - `off(event, listener)` works: it removes every registration `==` to
+    `listener` and ignores one that is not registered. 2.x documented this
+    call but it raised `AttributeError` (its `pyee` has no `off`); the rc's
+    raised `TypeError`. `off(event)` still removes every callback for the
+    event.
+  - `on(event, f)` registers `f` once per event: a callback `==` to one
+    already registered is not added again, so a setup function that runs
+    twice no longer handles each message twice. 2.x behaved this way (its
+    `pyee` kept listeners keyed by the function); the rc's called it once
+    per registration. Node is unchanged.
+- **MIGRATION §9 described 2.x's `connect()` wrongly**: 2.x raised a plain
+  `Exception` on rejected credentials too; the difference is the class
+  (`AuthError`) and its text.
 
 - **Packages ship their license texts, and say the same license everywhere**
   (#300). The wheel's `dist-info/` had no `licenses/` and the npm packages

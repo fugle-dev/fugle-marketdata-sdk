@@ -208,7 +208,7 @@ async fn full_queue_drops_newest_reports_in_place_and_keeps_every_event() {
     let expected_head = vec![
         "Connecting".to_string(),
         "Connected".into(),
-        "Authenticated { data: Null }".into(),
+        "Authenticated { data: Null, frame: \"{\\\"event\\\":\\\"authenticated\\\"}\" }".into(),
         "m:authenticated".into(),
         "m0".into(),
         "m1".into(),

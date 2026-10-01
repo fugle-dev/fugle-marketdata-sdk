@@ -2802,7 +2802,7 @@ fn spawn_stream_reader(
                     ConnectionEvent::Connected => {
                         sink.emit("connect", EventArgs::None);
                     }
-                    ConnectionEvent::Authenticated { data } => {
+                    ConnectionEvent::Authenticated { data, .. } => {
                         inject_test_panic(test_panic.as_deref(), "ws_events");
                         // The initial authentication: decide, atomically with the
                         // worker's abort, whether it is reported (#44).

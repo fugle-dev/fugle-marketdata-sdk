@@ -49,6 +49,9 @@ REJECTED_API_KEY = "rejected-key"
 # ``auth`` with this API key is never answered, so a ``connect()`` stays in
 # the handshake until the client gives up.
 SILENT_API_KEY = "silent-key"
+
+# Authenticated with a bare `{"event":"authenticated"}`, no `data` (#304).
+BARE_AUTH_API_KEY = "bare-auth-key"
 # ``auth`` with this API key is answered with a Close frame, the way the
 # server refuses a connection over its limit (#292).
 LIMITED_API_KEY = "limited-key"
@@ -306,6 +309,8 @@ class _Server:
             if self.reject_auth or (frame.get("data") or {}).get("apikey") == REJECTED_API_KEY:
                 # The server's rejection shape: `code` 1000 at the top level (#201).
                 return [{"event": "error", "code": 1000, "data": {"message": "Invalid authentication credentials"}}]
+            if (frame.get("data") or {}).get("apikey") == BARE_AUTH_API_KEY:
+                return [{"event": "authenticated"}]
             return [{"event": "authenticated", "data": {"message": "Authenticated successfully"}}]
         if event == "subscribe":
             data = frame.get("data") or {}

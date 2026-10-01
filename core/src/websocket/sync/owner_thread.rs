@@ -1096,7 +1096,7 @@ mod tests {
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         match events.as_slice() {
             [
-                StreamItem::Event(ConnectionEvent::Authenticated { data }),
+                StreamItem::Event(ConnectionEvent::Authenticated { data, .. }),
                 StreamItem::Event(ConnectionEvent::Error(info)),
             ] => {
                 assert_eq!(*data, serde_json::json!({"k": 1}));

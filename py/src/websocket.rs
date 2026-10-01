@@ -546,6 +546,10 @@ impl HealthCheckConfig {
     ///         flows.
     ///     probe_timeout_ms: Wait for any inbound frame after the probe.
     ///         Default 5 000 ms; floor 1 000 ms.
+    ///     ping_interval, max_missed_pongs: the 2.x fields. They do not
+    ///         exist in 3.0: a value other than None is ignored, with a
+    ///         `FugleHealthCheckWarning` (#304). They are the 2nd and 3rd
+    ///         positional parameters, as in 2.x.
     ///
     /// Raises:
     ///     ConfigError: code 1004 if `heartbeat_timeout_ms` < 5 000,
@@ -570,15 +574,20 @@ impl HealthCheckConfig {
     ///     ```
     #[new]
     #[pyo3(signature = (
-        *,
         enabled=true,
+        ping_interval=None,
+        max_missed_pongs=None,
+        *,
         heartbeat_timeout_ms=marketdata_core::DEFAULT_HEARTBEAT_TIMEOUT_MS,
         probe_enabled=false,
         idle_probe_after_ms=marketdata_core::DEFAULT_IDLE_PROBE_AFTER_MS,
         probe_timeout_ms=marketdata_core::DEFAULT_PROBE_TIMEOUT_MS,
     ))]
     pub fn new(
+        py: Python<'_>,
         enabled: bool,
+        ping_interval: Option<&Bound<'_, PyAny>>,
+        max_missed_pongs: Option<&Bound<'_, PyAny>>,
         heartbeat_timeout_ms: u64,
         probe_enabled: bool,
         idle_probe_after_ms: u64,
@@ -595,6 +604,12 @@ impl HealthCheckConfig {
         config
             .try_to_core()
             .map_err(errors::to_py_err)?;
+        let legacy: Vec<&str> = [("ping_interval", ping_interval), ("max_missed_pongs", max_missed_pongs)]
+            .into_iter()
+            .filter(|(_, value)| value.is_some_and(|value| !value.is_none()))
+            .map(|(name, _)| name)
+            .collect();
+        errors::warn_legacy_health_check_fields(py, &legacy)?;
         Ok(config)
     }
 }
@@ -1416,9 +1431,11 @@ fn forward_event(
     use marketdata_core::websocket::ConnectionEvent;
     match event {
         ConnectionEvent::Connected => callbacks.invoke_connect(py),
-        ConnectionEvent::Authenticated { data } => callbacks.invoke_authenticated(py, &data),
-        ConnectionEvent::Unauthenticated { data, .. } => {
-            callbacks.invoke_unauthenticated(py, &data)
+        ConnectionEvent::Authenticated { data, frame } => {
+            callbacks.invoke_authenticated(py, &frame, data)
+        }
+        ConnectionEvent::Unauthenticated { data, frame, .. } => {
+            callbacks.invoke_unauthenticated(py, &frame, data)
         }
         ConnectionEvent::Disconnected { code, reason, intent, will_reconnect } => {
             // Before the callbacks, so one reading `last_disconnect` sees the
@@ -2354,12 +2371,17 @@ impl StockWebSocketClient {
     ///   - "message" / "data": Called with message dict when data received
     ///   - "raw_message": Called with the message as the str the server sent, no dict built
     ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
-    ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
-    ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
+    ///   - "authenticated": Called with the server's `authenticated` frame (dict: `event`, `data`)
+    ///     when it accepts credentials, as in 2.x
+    ///   - "unauthenticated": Called with the server's rejection frame (dict: `event` "error",
+    ///     `code`, `data`) when it refuses credentials, as in 2.x
     ///   - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection
     ///     closed; who closed it and whether a reconnect follows are in `last_disconnect`
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
+    ///
+    /// A callback `==` to one already registered for the event is not added
+    /// again, as in 2.x: it runs once per event.
     ///
     /// Args:
     ///     event: Event type string
@@ -2377,10 +2399,17 @@ impl StockWebSocketClient {
         self.callbacks.register(event, callback)
     }
 
-    /// Remove all callbacks for an event type
-    #[pyo3(signature = (event))]
-    pub fn off(&self, event: &str) -> PyResult<()> {
-        self.callbacks.unregister(event)
+    /// Remove callbacks for an event type
+    ///
+    /// Args:
+    ///     event: Event type string
+    ///     listener: The callback to remove (compared with `==`); one that is
+    ///         not registered is ignored. Omitted or None removes every
+    ///         callback for `event`. 2.x documented `off(event, listener)`
+    ///         but it raised `AttributeError`.
+    #[pyo3(signature = (event, listener=None))]
+    pub fn off(&self, event: &str, listener: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.callbacks.unregister(event, listener)
     }
 
     /// Connect to WebSocket server
@@ -2835,12 +2864,17 @@ impl FutOptWebSocketClient {
     ///   - "message" / "data": Called with message dict when data received
     ///   - "raw_message": Called with the message as the str the server sent, no dict built
     ///   - "connect" / "connected": Called when the WebSocket opens, before authentication
-    ///   - "authenticated": Called with the server's data (dict, or None) when it accepts credentials
-    ///   - "unauthenticated": Called with the server's data (dict, or None) when it refuses credentials
+    ///   - "authenticated": Called with the server's `authenticated` frame (dict: `event`, `data`)
+    ///     when it accepts credentials, as in 2.x
+    ///   - "unauthenticated": Called with the server's rejection frame (dict: `event` "error",
+    ///     `code`, `data`) when it refuses credentials, as in 2.x
     ///   - "disconnect" / "disconnected" / "close": Called with (code, reason) when connection
     ///     closed; who closed it and whether a reconnect follows are in `last_disconnect`
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
+    ///
+    /// A callback `==` to one already registered for the event is not added
+    /// again, as in 2.x: it runs once per event.
     ///
     /// Args:
     ///     event: Event type string
@@ -2850,10 +2884,17 @@ impl FutOptWebSocketClient {
         self.callbacks.register(event, callback)
     }
 
-    /// Remove all callbacks for an event type
-    #[pyo3(signature = (event))]
-    pub fn off(&self, event: &str) -> PyResult<()> {
-        self.callbacks.unregister(event)
+    /// Remove callbacks for an event type
+    ///
+    /// Args:
+    ///     event: Event type string
+    ///     listener: The callback to remove (compared with `==`); one that is
+    ///         not registered is ignored. Omitted or None removes every
+    ///         callback for `event`. 2.x documented `off(event, listener)`
+    ///         but it raised `AttributeError`.
+    #[pyo3(signature = (event, listener=None))]
+    pub fn off(&self, event: &str, listener: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.callbacks.unregister(event, listener)
     }
 
     /// Connect to WebSocket server
