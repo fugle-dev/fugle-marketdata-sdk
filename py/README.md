@@ -402,7 +402,7 @@ client.unsubscribe(channel=channel, symbol=symbol)  # Unsubscribe by subscribe()
 client.subscriptions()                     # List active subscriptions
 
 client.on(event, callback)                 # Register event callback (not async def)
-client.off(event, listener=None)           # Unregister one callback, or all for the event
+client.off(event, listener=None)           # Unregister one callback (==), or all for the event
 
 client.messages()                          # Get message iterator
 client.messages(raw=True)                  # ... yielding each message as the str the server sent

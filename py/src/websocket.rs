@@ -2380,6 +2380,9 @@ impl StockWebSocketClient {
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
     ///
+    /// A callback `==` to one already registered for the event is not added
+    /// again, as in 2.x: it runs once per event.
+    ///
     /// Args:
     ///     event: Event type string
     ///     callback: Python callable to invoke
@@ -2400,10 +2403,10 @@ impl StockWebSocketClient {
     ///
     /// Args:
     ///     event: Event type string
-    ///     listener: The callback to remove, as in 2.x's `off(event, listener)`:
-    ///         every registration equal to it is removed, and one that is not
-    ///         registered is ignored. Omitted or None removes every callback
-    ///         for `event`.
+    ///     listener: The callback to remove (compared with `==`); one that is
+    ///         not registered is ignored. Omitted or None removes every
+    ///         callback for `event`. 2.x documented `off(event, listener)`
+    ///         but it raised `AttributeError`.
     #[pyo3(signature = (event, listener=None))]
     pub fn off(&self, event: &str, listener: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
         self.callbacks.unregister(event, listener)
@@ -2870,6 +2873,9 @@ impl FutOptWebSocketClient {
     ///   - "reconnect" / "reconnecting": Called when reconnecting
     ///   - "error": Called with a single `err` argument (WebSocketError instance) when error occurs
     ///
+    /// A callback `==` to one already registered for the event is not added
+    /// again, as in 2.x: it runs once per event.
+    ///
     /// Args:
     ///     event: Event type string
     ///     callback: Python callable to invoke
@@ -2882,10 +2888,10 @@ impl FutOptWebSocketClient {
     ///
     /// Args:
     ///     event: Event type string
-    ///     listener: The callback to remove, as in 2.x's `off(event, listener)`:
-    ///         every registration equal to it is removed, and one that is not
-    ///         registered is ignored. Omitted or None removes every callback
-    ///         for `event`.
+    ///     listener: The callback to remove (compared with `==`); one that is
+    ///         not registered is ignored. Omitted or None removes every
+    ///         callback for `event`. 2.x documented `off(event, listener)`
+    ///         but it raised `AttributeError`.
     #[pyo3(signature = (event, listener=None))]
     pub fn off(&self, event: &str, listener: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
         self.callbacks.unregister(event, listener)

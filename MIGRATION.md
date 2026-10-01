@@ -79,7 +79,8 @@ to rewrite call sites:
 | Node `on()` chaining: `ws.stock.on('message', cb).subscribe({ ... })` | ✅ `on()` returns the client it was called on |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
 | Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working; `str(e)` is the message, in a different format from 2.x (see [§6](#6-python-exception-hierarchy-is-finer-grained)) |
-| Python `ws.stock.off(event, listener)` | ✅ removes that listener (every registration equal to it); `off(event)` removes every callback for the event |
+| Python `ws.stock.off(event, listener)` | ✅ removes every registration `==` to `listener` (one not registered is ignored); `off(event)` removes every callback for the event. 2.x documented this call but it raised `AttributeError` |
+| Python `ws.stock.on(event, f)` twice with the same `f` | ✅ registered once, as in 2.x: `f` runs once per event |
 | Python WebSocket `error` callback `on_error(err)` | ✅ one argument as in 2.x, now a `WebSocketError` (2.x passed the websocket-client exception); `str(err)` is its message |
 | `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (both ignore them and warn: Node with a process warning once per process, Python with a `FugleHealthCheckWarning` — a `UserWarning`, shown once per calling line under the default warning filters; both carry code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`. Python also keeps 2.x's positional order, `HealthCheckConfig(enabled, ping_interval, max_missed_pongs)`). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
 

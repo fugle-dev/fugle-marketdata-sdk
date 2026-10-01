@@ -95,9 +95,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     every such call and shown as Python's warning filters decide. 2.x's
     positional order `HealthCheckConfig(enabled, ping_interval,
     max_missed_pongs)` works too.
-  - `off(event, listener)` removes that listener (every registration equal
-    to it, as 2.x's `pyee` compared them); one not registered is ignored.
-    `off(event)` still removes every callback for the event.
+  - `off(event, listener)` works: it removes every registration `==` to
+    `listener` and ignores one that is not registered. 2.x documented this
+    call but it raised `AttributeError` (its `pyee` has no `off`); the rc's
+    raised `TypeError`. `off(event)` still removes every callback for the
+    event.
+  - `on(event, f)` registers `f` once per event: a callback `==` to one
+    already registered is not added again, so a setup function that runs
+    twice no longer handles each message twice. 2.x behaved this way (its
+    `pyee` kept listeners keyed by the function); the rc's called it once
+    per registration. Node is unchanged.
 - **MIGRATION §9 described 2.x's `connect()` wrongly**: 2.x raised a plain
   `Exception` on rejected credentials too; the difference is the class
   (`AuthError`) and its text.

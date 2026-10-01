@@ -34,10 +34,6 @@ class MarketDataError(Exception):
     """Category of the failure."""
     message: str
     """Human-readable message (also ``args[0]`` and ``str(e)``)."""
-    def __str__(self) -> str:
-        """``message``. An instance raised without one (``MarketDataError("...")``)
-        prints like any exception."""
-        ...
     status: Optional[int]
     """HTTP status, when the error came from an HTTP response."""
     body: Optional[str]
@@ -54,6 +50,11 @@ class MarketDataError(Exception):
     """Always None; kept from the 2.4.1 SDK's ``FugleAPIError``."""
     params: None
     """Always None; kept from the 2.4.1 SDK's ``FugleAPIError``."""
+
+    def __str__(self) -> str:
+        """``message``. An instance raised without one (``MarketDataError("...")``)
+        prints like any exception."""
+        ...
 
 class ApiError(MarketDataError):
     """API returned an error response.
@@ -1712,8 +1713,8 @@ class HealthCheckConfig:
     def __init__(
         self,
         enabled: bool = True,
-        ping_interval: object = None,
-        max_missed_pongs: object = None,
+        ping_interval: Optional[int] = None,
+        max_missed_pongs: Optional[int] = None,
         *,
         heartbeat_timeout_ms: int = 35000,
         probe_enabled: bool = False,
@@ -2328,6 +2329,9 @@ class StockWebSocketClient:
             and on the connection so far. At most once per second, and once
             more before "disconnect".
 
+        A callback ``==`` to one already registered for the event is not
+        added again, as in 2.x: it runs once per event.
+
         Args:
             event: Event type string
             callback: Python callable to invoke
@@ -2339,9 +2343,10 @@ class StockWebSocketClient:
 
         Args:
             event: Event type string
-            listener: The callback to remove, as in 2.x: every registration equal
-                to it is removed, one not registered is ignored. Omitted or None
-                removes every callback for ``event``.
+            listener: The callback to remove (compared with ``==``); one not
+                registered is ignored. Omitted or None removes every callback
+                for ``event``. 2.x documented ``off(event, listener)`` but it
+                raised ``AttributeError``.
         """
         ...
 
@@ -2665,6 +2670,9 @@ class FutOptWebSocketClient:
 
         Same events as StockWebSocketClient.on(), "raw_message" included.
 
+        A callback ``==`` to one already registered for the event is not
+        added again, as in 2.x: it runs once per event.
+
         Args:
             event: Event type string
             callback: Python callable to invoke
@@ -2676,9 +2684,10 @@ class FutOptWebSocketClient:
 
         Args:
             event: Event type string
-            listener: The callback to remove, as in 2.x: every registration equal
-                to it is removed, one not registered is ignored. Omitted or None
-                removes every callback for ``event``.
+            listener: The callback to remove (compared with ``==``); one not
+                registered is ignored. Omitted or None removes every callback
+                for ``event``. 2.x documented ``off(event, listener)`` but it
+                raised ``AttributeError``.
         """
         ...
 

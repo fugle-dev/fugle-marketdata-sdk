@@ -8,6 +8,7 @@ and ``headers``, plus the 2.4.1 aliases ``status_code`` / ``response_text``.
 from __future__ import annotations
 
 import json
+import pickle
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -178,3 +179,31 @@ def test_str_without_sdk_fields_is_the_usual_one(exc_type):
     assert str(exc_type("plain")) == "plain"
     assert str(exc_type("a", 1)) == "('a', 1)"
     assert exc_type.__str__ is MarketDataError.__str__
+
+
+def test_user_raised_error_repr_and_pickle():
+    """A caller's own ``MarketDataError("x")``: plain ``repr``, and pickling
+    keeps ``str`` / ``args`` (#299)."""
+    e = MarketDataError("x")
+    assert repr(e) == "MarketDataError('x')"
+    back = pickle.loads(pickle.dumps(e))
+    assert type(back) is MarketDataError
+    assert (str(back), back.args) == ("x", ("x",))
+    assert not hasattr(back, "message")
+
+
+def test_sdk_error_survives_pickle(error_client):
+    """``str`` / ``args`` / ``message`` of an SDK error survive a pickle round
+    trip, e.g. to another process (#299)."""
+    body = json.dumps({"message": "nope", "statusCode": 404})
+    client = error_client(404, body)
+    with pytest.raises(ApiError) as info:
+        client.stock.intraday.quote(symbol="2330")
+    e = info.value
+
+    back = pickle.loads(pickle.dumps(e))
+    assert type(back) is ApiError
+    assert back.args == e.args == (e.message, 2003)
+    assert back.message == e.message
+    assert str(back) == str(e) == e.message
+    assert (back.code, back.status, back.body) == (2003, 404, body)

@@ -161,6 +161,13 @@ impl CallbackRegistry {
             ));
         }
 
+        // Registered once per event, as 2.x's `pyee` kept its listeners
+        // keyed by the function: a second `on()` of an equal callback (a
+        // setup that runs again) does not make it run twice (#304).
+        if !self.registered_equal_to(event_type, callback)?.is_empty() {
+            return Ok(());
+        }
+
         // Store as Py<PyAny> for thread-safe access
         let py_callback: Py<PyAny> = callback.clone().unbind();
 
@@ -173,36 +180,26 @@ impl CallbackRegistry {
         Ok(())
     }
 
-    /// Unregister the callbacks for an event type equal to `listener`, or
-    /// all of them when `listener` is `None`
+    /// Unregister the callback for an event type equal to `listener`, or all
+    /// of them when `listener` is `None`. A `listener` that is not registered
+    /// is ignored.
     ///
-    /// Equality is Python's `==`, as the 2.x SDK's `pyee` looked listeners
-    /// up, so a bound method passed again still matches. It is evaluated
-    /// before the lock is taken: `__eq__` is Python code. An `on()` of the
-    /// same object on another thread while this runs may be removed too.
+    /// Equality is Python's `==`, as in [`Self::register`], so a bound
+    /// method passed again still matches. 2.x documented `off(event,
+    /// listener)` but it raised `AttributeError` (its `pyee` has no `off`).
     pub fn unregister(&self, event: &str, listener: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
         let event_type = EventType::from_str(event).ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err(format!("Invalid event type: '{}'", event))
         })?;
 
         if let Some(listener) = listener.filter(|listener| !listener.is_none()) {
-            let py = listener.py();
-            let registered: Vec<Py<PyAny>> = match self.read().get(&event_type) {
-                Some(handlers) => handlers.iter().map(|callback| callback.clone_ref(py)).collect(),
-                None => return Ok(()),
-            };
-            let mut matching = Vec::new();
-            for callback in &registered {
-                if callback.bind(py).eq(listener)? {
-                    matching.push(callback.as_ptr());
-                }
-            }
+            let matching = self.registered_equal_to(event_type, listener)?;
             if matching.is_empty() {
                 return Ok(());
             }
             let mut callbacks = self.write();
             if let Some(handlers) = callbacks.get_mut(&event_type) {
-                handlers.retain(|callback| !matching.contains(&callback.as_ptr()));
+                handlers.retain(|callback| !matching.iter().any(|m| m.as_ptr() == callback.as_ptr()));
                 if handlers.is_empty() {
                     callbacks.remove(&event_type);
                 }
@@ -218,6 +215,26 @@ impl CallbackRegistry {
         callbacks.remove(&event_type);
 
         Ok(())
+    }
+
+    /// The callbacks registered for `event_type` that are `==` to `callback`.
+    ///
+    /// `__eq__` is Python code, so it runs on a snapshot, without the lock;
+    /// an error it raises is returned. Concurrent `on()` / `off()` of equal
+    /// callbacks on other threads are not ordered against this.
+    fn registered_equal_to(&self, event_type: EventType, callback: &Bound<'_, PyAny>) -> PyResult<Vec<Py<PyAny>>> {
+        let py = callback.py();
+        let registered: Vec<Py<PyAny>> = match self.read().get(&event_type) {
+            Some(handlers) => handlers.iter().map(|handler| handler.clone_ref(py)).collect(),
+            None => return Ok(Vec::new()),
+        };
+        let mut matching = Vec::new();
+        for handler in registered {
+            if handler.bind(py).eq(callback)? {
+                matching.push(handler);
+            }
+        }
+        Ok(matching)
     }
 
     /// Clear all registered callbacks
