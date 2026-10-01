@@ -498,10 +498,12 @@ impl StockClient {
         }
     }
 
-    /// The fully resolved request prefix for this product client.
+    /// The fully resolved request prefix for this product client, product
+    /// segment included (`…/v1.0/stock`), for 1.x compatibility: it is what
+    /// `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
     #[napi(getter)]
     pub fn base_url(&self) -> String {
-        self.inner.resolved_base_url().to_string()
+        product_base_url(&self.inner, "stock")
     }
 }
 
@@ -1771,6 +1773,19 @@ impl FutOptClient {
             inner: self.inner.clone(),
         }
     }
+
+    /// The fully resolved request prefix for this product client, product
+    /// segment included (`…/v1.0/futopt`), for 1.x compatibility: it is what
+    /// `@fugle/marketdata` 1.x returned (#307). `RestClient.baseUrl` is the prefix without it.
+    #[napi(getter)]
+    pub fn base_url(&self) -> String {
+        product_base_url(&self.inner, "futopt")
+    }
+}
+
+/// `baseUrl` of a product client: the resolved prefix plus the product segment.
+fn product_base_url(inner: &marketdata_core::RestClient, product: &str) -> String {
+    format!("{}/{}", inner.resolved_base_url().trim_end_matches('/'), product)
 }
 
 /// FutOpt intraday data client

@@ -2,7 +2,7 @@
   "name": "@fugle/marketdata",
   "version": "3.0.0-rc.10",
   "description": "Fugle marketdata SDK for Node.js - REST and WebSocket client",
-  "main": "index.js",
+  "main": "main.js",
   "types": "index.d.ts",
   "napi": {
     "binaryName": "marketdata-js",
@@ -58,6 +58,7 @@
     "rust"
   ],
   "files": [
+    "main.js",
     "index.js",
     "index.d.ts",
     "types.d.ts",

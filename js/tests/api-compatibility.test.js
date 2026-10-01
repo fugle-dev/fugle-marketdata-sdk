@@ -36,6 +36,17 @@ describe('API Compatibility', () => {
       expect(client.futopt).toBeDefined();
     });
 
+    // 1.x: the product client's baseUrl carries the product segment (#307).
+    test('stock.baseUrl and futopt.baseUrl match 1.x', () => {
+      expect(client.baseUrl).toBe('https://api.fugle.tw/marketdata/v1.0');
+      expect(client.stock.baseUrl).toBe('https://api.fugle.tw/marketdata/v1.0/stock');
+      expect(client.futopt.baseUrl).toBe('https://api.fugle.tw/marketdata/v1.0/futopt');
+
+      const custom = new RestClient({ apiKey: 'k', baseUrl: 'https://h.example/p/' });
+      expect(custom.stock.baseUrl).toBe('https://h.example/p/v1.0/stock');
+      expect(custom.futopt.baseUrl).toBe('https://h.example/p/v1.0/futopt');
+    });
+
     describe('stock.intraday methods', () => {
       let intraday;
 

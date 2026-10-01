@@ -75,8 +75,11 @@ to rewrite call sites:
 | Node WebSocket listener arguments: `connect()`, `disconnect({ code, reason })` (3.0 adds `intent` and `willReconnect`) | ✅ plain arguments/objects, no JSON strings to parse — see [§12](#12-node-websocket-events-match-1x) |
 | Node `connect()` resolves with the server's `data`; rejected credentials fire `unauthenticated(data)` and reject with that `data` | ✅ |
 | WebSocket `ping({ state })` (Node) / `ping(state?)` | ✅ Node sends the object as the frame's `data`; a string still works |
+| Node `client.stock.baseUrl` / `client.futopt.baseUrl` | ✅ the request prefix with the product segment, e.g. `https://api.fugle.tw/marketdata/v1.0/stock`, as in 1.x; `client.baseUrl` (new) is the prefix without it |
 | WebSocket `ws.stock.url` / `ws.futopt.url` | ✅ the resolved endpoint, e.g. `wss://api.fugle.tw/marketdata/v1.1/futopt/streaming`; reflects `base_url` / `baseUrl` and `version`, readable before `connect()` |
 | Node `on()` chaining: `ws.stock.on('message', cb).subscribe({ ... })` | ✅ `on()` returns the client it was called on |
+| Node listeners as on the 1.x `EventEmitter`: several per event, `once`, `off` / `removeListener`, `removeAllListeners`, `listenerCount`, `addListener` | ✅ every listener of an event is called, in registration order, with `this` set to the client — see [§12](#12-node-websocket-events-match-1x) |
+| Node `ws.stock.connect().then(...)` with no `.catch`, as in the 1.x README | ✅ with an `error` listener, a failed connection does not end the process — see [§12](#12-node-websocket-events-match-1x) |
 | WebSocket `subscriptions()` (server query) | ✅ — sends `{event:"subscriptions"}`; reply arrives via `message` callback |
 | Python `except FugleAPIError:` | ✅ aliased to `MarketDataError` so legacy try/except blocks keep working |
 | `HealthCheckConfig` (Py) / `healthCheck` (JS) | ⚠️ the class/option is kept, the old fields are not: `ping_interval` / `pingInterval` and `max_missed_pongs` / `maxMissedPongs` do not exist (Python raises `TypeError`; Node ignores them and emits a process warning once per process: `FugleHealthCheckWarning`, code `FUGLE_HEALTH_CHECK_LEGACY_OPTIONS`). Detection is on by default (35 s); to have the SDK ping a silent connection, use `probe_enabled` + `idle_probe_after_ms` (Py) / `probeEnabled` + `idleProbeAfterMs` (JS) — see [configuration](docs/configuration.md#healthcheckconfig--healthcheckoptions) |
@@ -507,8 +510,9 @@ reject with 2011: it waits for the reconnect and resolves with its
 default settings. It rejects if the reconnect does not come back — code
 2010 when `disconnect()` is called or the connection ends without
 reconnecting, 3005 when the attempts run out, the server's `data` object
-when the credentials are rejected — so add a `.catch`: 1.x code without one
-turns that rejection into an unhandled rejection. With auto-reconnect off
+when the credentials are rejected — so add a `.catch`: without one, an
+unhandled rejection ends the process unless the client has an `error`
+listener and the rejection is not rejected credentials (§12). With auto-reconnect off
 (`reconnect: { enabled: false }`), the handler opens a new connection, as in
 1.x.
 
@@ -535,7 +539,33 @@ so 1.x listeners work unchanged:
 | `disconnect` | `{ code, reason, intent, willReconnect }` (`code` is `null` when the connection ended without one; `intent` and `willReconnect` are new in 3.0, see §5 — 1.x listeners that destructure `{ code, reason }` are unaffected) |
 | `ping(params)` | `params` sent as the frame's `data` |
 
-Two differences remain from 1.x's `error` event:
+Listeners are kept as the 1.x `EventEmitter` kept them (#307): each `on()`
+(or `addListener()`) adds one, every listener of an event is called in
+registration order with `this` set to the client, and `once`, `off` /
+`removeListener`, `removeAllListeners(event?)` and `listenerCount(event)`
+work as on an EventEmitter. The client is not an `EventEmitter`, though:
+`instanceof EventEmitter` is `false`; `emit`, `prependListener`,
+`listeners`, `eventNames` and `setMaxListeners` do not exist; and
+`on()` / `once()` throw for an event name that is not one of the events
+above.
+
+> **From an earlier 3.0 release candidate:** `on()` replaced the event's
+> previous listener. It now adds one; to replace, call
+> `removeAllListeners(event)` first.
+
+A failed `connect()` rejects, but the 1.x README's
+`ws.stock.connect().then(...)` with no `.catch` does not end the process
+when the client has an `error` listener, registered before `connect()` or
+before it fails (#307): in 1.x that Promise never settled and the failure
+only reached `error`. This covers `connect()` alone and `.then(f)` chains
+without a rejection handler; `await`, `.catch` and `.then(f, r)` still
+receive the rejection. It does not cover rejected credentials (1.x rejected
+those too), a client without an `error` listener, an error thrown by `f`,
+`.finally()`, `Promise.all()` and `Promise.race()` around `connect()`, or
+anything chained after those or after a `.catch`: those still reject
+unhandled, so give them a `.catch`.
+
+Three differences remain from 1.x's `error` event:
 
 - **The `error` argument is an `Error` with a numeric `code`.** Its `message`
   is the plain description, without a `[code]` prefix — read the code from

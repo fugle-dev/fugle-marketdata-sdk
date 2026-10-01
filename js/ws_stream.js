@@ -32,7 +32,7 @@
  */
 
 const readline = require('readline');
-const { WebSocketClient } = require('./index.js');
+const { WebSocketClient } = require('./');
 
 // ---------------------------------------------------------------------------
 // Parse CLI arguments

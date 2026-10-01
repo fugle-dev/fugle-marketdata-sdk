@@ -102,8 +102,8 @@ type DispatchTsfn = ThreadsafeFunction<(), (), (), Status, false, true>;
 ///
 /// The listener is looked up when the event runs, not when it is queued (see
 /// [`call_listener`]): a listener registered after the event was queued still
-/// receives it, and one that `on()` replaces while events are queued receives
-/// none of them — they all go to its replacement.
+/// receives it, and one that `off()` removes while events are queued receives
+/// none of them.
 ///
 /// `message` is the exception: a frame is only queued if a `message` listener
 /// is registered when it arrives (see [`Self::emit_message`]).
@@ -209,7 +209,7 @@ impl EventSink {
         })
     }
 
-    /// Queue `event` for its listener, if any is registered when it runs.
+    /// Queue `event` for its listeners, if any are registered when it runs.
     fn emit(&self, event: &'static str, args: EventArgs) {
         self.emit_then(event, args, || {});
     }
@@ -218,9 +218,9 @@ impl EventSink {
     /// registered yet: under a flood, queuing frames nobody listens to costs a
     /// JS-thread call each (#62). A frame skipped this way is not replayed to a
     /// listener registered later, as an EventEmitter drops what it emits with
-    /// no listener. Frames already queued still go to the current listener.
+    /// no listener. Frames already queued still go to the current listeners.
     ///
-    /// A queued frame counts as in flight until its listener has run (see
+    /// A queued frame counts as in flight until its listeners have run (see
     /// [`InFlight`]).
     fn emit_message(&self, frame: String) {
         if self.listeners.has_message.load(Ordering::SeqCst) {
@@ -323,28 +323,33 @@ fn emit_process_warning(env: sys::napi_env, message: &str, warning_type: &str, c
     }
 }
 
-/// Call `event`'s listener, if one is registered. On the JS thread.
+/// Call `event`'s listeners, in registration order. On the JS thread.
 ///
 /// A listener that throws, or returns a thenable that rejects, neither
-/// crashes the process nor stops later events (#83): see
-/// [`report_listener_failure`].
+/// crashes the process nor stops later events or the listeners after it
+/// (#83): see [`report_listener_failure`].
 fn call_listener(listeners: &Arc<Listeners>, env: &Env, event: &'static str, args: EventArgs) {
-    // Looked up now, on delivery: whatever `on()` registered last, even after
-    // this event was queued, gets it. Released before the call, so the
-    // listener can register listeners. A panic while holding the lock must
-    // not silence the events that report it (#25).
-    let listener = listeners.get(event);
-    let Some(listener) = listener else { return };
-    let returned = listener
-        .borrow_back(env)
-        .and_then(|listener| listener.call(args));
-    match returned {
-        Ok(returned) => on_rejection(listeners, env, event, returned.raw()),
-        Err(err) => {
-            // The thrown value itself (napi-rs keeps a reference to it).
-            if let Ok(thrown) = unsafe { napi::Error::to_napi_value(env.raw(), err) } {
-                report_listener_failure(listeners, env, event, "threw", thrown);
-            }
+    // Looked up now, on delivery: a listener registered after this event was
+    // queued gets it, one removed meanwhile does not. Released before the
+    // calls, so listeners can add and remove listeners (#307).
+    let registrations = listeners.take_for_emit(event);
+    if registrations.is_empty() {
+        return;
+    }
+    let raw = env.raw();
+    // One set of arguments for every listener, as `emit` passes them.
+    let values = match args.into_vec(raw) {
+        Ok(values) => values,
+        Err(_) => {
+            clear_exception(raw);
+            return;
+        }
+    };
+    for registration in registrations {
+        let Ok(listener) = registration.bound.borrow_back(env) else { continue };
+        match call_function(raw, listener.raw(), &values) {
+            Ok(returned) => on_rejection(listeners, env, event, returned),
+            Err(thrown) => report_listener_failure(listeners, env, event, "threw", thrown),
         }
     }
 }
@@ -420,16 +425,19 @@ fn report_listener_failure(
         let _ = set_property(raw, error, c"count", count.raw());
     }
 
-    let Some(listener) = listeners.get("error") else {
+    let registrations = listeners.take_for_emit("error");
+    if registrations.is_empty() {
         print_error(raw, "unhandled listener failure (no 'error' listener):", &[error]);
         return;
-    };
-    let Ok(function) = listener.borrow_back(env) else { return };
-    match call_function(raw, function.raw(), &[error]) {
-        // A rejection from the `error` listener is only printed.
-        Ok(returned) => on_rejection(listeners, env, "error", returned),
-        Err(thrown) => {
-            print_error(raw, "'error' listener threw while handling a listener failure:", &[thrown, error]);
+    }
+    for registration in registrations {
+        let Ok(function) = registration.bound.borrow_back(env) else { continue };
+        match call_function(raw, function.raw(), &[error]) {
+            // A rejection from an `error` listener is only printed.
+            Ok(returned) => on_rejection(listeners, env, "error", returned),
+            Err(thrown) => {
+                print_error(raw, "'error' listener threw while handling a listener failure:", &[thrown, error]);
+            }
         }
     }
 }
@@ -1370,23 +1378,43 @@ fn request_disconnect(slot: &WorkerSlot) -> napi::Result<()> {
     Ok(())
 }
 
-/// The registered listener of each event, one per event.
+/// One `on()` / `once()` registration (#307).
+struct Registration {
+    /// The function as registered: what `off()` compares against.
+    original: Listener,
+    /// `original` bound to the client `on()` was called on. For 1.x
+    /// compatibility the listener runs with `this` set to it, as an
+    /// EventEmitter's do.
+    ///
+    /// A strong reference, so the client stays reachable while the listener
+    /// is registered: `ws.stock` returns a new wrapper on every access, and a
+    /// weak one would leave `this` undefined once that wrapper is collected.
+    /// A listener closure that uses the client holds it the same way.
+    bound: Listener,
+    /// Removed before its first call, as `EventEmitter.once` does.
+    once: bool,
+}
+
+/// The listeners of each event, in registration order. For 1.x
+/// compatibility (#307), `on()` adds one, as the 1.x EventEmitter did, rather
+/// than replacing the previous one; `once` / `off` / `removeAllListeners` /
+/// `listenerCount` follow the EventEmitter too.
 ///
 /// Shared as `Arc`s so [`call_listener`] can release the lock before calling.
 #[derive(Default)]
 struct EventCallbacks {
-    message: Option<Arc<Listener>>,
-    connect: Option<Arc<Listener>>,
-    disconnect: Option<Arc<Listener>>,
-    reconnect: Option<Arc<Listener>>,
-    error: Option<Arc<Listener>>,
-    authenticated: Option<Arc<Listener>>,
-    unauthenticated: Option<Arc<Listener>>,
-    messages_dropped: Option<Arc<Listener>>,
+    message: Vec<Arc<Registration>>,
+    connect: Vec<Arc<Registration>>,
+    disconnect: Vec<Arc<Registration>>,
+    reconnect: Vec<Arc<Registration>>,
+    error: Vec<Arc<Registration>>,
+    authenticated: Vec<Arc<Registration>>,
+    unauthenticated: Vec<Arc<Registration>>,
+    messages_dropped: Vec<Arc<Registration>>,
 }
 
 impl EventCallbacks {
-    fn slot(&mut self, event: &str) -> Option<&mut Option<Arc<Listener>>> {
+    fn slot(&mut self, event: &str) -> Option<&mut Vec<Arc<Registration>>> {
         match event {
             "message" => Some(&mut self.message),
             "connect" => Some(&mut self.connect),
@@ -1399,18 +1427,14 @@ impl EventCallbacks {
             _ => None,
         }
     }
-
-    fn get(&mut self, event: &str) -> Option<Arc<Listener>> {
-        self.slot(event).and_then(|slot| slot.clone())
-    }
 }
 
 /// A client's listeners, shared by its connections' [`EventSink`]s.
 #[derive(Default)]
 struct Listeners {
     callbacks: Mutex<EventCallbacks>,
-    /// Set once a `message` listener is registered; there is no way to remove
-    /// one. Read by the worker for every frame (see [`EventSink::emit_message`]).
+    /// Whether any `message` listener is registered. Read by the worker for
+    /// every frame (see [`EventSink::emit_message`]).
     has_message: AtomicBool,
     /// Throttles the reports of failed listeners (#83), across the client's
     /// connections.
@@ -1422,38 +1446,120 @@ struct Listeners {
 }
 
 impl Listeners {
-    /// The listener registered for `event`. A panic while holding the lock
-    /// must not silence the events that report it (#25).
-    fn get(&self, event: &str) -> Option<Arc<Listener>> {
-        self.callbacks
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(event)
+    /// A panic while holding the lock must not silence the events that
+    /// report it (#25).
+    fn lock(&self) -> std::sync::MutexGuard<'_, EventCallbacks> {
+        self.callbacks.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The listeners one emission of `event` calls: those registered now, in
+    /// order. `once` registrations are removed as they are taken, so a
+    /// listener added or removed while they run only affects later emissions,
+    /// as with an EventEmitter.
+    fn take_for_emit(&self, event: &str) -> Vec<Arc<Registration>> {
+        let mut callbacks = self.lock();
+        let Some(slot) = callbacks.slot(event) else { return Vec::new() };
+        let taken = slot.clone();
+        if taken.iter().any(|registration| registration.once) {
+            slot.retain(|registration| !registration.once);
+            self.changed(event, slot);
+        }
+        taken
+    }
+
+    fn count(&self, event: &str) -> usize {
+        self.lock().slot(event).map_or(0, |slot| slot.len())
+    }
+
+    /// Keep [`Self::has_message`] in step with `event`'s new `slot`.
+    fn changed(&self, event: &str, slot: &[Arc<Registration>]) {
+        if event == "message" {
+            self.has_message.store(!slot.is_empty(), Ordering::SeqCst);
+        }
     }
 }
 
-/// `on(event, callback)`, shared by the stock and futopt clients.
-fn register_listener(
+/// `on()` / `addListener()` / `once()`, shared by the stock and futopt
+/// clients: adds `callback` to `event`'s listeners, called with `this` set to
+/// `client`.
+fn add_listener(
     listeners: &Listeners,
+    env: &Env,
+    client: &Object,
     event: &str,
     callback: Function<'_, EventArgs, Unknown<'static>>,
+    once: bool,
 ) -> napi::Result<()> {
-    let listener = Arc::new(callback.create_ref()?);
-    let mut callbacks = listeners
-        .callbacks
-        .lock()
-        .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
+    let raw = env.raw();
+    let bind = named_property(raw, callback.raw(), c"bind")
+        .ok_or_else(|| napi::Error::from_reason("listener has no bind()"))?;
+    let mut bound = std::ptr::null_mut();
+    let args = [client.raw()];
+    let status = unsafe { sys::napi_call_function(raw, callback.raw(), bind, args.len(), args.as_ptr(), &mut bound) };
+    if status != sys::Status::napi_ok {
+        clear_exception(raw);
+        return Err(napi::Error::from_reason("Failed to bind the listener"));
+    }
+    let bound = unsafe {
+        <Function<'_, EventArgs, Unknown<'static>> as napi::bindgen_prelude::FromNapiValue>::from_napi_value(raw, bound)
+    }?;
+    let registration = Arc::new(Registration {
+        original: callback.create_ref()?,
+        bound: bound.create_ref()?,
+        once,
+    });
+    let mut callbacks = listeners.lock();
     let slot = callbacks.slot(event).ok_or_else(|| {
         napi::Error::from_reason(format!(
             "Unknown event type: {}. Valid events: message, connect, disconnect, reconnect, error, authenticated, unauthenticated, messagesDropped",
             event
         ))
     })?;
-    *slot = Some(listener);
-    if event == "message" {
-        listeners.has_message.store(true, Ordering::SeqCst);
+    slot.push(registration);
+    listeners.changed(event, slot);
+    Ok(())
+}
+
+/// `off()` / `removeListener()`: removes the most recently added
+/// registration of `callback` for `event`, as an EventEmitter does. Nothing
+/// happens if there is none, or `event` is not one of the client's events.
+fn remove_listener(
+    listeners: &Listeners,
+    env: &Env,
+    event: &str,
+    callback: Function<'_, EventArgs, Unknown<'static>>,
+) -> napi::Result<()> {
+    let raw = env.raw();
+    let mut callbacks = listeners.lock();
+    let Some(slot) = callbacks.slot(event) else { return Ok(()) };
+    let found = slot.iter().rposition(|registration| {
+        let Ok(original) = registration.original.borrow_back(env) else { return false };
+        let mut equal = false;
+        let status = unsafe { sys::napi_strict_equals(raw, original.raw(), callback.raw(), &mut equal) };
+        status == sys::Status::napi_ok && equal
+    });
+    if let Some(index) = found {
+        slot.remove(index);
+        listeners.changed(event, slot);
     }
     Ok(())
+}
+
+/// `removeAllListeners(event?)`: the listeners of `event`, or of every event.
+fn remove_all_listeners(listeners: &Listeners, event: Option<&str>) {
+    let mut callbacks = listeners.lock();
+    match event {
+        Some(event) => {
+            if let Some(slot) = callbacks.slot(event) {
+                slot.clear();
+                listeners.changed(event, slot);
+            }
+        }
+        None => {
+            *callbacks = EventCallbacks::default();
+            listeners.has_message.store(false, Ordering::SeqCst);
+        }
+    }
 }
 
 /// WebSocket client for real-time market data (JavaScript wrapper)
@@ -1764,6 +1870,11 @@ impl StockWebSocketClient {
     /// `message` frames that arrive before a `message` listener is registered
     /// are dropped, not delivered to it later (#62).
     ///
+    /// Each call adds a listener, as on the 1.x `EventEmitter`: every
+    /// listener of an event is called, in registration order, with `this`
+    /// set to the client (#307). `once`, `off` / `removeListener`,
+    /// `removeAllListeners` and `listenerCount` work as on an EventEmitter.
+    ///
     /// Returns the client it was called on, as the 1.x `EventEmitter` did,
     /// so calls chain: `ws.stock.on('message', cb).subscribe({ ... })` (#245).
     ///
@@ -1787,12 +1898,98 @@ impl StockWebSocketClient {
     )]
     pub fn on<'env>(
         &self,
+        env: &Env,
         this: This<'env>,
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        register_listener(&self.callbacks, &event, callback)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
         Ok(this.object)
+    }
+
+    /// Alias of `on()`, as on an EventEmitter (#307).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn add_listener<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
+        Ok(this.object)
+    }
+
+    /// Like `on()`, but the listener is removed before its first call, as
+    /// with `EventEmitter.once` (#307).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn once<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        add_listener(&self.callbacks, env, &this.object, &event, callback, true)?;
+        Ok(this.object)
+    }
+
+    /// Remove `callback` from `event`'s listeners: the most recently added
+    /// registration of it, as an EventEmitter does (#307). Nothing happens if
+    /// it is not registered.
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn off<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        remove_listener(&self.callbacks, env, &event, callback)?;
+        Ok(this.object)
+    }
+
+    /// Alias of `off()`, as on an EventEmitter (#307).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn remove_listener<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        remove_listener(&self.callbacks, env, &event, callback)?;
+        Ok(this.object)
+    }
+
+    /// Remove every listener of `event`, or of every event when it is
+    /// omitted (#307).
+    #[napi(ts_args_type = "event?: WebSocketEvent", ts_return_type = "this")]
+    pub fn remove_all_listeners<'env>(&self, this: This<'env>, event: Option<String>) -> Object<'env> {
+        remove_all_listeners(&self.callbacks, event.as_deref());
+        this.object
+    }
+
+    /// How many listeners `event` has (#307).
+    #[napi(ts_args_type = "event: WebSocketEvent")]
+    pub fn listener_count(&self, event: String) -> u32 {
+        self.callbacks.count(&event) as u32
     }
 
     /// Connect to the stock WebSocket server.
@@ -2320,12 +2517,98 @@ impl FutOptWebSocketClient {
     )]
     pub fn on<'env>(
         &self,
+        env: &Env,
         this: This<'env>,
         event: String,
         callback: Function<'_, EventArgs, Unknown<'static>>,
     ) -> napi::Result<Object<'env>> {
-        register_listener(&self.callbacks, &event, callback)?;
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
         Ok(this.object)
+    }
+
+    /// Alias of `on()`, as on an EventEmitter (#307).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn add_listener<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        add_listener(&self.callbacks, env, &this.object, &event, callback, false)?;
+        Ok(this.object)
+    }
+
+    /// Like `on()`, but the listener is removed before its first call, as
+    /// with `EventEmitter.once` (#307).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn once<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        add_listener(&self.callbacks, env, &this.object, &event, callback, true)?;
+        Ok(this.object)
+    }
+
+    /// Remove `callback` from `event`'s listeners: the most recently added
+    /// registration of it, as an EventEmitter does (#307). Nothing happens if
+    /// it is not registered.
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn off<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        remove_listener(&self.callbacks, env, &event, callback)?;
+        Ok(this.object)
+    }
+
+    /// Alias of `off()`, as on an EventEmitter (#307).
+    #[napi(
+        ts_generic_types = "E extends WebSocketEvent",
+        ts_args_type = "event: E, callback: WebSocketEventMap[E]",
+        ts_return_type = "this"
+    )]
+    pub fn remove_listener<'env>(
+        &self,
+        env: &Env,
+        this: This<'env>,
+        event: String,
+        callback: Function<'_, EventArgs, Unknown<'static>>,
+    ) -> napi::Result<Object<'env>> {
+        remove_listener(&self.callbacks, env, &event, callback)?;
+        Ok(this.object)
+    }
+
+    /// Remove every listener of `event`, or of every event when it is
+    /// omitted (#307).
+    #[napi(ts_args_type = "event?: WebSocketEvent", ts_return_type = "this")]
+    pub fn remove_all_listeners<'env>(&self, this: This<'env>, event: Option<String>) -> Object<'env> {
+        remove_all_listeners(&self.callbacks, event.as_deref());
+        this.object
+    }
+
+    /// How many listeners `event` has (#307).
+    #[napi(ts_args_type = "event: WebSocketEvent")]
+    pub fn listener_count(&self, event: String) -> u32 {
+        self.callbacks.count(&event) as u32
     }
 
     /// Connect to the FutOpt WebSocket server.

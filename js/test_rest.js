@@ -9,7 +9,7 @@
  * 5. Error handling with error codes
  */
 
-const { RestClient } = require('./index.js');
+const { RestClient } = require('./');
 
 console.log('=== marketdata-js REST Client Tests ===\n');
 
