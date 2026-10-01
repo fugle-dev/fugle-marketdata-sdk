@@ -206,7 +206,7 @@ const AUTH_DOWN: &str = "Auth service unavailable";
 async fn reject_on_reconnect_server() -> common::MockServerHandle {
     common::spawn_sequence(vec![
         common::AfterAuth::ServerDropAfter { delay_ms: 100 },
-        common::AfterAuth::RejectAuth { code: 1000, message: REJECTED.into(), close: true },
+        common::AfterAuth::RejectAuth { code: 1000, message: REJECTED.into(), close: true, ended_by_close: None },
     ])
     .await
 }
@@ -217,7 +217,7 @@ async fn reject_on_reconnect_server() -> common::MockServerHandle {
 async fn auth_down_once_server() -> common::MockServerHandle {
     common::spawn_sequence(vec![
         common::AfterAuth::ServerDropAfter { delay_ms: 100 },
-        common::AfterAuth::RejectAuth { code: 1011, message: AUTH_DOWN.into(), close: false },
+        common::AfterAuth::RejectAuth { code: 1011, message: AUTH_DOWN.into(), close: false, ended_by_close: None },
         common::AfterAuth::Idle,
     ])
     .await
@@ -246,7 +246,7 @@ async fn close_without_code_server() -> common::MockServerHandle {
 
 /// The `common` mock: answers the first auth frame with `error{1011}`.
 async fn auth_down_server() -> common::MockServerHandle {
-    common::spawn(common::AfterAuth::RejectAuth { code: 1011, message: AUTH_DOWN.into(), close: false })
+    common::spawn(common::AfterAuth::RejectAuth { code: 1011, message: AUTH_DOWN.into(), close: false, ended_by_close: None })
         .await
 }
 

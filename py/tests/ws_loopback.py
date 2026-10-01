@@ -5,7 +5,8 @@ RFC 6455 for the SDK client: the opening handshake, unfragmented text frames
 from the client (masked) and to it (unmasked), ping/pong and close.
 
 The protocol mirrors ``js/tests/ws-worker.test.js``: ``auth`` is acked with
-``authenticated``, or answered with ``error`` for ``REJECTED_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
+``authenticated``, or answered with ``error`` for ``REJECTED_API_KEY``, or with a
+Close frame (1001, ``LIMIT_CLOSE_REASON``) for ``LIMITED_API_KEY``; ``subscribe`` is answered with ``subscribed`` plus one
 ``data`` frame. The ``subscribed`` ack echoes ``intradayOddLot`` / ``afterHours``
 and marks them in the id, as ``<channel>-<symbol>[-odd][-ah]``. With ``flood`` it keeps sending ``data`` frames until the peer
 closes. With ``burst_on_close`` it answers the client's Close with that many
@@ -46,6 +47,10 @@ REJECTED_API_KEY = "rejected-key"
 # ``auth`` with this API key is never answered, so a ``connect()`` stays in
 # the handshake until the client gives up.
 SILENT_API_KEY = "silent-key"
+# ``auth`` with this API key is answered with a Close frame, the way the
+# server refuses a connection over its limit (#292).
+LIMITED_API_KEY = "limited-key"
+LIMIT_CLOSE_REASON = "Maximum number of connections reached"
 
 OP_TEXT = 0x1
 OP_CLOSE = 0x8
@@ -214,6 +219,14 @@ class _Server:
                     frame = json.loads(payload)
                     if frame.get("event") == "auth":
                         self.auth_data.append(frame.get("data"))
+                        if (frame.get("data") or {}).get("apikey") == LIMITED_API_KEY:
+                            send(OP_CLOSE, struct.pack("!H", 1001) + LIMIT_CLOSE_REASON.encode())
+                            # Until the client goes: its reply Close, which needs
+                            # no answer, or the end of the stream, on which
+                            # _read_frame raises.
+                            while _read_frame(conn)[0] != OP_CLOSE:
+                                pass
+                            return
                     if frame.get("event") == "unsubscribe":
                         self.unsubscribe_data.append(frame.get("data"))
                     if frame.get("event") == "ping":

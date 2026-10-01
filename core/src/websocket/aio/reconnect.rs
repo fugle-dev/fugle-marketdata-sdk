@@ -6,8 +6,8 @@ use crate::websocket::aio::{SharedState, WsSink, WsStream};
 use crate::websocket::connection_event::ConnectionClose;
 use crate::websocket::stream_queue::{rejected_reason, StreamSender, MAX_ATTEMPTS_REASON};
 use crate::websocket::protocol::{
-    classify_auth_response, frame_auth, frame_resubscribe, AuthHandshake, AuthOutcome,
-    ResubscribeFrame,
+    classify_auth_response, closed_during_auth, frame_auth, frame_resubscribe, AuthHandshake,
+    AuthOutcome, ResubscribeFrame, AUTH_FAILED_CLOSE_TIMEOUT,
 };
 use crate::websocket::{
     ConnectionConfig, ConnectionEvent, ConnectionState, DisconnectIntent, ReconnectionManager,
@@ -65,6 +65,11 @@ pub(crate) async fn replay_subscriptions(
 /// Shared by
 /// `WebSocketClient::connect` and `try_connect` so the auth protocol cannot
 /// drift between fresh-connect and reconnect.
+///
+/// On a handshake that failed or was rejected the connection is closed,
+/// within [`AUTH_FAILED_CLOSE_TIMEOUT`], before it is given up: a server that
+/// sent a Close gets its reply, any other gets a Close of ours, rather than a
+/// dropped socket (#292).
 pub(crate) async fn authenticate(
     ws_sink: &mut WsSink,
     ws_read: &mut WsStream,
@@ -80,7 +85,11 @@ pub(crate) async fn authenticate(
     if let Err(e) = ws_sink.send(Message::Text(auth_json.into())).await {
         return AuthHandshake::Failed(e.into());
     }
-    await_auth_response(ws_read, config.auth_timeout).await
+    let handshake = await_auth_response(ws_read, config.auth_timeout).await;
+    if !matches!(handshake, AuthHandshake::Authenticated { .. }) {
+        let _ = timeout(AUTH_FAILED_CLOSE_TIMEOUT, ws_sink.close()).await;
+    }
+    handshake
 }
 
 /// Read frames off `ws_read` until a terminal auth outcome arrives or
@@ -109,13 +118,15 @@ pub(crate) async fn await_auth_response(
                         }
                     }
                 }
+                // No auth outcome can follow a Close (#292).
+                Ok(Message::Close(frame)) => {
+                    return AuthHandshake::Failed(closed_during_auth(frame.as_ref()))
+                }
                 Err(e) => return AuthHandshake::Failed(MarketDataError::from(e)),
                 _ => {}
             }
         }
-        AuthHandshake::Failed(MarketDataError::ConnectionError {
-            msg: "Stream closed during authentication".to_string(),
-        })
+        AuthHandshake::Failed(closed_during_auth(None))
     })
     .await;
     result.unwrap_or_else(|_| {

@@ -12,8 +12,10 @@ import time
 
 import pytest
 
-from fugle_marketdata import AuthError, HealthCheckConfig
+from fugle_marketdata import AuthError, ConnectionError, HealthCheckConfig
 from tests.ws_loopback import (
+    LIMIT_CLOSE_REASON,
+    LIMITED_API_KEY,
     REJECTED_API_KEY,
     TIMEOUT_S,
     InProcessLoopbackServer,
@@ -69,6 +71,22 @@ def test_rejected_key_fires_unauthenticated_before_raising(server, product):
     ]
     assert recorder.args_of("connect") == [()]
     assert "authenticated" not in recorder.names()
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+def test_close_during_auth_reports_close_code_and_reason(server, product):
+    # The server refuses a connection over its limit with a Close frame in
+    # place of the auth answer; its code and reason reach the error (#292).
+    ws = product_ws(server.url, product, api_key=LIMITED_API_KEY)
+
+    with pytest.raises(ConnectionError) as info:
+        ws.connect()
+
+    assert info.value.code == 2001
+    assert f"Stream closed during authentication (close 1001: {LIMIT_CLOSE_REASON})" in str(
+        info.value
+    )
 
 
 @hard_timeout

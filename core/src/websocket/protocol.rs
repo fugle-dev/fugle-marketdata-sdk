@@ -15,12 +15,48 @@ use crate::websocket::SubscriptionManager;
 use crate::MarketDataError;
 use indexmap::IndexMap;
 use std::collections::HashSet;
+use std::time::Duration;
+use tungstenite::protocol::CloseFrame;
 
 /// The server's error code for rejected credentials
 /// (`{"event":"error","code":1000,...}`). The only auth-phase error that
 /// ends the handshake as a rejection; every other code is a failure the
 /// reconnect loop retries (#201).
 pub(crate) const AUTH_REJECTED_CODE: i32 = 1000;
+
+/// How long a connection whose auth handshake failed or was rejected is
+/// given to send its Close frame (the reply to the server's, or its own)
+/// before it is dropped, so the server sees the close completed rather than
+/// `1006` (#292).
+pub(crate) const AUTH_FAILED_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// The error for a stream that closed before the auth handshake reached an
+/// outcome. A Close frame's code and reason are part of the message: the
+/// server refuses a connection over its limit with
+/// `Close(1001, "Maximum number of connections reached")`, and that is the
+/// only place it says so (#292). Shared by the async and sync clients.
+///
+/// The reason comes from the server and ends up in logs, so each control
+/// character in it (`\n`, `\r`, ESC, ...) is replaced with a space: it
+/// cannot start a forged log line or an escape sequence.
+///
+/// The code is the one tungstenite reports, not always the one on the wire:
+/// a code a peer may not send (`1005`, `1006`, an unassigned one, ...) is
+/// reported as `1002` with the reason `Protocol violation`.
+pub(crate) fn closed_during_auth(frame: Option<&CloseFrame>) -> MarketDataError {
+    let msg = match frame {
+        Some(frame) if frame.reason.is_empty() => {
+            format!("Stream closed during authentication (close {})", u16::from(frame.code))
+        }
+        Some(frame) => format!(
+            "Stream closed during authentication (close {}: {})",
+            u16::from(frame.code),
+            frame.reason.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>()
+        ),
+        None => "Stream closed during authentication".to_string(),
+    };
+    MarketDataError::ConnectionError { msg }
+}
 
 /// Classification of the inbound auth response.
 #[derive(Debug)]
@@ -413,6 +449,29 @@ mod tests {
     fn non_utf8_binary_frame_is_a_deserialization_error() {
         let err = parse_binary_frame(b"{\"event\":\"data\",\"channel\":\"\xff\"}").unwrap_err();
         assert!(matches!(err, MarketDataError::DeserializationError { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn closed_during_auth_carries_close_code_and_reason() {
+        use tungstenite::protocol::frame::coding::CloseCode;
+        let msg = |frame: Option<CloseFrame>| match closed_during_auth(frame.as_ref()) {
+            MarketDataError::ConnectionError { msg } => msg,
+            other => panic!("{other:?}"),
+        };
+        let frame = |code: u16, reason: &str| CloseFrame {
+            code: CloseCode::from(code),
+            reason: reason.into(),
+        };
+        assert_eq!(
+            msg(Some(frame(1001, "Maximum number of connections reached"))),
+            "Stream closed during authentication (close 1001: Maximum number of connections reached)"
+        );
+        assert_eq!(msg(Some(frame(1008, ""))), "Stream closed during authentication (close 1008)");
+        assert_eq!(
+            msg(Some(frame(1001, "full\r\nERROR forged\x1b[31m"))),
+            "Stream closed during authentication (close 1001: full  ERROR forged [31m)"
+        );
+        assert_eq!(msg(None), "Stream closed during authentication");
     }
 
     #[test]
