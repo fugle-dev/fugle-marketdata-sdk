@@ -134,6 +134,30 @@ Rust constants live in `marketdata_core::error_code`.
 | 9999 | `OTHER` | `Other` | `client` | Unexpected error. |
 | -1 | `THREAD_PANIC` | — | `protocol` | Node / Python: a WebSocket worker thread panicked. |
 
+## Arguments of the wrong shape
+
+An argument a method cannot use is a `TypeError` with only a message — no
+`code` or the other fields above — in Node and Python alike (#294):
+
+- **Constructor options** (Node): an unknown key, a value of the wrong type
+  (`reconnect: 'x'`, `messageBuffer: -1`, `version: 'v1.0'`) or a non-object
+  options argument. `undefined` counts as not given. A valid type out of
+  range keeps its own error (for example 1004 for a reconnect delay below its
+  floor). `RestClient` accepts the WebSocket-only keys and does not read
+  them, so one options object can build both clients; `healthCheck`'s 1.x
+  `pingInterval` / `maxMissedPongs` are still only warned about.
+- **`version`** (Node and Python): anything but a per-product map, an
+  unknown product, or a version the product does not serve.
+- **WebSocket `subscribe()` / `unsubscribe()`**: a key the call does not
+  take — the other product's session flag included (`afterHours` on stock,
+  `intradayOddLot` / `oddLot` on futopt) — or a flag that is not a boolean.
+  Python: also `symbol` / `symbols` / the flag keyword next to a dict, or
+  `ids=` next to an unsubscribe dict.
+- **REST methods** (Node): a further argument the method does not take —
+  past its positional parameters, or after the params object — rejects the
+  returned promise with a `TypeError` before any request is sent. An unknown
+  key inside the params object stays code 1005 (see above).
+
 ## Callback failures
 
 An exception raised by your WebSocket callback or listener never crashes the

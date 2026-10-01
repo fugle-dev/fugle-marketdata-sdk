@@ -65,6 +65,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Arguments the SDK would not use are refused instead of dropped**
+  (#294). Before, a misspelled or misplaced argument was silently ignored
+  and the call went ahead with defaults — `version: 'v1.0'` still streamed
+  futopt v1.1. Each case below is now a `TypeError` with only a message (no
+  `code`; see [errors.md](docs/errors.md#arguments-of-the-wrong-shape)),
+  except where noted; `undefined` counts as not given.
+  - **Node `WebSocketClient` / `RestClient` options**: an unknown key (top
+    level, or in `reconnect` / `healthCheck` / `version`), a value of the
+    wrong type, a nested option that is not an object (`version: 'v1.0'`,
+    `reconnect: 'x'`, `null`), an integer option napi used to coerce
+    (`messageBuffer: -1` / `1.5`, `reconnect.maxAttempts: NaN`), a
+    non-finite or negative millisecond option, or a non-object options
+    argument. A bare `version` string gets 1.x's message naming the map to
+    write (`Use version: { futopt: 'v1.1' }.`). Kept: `healthCheck`'s 1.x
+    `pingInterval` / `maxMissedPongs` are only warned about (#262);
+    `RestClient` accepts the WebSocket-only keys and ignores them, so one
+    options object still builds both clients; a value of the right type out
+    of range keeps its error (`messageBuffer: 0`, delays below their floor
+    are 1004).
+  - **Node REST**: a further argument — past a method's positional
+    parameters (`trades('2330', { limit: 5 })`) or after its params object
+    (`candles({ symbol }, '5')`) — rejects with a `TypeError` and sends
+    nothing. `quote({ symbol }, true)` still applies the flag.
+    `stock.ownership.*` now checks its object against core's parameter table
+    like every other object form: an unknown key rejects with 1005 instead of
+    being dropped, and a non-object argument rejects with a `TypeError`.
+  - **Node and Python WebSocket `subscribe()` / `unsubscribe()`**: a key the
+    call does not take, including the other product's session flag
+    (`afterHours` on stock, `intradayOddLot` / `oddLot` on futopt), or a
+    flag that is not a boolean. Node also refuses a non-string `symbol` /
+    `id`, a non-string element of `symbols` / `ids` (it used to be skipped)
+    and a further argument. Python refuses `symbol` / `symbols` / the flag
+    keyword passed next to a dict, and `ids=` next to an unsubscribe dict
+    (both used to be ignored), and its stock dict also takes the server's
+    `intradayOddLot` spelling of `oddLot`.
+  - **Python `version`**: a bare string or another non-dict now says which
+    dict to write, worded like Node; still a `TypeError`.
+  - **Node error types**: errors for wrong argument types that napi used to
+    raise as `Error` with `code` `'StringExpected'` / `'BooleanExpected'` /
+    `'NumberExpected'` / `'InvalidArg'`, and an unsupported `version` (was
+    `'GenericFailure'`), are now `TypeError` without `code` and with a
+    message naming the field. Code matching those `code` strings or messages
+    needs updating.
+
 - **A Close frame received during authentication is reported with its code
   and reason** (#292). When the server refuses a connection with a Close
   frame in place of the auth answer — as it does when the API key already

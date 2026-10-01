@@ -403,13 +403,21 @@ interface WebSocketClientOptions {
   bearerToken?: string;                // Bearer token for authentication
   sdkToken?: string;                   // SDK token for authentication
   baseUrl?: string;                    // Override base URL (optional)
+  version?: { stock?: 'v1.0'; futopt?: 'v1.0' | 'v1.1' }; // Per-product streaming version (default: latest)
   reconnect?: ReconnectOptions;        // Reconnection configuration (optional)
   healthCheck?: HealthCheckOptions;    // Health check configuration (optional)
   messageOverflow?: 'dropNewest' | 'unbounded'; // While messageBuffer are unread (default 'dropNewest')
   messageBuffer?: number;              // Unread messages held (default 4096)
   authTimeoutMs?: number;              // Auth handshake limit in ms (default 10000; > 0)
+  tlsRootCertPem?: Uint8Array;         // Extra root CA, PEM bytes (a Buffer works)
+  tlsAcceptInvalidCerts?: boolean;     // Disable TLS verification (dev only)
 }
 ```
+
+Any other key, or a value of the wrong type, throws a `TypeError` that names
+the field and what it takes; a key set to `undefined` counts as not given.
+`RestClient` accepts these WebSocket-only keys and ignores them, so one
+options object can build both clients.
 
 ## Error Handling
 
