@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RestClient::base_url` / `try_base_url` and `WebSocketFactory` keep the
   Rust wording.
 
+### Added
+
+- **Go: `StreamingClient.Disconnect()`** (#318). It closes the connection and
+  the `Messages()` / `Errors()` channels but keeps the client, so
+  `LastDisconnect()` reads the `DisconnectIntentClient` record, and
+  `IsClosed()` / `MessagesDroppedTotal()` the connection that ended. Call
+  `Close()` afterwards to release it; to stream again, create a new client.
+
 ### Fixed
 
 - **Python, Node, C#, Go, Java, C++: a `base_url` that ends in a version
@@ -28,8 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stock` / `futopt` fields in C#, Go, Java and C++, which share one
   message. In Node the message, for `RestClient` and `WebSocketClient`
   alike, starts with `baseUrl` instead of `base_url`; the other languages
-  keep `base_url`. The exception type and
-  error code are unchanged.
+  keep `base_url`. The exception type and error code are unchanged.
+- **Go: `LastDisconnect()` no longer panics after `Close()`** (#318).
+  `Close()` keeps the last record before releasing the client:
+  `LastDisconnect()` after it returns that record, or nil if there was none,
+  instead of panicking with `object has already been destroyed`. Calling
+  `Close()` a second time does nothing instead of panicking. C# and Java
+  already have `DisconnectAsync()` / `disconnect()`; their docs now say that
+  `LastDisconnect` throws after `Dispose()` / `close()`.
+- **Go: `StreamingClient.Connect()` fails with `ClientClosed` (2010) once
+  `Messages()` is closed** (#318) — after `Disconnect()`, or after the server
+  closed the connection with no reconnect to follow. It used to connect and
+  drop every message, since there was no open channel to deliver them to.
+  Create a new client to stream again.
 
 ## [Bindings 3.0.0-rc.11 / core 0.9.0-rc.9 / uniffi 0.2.0-rc.9] - 2026-10-01
 

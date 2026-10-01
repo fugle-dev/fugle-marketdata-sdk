@@ -76,6 +76,16 @@ func (mc *MessageChannel) Errors() <-chan error {
 	return mc.errors
 }
 
+// isClosed reports whether Close has been called
+func (mc *MessageChannel) isClosed() bool {
+	select {
+	case <-mc.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // Close closes all channels
 func (mc *MessageChannel) Close() {
 	mc.once.Do(func() {
@@ -222,6 +232,15 @@ type StreamingClient struct {
 	client   *WebSocketClient
 	channel  *MessageChannel
 	listener *channelListener
+
+	// closeOnce makes Close() run once; a second call waits for the first.
+	// mu guards closed and lastDisconnect: Close() destroys client, so
+	// LastDisconnect() after it reads the record Close() kept. It is not held
+	// while disconnecting, which waits for the listener.
+	closeOnce      sync.Once
+	mu             sync.RWMutex
+	closed         bool
+	lastDisconnect *DisconnectInfo
 }
 
 // NewStreamingClient creates a channel-based streaming client for stock market data
@@ -260,7 +279,19 @@ func NewStreamingClientWithEndpoint(apiKey string, endpoint WebSocketEndpoint, b
 }
 
 // Connect establishes WebSocket connection
+//
+// Once Messages() is closed — after Disconnect(), or after the server closed
+// the connection with no reconnect to follow — it fails with ClientClosed
+// (code 2010) instead of connecting with nowhere to deliver messages: create
+// a new client to stream again.
 func (sc *StreamingClient) Connect() error {
+	if sc.channel.isClosed() {
+		return NewMarketDataErrorClientClosed(ErrorInfo{
+			Code:       2010,
+			SourceKind: ErrorSourceKindClient,
+			Message:    "Messages() is closed: create a new client to connect again",
+		})
+	}
 	err := sc.client.Connect()
 	if err != nil {
 		return fmt.Errorf("connect failed: %w", err)
@@ -393,8 +424,15 @@ func (sc *StreamingClient) MessagesDroppedTotal() uint64 {
 // Connect(), a reconnect and disconnecting keep it, so it is a record of the
 // last disconnect, not the connection state. A reconnect given up leaves it
 // at the drop that started the reconnect. Once Messages() is closed, this is
-// where to find why — read it before Close(), which destroys the client.
+// where to find why. After Close() it returns the record Close() kept
+// (intent DisconnectIntentClient if it was connected), or nil if there was
+// none.
 func (sc *StreamingClient) LastDisconnect() *DisconnectInfo {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+	if sc.closed {
+		return sc.lastDisconnect
+	}
 	return sc.client.LastDisconnect()
 }
 
@@ -430,13 +468,33 @@ func (sc *StreamingClient) QuerySubscriptions() error {
 	return nil
 }
 
-// Close disconnects and closes all channels
-func (sc *StreamingClient) Close() error {
+// Disconnect closes the connection and the Messages() and Errors() channels,
+// returning once the listener has handled the connection's last events.
+// Messages already buffered stay readable from Messages(). Connect() after it
+// fails with ClientClosed (code 2010): to stream again, create a new client.
+//
+// Unlike Close(), it keeps the client: LastDisconnect(), IsClosed() and
+// MessagesDroppedTotal() still read the connection that ended. Call Close()
+// afterwards to release it.
+func (sc *StreamingClient) Disconnect() {
 	// Channels first: Disconnect waits for the listener to handle the last
 	// events (#126), which a send blocked on a full channel nobody reads
 	// would never let happen.
 	sc.channel.Close()
 	sc.client.Disconnect()
-	sc.client.Destroy()
+}
+
+// Close disconnects, closes all channels and releases the client. Calling it
+// again does nothing. After it, only LastDisconnect(), Close(), and draining
+// Messages()/Errors() may be called.
+func (sc *StreamingClient) Close() error {
+	sc.closeOnce.Do(func() {
+		sc.Disconnect()
+		sc.mu.Lock()
+		defer sc.mu.Unlock()
+		sc.lastDisconnect = sc.client.LastDisconnect()
+		sc.closed = true
+		sc.client.Destroy()
+	})
 	return nil
 }

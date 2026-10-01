@@ -210,7 +210,9 @@ public class FugleWebSocketClient implements AutoCloseable {
      * and {@link #disconnect()} keep it, so it is a record of the last
      * disconnect, not the connection state. A reconnect given up
      * ({@code onReconnectFailed}) leaves it at the drop that started the
-     * reconnect.
+     * reconnect. After {@link #close()} it throws {@link FugleException}:
+     * to read a disconnect you made, call {@link #disconnect()} and read it
+     * before closing.
      */
     public DisconnectInfo lastDisconnect() {
         try {

@@ -392,7 +392,7 @@ bool IsConnected                              // Check connection status
 bool IsClosed                                 // Check if client is closed
 string Url                                    // Resolved endpoint; throws code 1004 on an invalid BaseUrl / version
 ulong MessagesDroppedTotal                    // Messages dropped this connection (see below)
-DisconnectInfo? LastDisconnect                // Last disconnect: Code, Reason, Intent (Client / Server / Network), WillReconnect; null before the first
+DisconnectInfo? LastDisconnect                // Last disconnect: Code, Reason, Intent (Client / Server / Network), WillReconnect; null before the first; throws ObjectDisposedException after Dispose (read it after DisconnectAsync)
                                               // (DisconnectAsync from a listener then ConnectAsync at once: the old connection's
                                               // last one can land after the new one's; for the state use IsConnected)
 

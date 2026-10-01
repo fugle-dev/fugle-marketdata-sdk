@@ -58,8 +58,7 @@ func TestWebSocketIsClosed_FalseWhileReconnecting_TrueAfterDisconnect(t *testing
 		t.Fatal("IsClosed() = true while reconnecting")
 	}
 
-	// Close destroys the client, so disconnect through it to read IsClosed after.
-	client.client.Disconnect()
+	client.Disconnect()
 	if !client.IsClosed() {
 		t.Fatal("IsClosed() = false after Disconnect")
 	}
