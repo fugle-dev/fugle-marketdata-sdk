@@ -813,7 +813,7 @@ pub struct HealthCheckOptions {
 impl HealthCheckOptions {
     /// Core's config; an omitted option takes the core default.
     fn to_core(&self) -> Result<marketdata_core::HealthCheckConfig, marketdata_core::MarketDataError> {
-        let ms = |v: Option<f64>| v.map(|v| Duration::from_millis(v as u64));
+        let ms = |v: Option<f64>| v.map(|v| Duration::from_millis(crate::options::millis(v)));
         marketdata_core::HealthCheckConfig::from_parts(
             self.enabled.unwrap_or(marketdata_core::DEFAULT_HEALTH_CHECK_ENABLED),
             ms(self.heartbeat_timeout_ms),
@@ -1051,8 +1051,9 @@ fn read_connection<T>(slot: &ConnectionSlot, read: impl FnOnce(&ConnectionHandle
 /// Per-product streaming version selection.
 ///
 /// The official SDK takes a free-form map and validates at runtime; expressing
-/// it as a struct lets TypeScript reject an unknown product at compile time,
-/// while the string values still need checking here.
+/// it as a struct lets TypeScript reject an unknown product at compile time.
+/// At runtime an unknown product, a non-string value or a version the
+/// product does not serve throws a `TypeError`.
 #[napi(object)]
 pub struct StreamingVersionOptions {
     /// Stock streaming version. Only "v1.0" is served.
@@ -1066,45 +1067,21 @@ pub struct StreamingVersionOptions {
 
 pub(crate) use marketdata_core::websocket::StreamProduct as WsProduct;
 
-/// Validate the `version` option into core's per-product enums.
+/// The `version` option as core's per-product enums. The constructor's
+/// options check has already refused anything core would (#294).
 pub(crate) fn parse_ws_versions(
     version: &Option<StreamingVersionOptions>,
 ) -> napi::Result<(
     marketdata_core::websocket::StockVersion,
     marketdata_core::websocket::FutOptVersion,
 )> {
-    use marketdata_core::websocket::{FutOptVersion, StockVersion};
-
-    let mut stock = StockVersion::default();
-    let mut futopt = FutOptVersion::default();
-
-    if let Some(opts) = version {
-        if let Some(v) = opts.stock.as_deref() {
-            stock = match v {
-                "v1.0" => StockVersion::V1_0,
-                other => {
-                    return Err(napi::Error::from_reason(format!(
-                        "stock streaming does not support {other} (supported: v1.0). \
-                         Omit it to use v1.0."
-                    )))
-                }
-            };
-        }
-        if let Some(v) = opts.futopt.as_deref() {
-            futopt = match v {
-                "v1.0" => FutOptVersion::V1_0,
-                "v1.1" => FutOptVersion::V1_1,
-                other => {
-                    return Err(napi::Error::from_reason(format!(
-                        "futopt streaming does not support {other} (supported: v1.0, v1.1). \
-                         Omit it to use v1.1."
-                    )))
-                }
-            };
-        }
-    }
-
-    Ok((stock, futopt))
+    let entries = version.iter().flat_map(|opts| {
+        [("stock", opts.stock.as_deref()), ("futopt", opts.futopt.as_deref())]
+            .into_iter()
+            .filter_map(|(product, v)| v.map(|v| (product, v)))
+    });
+    marketdata_core::websocket::version::option::resolve(entries)
+        .map_err(|err| napi::Error::new(napi::Status::InvalidArg, crate::options::version_message(&err)))
 }
 
 /// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
@@ -1177,11 +1154,9 @@ fn unsubscribe_ids(env: &Env, options: &serde_json::Value) -> napi::Result<Optio
     let batch = options
         .get("ids")
         .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        });
+        .map(|arr| crate::options::string_array("unsubscribe", "ids", arr))
+        .transpose()
+        .map_err(|message| crate::options::type_error(env.raw(), &message))?;
 
     match (single, batch) {
         (Some(id), None) => Ok(Some(vec![id])),
@@ -1213,13 +1188,15 @@ where
 
 /// The `symbol` or `symbols` of subscribe-shaped options — exactly one.
 /// `call` names the method in error messages.
-fn option_symbols(call: &str, options: &serde_json::Value) -> napi::Result<Vec<String>> {
+fn option_symbols(env: &Env, call: &str, options: &serde_json::Value) -> napi::Result<Vec<String>> {
     let single = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
-    let batch = options.get("symbols").and_then(|v| v.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect::<Vec<_>>()
-    });
+    // A non-string element is a `TypeError` rather than dropped (#294).
+    let batch = options
+        .get("symbols")
+        .and_then(|v| v.as_array())
+        .map(|arr| crate::options::string_array(call, "symbols", arr))
+        .transpose()
+        .map_err(|message| crate::options::type_error(env.raw(), &message))?;
     match (single, batch) {
         (Some(s), None) => Ok(vec![s]),
         (None, Some(list)) if !list.is_empty() => Ok(list),
@@ -1366,7 +1343,7 @@ async fn measure_latency(slot: &WorkerSlot, timeout_ms: Option<f64>) -> napi::Re
         None => None,
         Some(ms) if ms.is_finite() && ms >= 0.0 => Some(Duration::from_millis(ms as u64)),
         Some(_) => {
-            return Ok(Settled(Err(marketdata_core::MarketDataError::InvalidParameter {
+            return Ok(Settled::from(Err(marketdata_core::MarketDataError::InvalidParameter {
                 name: "timeoutMs".to_string(),
                 reason: "must be a positive number".to_string(),
             })));
@@ -1374,11 +1351,11 @@ async fn measure_latency(slot: &WorkerSlot, timeout_ms: Option<f64>) -> napi::Re
     };
     let (reply, rx) = tokio::sync::oneshot::channel();
     if send_command(slot, WsCommand::MeasureLatency { timeout, reply }, "measureLatency").is_err() {
-        return Ok(Settled(Err(marketdata_core::MarketDataError::ClientClosed)));
+        return Ok(Settled::from(Err(marketdata_core::MarketDataError::ClientClosed)));
     }
     // The worker ended without answering: its connection is gone.
     let result = rx.await.unwrap_or(Err(marketdata_core::MarketDataError::ClientClosed));
-    Ok(Settled(result.map(|rtt| serde_json::Value::from(rtt.as_secs_f64() * 1000.0))))
+    Ok(Settled::from(result.map(|rtt| serde_json::Value::from(rtt.as_secs_f64() * 1000.0))))
 }
 
 /// Mark the worker as ending and ask it to disconnect; no-op without one.
@@ -1546,8 +1523,12 @@ impl WebSocketClient {
     ///   healthCheck: { probeEnabled: true, idleProbeAfterMs: 10000 }
     /// });
     /// ```
-    #[napi(constructor)]
-    pub fn new(env: Env, options: WebSocketClientOptions) -> napi::Result<Self> {
+    #[napi(constructor, ts_args_type = "options: WebSocketClientOptions")]
+    pub fn new(env: Env, options: crate::options::Checked<WebSocketClientOptions>) -> napi::Result<Self> {
+        // The JS object was checked against `options::WEBSOCKET_CLIENT_FIELDS`
+        // before this conversion (#294): unknown keys and wrong types are a
+        // `TypeError` already.
+        let options = options.0;
         use marketdata_core::{DEFAULT_MAX_ATTEMPTS, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_DELAY_MS};
         use std::time::Duration;
 
@@ -1571,7 +1552,7 @@ impl WebSocketClient {
         let auth_timeout = match options.auth_timeout_ms {
             None => marketdata_core::websocket::DEFAULT_AUTH_TIMEOUT,
             Some(ms) => marketdata_core::websocket::auth_timeout_from_millis(
-                if ms.is_finite() && ms >= 1.0 { ms as u64 } else { 0 },
+                crate::options::millis(ms),
             )
             .map_err(|e| crate::errors::to_napi_error(&env, e))?,
         };
@@ -1596,10 +1577,10 @@ impl WebSocketClient {
         let reconnect_cfg = if let Some(r) = &options.reconnect {
             let max = r.max_attempts.unwrap_or(DEFAULT_MAX_ATTEMPTS);
             let initial = Duration::from_millis(
-                r.initial_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_INITIAL_DELAY_MS)
+                r.initial_delay_ms.map(crate::options::millis).unwrap_or(DEFAULT_INITIAL_DELAY_MS)
             );
             let max_delay = Duration::from_millis(
-                r.max_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_MAX_DELAY_MS)
+                r.max_delay_ms.map(crate::options::millis).unwrap_or(DEFAULT_MAX_DELAY_MS)
             );
             let mut cfg = marketdata_core::ReconnectionConfig::new(max, initial, max_delay)
                 .map_err(|e| crate::errors::to_napi_error(&env, e))?;
@@ -2114,7 +2095,10 @@ impl StockWebSocketClient {
     ///                  the old `@fugle/marketdata` shape.
     ///                  Shape: `{ channel, symbol?, symbols?, intradayOddLot? }`
     #[napi(ts_args_type = "options: StockSubscribeOptions")]
-    pub fn subscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn subscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("subscribe", WsProduct::Stock, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value?;
         let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
@@ -2122,7 +2106,7 @@ impl StockWebSocketClient {
             .parse::<marketdata_core::models::Channel>()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
-        let target_symbols = option_symbols("subscribe", &options)?;
+        let target_symbols = option_symbols(&env, "subscribe", &options)?;
 
         let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
         let sub = marketdata_core::StockSubscription::new(channel, target_symbols).with_odd_lot(odd_lot);
@@ -2137,7 +2121,10 @@ impl StockWebSocketClient {
     /// Node SDK shape; or the `subscribe` options
     /// `{ channel, symbol | symbols, intradayOddLot? }`.
     #[napi(ts_args_type = "options: string | UnsubscribeOptions | StockUnsubscribeOptions")]
-    pub fn unsubscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn unsubscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("unsubscribe", WsProduct::Stock, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value?;
         // Accept legacy positional string for backward compat with the previous
         // `unsubscribe(id: string)` signature.
         let target_ids = match unsubscribe_ids(&env, &options)? {
@@ -2145,7 +2132,7 @@ impl StockWebSocketClient {
             None => {
                 let channel = unsubscribe_channel::<marketdata_core::models::Channel>(&env, &options)?;
                 let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
-                marketdata_core::StockSubscription::new(channel, option_symbols("unsubscribe", &options)?)
+                marketdata_core::StockSubscription::new(channel, option_symbols(&env, "unsubscribe", &options)?)
                     .with_odd_lot(odd_lot)
                     .keys()
             }
@@ -2608,7 +2595,10 @@ impl FutOptWebSocketClient {
     ///                  or `symbols` (batch list) — exactly one is required.
     ///                  Shape: `{ channel, symbol?, symbols?, afterHours? }`
     #[napi(ts_args_type = "options: FutOptSubscribeOptions")]
-    pub fn subscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn subscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("subscribe", WsProduct::FutOpt, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value?;
         let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
@@ -2616,7 +2606,7 @@ impl FutOptWebSocketClient {
             .parse::<marketdata_core::models::futopt::FutOptChannel>()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
-        let target_symbols = option_symbols("subscribe", &options)?;
+        let target_symbols = option_symbols(&env, "subscribe", &options)?;
 
         let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
         let sub = marketdata_core::FutOptSubscription::new(channel, target_symbols).with_after_hours(after_hours);
@@ -2630,14 +2620,17 @@ impl FutOptWebSocketClient {
     /// `{ ids: ["...", "..."] }` (batch); or the `subscribe` options
     /// `{ channel, symbol | symbols, afterHours? }`.
     #[napi(ts_args_type = "options: string | UnsubscribeOptions | FutOptUnsubscribeOptions")]
-    pub fn unsubscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn unsubscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("unsubscribe", WsProduct::FutOpt, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value?;
         let target_ids = match unsubscribe_ids(&env, &options)? {
             Some(ids) => ids,
             None => {
                 let channel =
                     unsubscribe_channel::<marketdata_core::models::futopt::FutOptChannel>(&env, &options)?;
                 let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
-                marketdata_core::FutOptSubscription::new(channel, option_symbols("unsubscribe", &options)?)
+                marketdata_core::FutOptSubscription::new(channel, option_symbols(&env, "unsubscribe", &options)?)
                     .with_after_hours(after_hours)
                     .keys()
             }

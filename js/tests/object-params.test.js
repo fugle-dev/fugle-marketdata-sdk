@@ -317,7 +317,8 @@ describe('positional calls are unchanged', () => {
   });
 
   test('a missing first argument is rejected', async () => {
-    await expect(ctx.client.stock.intraday.ticker()).rejects.toThrow('`symbol` is required');
+    // A TypeError since #294; rest-extra-args.test.js covers every method.
+    await expect(ctx.client.stock.intraday.ticker()).rejects.toThrow('`stock.intraday.ticker`: symbol is required');
   });
 });
 

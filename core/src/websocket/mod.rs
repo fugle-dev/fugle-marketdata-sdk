@@ -19,6 +19,8 @@ pub(crate) mod stream_queue;
 pub(crate) mod protocol;
 pub mod reconnection;
 pub mod report_throttle;
+#[doc(hidden)]
+pub mod subscribe_keys;
 pub mod subscription;
 pub mod sync;
 pub mod version;

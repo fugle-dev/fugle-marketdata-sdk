@@ -134,6 +134,44 @@ Rust constants live in `marketdata_core::error_code`.
 | 9999 | `OTHER` | `Other` | `client` | Unexpected error. |
 | -1 | `THREAD_PANIC` | — | `protocol` | Node / Python: a WebSocket worker thread panicked. |
 
+## Arguments of the wrong shape
+
+An argument a method cannot use is a `TypeError` with only a message — no
+`code` or the other fields above — in Node and Python alike (#294).
+`undefined` and `null` (Python `None`) count as not given, except Node's
+`version: null`.
+
+- **Constructor options** (Node): an unknown key, a value of the wrong type
+  (`reconnect: 'x'`, `messageBuffer: -1`, `version: 'v1.0'`), or an options
+  argument or nested option that is not a plain object (prototype
+  `Object.prototype` or `null`). A value of the right type out of range
+  keeps its own error: a millisecond option only has to be a number, and a
+  negative, NaN or infinite one is 1004 like a value below its floor.
+  `RestClient` accepts the WebSocket-only keys and does not read them, so
+  one options object can build both clients; `healthCheck`'s 1.x
+  `pingInterval` / `maxMissedPongs` are still only warned about.
+- **`version`** (Node and Python): anything but a per-product map, an
+  unknown product, or a version the product does not serve.
+- **WebSocket `subscribe()` / `unsubscribe()`**: a key the call does not
+  take — the other product's session flag included (`afterHours` on stock,
+  `intradayOddLot` / `oddLot` on futopt) — or a flag that is not a boolean.
+  An `unsubscribe()` object without `channel` takes only `id` / `ids`.
+  Python: also `symbol` / `symbols` / the flag keyword next to a dict, `ids=`
+  next to an unsubscribe dict, or the flag under two spellings.
+- **REST methods** (Node): a missing required first argument (`quote()`),
+  an argument of the wrong type, an integer argument that is negative, fractional or not finite, or a further argument
+  the method does not take — past its positional parameters, or after the
+  params object — rejects the returned promise with a `TypeError` before any
+  request is sent. Only the first argument past the declared ones is
+  checked (napi does not report how many were given), so one after an
+  `undefined` / `null` there is not. An unknown key inside the params object
+  stays code 1005 (see above).
+
+In Node, a getter or Proxy trap that throws while an argument is read throws
+its own error, synchronously. Only the client options and their nested
+options have to be plain objects; a REST params object or a `subscribe()`
+argument may be any object.
+
 ## Callback failures
 
 An exception raised by your WebSocket callback or listener never crashes the

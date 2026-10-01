@@ -4,10 +4,11 @@
 //! marketdata-core::RestClient for NAPI-RS bindings.
 
 use crate::errors::{BuildError, Settled};
+use crate::options::{ExtraArg, JsVal};
 use crate::websocket::RestClientOptions;
 use napi_derive::napi;
 use napi::bindgen_prelude::{FromNapiValue, TypeName, ValueType};
-use napi::{check_status, sys};
+use napi::sys;
 use marketdata_core::rest::params::EndpointSpec;
 use serde_json::{Map, Value};
 
@@ -24,18 +25,29 @@ use serde_json::{Map, Value};
 
 /// The first argument of a REST method: positional, or the legacy params object.
 ///
-/// Converted while napi reads the arguments, so a wrong type (a number, an
-/// array, a `Buffer`) throws synchronously like any other argument type error
-/// rather than surfacing later as a rejected promise.
+/// A value of another type does not fail the conversion: it is kept as
+/// `Invalid` and rejects the call's promise with a `TypeError`, like every
+/// other argument error of a REST method (#294). Only a getter or Proxy trap
+/// that throws while the value is read throws, with its own error.
 pub enum RestArg {
     Positional(String),
     Params(Map<String, Value>),
+    /// Neither: the type as a message names it.
+    Invalid(String),
 }
 
 impl RestArg {
-    /// Unwrap a required first argument (`undefined` / `null` arrive as `None`).
-    fn required(arg: Option<Self>, name: &str) -> napi::Result<Self> {
-        arg.ok_or_else(|| napi::Error::from_reason(format!("`{name}` is required")))
+    /// Unwrap a required first argument (`undefined` / `null` arrive as
+    /// `None`); a missing one rejects with a `TypeError`, like the other
+    /// argument errors of a REST method (#294).
+    fn required(method: &str, arg: Option<Self>, name: &str) -> Result<Self, Settled> {
+        arg.ok_or_else(|| {
+            let short = method.rsplit('.').next().unwrap_or(method);
+            Settled::type_error(format!(
+                "`{method}`: {name} is required, as a string or a params object, e.g. \
+                 {short}({{ {name}: ... }})"
+            ))
+        })
     }
 }
 
@@ -51,31 +63,149 @@ impl TypeName for RestArg {
 
 impl FromNapiValue for RestArg {
     unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
-        let invalid = || {
-            napi::Error::new(
-                napi::Status::InvalidArg,
-                "expected a string or a params object".to_string(),
-            )
-        };
-        let mut ty = 0;
-        check_status!(unsafe { sys::napi_typeof(env, value, &mut ty) })?;
-        match ty {
-            sys::ValueType::napi_string => Ok(Self::Positional(unsafe { String::from_napi_value(env, value)? })),
-            sys::ValueType::napi_object => {
-                let checks: [unsafe fn(sys::napi_env, sys::napi_value, *mut bool) -> sys::napi_status; 3] =
-                    [sys::napi_is_array, sys::napi_is_buffer, sys::napi_is_typedarray];
-                for check in checks {
-                    let mut hit = false;
-                    check_status!(unsafe { check(env, value, &mut hit) })?;
-                    if hit {
-                        return Err(invalid());
-                    }
-                }
-                Ok(Self::Params(unsafe { Map::from_napi_value(env, value)? }))
-            }
-            _ => Err(invalid()),
-        }
+        Ok(match unsafe { crate::options::read(env, value, 0, false)? } {
+            JsVal::String(s) => Self::Positional(s),
+            JsVal::Object(_) => match unsafe { Map::from_napi_value(env, value) } {
+                Ok(params) => Self::Params(params),
+                // A getter that threw: its own error, thrown now, as for a
+                // constructor option.
+                Err(err) if exception_pending(env) => return Err(err),
+                Err(err) => Self::Invalid(format!("an object that cannot be sent ({})", err.reason)),
+            },
+            other => Self::Invalid(other.describe()),
+        })
     }
+}
+
+fn exception_pending(env: sys::napi_env) -> bool {
+    let mut pending = false;
+    let status = unsafe { sys::napi_is_exception_pending(env, &mut pending) };
+    status == sys::Status::napi_ok && pending
+}
+
+/// A positional REST argument after the first. Converting does not fail on
+/// a value of the wrong type; the method checks the type with [`pos_string`] / [`pos_bool`] / [`pos_u32`],
+/// so a wrong one rejects the promise with a `TypeError` instead of
+/// throwing napi's error, and an integer is not coerced (`-1`, `1.5`, `NaN`)
+/// (#294). `undefined` / `null` arrive as `None`.
+pub struct PosArg(JsVal);
+
+impl TypeName for PosArg {
+    fn type_name() -> &'static str {
+        "unknown"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for PosArg {
+    unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
+        Ok(Self(unsafe { crate::options::read(env, value, 0, false)? }))
+    }
+}
+
+fn wrong_type(method: &str, name: &str, expected: &str, got: &JsVal) -> Settled {
+    Settled::type_error(format!("`{method}`: {name} must be {expected}, got {}", got.describe()))
+}
+
+fn pos_string(method: &str, name: &str, arg: Option<PosArg>) -> Result<Option<String>, Settled> {
+    match arg {
+        None => Ok(None),
+        Some(PosArg(JsVal::String(s))) => Ok(Some(s)),
+        Some(PosArg(other)) => Err(wrong_type(method, name, "a string", &other)),
+    }
+}
+
+fn pos_bool(method: &str, name: &str, arg: Option<PosArg>) -> Result<Option<bool>, Settled> {
+    match arg {
+        None => Ok(None),
+        Some(PosArg(JsVal::Bool(b))) => Ok(Some(b)),
+        Some(PosArg(other)) => Err(wrong_type(method, name, "a boolean", &other)),
+    }
+}
+
+fn pos_u32(method: &str, name: &str, arg: Option<PosArg>) -> Result<Option<u32>, Settled> {
+    match arg {
+        None => Ok(None),
+        Some(PosArg(JsVal::Number(n))) if n.is_finite() && n.fract() == 0.0 && n >= 0.0 && n <= f64::from(u32::MAX) => {
+            Ok(Some(n as u32))
+        }
+        Some(PosArg(other)) => Err(wrong_type(method, name, "a non-negative integer", &other)),
+    }
+}
+
+/// The value of a `pos_*` / [`unused_args`] check, or return its rejection.
+macro_rules! take {
+    ($check:expr) => {
+        match $check {
+            Ok(value) => value,
+            Err(rejected) => return Ok(rejected),
+        }
+    };
+}
+
+/// The keys `spec` accepts in the object form, path param first.
+fn accepted_keys(spec: &EndpointSpec) -> String {
+    spec.path_param
+        .into_iter()
+        .chain(spec.path_param_aliases.iter().copied())
+        .chain(spec.names())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Refuse the arguments a call does not use (#294), as a `TypeError`
+/// rejection: with the params object first, any further argument (`later`
+/// names the declared ones and whether each is set); with a positional first
+/// argument, one past the last declared (`extra`).
+///
+/// `method` is the JS name (`stock.intraday.candles`), `path` its row in
+/// `core::rest::params`, `first` the name of the first parameter.
+fn unused_args(
+    method: &str,
+    path: &[&str],
+    first: (&str, &Option<RestArg>),
+    later: &[(&str, bool)],
+    extra: Option<ExtraArg>,
+) -> Option<Settled> {
+    if let Some(RestArg::Invalid(kind)) = first.1 {
+        return Some(Settled::type_error(format!(
+            "`{method}`: {} must be a string or a params object, got {kind}",
+            first.0
+        )));
+    }
+    let keys = || {
+        let spec = EndpointSpec::for_path(path)
+            .unwrap_or_else(|| panic!("{} has no entry in core::rest::params", path.join("/")));
+        accepted_keys(spec)
+    };
+    if matches!(first.1, Some(RestArg::Params(_))) {
+        let further = match (later.iter().find(|(_, set)| *set), extra) {
+            (Some((name, _)), _) => format!("`{name}` as a further argument"),
+            (None, Some(ExtraArg(kind))) => format!("a further {kind} argument"),
+            (None, None) => return None,
+        };
+        return Some(Settled::type_error(format!(
+            "`{method}` got a params object and {further}; the object form takes no other \
+             arguments. Put every parameter in the object; accepted keys: {}",
+            keys()
+        )));
+    }
+    let ExtraArg(kind) = extra?;
+    let names: Vec<&str> = std::iter::once(first.0).chain(later.iter().map(|(name, _)| *name)).collect();
+    let short = method.rsplit('.').next().unwrap_or(method);
+    Some(Settled::type_error(format!(
+        "`{method}` takes at most {} positional argument{} ({}), got a further {kind} one. Pass \
+         other parameters in the params object instead, e.g. {short}({{ {}: ..., ... }}); accepted \
+         keys: {keys}",
+        names.len(),
+        if names.len() == 1 { "" } else { "s" },
+        names.join(", "),
+        first.0,
+        keys = keys(),
+    )))
 }
 
 /// Send the object form: the path param (`symbol` / `market`, or `product`
@@ -118,13 +248,13 @@ async fn get_with_params(
     .await
     .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-    Ok(Settled(result))
+    Ok(Settled::from(result))
 }
 
 /// A rejection carrying the unified error fields (`code` 1005, `sourceKind`
 /// `client`), built on the JS thread when the promise settles.
 fn invalid(name: &str, reason: String) -> Settled {
-    Settled(Err(marketdata_core::MarketDataError::InvalidParameter {
+    Settled::from(Err(marketdata_core::MarketDataError::InvalidParameter {
         name: name.to_string(),
         reason,
     }))
@@ -153,18 +283,12 @@ fn query_pairs(
                 Some(name) => format!("did you mean `{name}`? "),
                 None => String::new(),
             };
-            let accepted: Vec<&str> = spec
-                .path_param
-                .into_iter()
-                .chain(spec.path_param_aliases.iter().copied())
-                .chain(spec.names())
-                .collect();
             return Err(invalid(
                 &key,
                 format!(
                     "`{}` does not accept `{key}`; {hint}accepted keys: {}",
                     spec.path.join("."),
-                    accepted.join(", ")
+                    accepted_keys(spec)
                 ),
             ));
         };
@@ -285,9 +409,10 @@ impl RestClient {
     ///   baseUrl: 'https://custom.api'
     /// });
     /// ```
-    #[napi(constructor)]
-    pub fn new(env: napi::Env, options: RestClientOptions) -> napi::Result<Self> {
-        Self::from_options(options).map_err(|e| e.into_napi(&env))
+    #[napi(constructor, ts_args_type = "options: RestClientOptions")]
+    pub fn new(env: napi::Env, options: crate::options::Checked<RestClientOptions>) -> napi::Result<Self> {
+        // Checked against `options::REST_CLIENT_FIELDS` first (#294).
+        Self::from_options(options.0).map_err(|e| e.into_napi(&env))
     }
 
     /// The prefix every request from this client is built on, fully resolved —
@@ -380,7 +505,10 @@ impl StockClient {
     }
 }
 
-/// `stock.ownership.etfHoldings` params (object form, matching the official SDK)
+/// `stock.ownership.etfHoldings` params (object form, matching the official SDK).
+/// Any other key is refused.
+// The TypeScript type only: the call reads the object through
+// `core::rest::params` (#294).
 #[napi(object)]
 pub struct EtfHoldingsParams {
     pub symbol: String,
@@ -389,7 +517,10 @@ pub struct EtfHoldingsParams {
     pub sort: Option<String>,
 }
 
-/// `stock.ownership.institutionalTrades` params (object form, matching the official SDK)
+/// `stock.ownership.institutionalTrades` params (object form, matching the official SDK).
+/// Any other key is refused.
+// The TypeScript type only: the call reads the object through
+// `core::rest::params` (#294).
 #[napi(object)]
 pub struct InstitutionalTradesParams {
     pub symbol: String,
@@ -398,7 +529,10 @@ pub struct InstitutionalTradesParams {
     pub sort: Option<String>,
 }
 
-/// `stock.ownership.directorHoldings` params (object form, matching the official SDK)
+/// `stock.ownership.directorHoldings` params (object form, matching the official SDK).
+/// Any other key is refused.
+// The TypeScript type only: the call reads the object through
+// `core::rest::params` (#294).
 #[napi(object)]
 pub struct DirectorHoldingsParams {
     pub symbol: String,
@@ -407,7 +541,10 @@ pub struct DirectorHoldingsParams {
     pub sort: Option<String>,
 }
 
-/// `stock.ownership.tdccDistribution` params (object form, matching the official SDK)
+/// `stock.ownership.tdccDistribution` params (object form, matching the official SDK).
+/// Any other key is refused.
+// The TypeScript type only: the call reads the object through
+// `core::rest::params` (#294).
 #[napi(object)]
 pub struct TdccDistributionParams {
     pub symbol: String,
@@ -430,10 +567,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.etfHoldings({ symbol: '0050' });
     /// await client.stock.ownership.etfHoldings({ symbol: '0050', from: '2026-01-01', sort: 'desc' });
     /// ```
-    #[napi(ts_return_type = "Promise<EtfHoldingsResponse>")]
-    pub async fn etf_holdings(&self, params: EtfHoldingsParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
-        run_ownership(self.inner.clone(), query, send_etf_holdings).await
+    #[napi(ts_return_type = "Promise<EtfHoldingsResponse>", ts_args_type = "params: EtfHoldingsParams")]
+    pub async fn etf_holdings(&self, params: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        ownership(&self.inner, "stock.ownership.etfHoldings", "etf-holdings", params, extra).await
     }
 
     /// Get daily trading by the three major institutional investors (foreign, investment trust, dealer).
@@ -442,10 +578,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.institutionalTrades({ symbol: '2330' });
     /// await client.stock.ownership.institutionalTrades({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
     /// ```
-    #[napi(ts_return_type = "Promise<InstitutionalTradesResponse>")]
-    pub async fn institutional_trades(&self, params: InstitutionalTradesParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
-        run_ownership(self.inner.clone(), query, send_institutional_trades).await
+    #[napi(ts_return_type = "Promise<InstitutionalTradesResponse>", ts_args_type = "params: InstitutionalTradesParams")]
+    pub async fn institutional_trades(&self, params: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        ownership(&self.inner, "stock.ownership.institutionalTrades", "institutional-trades", params, extra).await
     }
 
     /// Get monthly holdings and pledges disclosed by directors and supervisors.
@@ -454,10 +589,9 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.directorHoldings({ symbol: '2330' });
     /// await client.stock.ownership.directorHoldings({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
     /// ```
-    #[napi(ts_return_type = "Promise<DirectorHoldingsResponse>")]
-    pub async fn director_holdings(&self, params: DirectorHoldingsParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
-        run_ownership(self.inner.clone(), query, send_director_holdings).await
+    #[napi(ts_return_type = "Promise<DirectorHoldingsResponse>", ts_args_type = "params: DirectorHoldingsParams")]
+    pub async fn director_holdings(&self, params: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        ownership(&self.inner, "stock.ownership.directorHoldings", "director-holdings", params, extra).await
     }
 
     /// Get the weekly TDCC shareholder distribution by holding-size bracket.
@@ -466,72 +600,36 @@ impl StockOwnershipClient {
     /// await client.stock.ownership.tdccDistribution({ symbol: '2330' });
     /// await client.stock.ownership.tdccDistribution({ symbol: '2330', from: '2026-01-01', sort: 'desc' });
     /// ```
-    #[napi(ts_return_type = "Promise<TdccDistributionResponse>")]
-    pub async fn tdcc_distribution(&self, params: TdccDistributionParams) -> napi::Result<Settled> {
-        let query = OwnershipQuery::new(params.symbol, params.from, params.to, params.sort);
-        run_ownership(self.inner.clone(), query, send_tdcc_distribution).await
+    #[napi(ts_return_type = "Promise<TdccDistributionResponse>", ts_args_type = "params: TdccDistributionParams")]
+    pub async fn tdcc_distribution(&self, params: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        ownership(&self.inner, "stock.ownership.tdccDistribution", "tdcc-distribution", params, extra).await
     }
 }
 
-/// Parsed arguments shared by every `stock.ownership.*` method.
-struct OwnershipQuery {
-    symbol: String,
-    from: Option<String>,
-    to: Option<String>,
-    sort: Option<String>,
-}
-
-impl OwnershipQuery {
-    /// `sort` is sent as given: keys are checked, values are not (#164), so
-    /// a bad sort gets the server's own error like every other endpoint.
-    fn new(
-        symbol: String,
-        from: Option<String>,
-        to: Option<String>,
-        sort: Option<String>,
-    ) -> Self {
-        Self { symbol, from, to, sort }
-    }
-}
-
-macro_rules! ownership_sender {
-    ($fn_name:ident, $method:ident) => {
-        fn $fn_name(
-            client: &marketdata_core::RestClient,
-            q: OwnershipQuery,
-        ) -> Result<Value, marketdata_core::MarketDataError> {
-            let stock = client.stock();
-            let ownership = stock.ownership();
-            let mut builder = ownership.$method().symbol(&q.symbol);
-            if let Some(f) = q.from.as_deref() {
-                builder = builder.from(f);
-            }
-            if let Some(t) = q.to.as_deref() {
-                builder = builder.to(t);
-            }
-            if let Some(s) = q.sort.as_deref() {
-                builder = builder.sort(s);
-            }
-            builder.send()
-        }
-    };
-}
-
-ownership_sender!(send_etf_holdings, etf_holdings);
-ownership_sender!(send_institutional_trades, institutional_trades);
-ownership_sender!(send_director_holdings, director_holdings);
-ownership_sender!(send_tdcc_distribution, tdcc_distribution);
-
-async fn run_ownership(
-    client: marketdata_core::RestClient,
-    query: OwnershipQuery,
-    send: fn(&marketdata_core::RestClient, OwnershipQuery) -> Result<Value, marketdata_core::MarketDataError>,
+/// Every `stock.ownership.*` method: the params object, checked against
+/// `core::rest::params` like the other object forms (#294). These methods
+/// have no positional form.
+async fn ownership(
+    client: &marketdata_core::RestClient,
+    method: &str,
+    segment: &str,
+    params: Option<RestArg>,
+    extra: Option<ExtraArg>,
 ) -> napi::Result<Settled> {
-    let result = tokio::task::spawn_blocking(move || send(&client, query))
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
-
-    Ok(Settled(result))
+    let path = ["stock", "ownership", segment];
+    if !matches!(params, Some(RestArg::Params(_))) {
+        let short = method.rsplit('.').next().unwrap_or(method);
+        return Ok(Settled::type_error(format!(
+            "`{method}` takes a params object, e.g. {short}({{ symbol: '2330' }})"
+        )));
+    }
+    if let Some(rejected) = unused_args(method, &path, ("params", &params), &[], extra) {
+        return Ok(rejected);
+    }
+    let Some(RestArg::Params(object)) = params else {
+        unreachable!("checked above");
+    };
+    get_with_params(client, &path, object).await
 }
 
 /// Stock intraday data client
@@ -559,8 +657,21 @@ impl StockIntradayClient {
         ts_return_type = "Promise<QuoteResponse>",
         ts_args_type = "symbol: string | RestStockIntradayQuoteParams, oddLot?: boolean | undefined | null"
     )]
-    pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<bool>) -> napi::Result<Settled> {
-        let (symbol, effective_odd_lot) = match RestArg::required(symbol, "symbol")? {
+    pub async fn quote(&self, symbol: Option<RestArg>, odd_lot: Option<PosArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.intraday.quote",
+            &["stock", "intraday", "quote"],
+            ("symbol", &symbol),
+            // The positional flag also applies to the object form (below),
+            // so it is never "unused" there.
+            &[("oddLot", false)],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let odd_lot = take!(pos_bool("stock.intraday.quote", "oddLot", odd_lot));
+        let (symbol, effective_odd_lot) = match take!(RestArg::required("stock.intraday.quote", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(symbol) => (symbol, odd_lot),
             RestArg::Params(mut params) => {
                 // The positional flag still applies to the object form unless
@@ -593,7 +704,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday ticker for a stock symbol
@@ -604,8 +715,18 @@ impl StockIntradayClient {
         ts_return_type = "Promise<TickerResponse>",
         ts_args_type = "symbol: string | RestStockIntradayTickerParams"
     )]
-    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn ticker(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.intraday.ticker",
+            &["stock", "intraday", "ticker"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("stock.intraday.ticker", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "ticker"], params).await,
         };
@@ -618,7 +739,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday candles for a stock symbol
@@ -630,8 +751,19 @@ impl StockIntradayClient {
         ts_return_type = "Promise<CandlesResponse>",
         ts_args_type = "symbol: string | RestStockIntradayCandlesParams, timeframe?: string | undefined | null"
     )]
-    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<PosArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.intraday.candles",
+            &["stock", "intraday", "candles"],
+            ("symbol", &symbol),
+            &[("timeframe", timeframe.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let timeframe = take!(pos_string("stock.intraday.candles", "timeframe", timeframe));
+        let symbol = match take!(RestArg::required("stock.intraday.candles", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "candles"], params).await,
         };
@@ -650,7 +782,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday trades for a stock symbol
@@ -661,8 +793,18 @@ impl StockIntradayClient {
         ts_return_type = "Promise<TradesResponse>",
         ts_args_type = "symbol: string | RestStockIntradayTradesParams"
     )]
-    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn trades(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.intraday.trades",
+            &["stock", "intraday", "trades"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("stock.intraday.trades", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "trades"], params).await,
         };
@@ -675,7 +817,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday volumes for a stock symbol
@@ -686,8 +828,18 @@ impl StockIntradayClient {
         ts_return_type = "Promise<VolumesResponse>",
         ts_args_type = "symbol: string | RestStockIntradayVolumesParams"
     )]
-    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn volumes(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.intraday.volumes",
+            &["stock", "intraday", "volumes"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("stock.intraday.volumes", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "volumes"], params).await,
         };
@@ -700,7 +852,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get batch ticker list for a security type
@@ -718,12 +870,27 @@ impl StockIntradayClient {
     pub async fn tickers(
         &self,
         r#type: Option<RestArg>,
-        exchange: Option<String>,
-        market: Option<String>,
-        industry: Option<String>,
-        is_normal: Option<bool>,
+        exchange: Option<PosArg>,
+        market: Option<PosArg>,
+        industry: Option<PosArg>,
+        is_normal: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let r#type = match RestArg::required(r#type, "type")? {
+        if let Some(rejected) = unused_args(
+            "stock.intraday.tickers",
+            &["stock", "intraday", "tickers"],
+            ("type", &r#type),
+            &[("exchange", exchange.is_some()), ("market", market.is_some()), ("industry", industry.is_some()), ("isNormal", is_normal.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let exchange = take!(pos_string("stock.intraday.tickers", "exchange", exchange));
+        let market = take!(pos_string("stock.intraday.tickers", "market", market));
+        let industry = take!(pos_string("stock.intraday.tickers", "industry", industry));
+        let is_normal = take!(pos_bool("stock.intraday.tickers", "isNormal", is_normal));
+        let r#type = match take!(RestArg::required("stock.intraday.tickers", r#type, "type")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "intraday", "tickers"], params).await,
         };
@@ -751,7 +918,7 @@ impl StockIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 
@@ -777,11 +944,25 @@ impl StockHistoricalClient {
     pub async fn candles(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "stock.historical.candles",
+            &["stock", "historical", "candles"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("stock.historical.candles", "from", from));
+        let to = take!(pos_string("stock.historical.candles", "to", to));
+        let timeframe = take!(pos_string("stock.historical.candles", "timeframe", timeframe));
+        let symbol = match take!(RestArg::required("stock.historical.candles", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "candles"], params).await,
         };
@@ -806,7 +987,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get historical stats for a stock symbol
@@ -817,8 +998,18 @@ impl StockHistoricalClient {
         ts_return_type = "Promise<StatsResponse>",
         ts_args_type = "symbol: string | RestStockHistoricalStatsParams"
     )]
-    pub async fn stats(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn stats(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.historical.stats",
+            &["stock", "historical", "stats"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("stock.historical.stats", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "historical", "stats"], params).await,
         };
@@ -831,7 +1022,7 @@ impl StockHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 
@@ -852,8 +1043,19 @@ impl StockSnapshotClient {
         ts_return_type = "Promise<SnapshotQuotesResponse>",
         ts_args_type = "market: string | RestStockSnapshotQuotesParams, typeFilter?: string | undefined | null"
     )]
-    pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<String>) -> napi::Result<Settled> {
-        let market = match RestArg::required(market, "market")? {
+    pub async fn quotes(&self, market: Option<RestArg>, type_filter: Option<PosArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.snapshot.quotes",
+            &["stock", "snapshot", "quotes"],
+            ("market", &market),
+            &[("typeFilter", type_filter.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let type_filter = take!(pos_string("stock.snapshot.quotes", "typeFilter", type_filter));
+        let market = match take!(RestArg::required("stock.snapshot.quotes", market, "market")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "quotes"], params).await,
         };
@@ -872,7 +1074,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get movers (top gainers/losers) for a market
@@ -888,10 +1090,23 @@ impl StockSnapshotClient {
     pub async fn movers(
         &self,
         market: Option<RestArg>,
-        direction: Option<String>,
-        change: Option<String>,
+        direction: Option<PosArg>,
+        change: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let market = match RestArg::required(market, "market")? {
+        if let Some(rejected) = unused_args(
+            "stock.snapshot.movers",
+            &["stock", "snapshot", "movers"],
+            ("market", &market),
+            &[("direction", direction.is_some()), ("change", change.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let direction = take!(pos_string("stock.snapshot.movers", "direction", direction));
+        let change = take!(pos_string("stock.snapshot.movers", "change", change));
+        let market = match take!(RestArg::required("stock.snapshot.movers", market, "market")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "movers"], params).await,
         };
@@ -913,7 +1128,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get most actively traded stocks for a market
@@ -925,8 +1140,19 @@ impl StockSnapshotClient {
         ts_return_type = "Promise<ActivesResponse>",
         ts_args_type = "market: string | RestStockSnapshotActivesParams, trade?: string | undefined | null"
     )]
-    pub async fn actives(&self, market: Option<RestArg>, trade: Option<String>) -> napi::Result<Settled> {
-        let market = match RestArg::required(market, "market")? {
+    pub async fn actives(&self, market: Option<RestArg>, trade: Option<PosArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "stock.snapshot.actives",
+            &["stock", "snapshot", "actives"],
+            ("market", &market),
+            &[("trade", trade.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let trade = take!(pos_string("stock.snapshot.actives", "trade", trade));
+        let market = match take!(RestArg::required("stock.snapshot.actives", market, "market")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "snapshot", "actives"], params).await,
         };
@@ -945,7 +1171,7 @@ impl StockSnapshotClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 
@@ -972,12 +1198,27 @@ impl StockTechnicalClient {
     pub async fn sma(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
-        period: Option<u32>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        period: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "stock.technical.sma",
+            &["stock", "technical", "sma"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some()), ("period", period.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("stock.technical.sma", "from", from));
+        let to = take!(pos_string("stock.technical.sma", "to", to));
+        let timeframe = take!(pos_string("stock.technical.sma", "timeframe", timeframe));
+        let period = take!(pos_u32("stock.technical.sma", "period", period));
+        let symbol = match take!(RestArg::required("stock.technical.sma", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "sma"], params).await,
         };
@@ -1005,7 +1246,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get RSI (Relative Strength Index) for a stock
@@ -1023,12 +1264,27 @@ impl StockTechnicalClient {
     pub async fn rsi(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
-        period: Option<u32>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        period: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "stock.technical.rsi",
+            &["stock", "technical", "rsi"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some()), ("period", period.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("stock.technical.rsi", "from", from));
+        let to = take!(pos_string("stock.technical.rsi", "to", to));
+        let timeframe = take!(pos_string("stock.technical.rsi", "timeframe", timeframe));
+        let period = take!(pos_u32("stock.technical.rsi", "period", period));
+        let symbol = match take!(RestArg::required("stock.technical.rsi", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "rsi"], params).await,
         };
@@ -1056,7 +1312,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get KDJ (Stochastic Oscillator) for a stock
@@ -1076,14 +1332,31 @@ impl StockTechnicalClient {
     pub async fn kdj(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
-        r_period: Option<u32>,
-        k_period: Option<u32>,
-        d_period: Option<u32>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        r_period: Option<PosArg>,
+        k_period: Option<PosArg>,
+        d_period: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "stock.technical.kdj",
+            &["stock", "technical", "kdj"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some()), ("rPeriod", r_period.is_some()), ("kPeriod", k_period.is_some()), ("dPeriod", d_period.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("stock.technical.kdj", "from", from));
+        let to = take!(pos_string("stock.technical.kdj", "to", to));
+        let timeframe = take!(pos_string("stock.technical.kdj", "timeframe", timeframe));
+        let r_period = take!(pos_u32("stock.technical.kdj", "rPeriod", r_period));
+        let k_period = take!(pos_u32("stock.technical.kdj", "kPeriod", k_period));
+        let d_period = take!(pos_u32("stock.technical.kdj", "dPeriod", d_period));
+        let symbol = match take!(RestArg::required("stock.technical.kdj", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "kdj"], params).await,
         };
@@ -1117,7 +1390,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get MACD (Moving Average Convergence Divergence) for a stock
@@ -1137,14 +1410,31 @@ impl StockTechnicalClient {
     pub async fn macd(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
-        fast: Option<u32>,
-        slow: Option<u32>,
-        signal: Option<u32>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        fast: Option<PosArg>,
+        slow: Option<PosArg>,
+        signal: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "stock.technical.macd",
+            &["stock", "technical", "macd"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some()), ("fast", fast.is_some()), ("slow", slow.is_some()), ("signal", signal.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("stock.technical.macd", "from", from));
+        let to = take!(pos_string("stock.technical.macd", "to", to));
+        let timeframe = take!(pos_string("stock.technical.macd", "timeframe", timeframe));
+        let fast = take!(pos_u32("stock.technical.macd", "fast", fast));
+        let slow = take!(pos_u32("stock.technical.macd", "slow", slow));
+        let signal = take!(pos_u32("stock.technical.macd", "signal", signal));
+        let symbol = match take!(RestArg::required("stock.technical.macd", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "macd"], params).await,
         };
@@ -1178,7 +1468,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get Bollinger Bands for a stock
@@ -1196,12 +1486,27 @@ impl StockTechnicalClient {
     pub async fn bb(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
-        period: Option<u32>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        period: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "stock.technical.bb",
+            &["stock", "technical", "bb"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some()), ("period", period.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("stock.technical.bb", "from", from));
+        let to = take!(pos_string("stock.technical.bb", "to", to));
+        let timeframe = take!(pos_string("stock.technical.bb", "timeframe", timeframe));
+        let period = take!(pos_u32("stock.technical.bb", "period", period));
+        let symbol = match take!(RestArg::required("stock.technical.bb", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["stock", "technical", "bb"], params).await,
         };
@@ -1229,7 +1534,7 @@ impl StockTechnicalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 
@@ -1252,11 +1557,12 @@ pub struct StockCorporateActionsClient {
 fn reject_legacy_date_args(
     method: &str,
     first: &Option<RestArg>,
-    second: &Option<String>,
-    third: &Option<Value>,
+    second: &Option<PosArg>,
+    third: &Option<PosArg>,
 ) -> napi::Result<()> {
-    let is_set = |value: &Option<Value>| !matches!(value, None | Some(Value::Null));
-    if is_set(third) {
+    // `undefined` / `null` arrive as `None`; any other value, whatever its
+    // type, is the old third argument.
+    if third.is_some() {
         return Err(napi::Error::from_reason(format!(
             "`{method}` no longer takes `date` as its first argument: the server rejects it \
              (capital-changes and listing-applicants respond 400, dividends ignores it). \
@@ -1291,12 +1597,24 @@ impl StockCorporateActionsClient {
     pub async fn capital_changes(
         &self,
         start_date: Option<RestArg>,
-        end_date: Option<String>,
-        legacy_third_arg: Option<Value>,
+        end_date: Option<PosArg>,
+        legacy_third_arg: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("capitalChanges", &start_date, &end_date, &legacy_third_arg)?;
+        if let Some(rejected) = unused_args(
+            "stock.corporateActions.capitalChanges",
+            &["stock", "corporate-actions", "capital-changes"],
+            ("startDate", &start_date),
+            &[("endDate", end_date.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let end_date = take!(pos_string("stock.corporateActions.capitalChanges", "endDate", end_date));
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
+            Some(RestArg::Invalid(_)) => unreachable!("refused by unused_args"),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "capital-changes"], params).await,
             None => None,
         };
@@ -1318,7 +1636,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get dividend announcements
@@ -1333,12 +1651,24 @@ impl StockCorporateActionsClient {
     pub async fn dividends(
         &self,
         start_date: Option<RestArg>,
-        end_date: Option<String>,
-        legacy_third_arg: Option<Value>,
+        end_date: Option<PosArg>,
+        legacy_third_arg: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("dividends", &start_date, &end_date, &legacy_third_arg)?;
+        if let Some(rejected) = unused_args(
+            "stock.corporateActions.dividends",
+            &["stock", "corporate-actions", "dividends"],
+            ("startDate", &start_date),
+            &[("endDate", end_date.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let end_date = take!(pos_string("stock.corporateActions.dividends", "endDate", end_date));
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
+            Some(RestArg::Invalid(_)) => unreachable!("refused by unused_args"),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "dividends"], params).await,
             None => None,
         };
@@ -1360,7 +1690,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get IPO listing applicants
@@ -1375,12 +1705,24 @@ impl StockCorporateActionsClient {
     pub async fn listing_applicants(
         &self,
         start_date: Option<RestArg>,
-        end_date: Option<String>,
-        legacy_third_arg: Option<Value>,
+        end_date: Option<PosArg>,
+        legacy_third_arg: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         reject_legacy_date_args("listingApplicants", &start_date, &end_date, &legacy_third_arg)?;
+        if let Some(rejected) = unused_args(
+            "stock.corporateActions.listingApplicants",
+            &["stock", "corporate-actions", "listing-applicants"],
+            ("startDate", &start_date),
+            &[("endDate", end_date.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let end_date = take!(pos_string("stock.corporateActions.listingApplicants", "endDate", end_date));
         let start_date = match start_date {
             Some(RestArg::Positional(start_date)) => Some(start_date),
+            Some(RestArg::Invalid(_)) => unreachable!("refused by unused_args"),
             Some(RestArg::Params(params)) => return get_with_params(&self.inner, &["stock", "corporate-actions", "listing-applicants"], params).await,
             None => None,
         };
@@ -1402,7 +1744,7 @@ impl StockCorporateActionsClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 
@@ -1455,8 +1797,18 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<FutOptQuoteResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayQuoteParams"
     )]
-    pub async fn quote(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn quote(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.quote",
+            &["futopt", "intraday", "quote"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("futopt.intraday.quote", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "quote"], params).await,
         };
@@ -1469,7 +1821,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday ticker for a futures/options contract
@@ -1480,8 +1832,18 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<FutOptTickerResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayTickerParams"
     )]
-    pub async fn ticker(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn ticker(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.ticker",
+            &["futopt", "intraday", "ticker"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("futopt.intraday.ticker", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "ticker"], params).await,
         };
@@ -1494,7 +1856,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday candles for a futures/options contract
@@ -1506,8 +1868,19 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<CandlesResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayCandlesParams, timeframe?: string | undefined | null"
     )]
-    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<String>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn candles(&self, symbol: Option<RestArg>, timeframe: Option<PosArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.candles",
+            &["futopt", "intraday", "candles"],
+            ("symbol", &symbol),
+            &[("timeframe", timeframe.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let timeframe = take!(pos_string("futopt.intraday.candles", "timeframe", timeframe));
+        let symbol = match take!(RestArg::required("futopt.intraday.candles", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "candles"], params).await,
         };
@@ -1526,7 +1899,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday trades for a futures/options contract
@@ -1537,8 +1910,18 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<TradesResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayTradesParams"
     )]
-    pub async fn trades(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn trades(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.trades",
+            &["futopt", "intraday", "trades"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("futopt.intraday.trades", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "trades"], params).await,
         };
@@ -1551,7 +1934,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get intraday volumes for a futures/options contract
@@ -1562,8 +1945,18 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<VolumesResponse>",
         ts_args_type = "symbol: string | RestFutOptIntradayVolumesParams"
     )]
-    pub async fn volumes(&self, symbol: Option<RestArg>) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+    pub async fn volumes(&self, symbol: Option<RestArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.volumes",
+            &["futopt", "intraday", "volumes"],
+            ("symbol", &symbol),
+            &[],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let symbol = match take!(RestArg::required("futopt.intraday.volumes", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "volumes"], params).await,
         };
@@ -1576,7 +1969,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get batch ticker list for a FutOpt contract type
@@ -1593,12 +1986,27 @@ impl FutOptIntradayClient {
     pub async fn tickers(
         &self,
         typ: Option<RestArg>,
-        exchange: Option<String>,
-        after_hours: Option<bool>,
-        contract_type: Option<String>,
-        is_spread: Option<bool>,
+        exchange: Option<PosArg>,
+        after_hours: Option<PosArg>,
+        contract_type: Option<PosArg>,
+        is_spread: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let typ = match RestArg::required(typ, "type")? {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.tickers",
+            &["futopt", "intraday", "tickers"],
+            ("type", &typ),
+            &[("exchange", exchange.is_some()), ("afterHours", after_hours.is_some()), ("contractType", contract_type.is_some()), ("isSpread", is_spread.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let exchange = take!(pos_string("futopt.intraday.tickers", "exchange", exchange));
+        let after_hours = take!(pos_bool("futopt.intraday.tickers", "afterHours", after_hours));
+        let contract_type = take!(pos_string("futopt.intraday.tickers", "contractType", contract_type));
+        let is_spread = take!(pos_bool("futopt.intraday.tickers", "isSpread", is_spread));
+        let typ = match take!(RestArg::required("futopt.intraday.tickers", typ, "type")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "tickers"], params).await,
         };
@@ -1658,7 +2066,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get product list for futures/options
@@ -1670,8 +2078,19 @@ impl FutOptIntradayClient {
         ts_return_type = "Promise<ProductsResponse>",
         ts_args_type = "type: FutOptType | RestFutOptIntradayProductsParams, contractType?: ContractType | undefined | null"
     )]
-    pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<String>) -> napi::Result<Settled> {
-        let typ = match RestArg::required(typ, "type")? {
+    pub async fn products(&self, typ: Option<RestArg>, contract_type: Option<PosArg>, extra: Option<ExtraArg>) -> napi::Result<Settled> {
+        if let Some(rejected) = unused_args(
+            "futopt.intraday.products",
+            &["futopt", "intraday", "products"],
+            ("type", &typ),
+            &[("contractType", contract_type.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let contract_type = take!(pos_string("futopt.intraday.products", "contractType", contract_type));
+        let typ = match take!(RestArg::required("futopt.intraday.products", typ, "type")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => return get_with_params(&self.inner, &["futopt", "intraday", "products"], params).await,
         };
@@ -1722,7 +2141,7 @@ impl FutOptIntradayClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 
@@ -1756,15 +2175,33 @@ impl FutOptHistoricalClient {
     pub async fn candles(
         &self,
         symbol: Option<RestArg>,
-        from: Option<String>,
-        to: Option<String>,
-        timeframe: Option<String>,
-        after_hours: Option<bool>,
-        contract_month: Option<String>,
-        fields: Option<String>,
-        sort: Option<String>,
+        from: Option<PosArg>,
+        to: Option<PosArg>,
+        timeframe: Option<PosArg>,
+        after_hours: Option<PosArg>,
+        contract_month: Option<PosArg>,
+        fields: Option<PosArg>,
+        sort: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "futopt.historical.candles",
+            &["futopt", "historical", "candles"],
+            ("symbol", &symbol),
+            &[("from", from.is_some()), ("to", to.is_some()), ("timeframe", timeframe.is_some()), ("afterHours", after_hours.is_some()), ("contractMonth", contract_month.is_some()), ("fields", fields.is_some()), ("sort", sort.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let from = take!(pos_string("futopt.historical.candles", "from", from));
+        let to = take!(pos_string("futopt.historical.candles", "to", to));
+        let timeframe = take!(pos_string("futopt.historical.candles", "timeframe", timeframe));
+        let after_hours = take!(pos_bool("futopt.historical.candles", "afterHours", after_hours));
+        let contract_month = take!(pos_string("futopt.historical.candles", "contractMonth", contract_month));
+        let fields = take!(pos_string("futopt.historical.candles", "fields", fields));
+        let sort = take!(pos_string("futopt.historical.candles", "sort", sort));
+        let symbol = match take!(RestArg::required("futopt.historical.candles", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => {
                 return get_with_params(&self.inner, &["futopt", "historical", "candles"], params).await;
@@ -1803,7 +2240,7 @@ impl FutOptHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 
     /// Get one trading day's daily quotes for every contract month of a futures/options product
@@ -1819,10 +2256,23 @@ impl FutOptHistoricalClient {
     pub async fn daily(
         &self,
         symbol: Option<RestArg>,
-        date: Option<String>,
-        after_hours: Option<bool>,
+        date: Option<PosArg>,
+        after_hours: Option<PosArg>,
+        extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
-        let symbol = match RestArg::required(symbol, "symbol")? {
+        if let Some(rejected) = unused_args(
+            "futopt.historical.daily",
+            &["futopt", "historical", "daily"],
+            ("symbol", &symbol),
+            &[("date", date.is_some()), ("afterHours", after_hours.is_some())],
+            extra,
+        ) {
+            return Ok(rejected);
+        }
+        let date = take!(pos_string("futopt.historical.daily", "date", date));
+        let after_hours = take!(pos_bool("futopt.historical.daily", "afterHours", after_hours));
+        let symbol = match take!(RestArg::required("futopt.historical.daily", symbol, "symbol")) {
+            RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => {
                 return get_with_params(&self.inner, &["futopt", "historical", "daily"], params).await;
@@ -1846,7 +2296,7 @@ impl FutOptHistoricalClient {
         .await
         .map_err(|e| napi::Error::from_reason(format!("Task error: {}", e)))?;
 
-        Ok(Settled(result))
+        Ok(Settled::from(result))
     }
 }
 

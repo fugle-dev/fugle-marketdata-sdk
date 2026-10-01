@@ -1,0 +1,1034 @@
+//! Shape checks for the objects JavaScript callers pass in (#294).
+//!
+//! `#[napi(object)]` reads only the fields it declares, so a mistyped key
+//! (`reconnect: { maxRetries: 3 }`), a string where an object belongs
+//! (`version: 'v1.0'`) or a number napi coerces (`messageBuffer: -1`) used to
+//! pass silently. Each caller-facing object is described here by a table of
+//! its fields; [`check_options`] walks the JS value against it before napi's own
+//! conversion runs, and every refusal is a JS `TypeError` that says what was
+//! wrong and what to write instead.
+//!
+//! An `undefined` or `null` value counts as not given, for known and unknown
+//! keys alike, so `{ ...options, foo: undefined }` passes; the one exception
+//! is `version: null`. Objects have to be plain (prototype `Object.prototype`
+//! or `null`). Everything else has to match its field.
+//!
+//! The value is first read into [`JsVal`], so the rules themselves are plain
+//! Rust and unit-tested below; the jest suites cover the napi side.
+
+use marketdata_core::websocket::version::option::{self as version_option, VersionOptionError};
+use napi::bindgen_prelude::{FromNapiValue, TypeName, ValidateNapiValue};
+use napi::{sys, ValueType};
+
+/// A JS value, read as far as the checks need it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum JsVal {
+    Undefined,
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    /// A typed array or Buffer; `true` when it is a `Uint8Array` (a Node
+    /// `Buffer` is one).
+    Bytes(bool),
+    Array,
+    Function,
+    /// A plain object with its enumerable string keys, inherited ones
+    /// included (`include_prototypes`, as napi's conversion reads them), in
+    /// order. Read only to the depth the tables reach; deeper objects are
+    /// left empty.
+    Object(Vec<(String, JsVal)>),
+    /// Anything else (symbol, bigint, external).
+    Other(&'static str),
+    /// An object whose prototype is not `Object.prototype` or `null` (a
+    /// `Date`, a `Map`, a class instance), with its constructor's name.
+    Instance(String),
+    /// A property whose getter threw. Any field accepts it: a legacy field
+    /// is not read anyway (#262), and for a current one napi's conversion
+    /// reads it again and throws the getter's own error, as before.
+    Unreadable,
+}
+
+impl JsVal {
+    /// The type as an error message names it.
+    pub(crate) fn describe(&self) -> String {
+        match self {
+            Self::Undefined => "undefined".into(),
+            Self::Null => "null".into(),
+            Self::Bool(_) => "boolean".into(),
+            Self::Number(n) => format!("number {}", number_text(*n)),
+            Self::String(_) => "string".into(),
+            Self::Bytes(_) => "typed array".into(),
+            Self::Array => "array".into(),
+            Self::Function => "function".into(),
+            Self::Object(_) => "object".into(),
+            Self::Other(kind) => (*kind).into(),
+            // `Object.create(defaults)`: plain-looking, but its keys live on
+            // another object.
+            Self::Instance(name) if name == "Object" => {
+                "an object inheriting from another object (spread it into a plain object: { ...value })".into()
+            }
+            Self::Instance(name) => format!("object ({name})"),
+            Self::Unreadable => "a value whose getter threw".into(),
+        }
+    }
+}
+
+/// JS spelling of a number: `NaN`, `Infinity`, `-1`, `1.5`.
+fn number_text(n: f64) -> String {
+    if n.is_nan() {
+        "NaN".into()
+    } else if n.is_infinite() {
+        if n > 0.0 { "Infinity".into() } else { "-Infinity".into() }
+    } else {
+        format!("{n}")
+    }
+}
+
+/// What one field accepts.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Kind {
+    Str,
+    Bool,
+    /// A non-negative integer that fits a `u32`.
+    U32,
+    /// A number of milliseconds. The value is core's to judge: see
+    /// [`millis`].
+    Millis,
+    /// A `Uint8Array` / `Buffer`.
+    Bytes,
+    /// A nested object with its own table; `example` goes in the message
+    /// when the value is not an object.
+    Object { fields: &'static [Field], example: &'static str },
+    /// The per-product streaming `version` map.
+    Version,
+    /// A `@fugle/marketdata` 1.x field that 3.0 no longer reads: accepted
+    /// whatever its value, and warned about where it is read (#262).
+    Legacy,
+    /// Read by the other client (a shared 1.x-style options object): accepted
+    /// whatever its value.
+    Ignored,
+}
+
+/// One key of an object.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Field {
+    pub name: &'static str,
+    pub kind: Kind,
+}
+
+const fn field(name: &'static str, kind: Kind) -> Field {
+    Field { name, kind }
+}
+
+/// Names a table lists in an "unknown key" message: the current ones only.
+fn known_names(fields: &[Field]) -> String {
+    fields
+        .iter()
+        .filter(|f| !matches!(f.kind, Kind::Legacy | Kind::Ignored))
+        .map(|f| f.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+const RECONNECT_FIELDS: &[Field] = &[
+    field("enabled", Kind::Bool),
+    field("maxAttempts", Kind::U32),
+    field("initialDelayMs", Kind::Millis),
+    field("maxDelayMs", Kind::Millis),
+];
+
+const HEALTH_CHECK_FIELDS: &[Field] = &[
+    field("enabled", Kind::Bool),
+    field("heartbeatTimeoutMs", Kind::Millis),
+    field("probeEnabled", Kind::Bool),
+    field("idleProbeAfterMs", Kind::Millis),
+    field("probeTimeoutMs", Kind::Millis),
+    field("pingInterval", Kind::Legacy),
+    field("maxMissedPongs", Kind::Legacy),
+];
+
+/// `new WebSocketClient(options)`.
+pub(crate) const WEBSOCKET_CLIENT_FIELDS: &[Field] = &[
+    field("apiKey", Kind::Str),
+    field("bearerToken", Kind::Str),
+    field("sdkToken", Kind::Str),
+    field("baseUrl", Kind::Str),
+    field("version", Kind::Version),
+    field("reconnect", Kind::Object { fields: RECONNECT_FIELDS, example: "{ enabled: false }" }),
+    field("healthCheck", Kind::Object { fields: HEALTH_CHECK_FIELDS, example: "{ enabled: true }" }),
+    field("tlsRootCertPem", Kind::Bytes),
+    field("tlsAcceptInvalidCerts", Kind::Bool),
+    field("messageOverflow", Kind::Str),
+    field("messageBuffer", Kind::U32),
+    field("authTimeoutMs", Kind::Millis),
+];
+
+/// `new RestClient(options)`. The WebSocket-only keys are accepted and not
+/// read, so one options object can build both clients: 1.x documented
+/// `version` (and took `healthCheck`) on the same object.
+pub(crate) const REST_CLIENT_FIELDS: &[Field] = &[
+    field("apiKey", Kind::Str),
+    field("bearerToken", Kind::Str),
+    field("sdkToken", Kind::Str),
+    field("baseUrl", Kind::Str),
+    field("tlsRootCertPem", Kind::Bytes),
+    field("tlsAcceptInvalidCerts", Kind::Bool),
+    field("version", Kind::Ignored),
+    field("reconnect", Kind::Ignored),
+    field("healthCheck", Kind::Ignored),
+    field("messageOverflow", Kind::Ignored),
+    field("messageBuffer", Kind::Ignored),
+    field("authTimeoutMs", Kind::Ignored),
+];
+
+/// Check a constructor's options object. `owner` starts every message
+/// (`WebSocketClient options`).
+pub(crate) fn check_options(owner: &str, value: &JsVal, fields: &[Field]) -> Result<(), String> {
+    if !matches!(value, JsVal::Object(_)) {
+        let hint = match value {
+            JsVal::String(_) => " To pass an API key, write { apiKey: '<key>' }.",
+            _ => "",
+        };
+        return Err(format!(
+            "{owner} must be an object like {{ apiKey: '<key>' }}, got {}.{hint}",
+            value.describe()
+        ));
+    }
+    check_fields(owner, "", value, fields)
+}
+
+/// Check every key [`read`] found on `object` (enumerable, inherited ones
+/// included) against `fields`; `path` prefixes nested names (`reconnect.`).
+pub(crate) fn check_fields(owner: &str, path: &str, object: &JsVal, fields: &[Field]) -> Result<(), String> {
+    let JsVal::Object(entries) = object else {
+        return Ok(());
+    };
+    for (key, value) in entries {
+        let spec = fields.iter().find(|f| f.name == key);
+        // `null` counts as not given, like `undefined` (1.x took
+        // `healthCheck: null` and the like), except for `version`, which
+        // has no meaning to fall back to.
+        let null_given = matches!(value, JsVal::Null) && spec.is_some_and(|f| matches!(f.kind, Kind::Version));
+        if matches!(value, JsVal::Undefined) || (matches!(value, JsVal::Null) && !null_given) {
+            continue;
+        }
+        let Some(spec) = spec else {
+            return Err(format!(
+                "{owner}: unknown option '{path}{key}' (known: {})",
+                known_names(fields)
+            ));
+        };
+        check_value(owner, &format!("{path}{key}"), value, spec.kind)?;
+    }
+    Ok(())
+}
+
+fn check_value(owner: &str, name: &str, value: &JsVal, kind: Kind) -> Result<(), String> {
+    let wrong = |expected: &str| Err(format!("{owner}: {name} must be {expected}, got {}", value.describe()));
+    if matches!(value, JsVal::Unreadable) {
+        return Ok(());
+    }
+    match kind {
+        Kind::Legacy | Kind::Ignored => Ok(()),
+        Kind::Str => match value {
+            JsVal::String(_) => Ok(()),
+            _ => wrong("a string"),
+        },
+        Kind::Bool => match value {
+            JsVal::Bool(_) => Ok(()),
+            _ => wrong("a boolean"),
+        },
+        Kind::U32 => match value {
+            JsVal::Number(n) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 && *n <= f64::from(u32::MAX) => Ok(()),
+            _ => wrong("a non-negative integer"),
+        },
+        // Any number: a negative, NaN or infinite one is read as 0 and gets
+        // core's range error (1004), like any other value out of range.
+        Kind::Millis => match value {
+            JsVal::Number(_) => Ok(()),
+            _ => wrong("a number of milliseconds"),
+        },
+        Kind::Bytes => match value {
+            JsVal::Bytes(true) => Ok(()),
+            _ => wrong("a Uint8Array or Buffer holding PEM bytes"),
+        },
+        Kind::Object { fields, example } => match value {
+            JsVal::Object(_) => check_fields(owner, &format!("{name}."), value, fields),
+            _ => wrong(&format!("an object like {example}")),
+        },
+        Kind::Version => check_version(owner, value),
+    }
+}
+
+/// The `version` map: products and versions are core's (#294); the bare
+/// string message is 1.x's (`@fugle/marketdata` 1.7.0 threw the same
+/// `TypeError` for it).
+fn check_version(owner: &str, value: &JsVal) -> Result<(), String> {
+    let entries = match value {
+        JsVal::Object(entries) => entries,
+        JsVal::String(bare) => return Err(format!("{owner}: {}", bare_version_message(bare))),
+        other => {
+            return Err(format!(
+                "{owner}: version must be a per-product map like {{ futopt: 'v1.0' }}, got {}",
+                other.describe()
+            ))
+        }
+    };
+    let mut given = Vec::new();
+    for (product, requested) in entries {
+        match requested {
+            // `null` is not given; an unreadable value is left to napi's
+            // conversion, which throws the getter's error.
+            JsVal::Undefined | JsVal::Null | JsVal::Unreadable => {}
+            JsVal::String(v) => given.push((product.as_str(), v.as_str())),
+            other => {
+                // An unknown product is the clearer error, whatever its value.
+                if !version_option::product_names().contains(&product.as_str()) {
+                    return Err(format!("{owner}: {}", version_message(&VersionOptionError::UnknownProduct(product.clone()))));
+                }
+                return Err(format!(
+                    "{owner}: version.{product} must be a version string, e.g. 'v1.1', got {}",
+                    other.describe()
+                ));
+            }
+        }
+    }
+    version_option::resolve(given).map(|_| ()).map_err(|err| format!("{owner}: {}", version_message(&err)))
+}
+
+/// A refused `version` entry, in this binding's wording.
+pub(crate) fn version_message(err: &VersionOptionError) -> String {
+    match err {
+        VersionOptionError::UnknownProduct(key) => format!(
+            "unknown product '{key}' in version map (known: {})",
+            version_option::product_names().join(", ")
+        ),
+        VersionOptionError::Unsupported { product, .. } => format!(
+            "{} Remove it from the version map to use {}.",
+            err.describe(),
+            version_option::default_for(product).unwrap_or("the default")
+        ),
+    }
+}
+
+/// `version: 'v1.0'`: name the map that asks for it on every product that
+/// serves it.
+fn bare_version_message(bare: &str) -> String {
+    let products = version_option::products_serving(bare);
+    let fix = if products.is_empty() {
+        format!("No product serves {bare}.")
+    } else {
+        let pairs: Vec<String> = products.iter().map(|p| format!("{p}: '{bare}'")).collect();
+        format!("Use version: {{ {} }}.", pairs.join(", "))
+    };
+    format!("version must be a per-product map, not the bare string '{bare}'. {fix}")
+}
+
+// ---------------------------------------------------------------------------
+// Reading JS values
+
+/// Read `value`, descending `depth` levels into objects. With `plain`, an
+/// object that is not plain is read as [`JsVal::Instance`]: only the client
+/// options and their nested options have to be plain (#294); a REST params
+/// object or a `subscribe()` argument may be any object, as in 1.x
+/// (`trades(Object.create({ symbol: '2330' }))`, a class instance).
+///
+/// # Safety
+/// `env` and `value` must be live handles on the JS thread.
+pub(crate) unsafe fn read(env: sys::napi_env, value: sys::napi_value, depth: usize, plain: bool) -> napi::Result<JsVal> {
+    let mut kind = 0;
+    napi::check_status!(unsafe { sys::napi_typeof(env, value, &mut kind) })?;
+    Ok(match kind {
+        sys::ValueType::napi_undefined => JsVal::Undefined,
+        sys::ValueType::napi_null => JsVal::Null,
+        sys::ValueType::napi_boolean => JsVal::Bool(unsafe { bool::from_napi_value(env, value)? }),
+        sys::ValueType::napi_number => JsVal::Number(unsafe { f64::from_napi_value(env, value)? }),
+        sys::ValueType::napi_string => JsVal::String(unsafe { String::from_napi_value(env, value)? }),
+        sys::ValueType::napi_function => JsVal::Function,
+        sys::ValueType::napi_object => unsafe { read_object(env, value, depth, plain)? },
+        sys::ValueType::napi_symbol => JsVal::Other("symbol"),
+        sys::ValueType::napi_bigint => JsVal::Other("bigint"),
+        _ => JsVal::Other("value"),
+    })
+}
+
+unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize, plain: bool) -> napi::Result<JsVal> {
+    let mut hit = false;
+    napi::check_status!(unsafe { sys::napi_is_array(env, value, &mut hit) })?;
+    if hit {
+        return Ok(JsVal::Array);
+    }
+    napi::check_status!(unsafe { sys::napi_is_typedarray(env, value, &mut hit) })?;
+    if hit {
+        let mut array_type = 0;
+        napi::check_status!(unsafe {
+            sys::napi_get_typedarray_info(
+                env,
+                value,
+                &mut array_type,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        })?;
+        return Ok(JsVal::Bytes(array_type == sys::TypedarrayType::uint8_array));
+    }
+    napi::check_status!(unsafe { sys::napi_is_buffer(env, value, &mut hit) })?;
+    if hit {
+        return Ok(JsVal::Bytes(true));
+    }
+    if plain {
+        if let Some(name) = unsafe { instance_name(env, value)? } {
+            return Ok(JsVal::Instance(name));
+        }
+    }
+    if depth == 0 {
+        return Ok(JsVal::Object(Vec::new()));
+    }
+
+    let mut keys = std::ptr::null_mut();
+    napi::check_status!(unsafe {
+        sys::napi_get_all_property_names(
+            env,
+            value,
+            // Inherited enumerable keys too: napi's conversion reads them.
+            sys::KeyCollectionMode::include_prototypes,
+            sys::KeyFilter::enumerable | sys::KeyFilter::skip_symbols,
+            sys::KeyConversion::numbers_to_strings,
+            &mut keys,
+        )
+    })?;
+    let mut len = 0;
+    napi::check_status!(unsafe { sys::napi_get_array_length(env, keys, &mut len) })?;
+    let mut entries = Vec::with_capacity(len as usize);
+    for i in 0..len {
+        let mut key = std::ptr::null_mut();
+        napi::check_status!(unsafe { sys::napi_get_element(env, keys, i, &mut key) })?;
+        let name = unsafe { String::from_napi_value(env, key)? };
+        // Getters run here and again in `copy_given` (napi's conversion reads
+        // the copy), so twice per constructor.
+        let mut item = std::ptr::null_mut();
+        let read_item = if unsafe { sys::napi_get_property(env, value, key, &mut item) } == sys::Status::napi_ok {
+            unsafe { read(env, item, depth - 1, plain)? }
+        } else {
+            clear_exception(env);
+            JsVal::Unreadable
+        };
+        entries.push((name, read_item));
+    }
+    Ok(JsVal::Object(entries))
+}
+
+/// `None` for a plain object: its prototype is `null`, or its prototype's
+/// prototype is (`Object.prototype` of any realm, or a null-prototype
+/// object); otherwise its constructor's name, or `"unknown"`. For a Proxy,
+/// `napi_get_prototype` gives `null` without calling the `getPrototypeOf`
+/// trap, so a Proxy always counts as plain.
+unsafe fn instance_name(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Option<String>> {
+    let mut proto = std::ptr::null_mut();
+    napi::check_status!(unsafe { sys::napi_get_prototype(env, value, &mut proto) })?;
+    let mut kind = 0;
+    napi::check_status!(unsafe { sys::napi_typeof(env, proto, &mut kind) })?;
+    if kind == sys::ValueType::napi_null {
+        return Ok(None);
+    }
+    // `Object.prototype` of any realm (a jest sandbox has its own) is the
+    // one prototype whose own prototype is `null`; `Date.prototype`, a
+    // class's and the like sit on top of it.
+    let mut grand = std::ptr::null_mut();
+    napi::check_status!(unsafe { sys::napi_get_prototype(env, proto, &mut grand) })?;
+    napi::check_status!(unsafe { sys::napi_typeof(env, grand, &mut kind) })?;
+    if kind == sys::ValueType::napi_null {
+        return Ok(None);
+    }
+    // Best effort: a throwing or missing `constructor.name` is "unknown".
+    let name = (|| {
+        let mut ctor = std::ptr::null_mut();
+        if unsafe { sys::napi_get_named_property(env, value, c"constructor".as_ptr(), &mut ctor) } != sys::Status::napi_ok {
+            return None;
+        }
+        let mut name = std::ptr::null_mut();
+        if unsafe { sys::napi_get_named_property(env, ctor, c"name".as_ptr(), &mut name) } != sys::Status::napi_ok {
+            return None;
+        }
+        unsafe { String::from_napi_value(env, name) }.ok().filter(|n| !n.is_empty())
+    })();
+    clear_exception(env);
+    Ok(Some(name.unwrap_or_else(|| "unknown".into())))
+}
+
+/// Drop the exception a throwing getter left pending.
+fn clear_exception(env: sys::napi_env) {
+    let mut pending = false;
+    if unsafe { sys::napi_is_exception_pending(env, &mut pending) } == sys::Status::napi_ok && pending {
+        let mut ignored = std::ptr::null_mut();
+        unsafe { sys::napi_get_and_clear_last_exception(env, &mut ignored) };
+    }
+}
+
+/// Throw (or reject with) a JS `TypeError` carrying `message`.
+pub(crate) fn type_error(env: sys::napi_env, message: &str) -> napi::Error {
+    let raw = (|| {
+        let mut text = std::ptr::null_mut();
+        napi::check_status!(unsafe {
+            sys::napi_create_string_utf8(env, message.as_ptr().cast(), message.len() as isize, &mut text)
+        })?;
+        let mut error = std::ptr::null_mut();
+        napi::check_status!(unsafe { sys::napi_create_type_error(env, std::ptr::null_mut(), text, &mut error) })?;
+        Ok::<_, napi::Error>(error)
+    })();
+    match raw {
+        Ok(raw) => napi::Error::from(unsafe { napi::bindgen_prelude::Unknown::from_raw_unchecked(env, raw) }),
+        Err(_) => napi::Error::new(napi::Status::InvalidArg, message.to_string()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Method arguments
+
+/// An argument past the last one a method declares (#294). napi drops
+/// arguments beyond the declared ones, so `trades('2330', { limit: 5 })`
+/// used to send `trades('2330')`; methods now declare one more, as this, and
+/// refuse it. `undefined` / `null` arrive as `None`. Holds the type, for the
+/// message.
+pub struct ExtraArg(pub String);
+
+impl TypeName for ExtraArg {
+    fn type_name() -> &'static str {
+        "never"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for ExtraArg {
+    unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
+        Ok(Self(unsafe { read(env, value, 0, false)? }.describe()))
+    }
+}
+
+/// The argument of `subscribe()` / `unsubscribe()`: the JSON the methods
+/// read, and its shape for [`check_subscription`].
+pub struct SubscriptionArg {
+    /// Kept as a `Result` so a value serde cannot represent (`undefined`, a
+    /// function) is reported by the shape check, as a `TypeError` naming
+    /// it, before the conversion's own error.
+    pub(crate) value: napi::Result<serde_json::Value>,
+    pub(crate) shape: JsVal,
+}
+
+impl TypeName for SubscriptionArg {
+    fn type_name() -> &'static str {
+        "unknown"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for SubscriptionArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let shape = unsafe { read(env, napi_val, 1, false)? };
+        // `null` keys count as not given: drop them so the methods' own
+        // presence checks (`id` with `channel`) agree.
+        let value = unsafe { serde_json::Value::from_napi_value(env, napi_val) }.map(|mut value| {
+            if let serde_json::Value::Object(map) = &mut value {
+                map.retain(|_, v| !v.is_null());
+            }
+            value
+        });
+        Ok(Self { value, shape })
+    }
+}
+
+/// Check a `subscribe()` / `unsubscribe()` argument of `product`'s client
+/// (#294): every key known to the call and of its type. `symbols` / `ids`
+/// elements are checked where they are read. Whether the keys go together
+/// (`symbol` or `symbols`, `channel` or `id`) is the methods' own check.
+pub(crate) fn check_subscription(
+    call: &str,
+    product: marketdata_core::websocket::StreamProduct,
+    shape: &JsVal,
+    extra: Option<ExtraArg>,
+) -> Result<(), String> {
+    use marketdata_core::websocket::subscribe_keys::{self, ID_KEYS, SUBSCRIBE_KEYS};
+
+    let modifier = subscribe_keys::modifier_key(product);
+    let unsubscribe = call == "unsubscribe";
+    if let Some(ExtraArg(kind)) = extra {
+        return Err(format!("{call}() takes one argument, got a further {kind} one"));
+    }
+    let entries = match shape {
+        JsVal::Object(entries) => entries,
+        JsVal::String(_) if unsubscribe => return Ok(()),
+        other if unsubscribe => {
+            return Err(format!(
+                "unsubscribe() takes a subscription id or an object like {{ id: '...' }} or \
+                 {{ channel: 'trades', symbol: '2330' }}, got {}",
+                other.describe()
+            ))
+        }
+        other => {
+            return Err(format!(
+                "subscribe() takes an object like {{ channel: 'trades', symbol: '2330' }}, got {}",
+                other.describe()
+            ))
+        }
+    };
+    // `null` counts as not given, like `undefined`.
+    let absent = |v: &JsVal| matches!(v, JsVal::Undefined | JsVal::Null);
+    let given = |key: &str| entries.iter().any(|(k, v)| k == key && !absent(v));
+    // `unsubscribe()` without `channel` names server ids and takes nothing
+    // else; with `channel` it takes the `subscribe()` keys (and `id` / `ids`,
+    // which the method refuses together with `channel` as 1005).
+    let id_form = unsubscribe && !given("channel");
+    let accepted: Vec<&str> = if id_form {
+        ID_KEYS.to_vec()
+    } else {
+        let mut keys: Vec<&str> = SUBSCRIBE_KEYS.iter().copied().chain([modifier]).collect();
+        if unsubscribe {
+            keys.extend(ID_KEYS);
+        }
+        keys
+    };
+    for (key, value) in entries {
+        if absent(value) {
+            continue;
+        }
+        if !accepted.contains(&key.as_str()) {
+            let reason = if id_form {
+                subscribe_keys::unknown_id_key(key)
+            } else {
+                subscribe_keys::unknown_key(product, key, &accepted)
+            };
+            return Err(format!("{call}(): {reason}"));
+        }
+        let (fits, expected) = match key.as_str() {
+            "channel" | "symbol" | "id" => (matches!(value, JsVal::String(_)), "a string"),
+            "symbols" | "ids" => (matches!(value, JsVal::Array), "an array of strings"),
+            // An unreadable value is left to the conversion, as in the options.
+            _ => (matches!(value, JsVal::Bool(_)), "a boolean"),
+        };
+        if !fits && !matches!(value, JsVal::Unreadable) {
+            return Err(format!("{call}(): {key} must be {expected}, got {}", value.describe()));
+        }
+    }
+    Ok(())
+}
+
+/// The strings of a `symbols` / `ids` array, or the `TypeError` message for
+/// the first element that is not one; `key` and `call` name it.
+pub(crate) fn string_array(call: &str, key: &str, items: &[serde_json::Value]) -> Result<Vec<String>, String> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.as_str().map(String::from).ok_or_else(|| {
+                let got = match item {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Bool(_) => "boolean",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                    serde_json::Value::String(_) => "string",
+                };
+                format!("{call}(): {key}[{i}] must be a string, got {got}")
+            })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Checked constructor arguments
+
+/// The options object a constructor takes, with its table.
+pub(crate) trait OptionsTable {
+    const OWNER: &'static str;
+    const FIELDS: &'static [Field];
+}
+
+impl OptionsTable for crate::websocket::WebSocketClientOptions {
+    const OWNER: &'static str = "WebSocketClient options";
+    const FIELDS: &'static [Field] = WEBSOCKET_CLIENT_FIELDS;
+}
+
+impl OptionsTable for crate::websocket::RestClientOptions {
+    const OWNER: &'static str = "RestClient options";
+    const FIELDS: &'static [Field] = REST_CLIENT_FIELDS;
+}
+
+/// `T`, converted only after [`check_options`] accepted the JS value.
+pub struct Checked<T>(pub T);
+
+impl<T: TypeName> TypeName for Checked<T> {
+    fn type_name() -> &'static str {
+        T::type_name()
+    }
+
+    fn value_type() -> ValueType {
+        T::value_type()
+    }
+}
+
+impl<T: ValidateNapiValue> ValidateNapiValue for Checked<T> {}
+
+impl<T: FromNapiValue + OptionsTable> FromNapiValue for Checked<T> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        // Two levels: the options and their nested objects.
+        let value = unsafe { read(env, napi_val, 2, true)? };
+        check_options(T::OWNER, &value, T::FIELDS).map_err(|message| type_error(env, &message))?;
+        // napi's conversion refuses `null` for an `Option` field, so it reads
+        // a copy holding only the given keys.
+        let given = unsafe { copy_given(env, T::OWNER, "", napi_val, &value, T::FIELDS)? };
+        Ok(Self(unsafe { T::from_napi_value(env, given)? }))
+    }
+}
+
+/// A new object with the keys of `source` that are given (not `undefined`
+/// or `null`), nested option objects copied the same way. Each property is
+/// read again here, so a getter runs twice (once by [`read`]): the value read
+/// now is what napi converts, so it is checked again; a getter that throws
+/// now throws its own error, as napi's conversion did.
+unsafe fn copy_given(
+    env: sys::napi_env,
+    owner: &str,
+    path: &str,
+    source: sys::napi_value,
+    value: &JsVal,
+    fields: &[Field],
+) -> napi::Result<sys::napi_value> {
+    let mut copy = std::ptr::null_mut();
+    napi::check_status!(unsafe { sys::napi_create_object(env, &mut copy) })?;
+    let JsVal::Object(entries) = value else {
+        return Ok(copy);
+    };
+    for (key, item) in entries {
+        if matches!(item, JsVal::Undefined | JsVal::Null) {
+            continue;
+        }
+        let name = std::ffi::CString::new(key.as_str())
+            .map_err(|_| napi::Error::new(napi::Status::InvalidArg, format!("option name {key:?} has a NUL byte")))?;
+        let kind = fields.iter().find(|f| f.name == key).map(|f| f.kind);
+        let unread = matches!(kind, Some(Kind::Legacy | Kind::Ignored));
+        // A field this client does not read never fails the constructor,
+        // even if its getter throws (#262).
+        if unread && matches!(item, JsVal::Unreadable) {
+            continue;
+        }
+        let mut raw = std::ptr::null_mut();
+        if unsafe { sys::napi_get_named_property(env, source, name.as_ptr(), &mut raw) } != sys::Status::napi_ok {
+            if unread {
+                clear_exception(env);
+                continue;
+            }
+            return Err(napi::Error::new(napi::Status::PendingException, format!("reading option {key:?} threw")));
+        }
+        // A getter may give something else the second time: check what
+        // napi will read, as the first value was checked. `null` or
+        // `undefined` now is not given.
+        if let Some(kind) = kind.filter(|_| !unread) {
+            let depth = if matches!(kind, Kind::Version) { 1 } else { 0 };
+            let again = unsafe { read(env, raw, depth, true)? };
+            if matches!(again, JsVal::Undefined | JsVal::Null) {
+                continue;
+            }
+            // A nested object's own fields are checked as it is copied.
+            if !(matches!(kind, Kind::Object { .. }) && matches!(again, JsVal::Object(_))) {
+                check_value(owner, &format!("{path}{key}"), &again, kind).map_err(|message| type_error(env, &message))?;
+            }
+        }
+        let nested: Option<&[Field]> = match kind {
+            Some(Kind::Object { fields, .. }) => Some(fields),
+            // The version map was checked whole just above; copy its keys.
+            Some(Kind::Version) => Some(&[]),
+            _ => None,
+        };
+        if let (Some(nested), JsVal::Object(_)) = (nested, item) {
+            raw = unsafe { copy_given(env, owner, &format!("{path}{key}."), raw, item, nested)? };
+        }
+        napi::check_status!(unsafe { sys::napi_set_named_property(env, copy, name.as_ptr(), raw) })?;
+    }
+    Ok(copy)
+}
+
+/// A millisecond option as core reads it: a negative, NaN or infinite value
+/// is 0, which core refuses as below its floor (1004).
+pub(crate) fn millis(value: f64) -> u64 {
+    if value.is_finite() && value >= 0.0 {
+        value as u64
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn obj(entries: &[(&str, JsVal)]) -> JsVal {
+        JsVal::Object(entries.iter().map(|(k, v)| (k.to_string(), v.clone())).collect())
+    }
+
+    fn s(v: &str) -> JsVal {
+        JsVal::String(v.into())
+    }
+
+    fn ws(entries: &[(&str, JsVal)]) -> Result<(), String> {
+        let mut all = vec![("apiKey", s("k"))];
+        all.extend(entries.iter().cloned());
+        check_options("WebSocketClient options", &obj(&all), WEBSOCKET_CLIENT_FIELDS)
+    }
+
+    fn err(result: Result<(), String>) -> String {
+        result.expect_err("expected a refusal")
+    }
+
+    #[test]
+    fn test_options_must_be_object() {
+        assert_eq!(
+            err(check_options("WebSocketClient options", &JsVal::Undefined, WEBSOCKET_CLIENT_FIELDS)),
+            "WebSocketClient options must be an object like { apiKey: '<key>' }, got undefined."
+        );
+        assert!(err(check_options("RestClient options", &s("k"), REST_CLIENT_FIELDS))
+            .ends_with("got string. To pass an API key, write { apiKey: '<key>' }."));
+        assert!(err(check_options("RestClient options", &JsVal::Array, REST_CLIENT_FIELDS)).contains("got array"));
+        assert!(err(check_options("RestClient options", &JsVal::Instance("Date".into()), REST_CLIENT_FIELDS))
+            .contains("got object (Date)"));
+    }
+
+    #[test]
+    fn test_unknown_keys() {
+        assert_eq!(
+            err(ws(&[("foo", JsVal::Number(1.0))])),
+            "WebSocketClient options: unknown option 'foo' (known: apiKey, bearerToken, sdkToken, baseUrl, \
+             version, reconnect, healthCheck, tlsRootCertPem, tlsAcceptInvalidCerts, messageOverflow, \
+             messageBuffer, authTimeoutMs)"
+        );
+        assert_eq!(
+            err(ws(&[("reconnect", obj(&[("maxRetries", JsVal::Number(3.0))]))])),
+            "WebSocketClient options: unknown option 'reconnect.maxRetries' (known: enabled, maxAttempts, \
+             initialDelayMs, maxDelayMs)"
+        );
+        // Legacy names are accepted but not advertised.
+        assert_eq!(
+            err(ws(&[("healthCheck", obj(&[("foo", JsVal::Number(1.0))]))])),
+            "WebSocketClient options: unknown option 'healthCheck.foo' (known: enabled, heartbeatTimeoutMs, \
+             probeEnabled, idleProbeAfterMs, probeTimeoutMs)"
+        );
+    }
+
+    #[test]
+    fn test_undefined_is_not_given() {
+        assert!(ws(&[("foo", JsVal::Undefined), ("reconnect", JsVal::Undefined)]).is_ok());
+        // So is null, unknown keys and nested fields included; not for `version`.
+        assert!(ws(&[("foo", JsVal::Null), ("reconnect", obj(&[("enabled", JsVal::Null)])), ("healthCheck", JsVal::Null)]).is_ok());
+        assert!(err(ws(&[("version", JsVal::Null)])).contains("version must be a per-product map"));
+        assert!(ws(&[("version", obj(&[("futopt", JsVal::Undefined)]))]).is_ok());
+    }
+
+    #[test]
+    fn test_unreadable_is_left_to_napi() {
+        assert!(ws(&[("healthCheck", obj(&[("pingInterval", JsVal::Unreadable), ("enabled", JsVal::Unreadable)]))]).is_ok());
+        assert!(err(ws(&[("healthCheck", obj(&[("foo", JsVal::Unreadable)]))])).contains("unknown option 'healthCheck.foo'"));
+    }
+
+    #[test]
+    fn test_legacy_health_check_fields_pass() {
+        assert!(ws(&[("healthCheck", obj(&[("enabled", JsVal::Bool(true)), ("pingInterval", s("x")), ("maxMissedPongs", JsVal::Null)]))]).is_ok());
+    }
+
+    #[test]
+    fn test_rest_accepts_websocket_keys() {
+        let options = obj(&[
+            ("apiKey", s("k")),
+            ("version", s("v1.0")),
+            ("healthCheck", JsVal::Null),
+            ("reconnect", obj(&[("enabled", JsVal::Bool(false))])),
+            ("messageBuffer", JsVal::Number(-1.0)),
+        ]);
+        assert!(check_options("RestClient options", &options, REST_CLIENT_FIELDS).is_ok());
+        let unknown = obj(&[("apiKey", s("k")), ("foo", JsVal::Number(1.0))]);
+        assert_eq!(
+            err(check_options("RestClient options", &unknown, REST_CLIENT_FIELDS)),
+            "RestClient options: unknown option 'foo' (known: apiKey, bearerToken, sdkToken, baseUrl, \
+             tlsRootCertPem, tlsAcceptInvalidCerts)"
+        );
+    }
+
+    #[test]
+    fn test_rest_ignores_exactly_the_websocket_only_keys() {
+        let rest: Vec<&str> = REST_CLIENT_FIELDS.iter().map(|f| f.name).collect();
+        for f in WEBSOCKET_CLIENT_FIELDS {
+            assert!(rest.contains(&f.name), "RestClient must accept {}", f.name);
+        }
+    }
+
+    #[test]
+    fn test_scalar_kinds() {
+        assert_eq!(err(ws(&[("baseUrl", JsVal::Number(1.0))])), "WebSocketClient options: baseUrl must be a string, got number 1");
+        assert_eq!(err(ws(&[("tlsAcceptInvalidCerts", s("true"))])), "WebSocketClient options: tlsAcceptInvalidCerts must be a boolean, got string");
+        for bad in [-1.0, 1.5, f64::NAN, f64::INFINITY, 4_294_967_296.0] {
+            assert!(err(ws(&[("messageBuffer", JsVal::Number(bad))])).contains("messageBuffer must be a non-negative integer"), "{bad}");
+        }
+        assert!(ws(&[("messageBuffer", JsVal::Number(0.0))]).is_ok(), "0 is the constructor's own error");
+        // Any number: out of range is core's 1004.
+        for n in [-1.0, f64::NAN, f64::INFINITY, 0.5] {
+            assert!(ws(&[("authTimeoutMs", JsVal::Number(n))]).is_ok(), "{n}");
+        }
+        assert_eq!(
+            err(ws(&[("authTimeoutMs", s("5000"))])),
+            "WebSocketClient options: authTimeoutMs must be a number of milliseconds, got string"
+        );
+        assert_eq!(millis(-1.0), 0);
+        assert_eq!(millis(f64::NAN), 0);
+        assert_eq!(millis(f64::INFINITY), 0);
+        assert_eq!(millis(1500.7), 1500);
+        assert_eq!(
+            err(ws(&[("reconnect", obj(&[("maxAttempts", JsVal::Number(f64::NAN))]))])),
+            "WebSocketClient options: reconnect.maxAttempts must be a non-negative integer, got number NaN"
+        );
+        assert!(err(ws(&[("tlsRootCertPem", s("pem"))])).contains("tlsRootCertPem must be a Uint8Array or Buffer"));
+        assert!(err(ws(&[("tlsRootCertPem", JsVal::Bytes(false))])).contains("got typed array"));
+        assert!(ws(&[("tlsRootCertPem", JsVal::Bytes(true))]).is_ok());
+    }
+
+    #[test]
+    fn test_nested_object_shape() {
+        for (value, got) in [
+            (s("x"), "string"),
+            (JsVal::Bool(true), "boolean"),
+            (JsVal::Array, "array"),
+            (JsVal::Function, "function"),
+            (JsVal::Instance("Map".into()), "object (Map)"),
+        ] {
+            assert_eq!(
+                err(ws(&[("reconnect", value.clone())])),
+                format!("WebSocketClient options: reconnect must be an object like {{ enabled: false }}, got {got}")
+            );
+            assert!(err(ws(&[("healthCheck", value)])).contains("healthCheck must be an object like { enabled: true }"));
+        }
+    }
+
+    fn sub(call: &str, product: marketdata_core::websocket::StreamProduct, value: &JsVal) -> Result<(), String> {
+        check_subscription(call, product, value, None)
+    }
+
+    #[test]
+    fn test_subscription() {
+        use marketdata_core::websocket::StreamProduct::{FutOpt, Stock};
+        let base = |extra: (&str, JsVal)| obj(&[("channel", s("trades")), ("symbol", s("2330")), extra]);
+        assert!(sub("subscribe", Stock, &base(("intradayOddLot", JsVal::Bool(true)))).is_ok());
+        assert!(sub("subscribe", FutOpt, &base(("afterHours", JsVal::Undefined))).is_ok());
+        assert_eq!(
+            err(sub("subscribe", Stock, &base(("afterHours", JsVal::Bool(true))))),
+            "subscribe(): unknown key 'afterHours': it is a futopt option, the stock client takes \
+             intradayOddLot (accepted: channel, symbol, symbols, intradayOddLot)"
+        );
+        assert_eq!(
+            err(sub("subscribe", FutOpt, &base(("foo", JsVal::Number(1.0))))),
+            "subscribe(): unknown key 'foo' (accepted: channel, symbol, symbols, afterHours)"
+        );
+        assert_eq!(
+            err(sub("subscribe", Stock, &base(("intradayOddLot", s("true"))))),
+            "subscribe(): intradayOddLot must be a boolean, got string"
+        );
+        assert!(sub("subscribe", FutOpt, &base(("afterHours", JsVal::Null))).is_ok(), "null is not given");
+        assert_eq!(
+            err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", JsVal::Number(2330.0))]))),
+            "subscribe(): symbol must be a string, got number 2330"
+        );
+        assert_eq!(
+            err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("symbols", s("2330"))]))),
+            "subscribe(): symbols must be an array of strings, got string"
+        );
+        assert!(err(sub("subscribe", Stock, &base(("id", s("x"))))).starts_with("subscribe(): unknown key 'id'"));
+        assert_eq!(
+            err(sub("subscribe", Stock, &s("trades"))),
+            "subscribe() takes an object like { channel: 'trades', symbol: '2330' }, got string"
+        );
+        assert_eq!(
+            err(check_subscription("subscribe", Stock, &base(("intradayOddLot", JsVal::Undefined)), Some(ExtraArg("string".into())))),
+            "subscribe() takes one argument, got a further string one"
+        );
+    }
+
+    #[test]
+    fn test_unsubscription() {
+        use marketdata_core::websocket::StreamProduct::{FutOpt, Stock};
+        assert!(sub("unsubscribe", Stock, &s("abc")).is_ok());
+        assert!(sub("unsubscribe", Stock, &obj(&[("id", s("abc"))])).is_ok());
+        assert!(sub("unsubscribe", FutOpt, &obj(&[("ids", JsVal::Array)])).is_ok());
+        assert_eq!(
+            err(sub("subscribe", Stock, &JsVal::Undefined)),
+            "subscribe() takes an object like { channel: 'trades', symbol: '2330' }, got undefined"
+        );
+        assert!(err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("onData", JsVal::Function)])))
+            .starts_with("subscribe(): unknown key 'onData'"));
+        // Left to the method's own 1005.
+        assert!(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("id", s("abc"))])).is_ok());
+        let id_form = "(without channel the object takes id or ids; to unsubscribe by channel and symbol, add channel)";
+        assert_eq!(
+            err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("foo", JsVal::Number(1.0))]))),
+            format!("unsubscribe(): unknown key 'foo' {id_form}")
+        );
+        // The subscribe keys need `channel`: without it they were dropped.
+        assert_eq!(
+            err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("symbol", s("2330"))]))),
+            format!("unsubscribe(): unknown key 'symbol' {id_form}")
+        );
+        assert!(err(sub("unsubscribe", FutOpt, &obj(&[("ids", JsVal::Array), ("afterHours", JsVal::Bool(true))])))
+            .starts_with("unsubscribe(): unknown key 'afterHours' (without channel"));
+        assert_eq!(
+            err(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", s("2330")), ("foo", JsVal::Number(1.0))]))),
+            "unsubscribe(): unknown key 'foo' (accepted: channel, symbol, symbols, intradayOddLot, id, ids)"
+        );
+        assert!(err(sub("unsubscribe", FutOpt, &obj(&[("channel", s("trades")), ("intradayOddLot", JsVal::Bool(true))])))
+            .starts_with("unsubscribe(): unknown key 'intradayOddLot': it is a stock option, the futopt client takes afterHours"));
+        assert_eq!(err(sub("unsubscribe", Stock, &obj(&[("id", JsVal::Number(1.0))]))), "unsubscribe(): id must be a string, got number 1");
+        assert!(err(sub("unsubscribe", Stock, &JsVal::Number(1.0))).starts_with("unsubscribe() takes a subscription id or an object"));
+    }
+
+    #[test]
+    fn test_string_array() {
+        let items = vec![serde_json::json!("2330"), serde_json::json!(2317)];
+        assert_eq!(string_array("subscribe", "symbols", &items), Err("subscribe(): symbols[1] must be a string, got number".into()));
+        assert_eq!(string_array("subscribe", "symbols", &items[..1]), Ok(vec!["2330".to_string()]));
+    }
+
+    #[test]
+    fn test_version() {
+        assert_eq!(
+            err(ws(&[("version", s("v1.0"))])),
+            "WebSocketClient options: version must be a per-product map, not the bare string 'v1.0'. \
+             Use version: { stock: 'v1.0', futopt: 'v1.0' }."
+        );
+        assert!(err(ws(&[("version", s("v1.1"))])).ends_with("Use version: { futopt: 'v1.1' }."));
+        assert!(err(ws(&[("version", s("v9"))])).ends_with("No product serves v9."));
+        assert_eq!(
+            err(ws(&[("version", JsVal::Null)])),
+            "WebSocketClient options: version must be a per-product map like { futopt: 'v1.0' }, got null"
+        );
+        assert!(err(ws(&[("version", JsVal::Array)])).ends_with("got array"));
+        assert_eq!(
+            err(ws(&[("version", obj(&[("foo", s("v1.0"))]))])),
+            "WebSocketClient options: unknown product 'foo' in version map (known: stock, futopt)"
+        );
+        assert!(err(ws(&[("version", obj(&[("foo", JsVal::Number(1.0))]))])).contains("unknown product 'foo'"));
+        assert!(ws(&[("version", obj(&[("futopt", JsVal::Null)]))]).is_ok(), "null is not given");
+        assert_eq!(
+            err(ws(&[("version", obj(&[("futopt", JsVal::Bool(true))]))])),
+            "WebSocketClient options: version.futopt must be a version string, e.g. 'v1.1', got boolean"
+        );
+        assert_eq!(
+            err(ws(&[("version", obj(&[("futopt", s("v9"))]))])),
+            "WebSocketClient options: futopt streaming does not support v9 (supported: v1.0, v1.1). \
+             Remove it from the version map to use v1.1."
+        );
+        assert!(ws(&[("version", obj(&[("futopt", s("v1.0")), ("stock", s("v1.0"))]))]).is_ok());
+    }
+}

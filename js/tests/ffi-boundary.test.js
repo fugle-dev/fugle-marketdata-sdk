@@ -148,7 +148,7 @@ describe('FFI Boundary - Panic Recovery', () => {
     }
   });
 
-  test('non-string inputs throw Error', () => {
+  test('non-string inputs reject with a TypeError', async () => {
     const client = new RestClient({ apiKey: 'test-key', ...OFFLINE_REST });
 
     // `{ symbol: '2330' }` is intentionally absent: the object form is the
@@ -159,11 +159,12 @@ describe('FFI Boundary - Panic Recovery', () => {
       true,
     ];
 
+    // Like every other argument error of a REST method, a rejection rather
+    // than a synchronous throw (#294).
     for (const input of invalidInputs) {
-      // napi-rs type conversion errors are synchronous
-      expect(() => {
-        client.stock.intraday.quote(input);
-      }).toThrow();
+      const error = await client.stock.intraday.quote(input).catch((e) => e);
+      expect(error.name).toBe('TypeError');
+      expect(error.message).toMatch(/^`stock\.intraday\.quote`: symbol must be a string or a params object, got /);
     }
   });
 });
@@ -214,20 +215,18 @@ describe('FFI Boundary - Memory Safety', () => {
     await Promise.allSettled(promises);
   });
 
-  test('buffer handling is safe', () => {
+  test('buffer handling is safe', async () => {
     const client = new RestClient({ apiKey: 'test-key', ...OFFLINE_REST });
 
-    // Try buffer inputs (should fail at type conversion)
     const bufferInputs = [
       Buffer.from('2330'),
       new Uint8Array([50, 51, 51, 48]),
     ];
 
     for (const input of bufferInputs) {
-      // napi-rs type conversion errors are synchronous
-      expect(() => {
-        client.stock.intraday.quote(input);
-      }).toThrow();
+      const error = await client.stock.intraday.quote(input).catch((e) => e);
+      expect(error.name).toBe('TypeError');
+      expect(error.message).toContain('got typed array');
     }
   });
 

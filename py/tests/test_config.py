@@ -394,3 +394,37 @@ class TestWebSocketUrl:
         ws = WebSocketClient(api_key="key")
         with pytest.raises(AttributeError):
             ws.stock.url = "wss://elsewhere"
+
+
+class TestWebSocketVersionOption:
+    """`version` is a dict from product to version; anything else is a
+    TypeError worded like Node's (#294)."""
+
+    @pytest.mark.parametrize(
+        "version, message",
+        [
+            ("v1.0", "version must be a per-product dict, not the bare string 'v1.0'. "
+                     "Use version={'stock': 'v1.0', 'futopt': 'v1.0'}."),
+            ("v1.1", "version must be a per-product dict, not the bare string 'v1.1'. "
+                     "Use version={'futopt': 'v1.1'}."),
+            ("v9", "version must be a per-product dict, not the bare string 'v9'. No product serves v9."),
+            (1, "version must be a per-product dict like {'futopt': 'v1.0'}, got int"),
+            (["v1.0"], "version must be a per-product dict like {'futopt': 'v1.0'}, got list"),
+            (True, "version must be a per-product dict like {'futopt': 'v1.0'}, got bool"),
+            ({"foo": "v1.0"}, "unknown product 'foo' in version mapping (known: stock, futopt)"),
+            ({"futopt": 1}, "version['futopt'] must be a version string, e.g. 'v1.1', got int"),
+            ({"foo": 1}, "unknown product 'foo' in version mapping (known: stock, futopt)"),
+            ({1: None}, "version keys must be product names: 'stock' or 'futopt'"),
+            ({"futopt": "v9"}, "futopt streaming does not support v9 (supported: v1.0, v1.1). "
+                               "Remove it from the version mapping to use v1.1."),
+        ],
+    )
+    def test_refused(self, version, message):
+        with pytest.raises(TypeError) as exc_info:
+            WebSocketClient(api_key="key", version=version)
+        assert str(exc_info.value) == message
+
+    @pytest.mark.parametrize("version", [None, {}, {"futopt": None}])
+    def test_none_and_empty_take_the_defaults(self, version):
+        ws = WebSocketClient(api_key="key", version=version)
+        assert ws.futopt.url.endswith("/v1.1/futopt/streaming")
