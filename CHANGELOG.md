@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **All languages: reconnect jitter now shortens the wait, so it survives
+  the `max_delay` cap** (#297). The jitter of #227 added 0–50% to the base
+  and was then cut off by the cap: once a long outage had pushed the backoff
+  to `max_delay`, every client retried exactly once per `max_delay` (60 s by
+  default), all together. Each wait is now `base × (1 − U[0, 0.5))`, with
+  `base` still `initial_delay` doubling up to `max_delay`, so it stays
+  within `(base / 2, base]`: the first reconnect comes after 0.5–1 s instead
+  of 1–1.5 s, and at the cap the clients spread over 30–60 s. `U` is drawn
+  once per client when a reconnect starts and kept until it succeeds (or
+  `reconnect()` is called), so one
+  client's waits still never get shorter and never exceed `max_delay`.
+  Which closes reconnect is unchanged; the docs now also name 1013, the
+  close code the server will send at the connection limit (1001 today).
+
 ### Added
 
 - **WebSocket: who closed the connection, and whether a reconnect follows**

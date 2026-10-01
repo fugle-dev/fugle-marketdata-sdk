@@ -3168,8 +3168,9 @@ mod tests {
         let server_rt = tokio::runtime::Runtime::new().unwrap();
         let server = server_rt.block_on(MockWsServer::start_with_capacity(3));
         let listener = Arc::new(TestListener::new());
-        // Long enough a backoff that the second `connect_sync()` is within it.
-        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 1500));
+        // Long enough a backoff that the second `connect_sync()` is within it:
+        // 1.5–3 s, since the jitter takes up to half off (#297).
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(0, 3000));
 
         client.connect_sync().expect("connect_sync");
         server_rt.block_on(server.drop_transport_for(0));
@@ -3219,7 +3220,8 @@ mod tests {
         let server_rt = tokio::runtime::Runtime::new().unwrap();
         let server = server_rt.block_on(MockWsServer::start_with_capacity(3));
         let listener = Arc::new(TestListener::new());
-        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(1, 1500));
+        // 1.5–3 s of backoff (#297): the second `connect_sync()` joins it.
+        let client = mock_client(&server, Arc::clone(&listener), reconnect_every(1, 3000));
 
         client.connect_sync().expect("connect_sync");
         server.set_auth_response(serde_json::json!({
