@@ -12,11 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **All languages: the connection limit is error code 2012
   (`CONNECTION_LIMIT`) instead of 2001** (#300). When the server refuses a
   WebSocket connection because the account is at its connection limit — a
-  Close 1013, an auth-phase `error` with code 1003, or a Close 1001 whose
+  Close 1013, or an auth-phase `error` 1003 or Close 1001 whose message /
   reason is exactly `Maximum number of connections reached` — `connect()`
   fails, and each failed reconnect attempt is reported, with code 2012 instead
   of 2001, so it can be recognised without matching the message. A Close 1001
-  with any other reason (a restart) is still 2001. The exception class or
+  with any other reason (a restart) and an `error` 1003 with any other
+  message (a failed validation) are still 2001. The exception class or
   variant is unchanged: Python `ConnectionError`, C# / Go / Java / C++ the
   `ConnectionError` variant, Node an `Error` with `code`; Rust gains
   `MarketDataError::ConnectionLimit`. Reconnecting is unchanged too: it

@@ -42,9 +42,10 @@
 //!    `1004` no auth request seen, an unknown code) or none is not a verdict
 //!    on the credentials: it is reported as `Error` with code `CONNECTION`
 //!    (2001) and a message naming the server's code, and `connect()` fails
-//!    with `ConnectionError` (#201) — except `1003`, the connection limit,
-//!    which is code `CONNECTION_LIMIT` (2012) and `ConnectionLimit` (#300); the frames read during that handshake
-//!    are discarded. If the transport cannot be established the sequence is
+//!    with `ConnectionError` (#201) — except `1003` with the message
+//!    `Maximum number of connections reached`, the connection limit, which
+//!    is code `CONNECTION_LIMIT` (2012) and `ConnectionLimit` (#300); the
+//!    frames read during that handshake are discarded. If the transport cannot be established the sequence is
 //!    `Connecting` → `Error`, on both clients with code `WEBSOCKET` (3002)
 //!    and the transport error's kind (DNS, TCP, TLS, or the upgrade's HTTP
 //!    status), or `TIMEOUT` (3001) when `connect_timeout` ran out. A successful reconnect goes through the same sequence, and

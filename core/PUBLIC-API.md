@@ -41,8 +41,8 @@ PR number and listing the new/changed/removed symbols.
 
 - `+` `MarketDataError::ConnectionLimit { msg: String }` — the server refused
   a WebSocket connection during authentication because the account is at its
-  connection limit (Close 1013, auth-phase `error` 1003, or Close 1001 with
-  the reason `Maximum number of connections reached`). Was `ConnectionError`.
+  connection limit (Close 1013, or auth-phase `error` 1003 / Close 1001 with
+  the message `Maximum number of connections reached`). Was `ConnectionError`.
   Additive: the enum is `#[non_exhaustive]`.
 - `+` `error_code::CONNECTION_LIMIT` (2012; also `errors::error_code`).
 

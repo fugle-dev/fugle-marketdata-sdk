@@ -361,8 +361,9 @@ pub enum MarketDataError {
     /// because the account already has as many connections as it may (#300).
     ///
     /// Recognised from a Close `1013`, an auth-phase `error` frame with code
-    /// `1003`, or (until the server sends those) a Close `1001` whose reason
-    /// is exactly `Maximum number of connections reached`. Automatic
+    /// `1003` whose message is exactly `Maximum number of connections
+    /// reached` (`1003` is also any failed validation), or, until the server
+    /// sends those, a Close `1001` with that reason. Automatic
     /// reconnect keeps retrying after it like after any other failed attempt:
     /// after a dropped connection the server can still be counting the old
     /// one until it notices it is gone.

@@ -10,7 +10,8 @@
 //! - `connect()` fails with an error whose message carries the close code
 //!   and reason; a Close without a code leaves the message as it was. The
 //!   connection limit — that Close, `Close(1013)`, or the auth answered with
-//!   `error{1003}` — is `ConnectionLimit` (2012, #300); any other close is
+//!   `error{1003}` carrying the same text — is `ConnectionLimit` (2012,
+//!   #300); any other close, and `error{1003}` with another message, is
 //!   `ConnectionError` (2001); both are retryable;
 //! - the client answers the server's Close with its own before giving the
 //!   connection up, so the server sees the close completed, not `1006`; it
@@ -40,6 +41,9 @@ const WITH_RESTART: &str = "Stream closed during authentication (close 1001: Ser
 const WITH_1013: &str = "Stream closed during authentication (close 1013)";
 const WITH_1003: &str =
     "Authentication failed (server error 1003): Maximum number of connections reached";
+const VALIDATION: &str = "apikey should not be empty";
+const WITH_1003_VALIDATION: &str =
+    "Authentication failed (server error 1003): apikey should not be empty";
 /// Upper bound on every wait; the auth timeout is the same, so a client that
 /// ignores the Close fails with a timeout instead of hanging.
 const WAIT: Duration = Duration::from_secs(5);
@@ -79,6 +83,17 @@ fn limit_error(ended_by_close: Option<mpsc::UnboundedSender<bool>>) -> AfterAuth
     AfterAuth::RejectAuth {
         code: 1003,
         message: REASON.to_string(),
+        close: true,
+        ended_by_close,
+    }
+}
+
+/// `error{1003}` for a failed validation: same code as the limit, another
+/// message.
+fn validation_error(ended_by_close: Option<mpsc::UnboundedSender<bool>>) -> AfterAuth {
+    AfterAuth::RejectAuth {
+        code: 1003,
+        message: VALIDATION.to_string(),
         close: true,
         ended_by_close,
     }
@@ -252,6 +267,13 @@ mod aio {
     }
 
     #[tokio::test]
+    async fn error_1003_with_another_message_is_a_connection_error() {
+        let (result, by_close) = connect_once(validation_error, connect).await;
+        assert_closed_during_auth(&result, WITH_1003_VALIDATION);
+        assert!(by_close, "the client dropped the socket without a Close");
+    }
+
+    #[tokio::test]
     async fn close_1001_with_another_reason_is_a_connection_error() {
         let (result, by_close) = connect_once(restart_close, connect).await;
         assert_closed_during_auth(&result, WITH_RESTART);
@@ -327,6 +349,13 @@ mod sync {
     async fn error_1003_during_auth_is_the_connection_limit() {
         let (result, by_close) = connect_once(limit_error, connect).await;
         assert_connection_limit(&result, WITH_1003);
+        assert!(by_close, "the client dropped the socket without a Close");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn error_1003_with_another_message_is_a_connection_error() {
+        let (result, by_close) = connect_once(validation_error, connect).await;
+        assert_closed_during_auth(&result, WITH_1003_VALIDATION);
         assert!(by_close, "the client dropped the socket without a Close");
     }
 

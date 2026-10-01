@@ -501,7 +501,7 @@ client uses the OS trust store (rustls loads it via
 | 2003 | ApiError | API returned an error |
 | 2010 | ClientClosed | Client already closed, or `connect()` given up because `disconnect()` was called (also while it waits on an automatic reconnect, or when that connection ends without reconnecting) |
 | 2011 | AlreadyConnected | WebSocket `connect()` called while connected or while the first `connect()` is in progress (during an automatic reconnect it waits instead) |
-| 2012 | ConnectionLimit | The server refused the WebSocket connection because the account is at its connection limit (Close 1013, `error` 1003, or Close 1001 `Maximum number of connections reached`); automatic reconnect keeps retrying |
+| 2012 | ConnectionLimit | The server refused the WebSocket connection because the account is at its connection limit (Close 1013, or `error` 1003 / Close 1001 with the message `Maximum number of connections reached`); automatic reconnect keeps retrying |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not reported as an `error`: `disconnect` fires with `code: null`, `intent: 'network'` and the reason `Heartbeat timeout after …` |

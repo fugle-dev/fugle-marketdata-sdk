@@ -94,7 +94,7 @@ pub fn install_str(py: Python<'_>) -> PyResult<()> {
 /// - ConfigError → ConfigError
 /// - ApiError → ApiError (or RateLimitError for 429 status)
 /// - TimeoutError / HeartbeatTimeout → TimeoutError
-/// - ConnectionError → ConnectionError
+/// - ConnectionError / ConnectionLimit → ConnectionError
 /// - WebSocketError / ClientClosed / ConnectionAborted / AlreadyConnected / ReconnectFailed → WebSocketError
 /// - Other errors → MarketDataError (base exception)
 ///

@@ -62,6 +62,17 @@ LIMITED_1013_API_KEY = "limited-1013-key"
 # `1001` with another reason: a restart, not the limit (#300).
 RESTARTING_API_KEY = "restarting-key"
 RESTART_CLOSE_REASON = "Server restarting"
+# `auth` answered with `error{1003}` then a Close: the limit as a server with
+# fugle-realtime !640 says it (Close 1013), and a failed validation, which has
+# the same code and another message (Close without a code) (#300).
+LIMIT_ERROR_API_KEY = "limit-error-key"
+VALIDATION_ERROR_API_KEY = "validation-error-key"
+VALIDATION_ERROR_MESSAGE = "apikey should not be empty"
+# What each of those keys' `auth` is answered with: (code, message, close code).
+AUTH_ERRORS = {
+    LIMIT_ERROR_API_KEY: (1003, LIMIT_CLOSE_REASON, 1013),
+    VALIDATION_ERROR_API_KEY: (1003, VALIDATION_ERROR_MESSAGE, None),
+}
 # What each of those keys' `auth` is answered with: (close code, reason).
 AUTH_CLOSES = {
     LIMITED_API_KEY: (1001, LIMIT_CLOSE_REASON),
@@ -258,10 +269,18 @@ class _Server:
                     frame = json.loads(payload)
                     if frame.get("event") == "auth":
                         self.auth_data.append(frame.get("data"))
-                        auth_close = AUTH_CLOSES.get((frame.get("data") or {}).get("apikey"))
-                        if auth_close is not None:
-                            code, reason = auth_close
+                        apikey = (frame.get("data") or {}).get("apikey")
+                        refused = apikey in AUTH_ERRORS or apikey in AUTH_CLOSES
+                        if apikey in AUTH_ERRORS:
+                            code, message, close_code = AUTH_ERRORS[apikey]
+                            error = {"event": "error", "code": code, "data": {"message": message}}
+                            send(OP_TEXT, json.dumps(error).encode())
+                            close = b"" if close_code is None else struct.pack("!H", close_code)
+                            send(OP_CLOSE, close)
+                        elif apikey in AUTH_CLOSES:
+                            code, reason = AUTH_CLOSES[apikey]
                             send(OP_CLOSE, struct.pack("!H", code) + reason.encode())
+                        if refused:
                             # Until the client goes: its reply Close, which needs
                             # no answer, or the end of the stream, on which
                             # _read_frame raises.

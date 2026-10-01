@@ -213,8 +213,9 @@ public class WebSocketListenerImpl implements AutoCloseable, WebSocketListener {
      * same credentials would be rejected again, so the client stops and
      * stays closed (#201). An auth-phase `error` with any other code (1011
      * auth service unavailable, 1004 no auth request received) is not a
-     * rejection: it is reported to `on_error` (code 2001, or 2012 for 1003,
-     * the connection limit) and a reconnect goes on.
+     * rejection: it is reported to `on_error` (code 2001, or 2012 for the
+     * connection limit: 1003 with the message `Maximum number of
+     * connections reached`) and a reconnect goes on.
      *
      * `data_json` is the `data` member of the server's rejection frame
      * (the server's message is under `message`), still encoded as JSON, or
