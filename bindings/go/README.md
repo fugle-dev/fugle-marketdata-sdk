@@ -433,7 +433,8 @@ client, err := mkt.NewFugleWebSocketClient(listener,
 
 ```go
 // Connection management
-Connect() error                    // Connect to server
+Connect() error                    // Connect to server; ClientClosed (2010) once Messages() is closed:
+                                   // after Disconnect() or a server close with no reconnect, create a new client
 Disconnect()                       // Close connection and channels, keep the client readable
 Close() error                      // Disconnect and release the client; calling again does nothing
 IsConnected() bool                 // Check connection status

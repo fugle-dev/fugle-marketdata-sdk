@@ -76,6 +76,16 @@ func (mc *MessageChannel) Errors() <-chan error {
 	return mc.errors
 }
 
+// isClosed reports whether Close has been called
+func (mc *MessageChannel) isClosed() bool {
+	select {
+	case <-mc.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // Close closes all channels
 func (mc *MessageChannel) Close() {
 	mc.once.Do(func() {
@@ -269,7 +279,19 @@ func NewStreamingClientWithEndpoint(apiKey string, endpoint WebSocketEndpoint, b
 }
 
 // Connect establishes WebSocket connection
+//
+// Once Messages() is closed — after Disconnect(), or after the server closed
+// the connection with no reconnect to follow — it fails with ClientClosed
+// (code 2010) instead of connecting with nowhere to deliver messages: create
+// a new client to stream again.
 func (sc *StreamingClient) Connect() error {
+	if sc.channel.isClosed() {
+		return NewMarketDataErrorClientClosed(ErrorInfo{
+			Code:       2010,
+			SourceKind: ErrorSourceKindClient,
+			Message:    "Messages() is closed: create a new client to connect again",
+		})
+	}
 	err := sc.client.Connect()
 	if err != nil {
 		return fmt.Errorf("connect failed: %w", err)
@@ -448,8 +470,8 @@ func (sc *StreamingClient) QuerySubscriptions() error {
 
 // Disconnect closes the connection and the Messages() and Errors() channels,
 // returning once the listener has handled the connection's last events.
-// Messages already buffered stay readable from Messages(); to stream again,
-// create a new client.
+// Messages already buffered stay readable from Messages(). Connect() after it
+// fails with ClientClosed (code 2010): to stream again, create a new client.
 //
 // Unlike Close(), it keeps the client: LastDisconnect(), IsClosed() and
 // MessagesDroppedTotal() still read the connection that ended. Call Close()
@@ -463,7 +485,8 @@ func (sc *StreamingClient) Disconnect() {
 }
 
 // Close disconnects, closes all channels and releases the client. Calling it
-// again does nothing. After it, only LastDisconnect() may be called.
+// again does nothing. After it, only LastDisconnect(), Close(), and draining
+// Messages()/Errors() may be called.
 func (sc *StreamingClient) Close() error {
 	sc.closeOnce.Do(func() {
 		sc.Disconnect()
