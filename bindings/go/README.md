@@ -644,6 +644,7 @@ SDK or a `*StreamError` read from `StreamingClient.Errors()`:
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed | Client has been closed |
+| 2012 | ConnectionError | The server refused the WebSocket connection because the account is at its connection limit; automatic reconnect keeps retrying. Same variant as 2001, told apart by `code` |
 | 3001 | TimeoutError | Operation timed out |
 | 3002 | WebSocketError | WebSocket connect, read or write failed |
 | 3003 | HeartbeatTimeout | No inbound WebSocket frame within the heartbeat window. Not sent to `Errors()`: the connection drops (and reconnects if enabled) and `LastDisconnect()` has intent `DisconnectIntentNetwork`, no code and the reason `Heartbeat timeout after …` |

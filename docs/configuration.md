@@ -78,8 +78,27 @@ code. Closes with 1001 (server restart, no auth request within 60 s, and
 today the connection limit), 1013 (the connection limit once the server
 change for it ships), 1006, 1008, no code, or any code the SDK does not know
 all reconnect. An auth-phase `error` with any other code (1011 auth service
-unavailable, 1004 no auth request received) is not a rejection: it is
+unavailable, 1004 no auth request received, 1003 failed validation; 1003
+with the connection-limit message is below) is not a rejection: it is
 reported as an `error` (code 2001) and the reconnect goes on.
+
+**At the connection limit** the attempt fails with code 2012
+(`CONNECTION_LIMIT`) instead of 2001 (#300): `connect()` raises
+`ConnectionError` (Python; C# / Go / Java / C++ the `ConnectionError`
+variant; Node rejects with an `Error`), and the `error` callback receives a
+`WebSocketError` (Python; Node an `Error`; C# / Go / Java / C++ `on_error`'s
+`ErrorInfo`) with code 2012. The SDK recognises it from a Close 1013, or an
+auth-phase `error` 1003 or Close 1001 whose message / reason is exactly
+`Maximum number of connections reached`; a 1003 with another message is a
+failed validation and a 1001 with another reason a restart, both still 2001.
+It is retried like any other failed attempt, and each failed attempt reports
+2012 as an `error`. Retrying is on
+purpose: after a dropped connection the server can go on counting the old one
+until it notices it is gone, so the reconnect is refused for a while and then
+succeeds without anything changing on your side. If the limit is reached
+because too many clients share the key, that does not clear by itself; set
+`max_attempts` to give up (`ReconnectFailed`, 3005) instead of retrying at
+`max_delay_ms` until a slot frees, or react to 2012 in your `error` handler.
 
 ### Language-Specific Examples
 

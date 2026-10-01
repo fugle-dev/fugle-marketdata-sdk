@@ -16,8 +16,14 @@ from fugle_marketdata import AuthError, ConnectionError, HealthCheckConfig
 from tests.ws_loopback import (
     BARE_AUTH_API_KEY,
     LIMIT_CLOSE_REASON,
+    LIMIT_ERROR_API_KEY,
+    LIMITED_1013_API_KEY,
     LIMITED_API_KEY,
     REJECTED_API_KEY,
+    RESTART_CLOSE_REASON,
+    RESTARTING_API_KEY,
+    VALIDATION_ERROR_API_KEY,
+    VALIDATION_ERROR_MESSAGE,
     TIMEOUT_S,
     InProcessLoopbackServer,
     LoopbackServer,
@@ -101,10 +107,59 @@ def test_close_during_auth_reports_close_code_and_reason(server, product):
     with pytest.raises(ConnectionError) as info:
         ws.connect()
 
-    assert info.value.code == 2001
+    # The connection limit has its own code, still a ConnectionError (#300).
+    assert info.value.code == 2012
     assert f"Stream closed during authentication (close 1001: {LIMIT_CLOSE_REASON})" in str(
         info.value
     )
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+@pytest.mark.parametrize(
+    ("api_key", "code", "expected"),
+    [
+        (LIMITED_1013_API_KEY, 2012, "Stream closed during authentication (close 1013)"),
+        (
+            RESTARTING_API_KEY,
+            2001,
+            f"Stream closed during authentication (close 1001: {RESTART_CLOSE_REASON})",
+        ),
+        (
+            LIMIT_ERROR_API_KEY,
+            2012,
+            f"Authentication failed (server error 1003): {LIMIT_CLOSE_REASON}",
+        ),
+        (
+            VALIDATION_ERROR_API_KEY,
+            2001,
+            f"Authentication failed (server error 1003): {VALIDATION_ERROR_MESSAGE}",
+        ),
+    ],
+)
+def test_auth_refusal_code_tells_the_limit_apart(server, product, api_key, code, expected):
+    # Close 1013, and 1003 / 1001 with the limit's text, are the connection
+    # limit; 1001 with another reason and 1003 with another message are not
+    # (#300).
+    ws = product_ws(server.url, product, api_key=api_key)
+
+    with pytest.raises(ConnectionError) as info:
+        ws.connect()
+
+    assert info.value.code == code
+    assert expected in str(info.value)
+
+
+@hard_timeout
+@pytest.mark.parametrize("product", PRODUCTS)
+async def test_connect_async_at_the_connection_limit_raises_2012(server, product):
+    ws = product_ws(server.url, product, api_key=LIMITED_API_KEY)
+
+    with pytest.raises(ConnectionError) as info:
+        await ws.connect_async()
+
+    assert info.value.code == 2012
+    assert LIMIT_CLOSE_REASON in str(info.value)
 
 
 @hard_timeout
