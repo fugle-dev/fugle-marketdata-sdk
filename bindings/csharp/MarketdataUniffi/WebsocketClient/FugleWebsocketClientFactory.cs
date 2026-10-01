@@ -83,12 +83,19 @@ namespace FugleMarketData.WebsocketClient
             _stock = new Lazy<FugleWebsocketStockClient>(() =>
             {
                 lock (_lock)
+                {
+                    // A client built after Dispose would never be released.
+                    ThrowIfDisposed();
                     return _builtStock = new FugleWebsocketStockClient(WithEndpoint(_template, WebSocketEndpoint.Stock));
+                }
             });
             _futOpt = new Lazy<FugleWebsocketFutOptClient>(() =>
             {
                 lock (_lock)
+                {
+                    ThrowIfDisposed();
                     return _builtFutOpt = new FugleWebsocketFutOptClient(WithEndpoint(_template, WebSocketEndpoint.FutOpt));
+                }
             });
         }
 
@@ -99,7 +106,9 @@ namespace FugleMarketData.WebsocketClient
         /// before a token expires (an SDK token is valid for two days): a live
         /// connection is not authenticated again. Rejected credentials still end
         /// automatic reconnection; set a new credential, then call <c>Connect</c>
-        /// again. <c>Stock.SetCredentials</c> changes the Stock client's alone.
+        /// again. <c>Stock.SetCredentials</c> changes the Stock client's alone;
+        /// a later call here replaces what was set on either client that way, as
+        /// <c>ws.set_credentials()</c> does in Python and Node.
         /// </summary>
         /// <param name="apiKey">Fugle API key</param>
         /// <param name="bearerToken">OAuth bearer token</param>

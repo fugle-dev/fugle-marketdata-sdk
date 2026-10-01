@@ -240,8 +240,8 @@ current credential.
 // it before the token expires.
 ws.SetCredentials(sdkToken: newToken);
 
-// Event style: both clients, built or not; factory.Stock.SetCredentials(...)
-// changes the Stock client's alone.
+// Event style: both clients, built or not, replacing what was set on either
+// alone; factory.Stock.SetCredentials(...) changes the Stock client's alone.
 factory.SetCredentials(sdkToken: newToken);
 
 // REST: from the next request on, clients taken before (client.Stock, ...) included.

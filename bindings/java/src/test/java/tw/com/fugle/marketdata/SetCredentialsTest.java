@@ -77,7 +77,7 @@ public class SetCredentialsTest {
             client.connect().get(10, TimeUnit.SECONDS);
 
             auth.required = NEW;
-            client.setCredentials(null, null, NEW);
+            client.setCredentials(Credentials.sdkToken(NEW));
             Thread.sleep(100);
             assertEquals(1, auth.authData.size(), "no auth frame on the live connection");
 
@@ -98,7 +98,7 @@ public class SetCredentialsTest {
         try (LoopbackWsServer server = auth.server; FugleWebSocketClient client = client(auth)) {
             assertThrows(Exception.class, () -> client.connect().get(10, TimeUnit.SECONDS));
 
-            client.setCredentials(null, NEW, null);
+            client.setCredentials(Credentials.bearerToken(NEW));
             client.connect().get(10, TimeUnit.SECONDS);
             client.disconnect().get(10, TimeUnit.SECONDS);
 
@@ -112,9 +112,9 @@ public class SetCredentialsTest {
 
         AuthServer auth = new AuthServer();
         try (LoopbackWsServer server = auth.server; FugleWebSocketClient client = client(auth)) {
-            assertConfigError(() -> client.setCredentials(null, null, null));
-            assertConfigError(() -> client.setCredentials("a", null, "b"));
-            assertConfigError(() -> client.setCredentials(null, "   ", null));
+            assertConfigError(() -> client.setCredentials(Credentials.sdkToken("   ")));
+            assertConfigError(() -> client.setCredentials(Credentials.apiKey(null)));
+            assertThrows(NullPointerException.class, () -> client.setCredentials(null));
             client.connect().get(10, TimeUnit.SECONDS);
             client.disconnect().get(10, TimeUnit.SECONDS);
 
@@ -127,11 +127,17 @@ public class SetCredentialsTest {
         NativeLibrary.assumeAvailable();
 
         try (FugleRestClient client = FugleRestClient.builder().apiKey(OLD).build()) {
-            assertConfigError(() -> client.setCredentials(null, null, null));
-            assertConfigError(() -> client.setCredentials("a", null, "b"));
-            assertConfigError(() -> client.setCredentials("bad\nkey", null, null));
-            client.setCredentials(null, null, NEW);
+            assertConfigError(() -> client.setCredentials(Credentials.bearerToken("")));
+            assertConfigError(() -> client.setCredentials(Credentials.apiKey("bad\nkey")));
+            assertThrows(NullPointerException.class, () -> client.setCredentials(null));
+            client.setCredentials(Credentials.sdkToken(NEW));
         }
+    }
+
+    @Test
+    void credentialsToStringHidesTheSecret() {
+        assertEquals("Credentials.sdkToken(***)", Credentials.sdkToken("secret").toString());
+        assertEquals("Credentials.apiKey(***)", Credentials.apiKey("secret").toString());
     }
 
     @Test

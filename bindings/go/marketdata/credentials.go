@@ -1,11 +1,13 @@
 // credentials.go - Replacing a client's credential (#322)
 package marketdata_uniffi
 
-import "errors"
-
 // credentialsFrom reads the credential options WithApiKey, WithBearerToken
-// and WithSdkToken into the record core checks. Any other option is an
-// error: it would have no effect on a client already built.
+// and WithSdkToken into the record core checks. Any other option is a
+// ConfigError (code 1004): it would have no effect on a client already built.
+//
+// Other options are found by what they leave in the config, so one that
+// leaves its zero value, such as WithBaseUrl(""), goes unnoticed; it would
+// have changed nothing either.
 func credentialsFrom(opts []Option) (CredentialsRecord, error) {
 	cfg := &clientConfig{}
 	for _, opt := range opts {
@@ -17,7 +19,12 @@ func credentialsFrom(opts []Option) (CredentialsRecord, error) {
 	rest := *cfg
 	rest.apiKey, rest.bearerToken, rest.sdkToken = "", "", ""
 	if rest != (clientConfig{}) {
-		return CredentialsRecord{}, errors.New("SetCredentialsWith takes only WithApiKey, WithBearerToken and WithSdkToken")
+		const msg = "SetCredentialsWith takes only WithApiKey, WithBearerToken and WithSdkToken"
+		return CredentialsRecord{}, NewMarketDataErrorConfigError(msg, ErrorInfo{
+			Code:       1004,
+			SourceKind: ErrorSourceKindClient,
+			Message:    "Configuration error: " + msg,
+		})
 	}
 	return record, nil
 }
@@ -49,8 +56,19 @@ func (_self *RestClient) SetCredentialsWith(opts ...Option) error {
 // with the new credential to stream again.
 //
 // Exactly one non-empty credential must be set; otherwise it returns a
-// ConfigError (code 1004) and the current credential is kept.
+// ConfigError (code 1004) and the current credential is kept. After Close()
+// it returns ClientClosed (code 2010).
 func (sc *StreamingClient) SetCredentials(credentials CredentialsRecord) error {
+	// Held so Close() cannot destroy the client during the call.
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+	if sc.closed {
+		return NewMarketDataErrorClientClosed(ErrorInfo{
+			Code:       2010,
+			SourceKind: ErrorSourceKindClient,
+			Message:    "Client closed: create a new client to set credentials",
+		})
+	}
 	return sc.client.SetCredentials(credentials)
 }
 

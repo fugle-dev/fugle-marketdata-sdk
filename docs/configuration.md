@@ -703,8 +703,8 @@ err = client.SetCredentialsWith(mkt.WithSdkToken(newToken))  // RestClient
 ```
 
 ```java
-ws.setCredentials(null, null, newToken);     // FugleWebSocketClient (apiKey, bearerToken, sdkToken)
-client.setCredentials(null, null, newToken); // FugleRestClient
+ws.setCredentials(Credentials.sdkToken(newToken));     // FugleWebSocketClient
+client.setCredentials(Credentials.sdkToken(newToken)); // FugleRestClient
 ```
 
 ```cpp

@@ -139,7 +139,7 @@ public class SetCredentialsTests
     public async Task Rest_SendsTheNewCredential_ThroughClientsTakenBefore()
     {
         using var server = new LoopbackServer("{}");
-        var client = server.NewClient(Old);
+        using var client = server.NewClient(Old);
         var intraday = client.Stock.Intraday;
 
         client.SetCredentials(sdkToken: New);
@@ -159,7 +159,7 @@ public class SetCredentialsTests
     public async Task Rest_InvalidCredentials_AreConfigError_AndKeepTheCurrentOne()
     {
         using var server = new LoopbackServer("{}");
-        var client = server.NewClient(Old);
+        using var client = server.NewClient(Old);
 
         AssertConfigError(() => client.SetCredentials());
         AssertConfigError(() => client.SetCredentials(apiKey: "a", bearerToken: "b"));

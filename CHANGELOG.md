@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RestClient`, the event-style clients and `FugleWebsocketClientFactory`
   (both clients, built or not). Go: `SetCredentials(CredentialsRecord)` and
   `SetCredentialsWith(WithSdkToken(...))` on `StreamingClient` and
-  `RestClient`. Java: `setCredentials(apiKey, bearerToken, sdkToken)` on
-  `FugleWebSocketClient` and `FugleRestClient`. C++: the generated
+  `RestClient`. Java: `setCredentials(Credentials.sdkToken(...))` (or
+  `Credentials.apiKey` / `Credentials.bearerToken`) on `FugleWebSocketClient`
+  and `FugleRestClient`. C++: the generated
   `set_credentials`. Go's `Messages()` still closes when an automatic
   reconnect is rejected: create a new client to stream again.
 - **Rust, Python, Node: `set_credentials()` / `setCredentials()`** (#322).

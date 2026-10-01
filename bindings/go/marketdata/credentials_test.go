@@ -69,9 +69,7 @@ func TestSetCredentials_InvalidIsConfigErrorAndKeepsTheCurrentOne(t *testing.T) 
 	assertConfigError(t, client.SetCredentials(CredentialsRecord{}))
 	assertConfigError(t, client.SetCredentials(CredentialsRecord{BearerToken: &blank}))
 	assertConfigError(t, client.SetCredentialsWith(WithApiKey("a"), WithSdkToken("b")))
-	if err := client.SetCredentialsWith(WithSdkToken("t"), WithBaseUrl("ws://elsewhere")); err == nil {
-		t.Fatal("SetCredentialsWith took a non-credential option")
-	}
+	assertConfigError(t, client.SetCredentialsWith(WithSdkToken("t"), WithBaseUrl("ws://elsewhere")))
 	if err := client.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -134,5 +132,20 @@ func TestSetCredentials_RejectedFirstConnectSucceedsAfterTheCredentialIsSet(t *t
 	want := []map[string]any{{"apikey": "old-key"}, {"sdkToken": "new-token"}}
 	if got := srv.authData(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("auth data = %v, want %v", got, want)
+	}
+}
+
+func TestSetCredentials_AfterCloseIsClientClosed(t *testing.T) {
+	srv := newAuthFrameServer(t)
+	client := newCredentialsClient(t, srv)
+	_ = client.Close()
+
+	for _, err := range []error{
+		client.SetCredentials(CredentialsRecord{SdkToken: String("new-token")}),
+		client.SetCredentialsWith(WithSdkToken("new-token")),
+	} {
+		if info, ok := ErrorInfoOf(err); !ok || info.Code != 2010 {
+			t.Fatalf("err = %v, want ClientClosed 2010", err)
+		}
 	}
 }
