@@ -1095,6 +1095,11 @@ pub(crate) fn parse_ws_versions(
         .map_err(|err| napi::Error::new(napi::Status::InvalidArg, crate::options::version_message(&err)))
 }
 
+/// Ends a `base_url` rejection: the version option in Node syntax, not the
+/// Rust builder call (#316).
+const BASE_URL_VERSION_HINT: &str =
+    "The version comes from the version option, e.g. version: { futopt: 'v1.1' }.";
+
 /// Forwards to [`marketdata_core::websocket::stream_config`], which owns the
 /// endpoint rules (#252).
 pub(crate) fn build_stream_config(
@@ -1104,7 +1109,14 @@ pub(crate) fn build_stream_config(
     stock_version: marketdata_core::websocket::StockVersion,
     futopt_version: marketdata_core::websocket::FutOptVersion,
 ) -> Result<marketdata_core::ConnectionConfig, marketdata_core::MarketDataError> {
-    marketdata_core::websocket::stream_config(auth, base_url, product, stock_version, futopt_version)
+    marketdata_core::websocket::stream_config(
+        auth,
+        base_url,
+        product,
+        stock_version,
+        futopt_version,
+        BASE_URL_VERSION_HINT,
+    )
 }
 
 /// Command sent to WebSocket worker thread

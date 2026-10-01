@@ -37,6 +37,17 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — `stream_config` takes the binding's version hint (#316)
+
+- `~` `websocket::stream_config` (also `websocket::factory::stream_config`)
+  gains a last `version_hint: &str` argument: the sentence that ends the
+  `base_url` rejection, naming the binding's version option in its own
+  syntax. The rejection used to end with the Rust builder call
+  (`.futopt_version(FutOptVersion::V1_1)`), which Python and Node users
+  saw. Breaking for callers of `stream_config` (the bindings); pass `""`
+  to end the message at the corrected prefix. `WebSocketFactory` keeps the
+  Rust hint.
+
 ### Unreleased — product clients' resolved base URL (#306)
 
 - `+` `rest::StockClient::resolved_base_url(&self) -> String` — the

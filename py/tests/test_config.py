@@ -428,6 +428,17 @@ class TestWebSocketUrl:
         assert ws.stock.url == "wss://custom.ws/marketdata/v1.0/stock/streaming"
         assert ws.futopt.url == "wss://custom.ws/marketdata/v1.1/futopt/streaming"
 
+    def test_versioned_base_url_names_the_python_option(self):
+        # The hint is the Python spelling, not the Rust builder call (#316).
+        with pytest.raises(TypeError) as exc_info:
+            WebSocketClient(api_key="key", base_url="wss://custom.ws/marketdata/v1.0")
+        message = str(exc_info.value)
+        assert message.endswith(
+            "Pass the host and path prefix only: 'wss://custom.ws/marketdata'. "
+            "The version comes from the version option, e.g. version={'futopt': 'v1.1'}."
+        )
+        assert "futopt_version" not in message
+
     def test_is_read_only(self):
         ws = WebSocketClient(api_key="key")
         with pytest.raises(AttributeError):

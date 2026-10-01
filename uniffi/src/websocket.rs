@@ -432,6 +432,12 @@ pub struct StreamingVersionRecord {
     pub futopt: Option<String>,
 }
 
+/// Ends a `base_url` rejection. C#, Go, Java and C++ each name the version
+/// option differently, so this names its fields rather than one language's
+/// syntax, and not the Rust builder call (#316).
+const BASE_URL_VERSION_HINT: &str =
+    "The version comes from the streaming version option (its stock / futopt fields).";
+
 impl StreamingVersionRecord {
     fn resolve(
         &self,
@@ -1002,6 +1008,7 @@ impl WebSocketClient {
             product,
             stock_version,
             futopt_version,
+            BASE_URL_VERSION_HINT,
         )?)
     }
 
@@ -2590,6 +2597,21 @@ mod tests {
                 }
                 other => panic!("expected ConfigError, got {other:?}"),
             }
+        }
+    }
+
+    /// The `base_url` rejection names the version option, not the Rust
+    /// builder call (#316).
+    #[test]
+    fn versioned_base_url_hint_names_the_version_option() {
+        let client =
+            client_for_url(WebSocketEndpoint::FutOpt, Some("wss://staging.fugle.tw/marketdata/v1.0"), None);
+        match client.url() {
+            Err(MarketDataError::ConfigError { info, .. }) => {
+                assert!(info.message.ends_with(BASE_URL_VERSION_HINT), "{info:?}");
+                assert!(!info.message.contains("futopt_version"), "{info:?}");
+            }
+            other => panic!("expected ConfigError, got {other:?}"),
         }
     }
 
