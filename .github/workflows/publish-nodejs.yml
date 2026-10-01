@@ -119,6 +119,13 @@ jobs:
           # napi artifacts also copies every binary into js/; the main
           # package's `files` glob would otherwise ship all of them.
           rm -f ./*.node
+          # The platform packages carry the compiled code, so they need the
+          # license texts too. napi writes `files` with the .node only, and npm
+          # never auto-includes LICENSE-MIT / LICENSE-APACHE, so add them.
+          for dir in npm/*/; do
+            cp LICENSE-MIT LICENSE-APACHE "$dir"
+            node -e "const f='./$dir/package.json',p=require(f);p.files=[...new Set([...(p.files||[]),'LICENSE-MIT','LICENSE-APACHE'])];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          done
 
       - name: Verify packages
         working-directory: js
@@ -135,6 +142,9 @@ jobs:
             echo "| $name | $ver | $bins |" >> "$GITHUB_STEP_SUMMARY"
             [[ "$ver" == "$VERSION" ]] || { echo "::error::$name version $ver != $VERSION"; exit 1; }
             [[ "$bins" == "1" ]] || { echo "::error::$name has $bins .node files, expected 1"; exit 1; }
+            for lic in LICENSE-MIT LICENSE-APACHE; do
+              [[ -f "$dir$lic" ]] || { echo "::error::$name is missing $lic"; exit 1; }
+            done
             FOUND=$((FOUND + 1))
           done
           [[ "$FOUND" == "$EXPECTED" ]] || { echo "::error::Found $FOUND platform packages, package.json lists $EXPECTED"; exit 1; }

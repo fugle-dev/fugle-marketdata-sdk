@@ -8,6 +8,9 @@ version = "3.0.0rc10"
 description = "Fugle market data REST and WebSocket client, powered by a Rust core"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
+# Copies of the repo-root files: PEP 639 forbids `..` in license-files, so
+# they have to live next to this file to land in dist-info/licenses/.
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 authors = [{ name = "Fugle Team" }]
 keywords = ["fugle", "marketdata", "taiwan", "stock", "futures", "options", "websocket"]
 requires-python = ">=3.8"
@@ -24,7 +27,6 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
 [project.urls]

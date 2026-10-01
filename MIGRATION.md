@@ -31,8 +31,8 @@ package, jump to section 2.
 This SDK aims to be a near drop-in replacement for the original Fugle market
 data SDKs:
 
-- **`fugle-marketdata`** (PyPI, currently 2.4.1) — pure-Python implementation
-- **`@fugle/marketdata`** (npm, currently 1.4.2) — pure-JS implementation
+- **`fugle-marketdata`** (PyPI, last release 2.7.0) — pure-Python implementation
+- **`@fugle/marketdata`** (npm, last release 1.7.0) — pure-JS implementation
 
 The biggest change is that this SDK is built on a shared **Rust core** with
 PyO3 + napi-rs bindings, so you get a single behaviour across languages and
@@ -781,6 +781,53 @@ takes, so a typo fails at the call instead of returning default data:
 
 A getter or Proxy trap that throws while an argument is read throws its own
 error, synchronously, as before.
+
+#### 19. The legacy clients' plumbing is gone: `get_client()`, `request()`, `options`
+
+The 2.x / 1.x factories and product clients exposed the pieces they were
+built from. 3.0 builds them in the Rust core, so these members do not exist
+and using one raises `AttributeError` (Python) or `TypeError: … is not a
+function` / `undefined` (Node):
+
+| Legacy member | Python 2.7.0 | Node 1.7.0 | In 3.0 |
+|---|---|---|---|
+| `get_client('stock' \| 'futopt')` / `getClient(...)` on `RestClient` and `WebSocketClient` | ✓ | ✓ | use the `.stock` / `.futopt` properties, which return the same cached client |
+| Generic `request(path, **params)` / `request(endpoint, params)` | on each endpoint group: `stock.{intraday,historical,snapshot,technical,ownership,corporate_actions}`, `futopt.{intraday,historical}` | on the product client: `stock`, `futopt` | call the named method (`client.stock.intraday.quote(symbol="2330")`); see below for endpoints without one |
+| `options` on `RestClient` / `WebSocketClient`, `config` (Py) / `options` (Node) on product clients and endpoint groups | ✓ | ✓ | not exposed — keep the options you passed to the constructor |
+
+Every endpoint the 2.7.0 / 1.7.0 clients had a method for has one in 3.0,
+with the same name. `request()` was only needed for a path the SDK had no
+method for. 3.0 has no generic escape hatch for that; call the REST API
+directly with the same credentials header:
+
+```python
+# Legacy
+client.stock.intraday.request("intraday/quote/2330", type="oddlot")
+
+# This SDK
+client.stock.intraday.quote(symbol="2330", type="oddlot")
+
+# A path 3.0 has no method for: plain HTTP
+import requests
+requests.get(
+    "https://api.fugle.tw/marketdata/v1.0/stock/<path>",
+    headers={"X-API-KEY": api_key},  # or Authorization: Bearer / X-SDK-TOKEN
+    params={...},
+).json()
+```
+
+```js
+// Legacy
+await client.stock.request('intraday/quote/2330', { type: 'oddlot' });
+
+// This SDK
+await client.stock.intraday.quote({ symbol: '2330', type: 'oddlot' });
+```
+
+The legacy `request()` returned the parsed body; 2.x raised `FugleAPIError`
+on HTTP ≥ 400, while 1.x resolved with the error body. The named methods
+behave as described in [§6](#6-python-exception-hierarchy-is-finer-grained)
+and [§8](#8-node-rest-rejects-on-http-errors-instead-of-resolving-the-error-body).
 
 ### New things the legacy SDKs did not have
 
