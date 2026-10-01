@@ -139,7 +139,7 @@ def test_connect_in_disconnect_callback_joins_the_reconnect(server, product):
 @pytest.mark.parametrize("product", PRODUCTS)
 async def test_connect_async_joins_the_reconnect(server, product):
     # Long enough a backoff that connect_async() is called within it.
-    ws = reconnecting_ws(server.url, product, delay_ms=1500)
+    ws = reconnecting_ws(server.url, product, delay_ms=3000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -244,7 +244,7 @@ async def test_disconnect_async_during_backoff_ends_the_async_join_with_2010(ser
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_join_raises_3005_when_the_attempts_run_out(server, product):
-    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         ws.connect()
@@ -263,7 +263,7 @@ def test_join_raises_3005_when_the_attempts_run_out(server, product):
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 async def test_async_join_raises_3005_when_the_attempts_run_out(server, product):
-    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -280,7 +280,7 @@ async def test_async_join_raises_3005_when_the_attempts_run_out(server, product)
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_join_raises_auth_error_when_the_reconnect_is_rejected(server, product):
-    ws = reconnecting_ws(server.url, product, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         ws.connect()
@@ -299,7 +299,7 @@ def test_join_raises_auth_error_when_the_reconnect_is_rejected(server, product):
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 async def test_async_join_raises_auth_error_when_the_reconnect_is_rejected(server, product):
-    ws = reconnecting_ws(server.url, product, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()
@@ -354,7 +354,7 @@ async def test_second_connect_async_is_refused_before_authenticated_is_delivered
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_concurrent_joins_both_return_once_reconnected(server, product):
     # Like core's client: every caller waits on the one reconnect.
-    ws = reconnecting_ws(server.url, product, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         ws.connect()
@@ -372,7 +372,7 @@ def test_concurrent_joins_both_return_once_reconnected(server, product):
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 def test_concurrent_joins_both_raise_3005_when_the_attempts_run_out(server, product):
-    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, max_attempts=1, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         ws.connect()
@@ -392,7 +392,7 @@ def test_concurrent_joins_both_raise_3005_when_the_attempts_run_out(server, prod
 @hard_timeout
 @pytest.mark.parametrize("product", PRODUCTS)
 async def test_concurrent_async_joins_both_return_once_reconnected(server, product):
-    ws = reconnecting_ws(server.url, product, delay_ms=1000)
+    ws = reconnecting_ws(server.url, product, delay_ms=2000)
     recorder = Recorder(ws)
     try:
         await ws.connect_async()

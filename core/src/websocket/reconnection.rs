@@ -18,7 +18,16 @@ pub const DEFAULT_INITIAL_DELAY_MS: u64 = 1000;
 pub const DEFAULT_MAX_DELAY_MS: u64 = 60000;
 
 /// Minimum allowed initial delay to prevent connection storms
+///
+/// The floor applies to the configured value; the jitter takes up to half of
+/// it off, so the first wait is in `(initial_delay / 2, initial_delay]`
+/// (#297). The wait itself is not clamped to this floor: clamping would put
+/// every client that hits it back on the same moment.
 pub const MIN_INITIAL_DELAY_MS: u64 = 100;
+
+/// Upper bound (exclusive) of the jitter taken off each reconnect wait, in
+/// millionths of the base: 50%.
+const JITTER_PPM_CEILING: u64 = 500_000;
 
 /// Reconnection configuration
 ///
@@ -127,6 +136,10 @@ impl ReconnectionConfig {
 pub struct ReconnectionManager {
     config: ReconnectionConfig,
     current_attempt: u32,
+    /// This run's jitter, in millionths of the base taken off each wait:
+    /// drawn from `[0, 500_000)` on the first attempt after [`Self::new`] or
+    /// [`Self::reset`], kept for the rest of the run (#297).
+    jitter_ppm: u64,
 }
 
 impl ReconnectionManager {
@@ -135,6 +148,7 @@ impl ReconnectionManager {
         Self {
             config,
             current_attempt: 0,
+            jitter_ppm: 0,
         }
     }
 
@@ -155,11 +169,13 @@ impl ReconnectionManager {
     /// | `last_error_code == 1000`: the server rejected the credentials, then closed without a code | no |
     /// | anything else | yes |
     ///
-    /// Close codes the server sends: `1001` (maintenance restart,
-    /// connection limit, no auth request within 60 s) and `1008` (too many
-    /// auth messages on one connection; unreachable from this SDK, which
-    /// authenticates once per connection — revisit if it ever re-auths).
-    /// Both reconnect, as do `1006`, an absent code and any unknown code;
+    /// Close codes the server sends: `1001` (maintenance restart, no auth
+    /// request within 60 s, and today the connection limit), `1013` (the
+    /// connection limit once fugle-realtime !640 is deployed, after an
+    /// `error{1003}`) and `1008` (too many auth messages on one connection;
+    /// unreachable from this SDK, which authenticates once per connection —
+    /// revisit if it ever re-auths). All reconnect, as do `1006`, an absent
+    /// code and any unknown code;
     /// the server never sends 4xxx. Credentials rejected is the one case
     /// where retrying cannot help: the server says so with `error{1000}`
     /// followed by a Close with no code, hence the second parameter.
@@ -183,11 +199,21 @@ impl ReconnectionManager {
 
     /// Calculate next reconnection delay with exponential backoff and jitter
     ///
-    /// Attempt `n` waits `base × (1 + U[0, 0.5))`, where
-    /// `base = min(initial_delay × 2^(n-1), max_delay)`, and never longer
-    /// than `max_delay`. The jitter is random per call (#227), so clients
-    /// dropped at the same moment do not all come back at the same moment;
-    /// one client's delays still increase, since the jitter is under 100%.
+    /// Attempt `n` waits `base × (1 − U[0, 0.5))`, where
+    /// `base = min(initial_delay × 2^min(n-1, 10), max_delay)` (the exponent
+    /// stops at 10: with `max_delay` over `1024 × initial_delay`, the base
+    /// stays at `initial_delay × 1024`): a wait in
+    /// `(base / 2, base]`, so never longer than `max_delay`. The jitter takes
+    /// time off the base rather than adding to it (#297): added jitter was
+    /// cut off by the `max_delay` cap, and every client then retried exactly
+    /// once per `max_delay`, together. Taken off, the waits at the cap stay
+    /// spread over `(max_delay / 2, max_delay]`.
+    ///
+    /// `U` is drawn once per run, on the first attempt after [`Self::new`]
+    /// or [`Self::reset`], so clients dropped at the same moment do not all
+    /// come back at the same moment (#227), and one client's waits never
+    /// decrease, since its base never does. Drawing it per attempt would
+    /// let a wait at the cap come out shorter than the one before.
     ///
     /// Returns None if max attempts reached, Some(duration) otherwise; with
     /// `max_attempts == 0` (unlimited) it always returns Some.
@@ -197,11 +223,18 @@ impl ReconnectionManager {
             return None;
         }
 
+        // `jitter` returns a Duration; its nanoseconds serve as the random
+        // integer in `[0, JITTER_PPM_CEILING)`.
+        if self.current_attempt == 0 {
+            let ceiling = Duration::from_nanos(JITTER_PPM_CEILING);
+            self.jitter_ppm = crate::jitter::jitter(ceiling).as_nanos() as u64;
+        }
         self.current_attempt = self.current_attempt.saturating_add(1);
 
         let base = self.base_delay(self.current_attempt);
-        let delay = base.saturating_add(crate::jitter::jitter(base / 2));
-        Some(delay.min(self.config.max_delay))
+        let cut = base.as_nanos() * u128::from(self.jitter_ppm) / 1_000_000;
+        let cut = Duration::from_nanos(u64::try_from(cut).unwrap_or(u64::MAX));
+        Some(base.saturating_sub(cut))
     }
 
     /// Backoff before jitter for `attempt` (1-indexed):
@@ -217,7 +250,8 @@ impl ReconnectionManager {
 
     /// Reset reconnection state
     ///
-    /// Clears attempt counter, allowing fresh reconnection.
+    /// Clears attempt counter, allowing fresh reconnection; the next run
+    /// draws a new jitter (#297).
     /// Used after successful reconnection or manual reconnect() call.
     pub fn reset(&mut self) {
         self.current_attempt = 0;
@@ -330,6 +364,8 @@ mod tests {
         // Codes the server sends.
         assert!(manager.should_reconnect(Some(1001), None)); // going away
         assert!(manager.should_reconnect(Some(1008), None)); // policy violation
+        // Connection limit after fugle-realtime !640: error{1003}, close 1013.
+        assert!(manager.should_reconnect(Some(1013), Some(1003)));
         // Codes the transport produces.
         assert!(manager.should_reconnect(Some(1006), None)); // abnormal closure
         assert!(manager.should_reconnect(None, None)); // no Close frame / no code
@@ -343,7 +379,8 @@ mod tests {
         assert!(manager.should_reconnect(Some(4999), None));
         // Any other last error is not a verdict on the credentials: `1004`
         // (no auth request seen) precedes the server's 1001, `1011` (auth
-        // service down) is transient, `1003` is a bad request.
+        // service down) is transient, `1003` is a bad request or, once
+        // fugle-realtime !640 is deployed, the connection limit.
         assert!(manager.should_reconnect(None, Some(1004)));
         assert!(manager.should_reconnect(Some(1001), Some(1004)));
         assert!(manager.should_reconnect(None, Some(1011)));
@@ -438,7 +475,8 @@ mod tests {
         }
         assert_eq!(manager.current_attempt(), 100);
         assert_eq!(manager.attempts_remaining(), None);
-        assert_eq!(last, max_delay, "backoff reaches the cap");
+        // The jitter takes up to half of the cap off (#297).
+        assert!(last > max_delay / 2, "backoff reaches the cap: {last:?}");
     }
 
     /// Clients dropped at the same moment do not share a first delay (#227).
@@ -457,8 +495,18 @@ mod tests {
         assert!(first.len() >= 2, "every client got {first:?}");
     }
 
-    /// Each delay lies in `[base, base × 1.5]` and within `max_delay`, and a
-    /// client's delays never decrease (#227).
+    /// Base delay of `attempt` under `config`, as the docs state it.
+    fn expected_base(config: &ReconnectionConfig, attempt: u32) -> Duration {
+        config
+            .initial_delay
+            .saturating_mul(1 << (attempt - 1).min(10))
+            .min(config.max_delay)
+    }
+
+    /// Each delay lies in `(base / 2, base]` and within `max_delay`, and a
+    /// client's delays never decrease (#227, #297). With the defaults the
+    /// cap is not a power of two times `initial_delay` (32 s → 60 s), and
+    /// attempts 7–20 are all at the cap.
     #[test]
     fn test_delay_within_jitter_bounds_and_non_decreasing() {
         let config = ReconnectionConfig::default();
@@ -466,17 +514,14 @@ mod tests {
         for _ in 0..100 {
             let mut manager = ReconnectionManager::new(config.clone());
             let mut previous = Duration::ZERO;
-            for attempt in 1..=12 {
-                let base = config
-                    .initial_delay
-                    .saturating_mul(1 << (attempt - 1))
-                    .min(max_delay);
+            for attempt in 1..=20 {
+                let base = expected_base(&config, attempt);
                 let delay = manager.next_delay().expect("unlimited attempts");
-                assert!(delay >= base, "attempt {attempt}: {delay:?} < {base:?}");
                 assert!(
-                    delay <= base + base / 2,
-                    "attempt {attempt}: {delay:?} > 1.5 × {base:?}"
+                    delay > base / 2,
+                    "attempt {attempt}: {delay:?} <= {base:?} / 2"
                 );
+                assert!(delay <= base, "attempt {attempt}: {delay:?} > {base:?}");
                 assert!(delay <= max_delay, "attempt {attempt}: {delay:?}");
                 assert!(
                     delay >= previous,
@@ -484,6 +529,75 @@ mod tests {
                 );
                 previous = delay;
             }
+        }
+    }
+
+    /// The first reconnect comes within `(initial_delay / 2, initial_delay]`:
+    /// 0.5–1 s with the defaults (#297; it was 1–1.5 s).
+    #[test]
+    fn test_first_delay_at_most_initial_delay() {
+        let config = ReconnectionConfig::default();
+        for _ in 0..100 {
+            let delay = ReconnectionManager::new(config.clone())
+                .next_delay()
+                .expect("unlimited attempts");
+            assert!(delay > config.initial_delay / 2, "{delay:?}");
+            assert!(delay <= config.initial_delay, "{delay:?}");
+        }
+    }
+
+    /// Clients whose backoff has reached `max_delay` do not all retry at the
+    /// same moment (#297): the jitter used to be cut off by the cap. Random,
+    /// so only require that the 100 values are not all equal.
+    #[test]
+    fn test_jitter_spreads_delays_at_cap_across_clients() {
+        let config = ReconnectionConfig::default();
+        let at_cap: std::collections::HashSet<Duration> = (0..100)
+            .map(|_| {
+                let mut manager = ReconnectionManager::new(config.clone());
+                for _ in 0..30 {
+                    let _ = manager.next_delay();
+                }
+                manager.next_delay().expect("unlimited attempts")
+            })
+            .collect();
+        assert!(at_cap.len() >= 2, "every client got {at_cap:?}");
+        for delay in &at_cap {
+            assert!(*delay > config.max_delay / 2 && *delay <= config.max_delay);
+        }
+    }
+
+    /// `reset()` starts a new run: back to the first attempt's range, with a
+    /// jitter drawn again.
+    #[test]
+    fn test_reset_restarts_backoff_and_redraws_jitter() {
+        let config = ReconnectionConfig::default();
+        let mut manager = ReconnectionManager::new(config.clone());
+        let mut firsts = std::collections::HashSet::new();
+        for _ in 0..100 {
+            let first = manager.next_delay().expect("unlimited attempts");
+            assert!(first > config.initial_delay / 2 && first <= config.initial_delay);
+            firsts.insert(first);
+            for _ in 0..10 {
+                let _ = manager.next_delay();
+            }
+            manager.reset();
+        }
+        assert!(firsts.len() >= 2, "one jitter for every run: {firsts:?}");
+    }
+
+    /// One client keeps its jitter for the whole run, so at the cap it waits
+    /// the same time on every attempt instead of a random, possibly shorter,
+    /// one (#297).
+    #[test]
+    fn test_delay_at_cap_is_constant_within_a_run() {
+        let mut manager = ReconnectionManager::new(ReconnectionConfig::default());
+        for _ in 0..10 {
+            let _ = manager.next_delay();
+        }
+        let at_cap = manager.next_delay().expect("unlimited attempts");
+        for _ in 0..20 {
+            assert_eq!(manager.next_delay(), Some(at_cap));
         }
     }
 

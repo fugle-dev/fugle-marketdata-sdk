@@ -534,8 +534,12 @@ mod tests {
         assert!(!will_reconnect_after(&mgr(true), Server, close(Some(1001), Some(1000)), false));
         assert!(!will_reconnect_after(&mgr(true), Network, close(None, Some(1000)), false));
 
-        // Codes the server sends.
+        // Codes the server sends: 1001 (maintenance restart, no auth
+        // request, and today the connection limit), 1013 (the connection
+        // limit once fugle-realtime !640 is deployed, after `error{1003}`),
+        // 1008 (too many auth messages).
         assert!(will_reconnect_after(&mgr(true), Server, plain(Some(1001)), false));
+        assert!(will_reconnect_after(&mgr(true), Server, close(Some(1013), Some(1003)), false));
         assert!(will_reconnect_after(&mgr(true), Server, plain(Some(1008)), false));
         // A Close without a code, absent a rejection (regression: the
         // server's plain `close()` after `error{1004}`, or any other).

@@ -29,7 +29,7 @@ a reconnect config only to tune it or to turn it off.
 |--------|------|---------|-----|-----|-------------|
 | `enabled` | bool | true | - | - | Whether auto-reconnect is active (Go: use `WithoutReconnect()`) |
 | `max_attempts` | u32/int/number | 0 (unlimited) | 0 | - | Maximum reconnection attempts before giving up; 0 means never give up |
-| `initial_delay_ms` | u64/int/number | 1000 | 100 | - | Initial backoff delay in milliseconds |
+| `initial_delay_ms` | u64/int/number | 1000 | 100 | - | Initial backoff delay in milliseconds; the first wait is in (initial/2, initial] after jitter |
 | `max_delay_ms` | u64/int/number | 60000 | >= initial_delay_ms | - | Maximum backoff delay cap in milliseconds |
 
 **Constraints:**
@@ -47,11 +47,14 @@ a reconnect config only to tune it or to turn it off.
 
 **Backoff Strategy:** Exponential backoff with random jitter. The base delay
 doubles on each attempt until hitting the `max_delay_ms` cap, and each wait
-adds 0–50% of the base at random, never exceeding `max_delay_ms` (#227). With
-the defaults the waits are about 1s → 2s → 4s → 8s → 16s → 32s (each plus
-0–50%), then once a minute until the connection is back. The jitter is drawn
-per client, so clients dropped together (a server restart, say) do not all
-reconnect at the same moment.
+takes 0–50% off the base at random, so it never exceeds `max_delay_ms`
+(#227, #297). With the defaults the waits are about 1s → 2s → 4s → 8s → 16s
+→ 32s → 60s (each minus 0–50%), then that last wait, fixed between 30 and
+60s, repeated until the connection is back. The jitter is drawn per client
+when a reconnect starts and kept until it succeeds (or `reconnect()` is
+called), so clients dropped together (a server restart, say) do not all
+reconnect at the same moment, at the cap included, and one client's waits
+never get shorter.
 
 **Giving up:** with a non-zero `max_attempts`, after that many failed
 attempts; and, whatever `max_attempts`, when an attempt's credentials are
@@ -71,9 +74,10 @@ code 2010.
 `disconnect()` or reconnect disabled; the server closing with code 1000
 (normal closure); and the server rejecting the credentials on a live
 connection — an `error` frame with code 1000 followed by a Close without a
-code. Closes with 1001 (server restart, connection limit, no auth request
-within 60 s), 1006, 1008, no code, or any code the SDK does not know all
-reconnect. An auth-phase `error` with any other code (1011 auth service
+code. Closes with 1001 (server restart, no auth request within 60 s, and
+today the connection limit), 1013 (the connection limit once the server
+change for it ships), 1006, 1008, no code, or any code the SDK does not know
+all reconnect. An auth-phase `error` with any other code (1011 auth service
 unavailable, 1004 no auth request received) is not a rejection: it is
 reported as an `error` (code 2001) and the reconnect goes on.
 
