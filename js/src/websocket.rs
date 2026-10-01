@@ -1154,11 +1154,9 @@ fn unsubscribe_ids(env: &Env, options: &serde_json::Value) -> napi::Result<Optio
     let batch = options
         .get("ids")
         .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        });
+        .map(|arr| crate::options::string_array("unsubscribe", "ids", arr))
+        .transpose()
+        .map_err(|message| crate::options::type_error(env.raw(), &message))?;
 
     match (single, batch) {
         (Some(id), None) => Ok(Some(vec![id])),
@@ -1190,13 +1188,15 @@ where
 
 /// The `symbol` or `symbols` of subscribe-shaped options — exactly one.
 /// `call` names the method in error messages.
-fn option_symbols(call: &str, options: &serde_json::Value) -> napi::Result<Vec<String>> {
+fn option_symbols(env: &Env, call: &str, options: &serde_json::Value) -> napi::Result<Vec<String>> {
     let single = options.get("symbol").and_then(|v| v.as_str()).map(String::from);
-    let batch = options.get("symbols").and_then(|v| v.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect::<Vec<_>>()
-    });
+    // A non-string element is a `TypeError` rather than dropped (#294).
+    let batch = options
+        .get("symbols")
+        .and_then(|v| v.as_array())
+        .map(|arr| crate::options::string_array(call, "symbols", arr))
+        .transpose()
+        .map_err(|message| crate::options::type_error(env.raw(), &message))?;
     match (single, batch) {
         (Some(s), None) => Ok(vec![s]),
         (None, Some(list)) if !list.is_empty() => Ok(list),
@@ -2095,7 +2095,10 @@ impl StockWebSocketClient {
     ///                  the old `@fugle/marketdata` shape.
     ///                  Shape: `{ channel, symbol?, symbols?, intradayOddLot? }`
     #[napi(ts_args_type = "options: StockSubscribeOptions")]
-    pub fn subscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn subscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("subscribe", WsProduct::Stock, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value;
         let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
@@ -2103,7 +2106,7 @@ impl StockWebSocketClient {
             .parse::<marketdata_core::models::Channel>()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
-        let target_symbols = option_symbols("subscribe", &options)?;
+        let target_symbols = option_symbols(&env, "subscribe", &options)?;
 
         let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
         let sub = marketdata_core::StockSubscription::new(channel, target_symbols).with_odd_lot(odd_lot);
@@ -2118,7 +2121,10 @@ impl StockWebSocketClient {
     /// Node SDK shape; or the `subscribe` options
     /// `{ channel, symbol | symbols, intradayOddLot? }`.
     #[napi(ts_args_type = "options: string | UnsubscribeOptions | StockUnsubscribeOptions")]
-    pub fn unsubscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn unsubscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("unsubscribe", WsProduct::Stock, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value;
         // Accept legacy positional string for backward compat with the previous
         // `unsubscribe(id: string)` signature.
         let target_ids = match unsubscribe_ids(&env, &options)? {
@@ -2126,7 +2132,7 @@ impl StockWebSocketClient {
             None => {
                 let channel = unsubscribe_channel::<marketdata_core::models::Channel>(&env, &options)?;
                 let odd_lot = options.get("intradayOddLot").and_then(|v| v.as_bool()).unwrap_or(false);
-                marketdata_core::StockSubscription::new(channel, option_symbols("unsubscribe", &options)?)
+                marketdata_core::StockSubscription::new(channel, option_symbols(&env, "unsubscribe", &options)?)
                     .with_odd_lot(odd_lot)
                     .keys()
             }
@@ -2589,7 +2595,10 @@ impl FutOptWebSocketClient {
     ///                  or `symbols` (batch list) — exactly one is required.
     ///                  Shape: `{ channel, symbol?, symbols?, afterHours? }`
     #[napi(ts_args_type = "options: FutOptSubscribeOptions")]
-    pub fn subscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn subscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("subscribe", WsProduct::FutOpt, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value;
         let channel = options
             .get("channel")
             .and_then(|v| v.as_str())
@@ -2597,7 +2606,7 @@ impl FutOptWebSocketClient {
             .parse::<marketdata_core::models::futopt::FutOptChannel>()
             .map_err(|e| crate::errors::to_napi_error(&env, e))?;
 
-        let target_symbols = option_symbols("subscribe", &options)?;
+        let target_symbols = option_symbols(&env, "subscribe", &options)?;
 
         let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
         let sub = marketdata_core::FutOptSubscription::new(channel, target_symbols).with_after_hours(after_hours);
@@ -2611,14 +2620,17 @@ impl FutOptWebSocketClient {
     /// `{ ids: ["...", "..."] }` (batch); or the `subscribe` options
     /// `{ channel, symbol | symbols, afterHours? }`.
     #[napi(ts_args_type = "options: string | UnsubscribeOptions | FutOptUnsubscribeOptions")]
-    pub fn unsubscribe(&self, env: Env, options: serde_json::Value) -> napi::Result<()> {
+    pub fn unsubscribe(&self, env: Env, options: crate::options::SubscriptionArg, extra: Option<crate::options::ExtraArg>) -> napi::Result<()> {
+        crate::options::check_subscription("unsubscribe", WsProduct::FutOpt, &options.shape, extra)
+            .map_err(|message| crate::options::type_error(env.raw(), &message))?;
+        let options = options.value;
         let target_ids = match unsubscribe_ids(&env, &options)? {
             Some(ids) => ids,
             None => {
                 let channel =
                     unsubscribe_channel::<marketdata_core::models::futopt::FutOptChannel>(&env, &options)?;
                 let after_hours = options.get("afterHours").and_then(|v| v.as_bool()).unwrap_or(false);
-                marketdata_core::FutOptSubscription::new(channel, option_symbols("unsubscribe", &options)?)
+                marketdata_core::FutOptSubscription::new(channel, option_symbols(&env, "unsubscribe", &options)?)
                     .with_after_hours(after_hours)
                     .keys()
             }

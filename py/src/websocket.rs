@@ -70,33 +70,87 @@ fn resolve_symbol_args(
     }
 }
 
-/// Try to read a boolean from `dict[primary]`, falling back to `dict[fallback]`.
-/// Returns `None` if neither key is present.
-fn dict_bool_alias(
-    d: &Bound<'_, PyDict>,
-    primary: &str,
-    fallback: &str,
-) -> PyResult<Option<bool>> {
-    if let Some(v) = d.get_item(primary)? {
-        return Ok(Some(v.extract::<bool>()?));
-    }
-    if let Some(v) = d.get_item(fallback)? {
-        return Ok(Some(v.extract::<bool>()?));
-    }
-    Ok(None)
-}
-
-/// The session modifier of a product: its dict key and its kwarg name.
+/// The session modifier of a product: its dict key, its kwarg name, and the
+/// server's spelling, which the dict also takes (#294).
 #[derive(Clone, Copy)]
 struct Modifier {
     key: &'static str,
     kwarg: &'static str,
+    wire: &'static str,
+    product: marketdata_core::websocket::StreamProduct,
 }
 
-/// Stock: odd lot. Accepts both `oddLot` and `odd_lot` keys for legacy parity.
-const ODD_LOT: Modifier = Modifier { key: "oddLot", kwarg: "odd_lot" };
+impl Modifier {
+    /// Every dict spelling, the documented one first.
+    fn spellings(&self) -> Vec<&'static str> {
+        let mut all = vec![self.key, self.kwarg];
+        if !all.contains(&self.wire) {
+            all.push(self.wire);
+        }
+        all
+    }
+}
+
+/// Stock: odd lot. The dict takes `oddLot`, `odd_lot` and the server's
+/// `intradayOddLot` (the Node and 1.x spelling).
+const ODD_LOT: Modifier = Modifier {
+    key: "oddLot",
+    kwarg: "odd_lot",
+    wire: "intradayOddLot",
+    product: marketdata_core::websocket::StreamProduct::Stock,
+};
 /// FutOpt: after hours.
-const AFTER_HOURS: Modifier = Modifier { key: "afterHours", kwarg: "after_hours" };
+const AFTER_HOURS: Modifier = Modifier {
+    key: "afterHours",
+    kwarg: "after_hours",
+    wire: "afterHours",
+    product: marketdata_core::websocket::StreamProduct::FutOpt,
+};
+
+/// Refuse a dict key outside `accepted` (#294): the keys used to be read and
+/// the rest dropped, so a FutOpt `afterHours` on the stock client subscribed
+/// board-lot data. `call` names the method.
+fn check_dict_keys(
+    call: &str,
+    d: &Bound<'_, PyDict>,
+    accepted: &[&str],
+    product: marketdata_core::websocket::StreamProduct,
+) -> PyResult<()> {
+    for key in d.keys() {
+        let key: String = key.extract().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(format!("{call}(dict): keys must be strings"))
+        })?;
+        if !accepted.contains(&key.as_str()) {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "{call}(dict): {}",
+                marketdata_core::websocket::subscribe_keys::unknown_key(product, &key, accepted)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The modifier flag of a subscribe-shaped dict, under any one of its
+/// spellings; `None` if absent.
+fn dict_modifier(call: &str, d: &Bound<'_, PyDict>, modifier: Modifier) -> PyResult<Option<bool>> {
+    let mut found: Option<(&str, bool)> = None;
+    for key in modifier.spellings() {
+        let Some(value) = d.get_item(key)? else { continue };
+        if let Some((earlier, _)) = found {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "{call}(dict): '{key}' and '{earlier}' are the same option; give one"
+            )));
+        }
+        let flag = value.extract::<bool>().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(format!(
+                "{call}(dict): '{key}' must be a boolean, got {}",
+                value.get_type().name().map(|n| n.to_string()).unwrap_or_else(|_| "?".into())
+            ))
+        })?;
+        found = Some((key, flag));
+    }
+    Ok(found.map(|(_, flag)| flag))
+}
 
 /// Extract `(channel, symbols, modifier)` from a subscribe-shaped dict.
 /// `call` names the method in error messages.
@@ -105,6 +159,13 @@ fn extract_subscribe_dict(
     d: &Bound<'_, PyDict>,
     modifier: Modifier,
 ) -> PyResult<(String, Vec<String>, bool)> {
+    let accepted: Vec<&str> = marketdata_core::websocket::subscribe_keys::SUBSCRIBE_KEYS
+        .iter()
+        .copied()
+        .chain(modifier.spellings())
+        .collect();
+    check_dict_keys(call, d, &accepted, modifier.product)?;
+
     let channel = d
         .get_item("channel")?
         .ok_or_else(|| {
@@ -135,14 +196,20 @@ fn extract_subscribe_dict(
         }
     };
 
-    let flag = dict_bool_alias(d, modifier.key, modifier.kwarg)?.unwrap_or(false);
+    let flag = dict_modifier(call, d, modifier)?.unwrap_or(false);
 
     Ok((channel, symbols, flag))
 }
 
 /// Extract a list of subscription IDs from an unsubscribe dict.
 /// Accepts `{"id": "..."}` or `{"ids": [...]}`.
-fn extract_unsubscribe_dict(d: &Bound<'_, PyDict>) -> PyResult<Vec<String>> {
+fn extract_unsubscribe_dict(d: &Bound<'_, PyDict>, modifier: Modifier) -> PyResult<Vec<String>> {
+    check_dict_keys(
+        "unsubscribe",
+        d,
+        &marketdata_core::websocket::subscribe_keys::ID_KEYS,
+        modifier.product,
+    )?;
     match (d.get_item("id")?, d.get_item("ids")?) {
         (Some(s), None) => Ok(vec![s.extract::<String>()?]),
         (None, Some(list)) => {
@@ -238,6 +305,12 @@ fn resolve_unsubscribe_target(
         return resolve_unsubscribe_args(None, ids).map(UnsubscribeTarget::Ids);
     };
     if let Ok(d) = arg.cast::<PyDict>() {
+        // The dict is the whole call, as in the 1.x `unsubscribe(params)`.
+        if ids.is_some() {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "unsubscribe(): pass either a dict or ids=, not both",
+            ));
+        }
         if d.contains("channel")? {
             if d.contains("id")? || d.contains("ids")? {
                 return Err(channel_with_id());
@@ -245,7 +318,7 @@ fn resolve_unsubscribe_target(
             let (channel, symbols, flag) = extract_subscribe_dict("unsubscribe", d, modifier)?;
             return Ok(UnsubscribeTarget::Channel(channel, symbols, flag));
         }
-        extract_unsubscribe_dict(d).map(UnsubscribeTarget::Ids)
+        extract_unsubscribe_dict(d, modifier).map(UnsubscribeTarget::Ids)
     } else if let Ok(s) = arg.extract::<String>() {
         resolve_unsubscribe_args(Some(s.as_str()), ids).map(UnsubscribeTarget::Ids)
     } else {
@@ -1677,14 +1750,22 @@ fn resolve_subscribe_args(
     channel: &Bound<'_, PyAny>,
     symbol: Option<&str>,
     symbols: Option<Vec<String>>,
-    flag: bool,
+    flag: Option<bool>,
     modifier: Modifier,
 ) -> PyResult<(String, Vec<String>, bool)> {
     if let Ok(d) = channel.cast::<PyDict>() {
+        // The dict is the whole call, as in the 1.x `subscribe(params)`;
+        // arguments next to it used to be dropped (#294).
+        if symbol.is_some() || symbols.is_some() || flag.is_some() {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "{method}(): pass either a dict or the channel with symbol / symbols / {}, not both",
+                modifier.kwarg
+            )));
+        }
         extract_subscribe_dict("subscribe", d, modifier)
     } else if let Ok(s) = channel.extract::<String>() {
         let syms = resolve_symbol_args("subscribe", symbol, symbols)?;
-        Ok((s, syms, flag))
+        Ok((s, syms, flag.unwrap_or(false)))
     } else {
         Err(pyo3::exceptions::PyTypeError::new_err(
             format!("{method}() first argument must be a dict or channel string"),
@@ -2330,17 +2411,19 @@ impl StockWebSocketClient {
     /// ws.stock.subscribe("candles", "2330", odd_lot=True)
     /// ```
     ///
-    /// When a dict is supplied, the kwargs `symbol`/`symbols`/`odd_lot` are
-    /// ignored — the dict is the single source of truth, matching the legacy
-    /// SDK's `def subscribe(self, params)` behavior.
-    #[pyo3(signature = (channel, symbol=None, *, symbols=None, odd_lot=false))]
+    /// The dict is the whole call, as in the legacy SDK's
+    /// `def subscribe(self, params)`: `symbol` / `symbols` / `odd_lot` next
+    /// to it, a key it does not take, or a non-boolean flag is a `TypeError`
+    /// (#294). The flag may be spelled `oddLot`, `odd_lot` or
+    /// `intradayOddLot`.
+    #[pyo3(signature = (channel, symbol=None, *, symbols=None, odd_lot=None))]
     pub fn subscribe(
         &self,
         py: Python<'_>,
         channel: &Bound<'_, PyAny>,
         symbol: Option<&str>,
         symbols: Option<Vec<String>>,
-        odd_lot: bool,
+        odd_lot: Option<bool>,
     ) -> PyResult<()> {
         let (channel_str, target_symbols, effective_odd_lot) =
             resolve_subscribe_args("subscribe", channel, symbol, symbols, odd_lot, ODD_LOT)?;
@@ -2588,14 +2671,14 @@ impl StockWebSocketClient {
     ///     await ws.stock.subscribe_async("trades", "2330")
     ///     await ws.stock.subscribe_async({"channel": "trades", "symbol": "2330"})
     ///     ```
-    #[pyo3(signature = (channel, symbol=None, *, symbols=None, odd_lot=false))]
+    #[pyo3(signature = (channel, symbol=None, *, symbols=None, odd_lot=None))]
     pub fn subscribe_async<'py>(
         &self,
         py: Python<'py>,
         channel: &Bound<'py, PyAny>,
         symbol: Option<&str>,
         symbols: Option<Vec<String>>,
-        odd_lot: bool,
+        odd_lot: Option<bool>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let (channel_str, target_symbols, effective_odd_lot) =
             resolve_subscribe_args("subscribe_async", channel, symbol, symbols, odd_lot, ODD_LOT)?;
@@ -2795,14 +2878,14 @@ impl FutOptWebSocketClient {
     /// ws.futopt.subscribe("trades", "TXFC4")
     /// ws.futopt.subscribe("books", "MXFB4", after_hours=True)
     /// ```
-    #[pyo3(signature = (channel, symbol=None, *, symbols=None, after_hours=false))]
+    #[pyo3(signature = (channel, symbol=None, *, symbols=None, after_hours=None))]
     pub fn subscribe(
         &self,
         py: Python<'_>,
         channel: &Bound<'_, PyAny>,
         symbol: Option<&str>,
         symbols: Option<Vec<String>>,
-        after_hours: bool,
+        after_hours: Option<bool>,
     ) -> PyResult<()> {
         let (channel_str, target_symbols, effective_after_hours) =
             resolve_subscribe_args("subscribe", channel, symbol, symbols, after_hours, AFTER_HOURS)?;
@@ -3036,14 +3119,14 @@ impl FutOptWebSocketClient {
     ///     await ws.futopt.subscribe_async("trades", "TXFC4")
     ///     await ws.futopt.subscribe_async({"channel": "trades", "symbol": "TXFC4"})
     ///     ```
-    #[pyo3(signature = (channel, symbol=None, *, symbols=None, after_hours=false))]
+    #[pyo3(signature = (channel, symbol=None, *, symbols=None, after_hours=None))]
     pub fn subscribe_async<'py>(
         &self,
         py: Python<'py>,
         channel: &Bound<'py, PyAny>,
         symbol: Option<&str>,
         symbols: Option<Vec<String>>,
-        after_hours: bool,
+        after_hours: Option<bool>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let (channel_str, target_symbols, effective_after_hours) =
             resolve_subscribe_args("subscribe_async", channel, symbol, symbols, after_hours, AFTER_HOURS)?;

@@ -2152,7 +2152,7 @@ class StockWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        odd_lot: bool = False,
+        odd_lot: bool | None = None,
     ) -> None:
         """Subscribe to a channel for one or more symbols (blocking).
 
@@ -2170,10 +2170,12 @@ class StockWebSocketClient:
             ws.stock.subscribe("trades", symbols=["2330", "2317"])
             ws.stock.subscribe("candles", "2330", odd_lot=True)
 
-        When a dict is supplied, the kwargs ``symbol`` / ``symbols`` /
-        ``odd_lot`` are ignored — the dict is the single source of truth,
-        matching the legacy SDK's ``def subscribe(self, params)`` behavior.
-        Both ``oddLot`` (camelCase) and ``odd_lot`` keys are accepted.
+        The dict is the whole call, as in the legacy SDK's
+        ``def subscribe(self, params)``: passing ``symbol`` / ``symbols`` /
+        ``odd_lot`` next to it raises ``TypeError``, as does a key the dict
+        does not take (``afterHours`` is FutOpt only) or a non-boolean flag.
+        The flag may be spelled ``oddLot``, ``odd_lot`` or ``intradayOddLot``
+        (the server's and Node's name); give one.
         """
         ...
 
@@ -2183,7 +2185,7 @@ class StockWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        odd_lot: bool = False,
+        odd_lot: bool | None = None,
     ) -> None:
         """Subscribe to a channel for one or more symbols (async).
 
@@ -2521,7 +2523,7 @@ class FutOptWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        after_hours: bool = False,
+        after_hours: bool | None = None,
     ) -> None:
         """Subscribe to a channel for one or more FutOpt symbols (blocking).
 
@@ -2543,7 +2545,7 @@ class FutOptWebSocketClient:
         symbol: str | None = None,
         *,
         symbols: list[str] | None = None,
-        after_hours: bool = False,
+        after_hours: bool | None = None,
     ) -> None:
         """Subscribe to a channel for one or more FutOpt symbols (async).
 

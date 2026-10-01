@@ -4,6 +4,7 @@
 //! marketdata-core::RestClient for NAPI-RS bindings.
 
 use crate::errors::{BuildError, Settled};
+use crate::options::ExtraArg;
 use crate::websocket::RestClientOptions;
 use napi_derive::napi;
 use napi::bindgen_prelude::{FromNapiValue, TypeName, ValueType};
@@ -75,28 +76,6 @@ impl FromNapiValue for RestArg {
             }
             _ => Err(invalid()),
         }
-    }
-}
-
-/// An argument past the last one a REST method declares (#294). napi drops
-/// arguments beyond the declared ones, so `trades('2330', { limit: 5 })`
-/// used to send `trades('2330')`; each method now declares one more, as
-/// this, and refuses it. `undefined` / `null` arrive as `None`.
-pub struct ExtraArg(String);
-
-impl TypeName for ExtraArg {
-    fn type_name() -> &'static str {
-        "never"
-    }
-
-    fn value_type() -> ValueType {
-        ValueType::Unknown
-    }
-}
-
-impl FromNapiValue for ExtraArg {
-    unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
-        Ok(Self(unsafe { crate::options::read(env, value, 0)? }.describe()))
     }
 }
 

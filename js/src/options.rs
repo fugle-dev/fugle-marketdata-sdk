@@ -414,6 +414,138 @@ pub(crate) fn type_error(env: sys::napi_env, message: &str) -> napi::Error {
 }
 
 // ---------------------------------------------------------------------------
+// Method arguments
+
+/// An argument past the last one a method declares (#294). napi drops
+/// arguments beyond the declared ones, so `trades('2330', { limit: 5 })`
+/// used to send `trades('2330')`; methods now declare one more, as this, and
+/// refuse it. `undefined` / `null` arrive as `None`. Holds the type, for the
+/// message.
+pub struct ExtraArg(pub String);
+
+impl TypeName for ExtraArg {
+    fn type_name() -> &'static str {
+        "never"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for ExtraArg {
+    unsafe fn from_napi_value(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Self> {
+        Ok(Self(unsafe { read(env, value, 0)? }.describe()))
+    }
+}
+
+/// The argument of `subscribe()` / `unsubscribe()`: the JSON the methods
+/// read, and its shape for [`check_subscription`].
+pub struct SubscriptionArg {
+    pub(crate) value: serde_json::Value,
+    pub(crate) shape: JsVal,
+}
+
+impl TypeName for SubscriptionArg {
+    fn type_name() -> &'static str {
+        "unknown"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for SubscriptionArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let shape = unsafe { read(env, napi_val, 1)? };
+        let value = unsafe { serde_json::Value::from_napi_value(env, napi_val)? };
+        Ok(Self { value, shape })
+    }
+}
+
+/// Check a `subscribe()` / `unsubscribe()` argument of `product`'s client
+/// (#294): every key known to the call and of its type. `symbols` / `ids`
+/// elements are checked where they are read. Whether the keys go together
+/// (`symbol` or `symbols`, `channel` or `id`) is the methods' own check.
+pub(crate) fn check_subscription(
+    call: &str,
+    product: marketdata_core::websocket::StreamProduct,
+    shape: &JsVal,
+    extra: Option<ExtraArg>,
+) -> Result<(), String> {
+    use marketdata_core::websocket::subscribe_keys::{self, ID_KEYS, SUBSCRIBE_KEYS};
+
+    let modifier = subscribe_keys::modifier_key(product);
+    let unsubscribe = call == "unsubscribe";
+    if let Some(ExtraArg(kind)) = extra {
+        return Err(format!("{call}() takes one argument, got a further {kind} one"));
+    }
+    let entries = match shape {
+        JsVal::Object(entries) => entries,
+        JsVal::String(_) if unsubscribe => return Ok(()),
+        other if unsubscribe => {
+            return Err(format!(
+                "unsubscribe() takes a subscription id or an object like {{ id: '...' }} or \
+                 {{ channel: 'trades', symbol: '2330' }}, got {}",
+                other.describe()
+            ))
+        }
+        other => {
+            return Err(format!(
+                "subscribe() takes an object like {{ channel: 'trades', symbol: '2330' }}, got {}",
+                other.describe()
+            ))
+        }
+    };
+    let mut accepted: Vec<&str> = SUBSCRIBE_KEYS.iter().copied().chain([modifier]).collect();
+    if unsubscribe {
+        accepted.extend(ID_KEYS);
+    }
+    for (key, value) in entries {
+        if matches!(value, JsVal::Undefined) {
+            continue;
+        }
+        let expected = match key.as_str() {
+            "channel" | "symbol" | "id" if accepted.contains(&key.as_str()) => {
+                matches!(value, JsVal::String(_)).then_some(()).ok_or("a string")
+            }
+            "symbols" | "ids" if accepted.contains(&key.as_str()) => {
+                matches!(value, JsVal::Array).then_some(()).ok_or("an array of strings")
+            }
+            k if k == modifier => matches!(value, JsVal::Bool(_)).then_some(()).ok_or("a boolean"),
+            _ => return Err(format!("{call}(): {}", subscribe_keys::unknown_key(product, key, &accepted))),
+        };
+        if let Err(expected) = expected {
+            return Err(format!("{call}(): {key} must be {expected}, got {}", value.describe()));
+        }
+    }
+    Ok(())
+}
+
+/// The strings of a `symbols` / `ids` array, or the `TypeError` message for
+/// the first element that is not one; `key` and `call` name it.
+pub(crate) fn string_array(call: &str, key: &str, items: &[serde_json::Value]) -> Result<Vec<String>, String> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.as_str().map(String::from).ok_or_else(|| {
+                let got = match item {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Bool(_) => "boolean",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                    serde_json::Value::String(_) => "string",
+                };
+                format!("{call}(): {key}[{i}] must be a string, got {got}")
+            })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Checked constructor arguments
 
 /// The options object a constructor takes, with its table.
@@ -583,6 +715,77 @@ mod tests {
             );
             assert!(err(ws(&[("healthCheck", value)])).contains("healthCheck must be an object like { enabled: true }"));
         }
+    }
+
+    fn sub(call: &str, product: marketdata_core::websocket::StreamProduct, value: &JsVal) -> Result<(), String> {
+        check_subscription(call, product, value, None)
+    }
+
+    #[test]
+    fn test_subscription() {
+        use marketdata_core::websocket::StreamProduct::{FutOpt, Stock};
+        let base = |extra: (&str, JsVal)| obj(&[("channel", s("trades")), ("symbol", s("2330")), extra]);
+        assert!(sub("subscribe", Stock, &base(("intradayOddLot", JsVal::Bool(true)))).is_ok());
+        assert!(sub("subscribe", FutOpt, &base(("afterHours", JsVal::Undefined))).is_ok());
+        assert_eq!(
+            err(sub("subscribe", Stock, &base(("afterHours", JsVal::Bool(true))))),
+            "subscribe(): unknown key 'afterHours': it is a futopt option, the stock client takes \
+             intradayOddLot (accepted: channel, symbol, symbols, intradayOddLot)"
+        );
+        assert_eq!(
+            err(sub("subscribe", FutOpt, &base(("foo", JsVal::Number(1.0))))),
+            "subscribe(): unknown key 'foo' (accepted: channel, symbol, symbols, afterHours)"
+        );
+        assert_eq!(
+            err(sub("subscribe", Stock, &base(("intradayOddLot", s("true"))))),
+            "subscribe(): intradayOddLot must be a boolean, got string"
+        );
+        assert_eq!(
+            err(sub("subscribe", FutOpt, &base(("afterHours", JsVal::Null)))),
+            "subscribe(): afterHours must be a boolean, got null"
+        );
+        assert_eq!(
+            err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", JsVal::Number(2330.0))]))),
+            "subscribe(): symbol must be a string, got number 2330"
+        );
+        assert_eq!(
+            err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("symbols", s("2330"))]))),
+            "subscribe(): symbols must be an array of strings, got string"
+        );
+        assert!(err(sub("subscribe", Stock, &base(("id", s("x"))))).starts_with("subscribe(): unknown key 'id'"));
+        assert_eq!(
+            err(sub("subscribe", Stock, &s("trades"))),
+            "subscribe() takes an object like { channel: 'trades', symbol: '2330' }, got string"
+        );
+        assert_eq!(
+            err(check_subscription("subscribe", Stock, &base(("intradayOddLot", JsVal::Undefined)), Some(ExtraArg("string".into())))),
+            "subscribe() takes one argument, got a further string one"
+        );
+    }
+
+    #[test]
+    fn test_unsubscription() {
+        use marketdata_core::websocket::StreamProduct::{FutOpt, Stock};
+        assert!(sub("unsubscribe", Stock, &s("abc")).is_ok());
+        assert!(sub("unsubscribe", Stock, &obj(&[("id", s("abc"))])).is_ok());
+        assert!(sub("unsubscribe", FutOpt, &obj(&[("ids", JsVal::Array)])).is_ok());
+        // Left to the method's own 1005.
+        assert!(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("id", s("abc"))])).is_ok());
+        assert_eq!(
+            err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("foo", JsVal::Null)]))),
+            "unsubscribe(): unknown key 'foo' (accepted: channel, symbol, symbols, intradayOddLot, id, ids)"
+        );
+        assert!(err(sub("unsubscribe", FutOpt, &obj(&[("channel", s("trades")), ("intradayOddLot", JsVal::Bool(true))])))
+            .starts_with("unsubscribe(): unknown key 'intradayOddLot': it is a stock option, the futopt client takes afterHours"));
+        assert_eq!(err(sub("unsubscribe", Stock, &obj(&[("id", JsVal::Number(1.0))]))), "unsubscribe(): id must be a string, got number 1");
+        assert!(err(sub("unsubscribe", Stock, &JsVal::Number(1.0))).starts_with("unsubscribe() takes a subscription id or an object"));
+    }
+
+    #[test]
+    fn test_string_array() {
+        let items = vec![serde_json::json!("2330"), serde_json::json!(2317)];
+        assert_eq!(string_array("subscribe", "symbols", &items), Err("subscribe(): symbols[1] must be a string, got number".into()));
+        assert_eq!(string_array("subscribe", "symbols", &items[..1]), Ok(vec!["2330".to_string()]));
     }
 
     #[test]
