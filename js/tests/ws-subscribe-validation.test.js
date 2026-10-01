@@ -39,7 +39,6 @@ describe('subscribe()', () => {
     ['futopt', { channel: 'trades', symbol: 'TXFA6', foo: 1 }, `subscribe(): unknown key 'foo' (accepted: ${FUTOPT_KEYS})`],
     ['stock', { channel: 'trades', symbol: '2330', intradayOddLot: 'true' }, 'subscribe(): intradayOddLot must be a boolean, got string'],
     ['futopt', { channel: 'trades', symbol: 'TXFA6', afterHours: 1 }, 'subscribe(): afterHours must be a boolean, got number 1'],
-    ['futopt', { channel: 'trades', symbol: 'TXFA6', afterHours: null }, 'subscribe(): afterHours must be a boolean, got null'],
     ['stock', { channel: 'trades', symbol: 2330 }, 'subscribe(): symbol must be a string, got number 2330'],
     ['stock', { channel: 'trades', symbols: '2330' }, 'subscribe(): symbols must be an array of strings, got string'],
     ['stock', { channel: 'trades', symbols: ['2330', 2317] }, 'subscribe(): symbols[1] must be a string, got number'],
@@ -72,6 +71,8 @@ describe('subscribe()', () => {
     ['stock', { channel: 'trades', symbol: '2330', intradayOddLot: true }],
     ['stock', { channel: 'trades', symbols: ['2330'], intradayOddLot: undefined }],
     ['futopt', { channel: 'books', symbol: 'TXFA6', afterHours: false }],
+    // null counts as not given (#294).
+    ['futopt', { channel: 'books', symbol: 'TXFA6', afterHours: null, symbols: null }],
   ])('%s %j passes the checks', (product, options) => {
     expect(thrown(() => ws[product].subscribe(options, undefined))).toEqual(notConnected);
   });
@@ -102,6 +103,8 @@ describe('unsubscribe()', () => {
     ['stock', 'abc'],
     ['stock', { ids: ['abc', 'def'] }],
     ['futopt', { channel: 'trades', symbol: 'TXFA6', afterHours: true }],
+    // A null id next to channel is not given, so not the 1005 of both.
+    ['stock', { channel: 'trades', symbol: '2330', id: null }],
   ])('%s %j passes the checks', (product, options) => {
     expect(thrown(() => ws[product].unsubscribe(options))).toEqual(notConnected);
   });

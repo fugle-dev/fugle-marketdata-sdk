@@ -202,8 +202,8 @@ describe('WebSocketClient constructor', () => {
       expect(ws).toBeDefined();
     });
 
-    it('rejects authTimeoutMs below 1 with code 1004', () => {
-      for (const authTimeoutMs of [0, 0.5]) {
+    it('rejects authTimeoutMs of 0 or below with code 1004', () => {
+      for (const authTimeoutMs of [0, -1]) {
         let thrown: unknown;
         try {
           new WebSocketClient({ apiKey: 'test-key', authTimeoutMs });

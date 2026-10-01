@@ -193,6 +193,17 @@ mod tests {
     }
 
     #[test]
+    fn test_option_refuses_versions_outside_the_table() {
+        for (product, versions) in PRODUCTS {
+            for v in ["v0.9", "v1.2", "v2.0", "1.0", "V1.0", ""] {
+                assert!(!versions.contains(&v));
+                assert!(resolve([(product, v)]).is_err(), "{product} {v:?}");
+            }
+        }
+        assert!(resolve([("stock", "v1.1")]).is_err(), "futopt-only version on stock");
+    }
+
+    #[test]
     fn test_option_resolve() {
         assert_eq!(resolve([]), Ok((StockVersion::V1_0, FutOptVersion::V1_1)));
         assert_eq!(resolve([("futopt", "v1.0")]), Ok((StockVersion::V1_0, FutOptVersion::V1_0)));

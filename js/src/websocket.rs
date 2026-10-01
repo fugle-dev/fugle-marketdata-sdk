@@ -813,7 +813,7 @@ pub struct HealthCheckOptions {
 impl HealthCheckOptions {
     /// Core's config; an omitted option takes the core default.
     fn to_core(&self) -> Result<marketdata_core::HealthCheckConfig, marketdata_core::MarketDataError> {
-        let ms = |v: Option<f64>| v.map(|v| Duration::from_millis(v as u64));
+        let ms = |v: Option<f64>| v.map(|v| Duration::from_millis(crate::options::millis(v)));
         marketdata_core::HealthCheckConfig::from_parts(
             self.enabled.unwrap_or(marketdata_core::DEFAULT_HEALTH_CHECK_ENABLED),
             ms(self.heartbeat_timeout_ms),
@@ -1577,10 +1577,10 @@ impl WebSocketClient {
         let reconnect_cfg = if let Some(r) = &options.reconnect {
             let max = r.max_attempts.unwrap_or(DEFAULT_MAX_ATTEMPTS);
             let initial = Duration::from_millis(
-                r.initial_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_INITIAL_DELAY_MS)
+                r.initial_delay_ms.map(crate::options::millis).unwrap_or(DEFAULT_INITIAL_DELAY_MS)
             );
             let max_delay = Duration::from_millis(
-                r.max_delay_ms.map(|v| v as u64).unwrap_or(DEFAULT_MAX_DELAY_MS)
+                r.max_delay_ms.map(crate::options::millis).unwrap_or(DEFAULT_MAX_DELAY_MS)
             );
             let mut cfg = marketdata_core::ReconnectionConfig::new(max, initial, max_delay)
                 .map_err(|e| crate::errors::to_napi_error(&env, e))?;

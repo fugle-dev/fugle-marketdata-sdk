@@ -107,6 +107,18 @@ const AFTER_HOURS: Modifier = Modifier {
     product: marketdata_core::websocket::StreamProduct::FutOpt,
 };
 
+/// `d` without its `None` values: a key set to `None` counts as not given,
+/// as `odd_lot=None` does and as `null` does in Node (#294).
+fn without_none<'py>(d: &Bound<'py, PyDict>) -> PyResult<Bound<'py, PyDict>> {
+    let given = PyDict::new(d.py());
+    for (key, value) in d.iter() {
+        if !value.is_none() {
+            given.set_item(key, value)?;
+        }
+    }
+    Ok(given)
+}
+
 /// Refuse a dict key outside `accepted` (#294): the keys used to be read and
 /// the rest dropped, so a FutOpt `afterHours` on the stock client subscribed
 /// board-lot data. `call` names the method.
@@ -311,6 +323,7 @@ fn resolve_unsubscribe_target(
         return resolve_unsubscribe_args(None, ids).map(UnsubscribeTarget::Ids);
     };
     if let Ok(d) = arg.cast::<PyDict>() {
+        let d = &without_none(d)?;
         // The dict is the whole call, as in the 1.x `unsubscribe(params)`.
         if ids.is_some() {
             return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -921,6 +934,10 @@ fn parse_ws_versions(
 
     let mut entries: Vec<(String, String)> = Vec::new();
     for (key, value) in map.iter() {
+        // `None` counts as not given, like the option itself.
+        if value.is_none() {
+            continue;
+        }
         let product: String = key.extract().map_err(|_| {
             PyTypeError::new_err("version keys must be product names: 'stock' or 'futopt'")
         })?;
@@ -1770,6 +1787,7 @@ fn resolve_subscribe_args(
     modifier: Modifier,
 ) -> PyResult<(String, Vec<String>, bool)> {
     if let Ok(d) = channel.cast::<PyDict>() {
+        let d = &without_none(d)?;
         // The dict is the whole call, as in the 1.x `subscribe(params)`;
         // arguments next to it used to be dropped (#294).
         if symbol.is_some() || symbols.is_some() || flag.is_some() {

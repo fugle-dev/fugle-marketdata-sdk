@@ -170,9 +170,17 @@ ws.stock.unsubscribe({"ids": ["abc123", "def456"]})
 ws.stock.unsubscribe("abc123")
 ```
 
-When a dict is supplied, kwargs are ignored — the dict is the single source
-of truth. Both `oddLot` (camelCase) and `odd_lot` keys are accepted in dict
-form, as are `afterHours` / `after_hours` for futopt.
+The dict is the whole call, as in the legacy `subscribe(params)`: passing
+`symbol` / `symbols` / `odd_lot` (futopt `after_hours`) next to it, or `ids=`
+next to an unsubscribe dict, raises `TypeError` instead of being ignored.
+The dict takes `channel`, `symbol` / `symbols` and the session flag, spelled
+`oddLot`, `odd_lot` or `intradayOddLot` (the server's and Node's name) for
+stock and `afterHours` / `after_hours` for futopt; give one spelling. Any
+other key — the other product's flag included, such as `afterHours` on the
+stock client — or a flag that is not a boolean raises `TypeError` naming the
+accepted keys; legacy code that passed such a key got data it did not ask
+for. A key set to `None` counts as not given. An unsubscribe dict without
+`channel` takes only `id` / `ids`.
 
 #### 3. Python WebSocket `message` event delivers a parsed dict
 
@@ -739,6 +747,33 @@ else:
 
 Before cancelling a step, check `done()`, or read `result()`. A pending step
 is as before: cancelling it takes no message.
+
+#### 18. Node refuses options and arguments it would not use
+
+The 1.x SDK passed unknown keys along and the server mostly ignored them;
+an earlier 3.0 release candidate dropped them. Now each of these throws (or,
+for a REST method, rejects with) a `TypeError` that names the key and what it
+takes, so a typo fails at the call instead of returning default data:
+
+- **`new WebSocketClient()` / `new RestClient()`**: an unknown key at any
+  level (`reconnect: { maxRetries: 3 }`), a value of the wrong type, a
+  nested option that is not a plain object, or a bare `version` string
+  (`version: 'v1.0'` — write `version: { futopt: 'v1.0' }`, as 1.7.0 already
+  required). `undefined` and `null` count as not given, except
+  `version: null`. `RestClient` still accepts the WebSocket-only keys, so one
+  options object builds both clients, and `healthCheck.pingInterval` /
+  `maxMissedPongs` are still only warned about.
+- **`subscribe()` / `unsubscribe()`**: a key other than `channel`,
+  `symbol`, `symbols` and the product's flag (`intradayOddLot` for stock,
+  `afterHours` for futopt), a flag that is not a boolean, a non-string
+  symbol, or a second argument. 1.x sent such keys to the server as they
+  were; `{ channel, symbol, afterHours: true }` on the stock client quietly
+  subscribed board-lot data.
+- **REST methods**: an argument of the wrong type, an integer that is
+  negative, fractional or not finite, or an argument the method does not
+  take — after the params object, or past its positional parameters —
+  rejects the promise; nothing is sent. 1.x methods took one params object,
+  so 1.x call sites are not affected unless they passed something extra.
 
 ### New things the legacy SDKs did not have
 

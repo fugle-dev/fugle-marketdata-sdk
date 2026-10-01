@@ -194,16 +194,15 @@ describe('healthCheck 1.x fields (#262)', () => {
 describe('healthCheck of the wrong type (#294)', () => {
   const { WebSocketClient } = require('../');
   const prefix = 'WebSocketClient options: ';
-  const ms = 'must be a finite, non-negative number of milliseconds';
+  const ms = 'must be a number of milliseconds';
 
   test.each([
     [5, 'healthCheck must be an object like { enabled: true }, got number 5'],
     ['x', 'healthCheck must be an object like { enabled: true }, got string'],
     [[], 'healthCheck must be an object like { enabled: true }, got array'],
     [true, 'healthCheck must be an object like { enabled: true }, got boolean'],
-    [null, 'healthCheck must be an object like { enabled: true }, got null'],
+    [new Date(0), 'healthCheck must be an object like { enabled: true }, got object (Date)'],
     [{ enabled: 'x' }, 'healthCheck.enabled must be a boolean, got string'],
-    [{ enabled: null }, 'healthCheck.enabled must be a boolean, got null'],
     [{ probeEnabled: 1 }, 'healthCheck.probeEnabled must be a boolean, got number 1'],
     [{ heartbeatTimeoutMs: 'x' }, `healthCheck.heartbeatTimeoutMs ${ms}, got string`],
     [{ idleProbeAfterMs: {} }, `healthCheck.idleProbeAfterMs ${ms}, got object`],

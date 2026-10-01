@@ -70,48 +70,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the call went ahead with defaults — `version: 'v1.0'` still streamed
   futopt v1.1. Each case below is now a `TypeError` with only a message (no
   `code`; see [errors.md](docs/errors.md#arguments-of-the-wrong-shape)),
-  except where noted; `undefined` counts as not given (and so does `null`
-  in an argument position a method does not declare).
+  except where noted. `undefined` and `null` count as not given (Python:
+  `None`), except Node's `version: null`.
   - **Node `WebSocketClient` / `RestClient` options**: an unknown key (top
     level, or in `reconnect` / `healthCheck` / `version`), a value of the
-    wrong type, a nested option that is not an object (`version: 'v1.0'`,
-    `reconnect: 'x'`, `null`), an integer option napi used to coerce
-    (`messageBuffer: -1` / `1.5`, `reconnect.maxAttempts: NaN`), a
-    non-finite or negative millisecond option, or a non-object options
-    argument. A bare `version` string gets 1.x's message naming the map to
-    write (`Use version: { futopt: 'v1.1' }.`). Kept: `healthCheck`'s 1.x
-    `pingInterval` / `maxMissedPongs` are only warned about (#262);
-    `RestClient` accepts the WebSocket-only keys and ignores them, so one
-    options object still builds both clients; a value of the right type out
-    of range keeps its error (`messageBuffer: 0`, delays below their floor
-    are 1004).
-  - **Node REST**: a further argument — past a method's positional
+    wrong type, an options argument or nested option that is not a plain
+    object (`version: 'v1.0'`, `reconnect: 'x'`, a `Map`, a class instance;
+    prototype other than `Object.prototype` or `null`), or an integer option
+    napi used to coerce (`messageBuffer: -1` / `1.5`,
+    `reconnect.maxAttempts: NaN`). A bare `version` string gets 1.x's
+    message naming the map to write (`Use version: { futopt: 'v1.1' }.`).
+    Kept: a millisecond option only has to be a number — a negative, NaN or
+    infinite one is still core's 1004, like any value out of range
+    (`healthCheck.heartbeatTimeoutMs: Infinity`, which used to turn the
+    timeout off, is now 1004 too); `healthCheck`'s 1.x `pingInterval` /
+    `maxMissedPongs` are only warned about (#262); `RestClient` accepts the
+    WebSocket-only keys and ignores them, so one options object still builds
+    both clients. `null` for an option no longer throws napi's conversion
+    error.
+  - **Node REST**: an argument of the wrong type (`candles('2330', 5)`,
+    `trades(2330)`, `etfHoldings(5)`), an integer argument that is negative,
+    fractional or not finite (`sma('2330', u, u, u, -1)` used to send a
+    coerced value), or a further argument — past a method's positional
     parameters (`trades('2330', { limit: 5 })`) or after its params object
-    (`candles({ symbol }, '5')`) — rejects with a `TypeError` and sends
-    nothing. `quote({ symbol }, true)` still applies the flag.
-    `stock.ownership.*` now checks its object against core's parameter table
-    like every other object form: an unknown key rejects with 1005 instead of
-    being dropped, and a non-object argument rejects with a `TypeError`.
+    (`candles({ symbol }, '5')`) — rejects the returned promise with a
+    `TypeError` and sends nothing; wrong types used to throw napi's `Error`
+    synchronously. Only the first argument past the declared ones is
+    checked: napi does not tell a method how many it was given, so one
+    after an `undefined` / `null` there is still dropped.
+    `quote({ symbol }, true)` still applies the flag. `stock.ownership.*`
+    now checks its object against core's parameter table like every other
+    object form: an unknown key rejects with 1005 instead of being dropped.
   - **Node and Python WebSocket `subscribe()` / `unsubscribe()`**: a key the
     call does not take, including the other product's session flag
     (`afterHours` on stock, `intradayOddLot` / `oddLot` on futopt), or a
-    flag that is not a boolean. Node also refuses a non-string `symbol` /
-    `id`, a non-string element of `symbols` / `ids` (it used to be skipped)
-    and a further argument, and an `unsubscribe()` object without `channel`
-    takes only `id` / `ids` (`symbol` there used to be dropped). Python refuses `symbol` / `symbols` / the flag
-    keyword passed next to a dict, and `ids=` next to an unsubscribe dict
-    (both used to be ignored), and its stock dict also takes the server's
-    `intradayOddLot` spelling of `oddLot`.
+    flag that is not a boolean. An `unsubscribe()` object / dict without
+    `channel` takes only `id` / `ids` (`symbol` there used to be dropped).
+    Node also refuses a non-string `symbol` / `id`, a non-string element of
+    `symbols` / `ids` (it used to be skipped) and a further argument.
+  - **Python `subscribe()` / `unsubscribe()`**: `symbol` / `symbols` / the
+    flag keyword passed next to a dict, and `ids=` next to an unsubscribe
+    dict, raise instead of being ignored; so does a dict giving the flag
+    under two spellings (`{"oddLot": True, "odd_lot": True}` used to take
+    the first). The stock dict also takes the server's `intradayOddLot`
+    spelling. `odd_lot=None` / `after_hours=None` are now accepted as not
+    given (they were a `TypeError`), and a `None` value in the dict counts
+    as not given too.
   - **Python `version`**: a bare string or another non-dict now says which
     dict to write, worded like Node; still a `TypeError`.
-  - **Node error types**: in constructor options, `version` and the
-    `subscribe()` / `unsubscribe()` argument, a value of the wrong type used to
-    be napi's `Error` with `code` `'StringExpected'` / `'BooleanExpected'` /
-    `'NumberExpected'` / `'InvalidArg'`, and an unsupported `version` was
-    `'GenericFailure'`; these are now `TypeError` without `code`, with a
-    message naming the field. Code matching those `code` strings or messages
-    there needs updating. A REST method's positional argument of the wrong
-    type (`candles('2330', 5)`) is still napi's `Error` as before.
+  - **Node error types**: in constructor options, `version`, the
+    `subscribe()` / `unsubscribe()` argument and REST arguments, a value of
+    the wrong type used to be napi's `Error` with `code` `'StringExpected'` /
+    `'BooleanExpected'` / `'NumberExpected'` / `'InvalidArg'`, and an
+    unsupported `version` was `'GenericFailure'`; these are now `TypeError`
+    without `code`, with a message naming the field (REST: a rejection, no
+    longer a synchronous throw). Code matching those `code` strings or
+    messages needs updating.
 
 - **A Close frame received during authentication is reported with its code
   and reason** (#292). When the server refuses a connection with a Close

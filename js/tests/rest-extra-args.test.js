@@ -93,6 +93,56 @@ test('corporateActions: a fourth argument', async () => {
   expect(error.message).toMatch(/^`stock\.corporateActions\.dividends` takes at most 2 positional arguments \(startDate, endDate\), got a further string one/);
 });
 
+// A positional argument of the wrong type, or an integer napi would coerce,
+// rejects the promise like the arguments above, instead of throwing napi's
+// conversion error synchronously or sending a changed value (#294).
+describe('positional arguments of the wrong type', () => {
+  test.each([
+    ['stock.intraday.candles', (c) => c.stock.intraday.candles('2330', 5), 'timeframe must be a string, got number 5'],
+    ['stock.intraday.quote', (c) => c.stock.intraday.quote('2330', 'true'), 'oddLot must be a boolean, got string'],
+    ['stock.intraday.tickers', (c) => c.stock.intraday.tickers('EQUITY', undefined, undefined, undefined, 'yes'), 'isNormal must be a boolean, got string'],
+    ['stock.technical.sma', (c) => c.stock.technical.sma('2330', undefined, undefined, undefined, -1), 'period must be a non-negative integer, got number -1'],
+    ['stock.technical.rsi', (c) => c.stock.technical.rsi('2330', undefined, undefined, undefined, 1.5), 'period must be a non-negative integer, got number 1.5'],
+    ['stock.technical.kdj', (c) => c.stock.technical.kdj('2330', undefined, undefined, undefined, NaN), 'rPeriod must be a non-negative integer, got number NaN'],
+    ['stock.technical.macd', (c) => c.stock.technical.macd('2330', undefined, undefined, undefined, undefined, Infinity), 'slow must be a non-negative integer, got number Infinity'],
+    ['stock.technical.bb', (c) => c.stock.technical.bb('2330', undefined, undefined, undefined, '20'), 'period must be a non-negative integer, got string'],
+    ['stock.corporateActions.dividends', (c) => c.stock.corporateActions.dividends('2026-01-01', 20260201), 'endDate must be a string, got number 20260201'],
+    ['futopt.historical.daily', (c) => c.futopt.historical.daily('TXF', undefined, 1), 'afterHours must be a boolean, got number 1'],
+    ['stock.intraday.trades', (c) => c.stock.intraday.trades(2330), 'symbol must be a string or a params object, got number 2330'],
+    ['stock.intraday.ticker', (c) => c.stock.intraday.ticker(['2330']), 'symbol must be a string or a params object, got array'],
+    ['futopt.intraday.products', (c) => c.futopt.intraday.products(new Date(0)), 'type must be a string or a params object, got object (Date)'],
+  ])('%s', async (method, call, message) => {
+    let result;
+    // Not a synchronous throw: the call returns a promise that rejects.
+    expect(() => {
+      result = call(client);
+    }).not.toThrow();
+    const sent = urls.length;
+    const error = await result.then(
+      () => {
+        throw new Error('expected a rejection');
+      },
+      (e) => e,
+    );
+    expect(urls.length).toBe(sent);
+    expect({ name: error.name, code: error.code, message: error.message }).toEqual({
+      name: 'TypeError',
+      code: undefined,
+      message: `\`${method}\`: ${message}`,
+    });
+  });
+
+  test('ownership: a non-object rejects too', async () => {
+    const error = await rejected(() => client.stock.ownership.etfHoldings(5));
+    expect(error.name).toBe('TypeError');
+  });
+
+  test('a valid integer is sent as is', async () => {
+    await client.stock.technical.sma('2330', undefined, undefined, undefined, 5);
+    expect(urls[urls.length - 1]).toBe('/v1.0/stock/technical/sma/2330?period=5');
+  });
+});
+
 describe('still accepted', () => {
   test('undefined and null in the extra positions count as not given', async () => {
     await client.stock.intraday.trades('2330', undefined, null);

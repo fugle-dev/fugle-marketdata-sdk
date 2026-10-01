@@ -27,14 +27,14 @@ def ws():
          f"subscribe(dict): unknown key 'foo' (accepted: {STOCK_KEYS})"),
         ("stock", lambda c: c.subscribe({"channel": "trades", "symbol": "2330", "afterHours": True}),
          "subscribe(dict): unknown key 'afterHours': it is a futopt option, the stock client takes "
-         f"intradayOddLot (accepted: {STOCK_KEYS})"),
+         f"oddLot (accepted: {STOCK_KEYS})"),
         ("futopt", lambda c: c.subscribe({"channel": "trades", "symbol": "TXFA6", "oddLot": True}),
          "subscribe(dict): unknown key 'oddLot': it is a stock option, the futopt client takes "
          f"afterHours (accepted: {FUTOPT_KEYS})"),
         ("stock", lambda c: c.subscribe({"channel": "trades", "symbol": "2330", "oddLot": "true"}),
          "subscribe(dict): 'oddLot' must be a boolean, got str"),
-        ("futopt", lambda c: c.subscribe({"channel": "trades", "symbol": "TXFA6", "afterHours": None}),
-         "subscribe(dict): 'afterHours' must be a boolean, got NoneType"),
+        ("futopt", lambda c: c.subscribe({"channel": "trades", "symbol": "TXFA6", "afterHours": 1}),
+         "subscribe(dict): 'afterHours' must be a boolean, got int"),
         ("stock", lambda c: c.subscribe({"channel": "trades", "symbol": "2330", "oddLot": True, "intradayOddLot": True}),
          "subscribe(dict): 'intradayOddLot' and 'oddLot' are the same option; give one"),
         ("stock", lambda c: c.subscribe({"channel": "trades", "symbol": "2330"}, "2317"),
@@ -53,7 +53,7 @@ def ws():
          f"subscribe_async(dict): unknown key 'foo' (accepted: {FUTOPT_KEYS})"),
         ("stock", lambda c: c.unsubscribe({"channel": "trades", "symbol": "2330", "afterHours": True}),
          "unsubscribe(dict): unknown key 'afterHours': it is a futopt option, the stock client takes "
-         f"intradayOddLot (accepted: {STOCK_KEYS})"),
+         f"oddLot (accepted: {STOCK_KEYS})"),
         ("stock", lambda c: c.unsubscribe({"id": "abc"}, ids=["def"]),
          "unsubscribe(): pass either a dict or ids=, not both"),
     ],
@@ -73,6 +73,11 @@ def test_refused(ws, product, call, message):
         ("futopt", lambda c: c.subscribe({"channel": "books", "symbol": "TXFA6", "afterHours": True})),
         ("stock", lambda c: c.unsubscribe({"channel": "trades", "symbol": "2330", "intradayOddLot": True})),
         ("stock", lambda c: c.unsubscribe({"ids": ["abc"]})),
+        # None counts as not given, as odd_lot=None does (#294).
+        ("futopt", lambda c: c.subscribe({"channel": "books", "symbol": "TXFA6", "afterHours": None, "symbols": None})),
+        ("stock", lambda c: c.subscribe("trades", "2330", odd_lot=None)),
+        ("stock", lambda c: c.unsubscribe({"channel": "trades", "symbol": "2330", "id": None})),
+        ("stock", lambda c: c.unsubscribe({"id": "abc", "foo": None})),
     ],
 )
 def test_passes_the_checks(ws, product, call):

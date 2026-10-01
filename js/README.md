@@ -414,8 +414,10 @@ interface WebSocketClientOptions {
 }
 ```
 
-Any other key, or a value of the wrong type, throws a `TypeError` that names
-the field and what it takes; a key set to `undefined` counts as not given.
+Any other key, a value of the wrong type, or a nested option that is not a
+plain object throws a `TypeError` that names the field and what it takes; a
+key set to `undefined` or `null` counts as not given (`version: null`
+throws).
 `RestClient` accepts these WebSocket-only keys and ignores them, so one
 options object can build both clients.
 

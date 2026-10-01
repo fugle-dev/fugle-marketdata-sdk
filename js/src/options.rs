@@ -4,13 +4,14 @@
 //! (`reconnect: { maxRetries: 3 }`), a string where an object belongs
 //! (`version: 'v1.0'`) or a number napi coerces (`messageBuffer: -1`) used to
 //! pass silently. Each caller-facing object is described here by a table of
-//! its fields; [`check`] walks the JS value against it before napi's own
+//! its fields; [`check_options`] walks the JS value against it before napi's own
 //! conversion runs, and every refusal is a JS `TypeError` that says what was
 //! wrong and what to write instead.
 //!
-//! An `undefined` value counts as not given, for known and unknown keys
-//! alike, so `{ ...options, foo: undefined }` passes. Everything else
-//! (`null` included) has to match its field.
+//! An `undefined` or `null` value counts as not given, for known and unknown
+//! keys alike, so `{ ...options, foo: undefined }` passes; the one exception
+//! is `version: null`. Objects have to be plain (prototype `Object.prototype`
+//! or `null`). Everything else has to match its field.
 //!
 //! The value is first read into [`JsVal`], so the rules themselves are plain
 //! Rust and unit-tested below; the jest suites cover the napi side.
@@ -32,12 +33,16 @@ pub(crate) enum JsVal {
     Bytes(bool),
     Array,
     Function,
-    /// A plain object with its enumerable string keys (inherited ones too, as
-    /// napi reads them), in order. Read
-    /// only to the depth the tables reach; deeper objects are left empty.
+    /// A plain object with its enumerable string keys, inherited ones
+    /// included (`include_prototypes`, as napi's conversion reads them), in
+    /// order. Read only to the depth the tables reach; deeper objects are
+    /// left empty.
     Object(Vec<(String, JsVal)>),
     /// Anything else (symbol, bigint, external).
     Other(&'static str),
+    /// An object whose prototype is not `Object.prototype` or `null` (a
+    /// `Date`, a `Map`, a class instance), with its constructor's name.
+    Instance(String),
     /// A property whose getter threw. Any field accepts it: a legacy field
     /// is not read anyway (#262), and for a current one napi's conversion
     /// reads it again and throws the getter's own error, as before.
@@ -58,6 +63,7 @@ impl JsVal {
             Self::Function => "function".into(),
             Self::Object(_) => "object".into(),
             Self::Other(kind) => (*kind).into(),
+            Self::Instance(name) => format!("object ({name})"),
             Self::Unreadable => "a value whose getter threw".into(),
         }
     }
@@ -81,8 +87,8 @@ pub(crate) enum Kind {
     Bool,
     /// A non-negative integer that fits a `u32`.
     U32,
-    /// A finite, non-negative number of milliseconds; a fraction is accepted
-    /// (and truncated where it is read).
+    /// A number of milliseconds. The value is core's to judge: see
+    /// [`millis`].
     Millis,
     /// A `Uint8Array` / `Buffer`.
     Bytes,
@@ -187,17 +193,22 @@ pub(crate) fn check_options(owner: &str, value: &JsVal, fields: &[Field]) -> Res
     check_fields(owner, "", value, fields)
 }
 
-/// Check every own key of `object` against `fields`; `path` prefixes nested
-/// names (`reconnect.`).
+/// Check every key [`read`] found on `object` (enumerable, inherited ones
+/// included) against `fields`; `path` prefixes nested names (`reconnect.`).
 pub(crate) fn check_fields(owner: &str, path: &str, object: &JsVal, fields: &[Field]) -> Result<(), String> {
     let JsVal::Object(entries) = object else {
         return Ok(());
     };
     for (key, value) in entries {
-        if matches!(value, JsVal::Undefined) {
+        let spec = fields.iter().find(|f| f.name == key);
+        // `null` counts as not given, like `undefined` (1.x took
+        // `healthCheck: null` and the like), except for `version`, which
+        // has no meaning to fall back to.
+        let null_given = matches!(value, JsVal::Null) && spec.is_some_and(|f| matches!(f.kind, Kind::Version));
+        if matches!(value, JsVal::Undefined) || (matches!(value, JsVal::Null) && !null_given) {
             continue;
         }
-        let Some(spec) = fields.iter().find(|f| f.name == key) else {
+        let Some(spec) = spec else {
             return Err(format!(
                 "{owner}: unknown option '{path}{key}' (known: {})",
                 known_names(fields)
@@ -227,9 +238,11 @@ fn check_value(owner: &str, name: &str, value: &JsVal, kind: Kind) -> Result<(),
             JsVal::Number(n) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 && *n <= f64::from(u32::MAX) => Ok(()),
             _ => wrong("a non-negative integer"),
         },
+        // Any number: a negative, NaN or infinite one is read as 0 and gets
+        // core's range error (1004), like any other value out of range.
         Kind::Millis => match value {
-            JsVal::Number(n) if n.is_finite() && *n >= 0.0 => Ok(()),
-            _ => wrong("a finite, non-negative number of milliseconds"),
+            JsVal::Number(_) => Ok(()),
+            _ => wrong("a number of milliseconds"),
         },
         Kind::Bytes => match value {
             JsVal::Bytes(true) => Ok(()),
@@ -260,8 +273,9 @@ fn check_version(owner: &str, value: &JsVal) -> Result<(), String> {
     let mut given = Vec::new();
     for (product, requested) in entries {
         match requested {
-            // Left to napi's conversion, which throws the getter's error.
-            JsVal::Undefined | JsVal::Unreadable => {}
+            // `null` is not given; an unreadable value is left to napi's
+            // conversion, which throws the getter's error.
+            JsVal::Undefined | JsVal::Null | JsVal::Unreadable => {}
             JsVal::String(v) => given.push((product.as_str(), v.as_str())),
             other => {
                 // An unknown product is the clearer error, whatever its value.
@@ -356,6 +370,9 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
     if hit {
         return Ok(JsVal::Bytes(true));
     }
+    if let Some(name) = unsafe { instance_name(env, value)? } {
+        return Ok(JsVal::Instance(name));
+    }
     if depth == 0 {
         return Ok(JsVal::Object(Vec::new()));
     }
@@ -379,6 +396,8 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
         let mut key = std::ptr::null_mut();
         napi::check_status!(unsafe { sys::napi_get_element(env, keys, i, &mut key) })?;
         let name = unsafe { String::from_napi_value(env, key)? };
+        // Getters run here and again in `copy_given` (napi's conversion reads
+        // the copy), so twice per constructor.
         let mut item = std::ptr::null_mut();
         let read_item = if unsafe { sys::napi_get_property(env, value, key, &mut item) } == sys::Status::napi_ok {
             unsafe { read(env, item, depth - 1)? }
@@ -389,6 +408,42 @@ unsafe fn read_object(env: sys::napi_env, value: sys::napi_value, depth: usize) 
         entries.push((name, read_item));
     }
     Ok(JsVal::Object(entries))
+}
+
+/// `None` for a plain object (prototype `Object.prototype` or `null`; also
+/// an object two levels above `null`, which only `Object.create` makes);
+/// otherwise its constructor's name, or `"unknown"`.
+unsafe fn instance_name(env: sys::napi_env, value: sys::napi_value) -> napi::Result<Option<String>> {
+    let mut proto = std::ptr::null_mut();
+    napi::check_status!(unsafe { sys::napi_get_prototype(env, value, &mut proto) })?;
+    let mut kind = 0;
+    napi::check_status!(unsafe { sys::napi_typeof(env, proto, &mut kind) })?;
+    if kind == sys::ValueType::napi_null {
+        return Ok(None);
+    }
+    // `Object.prototype` of any realm (a jest sandbox has its own) is the
+    // one prototype whose own prototype is `null`; `Date.prototype`, a
+    // class's and the like sit on top of it.
+    let mut grand = std::ptr::null_mut();
+    napi::check_status!(unsafe { sys::napi_get_prototype(env, proto, &mut grand) })?;
+    napi::check_status!(unsafe { sys::napi_typeof(env, grand, &mut kind) })?;
+    if kind == sys::ValueType::napi_null {
+        return Ok(None);
+    }
+    // Best effort: a throwing or missing `constructor.name` is "unknown".
+    let name = (|| {
+        let mut ctor = std::ptr::null_mut();
+        if unsafe { sys::napi_get_named_property(env, value, c"constructor".as_ptr(), &mut ctor) } != sys::Status::napi_ok {
+            return None;
+        }
+        let mut name = std::ptr::null_mut();
+        if unsafe { sys::napi_get_named_property(env, ctor, c"name".as_ptr(), &mut name) } != sys::Status::napi_ok {
+            return None;
+        }
+        unsafe { String::from_napi_value(env, name) }.ok().filter(|n| !n.is_empty())
+    })();
+    clear_exception(env);
+    Ok(Some(name.unwrap_or_else(|| "unknown".into())))
 }
 
 /// Drop the exception a throwing getter left pending.
@@ -466,7 +521,14 @@ impl TypeName for SubscriptionArg {
 impl FromNapiValue for SubscriptionArg {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
         let shape = unsafe { read(env, napi_val, 1)? };
-        let value = unsafe { serde_json::Value::from_napi_value(env, napi_val) };
+        // `null` keys count as not given: drop them so the methods' own
+        // presence checks (`id` with `channel`) agree.
+        let value = unsafe { serde_json::Value::from_napi_value(env, napi_val) }.map(|mut value| {
+            if let serde_json::Value::Object(map) = &mut value {
+                map.retain(|_, v| !v.is_null());
+            }
+            value
+        });
         Ok(Self { value, shape })
     }
 }
@@ -505,7 +567,9 @@ pub(crate) fn check_subscription(
             ))
         }
     };
-    let given = |key: &str| entries.iter().any(|(k, v)| k == key && !matches!(v, JsVal::Undefined));
+    // `null` counts as not given, like `undefined`.
+    let absent = |v: &JsVal| matches!(v, JsVal::Undefined | JsVal::Null);
+    let given = |key: &str| entries.iter().any(|(k, v)| k == key && !absent(v));
     // `unsubscribe()` without `channel` names server ids and takes nothing
     // else; with `channel` it takes the `subscribe()` keys (and `id` / `ids`,
     // which the method refuses together with `channel` as 1005).
@@ -520,7 +584,7 @@ pub(crate) fn check_subscription(
         keys
     };
     for (key, value) in entries {
-        if matches!(value, JsVal::Undefined) {
+        if absent(value) {
             continue;
         }
         if !accepted.contains(&key.as_str()) {
@@ -605,7 +669,70 @@ impl<T: FromNapiValue + OptionsTable> FromNapiValue for Checked<T> {
         // Two levels: the options and their nested objects.
         let value = unsafe { read(env, napi_val, 2)? };
         check_options(T::OWNER, &value, T::FIELDS).map_err(|message| type_error(env, &message))?;
-        Ok(Self(unsafe { T::from_napi_value(env, napi_val)? }))
+        // napi's conversion refuses `null` for an `Option` field, so it reads
+        // a copy holding only the given keys.
+        let given = unsafe { copy_given(env, napi_val, &value, T::FIELDS)? };
+        Ok(Self(unsafe { T::from_napi_value(env, given)? }))
+    }
+}
+
+/// A new object with the keys of `source` that are given (not `undefined`
+/// or `null`), nested option objects copied the same way. Each property is
+/// read again here, so a getter runs twice (once by [`read`]); one that
+/// throws now throws its own error, as napi's conversion did.
+unsafe fn copy_given(
+    env: sys::napi_env,
+    source: sys::napi_value,
+    value: &JsVal,
+    fields: &[Field],
+) -> napi::Result<sys::napi_value> {
+    let mut copy = std::ptr::null_mut();
+    napi::check_status!(unsafe { sys::napi_create_object(env, &mut copy) })?;
+    let JsVal::Object(entries) = value else {
+        return Ok(copy);
+    };
+    for (key, item) in entries {
+        if matches!(item, JsVal::Undefined | JsVal::Null) {
+            continue;
+        }
+        let name = std::ffi::CString::new(key.as_str())
+            .map_err(|_| napi::Error::new(napi::Status::InvalidArg, format!("option name {key:?} has a NUL byte")))?;
+        let kind = fields.iter().find(|f| f.name == key).map(|f| f.kind);
+        let unread = matches!(kind, Some(Kind::Legacy | Kind::Ignored));
+        // A field this client does not read never fails the constructor,
+        // even if its getter throws (#262).
+        if unread && matches!(item, JsVal::Unreadable) {
+            continue;
+        }
+        let mut raw = std::ptr::null_mut();
+        if unsafe { sys::napi_get_named_property(env, source, name.as_ptr(), &mut raw) } != sys::Status::napi_ok {
+            if unread {
+                clear_exception(env);
+                continue;
+            }
+            return Err(napi::Error::new(napi::Status::PendingException, format!("reading option {key:?} threw")));
+        }
+        let nested: Option<&[Field]> = match kind {
+            Some(Kind::Object { fields, .. }) => Some(fields),
+            // The version map's keys are checked already; copy them all.
+            Some(Kind::Version) => Some(&[]),
+            _ => None,
+        };
+        if let (Some(nested), JsVal::Object(_)) = (nested, item) {
+            raw = unsafe { copy_given(env, raw, item, nested)? };
+        }
+        napi::check_status!(unsafe { sys::napi_set_named_property(env, copy, name.as_ptr(), raw) })?;
+    }
+    Ok(copy)
+}
+
+/// A millisecond option as core reads it: a negative, NaN or infinite value
+/// is 0, which core refuses as below its floor (1004).
+pub(crate) fn millis(value: f64) -> u64 {
+    if value.is_finite() && value >= 0.0 {
+        value as u64
+    } else {
+        0
     }
 }
 
@@ -640,6 +767,8 @@ mod tests {
         assert!(err(check_options("RestClient options", &s("k"), REST_CLIENT_FIELDS))
             .ends_with("got string. To pass an API key, write { apiKey: '<key>' }."));
         assert!(err(check_options("RestClient options", &JsVal::Array, REST_CLIENT_FIELDS)).contains("got array"));
+        assert!(err(check_options("RestClient options", &JsVal::Instance("Date".into()), REST_CLIENT_FIELDS))
+            .contains("got object (Date)"));
     }
 
     #[test]
@@ -657,7 +786,7 @@ mod tests {
         );
         // Legacy names are accepted but not advertised.
         assert_eq!(
-            err(ws(&[("healthCheck", obj(&[("foo", JsVal::Null)]))])),
+            err(ws(&[("healthCheck", obj(&[("foo", JsVal::Number(1.0))]))])),
             "WebSocketClient options: unknown option 'healthCheck.foo' (known: enabled, heartbeatTimeoutMs, \
              probeEnabled, idleProbeAfterMs, probeTimeoutMs)"
         );
@@ -666,6 +795,9 @@ mod tests {
     #[test]
     fn test_undefined_is_not_given() {
         assert!(ws(&[("foo", JsVal::Undefined), ("reconnect", JsVal::Undefined)]).is_ok());
+        // So is null, unknown keys and nested fields included; not for `version`.
+        assert!(ws(&[("foo", JsVal::Null), ("reconnect", obj(&[("enabled", JsVal::Null)])), ("healthCheck", JsVal::Null)]).is_ok());
+        assert!(err(ws(&[("version", JsVal::Null)])).contains("version must be a per-product map"));
         assert!(ws(&[("version", obj(&[("futopt", JsVal::Undefined)]))]).is_ok());
     }
 
@@ -709,15 +841,23 @@ mod tests {
     #[test]
     fn test_scalar_kinds() {
         assert_eq!(err(ws(&[("baseUrl", JsVal::Number(1.0))])), "WebSocketClient options: baseUrl must be a string, got number 1");
-        assert_eq!(err(ws(&[("tlsAcceptInvalidCerts", JsVal::Null)])), "WebSocketClient options: tlsAcceptInvalidCerts must be a boolean, got null");
+        assert_eq!(err(ws(&[("tlsAcceptInvalidCerts", s("true"))])), "WebSocketClient options: tlsAcceptInvalidCerts must be a boolean, got string");
         for bad in [-1.0, 1.5, f64::NAN, f64::INFINITY, 4_294_967_296.0] {
             assert!(err(ws(&[("messageBuffer", JsVal::Number(bad))])).contains("messageBuffer must be a non-negative integer"), "{bad}");
         }
         assert!(ws(&[("messageBuffer", JsVal::Number(0.0))]).is_ok(), "0 is the constructor's own error");
-        for bad in [-1.0, f64::NAN, f64::INFINITY] {
-            assert!(err(ws(&[("authTimeoutMs", JsVal::Number(bad))])).contains("authTimeoutMs must be a finite, non-negative number of milliseconds"), "{bad}");
+        // Any number: out of range is core's 1004.
+        for n in [-1.0, f64::NAN, f64::INFINITY, 0.5] {
+            assert!(ws(&[("authTimeoutMs", JsVal::Number(n))]).is_ok(), "{n}");
         }
-        assert!(ws(&[("authTimeoutMs", JsVal::Number(0.5))]).is_ok(), "the floor is core's");
+        assert_eq!(
+            err(ws(&[("authTimeoutMs", s("5000"))])),
+            "WebSocketClient options: authTimeoutMs must be a number of milliseconds, got string"
+        );
+        assert_eq!(millis(-1.0), 0);
+        assert_eq!(millis(f64::NAN), 0);
+        assert_eq!(millis(f64::INFINITY), 0);
+        assert_eq!(millis(1500.7), 1500);
         assert_eq!(
             err(ws(&[("reconnect", obj(&[("maxAttempts", JsVal::Number(f64::NAN))]))])),
             "WebSocketClient options: reconnect.maxAttempts must be a non-negative integer, got number NaN"
@@ -729,7 +869,13 @@ mod tests {
 
     #[test]
     fn test_nested_object_shape() {
-        for (value, got) in [(s("x"), "string"), (JsVal::Bool(true), "boolean"), (JsVal::Array, "array"), (JsVal::Null, "null"), (JsVal::Function, "function")] {
+        for (value, got) in [
+            (s("x"), "string"),
+            (JsVal::Bool(true), "boolean"),
+            (JsVal::Array, "array"),
+            (JsVal::Function, "function"),
+            (JsVal::Instance("Map".into()), "object (Map)"),
+        ] {
             assert_eq!(
                 err(ws(&[("reconnect", value.clone())])),
                 format!("WebSocketClient options: reconnect must be an object like {{ enabled: false }}, got {got}")
@@ -761,10 +907,7 @@ mod tests {
             err(sub("subscribe", Stock, &base(("intradayOddLot", s("true"))))),
             "subscribe(): intradayOddLot must be a boolean, got string"
         );
-        assert_eq!(
-            err(sub("subscribe", FutOpt, &base(("afterHours", JsVal::Null)))),
-            "subscribe(): afterHours must be a boolean, got null"
-        );
+        assert!(sub("subscribe", FutOpt, &base(("afterHours", JsVal::Null))).is_ok(), "null is not given");
         assert_eq!(
             err(sub("subscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", JsVal::Number(2330.0))]))),
             "subscribe(): symbol must be a string, got number 2330"
@@ -800,7 +943,7 @@ mod tests {
         assert!(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("id", s("abc"))])).is_ok());
         let id_form = "(without channel the object takes id or ids; to unsubscribe by channel and symbol, add channel)";
         assert_eq!(
-            err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("foo", JsVal::Null)]))),
+            err(sub("unsubscribe", Stock, &obj(&[("id", s("abc")), ("foo", JsVal::Number(1.0))]))),
             format!("unsubscribe(): unknown key 'foo' {id_form}")
         );
         // The subscribe keys need `channel`: without it they were dropped.
@@ -811,7 +954,7 @@ mod tests {
         assert!(err(sub("unsubscribe", FutOpt, &obj(&[("ids", JsVal::Array), ("afterHours", JsVal::Bool(true))])))
             .starts_with("unsubscribe(): unknown key 'afterHours' (without channel"));
         assert_eq!(
-            err(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", s("2330")), ("foo", JsVal::Null)]))),
+            err(sub("unsubscribe", Stock, &obj(&[("channel", s("trades")), ("symbol", s("2330")), ("foo", JsVal::Number(1.0))]))),
             "unsubscribe(): unknown key 'foo' (accepted: channel, symbol, symbols, intradayOddLot, id, ids)"
         );
         assert!(err(sub("unsubscribe", FutOpt, &obj(&[("channel", s("trades")), ("intradayOddLot", JsVal::Bool(true))])))
@@ -846,9 +989,10 @@ mod tests {
             "WebSocketClient options: unknown product 'foo' in version map (known: stock, futopt)"
         );
         assert!(err(ws(&[("version", obj(&[("foo", JsVal::Number(1.0))]))])).contains("unknown product 'foo'"));
+        assert!(ws(&[("version", obj(&[("futopt", JsVal::Null)]))]).is_ok(), "null is not given");
         assert_eq!(
-            err(ws(&[("version", obj(&[("futopt", JsVal::Null)]))])),
-            "WebSocketClient options: version.futopt must be a version string, e.g. 'v1.1', got null"
+            err(ws(&[("version", obj(&[("futopt", JsVal::Bool(true))]))])),
+            "WebSocketClient options: version.futopt must be a version string, e.g. 'v1.1', got boolean"
         );
         assert_eq!(
             err(ws(&[("version", obj(&[("futopt", s("v9"))]))])),

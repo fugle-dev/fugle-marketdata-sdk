@@ -423,7 +423,7 @@ class TestWebSocketVersionOption:
             WebSocketClient(api_key="key", version=version)
         assert str(exc_info.value) == message
 
-    @pytest.mark.parametrize("version", [None, {}])
+    @pytest.mark.parametrize("version", [None, {}, {"futopt": None}])
     def test_none_and_empty_take_the_defaults(self, version):
         ws = WebSocketClient(api_key="key", version=version)
         assert ws.futopt.url.endswith("/v1.1/futopt/streaming")

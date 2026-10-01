@@ -47,15 +47,21 @@ fn product_name(product: StreamProduct) -> &'static str {
 /// Why `key` is refused by `product`'s object that takes `accepted`, without
 /// the binding's call prefix: `unknown key 'afterHours': it is a futopt
 /// option, the stock client takes intradayOddLot (accepted: channel, symbol,
-/// symbols, intradayOddLot)`.
+/// symbols, intradayOddLot)`. The spelling suggested is the binding's: the
+/// first of `accepted` that is `product`'s modifier (Python lists `oddLot`
+/// first), else the server's.
 pub fn unknown_key(product: StreamProduct, key: &str, accepted: &[&str]) -> String {
+    let suggested = accepted
+        .iter()
+        .copied()
+        .find(|k| modifier_product(k) == Some(product))
+        .unwrap_or_else(|| modifier_key(product));
     let accepted = accepted.join(", ");
     match modifier_product(key) {
         Some(owner) if owner != product => format!(
-            "unknown key '{key}': it is a {} option, the {} client takes {} (accepted: {accepted})",
+            "unknown key '{key}': it is a {} option, the {} client takes {suggested} (accepted: {accepted})",
             product_name(owner),
             product_name(product),
-            modifier_key(product),
         ),
         _ => format!("unknown key '{key}' (accepted: {accepted})"),
     }
@@ -89,6 +95,8 @@ mod tests {
             "unknown key 'odd_lot': it is a stock option, the futopt client takes afterHours (accepted: channel)"
         );
         assert_eq!(unknown_key(StreamProduct::Stock, "foo", &["channel"]), "unknown key 'foo' (accepted: channel)");
+        assert!(unknown_key(StreamProduct::Stock, "afterHours", &["channel", "oddLot", "intradayOddLot"])
+            .contains("the stock client takes oddLot (accepted"));
     }
 
     #[test]
