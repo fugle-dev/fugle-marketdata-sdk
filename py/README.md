@@ -12,7 +12,7 @@ pip install --pre fugle-marketdata   # 3.x pre-release
 Wheels are published for CPython 3.8+ (abi3) on Linux glibc and musl
 (x86_64, aarch64), macOS (x86_64, arm64) and Windows x64. There is no source
 distribution: on other platforms pip installs the pure-Python 2.x SDK instead.
-See [Unsupported platforms](../docs/INSTALL.md#unsupported-platforms) for how
+See [Unsupported platforms](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/INSTALL.md#unsupported-platforms) for how
 to pin `fugle-marketdata<3` or build 3.x from source.
 
 ### Upgrading from 2.x
@@ -87,16 +87,19 @@ print(f"Name: {ticker['name']}")
 # Get intraday candles (5-minute)
 candles = client.stock.intraday.candles("2330", timeframe="5")
 for candle in candles['data'][:3]:
-    print(f"  {candle['time']}: O={candle['open']} H={candle['high']} L={candle['low']} C={candle['close']}")
+    print(f"  {candle['date']}: O={candle['open']} H={candle['high']} L={candle['low']} C={candle['close']}")
 
 # Get recent trades
 trades = client.stock.intraday.trades("2330")
 for trade in trades['data'][:5]:
     print(f"  Price: {trade['price']}, Size: {trade['size']}")
 
-# FutOpt (futures/options) data
-futopt_quote = client.futopt.intraday.quote("TXFC4")
-print(f"Futures Price: {futopt_quote['closePrice']}")
+# FutOpt (futures/options) data: contract symbols expire, so look up the
+# TAIEX futures (TXF) contracts listed today and take the nearest month
+txf = client.futopt.intraday.tickers(type="FUTURE", product="TXF", is_spread=False)
+front = min(txf['data'], key=lambda t: t['settlementDate'])['symbol']
+futopt_quote = client.futopt.intraday.quote(front)
+print(f"{front} Price: {futopt_quote['closePrice']}")
 ```
 
 ### WebSocket Streaming
@@ -114,8 +117,8 @@ def on_message(msg):
     """Handle incoming messages"""
     if msg.get('event') == 'data':
         channel = msg.get('channel')
-        symbol = msg.get('symbol')
         data = msg.get('data', {})
+        symbol = data.get('symbol')
         print(f"[{channel}] {symbol}: {data}")
 
 def on_connect():
@@ -125,8 +128,8 @@ def on_disconnect(code, reason):
     info = ws.stock.last_disconnect  # who closed it, and whether a reconnect follows
     print(f"Disconnected: {code} - {reason} ({info.intent}, will_reconnect={info.will_reconnect})")
 
-def on_error(message, code):
-    print(f"Error [{code}]: {message}")
+def on_error(err):  # a WebSocketError
+    print(f"Error [{err.code}]: {err}")
 
 # Register callbacks
 stock = ws.stock
@@ -217,7 +220,7 @@ connection of its own: it waits for the reconnect and returns once the
 connection is back and the subscriptions have been re-sent (#230). So code
 that calls `connect()` and subscribes again from a `disconnect` callback
 keeps working; the repeated subscriptions are harmless
-([migration guide §5](../MIGRATION.md#5-auto-reconnect-is-on-by-default)).
+([migration guide §5](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#5-auto-reconnect-is-on-by-default)).
 Called from a callback, it holds up that client's callbacks until the
 reconnect ends. It raises if the reconnect does not come back:
 `WebSocketError` with code 2010 on `disconnect()`, code 3005 when the
@@ -261,7 +264,8 @@ ws = WebSocketClient(api_key="your-key",
                                                     idle_probe_after_ms=5000,
                                                     probe_timeout_ms=5000))
 
-# Round trip on demand, in milliseconds (default timeout 5000)
+# Round trip on demand, in milliseconds (default timeout 5000), once connected
+ws.stock.connect()
 latency = ws.stock.measure_latency()
 ```
 
@@ -287,7 +291,7 @@ by a late heartbeat.
   (default: 5000ms, min: 1000ms)
 
 Probing does not detect a half-open connection (the server still sends, our
-writes no longer arrive). See [docs/configuration.md](../docs/configuration.md#healthcheckconfig--healthcheckoptions)
+writes no longer arrive). See [docs/configuration.md](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/docs/configuration.md#healthcheckconfig--healthcheckoptions)
 for the trade-offs and the server cost of short probe intervals.
 
 ### Auth Timeout
@@ -323,25 +327,64 @@ ws = WebSocketClient(
 
 ### RestClient
 
-#### Stock Intraday Methods
+Every method below blocks and returns the response as a `dict`. Each has an
+`_async` sibling that returns a coroutine instead, for asyncio code:
+`quote_async`, `candles_async`, ... (`await client.stock.intraday.quote_async("2330")`).
+
+#### Stock
 
 ```python
-client.stock.intraday.quote(symbol)        # Real-time quote
-client.stock.intraday.ticker(symbol)       # Symbol information
+client.stock.intraday.quote(symbol)          # Real-time quote
+client.stock.intraday.ticker(symbol)         # Symbol information
+client.stock.intraday.tickers(type)          # Symbol list ("EQUITY", "INDEX", ...)
 client.stock.intraday.candles(symbol, timeframe="1")  # OHLCV candles
-client.stock.intraday.trades(symbol)       # Trade history
-client.stock.intraday.volumes(symbol)      # Volume by price
+client.stock.intraday.trades(symbol)         # Trade history
+client.stock.intraday.volumes(symbol)        # Volume by price
+
+client.stock.historical.candles(symbol, from_date=..., to_date=..., timeframe="D")
+client.stock.historical.stats(symbol)        # 52-week statistics
+
+client.stock.snapshot.quotes(market)         # Quotes of a whole market ("TSE", "OTC", ...)
+client.stock.snapshot.movers(market, direction, change)  # Top gainers / losers
+client.stock.snapshot.actives(market, trade) # Most active by "volume" / "value"
+
+client.stock.technical.sma(symbol, period)   # also rsi(symbol, period), bb(symbol, period),
+client.stock.technical.kdj(symbol, r_period, k_period, d_period)
+client.stock.technical.macd(symbol, fast, slow, signal)
+
+client.stock.ownership.etf_holdings(symbol)
+client.stock.ownership.institutional_trades(symbol)
+client.stock.ownership.director_holdings(symbol)
+client.stock.ownership.tdcc_distribution(symbol)
+
+client.stock.corporate_actions.capital_changes()   # all keyword arguments
+client.stock.corporate_actions.dividends()
+client.stock.corporate_actions.listing_applicants()
 ```
 
-#### FutOpt Intraday Methods
+#### FutOpt
 
 ```python
-client.futopt.intraday.quote(symbol)       # Real-time quote
-client.futopt.intraday.ticker(symbol)      # Contract information
+client.futopt.intraday.quote(symbol)         # Real-time quote
+client.futopt.intraday.ticker(symbol)        # Contract information
+client.futopt.intraday.tickers(type)         # Contract list ("FUTURE" or "OPTION")
 client.futopt.intraday.candles(symbol, timeframe="1")  # OHLCV candles
-client.futopt.intraday.trades(symbol)      # Trade history
-client.futopt.intraday.volumes(symbol)     # Volume by price
-client.futopt.intraday.products(type)      # Product listing ("F" or "O")
+client.futopt.intraday.trades(symbol)        # Trade history
+client.futopt.intraday.volumes(symbol)       # Volume by price
+client.futopt.intraday.products(type)        # Product listing ("FUTURE" or "OPTION")
+
+client.futopt.historical.candles(product, contract_month="1!")  # "TXF"; also product=...
+client.futopt.historical.daily(product, date=...)               # one day, a row per contract
+```
+
+#### Client
+
+```python
+RestClient(api_key=...)                      # or bearer_token= / sdk_token=, plus base_url=
+RestClient.with_bearer_token(token)          # same as RestClient(bearer_token=token)
+RestClient.with_sdk_token(sdk_token)         # same as RestClient(sdk_token=sdk_token)
+client.base_url                              # https://api.fugle.tw/marketdata/v1.0
+client.stock.base_url                        # .../v1.0/stock (client.futopt.base_url: .../v1.0/futopt)
 ```
 
 #### Query parameters
@@ -397,9 +440,12 @@ client.is_closed()                         # Check if client is closed
 client.url                                 # Resolved endpoint, e.g. wss://api.fugle.tw/marketdata/v1.0/stock/streaming
 
 client.subscribe(channel, symbol)          # Subscribe to channel
+client.subscribe(channel, symbols=[...])   # ... for several symbols in one frame
 client.unsubscribe(subscription_id)        # Unsubscribe by server ID (or ids=[...])
 client.unsubscribe(channel=channel, symbol=symbol)  # Unsubscribe by subscribe() arguments
-client.subscriptions()                     # List active subscriptions
+client.subscriptions()                     # Ask the server for its list: returns None, the reply
+                                           #   arrives as a message ({"event": "subscriptions", ...})
+client.local_subscriptions()               # The SDK's own list of active subscriptions, returned now
 
 client.on(event, callback)                 # Register event callback (not async def)
 client.off(event, listener=None)           # Unregister one callback (==), or all for the event
@@ -420,7 +466,7 @@ await client.subscribe_async(channel, symbol)  # odd_lot= (stock) / after_hours=
 await client.measure_latency_async(timeout_ms=None)
 
 async with ws.futopt as client:            # connect_async() on entry, disconnect_async() on exit
-    await client.subscribe_async("trades", "TXFC4")
+    await client.subscribe_async("trades", front)  # a contract symbol, e.g. from Quick Start's REST example
     async for msg in client.messages():
         print(msg)
 ```
@@ -435,8 +481,14 @@ async with ws.futopt as client:            # connect_async() on entry, disconnec
 | `authenticated` | `fn(frame: dict)` | Credentials accepted; the server's frame as in 2.x, `{"event": "authenticated", "data": {...}}` |
 | `unauthenticated` | `fn(frame: dict)` | Credentials rejected; the server's frame as in 2.x, `{"event": "error", "code": 1000, "data": {"message": ...}}` |
 | `disconnect` | `fn(code: int, reason: str)` | Connection closed |
+| `reconnect` | `fn(attempt: int)` | An automatic reconnect attempt starts (1, 2, ...) |
 | `error` | `fn(err: WebSocketError)` | Error occurred (`err.args == (message, code)`, `str(err)` is the message) |
 | `messages_dropped` | `fn(dropped: int, total: int)` | Messages dropped because you fell behind (at most once per second, and before `disconnect`) |
+
+These are the events `on()` accepts; any other name raises `ValueError`.
+Names are matched ignoring case, and `data`, `connected`,
+`disconnected` / `close` / `closed` and `reconnecting` are accepted as
+aliases of `message`, `connect`, `disconnect` and `reconnect`.
 
 `disconnect`'s `code` is `None` when the connection ended without one. The
 rest of the story is `ws.stock.last_disconnect` / `ws.futopt.last_disconnect`
@@ -506,8 +558,8 @@ in asyncio code.
 All of a client's callbacks run one at a time on that one thread, so a
 callback that blocks (a `time.sleep()` or retry loop in `disconnect`, say)
 holds up every later event, and messages past `message_buffer` are dropped
-meanwhile (see [Message Queue](#message-queue) and
-[migration guide §15](../MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
+meanwhile (see Message Queue below and
+[migration guide §15](https://github.com/fugle-dev/fugle-marketdata-sdk/blob/main/MIGRATION.md#15-python-websocket-callbacks-run-one-at-a-time-on-one-thread)).
 Hand slow work to your own thread.
 
 `disconnect()` returns once the stream readers of the connection it closes,
@@ -680,7 +732,7 @@ keep their built-in `TypeError` / `ValueError`.
 | 1003 | RuntimeError | Internal runtime error |
 | 1004 | ConfigError | Invalid configuration: not exactly one credential, or a `ReconnectConfig` / `HealthCheckConfig` value below its floor |
 | 1005 | InvalidParameter | Invalid or missing parameter (including an unknown WebSocket channel) |
-| 2001 | ConnectionError | A REST request cannot reach the server (DNS, connection refused, TLS), a WebSocket command is sent while the connection is down, or the WebSocket auth handshake fails for a reason other than rejected credentials |
+| 2001 | ConnectionError | A REST request cannot reach the server (DNS, connection refused, TLS), a WebSocket command is sent while the connection is down (not before `connect()` or after `disconnect()`: that is a `RuntimeError`), or the WebSocket auth handshake fails for a reason other than rejected credentials |
 | 2002 | AuthError | Authentication failed |
 | 2003 | ApiError | API returned error response |
 | 2010 | ClientClosed, ConnectionAborted | Client has been closed, or `connect()` / `connect_async()` was given up because `disconnect()` was called before the connection was established or while it waited on an automatic reconnect (raised as `WebSocketError`, message `Connection aborted: …`) |
@@ -724,11 +776,11 @@ def main():
 
         # FutOpt data
         print("\n=== FutOpt Market Data ===")
-        products = client.futopt.intraday.products("F")
+        products = client.futopt.intraday.products("FUTURE")
         print(f"Futures products: {len(products['data'])}")
 
     except MarketDataError as e:
-        print(f"Error [{e.args[1]}]: {e.args[0]}")
+        print(f"Error [{e.code}]: {e}")
 
 if __name__ == "__main__":
     main()
@@ -756,13 +808,13 @@ def main():
         nonlocal message_count
         message_count += 1
         if msg.get('event') == 'data':
-            print(f"[{message_count}] {msg.get('channel')}: {msg.get('symbol')}")
+            print(f"[{message_count}] {msg.get('channel')}: {msg['data'].get('symbol')}")
 
     def on_connect():
         print("Connected!")
 
-    def on_error(message, code):
-        print(f"Error [{code}]: {message}")
+    def on_error(err):  # a WebSocketError
+        print(f"Error [{err.code}]: {err}")
 
     stock.on("message", on_message)
     stock.on("connect", on_connect)
@@ -777,10 +829,10 @@ def main():
         time.sleep(10)
 
         print(f"\nReceived {message_count} messages")
-        print(f"Subscriptions: {stock.subscriptions()}")
+        print(f"Subscriptions: {stock.local_subscriptions()}")
 
     except MarketDataError as e:
-        print(f"Error [{e.args[1]}]: {e.args[0]}")
+        print(f"Error [{e.code}]: {e}")
     finally:
         if stock.is_connected():
             stock.disconnect()

@@ -145,6 +145,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MIGRATION §9 described 2.x's `connect()` wrongly**: 2.x raised a plain
   `Exception` on rejected credentials too; the difference is the class
   (`AuthError`) and its text.
+- **Docs: the Python README's examples run as written** (#298). The error
+  callback took `(message, code)` instead of the one `WebSocketError` it
+  gets; the futures example used `TXFC4`, a contract that expired in 2024
+  (it now looks up the nearest TXF contract); `products("F")` raised
+  `ValueError` (the type is `"FUTURE"`); intraday candles were read by `time` instead
+  of `date`, and data messages' `symbol` from the frame instead of its
+  `data`; `measure_latency()` was called before `connect()`. The README
+  also says `subscriptions()` returns `None` (the reply is a message; the
+  SDK's own list is `local_subscriptions()`), lists the `reconnect` event
+  and the event aliases `on()` accepts, covers every REST group
+  (`historical`, `snapshot`, `technical`, `ownership`, `corporate_actions`,
+  futopt `historical`, the `_async` siblings, `with_bearer_token` /
+  `with_sdk_token`) and `subscribe(channel, symbols=[...])`, and links to
+  GitHub with absolute URLs, which also work on PyPI. The package and stub
+  docstrings no longer call the REST methods async-only or mention a
+  `quote_sync` that does not exist.
+- **Docs: MIGRATION errata and gaps against 2.7.0 / 1.7.0** (#314). The
+  Node quickstart required `marketdata-js` (the package is
+  `@fugle/marketdata`) and used top-level `await` in CommonJS; the Python
+  examples awaited the sync REST methods; §4 said query params keep their
+  order (they do not); Common Issues showed a `ValueError` for a missing
+  credential (it is `ConfigError`, code 1004). New: a table of the five
+  changes most upgrades run into, [Defaults that changed](MIGRATION.md#defaults-that-changed)
+  (auto-reconnect, health check, the 4096-message queue, the 10 s auth
+  timeout, the 30 s REST timeout), §20 and §21 for the smaller Python and
+  Node differences (WebSocket options refused by `RestClient`, submodule
+  imports, `import *` shadowing `ConnectionError` / `TimeoutError`,
+  constructor errors no longer `TypeError`, renamed TypeScript types and the
+  missing `lib/**`), `e.message` and non-JSON responses in §6, the
+  `disconnect` argument's lost `CloseEvent` fields and health-check reason
+  in §12, the stricter REST value types and Python's `str`-only `ping()`,
+  and the platforms and transitive dependencies 3.x no longer covers. Also
+  fixed: §3 said 2.x's `message` got bytes (it got a `str`), and the
+  drop-in table's REST namespaces lacked `ownership` and Python's
+  `corporate_actions`.
 
 - **Packages ship their license texts, and say the same license everywhere**
   (#300). The wheel's `dist-info/` had no `licenses/` and the npm packages

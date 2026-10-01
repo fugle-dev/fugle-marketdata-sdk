@@ -6,17 +6,19 @@ Drop-in replacement for fugle-marketdata-python with Rust performance.
 Usage:
     from fugle_marketdata import RestClient, WebSocketClient
 
-    # REST API (async)
+    # REST API: methods block and return a dict, as in 2.x
+    client = RestClient(api_key="your-api-key")
+    quote = client.stock.intraday.quote("2330")
+
+    # ... and each has an _async sibling for asyncio code
     async def main():
-        client = RestClient(api_key="your-api-key")
         quote = await client.stock.intraday.quote_async("2330")
-        print(quote)
 
     # WebSocket (async iterator)
     async def stream():
-        ws = WebSocketClient("your-api-key")
-        await ws.stock.connect()
-        await ws.stock.subscribe("trades", "2330")
+        ws = WebSocketClient(api_key="your-api-key")
+        await ws.stock.connect_async()
+        await ws.stock.subscribe_async("trades", "2330")
         async for msg in ws.stock.messages():
             print(msg)
 """

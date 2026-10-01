@@ -95,7 +95,8 @@ class ConnectionError(MarketDataError):
 
     Raised when a REST request cannot reach the server (DNS resolution,
     connection refused, TLS), when a WebSocket command is sent while the
-    connection is down, or when the WebSocket auth handshake fails for a
+    connection is down (not before ``connect()`` or after ``disconnect()``:
+    that is a ``RuntimeError``), or when the WebSocket auth handshake fails for a
     reason other than rejected credentials. When the server refuses the
     connection because the account is at its connection limit, ``code`` is
     2012 instead (#300). Not a ``WebSocketError`` (#219);
@@ -139,19 +140,20 @@ class RestClient:
     """REST client for Fugle market data API.
 
     Provides access to stock and futures/options market data through
-    REST endpoints. All data methods are async and return coroutines.
+    REST endpoints. Each data method blocks and returns a dict, as in 2.x,
+    and has an ``_async`` sibling (e.g. ``quote_async``) that returns a
+    coroutine instead.
 
     Example:
         ```python
-        import asyncio
         from fugle_marketdata import RestClient
 
-        async def main():
-            client = RestClient(api_key="your-api-key")
-            quote = await client.stock.intraday.quote_async("2330")
-            print(f"Last price: {quote['lastPrice']}")
+        client = RestClient(api_key="your-api-key")
+        quote = client.stock.intraday.quote("2330")
+        print(f"Last price: {quote['lastPrice']}")
 
-        asyncio.run(main())
+        # in asyncio code
+        quote = await client.stock.intraday.quote_async("2330")
         ```
     """
 
@@ -356,10 +358,9 @@ class StockClient:
 class StockIntradayClient:
     """Stock intraday (real-time) endpoints client.
 
-    Access via `client.stock.intraday`. Each async method has a `_sync`
-    sibling (e.g. `quote_sync`) that blocks the calling thread and returns
-    the dict directly — provided for callers migrating from the legacy
-    fugle-marketdata SDK.
+    Access via `client.stock.intraday`. Each method (e.g. `quote`) blocks the
+    calling thread and returns the dict, as in the legacy fugle-marketdata
+    SDK; its `_async` sibling (e.g. `quote_async`) returns a coroutine.
     """
 
     async def quote_async(self, symbol: str, *, odd_lot: Optional[bool] = None) -> dict[str, Any]:
@@ -558,8 +559,9 @@ class StockIntradayClient:
 class StockHistoricalClient:
     """Stock historical data endpoints client.
 
-    Access via `client.stock.historical`. All methods are async and
-    return coroutines that resolve to dict objects.
+    Access via `client.stock.historical`. Each method blocks and
+    returns a dict; its `_async` sibling returns a coroutine that resolves
+    to the same dict.
     """
 
     async def candles_async(
@@ -646,8 +648,9 @@ class StockHistoricalClient:
 class StockSnapshotClient:
     """Stock snapshot endpoints client.
 
-    Access via `client.stock.snapshot`. All methods are async and
-    return coroutines that resolve to dict objects.
+    Access via `client.stock.snapshot`. Each method blocks and
+    returns a dict; its `_async` sibling returns a coroutine that resolves
+    to the same dict.
     """
 
     async def quotes_async(
@@ -773,8 +776,9 @@ class StockSnapshotClient:
 class StockTechnicalClient:
     """Stock technical indicator endpoints client.
 
-    Access via `client.stock.technical`. All methods are async and
-    return coroutines that resolve to dict objects.
+    Access via `client.stock.technical`. Each method blocks and
+    returns a dict; its `_async` sibling returns a coroutine that resolves
+    to the same dict.
     """
 
     async def sma_async(
@@ -1172,8 +1176,9 @@ class StockOwnershipClient:
 class StockCorporateActionsClient:
     """Stock corporate actions endpoints client.
 
-    Access via `client.stock.corporate_actions`. All methods are async and
-    return coroutines that resolve to dict objects.
+    Access via `client.stock.corporate_actions`. Each method blocks and
+    returns a dict; its `_async` sibling returns a coroutine that resolves
+    to the same dict.
     """
 
     async def capital_changes_async(
@@ -1340,8 +1345,9 @@ class FutOptClient:
 class FutOptIntradayClient:
     """FutOpt intraday (real-time) endpoints client.
 
-    Access via `client.futopt.intraday`. All methods are async and
-    return coroutines that resolve to dict objects.
+    Access via `client.futopt.intraday`. Each method blocks and
+    returns a dict; its `_async` sibling returns a coroutine that resolves
+    to the same dict.
     """
 
     async def quote_async(self, symbol: str, *, after_hours: Optional[bool] = None) -> dict[str, Any]:
