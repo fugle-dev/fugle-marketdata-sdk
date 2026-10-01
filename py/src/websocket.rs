@@ -657,7 +657,7 @@ impl WebSocketClient {
         bearer_token: Option<String>,
         sdk_token: Option<String>,
         base_url: Option<String>,
-        version: Option<&Bound<'_, pyo3::types::PyDict>>,
+        version: Option<&Bound<'_, PyAny>>,
         reconnect: Option<&Bound<'_, ReconnectConfig>>,
         health_check: Option<&Bound<'_, HealthCheckConfig>>,
         tls_ca_file: Option<String>,
@@ -816,64 +816,67 @@ impl MessageQueueSettings {
     }
 }
 
+/// The `version` option: `None`, or a dict from product name to version
+/// string. Products and versions are resolved by core (#294); this checks the
+/// Python shape and words the errors in dict syntax. Every refusal is a
+/// `TypeError`.
 fn parse_ws_versions(
-    version: Option<&Bound<'_, pyo3::types::PyDict>>,
+    version: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<(marketdata_core::websocket::StockVersion, marketdata_core::websocket::FutOptVersion)> {
-    use marketdata_core::websocket::{FutOptVersion, StockVersion};
+    use marketdata_core::websocket::version::option::{self, VersionOptionError};
+    use pyo3::exceptions::PyTypeError;
     use pyo3::types::PyAnyMethods;
 
-    let mut stock = StockVersion::default();
-    let mut futopt = FutOptVersion::default();
-
-    let Some(map) = version else {
-        return Ok((stock, futopt));
+    let Some(version) = version.filter(|v| !v.is_none()) else {
+        return Ok(Default::default());
+    };
+    let Ok(map) = version.cast::<pyo3::types::PyDict>() else {
+        return Err(PyTypeError::new_err(match version.extract::<String>() {
+            Ok(bare) => bare_version_message(&bare),
+            Err(_) => format!(
+                "version must be a per-product dict like {{'futopt': 'v1.0'}}, got {}",
+                version.get_type().name().map(|n| n.to_string()).unwrap_or_else(|_| "?".into())
+            ),
+        }));
     };
 
+    let mut entries: Vec<(String, String)> = Vec::new();
     for (key, value) in map.iter() {
         let product: String = key.extract().map_err(|_| {
-            pyo3::exceptions::PyTypeError::new_err(
-                "version keys must be product names: 'stock' or 'futopt'",
-            )
+            PyTypeError::new_err("version keys must be product names: 'stock' or 'futopt'")
         })?;
         let requested: String = value.extract().map_err(|_| {
-            pyo3::exceptions::PyTypeError::new_err(format!(
-                "version['{product}'] must be a version string, e.g. 'v1.1'"
-            ))
+            PyTypeError::new_err(format!("version['{product}'] must be a version string, e.g. 'v1.1'"))
         })?;
-
-        match product.as_str() {
-            "stock" => {
-                stock = match requested.as_str() {
-                    "v1.0" => StockVersion::V1_0,
-                    other => {
-                        return Err(pyo3::exceptions::PyTypeError::new_err(format!(
-                            "stock streaming does not support {other} (supported: v1.0). \
-                             Remove it from the version mapping to use v1.0."
-                        )))
-                    }
-                }
-            }
-            "futopt" => {
-                futopt = match requested.as_str() {
-                    "v1.0" => FutOptVersion::V1_0,
-                    "v1.1" => FutOptVersion::V1_1,
-                    other => {
-                        return Err(pyo3::exceptions::PyTypeError::new_err(format!(
-                            "futopt streaming does not support {other} (supported: v1.0, v1.1). \
-                             Remove it from the version mapping to use v1.1."
-                        )))
-                    }
-                }
-            }
-            other => {
-                return Err(pyo3::exceptions::PyTypeError::new_err(format!(
-                    "unknown product '{other}' in version mapping (known: stock, futopt)"
-                )))
-            }
-        }
+        entries.push((product, requested));
     }
 
-    Ok((stock, futopt))
+    option::resolve(entries.iter().map(|(p, v)| (p.as_str(), v.as_str()))).map_err(|err| {
+        PyTypeError::new_err(match &err {
+            VersionOptionError::UnknownProduct(key) => format!(
+                "unknown product '{key}' in version mapping (known: {})",
+                option::product_names().join(", ")
+            ),
+            VersionOptionError::Unsupported { product, .. } => format!(
+                "{} Remove it from the version mapping to use {}.",
+                err.describe(),
+                option::default_for(product).unwrap_or("the default")
+            ),
+        })
+    })
+}
+
+/// The error for `version="v1.0"`: the option is per product, so name the
+/// dict that would ask for this version on every product serving it (#294).
+fn bare_version_message(bare: &str) -> String {
+    let products = marketdata_core::websocket::version::option::products_serving(bare);
+    let fix = if products.is_empty() {
+        format!("No product serves {bare}.")
+    } else {
+        let pairs: Vec<String> = products.iter().map(|p| format!("'{p}': '{bare}'")).collect();
+        format!("Use version={{{}}}.", pairs.join(", "))
+    };
+    format!("version must be a per-product dict, not the bare string '{bare}'. {fix}")
 }
 
 use marketdata_core::websocket::StreamProduct as WsProduct;
