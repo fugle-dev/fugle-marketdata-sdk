@@ -13,9 +13,10 @@ on:
         type: boolean
         default: false
     secrets:
-      NUGET_API_KEY:
-        # Optional so workflow_dispatch dry runs work without the secret;
-        # the push step fails loudly if it is missing on a real release.
+      NUGET_USER:
+        # nuget.org username (not email) of the account that created the
+        # trusted publishing policy. Optional so dry runs work without it;
+        # the login step fails loudly if it is missing on a real release.
         required: false
   workflow_dispatch:
     inputs:
@@ -169,6 +170,8 @@ jobs:
     needs: [pack, smoke]
     if: ${{ !inputs.dry-run }}
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # trusted publishing
 
     steps:
       - name: Setup .NET
@@ -182,9 +185,22 @@ jobs:
           name: nuget-package
           path: nupkg/
 
+      # Trusted publishing: exchanges the job's OIDC token for an API key
+      # valid for one hour. nuget.org matches the policy against
+      # job_workflow_ref, so the policy names this file (publish-nuget.yml),
+      # not the calling release.yml. A dry run never reaches this step, so a
+      # rehearsal cannot catch a misconfigured policy.
+      - name: NuGet login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push to NuGet
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           dotnet nuget push nupkg/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate

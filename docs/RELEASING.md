@@ -68,12 +68,15 @@ These require organization or registry admin access.
 | PyPI trusted publisher | pypi.org, project `fugle-marketdata`, Publishing | Owner `fugle-dev`, repository `fugle-marketdata-sdk`, workflow `release.yml`, environment `release` |
 | npm trusted publisher | npmjs.com, `@fugle/marketdata` and each `@fugle/marketdata-<platform>` package | Repository `fugle-dev/fugle-marketdata-sdk`, workflow `release.yml`. Until the platform packages exist, use the `NPM_TOKEN` secret instead. A platform added to `napi.targets` (for example the musl ones in #229) is a new package, and npm only accepts a trusted publisher on a package that exists: see [Adding an npm platform](#adding-an-npm-platform). |
 | `NPM_TOKEN` secret | GitHub secrets | Granular automation token with publish rights on `@fugle`. Optional once trusted publishing covers every package. |
-| `NUGET_API_KEY` secret | GitHub secrets | nuget.org API key scoped to push `Fugle.MarketData` |
+| NuGet trusted publishing policy | nuget.org, your account → Trusted Publishing | Policy owner `Fugle` (organization), repository owner `fugle-dev`, repository `fugle-marketdata-sdk`, workflow `publish-nuget.yml`, environment blank. Its scope must allow pushing new packages until `Fugle.MarketData` exists. |
+| `NUGET_USER` secret | GitHub secrets | nuget.org username (profile name, not email) of the account that created the policy above |
 | `GO_REPO_DEPLOY_KEY` secret | GitHub secrets | Private half of a deploy key that has write access to `fugle-dev/fugle-marketdata-go` |
 | crates.io trusted publisher | crates.io, each of `fugle-marketdata-core` and `fugle-marketdata`: Settings → Trusted Publishing | Owner `fugle-dev`, repository `fugle-marketdata-sdk`, workflow `release-rust.yml`, environment `release` |
 
 npm validates the **calling** workflow, and PyPI does not accept reusable
 workflows, which is why both trusted publishers point at `release.yml`.
+NuGet is the opposite: it matches the `job_workflow_ref` claim, the workflow
+that runs the push job, so its policy names `publish-nuget.yml`.
 
 ### Adding an npm platform
 
