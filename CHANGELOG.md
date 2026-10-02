@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.12 / core 0.9.0-rc.10 / uniffi 0.2.0-rc.10] - 2026-10-02
+
 ### Added
 
+- **C#: published to nuget.org as `Fugle.MarketData`** (#326), starting
+  with this release: `dotnet add package Fugle.MarketData --prerelease`.
 - **C#, Go, Java, C++: `SetCredentials` / `setCredentials` /
   `set_credentials`** (#322), as Rust, Python and Node have below: UniFFI
   `WebSocketClient` and `RestClient` gain `set_credentials(CredentialsRecord)`.
