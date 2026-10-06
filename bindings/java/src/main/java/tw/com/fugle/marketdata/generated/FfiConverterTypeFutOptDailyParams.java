@@ -10,7 +10,8 @@ public enum FfiConverterTypeFutOptDailyParams implements FfiConverterRustBuffer<
   public FutOptDailyParams read(ByteBuffer buf) {
     return new FutOptDailyParams(
       FfiConverterOptionalString.INSTANCE.read(buf),
-      FfiConverterOptionalBoolean.INSTANCE.read(buf)
+      FfiConverterOptionalBoolean.INSTANCE.read(buf),
+      FfiConverterOptionalString.INSTANCE.read(buf)
     );
   }
 
@@ -18,7 +19,8 @@ public enum FfiConverterTypeFutOptDailyParams implements FfiConverterRustBuffer<
   public long allocationSize(FutOptDailyParams value) {
       return (
             FfiConverterOptionalString.INSTANCE.allocationSize(value.date()) +
-            FfiConverterOptionalBoolean.INSTANCE.allocationSize(value.afterHours())
+            FfiConverterOptionalBoolean.INSTANCE.allocationSize(value.afterHours()) +
+            FfiConverterOptionalString.INSTANCE.allocationSize(value.contractMonth())
       );
   }
 
@@ -26,6 +28,7 @@ public enum FfiConverterTypeFutOptDailyParams implements FfiConverterRustBuffer<
   public void write(FutOptDailyParams value, ByteBuffer buf) {
       FfiConverterOptionalString.INSTANCE.write(value.date(), buf);
       FfiConverterOptionalBoolean.INSTANCE.write(value.afterHours(), buf);
+      FfiConverterOptionalString.INSTANCE.write(value.contractMonth(), buf);
   }
 }
 

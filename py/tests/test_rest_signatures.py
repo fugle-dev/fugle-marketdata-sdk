@@ -185,7 +185,7 @@ def test_optional_parameters_are_keyword_only(cls, name, method):
     ``product=`` can stand in for it, and is still required (#306)."""
     from_core = {
         ("FutOptHistoricalClient", "candles"): {"symbol"},
-        ("FutOptHistoricalClient", "daily"): {"symbol"},
+        ("FutOptHistoricalClient", "daily"): {"product"},
         ("StockSnapshotClient", "movers"): {"direction", "change"},
         ("StockSnapshotClient", "actives"): {"trade"},
         ("StockTechnicalClient", "sma"): {"period"},

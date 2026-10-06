@@ -40,7 +40,7 @@ impl<'a> FutOptHistoricalClient<'a> {
     /// FutOpt product.
     ///
     /// The path takes a **product** code (`TXF`); a contract code such as
-    /// `TXFC4` returns HTTP 404.
+    /// `TXFJ6` returns HTTP 400. Narrow to one month with `contract_month()`.
     ///
     /// # Example
     /// ```no_run
@@ -48,7 +48,7 @@ impl<'a> FutOptHistoricalClient<'a> {
     ///
     /// let client = RestClient::new(Auth::SdkToken("my-token".to_string()));
     /// let daily = client.futopt().historical().daily()
-    ///     .symbol("TXF")
+    ///     .product("TXF")
     ///     .date("2026-09-15")
     ///     .after_hours(true)
     ///     .send()?;

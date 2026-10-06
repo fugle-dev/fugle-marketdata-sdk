@@ -597,10 +597,14 @@ pub static ENDPOINTS: &[EndpointSpec] = &[
     ),
     endpoint!(
         futopt("historical", "daily"),
-        Some("symbol"),
-        &["product"],
+        Some("product"),
+        &["symbol"],
         "futopt/historical/daily.rs",
-        [param("date", "date"), AFTER_HOURS,]
+        [
+            param("date", "date"),
+            param("contractMonth", "contract_month"),
+            AFTER_HOURS,
+        ]
     ),
 ];
 
@@ -722,6 +726,10 @@ mod tests {
         let hist = EndpointSpec::for_path(&["futopt", "historical", "candles"]).unwrap();
         assert!(hist.is_path_param("product") && hist.is_path_param("symbol"));
         assert!(hist.resolve("from").unwrap().spec.python_keyword);
+
+        let daily = EndpointSpec::for_path(&["futopt", "historical", "daily"]).unwrap();
+        assert_eq!(daily.path_param, Some("product"));
+        assert!(daily.is_path_param("symbol"));
     }
 
     #[test]
@@ -779,6 +787,11 @@ mod tests {
                     "{}: no `{path_param}()` setter",
                     e.builder_src
                 );
+            }
+            // A setter under an alias of the path param (`symbol()` on daily,
+            // kept deprecated) is not a query param.
+            for alias in e.path_param_aliases {
+                setters.remove(*alias);
             }
             let mut expected = BTreeSet::new();
             for spec in e.params {
@@ -1189,8 +1202,9 @@ mod tests {
                 c.futopt()
                     .historical()
                     .daily()
-                    .symbol("TXF")
+                    .product("TXF")
                     .date("2026-01-15")
+                    .contract_month("1!")
                     .after_hours(true)
                     .send()
             }),

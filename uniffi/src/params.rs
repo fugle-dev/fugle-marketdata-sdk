@@ -512,11 +512,16 @@ pub struct FutOptDailyParams {
     /// `true` asks for the after-hours session (`session=afterhours`).
     #[uniffi(default = None)]
     pub after_hours: Option<bool>,
+    /// One contract month only: `YYYYMM`, `YYYYMMWn` / `YYYYMMFn`, a futures
+    /// spread `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Unset
+    /// returns every contract month.
+    #[uniffi(default = None)]
+    pub contract_month: Option<String>,
 }
 
 impl QueryParams for FutOptDailyParams {
     fn fields(&self) -> Vec<Field> {
-        fields!(self; date: Str, after_hours: Flag)
+        fields!(self; date: Str, after_hours: Flag, contract_month: Str)
     }
 }
 
@@ -670,7 +675,7 @@ mod tests {
     }
 
     fn futopt_daily() -> FutOptDailyParams {
-        FutOptDailyParams { date: s("2024-01-02"), after_hours: Some(true) }
+        FutOptDailyParams { date: s("2024-01-02"), after_hours: Some(true), contract_month: s("1!") }
     }
 
     fn positional(fields: &[(&'static str, &str)]) -> Vec<Field> {
@@ -792,7 +797,7 @@ mod tests {
             vec![("session", "afterhours".to_string())]
         );
         assert_eq!(
-            query(&["futopt", "historical", "daily"], FutOptDailyParams { date: None, after_hours: Some(true) }.fields()),
+            query(&["futopt", "historical", "daily"], FutOptDailyParams { after_hours: Some(true), ..Default::default() }.fields()),
             vec![("session", "afterhours".to_string())]
         );
         for value in [Some(false), None] {

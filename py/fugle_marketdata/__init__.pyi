@@ -1665,21 +1665,25 @@ class FutOptHistoricalClient:
     @overload
     async def daily_async(
         self,
-        symbol: str,
+        product: str,
         *,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
+        contract_month: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Get one trading day's daily quotes for every contract month of a FutOpt product.
+        """Get one trading day's daily quotes for every contract of a FutOpt product.
 
         Args:
-            symbol: Product code (e.g., "TXF"); ``product=`` is accepted in
-                its place
+            product: Product code (e.g., "TXF", "TXO"); a contract code such
+                as "TXFJ6" returns 400. ``symbol=`` is accepted in its place
             date: Trading date (YYYY-MM-DD); the server defaults to today
             after_hours: Query the after-hours session
+            contract_month: One month only: "YYYYMM", "YYYYMMWn" /
+                "YYYYMMFn", a futures spread "YYYYMM/YYYYMM", or (futures
+                only) "1!" / "2!" / "3!"; unset returns every contract month
 
         Returns:
-            Daily quotes, one row per contract month
+            Daily quotes, one row per listed contract
 
         Raises:
             TypeError: If `from_date` / `to_date` are passed
@@ -1695,9 +1699,10 @@ class FutOptHistoricalClient:
     async def daily_async(
         self,
         *,
-        product: str,
+        symbol: str,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
+        contract_month: Optional[str] = None,
     ) -> dict[str, Any]: ...
 
     # ----- Sync siblings (legacy fugle-marketdata compatibility) -----
@@ -1738,10 +1743,11 @@ class FutOptHistoricalClient:
     @overload
     def daily(
         self,
-        symbol: str,
+        product: str,
         *,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
+        contract_month: Optional[str] = None,
     ) -> dict[str, Any]:
         """Blocking version of `daily_async()`."""
         ...
@@ -1749,9 +1755,10 @@ class FutOptHistoricalClient:
     def daily(
         self,
         *,
-        product: str,
+        symbol: str,
         date: Optional[str] = None,
         after_hours: Optional[bool] = None,
+        contract_month: Optional[str] = None,
     ) -> dict[str, Any]: ...
 
 

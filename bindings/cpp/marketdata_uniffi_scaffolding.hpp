@@ -44,7 +44,7 @@ void * uniffi_marketdata_uniffi_fn_method_futoptclient_intraday(void * ptr, Rust
 void * uniffi_marketdata_uniffi_fn_clone_futopthistoricalclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_futopthistoricalclient(void * ptr, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync(void * ptr, RustBuffer symbol, RustBuffer params, RustCallStatus *out_status);
-RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(void * ptr, RustBuffer symbol, RustBuffer params, RustCallStatus *out_status);
+RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(void * ptr, RustBuffer product, RustBuffer params, RustCallStatus *out_status);
 void * uniffi_marketdata_uniffi_fn_clone_futoptintradayclient(void * ptr, RustCallStatus *out_status);
 void uniffi_marketdata_uniffi_fn_free_futoptintradayclient(void * ptr, RustCallStatus *out_status);
 RustBuffer uniffi_marketdata_uniffi_fn_method_futoptintradayclient_candles_sync(void * ptr, RustBuffer symbol, RustBuffer params, RustCallStatus *out_status);

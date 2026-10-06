@@ -1670,7 +1670,7 @@ export interface FutOptDailyData {
 
 /**
  * FutOpt daily response from futopt/historical/daily/{product}:
- * one trading day, one row per contract month.
+ * one trading day, one row per listed contract.
  */
 export interface FutOptDailyResponse {
   /** Trading date (YYYY-MM-DD) */
@@ -1681,7 +1681,12 @@ export interface FutOptDailyResponse {
   exchange?: string;
   /** Trading session ("REGULAR" or "AFTERHOURS") */
   session?: string;
-  /** One row per contract month */
+  /**
+   * The requested contract month, resolved: "1!" comes back as the actual
+   * month (e.g., "202610"). Absent when the request gave none.
+   */
+  contractMonth?: string;
+  /** One row per listed contract: every futures month and spread, or every option strike and side */
   data: FutOptDailyData[];
 }
 
@@ -1929,6 +1934,12 @@ export type RestFutOptHistoricalCandlesParams = FutOptHistoricalProduct & {
 export type RestFutOptHistoricalDailyParams = FutOptHistoricalProduct & {
   /** Trading date (YYYY-MM-DD); the server defaults to today */
   date?: string;
+  /**
+   * One contract month only: "YYYYMM", "YYYYMMWn" / "YYYYMMFn", a futures
+   * spread "YYYYMM/YYYYMM", or (futures only) "1!" / "2!" / "3!". Unset
+   * returns every contract month.
+   */
+  contractMonth?: string;
   session?: FutOptHistoricalSession;
 };
 
@@ -1982,6 +1993,6 @@ export interface StockCorporateActionsClient {
 export interface FutOptHistoricalClient {
   /** Get historical candles for a FutOpt product */
   candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean, contractMonth?: string, fields?: string, sort?: 'asc' | 'desc'): Promise<FutOptHistoricalCandlesResponse>;
-  /** Get one trading day's daily quotes for every contract month of a FutOpt product */
-  daily(symbol: string | RestFutOptHistoricalDailyParams, date?: string, afterHours?: boolean): Promise<FutOptDailyResponse>;
+  /** Get one trading day's daily quotes for every contract of a FutOpt product */
+  daily(product: string | RestFutOptHistoricalDailyParams, date?: string, afterHours?: boolean, contractMonth?: string): Promise<FutOptDailyResponse>;
 }

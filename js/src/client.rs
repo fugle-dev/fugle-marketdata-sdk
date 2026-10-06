@@ -2282,35 +2282,38 @@ impl FutOptHistoricalClient {
         Ok(Settled::from(result))
     }
 
-    /// Get one trading day's daily quotes for every contract month of a futures/options product
+    /// Get one trading day's daily quotes for every contract of a futures/options product
     ///
-    /// @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+    /// @param product - Product code (e.g., "TXF", "TXO"); a contract code such as "TXFJ6" returns 400
     /// @param date - Trading date (YYYY-MM-DD); the server defaults to today
     /// @param afterHours - Query the after-hours session
+    /// @param contractMonth - One month only: "YYYYMM", "YYYYMMWn", a futures spread "YYYYMM/YYYYMM", or (futures only) "1!", "2!", "3!"
     /// @returns Promise resolving to daily historical data
     #[napi(
         ts_return_type = "Promise<FutOptDailyResponse>",
-        ts_args_type = "symbol: string | RestFutOptHistoricalDailyParams, date?: string | undefined | null, afterHours?: boolean | undefined | null"
+        ts_args_type = "product: string | RestFutOptHistoricalDailyParams, date?: string | undefined | null, afterHours?: boolean | undefined | null, contractMonth?: string | undefined | null"
     )]
     pub async fn daily(
         &self,
-        symbol: Option<RestArg>,
+        product: Option<RestArg>,
         date: Option<PosArg>,
         after_hours: Option<PosArg>,
+        contract_month: Option<PosArg>,
         extra: Option<ExtraArg>,
     ) -> napi::Result<Settled> {
         if let Some(rejected) = unused_args(
             "futopt.historical.daily",
             &["futopt", "historical", "daily"],
-            ("symbol", &symbol),
-            &[("date", date.is_some()), ("afterHours", after_hours.is_some())],
+            ("product", &product),
+            &[("date", date.is_some()), ("afterHours", after_hours.is_some()), ("contractMonth", contract_month.is_some())],
             extra,
         ) {
             return Ok(rejected);
         }
         let date = take!(pos_string("futopt.historical.daily", "date", date));
         let after_hours = take!(pos_bool("futopt.historical.daily", "afterHours", after_hours));
-        let symbol = match take!(RestArg::required("futopt.historical.daily", symbol, "symbol")) {
+        let contract_month = take!(pos_string("futopt.historical.daily", "contractMonth", contract_month));
+        let product = match take!(RestArg::required("futopt.historical.daily", product, "product")) {
             RestArg::Invalid(_) => unreachable!("refused by unused_args"),
             RestArg::Positional(value) => value,
             RestArg::Params(params) => {
@@ -2323,12 +2326,15 @@ impl FutOptHistoricalClient {
         let result = tokio::task::spawn_blocking(move || {
             let futopt = inner.futopt();
             let hist = futopt.historical();
-            let mut builder = hist.daily().symbol(&symbol);
+            let mut builder = hist.daily().product(&product);
             if let Some(d) = date {
                 builder = builder.date(&d);
             }
             if let Some(ah) = after_hours {
                 builder = builder.after_hours(ah);
+            }
+            if let Some(cm) = contract_month {
+                builder = builder.contract_month(&cm);
             }
             builder.send()
         })

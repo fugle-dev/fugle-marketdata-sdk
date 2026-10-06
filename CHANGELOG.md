@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Release order:** the `futopt.historical.daily()` `contractMonth` param
+> follows fugle-realtime #897 / #727 (MR !722, !725, !726, !735). Publish
+> only after those are live in production; until then the server ignores
+> `contractMonth` and returns every contract month.
+
+### Added
+
+- **All languages**: `futopt.historical.daily()` takes `contractMonth`
+  (Python `contract_month`) to return one contract month instead of all of
+  them: `YYYYMM`, a weekly `YYYYMMWn` / `YYYYMMFn`, a futures spread
+  `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Node appends it as
+  the fourth positional argument; UniFFI adds `contract_month` to
+  `FutOptDailyParams`; C# `DailyRequest` gains `ContractMonth`.
+- **Rust, Node types**: `FutOptDailyResponse` gains an optional
+  `contractMonth`, the month the request asked for after the server resolved
+  it (`1!` comes back as e.g. `202610`).
+
+### Changed
+
+- **All languages**: `futopt.historical.daily()` names its path param
+  `product`, as the server does. Rust: `FutOptDailyRequestBuilder::product()`;
+  `symbol()` is kept and deprecated. Node: the first positional is `product`,
+  and the object form accepts `product` or `symbol` as before. Python: the
+  positional is `product`; `symbol=` is accepted in its place. **C#, Go,
+  Java, C++**: the generated `get_daily` / `daily_sync` parameter is renamed
+  `product` (C#'s FubonNeo-style `FutOpt.Historical.Daily(symbol, …)` keeps
+  its name).
+- Docs: a contract code in the `futopt/historical` path (`TXFJ6`) is an
+  HTTP 400 telling you to use `product` + `contractMonth`, not a 404.
+
+### Removed
+
+- **Rust**: `FutOptDailyResponse::total_volume()`. Spread rows count
+  spread-to-spread volume, a different unit from the outright rows, so the
+  sum had no clear meaning. No binding exposed it.
+  `FutOptHistoricalCandlesResponse::total_volume()` and the other
+  `total_volume()` methods are unchanged.
+
 ## [Bindings 3.0.0-rc.12 / core 0.9.0-rc.10 / uniffi 0.2.0-rc.10] - 2026-10-02
 
 ### Added

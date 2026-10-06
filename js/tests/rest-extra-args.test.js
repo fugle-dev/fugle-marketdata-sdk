@@ -192,7 +192,7 @@ describe('a missing first argument', () => {
     'futopt.intraday.tickers': 'type',
     'futopt.intraday.products': 'type',
     'futopt.historical.candles': 'symbol',
-    'futopt.historical.daily': 'symbol',
+    'futopt.historical.daily': 'product',
   };
   const OWNERSHIP = ['etfHoldings', 'institutionalTrades', 'directorHoldings', 'tdccDistribution'].map((m) => `stock.ownership.${m}`);
   const OPTIONAL = ['capitalChanges', 'dividends', 'listingApplicants'].map((m) => `stock.corporateActions.${m}`);
