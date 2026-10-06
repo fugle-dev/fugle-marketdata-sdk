@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `product` (C# `GetDaily` / `DailySync`, Go `GetDaily` / `DailySync`, Java
   `getDaily` / `dailySync`, C++ `daily_sync`) (C#'s FubonNeo-style `FutOpt.Historical.Daily(symbol, …)` keeps
   its name).
+- **Node types**: `FutOptDailyData` follows the standby payload. `exchange`
+  and `volume` are always present; `openPrice` / `highPrice` / `lowPrice` /
+  `closePrice` / `change` / `changePercent` / `openInterest` /
+  `settlementPrice` are `number | null` (null on untraded and spread rows);
+  `volumeSpread` is `?: number | null`, since option rows from older servers
+  omit the key. Rust already models these as `Option`; `volume_spread` now
+  also has `#[serde(default)]`.
 - Docs: a contract code in the `futopt/historical` path (`TXFJ6`) is an
   HTTP 400 telling you to use `product` + `contractMonth`, not a 404.
 

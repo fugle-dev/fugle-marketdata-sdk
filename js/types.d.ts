@@ -1638,34 +1638,37 @@ export interface FutOptHistoricalCandlesResponse {
 
 /** One contract month's daily quote for FutOpt */
 export interface FutOptDailyData {
-  /** Contract month (e.g., "202609", or "202609/202610" for a spread) */
+  /** Contract month (e.g., "202609", "202610W1", or "202609/202610" for a spread) */
   contractMonth: string;
   /** Option right ("CALL" / "PUT"); null for futures */
   callPut?: string | null;
   /** Option strike price; null for futures */
   strikePrice?: number | null;
   /** Exchange code (e.g., "TAIFEX") */
-  exchange?: string;
-  /** Open price */
-  openPrice?: number;
-  /** High price */
-  highPrice?: number;
-  /** Low price */
-  lowPrice?: number;
-  /** Close price */
-  closePrice?: number;
-  /** Price change from previous close */
-  change?: number;
-  /** Percentage change from previous close */
-  changePercent?: number;
-  /** Volume (number of contracts) */
-  volume?: number;
-  /** Spread-order volume */
-  volumeSpread?: number;
-  /** Open interest (total outstanding contracts) */
-  openInterest?: number;
-  /** Settlement price (official closing price for margin calculation) */
-  settlementPrice?: number;
+  exchange: string;
+  /** Open price; null when the contract did not trade */
+  openPrice: number | null;
+  /** High price; null when the contract did not trade */
+  highPrice: number | null;
+  /** Low price; null when the contract did not trade */
+  lowPrice: number | null;
+  /** Close price; null when the contract did not trade */
+  closePrice: number | null;
+  /** Price change from previous close; null when the contract did not trade, and on spread rows */
+  change: number | null;
+  /** Percentage change from previous close; null when it cannot be computed */
+  changePercent: number | null;
+  /** Volume (number of contracts); 0 when the contract did not trade. On a spread row, spread-to-spread volume */
+  volume: number;
+  /**
+   * Spread rows: volume traded against single legs (do not add to `volume`).
+   * Null on outright rows; option rows from older servers omit the key.
+   */
+  volumeSpread?: number | null;
+  /** Open interest (total outstanding contracts); null on spread rows */
+  openInterest: number | null;
+  /** Settlement price (official closing price for margin calculation); null on spread rows */
+  settlementPrice: number | null;
 }
 
 /**

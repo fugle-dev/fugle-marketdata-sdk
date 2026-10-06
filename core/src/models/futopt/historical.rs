@@ -235,8 +235,10 @@ pub struct FutOptDailyData {
     /// Volume (number of contracts)
     pub volume: Option<u64>,
 
-    /// Spread-order volume
-    #[serde(rename = "volumeSpread")]
+    /// Spread rows: volume traded against single legs; not to be added to
+    /// `volume`. `None` on outright rows. Option rows from servers before
+    /// fugle-realtime filled it in omit the key, hence `default`.
+    #[serde(rename = "volumeSpread", default)]
     pub volume_spread: Option<u64>,
 
     /// Open interest (total outstanding contracts)
@@ -425,6 +427,21 @@ mod tests {
         let response: FutOptDailyResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.product, "TXF");
         assert!(response.data.is_empty());
+    }
+
+    #[test]
+    fn test_futopt_daily_option_row_without_volume_spread() {
+        // Recorded from standby (2026-10-02, daily/TXO): option rows carry no
+        // `volumeSpread` key at all, and an untraded row has null prices.
+        let json = r#"{"date":"2026-10-02","product":"TXO","exchange":"TAIFEX","session":"REGULAR","data":[
+            {"callPut":"CALL","contractMonth":"202610W1","strikePrice":42800,"change":null,"changePercent":null,"closePrice":null,"exchange":"TAIFEX","highPrice":null,"lowPrice":null,"openInterest":0,"openPrice":null,"settlementPrice":5560,"volume":0}
+        ]}"#;
+        let response: FutOptDailyResponse = serde_json::from_str(json).unwrap();
+        let row = &response.data[0];
+        assert_eq!(row.volume_spread, None);
+        assert_eq!(row.close_price, None);
+        assert_eq!(row.volume, Some(0));
+        assert_eq!(row.settlement_price, Some(5560.0));
     }
 
     #[test]
