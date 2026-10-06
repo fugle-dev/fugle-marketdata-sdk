@@ -31,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `symbol()` is kept and deprecated. Node: the first positional is `product`,
   and the object form accepts `product` or `symbol` as before. Python: the
   positional is `product`; `symbol=` is accepted in its place. **C#, Go,
-  Java, C++**: the generated `get_daily` / `daily_sync` parameter is renamed
-  `product` (C#'s FubonNeo-style `FutOpt.Historical.Daily(symbol, …)` keeps
+  Java, C++**: the generated daily methods' path parameter is renamed
+  `product` (C# `GetDaily` / `DailySync`, Go `GetDaily` / `DailySync`, Java
+  `getDaily` / `dailySync`, C++ `daily_sync`) (C#'s FubonNeo-style `FutOpt.Historical.Daily(symbol, …)` keeps
   its name).
 - Docs: a contract code in the `futopt/historical` path (`TXFJ6`) is an
   HTTP 400 telling you to use `product` + `contractMonth`, not a 404.

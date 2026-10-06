@@ -2197,7 +2197,7 @@ pub struct FutOptHistoricalClient {
 impl FutOptHistoricalClient {
     /// Get historical candles for a futures/options product
     ///
-    /// @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+    /// @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFJ6" returns 400
     /// @param from - Start date (YYYY-MM-DD)
     /// @param to - End date (YYYY-MM-DD)
     /// @param timeframe - Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
@@ -2287,7 +2287,7 @@ impl FutOptHistoricalClient {
     /// @param product - Product code (e.g., "TXF", "TXO"); a contract code such as "TXFJ6" returns 400
     /// @param date - Trading date (YYYY-MM-DD); the server defaults to today
     /// @param afterHours - Query the after-hours session
-    /// @param contractMonth - One month only: "YYYYMM", "YYYYMMWn", a futures spread "YYYYMM/YYYYMM", or (futures only) "1!", "2!", "3!"
+    /// @param contractMonth - One month only: "YYYYMM", "YYYYMMWn" / "YYYYMMFn", a futures spread "YYYYMM/YYYYMM", or (futures only) "1!", "2!", "3!"
     /// @returns Promise resolving to daily historical data
     #[napi(
         ts_return_type = "Promise<FutOptDailyResponse>",

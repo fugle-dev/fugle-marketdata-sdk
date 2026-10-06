@@ -36,8 +36,8 @@ impl<'a> FutOptHistoricalClient<'a> {
         FutOptHistoricalCandlesRequestBuilder::new(self.client)
     }
 
-    /// Get one trading day's daily quotes for every contract month of a
-    /// FutOpt product.
+    /// Get one trading day's daily quotes for every contract of a FutOpt
+    /// product.
     ///
     /// The path takes a **product** code (`TXF`); a contract code such as
     /// `TXFJ6` returns HTTP 400. Narrow to one month with `contract_month()`.

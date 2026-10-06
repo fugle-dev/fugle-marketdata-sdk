@@ -1029,7 +1029,7 @@ namespace FugleMarketData
         /// <summary>
         /// Get historical candles for a futures/options product (async).
         /// </summary>
-        /// <param name="product">Product code, e.g. "TXF" or "TXO" (a contract code such as "TXFC4" returns 404)</param>
+        /// <param name="product">Product code, e.g. "TXF" or "TXO" (a contract code such as "TXFJ6" returns 400)</param>
         /// <param name="request">Optional filters: from, to, timeframe, fields, contractMonth, sort, session, strikePrice, callPut</param>
         public Task<string> Candles(string product, FuOptHistorical.HistoricalCandlesRequest? request = null)
             => _inner.GetCandles(product, request?.ToParams());

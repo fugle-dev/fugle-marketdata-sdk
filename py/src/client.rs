@@ -3092,7 +3092,7 @@ impl FutOptHistoricalClient {
     /// Get historical candles for a FutOpt product
     ///
     /// Args:
-    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404.
+    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFJ6" returns 400.
     ///         2.x's `product=` keyword is accepted in its place
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)

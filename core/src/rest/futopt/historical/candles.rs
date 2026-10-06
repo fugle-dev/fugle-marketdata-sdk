@@ -38,7 +38,7 @@ impl<'a> FutOptHistoricalCandlesRequestBuilder<'a> {
     /// Set the product code (required, e.g. `"TXF"`).
     ///
     /// This is the **product**, not a contract: a contract code such as
-    /// `"TXFC4"` returns HTTP 404. Pick the contract with
+    /// `"TXFJ6"` returns HTTP 400. Pick the contract with
     /// [`contract_month`](Self::contract_month).
     pub fn symbol(mut self, symbol: &str) -> Self {
         self.symbol = Some(symbol.to_string());

@@ -1595,7 +1595,8 @@ class FutOptHistoricalClient:
     """FutOpt historical data endpoints client.
 
     Access via `client.futopt.historical`. Both endpoints take a **product**
-    code (e.g. "TXF"); a contract code such as "TXFC4" returns 404.
+    code (e.g. "TXF"); a contract code such as "TXFJ6" returns 400 pointing
+    at the product plus `contract_month`.
     """
 
     @overload

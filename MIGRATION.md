@@ -557,7 +557,9 @@ server side (fugle-realtime #727), and this SDK follows the new contract:
   spread `YYYYMM/YYYYMM`, or for futures only `1!` / `2!` / `3!`), and the
   response then carries the resolved month as `contractMonth`.
 - `daily` names its path param `product` in every binding; `symbol` is still
-  accepted (Node object form, Python `symbol=`).
+  accepted (Node object form, Python `symbol=`). The exception is C#'s
+  FubonNeo-style `FutOpt.Historical.Daily(symbol, …)`, which keeps its
+  parameter name.
 
 ```javascript
 // Legacy

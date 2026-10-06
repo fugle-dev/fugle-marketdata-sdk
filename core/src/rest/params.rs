@@ -82,7 +82,7 @@ pub struct EndpointSpec {
     /// `market`), if the endpoint has one.
     pub path_param: Option<&'static str>,
     /// Other accepted keys for the path segment: futopt historical calls it
-    /// `product` because a contract code there is a 404.
+    /// `product` because a contract code there is a 400.
     pub path_param_aliases: &'static [&'static str],
     pub params: &'static [ParamSpec],
     /// The builder's source file under `core/src/rest/`, for the tests that
