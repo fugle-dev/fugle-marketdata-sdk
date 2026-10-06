@@ -20,9 +20,9 @@ the numbers that belong together.
 
 | Track | Languages | Example |
 |---|---|---|
-| Bindings | Python, Node.js | `3.0.0-rc.12` (PyPI spells it `3.0.0rc12`) |
-| UniFFI | C#, Go, C++ | `0.2.0-rc.10` |
-| Rust crates | Rust | `0.9.0-rc.10` |
+| Bindings | Python, Node.js | `3.0.0-rc.13` (PyPI spells it `3.0.0rc13`) |
+| UniFFI | C#, Go, C++ | `0.2.0-rc.11` |
+| Rust crates | Rust | `0.9.0-rc.11` |
 
 Java bindings exist in the repository but are not published yet.
 
@@ -52,7 +52,7 @@ No source distribution is published. On any other platform pip cannot use a
 [Unsupported platforms](#unsupported-platforms).
 
 ```bash
-pip install --pre "fugle-marketdata==3.0.0rc12"
+pip install --pre "fugle-marketdata==3.0.0rc13"
 ```
 
 ```python
@@ -113,7 +113,7 @@ shared library or `LD_LIBRARY_PATH` is needed at runtime.
 | `windows/amd64` | MinGW-w64 gcc |
 
 ```bash
-CGO_ENABLED=1 go get github.com/fugle-dev/fugle-marketdata-go@v0.2.0-rc.10
+CGO_ENABLED=1 go get github.com/fugle-dev/fugle-marketdata-go@v0.2.0-rc.11
 ```
 
 ```go
@@ -128,9 +128,9 @@ C++ has no package registry. Each release attaches one tarball per platform
 containing the headers and the UniFFI shared library.
 
 ```bash
-VERSION=0.2.0-rc.10
+VERSION=0.2.0-rc.11
 PLATFORM=osx-arm64  # or linux-x64, linux-arm64, osx-x64, win-x64
-TAG=v3.0.0-rc.12     # the bindings release that shipped this UniFFI version
+TAG=v3.0.0-rc.13     # the bindings release that shipped this UniFFI version
 
 curl -LO "https://github.com/fugle-dev/fugle-marketdata-sdk/releases/download/${TAG}/fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
 tar -xzf "fugle-marketdata-cpp-${PLATFORM}-${VERSION}.tar.gz"
@@ -190,7 +190,7 @@ but `require('@fugle/marketdata')` throws `Cannot find native binding`. Pin
 Two causes:
 
 - **Missing `--pre`.** Pre-releases need `--pre` or an explicit version such
-  as `fugle-marketdata==3.0.0rc12`.
+  as `fugle-marketdata==3.0.0rc13`.
 - **No wheel for your platform.** pip picks the newest release that installs
   (see [Unsupported platforms](#unsupported-platforms)); with an explicit 3.x
   version it reports `No matching distribution found` instead.

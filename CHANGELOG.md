@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **Release order:** the `futopt.historical.daily()` `contractMonth` param
-> follows fugle-realtime #897 / #727 (MR !722, !725, !726, !735). Publish
-> only after those are live in production; until then the server ignores
-> `contractMonth` and returns every contract month.
+## [Bindings 3.0.0-rc.13 / core 0.9.0-rc.11 / uniffi 0.2.0-rc.11] - 2026-10-06
+
+> **Server dependency:** the `futopt.historical.daily()` `contractMonth`
+> param follows fugle-realtime #897 / #727 (MR !722, !725, !726, !735),
+> which this release ships ahead of. Until those are live in production, the
+> production server ignores `contractMonth` (every contract month comes
+> back, and the response has no `contractMonth`) and answers a contract code
+> in the path with 404 rather than 400.
 
 ### Added
 
