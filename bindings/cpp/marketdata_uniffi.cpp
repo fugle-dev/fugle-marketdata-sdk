@@ -54,7 +54,7 @@ void ensure_initialized() {
     if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_candles_sync() != 8321) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
-    if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync() != 43568) {
+    if (uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync() != 20382) {
         throw std::runtime_error("UniFFI API checksum mismatch: try cleaning and rebuilding your project");
     }
     if (uniffi_marketdata_uniffi_checksum_method_futoptintradayclient_candles_sync() != 15435) {
@@ -680,12 +680,12 @@ std::string FutOptHistoricalClient::candles_sync(const std::string &symbol, std:
         uniffi::FfiConverterMarketDataError::lift,
         ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeFutOptHistoricalCandlesParams::lower(params)));
 }
-std::string FutOptHistoricalClient::daily_sync(const std::string &symbol, std::optional<FutOptDailyParams> params) {
+std::string FutOptHistoricalClient::daily_sync(const std::string &product, std::optional<FutOptDailyParams> params) {
     auto ptr = this->_uniffi_internal_clone_pointer();
     return uniffi::FfiConverterString::lift(uniffi::rust_call(
         uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync,
         uniffi::FfiConverterMarketDataError::lift,
-        ptr, uniffi::FfiConverterString::lower(symbol), uniffi::FfiConverterOptionalTypeFutOptDailyParams::lower(params)));
+        ptr, uniffi::FfiConverterString::lower(product), uniffi::FfiConverterOptionalTypeFutOptDailyParams::lower(params)));
 }
 
 FutOptHistoricalClient::~FutOptHistoricalClient() {
@@ -2413,20 +2413,23 @@ RustBuffer FfiConverterTypeFutOptDailyParams::lower(const FutOptDailyParams &val
 FutOptDailyParams FfiConverterTypeFutOptDailyParams::read(RustStream &stream) {
     return {
         FfiConverterOptionalString::read(stream),
-        FfiConverterOptionalBool::read(stream)
+        FfiConverterOptionalBool::read(stream),
+        FfiConverterOptionalString::read(stream)
     };
 }
 
 void FfiConverterTypeFutOptDailyParams::write(RustStream &stream, const FutOptDailyParams &val) {
     FfiConverterOptionalString::write(stream, val.date);
     FfiConverterOptionalBool::write(stream, val.after_hours);
+    FfiConverterOptionalString::write(stream, val.contract_month);
 }
 
 uint64_t FfiConverterTypeFutOptDailyParams::allocation_size(const FutOptDailyParams &val) {
     
     return 
         FfiConverterOptionalString::allocation_size(val.date) +
-        FfiConverterOptionalBool::allocation_size(val.after_hours);
+        FfiConverterOptionalBool::allocation_size(val.after_hours) +
+        FfiConverterOptionalString::allocation_size(val.contract_month);
     
 }
 

@@ -371,7 +371,7 @@ their request.
 | | `Ticker` / `Quote` / `Volumes(symbol, request?)` | `TickerVolumeRequest` — Session |
 | | `Candles(symbol, request?)` | `CandlesRequest` — Session, TimeFrame |
 | | `Trades(symbol, request?)` | `TradesRequest` — Session, Offset, Limit, IsTrial |
-| `FutOpt.Historical` | `Daily(symbol, request?)` | `FuOpt.Historical.DailyRequest` — Date, AfterHours |
+| `FutOpt.Historical` | `Daily(symbol, request?)` | `FuOpt.Historical.DailyRequest` — Date, AfterHours, ContractMonth |
 | | `Candles(product, request?)` | `HistoricalCandlesRequest` — From, To, TimeFrame, Fields, ContractMonth, Sort, Session, **StrikePrice**, **CallPut** |
 
 Bold properties and types are additions over FubonNeo. A negative `Offset`,

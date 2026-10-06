@@ -146,10 +146,10 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
 
   
     /**
-     * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+     * Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
      */
     @Override
-    public String dailySync(String symbol, FutOptDailyParams params) throws MarketDataException {
+    public String dailySync(String product, FutOptDailyParams params) throws MarketDataException {
             try {
                 return FfiConverterString.INSTANCE.lift(
     callWithPointer(it -> {
@@ -158,7 +158,7 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
             return
     UniffiHelpers.uniffiRustCallWithError(new MarketDataExceptionErrorHandler(), _status -> {
         return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
-            it, FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.lower(params), _status);
+            it, FfiConverterString.INSTANCE.lower(product), FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.lower(params), _status);
     });
     
         } catch (Exception e) {
@@ -206,16 +206,16 @@ public class FutOptHistoricalClient implements AutoCloseable, FutOptHistoricalCl
 
   
     /**
-     * Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
+     * Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (async)
      */
     @Override
     
-    public CompletableFuture<String> getDaily(String symbol, FutOptDailyParams params){
+    public CompletableFuture<String> getDaily(String product, FutOptDailyParams params){
         return UniffiAsyncHelpers.uniffiRustCallAsync(
         callWithPointer(thisPtr -> {
             return UniffiLib.INSTANCE.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
                 thisPtr,
-                FfiConverterString.INSTANCE.lower(symbol), FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.lower(params)
+                FfiConverterString.INSTANCE.lower(product), FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.lower(params)
             );
         }),
         (future, callback, continuation) -> UniffiLib.INSTANCE.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(future, callback, continuation),

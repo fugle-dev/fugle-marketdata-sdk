@@ -832,6 +832,9 @@ public class FubonNeoCompatTests
         // FubonNeo sent afterhours=false, a key the server never read.
         await client.FutOpt.Historical.Daily("TXF", new DailyRequest(new DateTime(2024, 1, 2), false)).ConfigureAwait(false);
         AssertRequest(server, "/futopt/historical/daily/TXF", "date=2024-01-02");
+
+        await client.FutOpt.Historical.Daily("TXF", new DailyRequest { ContractMonth = "1!" }).ConfigureAwait(false);
+        AssertRequest(server, "/futopt/historical/daily/TXF", "contractMonth=1!");
     }
 
     [TestMethod]

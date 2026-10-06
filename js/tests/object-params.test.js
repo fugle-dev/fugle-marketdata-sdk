@@ -129,6 +129,8 @@ const CASES = [
     '/futopt/historical/daily/TXF', { date: '2026-09-15', session: 'afterhours' }],
   ['futopt.historical.daily with product', (c) => c.futopt.historical.daily({ product: 'TXF' }),
     '/futopt/historical/daily/TXF', {}],
+  ['futopt.historical.daily with contractMonth', (c) => c.futopt.historical.daily({ product: 'TXO', date: '2026-10-02', contractMonth: '202610W2' }),
+    '/futopt/historical/daily/TXO', { date: '2026-10-02', contractMonth: '202610W2' }],
 ];
 
 describe('object params are sent under the API names', () => {
@@ -212,7 +214,7 @@ describe('unknown keys are rejected', () => {
       ctx.client.futopt.historical.daily({ product: 'TXF', symbol: 'TXF' })
     ).rejects.toThrow('`symbol` and `product` both name the path param; give one');
     const err = await rejection(ctx.client.futopt.historical.daily({ product: 'TXF', dat: '2026-09-01' }));
-    expect(err.message).toContain('accepted keys: symbol, product, date, session');
+    expect(err.message).toContain('accepted keys: product, symbol, date, contractMonth, session');
   });
 
   test.each([
@@ -311,6 +313,8 @@ describe('positional calls are unchanged', () => {
       '/futopt/historical/daily/TXF', { date: '2026-09-15', session: 'afterhours' }],
     ['futopt historical daily regular session', (c) => c.futopt.historical.daily('TXF', undefined, false),
       '/futopt/historical/daily/TXF', {}],
+    ['futopt historical daily contract month', (c) => c.futopt.historical.daily('TXF', '2026-10-02', undefined, '1!'),
+      '/futopt/historical/daily/TXF', { date: '2026-10-02', contractMonth: '1!' }],
   ])('%s', async (_name, call, path, query) => {
     await call(ctx.client);
     expect(ctx.lastRequest()).toEqual({ path: `/v1.0${path}`, query });

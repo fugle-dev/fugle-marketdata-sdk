@@ -139,7 +139,8 @@ impl FutOptHistoricalCandle {
 
 /// FutOpt Daily response from Fugle API (futopt/historical/daily/{product})
 ///
-/// One trading day, one row per contract month of the product.
+/// One trading day, one row per listed contract of the product (or of one
+/// contract month, when the request gave `contractMonth`).
 ///
 /// # Example
 ///
@@ -177,16 +178,15 @@ pub struct FutOptDailyResponse {
     /// Trading session (e.g., "REGULAR", "AFTERHOURS")
     pub session: Option<String>,
 
-    /// One row per contract month
+    /// The contract month the request asked for, resolved: `"1!"` comes back
+    /// as the actual month (e.g., "202610"). Absent when the request gave none.
+    #[serde(rename = "contractMonth", default, skip_serializing_if = "Option::is_none")]
+    pub contract_month: Option<String>,
+
+    /// One row per listed contract: every futures month and spread, or every
+    /// option strike and side
     #[serde(default)]
     pub data: Vec<FutOptDailyData>,
-}
-
-impl FutOptDailyResponse {
-    /// Total volume across contract months (rows without volume count as 0).
-    pub fn total_volume(&self) -> u64 {
-        self.data.iter().filter_map(|d| d.volume).sum()
-    }
 }
 
 /// One contract month's daily quote for FutOpt
@@ -235,8 +235,10 @@ pub struct FutOptDailyData {
     /// Volume (number of contracts)
     pub volume: Option<u64>,
 
-    /// Spread-order volume
-    #[serde(rename = "volumeSpread")]
+    /// Spread rows: volume traded against single legs; not to be added to
+    /// `volume`. `None` on outright rows. Option rows from servers before
+    /// fugle-realtime filled it in omit the key, hence `default`.
+    #[serde(rename = "volumeSpread", default)]
     pub volume_spread: Option<u64>,
 
     /// Open interest (total outstanding contracts)
@@ -354,7 +356,7 @@ mod tests {
         assert_eq!(response.data[0].contract_month, "202609");
         assert_eq!(response.data[0].volume_spread, Some(100));
         assert_eq!(response.data[1].settlement_price, Some(17545.0));
-        assert_eq!(response.total_volume(), 50000);
+        assert_eq!(response.contract_month, None);
     }
 
     #[test]
@@ -375,7 +377,6 @@ mod tests {
         assert_eq!(response.data[2].call_put.as_deref(), Some("CALL"));
         assert_eq!(response.data[2].strike_price, Some(45000.0));
         assert_eq!(response.data[2].range(), None);
-        assert_eq!(response.total_volume(), 30437);
     }
 
     #[test]
@@ -426,5 +427,33 @@ mod tests {
         let response: FutOptDailyResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.product, "TXF");
         assert!(response.data.is_empty());
+    }
+
+    #[test]
+    fn test_futopt_daily_option_row_without_volume_spread() {
+        // Recorded from standby (2026-10-02, daily/TXO): option rows carry no
+        // `volumeSpread` key at all, and an untraded row has null prices.
+        let json = r#"{"date":"2026-10-02","product":"TXO","exchange":"TAIFEX","session":"REGULAR","data":[
+            {"callPut":"CALL","contractMonth":"202610W1","strikePrice":42800,"change":null,"changePercent":null,"closePrice":null,"exchange":"TAIFEX","highPrice":null,"lowPrice":null,"openInterest":0,"openPrice":null,"settlementPrice":5560,"volume":0}
+        ]}"#;
+        let response: FutOptDailyResponse = serde_json::from_str(json).unwrap();
+        let row = &response.data[0];
+        assert_eq!(row.volume_spread, None);
+        assert_eq!(row.close_price, None);
+        assert_eq!(row.volume, Some(0));
+        assert_eq!(row.settlement_price, Some(5560.0));
+    }
+
+    #[test]
+    fn test_futopt_daily_resolved_contract_month() {
+        // `contractMonth=1!` is echoed as the month it resolved to on `date`.
+        let json = r#"{"date":"2026-10-02","product":"TXF","exchange":"TAIFEX","session":"REGULAR","contractMonth":"202610","data":[
+            {"contractMonth":"202610","callPut":null,"strikePrice":null,"exchange":"TAIFEX","openPrice":22000,"highPrice":22100,"lowPrice":21900,"closePrice":22050,"change":50,"changePercent":0.23,"volume":80000,"volumeSpread":null,"openInterest":90000,"settlementPrice":22050}
+        ]}"#;
+        let response: FutOptDailyResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.contract_month.as_deref(), Some("202610"));
+        assert_eq!(response.data[0].contract_month, "202610");
+        let round_trip = serde_json::to_value(&response).unwrap();
+        assert_eq!(round_trip["contractMonth"], "202610");
     }
 }

@@ -20,9 +20,9 @@ interface UniffiLib extends Library {
     Pointer uniffi_marketdata_uniffi_fn_clone_futopthistoricalclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_futopthistoricalclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_candles_sync(Pointer ptr, RustBuffer.ByValue symbol, RustBuffer.ByValue params, UniffiRustCallStatus uniffi_out_errmk);
-    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(Pointer ptr, RustBuffer.ByValue symbol, RustBuffer.ByValue params, UniffiRustCallStatus uniffi_out_errmk);
+    RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(Pointer ptr, RustBuffer.ByValue product, RustBuffer.ByValue params, UniffiRustCallStatus uniffi_out_errmk);
     Long uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_candles(Pointer ptr, RustBuffer.ByValue symbol, RustBuffer.ByValue params);
-    Long uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(Pointer ptr, RustBuffer.ByValue symbol, RustBuffer.ByValue params);
+    Long uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(Pointer ptr, RustBuffer.ByValue product, RustBuffer.ByValue params);
     Pointer uniffi_marketdata_uniffi_fn_clone_futoptintradayclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     void uniffi_marketdata_uniffi_fn_free_futoptintradayclient(Pointer ptr, UniffiRustCallStatus uniffi_out_errmk);
     RustBuffer.ByValue uniffi_marketdata_uniffi_fn_method_futoptintradayclient_candles_sync(Pointer ptr, RustBuffer.ByValue symbol, RustBuffer.ByValue params, UniffiRustCallStatus uniffi_out_errmk);

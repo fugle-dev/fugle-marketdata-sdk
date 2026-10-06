@@ -56,6 +56,23 @@ def test_daily_sends_date_and_session(historical, server):
     )
 
 
+def test_daily_sends_contract_month(historical, server):
+    historical.daily("TXF", date="2026-10-02", contract_month="202610/202611")
+    assert last_request(server[1]) == (
+        "/v1.0/futopt/historical/daily/TXF",
+        {"date": "2026-10-02", "contractMonth": "202610/202611"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_daily_async_sends_contract_month(historical, server):
+    await historical.daily_async(product="TXO", contractMonth="202610W2")
+    assert last_request(server[1]) == (
+        "/v1.0/futopt/historical/daily/TXO",
+        {"contractMonth": "202610W2"},
+    )
+
+
 def test_daily_regular_session_sends_no_params(historical, server):
     historical.daily("TXF")
     assert last_request(server[1]) == ("/v1.0/futopt/historical/daily/TXF", {})

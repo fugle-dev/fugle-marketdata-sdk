@@ -605,13 +605,12 @@ impl core::marker::UnsafeUnpin for marketdata_core::models::futopt::FutOptDailyD
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::futopt::FutOptDailyData
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::futopt::FutOptDailyData
 pub struct marketdata_core::models::futopt::FutOptDailyResponse
+pub marketdata_core::models::futopt::FutOptDailyResponse::contract_month: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptDailyResponse::data: alloc::vec::Vec<marketdata_core::models::futopt::FutOptDailyData>
 pub marketdata_core::models::futopt::FutOptDailyResponse::date: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptDailyResponse::exchange: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptDailyResponse::product: alloc::string::String
 pub marketdata_core::models::futopt::FutOptDailyResponse::session: core::option::Option<alloc::string::String>
-impl marketdata_core::models::futopt::FutOptDailyResponse
-pub fn marketdata_core::models::futopt::FutOptDailyResponse::total_volume(&self) -> u64
 impl core::clone::Clone for marketdata_core::models::futopt::FutOptDailyResponse
 pub fn marketdata_core::models::futopt::FutOptDailyResponse::clone(&self) -> marketdata_core::models::futopt::FutOptDailyResponse
 impl core::cmp::PartialEq for marketdata_core::models::futopt::FutOptDailyResponse
@@ -2922,7 +2921,9 @@ pub mod marketdata_core::rest::futopt::historical
 pub struct marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
 impl<'a> marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::after_hours(self, bool) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::contract_month(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::date(self, &str) -> Self
+pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::product(self, &str) -> Self
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::send(self) -> core::result::Result<serde_json::value::Value, marketdata_core::errors::MarketDataError>
 pub fn marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>::symbol(self, &str) -> Self
 impl<'a> core::marker::Freeze for marketdata_core::rest::futopt::historical::FutOptDailyRequestBuilder<'a>

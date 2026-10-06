@@ -484,9 +484,9 @@ async fn main() {
         .futopt().historical().candles().symbol(&s).contract_month("1!").after_hours(true).send());
     let s = hist_sym.clone();
     rest_probe!("rest futopt/historical/daily", move |c: &RestClient| c
-        .futopt().historical().daily().symbol(&s).send());
+        .futopt().historical().daily().product(&s).send());
     rest_probe!("rest futopt/historical/daily AFTERHOURS", move |c: &RestClient| c
-        .futopt().historical().daily().symbol(&hist_sym).after_hours(true).send());
+        .futopt().historical().daily().product(&hist_sym).after_hours(true).send());
 
     let mut rows: Vec<Row> = Vec::new();
     for h in handles {

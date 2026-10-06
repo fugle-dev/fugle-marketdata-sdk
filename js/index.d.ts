@@ -1638,39 +1638,42 @@ export interface FutOptHistoricalCandlesResponse {
 
 /** One contract month's daily quote for FutOpt */
 export interface FutOptDailyData {
-  /** Contract month (e.g., "202609", or "202609/202610" for a spread) */
+  /** Contract month (e.g., "202609", "202610W1", or "202609/202610" for a spread) */
   contractMonth: string;
   /** Option right ("CALL" / "PUT"); null for futures */
   callPut?: string | null;
   /** Option strike price; null for futures */
   strikePrice?: number | null;
   /** Exchange code (e.g., "TAIFEX") */
-  exchange?: string;
-  /** Open price */
-  openPrice?: number;
-  /** High price */
-  highPrice?: number;
-  /** Low price */
-  lowPrice?: number;
-  /** Close price */
-  closePrice?: number;
-  /** Price change from previous close */
-  change?: number;
-  /** Percentage change from previous close */
-  changePercent?: number;
-  /** Volume (number of contracts) */
-  volume?: number;
-  /** Spread-order volume */
-  volumeSpread?: number;
-  /** Open interest (total outstanding contracts) */
-  openInterest?: number;
-  /** Settlement price (official closing price for margin calculation) */
-  settlementPrice?: number;
+  exchange: string;
+  /** Open price; null when the contract did not trade */
+  openPrice: number | null;
+  /** High price; null when the contract did not trade */
+  highPrice: number | null;
+  /** Low price; null when the contract did not trade */
+  lowPrice: number | null;
+  /** Close price; null when the contract did not trade */
+  closePrice: number | null;
+  /** Price change from previous close; null when the contract did not trade, and on spread rows */
+  change: number | null;
+  /** Percentage change from previous close; null when it cannot be computed */
+  changePercent: number | null;
+  /** Volume (number of contracts); 0 when the contract did not trade. On a spread row, spread-to-spread volume */
+  volume: number;
+  /**
+   * Spread rows: volume traded against single legs (do not add to `volume`).
+   * Null on outright rows; option rows from older servers omit the key.
+   */
+  volumeSpread?: number | null;
+  /** Open interest (total outstanding contracts); null on spread rows */
+  openInterest: number | null;
+  /** Settlement price (official closing price for margin calculation); null on spread rows */
+  settlementPrice: number | null;
 }
 
 /**
  * FutOpt daily response from futopt/historical/daily/{product}:
- * one trading day, one row per contract month.
+ * one trading day, one row per listed contract.
  */
 export interface FutOptDailyResponse {
   /** Trading date (YYYY-MM-DD) */
@@ -1681,7 +1684,12 @@ export interface FutOptDailyResponse {
   exchange?: string;
   /** Trading session ("REGULAR" or "AFTERHOURS") */
   session?: string;
-  /** One row per contract month */
+  /**
+   * The requested contract month, resolved: "1!" comes back as the actual
+   * month (e.g., "202610"). Absent when the request gave none.
+   */
+  contractMonth?: string;
+  /** One row per listed contract: every futures month and spread, or every option strike and side */
   data: FutOptDailyData[];
 }
 
@@ -1929,6 +1937,12 @@ export type RestFutOptHistoricalCandlesParams = FutOptHistoricalProduct & {
 export type RestFutOptHistoricalDailyParams = FutOptHistoricalProduct & {
   /** Trading date (YYYY-MM-DD); the server defaults to today */
   date?: string;
+  /**
+   * One contract month only: "YYYYMM", "YYYYMMWn" / "YYYYMMFn", a futures
+   * spread "YYYYMM/YYYYMM", or (futures only) "1!" / "2!" / "3!". Unset
+   * returns every contract month.
+   */
+  contractMonth?: string;
   session?: FutOptHistoricalSession;
 };
 
@@ -1982,8 +1996,8 @@ export interface StockCorporateActionsClient {
 export interface FutOptHistoricalClient {
   /** Get historical candles for a FutOpt product */
   candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string, to?: string, timeframe?: string, afterHours?: boolean, contractMonth?: string, fields?: string, sort?: 'asc' | 'desc'): Promise<FutOptHistoricalCandlesResponse>;
-  /** Get one trading day's daily quotes for every contract month of a FutOpt product */
-  daily(symbol: string | RestFutOptHistoricalDailyParams, date?: string, afterHours?: boolean): Promise<FutOptDailyResponse>;
+  /** Get one trading day's daily quotes for every contract of a FutOpt product */
+  daily(product: string | RestFutOptHistoricalDailyParams, date?: string, afterHours?: boolean, contractMonth?: string): Promise<FutOptDailyResponse>;
 }
 
 
@@ -2009,7 +2023,7 @@ export declare class FutOptHistoricalClient {
   /**
    * Get historical candles for a futures/options product
    *
-   * @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+   * @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFJ6" returns 400
    * @param from - Start date (YYYY-MM-DD)
    * @param to - End date (YYYY-MM-DD)
    * @param timeframe - Timeframe ("D", "W", "M", "1", "5", "10", "15", "30", "60")
@@ -2021,14 +2035,15 @@ export declare class FutOptHistoricalClient {
    */
   candles(symbol: string | RestFutOptHistoricalCandlesParams, from?: string | undefined | null, to?: string | undefined | null, timeframe?: string | undefined | null, afterHours?: boolean | undefined | null, contractMonth?: string | undefined | null, fields?: string | undefined | null, sort?: 'asc' | 'desc' | undefined | null): Promise<FutOptHistoricalCandlesResponse>
   /**
-   * Get one trading day's daily quotes for every contract month of a futures/options product
+   * Get one trading day's daily quotes for every contract of a futures/options product
    *
-   * @param symbol - Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404
+   * @param product - Product code (e.g., "TXF", "TXO"); a contract code such as "TXFJ6" returns 400
    * @param date - Trading date (YYYY-MM-DD); the server defaults to today
    * @param afterHours - Query the after-hours session
+   * @param contractMonth - One month only: "YYYYMM", "YYYYMMWn" / "YYYYMMFn", a futures spread "YYYYMM/YYYYMM", or (futures only) "1!", "2!", "3!"
    * @returns Promise resolving to daily historical data
    */
-  daily(symbol: string | RestFutOptHistoricalDailyParams, date?: string | undefined | null, afterHours?: boolean | undefined | null): Promise<FutOptDailyResponse>
+  daily(product: string | RestFutOptHistoricalDailyParams, date?: string | undefined | null, afterHours?: boolean | undefined | null, contractMonth?: string | undefined | null): Promise<FutOptDailyResponse>
 }
 
 /** FutOpt intraday data client */

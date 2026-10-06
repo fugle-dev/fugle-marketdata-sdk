@@ -492,7 +492,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync()
 		})
-		if checksum != 43568 {
+		if checksum != 20382 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync: UniFFI API checksum mismatch")
 		}
@@ -510,7 +510,7 @@ func uniffiCheckChecksums() {
 		checksum := rustCall(func(_uniffiStatus *C.RustCallStatus) C.uint16_t {
 			return C.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily()
 		})
-		if checksum != 61915 {
+		if checksum != 9574 {
 			// If this happens try cleaning and rebuilding your project
 			panic("marketdata_uniffi: uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily: UniFFI API checksum mismatch")
 		}
@@ -1829,12 +1829,12 @@ func (_ FfiDestroyerFutOptClient) Destroy(value *FutOptClient) {
 type FutOptHistoricalClientInterface interface {
 	// Get historical candles for a product such as "TXF" (sync/blocking)
 	CandlesSync(symbol string, params *FutOptHistoricalCandlesParams) (string, error)
-	// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
-	DailySync(symbol string, params *FutOptDailyParams) (string, error)
+	// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
+	DailySync(product string, params *FutOptDailyParams) (string, error)
 	// Get historical candles for a product such as "TXF" (async)
 	GetCandles(symbol string, params *FutOptHistoricalCandlesParams) (string, error)
-	// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
-	GetDaily(symbol string, params *FutOptDailyParams) (string, error)
+	// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (async)
+	GetDaily(product string, params *FutOptDailyParams) (string, error)
 }
 
 // FutOpt historical data endpoints
@@ -1862,14 +1862,14 @@ func (_self *FutOptHistoricalClient) CandlesSync(symbol string, params *FutOptHi
 	}
 }
 
-// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
-func (_self *FutOptHistoricalClient) DailySync(symbol string, params *FutOptDailyParams) (string, error) {
+// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
+func (_self *FutOptHistoricalClient) DailySync(product string, params *FutOptDailyParams) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	_uniffiRV, _uniffiErr := rustCallWithError[MarketDataError](FfiConverterMarketDataError{}, func(_uniffiStatus *C.RustCallStatus) RustBufferI {
 		return GoRustBuffer{
 			inner: C.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
-				_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalFutOptDailyParamsINSTANCE.Lower(params), _uniffiStatus),
+				_pointer, FfiConverterStringINSTANCE.Lower(product), FfiConverterOptionalFutOptDailyParamsINSTANCE.Lower(params), _uniffiStatus),
 		}
 	})
 	if _uniffiErr != nil {
@@ -1916,8 +1916,8 @@ func (_self *FutOptHistoricalClient) GetCandles(symbol string, params *FutOptHis
 	return res, err
 }
 
-// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
-func (_self *FutOptHistoricalClient) GetDaily(symbol string, params *FutOptDailyParams) (string, error) {
+// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (async)
+func (_self *FutOptHistoricalClient) GetDaily(product string, params *FutOptDailyParams) (string, error) {
 	_pointer := _self.ffiObject.incrementPointer("*FutOptHistoricalClient")
 	defer _self.ffiObject.decrementPointer()
 	res, err := uniffiRustCallAsync[MarketDataError](
@@ -1934,7 +1934,7 @@ func (_self *FutOptHistoricalClient) GetDaily(symbol string, params *FutOptDaily
 			return FfiConverterStringINSTANCE.Lift(ffi)
 		},
 		C.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
-			_pointer, FfiConverterStringINSTANCE.Lower(symbol), FfiConverterOptionalFutOptDailyParamsINSTANCE.Lower(params)),
+			_pointer, FfiConverterStringINSTANCE.Lower(product), FfiConverterOptionalFutOptDailyParamsINSTANCE.Lower(params)),
 		// pollFn
 		func(handle C.uint64_t, continuation C.UniffiRustFutureContinuationCallback, data C.uint64_t) {
 			C.ffi_marketdata_uniffi_rust_future_poll_rust_buffer(handle, continuation, data)
@@ -6115,11 +6115,16 @@ type FutOptDailyParams struct {
 	Date *string
 	// `true` asks for the after-hours session (`session=afterhours`).
 	AfterHours *bool
+	// One contract month only: `YYYYMM`, `YYYYMMWn` / `YYYYMMFn`, a futures
+	// spread `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Unset
+	// returns every contract month.
+	ContractMonth *string
 }
 
 func (r *FutOptDailyParams) Destroy() {
 	FfiDestroyerOptionalString{}.Destroy(r.Date)
 	FfiDestroyerOptionalBool{}.Destroy(r.AfterHours)
+	FfiDestroyerOptionalString{}.Destroy(r.ContractMonth)
 }
 
 type FfiConverterFutOptDailyParams struct{}
@@ -6134,6 +6139,7 @@ func (c FfiConverterFutOptDailyParams) Read(reader io.Reader) FutOptDailyParams 
 	return FutOptDailyParams{
 		FfiConverterOptionalStringINSTANCE.Read(reader),
 		FfiConverterOptionalBoolINSTANCE.Read(reader),
+		FfiConverterOptionalStringINSTANCE.Read(reader),
 	}
 }
 
@@ -6148,6 +6154,7 @@ func (c FfiConverterFutOptDailyParams) LowerExternal(value FutOptDailyParams) Ex
 func (c FfiConverterFutOptDailyParams) Write(writer io.Writer, value FutOptDailyParams) {
 	FfiConverterOptionalStringINSTANCE.Write(writer, value.Date)
 	FfiConverterOptionalBoolINSTANCE.Write(writer, value.AfterHours)
+	FfiConverterOptionalStringINSTANCE.Write(writer, value.ContractMonth)
 }
 
 type FfiDestroyerFutOptDailyParams struct{}

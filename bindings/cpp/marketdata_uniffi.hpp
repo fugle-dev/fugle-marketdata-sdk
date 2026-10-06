@@ -126,25 +126,6 @@ enum class WebSocketEndpoint;
 
 
 /**
- * Who closed the connection, in a [`DisconnectInfo`] (#293).
- */
-enum class DisconnectIntent: int32_t {
-    /**
-     * Your `disconnect()`.
-     */
-    kClient = 1,
-    /**
-     * The server's Close frame, whatever its code.
-     */
-    kServer = 2,
-    /**
-     * Transport error, EOF without a Close frame, or heartbeat timeout.
-     */
-    kNetwork = 3
-};
-
-
-/**
  * Coarse-grained classification of the source of a [`MarketDataError`].
  *
  * Mirrors `marketdata_core::ErrorKind`. That core enum is `#[non_exhaustive]`
@@ -183,6 +164,25 @@ enum class ErrorSourceKind: int32_t {
 
 
 /**
+ * Who closed the connection, in a [`DisconnectInfo`] (#293).
+ */
+enum class DisconnectIntent: int32_t {
+    /**
+     * Your `disconnect()`.
+     */
+    kClient = 1,
+    /**
+     * The server's Close frame, whatever its code.
+     */
+    kServer = 2,
+    /**
+     * Transport error, EOF without a Close frame, or heartbeat timeout.
+     */
+    kNetwork = 3
+};
+
+
+/**
  * What the client does with an inbound message while its queue already
  * holds `buffer` unread messages.
  */
@@ -195,44 +195,6 @@ enum class MessageOverflowRecord: int32_t {
      * Never drop: the queue grows while `on_message` lags.
      */
     kUnbounded = 2
-};
-
-
-/**
- * The cross-language view of an error: the fields every binding exposes
- * under the same names. Mirrors `marketdata_core::ErrorInfo`.
- */
-struct ErrorInfo {
-    /**
-     * Numeric code from `marketdata_core::error_code`, stable across
-     * languages and releases.
-     */
-    int32_t code;
-    /**
-     * Category of the failure.
-     */
-    ErrorSourceKind source_kind;
-    /**
-     * Human-readable message.
-     */
-    std::string message;
-    /**
-     * HTTP status, when the error came from an HTTP response (REST, or the
-     * WebSocket upgrade).
-     */
-    std::optional<uint16_t> status;
-    /**
-     * Raw HTTP response body (REST only).
-     */
-    std::optional<std::string> body;
-    /**
-     * Server-assigned request id (`x-request-id`), when present.
-     */
-    std::optional<std::string> request_id;
-    /**
-     * HTTP response headers (REST only; empty otherwise).
-     */
-    std::unordered_map<std::string, std::string> headers;
 };
 
 
@@ -279,6 +241,44 @@ struct DisconnectInfo {
      * this connection is over.
      */
     bool will_reconnect;
+};
+
+
+/**
+ * The cross-language view of an error: the fields every binding exposes
+ * under the same names. Mirrors `marketdata_core::ErrorInfo`.
+ */
+struct ErrorInfo {
+    /**
+     * Numeric code from `marketdata_core::error_code`, stable across
+     * languages and releases.
+     */
+    int32_t code;
+    /**
+     * Category of the failure.
+     */
+    ErrorSourceKind source_kind;
+    /**
+     * Human-readable message.
+     */
+    std::string message;
+    /**
+     * HTTP status, when the error came from an HTTP response (REST, or the
+     * WebSocket upgrade).
+     */
+    std::optional<uint16_t> status;
+    /**
+     * Raw HTTP response body (REST only).
+     */
+    std::optional<std::string> body;
+    /**
+     * Server-assigned request id (`x-request-id`), when present.
+     */
+    std::optional<std::string> request_id;
+    /**
+     * HTTP response headers (REST only; empty otherwise).
+     */
+    std::unordered_map<std::string, std::string> headers;
 };
 
 namespace uniffi {
@@ -575,9 +575,9 @@ struct FutOptHistoricalClient
      */
     std::string candles_sync(const std::string &symbol, std::optional<FutOptHistoricalCandlesParams> params);
     /**
-     * Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+     * Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
      */
-    std::string daily_sync(const std::string &symbol, std::optional<FutOptDailyParams> params);
+    std::string daily_sync(const std::string &product, std::optional<FutOptDailyParams> params);
 
     private:
     FutOptHistoricalClient(const FutOptHistoricalClient &);
@@ -1738,6 +1738,12 @@ struct FutOptDailyParams {
      * `true` asks for the after-hours session (`session=afterhours`).
      */
     std::optional<bool> after_hours = std::nullopt;
+    /**
+     * One contract month only: `YYYYMM`, `YYYYMMWn` / `YYYYMMFn`, a futures
+     * spread `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Unset
+     * returns every contract month.
+     */
+    std::optional<std::string> contract_month = std::nullopt;
 };
 
 

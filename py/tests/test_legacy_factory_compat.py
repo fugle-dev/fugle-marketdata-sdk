@@ -177,16 +177,24 @@ def test_candles_product_with_params(historical, futopt_server):
     assert futopt_server.requests[-1] == "/v1.0/futopt/historical/candles/TXF?timeframe=D"
 
 
-@pytest.mark.parametrize("method", ["candles", "daily"])
-def test_symbol_and_product_conflict(historical, method):
+def test_symbol_and_product_conflict(historical):
     with pytest.raises(TypeError, match="multiple values for symbol"):
-        getattr(historical, method)("TXF", product="TXF")
+        historical.candles("TXF", product="TXF")
+    # daily's path param is `product`; `symbol` is the alias there.
+    with pytest.raises(TypeError, match="multiple values for product"):
+        historical.daily("TXF", symbol="TXF")
 
 
-@pytest.mark.parametrize("method", ["candles", "daily"])
-def test_without_symbol_or_product(historical, method):
+def test_without_symbol_or_product(historical):
     with pytest.raises(TypeError, match="missing required argument: 'symbol' or 'product'"):
-        getattr(historical, method)()
+        historical.candles()
+    with pytest.raises(TypeError, match="missing required argument: 'product' or 'symbol'"):
+        historical.daily()
+
+
+def test_daily_accepts_symbol(historical, futopt_server):
+    historical.daily(symbol="TXF")
+    assert futopt_server.requests[-1] == "/v1.0/futopt/historical/daily/TXF"
 
 
 @pytest.mark.parametrize("value", [1, None])

@@ -1241,8 +1241,8 @@ impl FutOptHistoricalClient {
         Request::with_path_param(&["futopt", "historical", "candles"], symbol).params(params)
     }
 
-    fn daily(symbol: String, params: Option<crate::params::FutOptDailyParams>) -> Request {
-        Request::with_path_param(&["futopt", "historical", "daily"], symbol).params(params)
+    fn daily(product: String, params: Option<crate::params::FutOptDailyParams>) -> Request {
+        Request::with_path_param(&["futopt", "historical", "daily"], product).params(params)
     }
 }
 
@@ -1259,14 +1259,14 @@ impl FutOptHistoricalClient {
         Self::candles(symbol, params).send_async(&self.inner).await
     }
 
-    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
+    /// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (async)
     #[uniffi::method(default(params = None))]
     pub async fn get_daily(
         &self,
-        symbol: String,
+        product: String,
         params: Option<crate::params::FutOptDailyParams>,
     ) -> Result<String, MarketDataError> {
-        Self::daily(symbol, params).send_async(&self.inner).await
+        Self::daily(product, params).send_async(&self.inner).await
     }
 }
 
@@ -1282,14 +1282,14 @@ impl FutOptHistoricalClient {
         Self::candles(symbol, params).send(&self.inner)
     }
 
-    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+    /// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
     #[uniffi::method(default(params = None))]
     pub fn daily_sync(
         &self,
-        symbol: String,
+        product: String,
         params: Option<crate::params::FutOptDailyParams>,
     ) -> Result<String, MarketDataError> {
-        Self::daily(symbol, params).send(&self.inner)
+        Self::daily(product, params).send(&self.inner)
     }
 }
 

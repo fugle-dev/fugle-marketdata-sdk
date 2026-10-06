@@ -332,7 +332,7 @@ intraday.get_volumes(symbol, AfterHoursParams?)
 intraday.get_candles(symbol, FutOptCandlesParams?)        # afterHours, timeframe
 intraday.get_trades(symbol, FutOptTradesParams?)          # afterHours, offset, limit, isTrial
 historical.get_candles(symbol, FutOptHistoricalCandlesParams?)  # from, to, contractMonth, fields, timeframe, sort, strikePrice, callPut, afterHours
-historical.get_daily(symbol, FutOptDailyParams?)          # date, afterHours
+historical.get_daily(product, FutOptDailyParams?)         # date, afterHours, contractMonth
 ```
 
 `type` is `"F"` / `"O"` (or `FUTURE` / `OPTION`, any case). The flag fields

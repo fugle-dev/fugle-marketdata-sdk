@@ -20,8 +20,16 @@ public sealed class DailyRequest : BaseRequest
     /// does not read, so its value never took effect.
     /// </summary>
     public bool? AfterHours { get; init; } = default;
+    /// <summary>
+    /// One contract month only: <c>YYYYMM</c>, <c>YYYYMMWn</c> / <c>YYYYMMFn</c>,
+    /// a futures spread <c>YYYYMM/YYYYMM</c>, or (futures only) <c>1!</c> /
+    /// <c>2!</c> / <c>3!</c>; empty means every contract month. FubonNeo has
+    /// no such property.
+    /// </summary>
+    public string? ContractMonth { get; init; } = default;
 
     internal FutOptDailyParams ToParams() => new FutOptDailyParams(
         date: QueryValue.Date(Date),
-        afterHours: QueryValue.Flag(AfterHours));
+        afterHours: QueryValue.Flag(AfterHours),
+        contractMonth: QueryValue.NonEmpty(ContractMonth));
 }

@@ -983,7 +983,7 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern RustBuffer uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
         IntPtr @ptr,
-        RustBuffer @symbol,
+        RustBuffer @product,
         RustBuffer @params,
         ref UniffiRustCallStatus _uniffi_out_err
     );
@@ -998,7 +998,7 @@ static class _UniFFILib
     [DllImport("marketdata_uniffi", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
         IntPtr @ptr,
-        RustBuffer @symbol,
+        RustBuffer @product,
         RustBuffer @params
     );
 
@@ -2745,10 +2745,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync();
-            if (checksum != 43568)
+            if (checksum != 20382)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync` checksum `43568`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_daily_sync` checksum `20382`, library returned `{checksum}`"
                 );
             }
         }
@@ -2765,10 +2765,10 @@ static class _UniFFILib
         {
             var checksum =
                 _UniFFILib.uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily();
-            if (checksum != 61915)
+            if (checksum != 9574)
             {
                 throw new UniffiContractChecksumException(
-                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily` checksum `61915`, library returned `{checksum}`"
+                    $"uniffi.marketdata_uniffi: uniffi bindings expected function `uniffi_marketdata_uniffi_checksum_method_futopthistoricalclient_get_daily` checksum `9574`, library returned `{checksum}`"
                 );
             }
         }
@@ -4255,10 +4255,10 @@ public interface IFutOptHistoricalClient
     string CandlesSync(string @symbol, FutOptHistoricalCandlesParams? @params = null);
 
     /// <summary>
-    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+    /// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    string DailySync(string @symbol, FutOptDailyParams? @params = null);
+    string DailySync(string @product, FutOptDailyParams? @params = null);
 
     /// <summary>
     /// Get historical candles for a product such as "TXF" (async)
@@ -4267,10 +4267,10 @@ public interface IFutOptHistoricalClient
     Task<string> GetCandles(string @symbol, FutOptHistoricalCandlesParams? @params = null);
 
     /// <summary>
-    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
+    /// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    Task<string> GetDaily(string @symbol, FutOptDailyParams? @params = null);
+    Task<string> GetDaily(string @product, FutOptDailyParams? @params = null);
 }
 
 /// <summary>
@@ -4418,10 +4418,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
     }
 
     /// <summary>
-    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (sync/blocking)
+    /// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (sync/blocking)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public string DailySync(string @symbol, FutOptDailyParams? @params = null)
+    public string DailySync(string @product, FutOptDailyParams? @params = null)
     {
         return CallWithPointer(thisPtr =>
             FfiConverterString.INSTANCE.Lift(
@@ -4430,7 +4430,7 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
                     (ref UniffiRustCallStatus _status) =>
                         _UniFFILib.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_daily_sync(
                             thisPtr,
-                            FfiConverterString.INSTANCE.Lower(@symbol),
+                            FfiConverterString.INSTANCE.Lower(@product),
                             FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.Lower(@params),
                             ref _status
                         )
@@ -4484,10 +4484,10 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
     }
 
     /// <summary>
-    /// Get one trading day's daily quotes for every contract month of a product such as "TXF" (async)
+    /// Get one trading day's daily quotes for every contract of a product such as "TXF" or "TXO" (async)
     /// </summary>
     /// <exception cref="MarketDataException"></exception>
-    public async Task<string> GetDaily(string @symbol, FutOptDailyParams? @params = null)
+    public async Task<string> GetDaily(string @product, FutOptDailyParams? @params = null)
     {
         return await _UniFFIAsync.UniffiRustCallAsync(
             // Get rust future
@@ -4495,7 +4495,7 @@ public class FutOptHistoricalClient : IFutOptHistoricalClient, IDisposable
             {
                 return _UniFFILib.uniffi_marketdata_uniffi_fn_method_futopthistoricalclient_get_daily(
                     thisPtr,
-                    FfiConverterString.INSTANCE.Lower(@symbol),
+                    FfiConverterString.INSTANCE.Lower(@product),
                     FfiConverterOptionalTypeFutOptDailyParams.INSTANCE.Lower(@params)
                 );
             }),
@@ -10969,6 +10969,11 @@ class FfiConverterTypeFutOptCandlesParams : FfiConverterRustBuffer<FutOptCandles
 /// <param name="after_hours">
 /// `true` asks for the after-hours session (`session=afterhours`).
 /// </param>
+/// <param name="contract_month">
+/// One contract month only: `YYYYMM`, `YYYYMMWn` / `YYYYMMFn`, a futures
+/// spread `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Unset
+/// returns every contract month.
+/// </param>
 public record FutOptDailyParams(
     /// <summary>
     /// `YYYY-MM-DD`.
@@ -10977,7 +10982,13 @@ public record FutOptDailyParams(
     /// <summary>
     /// `true` asks for the after-hours session (`session=afterhours`).
     /// </summary>
-    bool? @afterHours = null
+    bool? @afterHours = null,
+    /// <summary>
+    /// One contract month only: `YYYYMM`, `YYYYMMWn` / `YYYYMMFn`, a futures
+    /// spread `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Unset
+    /// returns every contract month.
+    /// </summary>
+    string? @contractMonth = null
 ) { }
 
 class FfiConverterTypeFutOptDailyParams : FfiConverterRustBuffer<FutOptDailyParams>
@@ -10989,7 +11000,8 @@ class FfiConverterTypeFutOptDailyParams : FfiConverterRustBuffer<FutOptDailyPara
     {
         return new FutOptDailyParams(
             @date: FfiConverterOptionalString.INSTANCE.Read(stream),
-            @afterHours: FfiConverterOptionalBoolean.INSTANCE.Read(stream)
+            @afterHours: FfiConverterOptionalBoolean.INSTANCE.Read(stream),
+            @contractMonth: FfiConverterOptionalString.INSTANCE.Read(stream)
         );
     }
 
@@ -10997,13 +11009,15 @@ class FfiConverterTypeFutOptDailyParams : FfiConverterRustBuffer<FutOptDailyPara
     {
         return 0
             + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@date)
-            + FfiConverterOptionalBoolean.INSTANCE.AllocationSize(value.@afterHours);
+            + FfiConverterOptionalBoolean.INSTANCE.AllocationSize(value.@afterHours)
+            + FfiConverterOptionalString.INSTANCE.AllocationSize(value.@contractMonth);
     }
 
     public override void Write(FutOptDailyParams value, BigEndianStream stream)
     {
         FfiConverterOptionalString.INSTANCE.Write(value.@date, stream);
         FfiConverterOptionalBoolean.INSTANCE.Write(value.@afterHours, stream);
+        FfiConverterOptionalString.INSTANCE.Write(value.@contractMonth, stream);
     }
 }
 

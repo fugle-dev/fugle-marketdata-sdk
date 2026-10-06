@@ -1015,10 +1015,10 @@ namespace FugleMarketData
         // ========== Async Methods ==========
 
         /// <summary>
-        /// Get one trading day's daily quotes for every contract month of a futures/options product (async).
+        /// Get one trading day's daily quotes for every contract of a futures/options product (async).
         /// </summary>
-        /// <param name="symbol">Product code, e.g. "TXF" (a contract code such as "TXFC4" returns 404)</param>
-        /// <param name="request">Optional filters: date (unset defaults to today), afterHours</param>
+        /// <param name="symbol">Product code, e.g. "TXF" or "TXO" (a contract code such as "TXFJ6" returns 400)</param>
+        /// <param name="request">Optional filters: date (unset defaults to today), afterHours, contractMonth</param>
         public Task<string> Daily(string symbol, FuOptHistorical.DailyRequest? request = null)
             => _inner.GetDaily(symbol, request?.ToParams());
 
@@ -1029,7 +1029,7 @@ namespace FugleMarketData
         /// <summary>
         /// Get historical candles for a futures/options product (async).
         /// </summary>
-        /// <param name="product">Product code, e.g. "TXF" or "TXO" (a contract code such as "TXFC4" returns 404)</param>
+        /// <param name="product">Product code, e.g. "TXF" or "TXO" (a contract code such as "TXFJ6" returns 400)</param>
         /// <param name="request">Optional filters: from, to, timeframe, fields, contractMonth, sort, session, strikePrice, callPut</param>
         public Task<string> Candles(string product, FuOptHistorical.HistoricalCandlesRequest? request = null)
             => _inner.GetCandles(product, request?.ToParams());
@@ -1041,7 +1041,7 @@ namespace FugleMarketData
         // ========== Sync Methods ==========
 
         /// <summary>
-        /// Get one trading day's daily quotes for every contract month of a futures/options product (blocking).
+        /// Get one trading day's daily quotes for every contract of a futures/options product (blocking).
         /// </summary>
         public string GetDaily(string symbol, FuOptHistorical.DailyRequest? request = null)
             => _inner.DailySync(symbol, request?.ToParams());

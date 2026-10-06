@@ -17,15 +17,24 @@ public class FutOptDailyParams {
      * `true` asks for the after-hours session (`session=afterhours`).
      */
     private Boolean afterHours;
+    /**
+     * One contract month only: `YYYYMM`, `YYYYMMWn` / `YYYYMMFn`, a futures
+     * spread `YYYYMM/YYYYMM`, or (futures only) `1!` / `2!` / `3!`. Unset
+     * returns every contract month.
+     */
+    private String contractMonth;
 
     public FutOptDailyParams(
         String date, 
-        Boolean afterHours
+        Boolean afterHours, 
+        String contractMonth
     ) {
         
         this.date = date;
         
         this.afterHours = afterHours;
+        
+        this.contractMonth = contractMonth;
     }
     
     public String date() {
@@ -35,11 +44,18 @@ public class FutOptDailyParams {
     public Boolean afterHours() {
         return this.afterHours;
     }
+    
+    public String contractMonth() {
+        return this.contractMonth;
+    }
     public void setDate(String date) {
         this.date = date;
     }
     public void setAfterHours(Boolean afterHours) {
         this.afterHours = afterHours;
+    }
+    public void setContractMonth(String contractMonth) {
+        this.contractMonth = contractMonth;
     }
 
     
@@ -51,7 +67,9 @@ public class FutOptDailyParams {
             return (
               Objects.equals(date, t.date) && 
               
-              Objects.equals(afterHours, t.afterHours)
+              Objects.equals(afterHours, t.afterHours) && 
+              
+              Objects.equals(contractMonth, t.contractMonth)
               
             );
         };
@@ -60,7 +78,7 @@ public class FutOptDailyParams {
 
     @Override
     public int hashCode() {
-        return Objects.hash(date, afterHours);
+        return Objects.hash(date, afterHours, contractMonth);
     }
 }
 

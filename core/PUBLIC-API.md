@@ -37,6 +37,18 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — futopt daily takes `product` and `contractMonth` (fugle-realtime #727 / #897)
+
+- `+` `FutOptDailyRequestBuilder::product` — the path param under the
+  server's name; `symbol` stays as a `#[deprecated]` alias (the attribute is
+  not part of the simplified snapshot).
+- `+` `FutOptDailyRequestBuilder::contract_month` — one contract month
+  instead of all of them.
+- `+` `FutOptDailyResponse::contract_month` — the requested month as the
+  server resolved it.
+- `-` `FutOptDailyResponse::total_volume` — spread rows count
+  spread-to-spread volume, a different unit from the outright rows.
+
 ### Unreleased — mock server records auth frames (#322)
 
 - `+` `testing::MockWsServer::auth_received(&self) -> Vec<serde_json::Value>`

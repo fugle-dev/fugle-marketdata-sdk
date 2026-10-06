@@ -3092,7 +3092,7 @@ impl FutOptHistoricalClient {
     /// Get historical candles for a FutOpt product
     ///
     /// Args:
-    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404.
+    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFJ6" returns 400.
     ///         2.x's `product=` keyword is accepted in its place
     ///     from_date: Start date (YYYY-MM-DD)
     ///     to_date: End date (YYYY-MM-DD)
@@ -3199,16 +3199,19 @@ impl FutOptHistoricalClient {
         }
     }
 
-    /// Get one trading day's daily quotes for every contract month of a FutOpt product
+    /// Get one trading day's daily quotes for every contract of a FutOpt product
     ///
     /// Args:
-    ///     symbol: Product code (e.g., "TXF"); a contract code such as "TXFC4" returns 404.
-    ///         2.x's `product=` keyword is accepted in its place
+    ///     product: Product code (e.g., "TXF", "TXO"); a contract code such as "TXFJ6"
+    ///         returns 400. `symbol=` is accepted in its place
     ///     date: Trading date (YYYY-MM-DD); the server defaults to today
     ///     after_hours: Query the after-hours session (default: False)
+    ///     contract_month: One month only: "YYYYMM", "YYYYMMWn" / "YYYYMMFn", a futures
+    ///         spread "YYYYMM/YYYYMM", or (futures only) "1!" / "2!" / "3!"; unset
+    ///         returns every contract month
     ///
     /// Returns:
-    ///     Awaitable[dict]: Daily quotes, one row per contract month
+    ///     Awaitable[dict]: Daily quotes, one row per listed contract
     ///
     /// Raises:
     ///     TypeError: If `from_date` / `to_date` are passed — the endpoint takes a single `date`
@@ -3217,24 +3220,28 @@ impl FutOptHistoricalClient {
     ///     ```python
     ///     daily = await client.futopt.historical.daily_async("TXF", date="2026-09-15")
     ///     ```
-    #[pyo3(signature = (symbol=None, *, date=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (product=None, *, date=None, after_hours=None, contract_month=None, **_extra))]
     pub fn daily_async<'py>(
         &self,
         py: Python<'py>,
-        symbol: Option<String>,
+        product: Option<String>,
         date: Option<String>,
         after_hours: Option<bool>,
+        contract_month: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Bound<'py, PyAny>> {
         reject_daily_range_kwargs(&_extra)?;
         let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.daily", &_extra)?;
-        let symbol = kw.take_path(symbol)?;
-        let date = kw.take_string("date", date)?;
-        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let query = FutOptDailyQuery {
+            product: kw.take_path(product)?,
+            date: kw.take_string("date", date)?,
+            after_hours: kw.take_flag("after_hours", after_hours)?,
+            contract_month: kw.take_string("contract_month", contract_month)?,
+        };
         kw.finish()?;
         let client = self.inner.clone();
         future_into_py(py, async move {
-            let result = tokio::task::spawn_blocking(move || send_futopt_daily(&client, &symbol, date.as_deref(), after_hours))
+            let result = tokio::task::spawn_blocking(move || query.send(&client))
                 .await
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Task join error: {}", e)))?;
 
@@ -3246,23 +3253,27 @@ impl FutOptHistoricalClient {
     }
 
     /// Sync sibling of `daily()` for legacy fugle-marketdata callers.
-    #[pyo3(signature = (symbol=None, *, date=None, after_hours=None, **_extra))]
+    #[pyo3(signature = (product=None, *, date=None, after_hours=None, contract_month=None, **_extra))]
     pub fn daily(
         &self,
         py: Python<'_>,
-        symbol: Option<String>,
+        product: Option<String>,
         date: Option<String>,
         after_hours: Option<bool>,
+        contract_month: Option<String>,
         _extra: Option<Bound<'_, pyo3::types::PyDict>>
     ) -> PyResult<Py<pyo3::types::PyDict>> {
         reject_daily_range_kwargs(&_extra)?;
         let mut kw = crate::kwargs::Kwargs::parse("futopt.historical.daily", &_extra)?;
-        let symbol = kw.take_path(symbol)?;
-        let date = kw.take_string("date", date)?;
-        let after_hours = kw.take_flag("after_hours", after_hours)?;
+        let query = FutOptDailyQuery {
+            product: kw.take_path(product)?,
+            date: kw.take_string("date", date)?,
+            after_hours: kw.take_flag("after_hours", after_hours)?,
+            contract_month: kw.take_string("contract_month", contract_month)?,
+        };
         kw.finish()?;
         let inner = self.inner.clone();
-        let result = py.detach(|| send_futopt_daily(&inner, &symbol, date.as_deref(), after_hours));
+        let result = py.detach(|| query.send(&inner));
         match result {
             Ok(daily) => types::value_to_dict(py, &daily),
             Err(e) => Err(errors::to_py_err(e)),
@@ -3302,18 +3313,24 @@ impl FutOptCandlesQuery {
     }
 }
 
-fn send_futopt_daily(
-    client: &marketdata_core::RestClient,
-    symbol: &str,
-    date: Option<&str>,
+/// Arguments shared by `futopt.historical.daily` and its `_async` sibling.
+struct FutOptDailyQuery {
+    product: String,
+    date: Option<String>,
     after_hours: Option<bool>,
-) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
-    let futopt = client.futopt();
-    let historical = futopt.historical();
-    let mut builder = historical.daily().symbol(symbol);
-    if let Some(d) = date { builder = builder.date(d); }
-    if after_hours == Some(true) { builder = builder.after_hours(true); }
-    builder.send()
+    contract_month: Option<String>,
+}
+
+impl FutOptDailyQuery {
+    fn send(self, client: &marketdata_core::RestClient) -> Result<serde_json::Value, marketdata_core::MarketDataError> {
+        let futopt = client.futopt();
+        let historical = futopt.historical();
+        let mut builder = historical.daily().product(&self.product);
+        if let Some(d) = &self.date { builder = builder.date(d); }
+        if self.after_hours == Some(true) { builder = builder.after_hours(true); }
+        if let Some(cm) = &self.contract_month { builder = builder.contract_month(cm); }
+        builder.send()
+    }
 }
 
 /// `futopt.historical.daily` used to take a date range. The endpoint returns a
