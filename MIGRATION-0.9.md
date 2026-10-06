@@ -1,4 +1,4 @@
-# Migrating to 0.9.0 (bindings 3.0.0-rc.12, uniffi 0.2.0-rc.10)
+# Migrating to 0.9.0 (bindings 3.0.0-rc.13, uniffi 0.2.0-rc.11)
 
 Responses now reach you exactly as the server sent them. Previously every
 language decoded the JSON into a struct maintained by hand and re-encoded it
