@@ -668,12 +668,14 @@ impl core::marker::UnsafeUnpin for marketdata_core::models::futopt::FutOptHistor
 impl core::panic::unwind_safe::RefUnwindSafe for marketdata_core::models::futopt::FutOptHistoricalCandle
 impl core::panic::unwind_safe::UnwindSafe for marketdata_core::models::futopt::FutOptHistoricalCandle
 pub struct marketdata_core::models::futopt::FutOptHistoricalCandlesResponse
+pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::call_put: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::candles: alloc::vec::Vec<marketdata_core::models::futopt::FutOptHistoricalCandle>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::contract_month: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::exchange: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::product: alloc::string::String
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::session: core::option::Option<alloc::string::String>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::sort: core::option::Option<alloc::string::String>
+pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::strike_price: core::option::Option<f64>
 pub marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::timeframe: core::option::Option<alloc::string::String>
 impl marketdata_core::models::futopt::FutOptHistoricalCandlesResponse
 pub fn marketdata_core::models::futopt::FutOptHistoricalCandlesResponse::highest_high(&self) -> core::option::Option<f64>

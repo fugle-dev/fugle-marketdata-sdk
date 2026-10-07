@@ -483,10 +483,10 @@ pub struct FutOptHistoricalCandlesParams {
     /// `asc` or `desc`.
     #[uniffi(default = None)]
     pub sort: Option<String>,
-    /// Options only.
+    /// Options only, with `call_put`.
     #[uniffi(default = None)]
     pub strike_price: Option<f64>,
-    /// Options only: `C` or `P`.
+    /// Options only, with `strike_price`: `CALL` or `PUT`.
     #[uniffi(default = None)]
     pub call_put: Option<String>,
     /// `true` asks for the after-hours session (`session=afterhours`).

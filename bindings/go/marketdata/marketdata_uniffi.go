@@ -6181,9 +6181,9 @@ type FutOptHistoricalCandlesParams struct {
 	Timeframe *string
 	// `asc` or `desc`.
 	Sort *string
-	// Options only.
+	// Options only, with `call_put`.
 	StrikePrice *float64
-	// Options only: `C` or `P`.
+	// Options only, with `strike_price`: `CALL` or `PUT`.
 	CallPut *string
 	// `true` asks for the after-hours session (`session=afterhours`).
 	AfterHours *bool

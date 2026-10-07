@@ -164,6 +164,22 @@ enum class ErrorSourceKind: int32_t {
 
 
 /**
+ * What the client does with an inbound message while its queue already
+ * holds `buffer` unread messages.
+ */
+enum class MessageOverflowRecord: int32_t {
+    /**
+     * Drop new messages and report them through `on_messages_dropped`.
+     */
+    kDropNewest = 1,
+    /**
+     * Never drop: the queue grows while `on_message` lags.
+     */
+    kUnbounded = 2
+};
+
+
+/**
  * Who closed the connection, in a [`DisconnectInfo`] (#293).
  */
 enum class DisconnectIntent: int32_t {
@@ -179,22 +195,6 @@ enum class DisconnectIntent: int32_t {
      * Transport error, EOF without a Close frame, or heartbeat timeout.
      */
     kNetwork = 3
-};
-
-
-/**
- * What the client does with an inbound message while its queue already
- * holds `buffer` unread messages.
- */
-enum class MessageOverflowRecord: int32_t {
-    /**
-     * Drop new messages and report them through `on_messages_dropped`.
-     */
-    kDropNewest = 1,
-    /**
-     * Never drop: the queue grows while `on_message` lags.
-     */
-    kUnbounded = 2
 };
 
 
@@ -1780,11 +1780,11 @@ struct FutOptHistoricalCandlesParams {
      */
     std::optional<std::string> sort = std::nullopt;
     /**
-     * Options only.
+     * Options only, with `call_put`.
      */
     std::optional<double> strike_price = std::nullopt;
     /**
-     * Options only: `C` or `P`.
+     * Options only, with `strike_price`: `CALL` or `PUT`.
      */
     std::optional<std::string> call_put = std::nullopt;
     /**

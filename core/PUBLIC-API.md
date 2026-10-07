@@ -37,6 +37,12 @@ PR number and listing the new/changed/removed symbols.
 
 ## Acknowledged changes
 
+### Unreleased — futopt historical candles echo the option queried (sdk-core #443)
+
+- `+` `FutOptHistoricalCandlesResponse::{strike_price, call_put}` — an
+  option query (`strikePrice` + `callPut`) is echoed at the top level of the
+  response; both are absent for futures.
+
 ### Unreleased — futopt daily takes `product` and `contractMonth` (fugle-realtime #727 / #897)
 
 - `+` `FutOptDailyRequestBuilder::product` — the path param under the
