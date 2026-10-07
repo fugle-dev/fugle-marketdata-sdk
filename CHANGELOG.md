@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Bindings 3.0.0-rc.14 / core 0.9.0-rc.12 / uniffi 0.2.0-rc.12] - 2026-10-07
+
 ### Added
 
 - **Rust, Node types**: `FutOptHistoricalCandlesResponse` gains optional
