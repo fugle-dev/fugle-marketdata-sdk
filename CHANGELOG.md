@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Rust, Node types**: `FutOptHistoricalCandlesResponse` gains optional
+  `strikePrice` / `callPut`. An option query on `futopt.historical.candles()`
+  (`strikePrice` + `callPut`, fugle-realtime #727) echoes them at the top
+  level; futures responses have neither. The request side already took both
+  in every binding (Node `RestFutOptHistoricalCandlesParams`, Python
+  `strike_price` / `call_put`, UniFFI `FutOptHistoricalCandlesParams`, C#
+  `HistoricalCandlesRequest`).
+
+### Fixed
+
+- **C#, Go, Java, C++ docs**: `FutOptHistoricalCandlesParams.call_put` is
+  documented as `CALL` / `PUT`; it said `C` / `P`, which the server rejects.
+
 ## [Bindings 3.0.0-rc.13 / core 0.9.0-rc.11 / uniffi 0.2.0-rc.11] - 2026-10-06
 
 > **Server dependency:** the `futopt.historical.daily()` `contractMonth`

@@ -11047,10 +11047,10 @@ class FfiConverterTypeFutOptDailyParams : FfiConverterRustBuffer<FutOptDailyPara
 /// `asc` or `desc`.
 /// </param>
 /// <param name="strike_price">
-/// Options only.
+/// Options only, with `call_put`.
 /// </param>
 /// <param name="call_put">
-/// Options only: `C` or `P`.
+/// Options only, with `strike_price`: `CALL` or `PUT`.
 /// </param>
 /// <param name="after_hours">
 /// `true` asks for the after-hours session (`session=afterhours`).
@@ -11082,11 +11082,11 @@ public record FutOptHistoricalCandlesParams(
     /// </summary>
     string? @sort = null,
     /// <summary>
-    /// Options only.
+    /// Options only, with `call_put`.
     /// </summary>
     double? @strikePrice = null,
     /// <summary>
-    /// Options only: `C` or `P`.
+    /// Options only, with `strike_price`: `CALL` or `PUT`.
     /// </summary>
     string? @callPut = null,
     /// <summary>

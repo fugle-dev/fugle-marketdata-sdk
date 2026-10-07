@@ -1632,6 +1632,10 @@ export interface FutOptHistoricalCandlesResponse {
   timeframe?: string;
   /** Sort order ("asc" or "desc") */
   sort?: string;
+  /** Strike price of the option queried; absent for futures */
+  strikePrice?: number;
+  /** Option side queried; absent for futures */
+  callPut?: 'CALL' | 'PUT';
   /** Candle data */
   data: FutOptHistoricalCandle[];
 }

@@ -38,11 +38,11 @@ public class FutOptHistoricalCandlesParams {
      */
     private String sort;
     /**
-     * Options only.
+     * Options only, with `call_put`.
      */
     private Double strikePrice;
     /**
-     * Options only: `C` or `P`.
+     * Options only, with `strike_price`: `CALL` or `PUT`.
      */
     private String callPut;
     /**

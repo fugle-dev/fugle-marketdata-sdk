@@ -52,6 +52,14 @@ pub struct FutOptHistoricalCandlesResponse {
     /// Sort order ("asc" or "desc")
     pub sort: Option<String>,
 
+    /// Strike price of the option queried; absent for futures
+    #[serde(rename = "strikePrice", default, skip_serializing_if = "Option::is_none")]
+    pub strike_price: Option<f64>,
+
+    /// Option side queried ("CALL" / "PUT"); absent for futures
+    #[serde(rename = "callPut", default, skip_serializing_if = "Option::is_none")]
+    pub call_put: Option<String>,
+
     /// Candle data
     #[serde(default, rename = "data")]
     pub candles: Vec<FutOptHistoricalCandle>,
@@ -296,6 +304,21 @@ mod tests {
         assert_eq!(response.highest_high(), Some(17580.0));
         assert_eq!(response.lowest_low(), Some(17380.0));
         assert_eq!(response.total_volume(), 95000);
+    }
+
+    #[test]
+    fn test_futopt_historical_candles_option_echo() {
+        // Recorded from standby (2026-10-07): an option query echoes the
+        // strike and side at the top level; a futures query has neither.
+        let json = r#"{"product":"TXO","contractMonth":"202610W1","exchange":"TAIFEX","session":"REGULAR","timeframe":"D","sort":"desc","strikePrice":42800,"callPut":"PUT","data":[]}"#;
+        let response: FutOptHistoricalCandlesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.strike_price, Some(42800.0));
+        assert_eq!(response.call_put.as_deref(), Some("PUT"));
+
+        let futures: FutOptHistoricalCandlesResponse =
+            serde_json::from_str(r#"{"product":"TXF","data":[]}"#).unwrap();
+        assert_eq!(futures.strike_price, None);
+        assert!(!serde_json::to_string(&futures).unwrap().contains("callPut"));
     }
 
     #[test]
